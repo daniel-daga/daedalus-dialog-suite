@@ -6,8 +6,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Parser from 'tree-sitter';
-import { SemanticModelBuilderVisitor } from './semantic-visitor-index';
-import { SemanticCodeGenerator, CodeGeneratorOptions } from './semantic-code-generator';
+import { SemanticModelBuilderVisitor } from '../src/semantic-visitor-index';
+import { SemanticCodeGenerator, CodeGeneratorOptions } from '../src/semantic-code-generator';
 
 interface CLIOptions extends CodeGeneratorOptions {
   output?: string;

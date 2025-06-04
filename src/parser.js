@@ -12,7 +12,6 @@ class DaedalusParser {
    * Parse Daedalus source code and return syntax tree
    * @param {string} sourceCode - The Daedalus source code to parse
    * @param {Object} options - Parsing options
-   * @param {boolean} options.includeSource - Include source text in nodes
    * @returns {Object} Parse tree with metadata
    */
   parse(sourceCode, options = {}) {
@@ -32,8 +31,9 @@ class DaedalusParser {
       throughput: sourceCode.length / parseTimeMs * PERFORMANCE.THROUGHPUT_CALCULATION_MS // bytes per second
     };
 
-    if (options.includeSource) {
-      result.sourceCode = sourceCode;
+    if (result.hasErrors) {
+      const validation = parser.validate(result.sourceCode);
+      result.errors = validation.errors;
     }
 
     return result;
@@ -102,8 +102,8 @@ class DaedalusParser {
       if (child.type === 'instance_declaration') {
         declarations.push({
           type: 'instance',
-          name: this.getFieldText(child, 'name', parseResult.sourceCode),
-          parent: this.getFieldText(child, 'parent', parseResult.sourceCode),
+          name: this.getFieldText(child, 'name'),
+          parent: this.getFieldText(child, 'parent'),
           startPosition: child.startPosition,
           endPosition: child.endPosition,
           node: child
@@ -111,20 +111,20 @@ class DaedalusParser {
       } else if (child.type === 'function_declaration') {
         declarations.push({
           type: 'function',
-          name: this.getFieldText(child, 'name', parseResult.sourceCode),
-          returnType: this.getFieldText(child, 'return_type', parseResult.sourceCode),
+          name: this.getFieldText(child, 'name'),
+          returnType: this.getFieldText(child, 'return_type'),
           startPosition: child.startPosition,
           endPosition: child.endPosition,
           node: child
         });
       } else if (child.type === 'variable_declaration') {
-        const keyword = this.getFieldText(child, 'keyword', parseResult.sourceCode);
+        const keyword = this.getFieldText(child, 'keyword');
         declarations.push({
           type: 'variable',
-          name: this.getFieldText(child, 'name', parseResult.sourceCode),
-          varType: this.getFieldText(child, 'type', parseResult.sourceCode),
+          name: this.getFieldText(child, 'name'),
+          varType: this.getFieldText(child, 'type'),
           isConst: keyword && keyword.toLowerCase() === 'const',
-          value: this.getFieldText(child, 'value', parseResult.sourceCode),
+          value: this.getFieldText(child, 'value'),
           startPosition: child.startPosition,
           endPosition: child.endPosition,
           node: child
@@ -132,7 +132,7 @@ class DaedalusParser {
       } else if (child.type === 'class_declaration') {
         declarations.push({
           type: 'class',
-          name: this.getFieldText(child, 'name', parseResult.sourceCode),
+          name: this.getFieldText(child, 'name'),
           startPosition: child.startPosition,
           endPosition: child.endPosition,
           node: child
@@ -140,8 +140,8 @@ class DaedalusParser {
       } else if (child.type === 'prototype_declaration') {
         declarations.push({
           type: 'prototype',
-          name: this.getFieldText(child, 'name', parseResult.sourceCode),
-          parent: this.getFieldText(child, 'parent', parseResult.sourceCode),
+          name: this.getFieldText(child, 'name'),
+          parent: this.getFieldText(child, 'parent'),
           startPosition: child.startPosition,
           endPosition: child.endPosition,
           node: child
@@ -156,9 +156,9 @@ class DaedalusParser {
    * Get text content of a named field from a node
    * @private
    */
-  getFieldText(node, fieldName, sourceCode) {
+  getFieldText(node, fieldName) {
     const field = node.childForFieldName(fieldName);
-    return field ? sourceCode.slice(field.startIndex, field.endIndex) : null;
+    return field.text;;
   }
 
   /**

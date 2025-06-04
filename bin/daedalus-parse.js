@@ -65,7 +65,7 @@ function main() {
     console.log(`Parsing: ${filePath}`);
     console.log('─'.repeat(50));
 
-    const result = parser.parseFile(filePath, { includeSource: true });
+    const result = parser.parseFile(filePath);
 
     if (options.json) {
       // JSON output
@@ -77,11 +77,6 @@ function main() {
         throughput: result.throughput,
         declarations: parser.extractDeclarations(result)
       };
-
-      if (result.hasErrors) {
-        const validation = parser.validate(result.sourceCode);
-        output.errors = validation.errors;
-      }
 
       console.log(JSON.stringify(output, null, 2));
     } else if (options.declarations) {
@@ -129,9 +124,8 @@ function main() {
       });
 
       if (result.hasErrors) {
-        const validation = parser.validate(result.sourceCode);
-        console.log(`\nErrors: ${validation.errors.length}`);
-        validation.errors.forEach((error, i) => {
+        console.log(`\nErrors: ${result.errors.length}`);
+        result.errors.forEach((error, i) => {
           console.log(`  ${i + 1}. ${error.message} at line ${error.position.row + 1}`);
         });
       }
@@ -166,8 +160,7 @@ function main() {
 
       if (result.hasErrors) {
         console.log('\nSyntax Errors:');
-        const validation = parser.validate(result.sourceCode);
-        validation.errors.forEach((error, i) => {
+        result.errors.forEach((error, i) => {
           console.log(`  ${i + 1}. ${error.message} at line ${error.position.row + 1}`);
         });
       }
@@ -177,6 +170,9 @@ function main() {
     }
   } catch (error) {
     console.error(`Error parsing file: ${error.message}`);
+
+    console.error(error.stack);
+
     process.exit(1);
   }
 }

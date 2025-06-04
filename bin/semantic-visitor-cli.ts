@@ -5,7 +5,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Parser from 'tree-sitter';
-import { SemanticModelBuilderVisitor } from './semantic-visitor-index';
 import {
   DialogFunction,
   DialogLine,
@@ -20,8 +19,9 @@ import {
   SetAttitudeAction,
   ExchangeRoutineAction,
   ChapterTransitionAction,
-  TreeSitterNode
-} from './semantic-visitor-index';
+  TreeSitterNode,
+  SemanticModelBuilderVisitor
+} from '../src/semantic-visitor-index';
 
 function main() {
   const args = process.argv.slice(2);

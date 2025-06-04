@@ -8,11 +8,11 @@
     "test": "npm run build && node --test test/*.test.js",
     "build": "tree-sitter generate",
     "build:ts": "tsc --project tsconfig.build.json",
+
     "parse": "node bin/daedalus-parse.js",
-    "format": "node bin/daedalus-format.js",
-    "editor": "node bin/daedalus-dialog-editor.js",
-    "semantic": "npx ts-node src/semantic-visitor-cli.ts",
-    "generate": "npx ts-node src/semantic-code-generator-cli.ts",
+    "semantic": "npx ts-node bin/semantic-visitor-cli.ts",
+    "format": "npx ts-node bin/semantic-code-generator-cli.ts",
+    
     "lint": "eslint src/ test/ bin/ --max-warnings 0",
     "lint:fix": "eslint src/ test/ bin/ --fix",
     "typecheck": "tsc --noEmit",
