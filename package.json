@@ -1,0 +1,57 @@
+{
+  "name": "daedalus-parser",
+  "version": "1.0.0",
+  "description": "High-performance Tree-sitter parser for Gothic 2 Daedalus scripting language",
+  "main": "src/parser.js",
+  "types": "bindings/node",
+  "scripts": {
+    "test": "npm run build && node --test test/*.test.js",
+    "build": "tree-sitter generate",
+    "lint": "echo 'No linter configured yet'",
+    "typecheck": "echo 'No TypeScript configured yet'",
+    "install": "node-gyp-build",
+    "prebuildify": "prebuildify --napi --strip"
+  },
+  "keywords": [
+    "parser",
+    "daedalus",
+    "gothic",
+    "scripting",
+    "tree-sitter"
+  ],
+  "files": [
+    "grammar.js",
+    "binding.gyp",
+    "prebuilds/**",
+    "bindings/node/*",
+    "queries/*",
+    "src/**"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.21.0",
+    "node-gyp-build": "^4.8.0"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "tree_sitter": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.22.0",
+    "prebuildify": "^6.0.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.daedalus",
+      "injection-regex": "^daedalus$"
+    }
+  ]
+}
