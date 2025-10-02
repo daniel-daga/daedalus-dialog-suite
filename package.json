@@ -1,0 +1,57 @@
+{
+  "name": "daedalus-dialog-editor",
+  "version": "0.1.0",
+  "description": "Visual dialog editor for Gothic 2 Daedalus scripting language",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "npm run build:main && concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:main": "tsc -p tsconfig.main.json --watch",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on dist/main/main.js && NODE_ENV=development electron . --enable-logging --no-sandbox",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "package": "electron-builder"
+  },
+  "keywords": [
+    "gothic",
+    "modding",
+    "dialog",
+    "daedalus"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@mui/icons-material": "^5.18.0",
+    "@tanstack/react-query": "^5.28.4",
+    "better-sqlite3": "^11.0.0",
+    "daedalus-parser": "*",
+    "tree-sitter": "^0.21.1",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@emotion/react": "^11.11.4",
+    "@emotion/styled": "^11.11.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@mui/material": "^5.15.14",
+    "@types/better-sqlite3": "^7.6.9",
+    "@types/node": "^20.11.30",
+    "@types/react": "^18.2.73",
+    "@types/react-beautiful-dnd": "^13.1.8",
+    "@types/react-dom": "^18.2.23",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^29.1.5",
+    "electron-builder": "^24.13.3",
+    "react": "^18.2.0",
+    "react-beautiful-dnd": "^13.1.1",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "reactflow": "^11.11.1",
+    "typescript": "^5.4.3",
+    "vite": "^5.2.6",
+    "vite-plugin-electron": "^0.28.4",
+    "wait-on": "^9.0.1"
+  }
+}
