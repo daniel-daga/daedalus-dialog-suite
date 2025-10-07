@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip, Select, MenuItem, FormControl, InputLabel, FormHelperText, Tooltip, Menu } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 
 interface ThreeColumnLayoutProps {
@@ -544,15 +544,27 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
     return 'Unknown';
   };
 
+  const getActionIcon = () => {
+    if (isDialogLine) return <ChatIcon fontSize="small" />;
+    if (isChoice) return <CallSplitIcon fontSize="small" />;
+    if (isCreateTopic) return <LibraryBooksIcon fontSize="small" />;
+    if (isLogEntry) return <DescriptionIcon fontSize="small" />;
+    if (isChapterTransition) return <NavigationIcon fontSize="small" />;
+    if (isExchangeRoutine) return <SwapHorizIcon fontSize="small" />;
+    if (isAction) return <CodeIcon fontSize="small" />;
+    return <HelpOutlineIcon fontSize="small" />;
+  };
+
   return (
     <Box sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-        {getActionTypeLabel()}
-      </Typography>
-
       <Stack spacing={2}>
           {isDialogLine && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
               <FormControl size="small" sx={{ width: 150, flexShrink: 0 }}>
                 <InputLabel>Speaker</InputLabel>
                 <Select
@@ -586,6 +598,11 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
           {isChoice && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <Tooltip title={getActionTypeLabel()} arrow>
+                  <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0, mt: 0.5 }}>
+                    {getActionIcon()}
+                  </Box>
+                </Tooltip>
                 <TextField
                   fullWidth
                   label="Text"
@@ -606,11 +623,17 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 onChange={(e) => onUpdate({ ...action, targetFunction: e.target.value })}
                 size="small"
                 helperText="Function to call when this choice is selected"
+                sx={{ ml: 4 }}
               />
             </Box>
           )}
           {isCreateTopic && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
               <TextField
                 label="Topic"
                 value={action.topic || ''}
@@ -632,6 +655,11 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
           )}
           {isLogEntry && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
               <TextField
                 label="Topic"
                 value={action.topic || ''}
@@ -653,6 +681,11 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
           )}
           {isChapterTransition && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
               <TextField
                 label="Chapter"
                 type="number"
@@ -675,6 +708,11 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
           )}
           {isExchangeRoutine && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
               <TextField
                 label="Target NPC"
                 value={action.target || action.npc || ''}
@@ -706,6 +744,11 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
           )}
           {isAction && (
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0, mt: 0.5 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
               <TextField
                 fullWidth
                 label="Action"
@@ -723,6 +766,11 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
           {isUnknown && (
             <Box>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <Tooltip title={getActionTypeLabel()} arrow>
+                  <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                    {getActionIcon()}
+                  </Box>
+                </Tooltip>
                 <Box sx={{ flex: 1 }}>
                   <Typography variant="body2" color="warning.main" gutterBottom>
                     This action type is not recognized. Fields detected:
