@@ -1,44 +1,5 @@
 import { create } from 'zustand';
 
-// Helper function to normalize semantic model for serialization
-function normalizeSemanticModel(model: any): any {
-  const normalized = {
-    dialogs: {} as any,
-    functions: {} as any
-  };
-
-  // Normalize dialogs
-  for (const dialogName in model.dialogs) {
-    const dialog = model.dialogs[dialogName];
-    normalized.dialogs[dialogName] = {
-      ...dialog,
-      properties: normalizeProperties(dialog.properties)
-    };
-  }
-
-  // Copy functions as-is
-  normalized.functions = { ...model.functions };
-
-  return normalized;
-}
-
-function normalizeProperties(properties: any): any {
-  const normalized: any = {};
-
-  for (const key in properties) {
-    const value = properties[key];
-
-    // Convert DialogFunction objects to their name strings
-    if (typeof value === 'object' && value !== null && 'name' in value && 'returnType' in value) {
-      normalized[key] = value.name;
-    } else {
-      normalized[key] = value;
-    }
-  }
-
-  return normalized;
-}
-
 interface FileState {
   filePath: string;
   semanticModel: any;
@@ -105,12 +66,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   openFile: async (filePath: string) => {
     try {
-      const model = await window.editorAPI.parseFile(filePath);
+      // Read and parse file in main process (has access to native modules)
+      const sourceCode = await window.editorAPI.readFile(filePath);
+      const model = await window.editorAPI.parseSource(sourceCode);
+
       const fileState: FileState = {
         filePath,
         semanticModel: model,
         isDirty: false,
         lastSaved: new Date(),
+        originalCode: sourceCode,
       };
 
       set((state) => {
@@ -163,14 +128,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
 
     try {
-      // Normalize the model to convert DialogFunction objects to strings
-      const normalizedModel = normalizeSemanticModel(fileState.semanticModel);
-
-      await window.editorAPI.saveFile(
-        filePath,
-        normalizedModel,
-        state.codeSettings
-      );
+      // Generate code and save in main process
+      await window.editorAPI.saveFile(filePath, fileState.semanticModel, state.codeSettings);
 
       set((state) => {
         const updatedFileState: FileState = {
@@ -195,10 +154,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       throw new Error('File not open');
     }
 
-    return window.editorAPI.generateCode(
-      fileState.semanticModel,
-      state.codeSettings
-    );
+    // Generate code in main process
+    return window.editorAPI.generateCode(fileState.semanticModel, state.codeSettings);
   },
 
   setSelectedDialog: (dialogName: string | null) => {

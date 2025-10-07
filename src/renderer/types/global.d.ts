@@ -1,18 +1,14 @@
 export interface EditorAPI {
-  // Parser API
-  parseFile: (filePath: string) => Promise<any>;
+  // Parser API - runs in main process (has access to native modules)
   parseSource: (sourceCode: string) => Promise<any>;
-  validateSyntax: (sourceCode: string) => Promise<{ isValid: boolean; errors: any[] }>;
 
-  // Code Generator API
+  // Code Generator API - runs in main process
   generateCode: (model: any, settings: any) => Promise<string>;
-  generateDialog: (dialog: any, settings: any) => Promise<string>;
-  generateFunction: (func: any, settings: any) => Promise<string>;
+  saveFile: (filePath: string, model: any, settings: any) => Promise<{ success: boolean }>;
 
-  // File API
+  // File I/O API
   readFile: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
-  saveFile: (filePath: string, model: any, settings: any) => Promise<{ success: boolean }>;
   openFileDialog: () => Promise<string | null>;
   saveFileDialog: () => Promise<string | null>;
 }

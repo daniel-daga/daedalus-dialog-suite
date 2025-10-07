@@ -1,13 +1,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
-import { SemanticParserService } from './services/SemanticParserService';
-import { CodeGeneratorService } from './services/CodeGeneratorService';
 import { FileService } from './services/FileService';
+import { ParserService } from './services/ParserService';
+import { CodeGeneratorService } from './services/CodeGeneratorService';
 
 let mainWindow: BrowserWindow | null = null;
-const parserService = new SemanticParserService();
-const codeGeneratorService = new CodeGeneratorService();
 const fileService = new FileService();
+const parserService = new ParserService();
+const codeGeneratorService = new CodeGeneratorService();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -50,48 +50,31 @@ app.on('window-all-closed', () => {
 });
 
 function setupIpcHandlers() {
-  // Parser handlers
-  ipcMain.handle('parser:parseFile', async (_event, filePath: string) => {
-    return parserService.parseFile(filePath);
-  });
-
+  // Parser handler (main process has access to native modules)
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: string) => {
     return parserService.parseSource(sourceCode);
   });
 
-  ipcMain.handle('parser:validate', async (_event, sourceCode: string) => {
-    return parserService.validateSyntax(sourceCode);
-  });
-
   // Code generator handlers
-  ipcMain.handle('generator:generate', async (_event, model: any, settings: any) => {
-    codeGeneratorService.updateSettings(settings);
-    return codeGeneratorService.generate(model);
+  ipcMain.handle('generator:generateCode', async (_event, model: any, settings: any) => {
+    return codeGeneratorService.generateCode(model, settings);
   });
 
-  ipcMain.handle('generator:generateDialog', async (_event, dialog: any, settings: any) => {
-    codeGeneratorService.updateSettings(settings);
-    return codeGeneratorService.generateDialog(dialog);
+  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any) => {
+    console.log('Generating code for model:', JSON.stringify(model, null, 2));
+    const code = codeGeneratorService.generateCode(model, settings);
+    console.log('Generated code type:', typeof code);
+    console.log('Generated code:', code);
+    return fileService.writeFile(filePath, code);
   });
 
-  ipcMain.handle('generator:generateFunction', async (_event, func: any, settings: any) => {
-    codeGeneratorService.updateSettings(settings);
-    return codeGeneratorService.generateFunction(func);
-  });
-
-  // File handlers
+  // File I/O handlers
   ipcMain.handle('file:read', async (_event, filePath: string) => {
     return fileService.readFile(filePath);
   });
 
   ipcMain.handle('file:write', async (_event, filePath: string, content: string) => {
     return fileService.writeFile(filePath, content);
-  });
-
-  ipcMain.handle('file:save', async (_event, filePath: string, model: any, settings: any) => {
-    codeGeneratorService.updateSettings(settings);
-    const code = codeGeneratorService.generate(model);
-    return fileService.writeFile(filePath, code);
   });
 
   ipcMain.handle('file:openDialog', async () => {
