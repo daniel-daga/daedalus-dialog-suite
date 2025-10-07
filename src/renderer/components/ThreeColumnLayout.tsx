@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip, Select, MenuItem, FormControl, InputLabel, FormHelperText, Tooltip } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon } from '@mui/icons-material';
+import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip, Select, MenuItem, FormControl, InputLabel, FormHelperText, Tooltip, Menu } from '@mui/material';
+import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 
 interface ThreeColumnLayoutProps {
@@ -273,6 +273,67 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     });
   };
 
+  const addLogEntry = () => {
+    if (!localFunction) return;
+    const newAction = {
+      topic: 'TOPIC_NAME',
+      text: 'New log entry'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addCreateTopic = () => {
+    if (!localFunction) return;
+    const newAction = {
+      topic: 'TOPIC_NAME',
+      topicType: 'LOG_MISSION'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addChapterTransition = () => {
+    if (!localFunction) return;
+    const newAction = {
+      chapter: 1,
+      world: 'NEWWORLD_ZEN'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addExchangeRoutine = () => {
+    if (!localFunction) return;
+    const newAction = {
+      target: 'self',
+      routine: 'START'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addCustomAction = () => {
+    if (!localFunction) return;
+    const newAction = {
+      action: 'AI_StopProcessInfos(self)'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
+
   const isDirty = JSON.stringify(dialog) !== JSON.stringify(localDialog) ||
                   JSON.stringify(infoFunction) !== JSON.stringify(localFunction);
 
@@ -399,12 +460,40 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             >
               Add Choice
             </Button>
+            <IconButton
+              size="small"
+              onClick={(e) => setAddMenuAnchor(e.currentTarget)}
+              sx={{ ml: 0.5 }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+            <Menu
+              anchorEl={addMenuAnchor}
+              open={Boolean(addMenuAnchor)}
+              onClose={() => setAddMenuAnchor(null)}
+            >
+              <MenuItem onClick={() => { addLogEntry(); setAddMenuAnchor(null); }}>
+                Add Log Entry
+              </MenuItem>
+              <MenuItem onClick={() => { addCreateTopic(); setAddMenuAnchor(null); }}>
+                Add Create Topic
+              </MenuItem>
+              <MenuItem onClick={() => { addChapterTransition(); setAddMenuAnchor(null); }}>
+                Add Chapter Transition
+              </MenuItem>
+              <MenuItem onClick={() => { addExchangeRoutine(); setAddMenuAnchor(null); }}>
+                Add Exchange Routine
+              </MenuItem>
+              <MenuItem onClick={() => { addCustomAction(); setAddMenuAnchor(null); }}>
+                Add Custom Action
+              </MenuItem>
+            </Menu>
           </Stack>
         </Box>
 
         {!localFunction || (localFunction.actions || []).length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            No dialog actions yet. Click "Add Line" or "Add Choice" to create one.
+            No dialog actions yet. Use the buttons above to add actions.
           </Typography>
         ) : (
           <Stack spacing={2}>
