@@ -504,6 +504,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 index={idx}
                 onUpdate={(updated) => updateAction(idx, updated)}
                 onDelete={() => deleteAction(idx)}
+                dialog={localDialog}
               />
             ))}
           </Stack>
@@ -518,9 +519,10 @@ interface ActionCardProps {
   index: number;
   onUpdate: (action: any) => void;
   onDelete: () => void;
+  dialog: any;
 }
 
-const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDelete }) => {
+const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDelete, dialog }) => {
   // Determine action type
   const isDialogLine = action.speaker !== undefined && action.text !== undefined && action.id !== undefined;
   const isChoice = action.dialogRef !== undefined && action.targetFunction !== undefined;
@@ -551,15 +553,15 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
       <Stack spacing={2}>
           {isDialogLine && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <FormControl size="small" sx={{ minWidth: 120 }}>
+              <FormControl size="small" sx={{ width: 150, flexShrink: 0 }}>
                 <InputLabel>Speaker</InputLabel>
                 <Select
                   value={action.speaker || 'self'}
                   label="Speaker"
                   onChange={(e) => onUpdate({ ...action, speaker: e.target.value })}
                 >
-                  <MenuItem value="self">self</MenuItem>
-                  <MenuItem value="other">other</MenuItem>
+                  <MenuItem value="self">{dialog.properties?.npc || 'NPC'}</MenuItem>
+                  <MenuItem value="other">Hero</MenuItem>
                 </Select>
               </FormControl>
               <TextField
