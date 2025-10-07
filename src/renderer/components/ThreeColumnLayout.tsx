@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip, Select, MenuItem, FormControl, InputLabel, FormHelperText, Tooltip, Menu } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
@@ -206,12 +206,20 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const [localFunction, setLocalFunction] = useState(infoFunction);
   const { openFiles, saveFile } = useEditorStore();
   const fileState = openFiles.get(filePath);
+  const actionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Reset local state when dialog changes
   React.useEffect(() => {
     setLocalDialog(dialog);
     setLocalFunction(infoFunction);
   }, [dialogName, dialog, infoFunction]);
+
+  const focusAction = (index: number) => {
+    const ref = actionRefs.current[index];
+    if (ref) {
+      ref.focus();
+    }
+  };
 
   const handleSave = () => {
     // Normalize dialog properties to use string references for functions
@@ -500,11 +508,24 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             {(localFunction.actions || []).map((action: any, idx: number) => (
               <ActionCard
                 key={idx}
+                ref={(el) => (actionRefs.current[idx] = el)}
                 action={action}
                 index={idx}
                 onUpdate={(updated) => updateAction(idx, updated)}
                 onDelete={() => deleteAction(idx)}
                 dialog={localDialog}
+                onTabToNext={() => {
+                  const nextIdx = idx + 1;
+                  if (nextIdx < (localFunction.actions || []).length) {
+                    focusAction(nextIdx);
+                  }
+                }}
+                onTabToPrev={() => {
+                  const prevIdx = idx - 1;
+                  if (prevIdx >= 0) {
+                    focusAction(prevIdx);
+                  }
+                }}
               />
             ))}
           </Stack>
@@ -520,9 +541,16 @@ interface ActionCardProps {
   onUpdate: (action: any) => void;
   onDelete: () => void;
   dialog: any;
+  onTabToNext?: () => void;
+  onTabToPrev?: () => void;
 }
 
-const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDelete, dialog }) => {
+const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, onUpdate, onDelete, dialog, onTabToNext, onTabToPrev }, ref) => {
+  const mainFieldRef = useRef<HTMLInputElement>(null);
+
+  // Expose the ref to parent
+  React.useImperativeHandle(ref, () => mainFieldRef.current!);
+
   // Determine action type
   const isDialogLine = action.speaker !== undefined && action.text !== undefined && action.id !== undefined;
   const isChoice = action.dialogRef !== undefined && action.targetFunction !== undefined;
@@ -532,6 +560,16 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
   const isExchangeRoutine = (action.npc !== undefined || action.target !== undefined) && action.routine !== undefined;
   const isAction = action.action !== undefined;
   const isUnknown = !isDialogLine && !isChoice && !isCreateTopic && !isLogEntry && !isChapterTransition && !isExchangeRoutine && !isAction;
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      onTabToNext?.();
+    } else if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      onTabToPrev?.();
+    }
+  };
 
   const getActionTypeLabel = () => {
     if (isDialogLine) return 'Dialog Line';
@@ -582,6 +620,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 value={action.text || ''}
                 onChange={(e) => onUpdate({ ...action, text: e.target.value })}
                 size="small"
+                inputRef={mainFieldRef}
+                onKeyDown={handleKeyDown}
               />
               {action.id && (
                 <Tooltip title={`Dialog ID: ${action.id}`} arrow>
@@ -611,6 +651,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                   size="small"
                   multiline
                   rows={2}
+                  inputRef={mainFieldRef}
+                  onKeyDown={handleKeyDown}
                 />
                 <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
                   <DeleteIcon fontSize="small" />
@@ -640,6 +682,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
                 size="small"
                 sx={{ minWidth: 180 }}
+                inputRef={mainFieldRef}
+                onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
@@ -673,6 +717,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 value={action.text || ''}
                 onChange={(e) => onUpdate({ ...action, text: e.target.value })}
                 size="small"
+                inputRef={mainFieldRef}
+                onKeyDown={handleKeyDown}
               />
               <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
@@ -693,6 +739,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 onChange={(e) => onUpdate({ ...action, chapter: parseInt(e.target.value) || 0 })}
                 size="small"
                 sx={{ width: 100 }}
+                inputRef={mainFieldRef}
+                onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
@@ -729,6 +777,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 }}
                 size="small"
                 sx={{ width: 120 }}
+                inputRef={mainFieldRef}
+                onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
@@ -757,6 +807,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 size="small"
                 multiline
                 rows={2}
+                inputRef={mainFieldRef}
+                onKeyDown={handleKeyDown}
               />
               <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
                 <DeleteIcon fontSize="small" />
@@ -806,6 +858,8 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
       </Stack>
     </Box>
   );
-};
+});
+
+ActionCard.displayName = 'ActionCard';
 
 export default ThreeColumnLayout;
