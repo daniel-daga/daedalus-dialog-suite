@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon } from '@mui/icons-material';
+import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip, Select, MenuItem, FormControl, InputLabel, FormHelperText, Tooltip } from '@mui/material';
+import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 
 interface ThreeColumnLayoutProps {
@@ -279,10 +279,10 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="h5">{dialogName}</Typography>
-          {fileState?.isDirty && <Chip label="File Modified" size="small" color="warning" sx={{ ml: 1 }} />}
-          {isDirty && <Chip label="Unsaved Changes" size="small" color="error" sx={{ ml: 1 }} />}
+          {fileState?.isDirty && <Chip label="File Modified" size="small" color="warning" />}
+          {isDirty && <Chip label="Unsaved Changes" size="small" color="error" />}
         </Box>
         <Stack direction="row" spacing={1}>
           <Button
@@ -454,56 +454,60 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
   };
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            #{index + 1} - {getActionTypeLabel()}
-          </Typography>
-          <IconButton size="small" color="error" onClick={onDelete}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Box>
+    <Box sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+        {getActionTypeLabel()}
+      </Typography>
 
-        <Stack spacing={2}>
+      <Stack spacing={2}>
           {isDialogLine && (
-            <>
-              <TextField
-                fullWidth
-                label="Speaker"
-                value={action.speaker || ''}
-                onChange={(e) => onUpdate({ ...action, speaker: e.target.value })}
-                size="small"
-              />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <InputLabel>Speaker</InputLabel>
+                <Select
+                  value={action.speaker || 'self'}
+                  label="Speaker"
+                  onChange={(e) => onUpdate({ ...action, speaker: e.target.value })}
+                >
+                  <MenuItem value="self">self</MenuItem>
+                  <MenuItem value="other">other</MenuItem>
+                </Select>
+              </FormControl>
               <TextField
                 fullWidth
                 label="Text"
                 value={action.text || ''}
                 onChange={(e) => onUpdate({ ...action, text: e.target.value })}
                 size="small"
-                multiline
-                rows={3}
               />
-              <TextField
-                fullWidth
-                label="Dialog ID"
-                value={action.id || ''}
-                onChange={(e) => onUpdate({ ...action, id: e.target.value })}
-                size="small"
-              />
-            </>
+              {action.id && (
+                <Tooltip title={`Dialog ID: ${action.id}`} arrow>
+                  <IconButton size="small" sx={{ flexShrink: 0 }}>
+                    <InfoIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
           )}
           {isChoice && (
-            <>
-              <TextField
-                fullWidth
-                label="Text"
-                value={action.text || ''}
-                onChange={(e) => onUpdate({ ...action, text: e.target.value })}
-                size="small"
-                multiline
-                rows={2}
-              />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <TextField
+                  fullWidth
+                  label="Text"
+                  value={action.text || ''}
+                  onChange={(e) => onUpdate({ ...action, text: e.target.value })}
+                  size="small"
+                  multiline
+                  rows={2}
+                />
+                <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
               <TextField
                 fullWidth
                 label="Target Function"
@@ -512,16 +516,16 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 size="small"
                 helperText="Function to call when this choice is selected"
               />
-            </>
+            </Box>
           )}
           {isCreateTopic && (
-            <>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TextField
-                fullWidth
                 label="Topic"
                 value={action.topic || ''}
                 onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
                 size="small"
+                sx={{ minWidth: 180 }}
               />
               <TextField
                 fullWidth
@@ -530,16 +534,19 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 onChange={(e) => onUpdate({ ...action, topicType: e.target.value })}
                 size="small"
               />
-            </>
+              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
           )}
           {isLogEntry && (
-            <>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TextField
-                fullWidth
                 label="Topic"
                 value={action.topic || ''}
                 onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
                 size="small"
+                sx={{ minWidth: 180 }}
               />
               <TextField
                 fullWidth
@@ -547,21 +554,21 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 value={action.text || ''}
                 onChange={(e) => onUpdate({ ...action, text: e.target.value })}
                 size="small"
-                multiline
-                rows={2}
               />
-            </>
+              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
           )}
           {isChapterTransition && (
-            <>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TextField
-                fullWidth
                 label="Chapter"
                 type="number"
                 value={action.chapter || ''}
                 onChange={(e) => onUpdate({ ...action, chapter: parseInt(e.target.value) || 0 })}
                 size="small"
-                helperText="Chapter number to transition to"
+                sx={{ width: 100 }}
               />
               <TextField
                 fullWidth
@@ -569,14 +576,15 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 value={action.world || ''}
                 onChange={(e) => onUpdate({ ...action, world: e.target.value })}
                 size="small"
-                helperText="World/ZEN file name (e.g., NEWWORLD_ZEN)"
               />
-            </>
+              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
           )}
           {isExchangeRoutine && (
-            <>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TextField
-                fullWidth
                 label="Target NPC"
                 value={action.target || action.npc || ''}
                 onChange={(e) => {
@@ -591,7 +599,7 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                   onUpdate(updated);
                 }}
                 size="small"
-                helperText="NPC instance (e.g., self, other)"
+                sx={{ width: 120 }}
               />
               <TextField
                 fullWidth
@@ -599,52 +607,65 @@ const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDele
                 value={action.routine || ''}
                 onChange={(e) => onUpdate({ ...action, routine: e.target.value })}
                 size="small"
-                helperText="Routine name (e.g., START, FOLLOW)"
               />
-            </>
+              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
           )}
           {isAction && (
-            <TextField
-              fullWidth
-              label="Action"
-              value={action.action || ''}
-              onChange={(e) => onUpdate({ ...action, action: e.target.value })}
-              size="small"
-              multiline
-              rows={2}
-            />
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+              <TextField
+                fullWidth
+                label="Action"
+                value={action.action || ''}
+                onChange={(e) => onUpdate({ ...action, action: e.target.value })}
+                size="small"
+                multiline
+                rows={2}
+              />
+              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
           )}
           {isUnknown && (
             <Box>
-              <Typography variant="body2" color="warning.main" gutterBottom>
-                This action type is not recognized. Fields detected:
-              </Typography>
-              <TextField
-                fullWidth
-                label="Raw JSON"
-                value={JSON.stringify(action, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    onUpdate(parsed);
-                  } catch (err) {
-                    // Invalid JSON, ignore
-                  }
-                }}
-                size="small"
-                multiline
-                rows={6}
-                helperText="Edit the raw JSON structure"
-                sx={{ fontFamily: 'monospace' }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                Properties: {Object.keys(action).join(', ')}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" color="warning.main" gutterBottom>
+                    This action type is not recognized. Fields detected:
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    label="Raw JSON"
+                    value={JSON.stringify(action, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        onUpdate(parsed);
+                      } catch (err) {
+                        // Invalid JSON, ignore
+                      }
+                    }}
+                    size="small"
+                    multiline
+                    rows={6}
+                    helperText="Edit the raw JSON structure"
+                    sx={{ fontFamily: 'monospace' }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                    Properties: {Object.keys(action).join(', ')}
+                  </Typography>
+                </Box>
+                <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
             </Box>
           )}
-        </Stack>
-      </CardContent>
-    </Card>
+      </Stack>
+    </Box>
   );
 };
 
