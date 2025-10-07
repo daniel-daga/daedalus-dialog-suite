@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Divider, Stack, TextField, Button, IconButton, Card, CardContent, Chip } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Save as SaveIcon } from '@mui/icons-material';
+import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip } from '@mui/material';
+import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 
 interface ThreeColumnLayoutProps {
@@ -432,164 +432,217 @@ interface ActionCardProps {
 }
 
 const ActionCard: React.FC<ActionCardProps> = ({ action, index, onUpdate, onDelete }) => {
-  const [expanded, setExpanded] = useState(false);
-
   // Determine action type
   const isDialogLine = action.speaker !== undefined && action.text !== undefined && action.id !== undefined;
   const isChoice = action.dialogRef !== undefined && action.targetFunction !== undefined;
   const isCreateTopic = action.topic !== undefined && action.topicType !== undefined;
   const isLogEntry = action.topic !== undefined && action.text !== undefined && !action.topicType;
+  const isChapterTransition = action.chapter !== undefined && action.world !== undefined;
+  const isExchangeRoutine = (action.npc !== undefined || action.target !== undefined) && action.routine !== undefined;
   const isAction = action.action !== undefined;
+  const isUnknown = !isDialogLine && !isChoice && !isCreateTopic && !isLogEntry && !isChapterTransition && !isExchangeRoutine && !isAction;
 
   const getActionTypeLabel = () => {
     if (isDialogLine) return 'Dialog Line';
     if (isChoice) return 'Choice';
     if (isCreateTopic) return 'Create Topic';
     if (isLogEntry) return 'Log Entry';
+    if (isChapterTransition) return 'Chapter Transition';
+    if (isExchangeRoutine) return 'Exchange Routine';
     if (isAction) return 'Action';
     return 'Unknown';
-  };
-
-  const getActionSummary = () => {
-    if (isDialogLine) return `${action.speaker}: ${action.text}`;
-    if (isChoice) return action.text;
-    if (isCreateTopic) return `Create topic: ${action.topic}`;
-    if (isLogEntry) return `Log: ${action.text}`;
-    if (isAction) return action.action;
-    return JSON.stringify(action);
   };
 
   return (
     <Card variant="outlined">
       <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: expanded ? 2 : 0 }}>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle2" color="text.secondary">
-              #{index + 1} - {getActionTypeLabel()}
-            </Typography>
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
-              {getActionSummary()}
-            </Typography>
-            {isChoice && action.targetFunction && (
-              <Typography variant="caption" color="primary">
-                → {action.targetFunction}()
-              </Typography>
-            )}
-          </Box>
-          <Stack direction="row" spacing={0.5}>
-            <IconButton size="small" onClick={() => setExpanded(!expanded)}>
-              <EditIcon fontSize="small" />
-            </IconButton>
-            <IconButton size="small" color="error" onClick={onDelete}>
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Stack>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="subtitle2" color="text.secondary">
+            #{index + 1} - {getActionTypeLabel()}
+          </Typography>
+          <IconButton size="small" color="error" onClick={onDelete}>
+            <DeleteIcon fontSize="small" />
+          </IconButton>
         </Box>
 
-        {expanded && (
-          <Stack spacing={2} sx={{ mt: 2 }}>
-            {isDialogLine && (
-              <>
-                <TextField
-                  fullWidth
-                  label="Speaker"
-                  value={action.speaker || ''}
-                  onChange={(e) => onUpdate({ ...action, speaker: e.target.value })}
-                  size="small"
-                />
-                <TextField
-                  fullWidth
-                  label="Text"
-                  value={action.text || ''}
-                  onChange={(e) => onUpdate({ ...action, text: e.target.value })}
-                  size="small"
-                  multiline
-                  rows={3}
-                />
-                <TextField
-                  fullWidth
-                  label="Dialog ID"
-                  value={action.id || ''}
-                  onChange={(e) => onUpdate({ ...action, id: e.target.value })}
-                  size="small"
-                />
-              </>
-            )}
-            {isChoice && (
-              <>
-                <TextField
-                  fullWidth
-                  label="Text"
-                  value={action.text || ''}
-                  onChange={(e) => onUpdate({ ...action, text: e.target.value })}
-                  size="small"
-                  multiline
-                  rows={2}
-                />
-                <TextField
-                  fullWidth
-                  label="Target Function"
-                  value={action.targetFunction || ''}
-                  onChange={(e) => onUpdate({ ...action, targetFunction: e.target.value })}
-                  size="small"
-                  helperText="Function to call when this choice is selected"
-                />
-              </>
-            )}
-            {isCreateTopic && (
-              <>
-                <TextField
-                  fullWidth
-                  label="Topic"
-                  value={action.topic || ''}
-                  onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
-                  size="small"
-                />
-                <TextField
-                  fullWidth
-                  label="Topic Type"
-                  value={action.topicType || ''}
-                  onChange={(e) => onUpdate({ ...action, topicType: e.target.value })}
-                  size="small"
-                />
-              </>
-            )}
-            {isLogEntry && (
-              <>
-                <TextField
-                  fullWidth
-                  label="Topic"
-                  value={action.topic || ''}
-                  onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
-                  size="small"
-                />
-                <TextField
-                  fullWidth
-                  label="Text"
-                  value={action.text || ''}
-                  onChange={(e) => onUpdate({ ...action, text: e.target.value })}
-                  size="small"
-                  multiline
-                  rows={2}
-                />
-              </>
-            )}
-            {isAction && (
+        <Stack spacing={2}>
+          {isDialogLine && (
+            <>
               <TextField
                 fullWidth
-                label="Action"
-                value={action.action || ''}
-                onChange={(e) => onUpdate({ ...action, action: e.target.value })}
+                label="Speaker"
+                value={action.speaker || ''}
+                onChange={(e) => onUpdate({ ...action, speaker: e.target.value })}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Text"
+                value={action.text || ''}
+                onChange={(e) => onUpdate({ ...action, text: e.target.value })}
+                size="small"
+                multiline
+                rows={3}
+              />
+              <TextField
+                fullWidth
+                label="Dialog ID"
+                value={action.id || ''}
+                onChange={(e) => onUpdate({ ...action, id: e.target.value })}
+                size="small"
+              />
+            </>
+          )}
+          {isChoice && (
+            <>
+              <TextField
+                fullWidth
+                label="Text"
+                value={action.text || ''}
+                onChange={(e) => onUpdate({ ...action, text: e.target.value })}
                 size="small"
                 multiline
                 rows={2}
               />
-            )}
-            <Button size="small" variant="outlined" onClick={() => setExpanded(false)}>
-              Done
-            </Button>
-          </Stack>
-        )}
+              <TextField
+                fullWidth
+                label="Target Function"
+                value={action.targetFunction || ''}
+                onChange={(e) => onUpdate({ ...action, targetFunction: e.target.value })}
+                size="small"
+                helperText="Function to call when this choice is selected"
+              />
+            </>
+          )}
+          {isCreateTopic && (
+            <>
+              <TextField
+                fullWidth
+                label="Topic"
+                value={action.topic || ''}
+                onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Topic Type"
+                value={action.topicType || ''}
+                onChange={(e) => onUpdate({ ...action, topicType: e.target.value })}
+                size="small"
+              />
+            </>
+          )}
+          {isLogEntry && (
+            <>
+              <TextField
+                fullWidth
+                label="Topic"
+                value={action.topic || ''}
+                onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Text"
+                value={action.text || ''}
+                onChange={(e) => onUpdate({ ...action, text: e.target.value })}
+                size="small"
+                multiline
+                rows={2}
+              />
+            </>
+          )}
+          {isChapterTransition && (
+            <>
+              <TextField
+                fullWidth
+                label="Chapter"
+                type="number"
+                value={action.chapter || ''}
+                onChange={(e) => onUpdate({ ...action, chapter: parseInt(e.target.value) || 0 })}
+                size="small"
+                helperText="Chapter number to transition to"
+              />
+              <TextField
+                fullWidth
+                label="World"
+                value={action.world || ''}
+                onChange={(e) => onUpdate({ ...action, world: e.target.value })}
+                size="small"
+                helperText="World/ZEN file name (e.g., NEWWORLD_ZEN)"
+              />
+            </>
+          )}
+          {isExchangeRoutine && (
+            <>
+              <TextField
+                fullWidth
+                label="Target NPC"
+                value={action.target || action.npc || ''}
+                onChange={(e) => {
+                  const updated = { ...action, routine: action.routine };
+                  if (action.target !== undefined) {
+                    updated.target = e.target.value;
+                    delete updated.npc;
+                  } else {
+                    updated.npc = e.target.value;
+                    delete updated.target;
+                  }
+                  onUpdate(updated);
+                }}
+                size="small"
+                helperText="NPC instance (e.g., self, other)"
+              />
+              <TextField
+                fullWidth
+                label="Routine"
+                value={action.routine || ''}
+                onChange={(e) => onUpdate({ ...action, routine: e.target.value })}
+                size="small"
+                helperText="Routine name (e.g., START, FOLLOW)"
+              />
+            </>
+          )}
+          {isAction && (
+            <TextField
+              fullWidth
+              label="Action"
+              value={action.action || ''}
+              onChange={(e) => onUpdate({ ...action, action: e.target.value })}
+              size="small"
+              multiline
+              rows={2}
+            />
+          )}
+          {isUnknown && (
+            <Box>
+              <Typography variant="body2" color="warning.main" gutterBottom>
+                This action type is not recognized. Fields detected:
+              </Typography>
+              <TextField
+                fullWidth
+                label="Raw JSON"
+                value={JSON.stringify(action, null, 2)}
+                onChange={(e) => {
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    onUpdate(parsed);
+                  } catch (err) {
+                    // Invalid JSON, ignore
+                  }
+                }}
+                size="small"
+                multiline
+                rows={6}
+                helperText="Edit the raw JSON structure"
+                sx={{ fontFamily: 'monospace' }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Properties: {Object.keys(action).join(', ')}
+              </Typography>
+            </Box>
+          )}
+        </Stack>
       </CardContent>
     </Card>
   );
