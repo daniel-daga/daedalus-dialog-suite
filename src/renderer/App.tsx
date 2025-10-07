@@ -323,7 +323,7 @@ const App: React.FC = () => {
       <AppBar position="static">
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Daedalus Dialog Editor
+            Dandelion
           </Typography>
           <Button color="inherit" onClick={handleOpenFile}>
             Open File

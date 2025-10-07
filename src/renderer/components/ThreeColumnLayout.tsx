@@ -44,9 +44,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const infoFunctionData = infoFunctionName ? semanticModel.functions[infoFunctionName] : null;
 
   return (
-    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>
       {/* Column 1: NPC List */}
-      <Paper sx={{ width: 250, overflow: 'auto', borderRadius: 0 }} elevation={1}>
+      <Paper sx={{ width: 250, overflow: 'auto', borderRadius: 0, flexShrink: 0 }} elevation={1}>
         <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="h6">NPCs</Typography>
           <Typography variant="caption" color="text.secondary">
@@ -74,7 +74,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       </Paper>
 
       {/* Column 2: Dialog Instances */}
-      <Paper sx={{ width: 300, overflow: 'auto', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider' }} elevation={1}>
+      <Paper sx={{ width: 300, overflow: 'auto', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0 }} elevation={1}>
         <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="h6">Dialogs</Typography>
           {selectedNPC && (
@@ -140,9 +140,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       </Paper>
 
       {/* Column 3: Dialog Editor */}
-      <Box sx={{ flex: 1, overflow: 'auto', p: 2, minWidth: 0 }}>
+      <Box sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {selectedDialog && dialogData ? (
-          <Box sx={{ width: '100%', maxWidth: '100%' }}>
+          <Box sx={{ width: '100%' }}>
             <DialogDetailsEditor
               key={selectedDialog}
               dialogName={selectedDialog}
