@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Chip, Select, MenuItem, FormControl, InputLabel, Tooltip, Menu } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
@@ -214,7 +214,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     setLocalFunction(infoFunction);
   }, [dialogName, dialog, infoFunction]);
 
-  const focusAction = (index: number, scrollIntoView = false) => {
+  const focusAction = useCallback((index: number, scrollIntoView = false) => {
     const ref = actionRefs.current[index];
     if (ref) {
       ref.focus();
@@ -225,7 +225,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         });
       }
     }
-  };
+  }, []);
 
   const handleSave = () => {
     // Normalize dialog properties to use string references for functions
@@ -248,49 +248,54 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     }
   };
 
-  const updateAction = (index: number, updatedAction: any) => {
-    if (!localFunction) return;
-    const newActions = [...(localFunction.actions || [])];
-    newActions[index] = updatedAction;
-    setLocalFunction({ ...localFunction, actions: newActions });
-  };
+  const updateAction = useCallback((index: number, updatedAction: any) => {
+    setLocalFunction((prev) => {
+      if (!prev) return prev;
+      const newActions = [...(prev.actions || [])];
+      newActions[index] = updatedAction;
+      return { ...prev, actions: newActions };
+    });
+  }, []);
 
-  const deleteAction = (index: number) => {
-    if (!localFunction) return;
-    const newActions = (localFunction.actions || []).filter((_: any, i: number) => i !== index);
-    setLocalFunction({ ...localFunction, actions: newActions });
-  };
+  const deleteAction = useCallback((index: number) => {
+    setLocalFunction((prev) => {
+      if (!prev) return prev;
+      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
+      return { ...prev, actions: newActions };
+    });
+  }, []);
 
-  const deleteActionAndFocusPrev = (index: number) => {
-    if (!localFunction) return;
-    const newActions = (localFunction.actions || []).filter((_: any, i: number) => i !== index);
-    setLocalFunction({ ...localFunction, actions: newActions });
+  const deleteActionAndFocusPrev = useCallback((index: number) => {
+    setLocalFunction((prev) => {
+      if (!prev) return prev;
+      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
+      return { ...prev, actions: newActions };
+    });
     // Focus the previous action after state update
     const prevIdx = index - 1;
     if (prevIdx >= 0) {
       setTimeout(() => focusAction(prevIdx), 0);
     }
-  };
+  }, [focusAction]);
 
-  const addDialogLineAfter = (index: number) => {
-    if (!localFunction) return;
-    const currentAction = (localFunction.actions || [])[index];
-    // Toggle speaker: if current is 'self', new is 'other', and vice versa
-    const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
-    const newAction = {
-      speaker: oppositeSpeaker,
-      text: '',
-      id: 'NEW_LINE_ID'
-    };
-    const newActions = [...(localFunction.actions || [])];
-    newActions.splice(index + 1, 0, newAction);
-    setLocalFunction({
-      ...localFunction,
-      actions: newActions
+  const addDialogLineAfter = useCallback((index: number) => {
+    setLocalFunction((prev) => {
+      if (!prev) return prev;
+      const currentAction = (prev.actions || [])[index];
+      // Toggle speaker: if current is 'self', new is 'other', and vice versa
+      const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
+      const newAction = {
+        speaker: oppositeSpeaker,
+        text: '',
+        id: 'NEW_LINE_ID'
+      };
+      const newActions = [...(prev.actions || [])];
+      newActions.splice(index + 1, 0, newAction);
+      return { ...prev, actions: newActions };
     });
     // Focus the new action after state update with smooth scroll
     setTimeout(() => focusAction(index + 1, true), 0);
-  };
+  }, [focusAction]);
 
   const addDialogLine = () => {
     if (!localFunction) return;
@@ -377,69 +382,68 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     });
   };
 
-  const addActionAfter = (index: number, actionType: string) => {
-    if (!localFunction) return;
-    const currentAction = (localFunction.actions || [])[index];
+  const addActionAfter = useCallback((index: number, actionType: string) => {
+    setLocalFunction((prev) => {
+      if (!prev) return prev;
+      const currentAction = (prev.actions || [])[index];
 
-    let newAction: any;
-    switch (actionType) {
-      case 'dialogLine':
-        const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
-        newAction = {
-          speaker: oppositeSpeaker,
-          text: '',
-          id: 'NEW_LINE_ID'
-        };
-        break;
-      case 'choice':
-        newAction = {
-          dialogRef: dialogName,
-          text: '',
-          targetFunction: ''
-        };
-        break;
-      case 'logEntry':
-        newAction = {
-          topic: 'TOPIC_NAME',
-          text: ''
-        };
-        break;
-      case 'createTopic':
-        newAction = {
-          topic: 'TOPIC_NAME',
-          topicType: 'LOG_MISSION'
-        };
-        break;
-      case 'chapterTransition':
-        newAction = {
-          chapter: 1,
-          world: 'NEWWORLD_ZEN'
-        };
-        break;
-      case 'exchangeRoutine':
-        newAction = {
-          target: 'self',
-          routine: 'START'
-        };
-        break;
-      case 'customAction':
-        newAction = {
-          action: 'AI_StopProcessInfos(self)'
-        };
-        break;
-      default:
-        return;
-    }
+      let newAction: any;
+      switch (actionType) {
+        case 'dialogLine':
+          const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
+          newAction = {
+            speaker: oppositeSpeaker,
+            text: '',
+            id: 'NEW_LINE_ID'
+          };
+          break;
+        case 'choice':
+          newAction = {
+            dialogRef: dialogName,
+            text: '',
+            targetFunction: ''
+          };
+          break;
+        case 'logEntry':
+          newAction = {
+            topic: 'TOPIC_NAME',
+            text: ''
+          };
+          break;
+        case 'createTopic':
+          newAction = {
+            topic: 'TOPIC_NAME',
+            topicType: 'LOG_MISSION'
+          };
+          break;
+        case 'chapterTransition':
+          newAction = {
+            chapter: 1,
+            world: 'NEWWORLD_ZEN'
+          };
+          break;
+        case 'exchangeRoutine':
+          newAction = {
+            target: 'self',
+            routine: 'START'
+          };
+          break;
+        case 'customAction':
+          newAction = {
+            action: 'AI_StopProcessInfos(self)'
+          };
+          break;
+        default:
+          return prev;
+      }
 
-    const newActions = [...(localFunction.actions || [])];
-    newActions.splice(index + 1, 0, newAction);
-    setLocalFunction({
-      ...localFunction,
-      actions: newActions
+      const newActions = [...(prev.actions || [])];
+      newActions.splice(index + 1, 0, newAction);
+      return { ...prev, actions: newActions };
     });
     // Focus the new action after state update with smooth scroll
     setTimeout(() => focusAction(index + 1, true), 0);
-  };
+  }, [dialogName, focusAction]);
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
@@ -612,24 +616,14 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 ref={(el) => (actionRefs.current[idx] = el)}
                 action={action}
                 index={idx}
-                onUpdate={(updated) => updateAction(idx, updated)}
-                onDelete={() => deleteAction(idx)}
-                dialog={localDialog}
-                onTabToNext={() => {
-                  const nextIdx = idx + 1;
-                  if (nextIdx < (localFunction.actions || []).length) {
-                    focusAction(nextIdx);
-                  }
-                }}
-                onTabToPrev={() => {
-                  const prevIdx = idx - 1;
-                  if (prevIdx >= 0) {
-                    focusAction(prevIdx);
-                  }
-                }}
-                onAddNewAfter={() => addDialogLineAfter(idx)}
-                onDeleteAndFocusPrev={() => deleteActionAndFocusPrev(idx)}
-                onAddActionAfter={(actionType) => addActionAfter(idx, actionType)}
+                totalActions={(localFunction.actions || []).length}
+                npcName={localDialog.properties?.npc || 'NPC'}
+                updateAction={updateAction}
+                deleteAction={deleteAction}
+                focusAction={focusAction}
+                addDialogLineAfter={addDialogLineAfter}
+                deleteActionAndFocusPrev={deleteActionAndFocusPrev}
+                addActionAfter={addActionAfter}
               />
             ))}
           </Stack>
@@ -639,56 +633,129 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   );
 };
 
+
 interface ActionCardProps {
   action: any;
   index: number;
-  onUpdate: (action: any) => void;
-  onDelete: () => void;
-  dialog: any;
-  onTabToNext?: () => void;
-  onTabToPrev?: () => void;
-  onAddNewAfter?: () => void;
-  onDeleteAndFocusPrev?: () => void;
-  onAddActionAfter?: (actionType: string) => void;
+  totalActions: number;
+  npcName: string;
+  updateAction: (index: number, action: any) => void;
+  deleteAction: (index: number) => void;
+  focusAction: (index: number, scrollIntoView?: boolean) => void;
+  addDialogLineAfter: (index: number) => void;
+  deleteActionAndFocusPrev: (index: number) => void;
+  addActionAfter: (index: number, actionType: string) => void;
 }
 
-const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, onUpdate, onDelete, dialog, onTabToNext, onTabToPrev, onAddNewAfter, onDeleteAndFocusPrev, onAddActionAfter }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
 
+  // Local state for text input to avoid parent re-renders on every keystroke
+  const [localAction, setLocalAction] = useState(action);
+  const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync local state when action prop changes from parent
+  React.useEffect(() => {
+    setLocalAction(action);
+  }, [action]);
+
   // Expose the ref to parent
   React.useImperativeHandle(ref, () => mainFieldRef.current!);
 
+  const flushUpdate = useCallback(() => {
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = null;
+    }
+    // Sync local state to parent immediately
+    updateAction(index, localAction);
+  }, [updateAction, index, localAction]);
+
+  const handleUpdate = useCallback((updated: any) => {
+    // Update local state immediately for responsive UI
+    setLocalAction(updated);
+    // Don't update parent during typing - only on flush
+  }, []);
+
+  // Cleanup timer on unmount and flush pending updates
+  React.useEffect(() => {
+    return () => {
+      if (updateTimerRef.current) {
+        clearTimeout(updateTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleDelete = useCallback(() => {
+    deleteAction(index);
+  }, [deleteAction, index]);
+
+  const handleTabToNext = useCallback(() => {
+    const nextIdx = index + 1;
+    if (nextIdx < totalActions) {
+      focusAction(nextIdx);
+    }
+  }, [focusAction, index, totalActions]);
+
+  const handleTabToPrev = useCallback(() => {
+    const prevIdx = index - 1;
+    if (prevIdx >= 0) {
+      focusAction(prevIdx);
+    }
+  }, [focusAction, index]);
+
+  const handleAddNewAfter = useCallback(() => {
+    addDialogLineAfter(index);
+  }, [addDialogLineAfter, index]);
+
+  const handleDeleteAndFocusPrev = useCallback(() => {
+    deleteActionAndFocusPrev(index);
+  }, [deleteActionAndFocusPrev, index]);
+
+  const handleAddActionAfter = useCallback((actionType: string) => {
+    addActionAfter(index, actionType);
+  }, [addActionAfter, index]);
+
   // Determine action type
-  const isDialogLine = action.speaker !== undefined && action.text !== undefined && action.id !== undefined;
-  const isChoice = action.dialogRef !== undefined && action.targetFunction !== undefined;
-  const isCreateTopic = action.topic !== undefined && action.topicType !== undefined;
-  const isLogEntry = action.topic !== undefined && action.text !== undefined && !action.topicType;
-  const isChapterTransition = action.chapter !== undefined && action.world !== undefined;
-  const isExchangeRoutine = (action.npc !== undefined || action.target !== undefined) && action.routine !== undefined;
-  const isAction = action.action !== undefined;
+  const isDialogLine = localAction.speaker !== undefined && localAction.text !== undefined && localAction.id !== undefined;
+  const isChoice = localAction.dialogRef !== undefined && localAction.targetFunction !== undefined;
+  const isCreateTopic = localAction.topic !== undefined && localAction.topicType !== undefined;
+  const isLogEntry = localAction.topic !== undefined && localAction.text !== undefined && !localAction.topicType;
+  const isChapterTransition = localAction.chapter !== undefined && localAction.world !== undefined;
+  const isExchangeRoutine = (localAction.npc !== undefined || localAction.target !== undefined) && localAction.routine !== undefined;
+  const isAction = localAction.action !== undefined;
   const isUnknown = !isDialogLine && !isChoice && !isCreateTopic && !isLogEntry && !isChapterTransition && !isExchangeRoutine && !isAction;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Don't process any keys if menu is open (menu will handle them)
+    if (menuAnchor) {
+      return;
+    }
+
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
-      onTabToNext?.();
+      flushUpdate();
+      handleTabToNext();
     } else if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
-      onTabToPrev?.();
+      flushUpdate();
+      handleTabToPrev();
     } else if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault();
+      flushUpdate();
       setMenuAnchor(mainFieldRef.current);
       setSelectedMenuIndex(0);
-    } else if (e.key === 'Enter' && isDialogLine && action.text && action.text.trim() !== '') {
+    } else if (e.key === 'Enter' && isDialogLine && localAction.text && localAction.text.trim() !== '') {
       e.preventDefault();
-      onAddNewAfter?.();
-    } else if (e.key === 'Backspace' && isDialogLine && (!action.text || action.text.trim() === '')) {
+      flushUpdate();
+      handleAddNewAfter();
+    } else if (e.key === 'Backspace' && isDialogLine && (!localAction.text || localAction.text.trim() === '')) {
       e.preventDefault();
-      onDeleteAndFocusPrev?.();
+      handleDeleteAndFocusPrev();
     }
-  };
+  }, [menuAnchor, isDialogLine, localAction.text, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev]);
 
   const getActionTypeLabel = () => {
     if (isDialogLine) return 'Dialog Line';
@@ -712,7 +779,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
     return <HelpOutlineIcon fontSize="small" />;
   };
 
-  const actionTypes = [
+  const actionTypes = useMemo(() => [
     { type: 'dialogLine', label: 'Dialog Line', icon: <ChatIcon fontSize="small" /> },
     { type: 'choice', label: 'Choice', icon: <CallSplitIcon fontSize="small" /> },
     { type: 'logEntry', label: 'Log Entry', icon: <DescriptionIcon fontSize="small" /> },
@@ -720,26 +787,26 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
     { type: 'chapterTransition', label: 'Chapter Transition', icon: <NavigationIcon fontSize="small" /> },
     { type: 'exchangeRoutine', label: 'Exchange Routine', icon: <SwapHorizIcon fontSize="small" /> },
     { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
-  ];
+  ], []);
 
-  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
+  const handleMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      e.stopPropagation();
       setSelectedMenuIndex((prev) => (prev + 1) % actionTypes.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      e.stopPropagation();
       setSelectedMenuIndex((prev) => (prev - 1 + actionTypes.length) % actionTypes.length);
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      const selectedType = actionTypes[selectedMenuIndex].type;
-      onAddActionAfter?.(selectedType);
-      setMenuAnchor(null);
     } else if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
       setMenuAnchor(null);
       mainFieldRef.current?.focus();
     }
-  };
+    // Note: Don't handle Enter/Space here - let MenuItem's onClick handle it naturally
+    // to avoid double-triggering
+  }, [actionTypes, selectedMenuIndex]);
 
   return (
     <Box sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}>
@@ -754,32 +821,34 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
               <FormControl size="small" sx={{ width: 150, flexShrink: 0 }}>
                 <InputLabel>Speaker</InputLabel>
                 <Select
-                  value={action.speaker || 'self'}
+                  value={localAction.speaker || 'self'}
                   label="Speaker"
-                  onChange={(e) => onUpdate({ ...action, speaker: e.target.value })}
-                  onKeyDown={handleKeyDown}
+                  onChange={(e) => handleUpdate({ ...localAction, speaker: e.target.value })}
+                  onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
                 >
-                  <MenuItem value="self">{dialog.properties?.npc || 'NPC'}</MenuItem>
+                  <MenuItem value="self">{npcName}</MenuItem>
                   <MenuItem value="other">Hero</MenuItem>
                 </Select>
               </FormControl>
               <TextField
                 fullWidth
                 label="Text"
-                value={action.text || ''}
-                onChange={(e) => onUpdate({ ...action, text: e.target.value })}
+                value={localAction.text || ''}
+                onChange={(e) => handleUpdate({ ...localAction, text: e.target.value })}
                 size="small"
                 inputRef={mainFieldRef}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
-              {action.id && (
-                <Tooltip title={`Dialog ID: ${action.id}`} arrow>
+              {localAction.id && (
+                <Tooltip title={`Dialog ID: ${localAction.id}`} arrow>
                   <IconButton size="small" sx={{ flexShrink: 0 }}>
                     <InfoIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               )}
-              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -795,26 +864,28 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                 <TextField
                   fullWidth
                   label="Text"
-                  value={action.text || ''}
-                  onChange={(e) => onUpdate({ ...action, text: e.target.value })}
+                  value={localAction.text || ''}
+                  onChange={(e) => handleUpdate({ ...localAction, text: e.target.value })}
                   size="small"
                   multiline
                   rows={2}
                   inputRef={mainFieldRef}
-                  onKeyDown={handleKeyDown}
+                  onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
                 />
-                <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
+                <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Box>
               <TextField
                 fullWidth
                 label="Target Function"
-                value={action.targetFunction || ''}
-                onChange={(e) => onUpdate({ ...action, targetFunction: e.target.value })}
+                value={localAction.targetFunction || ''}
+                onChange={(e) => handleUpdate({ ...localAction, targetFunction: e.target.value })}
                 size="small"
                 helperText="Function to call when this choice is selected"
                 sx={{ ml: 4 }}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
             </Box>
@@ -828,22 +899,24 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
               </Tooltip>
               <TextField
                 label="Topic"
-                value={action.topic || ''}
-                onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
+                value={localAction.topic || ''}
+                onChange={(e) => handleUpdate({ ...localAction, topic: e.target.value })}
                 size="small"
                 sx={{ minWidth: 180 }}
                 inputRef={mainFieldRef}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
                 label="Topic Type"
-                value={action.topicType || ''}
-                onChange={(e) => onUpdate({ ...action, topicType: e.target.value })}
+                value={localAction.topicType || ''}
+                onChange={(e) => handleUpdate({ ...localAction, topicType: e.target.value })}
                 size="small"
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
-              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -857,22 +930,24 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
               </Tooltip>
               <TextField
                 label="Topic"
-                value={action.topic || ''}
-                onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
+                value={localAction.topic || ''}
+                onChange={(e) => handleUpdate({ ...localAction, topic: e.target.value })}
                 size="small"
                 sx={{ minWidth: 180 }}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
                 label="Text"
-                value={action.text || ''}
-                onChange={(e) => onUpdate({ ...action, text: e.target.value })}
+                value={localAction.text || ''}
+                onChange={(e) => handleUpdate({ ...localAction, text: e.target.value })}
                 size="small"
                 inputRef={mainFieldRef}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
-              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -887,22 +962,24 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
               <TextField
                 label="Chapter"
                 type="number"
-                value={action.chapter || ''}
-                onChange={(e) => onUpdate({ ...action, chapter: parseInt(e.target.value) || 0 })}
+                value={localAction.chapter || ''}
+                onChange={(e) => handleUpdate({ ...localAction, chapter: parseInt(e.target.value) || 0 })}
                 size="small"
                 sx={{ width: 100 }}
                 inputRef={mainFieldRef}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
                 label="World"
-                value={action.world || ''}
-                onChange={(e) => onUpdate({ ...action, world: e.target.value })}
+                value={localAction.world || ''}
+                onChange={(e) => handleUpdate({ ...localAction, world: e.target.value })}
                 size="small"
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
-              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -916,32 +993,34 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
               </Tooltip>
               <TextField
                 label="Target NPC"
-                value={action.target || action.npc || ''}
+                value={localAction.target || localAction.npc || ''}
                 onChange={(e) => {
-                  const updated = { ...action, routine: action.routine };
-                  if (action.target !== undefined) {
+                  const updated = { ...localAction, routine: localAction.routine };
+                  if (localAction.target !== undefined) {
                     updated.target = e.target.value;
                     delete updated.npc;
                   } else {
                     updated.npc = e.target.value;
                     delete updated.target;
                   }
-                  onUpdate(updated);
+                  handleUpdate(updated);
                 }}
                 size="small"
                 sx={{ width: 120 }}
                 inputRef={mainFieldRef}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
                 label="Routine"
-                value={action.routine || ''}
-                onChange={(e) => onUpdate({ ...action, routine: e.target.value })}
+                value={localAction.routine || ''}
+                onChange={(e) => handleUpdate({ ...localAction, routine: e.target.value })}
                 size="small"
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
-              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -956,15 +1035,16 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
               <TextField
                 fullWidth
                 label="Action"
-                value={action.action || ''}
-                onChange={(e) => onUpdate({ ...action, action: e.target.value })}
+                value={localAction.action || ''}
+                onChange={(e) => handleUpdate({ ...localAction, action: e.target.value })}
                 size="small"
                 multiline
                 rows={2}
                 inputRef={mainFieldRef}
+                onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
-              <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -984,11 +1064,11 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                   <TextField
                     fullWidth
                     label="Raw JSON"
-                    value={JSON.stringify(action, null, 2)}
+                    value={JSON.stringify(localAction, null, 2)}
                     onChange={(e) => {
                       try {
                         const parsed = JSON.parse(e.target.value);
-                        onUpdate(parsed);
+                        handleUpdate(parsed);
                       } catch (err) {
                         // Invalid JSON, ignore
                       }
@@ -1000,10 +1080,10 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                     sx={{ fontFamily: 'monospace' }}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                    Properties: {Object.keys(action).join(', ')}
+                    Properties: {Object.keys(localAction).join(', ')}
                   </Typography>
                 </Box>
-                <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
+                <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Box>
@@ -1030,7 +1110,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
             key={actionType.type}
             selected={idx === selectedMenuIndex}
             onClick={() => {
-              onAddActionAfter?.(actionType.type);
+              handleAddActionAfter(actionType.type);
               setMenuAnchor(null);
             }}
             sx={{ gap: 1.5 }}
@@ -1076,7 +1156,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
       </Box>
     </Box>
   );
-});
+}));
 
 ActionCard.displayName = 'ActionCard';
 
