@@ -377,6 +377,70 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     });
   };
 
+  const addActionAfter = (index: number, actionType: string) => {
+    if (!localFunction) return;
+    const currentAction = (localFunction.actions || [])[index];
+
+    let newAction: any;
+    switch (actionType) {
+      case 'dialogLine':
+        const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
+        newAction = {
+          speaker: oppositeSpeaker,
+          text: '',
+          id: 'NEW_LINE_ID'
+        };
+        break;
+      case 'choice':
+        newAction = {
+          dialogRef: dialogName,
+          text: '',
+          targetFunction: ''
+        };
+        break;
+      case 'logEntry':
+        newAction = {
+          topic: 'TOPIC_NAME',
+          text: ''
+        };
+        break;
+      case 'createTopic':
+        newAction = {
+          topic: 'TOPIC_NAME',
+          topicType: 'LOG_MISSION'
+        };
+        break;
+      case 'chapterTransition':
+        newAction = {
+          chapter: 1,
+          world: 'NEWWORLD_ZEN'
+        };
+        break;
+      case 'exchangeRoutine':
+        newAction = {
+          target: 'self',
+          routine: 'START'
+        };
+        break;
+      case 'customAction':
+        newAction = {
+          action: 'AI_StopProcessInfos(self)'
+        };
+        break;
+      default:
+        return;
+    }
+
+    const newActions = [...(localFunction.actions || [])];
+    newActions.splice(index + 1, 0, newAction);
+    setLocalFunction({
+      ...localFunction,
+      actions: newActions
+    });
+    // Focus the new action after state update with smooth scroll
+    setTimeout(() => focusAction(index + 1, true), 0);
+  };
+
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
   const isDirty = JSON.stringify(dialog) !== JSON.stringify(localDialog) ||
@@ -565,6 +629,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 }}
                 onAddNewAfter={() => addDialogLineAfter(idx)}
                 onDeleteAndFocusPrev={() => deleteActionAndFocusPrev(idx)}
+                onAddActionAfter={(actionType) => addActionAfter(idx, actionType)}
               />
             ))}
           </Stack>
@@ -584,10 +649,13 @@ interface ActionCardProps {
   onTabToPrev?: () => void;
   onAddNewAfter?: () => void;
   onDeleteAndFocusPrev?: () => void;
+  onAddActionAfter?: (actionType: string) => void;
 }
 
-const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, onUpdate, onDelete, dialog, onTabToNext, onTabToPrev, onAddNewAfter, onDeleteAndFocusPrev }, ref) => {
+const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, onUpdate, onDelete, dialog, onTabToNext, onTabToPrev, onAddNewAfter, onDeleteAndFocusPrev, onAddActionAfter }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
 
   // Expose the ref to parent
   React.useImperativeHandle(ref, () => mainFieldRef.current!);
@@ -609,6 +677,10 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
     } else if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
       onTabToPrev?.();
+    } else if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      setMenuAnchor(mainFieldRef.current);
+      setSelectedMenuIndex(0);
     } else if (e.key === 'Enter' && isDialogLine && action.text && action.text.trim() !== '') {
       e.preventDefault();
       onAddNewAfter?.();
@@ -640,8 +712,37 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
     return <HelpOutlineIcon fontSize="small" />;
   };
 
+  const actionTypes = [
+    { type: 'dialogLine', label: 'Dialog Line', icon: <ChatIcon fontSize="small" /> },
+    { type: 'choice', label: 'Choice', icon: <CallSplitIcon fontSize="small" /> },
+    { type: 'logEntry', label: 'Log Entry', icon: <DescriptionIcon fontSize="small" /> },
+    { type: 'createTopic', label: 'Create Topic', icon: <LibraryBooksIcon fontSize="small" /> },
+    { type: 'chapterTransition', label: 'Chapter Transition', icon: <NavigationIcon fontSize="small" /> },
+    { type: 'exchangeRoutine', label: 'Exchange Routine', icon: <SwapHorizIcon fontSize="small" /> },
+    { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
+  ];
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedMenuIndex((prev) => (prev + 1) % actionTypes.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedMenuIndex((prev) => (prev - 1 + actionTypes.length) % actionTypes.length);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const selectedType = actionTypes[selectedMenuIndex].type;
+      onAddActionAfter?.(selectedType);
+      setMenuAnchor(null);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setMenuAnchor(null);
+      mainFieldRef.current?.focus();
+    }
+  };
+
   return (
-    <Box sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+    <Box sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}>
       <Stack spacing={2}>
           {isDialogLine && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -656,6 +757,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                   value={action.speaker || 'self'}
                   label="Speaker"
                   onChange={(e) => onUpdate({ ...action, speaker: e.target.value })}
+                  onKeyDown={handleKeyDown}
                 >
                   <MenuItem value="self">{dialog.properties?.npc || 'NPC'}</MenuItem>
                   <MenuItem value="other">Hero</MenuItem>
@@ -713,6 +815,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                 size="small"
                 helperText="Function to call when this choice is selected"
                 sx={{ ml: 4 }}
+                onKeyDown={handleKeyDown}
               />
             </Box>
           )}
@@ -738,6 +841,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                 value={action.topicType || ''}
                 onChange={(e) => onUpdate({ ...action, topicType: e.target.value })}
                 size="small"
+                onKeyDown={handleKeyDown}
               />
               <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
@@ -757,6 +861,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                 onChange={(e) => onUpdate({ ...action, topic: e.target.value })}
                 size="small"
                 sx={{ minWidth: 180 }}
+                onKeyDown={handleKeyDown}
               />
               <TextField
                 fullWidth
@@ -795,6 +900,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                 value={action.world || ''}
                 onChange={(e) => onUpdate({ ...action, world: e.target.value })}
                 size="small"
+                onKeyDown={handleKeyDown}
               />
               <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
@@ -833,6 +939,7 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
                 value={action.routine || ''}
                 onChange={(e) => onUpdate({ ...action, routine: e.target.value })}
                 size="small"
+                onKeyDown={handleKeyDown}
               />
               <IconButton size="small" color="error" onClick={onDelete} sx={{ flexShrink: 0 }}>
                 <DeleteIcon fontSize="small" />
@@ -903,6 +1010,70 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
             </Box>
           )}
       </Stack>
+
+      {/* Action Type Selection Menu */}
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => {
+          setMenuAnchor(null);
+          mainFieldRef.current?.focus();
+        }}
+        onKeyDown={handleMenuKeyDown}
+        MenuListProps={{
+          dense: true,
+          sx: { outline: 'none' }
+        }}
+      >
+        {actionTypes.map((actionType, idx) => (
+          <MenuItem
+            key={actionType.type}
+            selected={idx === selectedMenuIndex}
+            onClick={() => {
+              onAddActionAfter?.(actionType.type);
+              setMenuAnchor(null);
+            }}
+            sx={{ gap: 1.5 }}
+          >
+            <Box sx={{ display: 'flex', color: 'text.secondary' }}>
+              {actionType.icon}
+            </Box>
+            {actionType.label}
+          </MenuItem>
+        ))}
+      </Menu>
+
+      {/* Hover "+" button in divider */}
+      <Box
+        sx={{
+          position: 'absolute',
+          bottom: -12,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          opacity: 0,
+          transition: 'opacity 0.2s',
+          '&:hover': { opacity: 1 },
+          '.MuiBox-root:hover > &': { opacity: 1 }
+        }}
+      >
+        <IconButton
+          size="small"
+          onClick={(e) => {
+            setMenuAnchor(e.currentTarget);
+            setSelectedMenuIndex(0);
+          }}
+          sx={{
+            bgcolor: 'background.paper',
+            border: '1px solid',
+            borderColor: 'divider',
+            '&:hover': {
+              bgcolor: 'action.hover'
+            }
+          }}
+        >
+          <AddIcon fontSize="small" />
+        </IconButton>
+      </Box>
     </Box>
   );
 });
