@@ -649,8 +649,10 @@ interface ActionCardProps {
 
 const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
+  const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
+  const [hasFocus, setHasFocus] = useState(false);
 
   // Local state for text input to avoid parent re-renders on every keystroke
   const [localAction, setLocalAction] = useState(action);
@@ -745,7 +747,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     } else if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault();
       flushUpdate();
-      setMenuAnchor(mainFieldRef.current);
+      setMenuAnchor(actionBoxRef.current);
       setSelectedMenuIndex(0);
     } else if (e.key === 'Enter' && isDialogLine && localAction.text && localAction.text.trim() !== '') {
       e.preventDefault();
@@ -809,7 +811,23 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, [actionTypes, selectedMenuIndex]);
 
   return (
-    <Box sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}>
+    <Box
+      ref={actionBoxRef}
+      sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}
+      onFocus={(e) => {
+        // Only set focus if the target is an input/select element
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.getAttribute('role') === 'combobox') {
+          setHasFocus(true);
+        }
+      }}
+      onBlur={(e) => {
+        // Only clear focus state if focus is leaving the entire action box
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setHasFocus(false);
+        }
+      }}
+    >
       <Stack spacing={2}>
           {isDialogLine && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1123,36 +1141,50 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
         ))}
       </Menu>
 
-      {/* Hover "+" button in divider */}
+      {/* "+" button in divider */}
       <Box
         sx={{
           position: 'absolute',
-          bottom: -12,
+          bottom: -16,
           left: '50%',
           transform: 'translateX(-50%)',
-          opacity: 0,
-          transition: 'opacity 0.2s',
-          '&:hover': { opacity: 1 },
-          '.MuiBox-root:hover > &': { opacity: 1 }
+          zIndex: 1
         }}
       >
-        <IconButton
-          size="small"
-          onClick={(e) => {
-            setMenuAnchor(e.currentTarget);
-            setSelectedMenuIndex(0);
-          }}
+        <Box
           sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
             bgcolor: 'background.paper',
             border: '1px solid',
             borderColor: 'divider',
+            borderRadius: '16px',
+            height: '32px',
+            px: 1,
+            boxShadow: 1,
+            transition: 'all 0.2s ease-in-out',
             '&:hover': {
-              bgcolor: 'action.hover'
-            }
+              bgcolor: 'action.hover',
+              borderColor: 'primary.main',
+              boxShadow: 2
+            },
+            cursor: 'pointer'
           }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuAnchor(e.currentTarget);
+            setSelectedMenuIndex(0);
+          }}
+          onMouseDown={(e) => e.preventDefault()}
         >
-          <AddIcon fontSize="small" />
-        </IconButton>
+          <AddIcon fontSize="small" sx={{ color: 'primary.main' }} />
+          {hasFocus && (
+            <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', whiteSpace: 'nowrap' }}>
+              Shift+Enter
+            </Typography>
+          )}
+        </Box>
       </Box>
     </Box>
   );
