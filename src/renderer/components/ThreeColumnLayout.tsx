@@ -377,6 +377,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const { openFiles, saveFile, updateModel } = useEditorStore();
   const fileState = openFiles.get(filePath);
   const actionRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [propertiesExpanded, setPropertiesExpanded] = useState(true);
 
   const handleUpdateTargetFunction = useCallback((functionName: string, updatedFunc: any) => {
     if (fileState) {
@@ -747,7 +748,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
 
       {/* Dialog Properties */}
       <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="h6" gutterBottom>Properties</Typography>
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', mb: propertiesExpanded ? 2 : 0 }}
+          onClick={() => setPropertiesExpanded(!propertiesExpanded)}
+        >
+          <Typography variant="h6">Properties</Typography>
+          <IconButton size="small">
+            {propertiesExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+          </IconButton>
+        </Box>
+        {propertiesExpanded && (
         <Stack spacing={2}>
           <TextField
             fullWidth
@@ -806,12 +816,18 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             rows={2}
           />
         </Stack>
+        )}
       </Paper>
 
       {/* Dialog Lines/Choices */}
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6">Dialog Actions</Typography>
+          <Box>
+            <Typography variant="h6">{localFunction?.name || 'Dialog Actions'}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {(localFunction?.actions || []).length} action(s)
+            </Typography>
+          </Box>
           <Stack direction="row" spacing={1}>
             <Button
               startIcon={<AddIcon />}
