@@ -79,9 +79,12 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { semanticModel } = fileState;
 
   // Build function tree for a given function (recursively find choices)
-  const buildFunctionTree = useCallback((funcName: string, visited: Set<string> = new Set()): any => {
-    if (visited.has(funcName)) return null; // Avoid cycles
-    visited.add(funcName);
+  // ancestorPath tracks the path from root to current node to prevent direct cycles
+  const buildFunctionTree = useCallback((funcName: string, ancestorPath: string[] = []): any => {
+    // Prevent direct cycles (A -> B -> A), but allow diamonds (A -> B, A -> C, both -> D)
+    if (ancestorPath.includes(funcName)) {
+      return null; // Direct cycle detected
+    }
 
     const func = semanticModel.functions?.[funcName];
     if (!func) return null;
@@ -90,14 +93,20 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       action.dialogRef !== undefined && action.targetFunction !== undefined
     );
 
+    const newPath = [...ancestorPath, funcName];
+
     return {
       name: funcName,
       function: func,
-      children: choices.map((choice: any) => ({
-        text: choice.text || '(no text)',
-        targetFunction: choice.targetFunction,
-        subtree: buildFunctionTree(choice.targetFunction, visited)
-      })).filter((c: any) => c.subtree)
+      children: choices.map((choice: any) => {
+        const subtree = buildFunctionTree(choice.targetFunction, newPath);
+        return {
+          text: choice.text || '(no text)',
+          targetFunction: choice.targetFunction,
+          subtree: subtree,
+          isShared: choices.filter((c: any) => c.targetFunction === choice.targetFunction).length > 1
+        };
+      }).filter((c: any) => c.subtree !== null)
     };
   }, [semanticModel]);
 
@@ -180,13 +189,13 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
               const hasChoices = functionTree && functionTree.children && functionTree.children.length > 0;
 
               // Recursive function to render choice subtree
-              const renderChoiceTree = (choice: any, depth: number = 1): React.ReactNode => {
+              const renderChoiceTree = (choice: any, depth: number = 1, index: number = 0): React.ReactNode => {
                 if (!choice.subtree) return null;
                 const isSelected = selectedFunctionName === choice.targetFunction;
                 const hasSubchoices = choice.subtree.children && choice.subtree.children.length > 0;
 
                 return (
-                  <Box key={choice.targetFunction}>
+                  <Box key={`${choice.targetFunction}-${depth}-${index}`}>
                     <ListItemButton
                       selected={isSelected}
                       onClick={() => {
@@ -203,8 +212,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                         secondaryTypographyProps={{ fontSize: '0.7rem' }}
                       />
                     </ListItemButton>
-                    {hasSubchoices && choice.subtree.children.map((subchoice: any) =>
-                      renderChoiceTree(subchoice, depth + 1)
+                    {hasSubchoices && choice.subtree.children.map((subchoice: any, idx: number) =>
+                      renderChoiceTree(subchoice, depth + 1, idx)
                     )}
                   </Box>
                 );
@@ -249,8 +258,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                       secondaryTypographyProps={{ fontSize: '0.75rem' }}
                     />
                   </ListItemButton>
-                  {isExpanded && hasChoices && functionTree.children.map((choice: any) =>
-                    renderChoiceTree(choice)
+                  {isExpanded && hasChoices && functionTree.children.map((choice: any, idx: number) =>
+                    renderChoiceTree(choice, 1, idx)
                   )}
                 </Box>
               );
