@@ -69,12 +69,37 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   const [selectedNPC, setSelectedNPC] = useState<string | null>(null);
   const [selectedDialog, setSelectedDialog] = useState<string | null>(null);
+  const [selectedFunctionName, setSelectedFunctionName] = useState<string | null>(null); // Can be dialog info function or choice function
+  const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
 
   if (!fileState) {
     return <Typography>Loading...</Typography>;
   }
 
   const { semanticModel } = fileState;
+
+  // Build function tree for a given function (recursively find choices)
+  const buildFunctionTree = useCallback((funcName: string, visited: Set<string> = new Set()): any => {
+    if (visited.has(funcName)) return null; // Avoid cycles
+    visited.add(funcName);
+
+    const func = semanticModel.functions?.[funcName];
+    if (!func) return null;
+
+    const choices = (func.actions || []).filter((action: any) =>
+      action.dialogRef !== undefined && action.targetFunction !== undefined
+    );
+
+    return {
+      name: funcName,
+      function: func,
+      children: choices.map((choice: any) => ({
+        text: choice.text || '(no text)',
+        targetFunction: choice.targetFunction,
+        subtree: buildFunctionTree(choice.targetFunction, visited)
+      })).filter((c: any) => c.subtree)
+    };
+  }, [semanticModel]);
 
   // Extract unique NPCs from all dialogs
   const npcMap = new Map<string, string[]>();
@@ -96,8 +121,11 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Get the information function for the selected dialog
   const infoFunction = dialogData?.properties?.information as any;
-  const infoFunctionName = typeof infoFunction === 'string' ? infoFunction : infoFunction?.name;
-  const infoFunctionData = infoFunctionName ? semanticModel.functions[infoFunctionName] : null;
+  const dialogInfoFunctionName = typeof infoFunction === 'string' ? infoFunction : infoFunction?.name;
+
+  // Get the currently selected function (either dialog info or choice function)
+  const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
+  const currentFunctionData = currentFunctionName ? semanticModel.functions[currentFunctionName] : null;
 
   return (
     <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>
@@ -129,8 +157,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         </List>
       </Paper>
 
-      {/* Column 2: Dialog Instances */}
-      <Paper sx={{ width: 300, overflow: 'auto', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0 }} elevation={1}>
+      {/* Column 2: Dialog Tree with Nested Choices */}
+      <Paper sx={{ width: 350, overflow: 'auto', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0 }} elevation={1}>
         <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="h6">Dialogs</Typography>
           {selectedNPC && (
@@ -147,42 +175,92 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
               const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
               const infoFuncData = infoFuncName ? semanticModel.functions[infoFuncName] : null;
               const actionCount = infoFuncData?.actions?.length || 0;
+              const isExpanded = expandedDialogs.has(dialogName);
+              const functionTree = infoFuncName ? buildFunctionTree(infoFuncName) : null;
+              const hasChoices = functionTree && functionTree.children && functionTree.children.length > 0;
+
+              // Recursive function to render choice subtree
+              const renderChoiceTree = (choice: any, depth: number = 1): React.ReactNode => {
+                if (!choice.subtree) return null;
+                const isSelected = selectedFunctionName === choice.targetFunction;
+                const hasSubchoices = choice.subtree.children && choice.subtree.children.length > 0;
+
+                return (
+                  <Box key={choice.targetFunction}>
+                    <ListItemButton
+                      selected={isSelected}
+                      onClick={() => {
+                        setSelectedDialog(dialogName);
+                        setSelectedFunctionName(choice.targetFunction);
+                      }}
+                      sx={{ pl: (depth + 1) * 2 }}
+                    >
+                      <CallSplitIcon fontSize="small" sx={{ mr: 1, fontSize: '1rem', color: 'text.secondary' }} />
+                      <ListItemText
+                        primary={choice.text}
+                        secondary={choice.targetFunction}
+                        primaryTypographyProps={{ fontSize: '0.85rem' }}
+                        secondaryTypographyProps={{ fontSize: '0.7rem' }}
+                      />
+                    </ListItemButton>
+                    {hasSubchoices && choice.subtree.children.map((subchoice: any) =>
+                      renderChoiceTree(subchoice, depth + 1)
+                    )}
+                  </Box>
+                );
+              };
 
               return (
-                <ListItem key={dialogName} disablePadding>
+                <Box key={dialogName}>
                   <ListItemButton
-                    selected={selectedDialog === dialogName}
-                    onClick={() => setSelectedDialog(dialogName)}
-                  >
-                    <ListItemText
-                      primary={dialogName}
-                      secondary={
-                        <Box component="span" sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                          {dialog.properties?.description && (
-                            <Typography variant="caption" component="span" sx={{ color: 'text.secondary' }}>
-                              {dialog.properties.description}
-                            </Typography>
-                          )}
-                          {dialog.properties?.information && (
-                            <Typography variant="caption" component="span" sx={{ color: 'info.main' }}>
-                              Info: {typeof dialog.properties.information === 'string' ? dialog.properties.information : dialog.properties.information?.name || 'N/A'}
-                            </Typography>
-                          )}
-                          {dialog.properties?.condition && (
-                            <Typography variant="caption" component="span" sx={{ color: 'warning.main' }}>
-                              Condition: {typeof dialog.properties.condition === 'string' ? dialog.properties.condition : dialog.properties.condition?.name || 'N/A'}
-                            </Typography>
-                          )}
-                          {actionCount > 0 && (
-                            <Typography variant="caption" component="span" sx={{ color: 'primary.main' }}>
-                              {actionCount} action(s)
-                            </Typography>
-                          )}
-                        </Box>
+                    selected={selectedDialog === dialogName && selectedFunctionName === infoFuncName}
+                    onClick={() => {
+                      setSelectedDialog(dialogName);
+                      setSelectedFunctionName(infoFuncName);
+                      if (hasChoices) {
+                        setExpandedDialogs((prev) => {
+                          const newSet = new Set(prev);
+                          if (isExpanded) {
+                            newSet.delete(dialogName);
+                          } else {
+                            newSet.add(dialogName);
+                          }
+                          return newSet;
+                        });
                       }
+                    }}
+                  >
+                    {hasChoices && (
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedDialogs((prev) => {
+                            const newSet = new Set(prev);
+                            if (isExpanded) {
+                              newSet.delete(dialogName);
+                            } else {
+                              newSet.add(dialogName);
+                            }
+                            return newSet;
+                          });
+                        }}
+                        sx={{ mr: 0.5 }}
+                      >
+                        {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+                      </IconButton>
+                    )}
+                    <ListItemText
+                      primary={dialog.properties?.description || dialogName}
+                      secondary={dialogName}
+                      primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isExpanded ? 600 : 400 }}
+                      secondaryTypographyProps={{ fontSize: '0.75rem' }}
                     />
                   </ListItemButton>
-                </ListItem>
+                  {isExpanded && hasChoices && functionTree.children.map((choice: any) =>
+                    renderChoiceTree(choice)
+                  )}
+                </Box>
               );
             })
           ) : (
@@ -195,15 +273,15 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         </List>
       </Paper>
 
-      {/* Column 3: Dialog Editor */}
+      {/* Column 3: Function Action Editor */}
       <Box sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {selectedDialog && dialogData ? (
+        {selectedDialog && dialogData && currentFunctionName && currentFunctionData ? (
           <Box sx={{ width: '100%' }}>
             <DialogDetailsEditor
-              key={selectedDialog}
+              key={`${selectedDialog}-${currentFunctionName}`}
               dialogName={selectedDialog}
               dialog={dialogData}
-              infoFunction={infoFunctionData}
+              infoFunction={currentFunctionData}
               filePath={filePath}
               onUpdateDialog={(updatedDialog) => {
                 const updatedModel = {
@@ -216,12 +294,12 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                 updateModel(filePath, updatedModel);
               }}
               onUpdateFunction={(updatedFunction) => {
-                if (infoFunctionName) {
+                if (currentFunctionName) {
                   const updatedModel = {
                     ...semanticModel,
                     functions: {
                       ...semanticModel.functions,
-                      [infoFunctionName]: updatedFunction
+                      [currentFunctionName]: updatedFunction
                     }
                   };
                   updateModel(filePath, updatedModel);
@@ -263,8 +341,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const { openFiles, saveFile, updateModel } = useEditorStore();
   const fileState = openFiles.get(filePath);
   const actionRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [choiceEditorOpen, setChoiceEditorOpen] = useState(false);
-  const [selectedChoiceFunction, setSelectedChoiceFunction] = useState<string | null>(null);
 
   const handleUpdateTargetFunction = useCallback((functionName: string, updatedFunc: any) => {
     if (fileState) {
@@ -770,9 +846,9 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 addActionAfter={addActionAfter}
                 semanticModel={fileState?.semanticModel}
                 onUpdateFunction={handleUpdateTargetFunction}
-                onNavigateToFunction={(functionName) => {
-                  setSelectedChoiceFunction(functionName);
-                  setChoiceEditorOpen(true);
+                onNavigateToFunction={() => {
+                  // Navigation is now handled by the tree in Column 2
+                  // The edit button is no longer needed but kept for consistency
                 }}
                 onRenameFunction={handleRenameFunction}
                 dialogContextName={dialogName}
@@ -781,22 +857,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           </Stack>
         )}
       </Paper>
-
-      {/* Choice Action Editor Modal */}
-      {choiceEditorOpen && selectedChoiceFunction && fileState?.semanticModel && (
-        <ChoiceActionEditor
-          open={choiceEditorOpen}
-          onClose={() => setChoiceEditorOpen(false)}
-          targetFunctionName={selectedChoiceFunction}
-          targetFunction={fileState.semanticModel.functions?.[selectedChoiceFunction]}
-          onUpdateFunction={(updatedFunc) => {
-            handleUpdateTargetFunction(selectedChoiceFunction, updatedFunc);
-          }}
-          npcName={localDialog.properties?.npc || 'NPC'}
-          semanticModel={fileState.semanticModel}
-          onUpdateSemanticFunction={handleUpdateTargetFunction}
-        />
-      )}
     </Box>
   );
 };
