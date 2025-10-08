@@ -650,6 +650,7 @@ interface ActionCardProps {
 const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
+  const addButtonRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
   const [hasFocus, setHasFocus] = useState(false);
@@ -1118,9 +1119,32 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
           mainFieldRef.current?.focus();
         }}
         onKeyDown={handleMenuKeyDown}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'center',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'center',
+        }}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1,
+              boxShadow: 2,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              minWidth: 200
+            }
+          }
+        }}
         MenuListProps={{
           dense: true,
-          sx: { outline: 'none' }
+          sx: {
+            outline: 'none',
+            py: 1
+          }
         }}
       >
         {actionTypes.map((actionType, idx) => (
