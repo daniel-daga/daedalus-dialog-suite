@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Card, CardContent, Chip, Select, MenuItem, FormControl, InputLabel, FormHelperText, Tooltip, Menu } from '@mui/material';
+import React, { useState, useRef } from 'react';
+import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Chip, Select, MenuItem, FormControl, InputLabel, Tooltip, Menu } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 
@@ -214,10 +214,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     setLocalFunction(infoFunction);
   }, [dialogName, dialog, infoFunction]);
 
-  const focusAction = (index: number) => {
+  const focusAction = (index: number, scrollIntoView = false) => {
     const ref = actionRefs.current[index];
     if (ref) {
       ref.focus();
+      // Scroll the element into view smoothly if requested
+      if (scrollIntoView) {
+        requestAnimationFrame(() => {
+          ref.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        });
+      }
     }
   };
 
@@ -253,6 +259,37 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     if (!localFunction) return;
     const newActions = (localFunction.actions || []).filter((_: any, i: number) => i !== index);
     setLocalFunction({ ...localFunction, actions: newActions });
+  };
+
+  const deleteActionAndFocusPrev = (index: number) => {
+    if (!localFunction) return;
+    const newActions = (localFunction.actions || []).filter((_: any, i: number) => i !== index);
+    setLocalFunction({ ...localFunction, actions: newActions });
+    // Focus the previous action after state update
+    const prevIdx = index - 1;
+    if (prevIdx >= 0) {
+      setTimeout(() => focusAction(prevIdx), 0);
+    }
+  };
+
+  const addDialogLineAfter = (index: number) => {
+    if (!localFunction) return;
+    const currentAction = (localFunction.actions || [])[index];
+    // Toggle speaker: if current is 'self', new is 'other', and vice versa
+    const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
+    const newAction = {
+      speaker: oppositeSpeaker,
+      text: '',
+      id: 'NEW_LINE_ID'
+    };
+    const newActions = [...(localFunction.actions || [])];
+    newActions.splice(index + 1, 0, newAction);
+    setLocalFunction({
+      ...localFunction,
+      actions: newActions
+    });
+    // Focus the new action after state update with smooth scroll
+    setTimeout(() => focusAction(index + 1, true), 0);
   };
 
   const addDialogLine = () => {
@@ -526,6 +563,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                     focusAction(prevIdx);
                   }
                 }}
+                onAddNewAfter={() => addDialogLineAfter(idx)}
+                onDeleteAndFocusPrev={() => deleteActionAndFocusPrev(idx)}
               />
             ))}
           </Stack>
@@ -543,9 +582,11 @@ interface ActionCardProps {
   dialog: any;
   onTabToNext?: () => void;
   onTabToPrev?: () => void;
+  onAddNewAfter?: () => void;
+  onDeleteAndFocusPrev?: () => void;
 }
 
-const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, onUpdate, onDelete, dialog, onTabToNext, onTabToPrev }, ref) => {
+const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, onUpdate, onDelete, dialog, onTabToNext, onTabToPrev, onAddNewAfter, onDeleteAndFocusPrev }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
 
   // Expose the ref to parent
@@ -568,6 +609,12 @@ const ActionCard = React.forwardRef<HTMLInputElement, ActionCardProps>(({ action
     } else if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
       onTabToPrev?.();
+    } else if (e.key === 'Enter' && isDialogLine && action.text && action.text.trim() !== '') {
+      e.preventDefault();
+      onAddNewAfter?.();
+    } else if (e.key === 'Backspace' && isDialogLine && (!action.text || action.text.trim() === '')) {
+      e.preventDefault();
+      onDeleteAndFocusPrev?.();
     }
   };
 
