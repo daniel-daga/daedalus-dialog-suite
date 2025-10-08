@@ -297,6 +297,14 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                   updateModel(filePath, updatedModel);
                 }
               }}
+              onNavigateToFunction={(functionName) => {
+                // Navigate to the choice function
+                setSelectedFunctionName(functionName);
+                // Optionally expand the dialog tree to show the choice
+                if (selectedDialog) {
+                  setExpandedDialogs((prev) => new Set([...prev, selectedDialog]));
+                }
+              }}
             />
           </Box>
         ) : (
@@ -318,6 +326,7 @@ interface DialogDetailsEditorProps {
   filePath: string;
   onUpdateDialog: (dialog: any) => void;
   onUpdateFunction: (func: any) => void;
+  onNavigateToFunction?: (functionName: string) => void;
 }
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
@@ -326,7 +335,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   infoFunction,
   filePath,
   onUpdateDialog,
-  onUpdateFunction
+  onUpdateFunction,
+  onNavigateToFunction
 }) => {
   const [localDialog, setLocalDialog] = useState(dialog);
   const [localFunction, setLocalFunction] = useState(infoFunction);
@@ -838,10 +848,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 addActionAfter={addActionAfter}
                 semanticModel={fileState?.semanticModel}
                 onUpdateFunction={handleUpdateTargetFunction}
-                onNavigateToFunction={() => {
-                  // Navigation is now handled by the tree in Column 2
-                  // The edit button is no longer needed but kept for consistency
-                }}
+                onNavigateToFunction={onNavigateToFunction}
                 onRenameFunction={handleRenameFunction}
                 dialogContextName={dialogName}
               />
