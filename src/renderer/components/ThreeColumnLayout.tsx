@@ -37,6 +37,32 @@ const createEmptyFunction = (functionName: string): any => {
   };
 };
 
+/**
+ * Validate function name for choice target functions
+ * Returns error message if invalid, null if valid
+ */
+const validateChoiceFunctionName = (
+  functionName: string,
+  requiredPrefix: string,
+  semanticModel: any,
+  originalFunctionName?: string
+): string | null => {
+  if (!functionName || functionName.trim() === '') {
+    return 'Function name cannot be empty';
+  }
+
+  if (!functionName.startsWith(requiredPrefix)) {
+    return `Function name must start with "${requiredPrefix}"`;
+  }
+
+  // Check uniqueness (skip if it's the same as original - meaning no rename)
+  if (functionName !== originalFunctionName && semanticModel?.functions?.[functionName]) {
+    return 'Function name already exists';
+  }
+
+  return null;
+};
+
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { openFiles, updateModel } = useEditorStore();
   const fileState = openFiles.get(filePath);
@@ -252,6 +278,31 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       updateModel(filePath, updatedModel);
     }
   }, [fileState, filePath, updateModel]);
+
+  const handleRenameFunction = useCallback((oldName: string, newName: string) => {
+    if (!fileState) return;
+
+    // Get the function to rename
+    const func = fileState.semanticModel.functions[oldName];
+    if (!func) return;
+
+    // Create updated functions map
+    const updatedFunctions = { ...fileState.semanticModel.functions };
+    delete updatedFunctions[oldName];
+    updatedFunctions[newName] = { ...func, name: newName };
+
+    // Update semantic model
+    const updatedModel = {
+      ...fileState.semanticModel,
+      functions: updatedFunctions
+    };
+    updateModel(filePath, updatedModel);
+
+    // Update local function state if we're editing the renamed function
+    if (localFunction && infoFunction?.name === oldName) {
+      setLocalFunction({ ...localFunction, name: newName });
+    }
+  }, [fileState, filePath, updateModel, localFunction, infoFunction]);
 
   // Reset local state when dialog changes
   React.useEffect(() => {
@@ -723,6 +774,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                   setSelectedChoiceFunction(functionName);
                   setChoiceEditorOpen(true);
                 }}
+                onRenameFunction={handleRenameFunction}
+                dialogContextName={dialogName}
               />
             ))}
           </Stack>
@@ -763,9 +816,11 @@ interface ActionCardProps {
   semanticModel?: any;
   onUpdateFunction?: (functionName: string, func: any) => void;
   onNavigateToFunction?: (functionName: string) => void;
+  onRenameFunction?: (oldName: string, newName: string) => void;
+  dialogContextName?: string; // The dialog/function name for validation prefix
 }
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter, semanticModel, onUpdateFunction, onNavigateToFunction }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter, semanticModel, onUpdateFunction, onNavigateToFunction, onRenameFunction, dialogContextName }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const addButtonRef = useRef<HTMLDivElement>(null);
@@ -998,7 +1053,6 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
                 </Box>
               </Tooltip>
               <TextField
-                fullWidth
                 label="Choice Text"
                 value={localAction.text || ''}
                 onChange={(e) => handleUpdate({ ...localAction, text: e.target.value })}
@@ -1006,14 +1060,40 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
                 inputRef={mainFieldRef}
                 onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
+                sx={{ flex: '1 1 40%', minWidth: 150 }}
               />
-              {localAction.targetFunction && (
-                <Tooltip title={`Target Function: ${localAction.targetFunction}`} arrow>
-                  <IconButton size="small" sx={{ flexShrink: 0 }}>
-                    <InfoIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              )}
+              <TextField
+                label="Function"
+                value={localAction.targetFunction || ''}
+                onChange={(e) => {
+                  const newName = e.target.value;
+                  handleUpdate({ ...localAction, targetFunction: newName });
+                }}
+                onBlur={() => {
+                  flushUpdate();
+                  // Validate and handle rename if needed
+                  if (dialogContextName && onRenameFunction && localAction.targetFunction !== action.targetFunction) {
+                    const validationError = validateChoiceFunctionName(
+                      localAction.targetFunction,
+                      dialogContextName,
+                      semanticModel,
+                      action.targetFunction
+                    );
+
+                    if (validationError) {
+                      // Revert to original name on validation error
+                      handleUpdate({ ...localAction, targetFunction: action.targetFunction });
+                      alert(validationError);
+                    } else if (localAction.targetFunction !== action.targetFunction) {
+                      // Valid rename - trigger the rename callback
+                      onRenameFunction(action.targetFunction, localAction.targetFunction);
+                    }
+                  }
+                }}
+                size="small"
+                sx={{ flex: '1 1 40%', minWidth: 150 }}
+                error={dialogContextName && localAction.targetFunction ? !localAction.targetFunction.startsWith(dialogContextName) : false}
+              />
               {semanticModel && localAction.targetFunction && semanticModel.functions && semanticModel.functions[localAction.targetFunction] && onNavigateToFunction && (
                 <Tooltip title="Edit choice actions" arrow>
                   <IconButton
@@ -1411,6 +1491,27 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
     onClose();
   };
 
+  const handleRenameFunction = useCallback((oldName: string, newName: string) => {
+    // Update local functions map
+    setLocalFunctions((prev) => {
+      const func = prev[oldName] || semanticModel?.functions?.[oldName];
+      if (!func) return prev;
+
+      const updated = { ...prev };
+      delete updated[oldName];
+      updated[newName] = { ...func, name: newName };
+      return updated;
+    });
+
+    // Update current function name if we're viewing the renamed function
+    if (currentFunctionName === oldName) {
+      setCurrentFunctionName(newName);
+    }
+
+    // Update semantic model immediately
+    onUpdateSemanticFunction(newName, { ...(localFunctions[oldName] || semanticModel?.functions?.[oldName]), name: newName });
+  }, [currentFunctionName, localFunctions, semanticModel, onUpdateSemanticFunction]);
+
   const updateAction = useCallback((index: number, updatedAction: any) => {
     setLocalFunctions((prev) => {
       const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
@@ -1740,6 +1841,8 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
                         setCurrentFunctionName(funcName);
                         setExpandedNodes((prev) => new Set([...prev, funcName]));
                       }}
+                      onRenameFunction={handleRenameFunction}
+                      dialogContextName={targetFunctionName}
                     />
                   ))}
                 </Stack>
