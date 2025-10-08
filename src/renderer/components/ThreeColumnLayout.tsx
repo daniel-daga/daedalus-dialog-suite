@@ -71,6 +71,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [selectedDialog, setSelectedDialog] = useState<string | null>(null);
   const [selectedFunctionName, setSelectedFunctionName] = useState<string | null>(null); // Can be dialog info function or choice function
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
+  const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
 
   if (!fileState) {
     return <Typography>Loading...</Typography>;
@@ -193,18 +194,42 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                 if (!choice.subtree) return null;
                 const isSelected = selectedFunctionName === choice.targetFunction;
                 const hasSubchoices = choice.subtree.children && choice.subtree.children.length > 0;
+                const choiceKey = `${choice.targetFunction}-${depth}-${index}`;
+                const isExpanded = expandedChoices.has(choiceKey);
 
                 return (
-                  <Box key={`${choice.targetFunction}-${depth}-${index}`}>
+                  <Box key={choiceKey}>
                     <ListItemButton
                       selected={isSelected}
                       onClick={() => {
                         setSelectedDialog(dialogName);
                         setSelectedFunctionName(choice.targetFunction);
                       }}
-                      sx={{ pl: (depth + 1) * 2 }}
+                      sx={{ pl: (depth + 1) * 2, pr: 1 }}
                     >
-                      <CallSplitIcon fontSize="small" sx={{ mr: 1, fontSize: '1rem', color: 'text.secondary' }} />
+                      {hasSubchoices ? (
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedChoices((prev) => {
+                              const newSet = new Set(prev);
+                              if (isExpanded) {
+                                newSet.delete(choiceKey);
+                              } else {
+                                newSet.add(choiceKey);
+                              }
+                              return newSet;
+                            });
+                          }}
+                          sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }}
+                        >
+                          {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+                        </IconButton>
+                      ) : (
+                        <Box sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }} />
+                      )}
+                      <CallSplitIcon fontSize="small" sx={{ mr: 1, fontSize: '1rem', color: 'text.secondary', flexShrink: 0 }} />
                       <ListItemText
                         primary={choice.text}
                         secondary={choice.targetFunction}
@@ -212,7 +237,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                         secondaryTypographyProps={{ fontSize: '0.7rem' }}
                       />
                     </ListItemButton>
-                    {hasSubchoices && choice.subtree.children.map((subchoice: any, idx: number) =>
+                    {isExpanded && hasSubchoices && choice.subtree.children.map((subchoice: any, idx: number) =>
                       renderChoiceTree(subchoice, depth + 1, idx)
                     )}
                   </Box>
