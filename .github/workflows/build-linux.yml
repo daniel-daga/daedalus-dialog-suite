@@ -18,6 +18,7 @@ jobs:
         with:
           repository: daniel-daga/daedalus-parser
           path: daedalus-parser
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
