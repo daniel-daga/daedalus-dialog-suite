@@ -8,6 +8,10 @@
       "required": true,
       "types": [
         {
+          "type": "array_access",
+          "named": true
+        },
+        {
           "type": "binary_expression",
           "named": true
         },
@@ -24,6 +28,10 @@
           "named": true
         },
         {
+          "type": "member_access",
+          "named": true
+        },
+        {
           "type": "number",
           "named": true
         },
@@ -34,28 +42,26 @@
         {
           "type": "string",
           "named": true
+        },
+        {
+          "type": "unary_expression",
+          "named": true
         }
       ]
     }
   },
   {
-    "type": "assignment_statement",
+    "type": "array_access",
     "named": true,
     "fields": {
-      "left": {
+      "array": {
         "multiple": false,
         "required": true,
         "types": [
           {
-            "type": "identifier",
+            "type": "array_access",
             "named": true
-          }
-        ]
-      },
-      "right": {
-        "multiple": false,
-        "required": true,
-        "types": [
+          },
           {
             "type": "binary_expression",
             "named": true
@@ -73,6 +79,10 @@
             "named": true
           },
           {
+            "type": "member_access",
+            "named": true
+          },
+          {
             "type": "number",
             "named": true
           },
@@ -82,6 +92,126 @@
           },
           {
             "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      },
+      "index": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "assignment_statement",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
             "named": true
           }
         ]
@@ -96,6 +226,10 @@
       "multiple": true,
       "required": true,
       "types": [
+        {
+          "type": "array_access",
+          "named": true
+        },
         {
           "type": "binary_expression",
           "named": true
@@ -113,6 +247,10 @@
           "named": true
         },
         {
+          "type": "member_access",
+          "named": true
+        },
+        {
           "type": "number",
           "named": true
         },
@@ -122,6 +260,10 @@
         },
         {
           "type": "string",
+          "named": true
+        },
+        {
+          "type": "unary_expression",
           "named": true
         }
       ]
@@ -178,6 +320,10 @@
         "required": true,
         "types": [
           {
+            "type": "array_access",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -194,6 +340,10 @@
             "named": true
           },
           {
+            "type": "member_access",
+            "named": true
+          },
+          {
             "type": "number",
             "named": true
           },
@@ -203,6 +353,73 @@
           },
           {
             "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "class_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "assignment_statement",
+          "named": true
+        },
+        {
+          "type": "variable_declaration",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "class_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "class_body",
+            "named": true
+          }
+        ]
+      },
+      "keyword": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "CLASS",
+            "named": false
+          },
+          {
+            "type": "Class",
+            "named": false
+          },
+          {
+            "type": "class",
+            "named": false
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -217,6 +434,10 @@
       "multiple": false,
       "required": true,
       "types": [
+        {
+          "type": "array_access",
+          "named": true
+        },
         {
           "type": "binary_expression",
           "named": true
@@ -234,6 +455,10 @@
           "named": true
         },
         {
+          "type": "member_access",
+          "named": true
+        },
+        {
           "type": "number",
           "named": true
         },
@@ -243,6 +468,10 @@
         },
         {
           "type": "string",
+          "named": true
+        },
+        {
+          "type": "unary_expression",
           "named": true
         }
       ]
@@ -309,7 +538,15 @@
             "named": false
           },
           {
+            "type": "Float",
+            "named": false
+          },
+          {
             "type": "INT",
+            "named": false
+          },
+          {
+            "type": "Int",
             "named": false
           },
           {
@@ -317,7 +554,15 @@
             "named": false
           },
           {
+            "type": "String",
+            "named": false
+          },
+          {
             "type": "VOID",
+            "named": false
+          },
+          {
+            "type": "Void",
             "named": false
           },
           {
@@ -363,6 +608,10 @@
         "required": true,
         "types": [
           {
+            "type": "array_access",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -379,6 +628,10 @@
             "named": true
           },
           {
+            "type": "member_access",
+            "named": true
+          },
+          {
             "type": "number",
             "named": true
           },
@@ -388,6 +641,10 @@
           },
           {
             "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
             "named": true
           }
         ]
@@ -459,6 +716,68 @@
     }
   },
   {
+    "type": "member_access",
+    "named": true,
+    "fields": {
+      "member": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "object": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "parameter",
     "named": true,
     "fields": {
@@ -481,7 +800,15 @@
             "named": false
           },
           {
+            "type": "Float",
+            "named": false
+          },
+          {
             "type": "INT",
+            "named": false
+          },
+          {
+            "type": "Int",
             "named": false
           },
           {
@@ -489,7 +816,15 @@
             "named": false
           },
           {
+            "type": "String",
+            "named": false
+          },
+          {
             "type": "VOID",
+            "named": false
+          },
+          {
+            "type": "Void",
             "named": false
           },
           {
@@ -540,6 +875,10 @@
       "required": true,
       "types": [
         {
+          "type": "array_access",
+          "named": true
+        },
+        {
           "type": "binary_expression",
           "named": true
         },
@@ -556,6 +895,10 @@
           "named": true
         },
         {
+          "type": "member_access",
+          "named": true
+        },
+        {
           "type": "number",
           "named": true
         },
@@ -565,6 +908,10 @@
         },
         {
           "type": "string",
+          "named": true
+        },
+        {
+          "type": "unary_expression",
           "named": true
         }
       ]
@@ -579,14 +926,80 @@
       "required": false,
       "types": [
         {
+          "type": "class_declaration",
+          "named": true
+        },
+        {
           "type": "function_declaration",
           "named": true
         },
         {
           "type": "instance_declaration",
           "named": true
+        },
+        {
+          "type": "prototype_declaration",
+          "named": true
+        },
+        {
+          "type": "variable_declaration",
+          "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "prototype_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "class_body",
+            "named": true
+          }
+        ]
+      },
+      "keyword": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "PROTOTYPE",
+            "named": false
+          },
+          {
+            "type": "Prototype",
+            "named": false
+          },
+          {
+            "type": "prototype",
+            "named": false
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "parent": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -597,6 +1010,10 @@
         "multiple": false,
         "required": false,
         "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
           {
             "type": "binary_expression",
             "named": true
@@ -614,6 +1031,10 @@
             "named": true
           },
           {
+            "type": "member_access",
+            "named": true
+          },
+          {
             "type": "number",
             "named": true
           },
@@ -624,10 +1045,288 @@
           {
             "type": "string",
             "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
           }
         ]
       }
     }
+  },
+  {
+    "type": "unary_expression",
+    "named": true,
+    "fields": {
+      "operand": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      },
+      "operator": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "!",
+            "named": false
+          },
+          {
+            "type": "+",
+            "named": false
+          },
+          {
+            "type": "-",
+            "named": false
+          },
+          {
+            "type": "~",
+            "named": false
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "variable_declaration",
+    "named": true,
+    "fields": {
+      "keyword": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "CONST",
+            "named": false
+          },
+          {
+            "type": "Const",
+            "named": false
+          },
+          {
+            "type": "VAR",
+            "named": false
+          },
+          {
+            "type": "Var",
+            "named": false
+          },
+          {
+            "type": "const",
+            "named": false
+          },
+          {
+            "type": "var",
+            "named": false
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "size": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "FLOAT",
+            "named": false
+          },
+          {
+            "type": "Float",
+            "named": false
+          },
+          {
+            "type": "INT",
+            "named": false
+          },
+          {
+            "type": "Int",
+            "named": false
+          },
+          {
+            "type": "STRING",
+            "named": false
+          },
+          {
+            "type": "String",
+            "named": false
+          },
+          {
+            "type": "VOID",
+            "named": false
+          },
+          {
+            "type": "Void",
+            "named": false
+          },
+          {
+            "type": "float",
+            "named": false
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "int",
+            "named": false
+          },
+          {
+            "type": "string",
+            "named": false
+          },
+          {
+            "type": "void",
+            "named": false
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "!",
+    "named": false
   },
   {
     "type": "!=",
@@ -666,6 +1365,10 @@
     "named": false
   },
   {
+    "type": ".",
+    "named": false
+  },
+  {
     "type": "/",
     "named": false
   },
@@ -698,6 +1401,30 @@
     "named": false
   },
   {
+    "type": "CLASS",
+    "named": false
+  },
+  {
+    "type": "CONST",
+    "named": false
+  },
+  {
+    "type": "Class",
+    "named": false
+  },
+  {
+    "type": "Const",
+    "named": false
+  },
+  {
+    "type": "ELSE",
+    "named": false
+  },
+  {
+    "type": "Else",
+    "named": false
+  },
+  {
     "type": "FALSE",
     "named": false
   },
@@ -710,7 +1437,19 @@
     "named": false
   },
   {
+    "type": "False",
+    "named": false
+  },
+  {
+    "type": "Float",
+    "named": false
+  },
+  {
     "type": "Func",
+    "named": false
+  },
+  {
+    "type": "IF",
     "named": false
   },
   {
@@ -722,7 +1461,31 @@
     "named": false
   },
   {
+    "type": "If",
+    "named": false
+  },
+  {
     "type": "Instance",
+    "named": false
+  },
+  {
+    "type": "Int",
+    "named": false
+  },
+  {
+    "type": "PROTOTYPE",
+    "named": false
+  },
+  {
+    "type": "Prototype",
+    "named": false
+  },
+  {
+    "type": "RETURN",
+    "named": false
+  },
+  {
+    "type": "Return",
     "named": false
   },
   {
@@ -730,7 +1493,19 @@
     "named": false
   },
   {
+    "type": "String",
+    "named": false
+  },
+  {
     "type": "TRUE",
+    "named": false
+  },
+  {
+    "type": "True",
+    "named": false
+  },
+  {
+    "type": "VAR",
     "named": false
   },
   {
@@ -738,8 +1513,32 @@
     "named": false
   },
   {
+    "type": "Var",
+    "named": false
+  },
+  {
+    "type": "Void",
+    "named": false
+  },
+  {
+    "type": "[",
+    "named": false
+  },
+  {
+    "type": "]",
+    "named": false
+  },
+  {
+    "type": "class",
+    "named": false
+  },
+  {
     "type": "comment",
     "named": true
+  },
+  {
+    "type": "const",
+    "named": false
   },
   {
     "type": "else",
@@ -778,7 +1577,15 @@
     "named": true
   },
   {
+    "type": "prototype",
+    "named": false
+  },
+  {
     "type": "return",
+    "named": false
+  },
+  {
+    "type": "string",
     "named": false
   },
   {
@@ -786,11 +1593,11 @@
     "named": true
   },
   {
-    "type": "string",
+    "type": "true",
     "named": false
   },
   {
-    "type": "true",
+    "type": "var",
     "named": false
   },
   {
@@ -807,6 +1614,10 @@
   },
   {
     "type": "}",
+    "named": false
+  },
+  {
+    "type": "~",
     "named": false
   }
 ]

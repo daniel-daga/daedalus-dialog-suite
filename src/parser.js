@@ -1,5 +1,6 @@
 const Parser = require('tree-sitter');
 const Daedalus = require('../bindings/node');
+const { PERFORMANCE } = require('./utils/constants');
 
 class DaedalusParser {
   constructor() {
@@ -28,7 +29,7 @@ class DaedalusParser {
       hasErrors: tree.rootNode.hasError,
       parseTime: parseTimeMs,
       sourceLength: sourceCode.length,
-      throughput: sourceCode.length / parseTimeMs * 1000, // bytes per second
+      throughput: sourceCode.length / parseTimeMs * PERFORMANCE.THROUGHPUT_CALCULATION_MS // bytes per second
     };
 
     if (options.includeSource) {
@@ -53,13 +54,47 @@ class DaedalusParser {
   }
 
   /**
+   * Extract all comments from parsed tree
+   * @param {Object} parseResult - Result from parse() method
+   * @returns {Array} Array of comment objects
+   */
+  extractComments(parseResult) {
+    const comments = [];
+    const { rootNode } = parseResult;
+    const sourceCode = parseResult.sourceCode || '';
+
+    function findComments(node) {
+      if (node.type === 'comment') {
+        const text = sourceCode.slice(node.startIndex, node.endIndex);
+        comments.push({
+          type: text.startsWith('//') ? 'line' : 'block',
+          text,
+          content: text.startsWith('//')
+            ? text.slice(2).trim()
+            : text.slice(2, -2).trim(),
+          startPosition: node.startPosition,
+          endPosition: node.endPosition,
+          node
+        });
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        findComments(node.child(i));
+      }
+    }
+
+    findComments(rootNode);
+    return comments;
+  }
+
+  /**
    * Extract all declarations from parsed tree
    * @param {Object} parseResult - Result from parse() method
    * @returns {Array} Array of declaration objects
    */
   extractDeclarations(parseResult) {
     const declarations = [];
-    const rootNode = parseResult.rootNode;
+    const { rootNode } = parseResult;
 
     for (let i = 0; i < rootNode.childCount; i++) {
       const child = rootNode.child(i);
@@ -78,6 +113,35 @@ class DaedalusParser {
           type: 'function',
           name: this.getFieldText(child, 'name', parseResult.sourceCode),
           returnType: this.getFieldText(child, 'return_type', parseResult.sourceCode),
+          startPosition: child.startPosition,
+          endPosition: child.endPosition,
+          node: child
+        });
+      } else if (child.type === 'variable_declaration') {
+        const keyword = this.getFieldText(child, 'keyword', parseResult.sourceCode);
+        declarations.push({
+          type: 'variable',
+          name: this.getFieldText(child, 'name', parseResult.sourceCode),
+          varType: this.getFieldText(child, 'type', parseResult.sourceCode),
+          isConst: keyword && keyword.toLowerCase() === 'const',
+          value: this.getFieldText(child, 'value', parseResult.sourceCode),
+          startPosition: child.startPosition,
+          endPosition: child.endPosition,
+          node: child
+        });
+      } else if (child.type === 'class_declaration') {
+        declarations.push({
+          type: 'class',
+          name: this.getFieldText(child, 'name', parseResult.sourceCode),
+          startPosition: child.startPosition,
+          endPosition: child.endPosition,
+          node: child
+        });
+      } else if (child.type === 'prototype_declaration') {
+        declarations.push({
+          type: 'prototype',
+          name: this.getFieldText(child, 'name', parseResult.sourceCode),
+          parent: this.getFieldText(child, 'parent', parseResult.sourceCode),
           startPosition: child.startPosition,
           endPosition: child.endPosition,
           node: child
@@ -118,6 +182,10 @@ class DaedalusParser {
     };
   }
 
+
+
+
+
   /**
    * Collect syntax errors from parse tree
    * @private
@@ -126,9 +194,18 @@ class DaedalusParser {
     if (node.type === 'ERROR') {
       errors.push({
         type: 'syntax_error',
-        message: `Unexpected token at line ${node.startPosition.row + 1}`,
+        message: `Syntax error at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
         position: node.startPosition,
         text: sourceCode.slice(node.startIndex, node.endIndex)
+      });
+    }
+
+    if (node.isMissing) {
+      errors.push({
+        type: 'missing_token',
+        message: `Missing ${node.type} at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
+        position: node.startPosition,
+        text: ''
       });
     }
 
@@ -136,6 +213,20 @@ class DaedalusParser {
       this.collectErrors(node.child(i), sourceCode, errors);
     }
   }
+
+  /**
+   * Create a parser instance with error handling
+   * @returns {DaedalusParser} Parser instance
+   */
+  static create() {
+    try {
+      return new DaedalusParser();
+    } catch (error) {
+      throw new Error(`Failed to create DaedalusParser: ${error.message}`);
+    }
+  }
 }
 
 module.exports = DaedalusParser;
+module.exports.default = DaedalusParser;
+module.exports.DaedalusLanguage = Daedalus;

@@ -1,31 +1,82 @@
 {
   "name": "daedalus-parser",
   "version": "1.0.0",
-  "description": "High-performance Tree-sitter parser for Gothic 2 Daedalus scripting language",
+  "description": "High-performance Tree-sitter parser for Gothic 2 Daedalus scripting language with dialog editing capabilities",
   "main": "src/parser.js",
-  "types": "bindings/node",
+  "types": "index.d.ts",
   "scripts": {
     "test": "npm run build && node --test test/*.test.js",
     "build": "tree-sitter generate",
-    "lint": "echo 'No linter configured yet'",
-    "typecheck": "echo 'No TypeScript configured yet'",
+    "build:ts": "tsc --project tsconfig.build.json",
+    "parse": "node bin/daedalus-parse.js",
+    "format": "node bin/daedalus-format.js",
+    "editor": "node bin/daedalus-dialog-editor.js",
+    "semantic": "npx ts-node src/semantic-visitor-cli.ts",
+    "generate": "npx ts-node src/semantic-code-generator-cli.ts",
+    "lint": "eslint src/ test/ bin/ --max-warnings 0",
+    "lint:fix": "eslint src/ test/ bin/ --fix",
+    "typecheck": "tsc --noEmit",
     "install": "node-gyp-build",
+    "postinstall": "npm run build && npm run build:ts",
     "prebuildify": "prebuildify --napi --strip"
+  },
+  "bin": {
+    "daedalus-parse": "./bin/daedalus-parse.js",
+    "daedalus-format": "./bin/daedalus-format.js",
+    "daedalus-dialog-editor": "./bin/daedalus-dialog-editor.js"
   },
   "keywords": [
     "parser",
     "daedalus",
     "gothic",
     "scripting",
-    "tree-sitter"
+    "tree-sitter",
+    "dialog-editor",
+    "game-modding",
+    "ast",
+    "syntax-tree",
+    "compiler"
   ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./src/parser.js",
+      "import": "./src/parser.js"
+    },
+    "./types": {
+      "types": "./index.d.ts"
+    },
+    "./semantic-model": {
+      "types": "./dist/semantic-model.d.ts",
+      "require": "./dist/semantic-model.js",
+      "import": "./dist/semantic-model.js"
+    },
+    "./semantic-visitor": {
+      "types": "./dist/semantic-visitor.d.ts",
+      "require": "./dist/semantic-visitor.js",
+      "import": "./dist/semantic-visitor.js"
+    },
+    "./semantic-code-generator": {
+      "types": "./dist/semantic-code-generator.d.ts",
+      "require": "./dist/semantic-code-generator.js",
+      "import": "./dist/semantic-code-generator.js"
+    },
+    "./bindings/node": {
+      "require": "./bindings/node/index.js"
+    }
+  },
   "files": [
+    "index.d.ts",
     "grammar.js",
     "binding.gyp",
     "prebuilds/**",
     "bindings/node/*",
     "queries/*",
-    "src/**"
+    "src/**",
+    "dist/**",
+    "examples/**",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "author": "",
   "license": "MIT",
@@ -33,8 +84,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "tree-sitter": "^0.21.0",
-    "node-gyp-build": "^4.8.0"
+    "node-gyp-build": "^4.8.0",
+    "tree-sitter": "^0.21.0"
   },
   "peerDependencies": {
     "tree-sitter": "^0.21.0"
@@ -45,8 +96,13 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.14",
+    "eslint": "^9.36.0",
+    "prebuildify": "^6.0.0",
     "tree-sitter-cli": "^0.22.0",
-    "prebuildify": "^6.0.0"
+    "typescript": "^5.9.2"
   },
   "tree-sitter": [
     {
