@@ -8,13 +8,23 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout dialog editor
         uses: actions/checkout@v4
+
+      - name: Checkout daedalus-parser
+        uses: actions/checkout@v4
+        with:
+          repository: daniel-daga/daedalus-parser
+          path: ../daedalus-parser
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Build daedalus-parser
+        working-directory: ../daedalus-parser
+        run: npm ci && npm run build && npm run prebuildify
 
       - name: Install dependencies
         run: npm ci
