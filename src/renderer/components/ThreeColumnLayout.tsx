@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
-import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Chip, Select, MenuItem, FormControl, InputLabel, Tooltip, Menu } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon } from '@mui/icons-material';
+import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Chip, Select, MenuItem, FormControl, InputLabel, Tooltip, Menu, Dialog, DialogTitle, DialogContent, DialogActions, Badge } from '@mui/material';
+import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon, Edit as EditIcon, Launch as LaunchIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 
 interface ThreeColumnLayoutProps {
@@ -204,9 +204,22 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
 }) => {
   const [localDialog, setLocalDialog] = useState(dialog);
   const [localFunction, setLocalFunction] = useState(infoFunction);
-  const { openFiles, saveFile } = useEditorStore();
+  const { openFiles, saveFile, updateModel } = useEditorStore();
   const fileState = openFiles.get(filePath);
   const actionRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleUpdateTargetFunction = useCallback((functionName: string, updatedFunc: any) => {
+    if (fileState) {
+      const updatedModel = {
+        ...fileState.semanticModel,
+        functions: {
+          ...fileState.semanticModel.functions,
+          [functionName]: updatedFunc
+        }
+      };
+      updateModel(filePath, updatedModel);
+    }
+  }, [fileState, filePath, updateModel]);
 
   // Reset local state when dialog changes
   React.useEffect(() => {
@@ -624,6 +637,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 addDialogLineAfter={addDialogLineAfter}
                 deleteActionAndFocusPrev={deleteActionAndFocusPrev}
                 addActionAfter={addActionAfter}
+                semanticModel={fileState?.semanticModel}
+                onUpdateFunction={handleUpdateTargetFunction}
               />
             ))}
           </Stack>
@@ -645,15 +660,18 @@ interface ActionCardProps {
   addDialogLineAfter: (index: number) => void;
   deleteActionAndFocusPrev: (index: number) => void;
   addActionAfter: (index: number, actionType: string) => void;
+  semanticModel?: any;
+  onUpdateFunction?: (functionName: string, func: any) => void;
 }
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter, semanticModel, onUpdateFunction }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const addButtonRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
   const [hasFocus, setHasFocus] = useState(false);
+  const [choiceEditorOpen, setChoiceEditorOpen] = useState(false);
 
   // Local state for text input to avoid parent re-renders on every keystroke
   const [localAction, setLocalAction] = useState(action);
@@ -873,40 +891,50 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
             </Box>
           )}
           {isChoice && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                <Tooltip title={getActionTypeLabel()} arrow>
-                  <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0, mt: 0.5 }}>
-                    {getActionIcon()}
-                  </Box>
-                </Tooltip>
-                <TextField
-                  fullWidth
-                  label="Text"
-                  value={localAction.text || ''}
-                  onChange={(e) => handleUpdate({ ...localAction, text: e.target.value })}
-                  size="small"
-                  multiline
-                  rows={2}
-                  inputRef={mainFieldRef}
-                  onBlur={flushUpdate}
-                onKeyDown={handleKeyDown}
-                />
-                <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
               <TextField
                 fullWidth
-                label="Target Function"
-                value={localAction.targetFunction || ''}
-                onChange={(e) => handleUpdate({ ...localAction, targetFunction: e.target.value })}
+                label="Choice Text"
+                value={localAction.text || ''}
+                onChange={(e) => handleUpdate({ ...localAction, text: e.target.value })}
                 size="small"
-                helperText="Function to call when this choice is selected"
-                sx={{ ml: 4 }}
+                inputRef={mainFieldRef}
                 onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
+              {localAction.targetFunction && (
+                <Tooltip title={`Target Function: ${localAction.targetFunction}`} arrow>
+                  <IconButton size="small" sx={{ flexShrink: 0 }}>
+                    <InfoIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+              {semanticModel && localAction.targetFunction && semanticModel.functions && semanticModel.functions[localAction.targetFunction] && (
+                <Tooltip title="Edit choice actions" arrow>
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={() => setChoiceEditorOpen(true)}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    <Badge
+                      badgeContent={semanticModel.functions[localAction.targetFunction]?.actions?.length || 0}
+                      color="secondary"
+                      sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', height: '16px', minWidth: '16px' } }}
+                    >
+                      <EditIcon fontSize="small" />
+                    </Badge>
+                  </IconButton>
+                </Tooltip>
+              )}
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
             </Box>
           )}
           {isCreateTopic && (
@@ -1210,10 +1238,265 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
           )}
         </Box>
       </Box>
+
+      {/* Choice Action Editor Modal */}
+      {isChoice && semanticModel && localAction.targetFunction && onUpdateFunction && (
+        <ChoiceActionEditor
+          open={choiceEditorOpen}
+          onClose={() => setChoiceEditorOpen(false)}
+          targetFunctionName={localAction.targetFunction}
+          targetFunction={semanticModel.functions?.[localAction.targetFunction]}
+          onUpdateFunction={(updatedFunc) => {
+            onUpdateFunction(localAction.targetFunction, updatedFunc);
+            setChoiceEditorOpen(false);
+          }}
+          npcName={npcName}
+          semanticModel={semanticModel}
+          onUpdateSemanticFunction={onUpdateFunction}
+        />
+      )}
     </Box>
   );
 }));
 
 ActionCard.displayName = 'ActionCard';
+
+interface ChoiceActionEditorProps {
+  open: boolean;
+  onClose: () => void;
+  targetFunctionName: string;
+  targetFunction: any;
+  onUpdateFunction: (func: any) => void;
+  npcName: string;
+  semanticModel: any;
+  onUpdateSemanticFunction: (functionName: string, func: any) => void;
+}
+
+const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
+  open,
+  onClose,
+  targetFunctionName,
+  targetFunction,
+  onUpdateFunction,
+  npcName,
+  semanticModel,
+  onUpdateSemanticFunction
+}) => {
+  const [localFunction, setLocalFunction] = useState(targetFunction);
+  const actionRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Reset local state when targetFunction changes
+  React.useEffect(() => {
+    setLocalFunction(targetFunction);
+  }, [targetFunction]);
+
+  const focusAction = useCallback((index: number, scrollIntoView = false) => {
+    const ref = actionRefs.current[index];
+    if (ref) {
+      ref.focus();
+      if (scrollIntoView) {
+        requestAnimationFrame(() => {
+          ref.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        });
+      }
+    }
+  }, []);
+
+  const handleSave = () => {
+    onUpdateFunction(localFunction);
+    onClose();
+  };
+
+  const updateAction = useCallback((index: number, updatedAction: any) => {
+    setLocalFunction((prev: any) => {
+      if (!prev) return prev;
+      const newActions = [...(prev.actions || [])];
+      newActions[index] = updatedAction;
+      return { ...prev, actions: newActions };
+    });
+  }, []);
+
+  const deleteAction = useCallback((index: number) => {
+    setLocalFunction((prev: any) => {
+      if (!prev) return prev;
+      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
+      return { ...prev, actions: newActions };
+    });
+  }, []);
+
+  const deleteActionAndFocusPrev = useCallback((index: number) => {
+    setLocalFunction((prev: any) => {
+      if (!prev) return prev;
+      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
+      return { ...prev, actions: newActions };
+    });
+    const prevIdx = index - 1;
+    if (prevIdx >= 0) {
+      setTimeout(() => focusAction(prevIdx), 0);
+    }
+  }, [focusAction]);
+
+  const addDialogLineAfter = useCallback((index: number) => {
+    setLocalFunction((prev: any) => {
+      if (!prev) return prev;
+      const currentAction = (prev.actions || [])[index];
+      const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
+      const newAction = {
+        speaker: oppositeSpeaker,
+        text: '',
+        id: 'NEW_LINE_ID'
+      };
+      const newActions = [...(prev.actions || [])];
+      newActions.splice(index + 1, 0, newAction);
+      return { ...prev, actions: newActions };
+    });
+    setTimeout(() => focusAction(index + 1, true), 0);
+  }, [focusAction]);
+
+  const addActionAfter = useCallback((index: number, actionType: string) => {
+    setLocalFunction((prev: any) => {
+      if (!prev) return prev;
+      const currentAction = (prev.actions || [])[index];
+
+      let newAction: any;
+      switch (actionType) {
+        case 'dialogLine':
+          const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
+          newAction = {
+            speaker: oppositeSpeaker,
+            text: '',
+            id: 'NEW_LINE_ID'
+          };
+          break;
+        case 'choice':
+          newAction = {
+            dialogRef: 'DIALOG_REF',
+            text: '',
+            targetFunction: ''
+          };
+          break;
+        case 'logEntry':
+          newAction = {
+            topic: 'TOPIC_NAME',
+            text: ''
+          };
+          break;
+        case 'createTopic':
+          newAction = {
+            topic: 'TOPIC_NAME',
+            topicType: 'LOG_MISSION'
+          };
+          break;
+        case 'chapterTransition':
+          newAction = {
+            chapter: 1,
+            world: 'NEWWORLD_ZEN'
+          };
+          break;
+        case 'exchangeRoutine':
+          newAction = {
+            target: 'self',
+            routine: 'START'
+          };
+          break;
+        case 'customAction':
+          newAction = {
+            action: 'AI_StopProcessInfos(self)'
+          };
+          break;
+        default:
+          return prev;
+      }
+
+      const newActions = [...(prev.actions || [])];
+      newActions.splice(index + 1, 0, newAction);
+      return { ...prev, actions: newActions };
+    });
+    setTimeout(() => focusAction(index + 1, true), 0);
+  }, [focusAction]);
+
+  const addDialogLine = () => {
+    if (!localFunction) return;
+    const newAction = {
+      speaker: 'other',
+      text: 'New dialog line',
+      id: 'NEW_LINE_ID'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const isDirty = JSON.stringify(targetFunction) !== JSON.stringify(localFunction);
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h6">Edit Choice Actions: {targetFunctionName}</Typography>
+          {isDirty && <Chip label="Unsaved Changes" size="small" color="warning" />}
+        </Box>
+      </DialogTitle>
+      <DialogContent>
+        {!localFunction ? (
+          <Typography color="text.secondary">
+            Function "{targetFunctionName}" not found in semantic model.
+          </Typography>
+        ) : (
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="subtitle1">
+                Dialog Actions ({(localFunction.actions || []).length})
+              </Typography>
+              <Button
+                startIcon={<AddIcon />}
+                size="small"
+                variant="outlined"
+                onClick={addDialogLine}
+              >
+                Add Line
+              </Button>
+            </Box>
+            {(localFunction.actions || []).length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No dialog actions yet. Use the button above to add actions.
+              </Typography>
+            ) : (
+              <Stack spacing={2}>
+                {(localFunction.actions || []).map((action: any, idx: number) => (
+                  <ActionCard
+                    key={idx}
+                    ref={(el) => (actionRefs.current[idx] = el)}
+                    action={action}
+                    index={idx}
+                    totalActions={(localFunction.actions || []).length}
+                    npcName={npcName}
+                    updateAction={updateAction}
+                    deleteAction={deleteAction}
+                    focusAction={focusAction}
+                    addDialogLineAfter={addDialogLineAfter}
+                    deleteActionAndFocusPrev={deleteActionAndFocusPrev}
+                    addActionAfter={addActionAfter}
+                    semanticModel={semanticModel}
+                    onUpdateFunction={onUpdateSemanticFunction}
+                  />
+                ))}
+              </Stack>
+            )}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => { setLocalFunction(targetFunction); onClose(); }}>
+          Cancel
+        </Button>
+        <Button variant="contained" onClick={handleSave} disabled={!isDirty}>
+          Save
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 export default ThreeColumnLayout;
