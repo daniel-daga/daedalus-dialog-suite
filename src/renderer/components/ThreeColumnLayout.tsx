@@ -217,20 +217,10 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                     onClick={() => {
                       setSelectedDialog(dialogName);
                       setSelectedFunctionName(infoFuncName);
-                      if (hasChoices) {
-                        setExpandedDialogs((prev) => {
-                          const newSet = new Set(prev);
-                          if (isExpanded) {
-                            newSet.delete(dialogName);
-                          } else {
-                            newSet.add(dialogName);
-                          }
-                          return newSet;
-                        });
-                      }
                     }}
+                    sx={{ pr: 1 }}
                   >
-                    {hasChoices && (
+                    {hasChoices ? (
                       <IconButton
                         size="small"
                         onClick={(e) => {
@@ -245,10 +235,12 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                             return newSet;
                           });
                         }}
-                        sx={{ mr: 0.5 }}
+                        sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }}
                       >
                         {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
                       </IconButton>
+                    ) : (
+                      <Box sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }} />
                     )}
                     <ListItemText
                       primary={dialog.properties?.description || dialogName}
