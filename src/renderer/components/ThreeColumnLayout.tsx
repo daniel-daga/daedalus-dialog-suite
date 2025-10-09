@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { Box, Paper, Typography, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Button, IconButton, Chip, Select, MenuItem, FormControl, InputLabel, Tooltip, Menu, Dialog, DialogTitle, DialogContent, DialogActions, Badge, Divider, Drawer } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon, Edit as EditIcon, Launch as LaunchIcon, ChevronRight as ChevronRightIcon, ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon, Save as SaveIcon, Info as InfoIcon, MoreVert as MoreVertIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, HelpOutline as HelpOutlineIcon, Edit as EditIcon, Launch as LaunchIcon, ChevronRight as ChevronRightIcon, ExpandMore as ExpandMoreIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 
 interface ThreeColumnLayoutProps {
@@ -596,6 +596,71 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     });
   };
 
+  const addLogSetTopicStatus = () => {
+    if (!localFunction) return;
+    const newAction = {
+      topic: 'TOPIC_NAME',
+      status: 'LOG_SUCCESS'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addCreateInventoryItems = () => {
+    if (!localFunction) return;
+    const newAction = {
+      target: 'hero',
+      item: 'ItMi_Gold',
+      quantity: 1
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addGiveInventoryItems = () => {
+    if (!localFunction) return;
+    const newAction = {
+      giver: 'self',
+      receiver: 'hero',
+      item: 'ItMi_Gold',
+      quantity: 1
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addAttackAction = () => {
+    if (!localFunction) return;
+    const newAction = {
+      attacker: 'self',
+      target: 'hero',
+      attackReason: 'ATTACK_REASON_KILL',
+      damage: 0
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
+  const addSetAttitudeAction = () => {
+    if (!localFunction) return;
+    const newAction = {
+      target: 'self',
+      attitude: 'ATT_FRIENDLY'
+    };
+    setLocalFunction({
+      ...localFunction,
+      actions: [...(localFunction.actions || []), newAction]
+    });
+  };
+
   const addCustomAction = () => {
     if (!localFunction) return;
     const newAction = {
@@ -671,6 +736,41 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           newAction = {
             topic: 'TOPIC_NAME',
             topicType: 'LOG_MISSION'
+          };
+          break;
+        case 'logSetTopicStatus':
+          newAction = {
+            topic: 'TOPIC_NAME',
+            status: 'LOG_SUCCESS'
+          };
+          break;
+        case 'createInventoryItems':
+          newAction = {
+            target: 'hero',
+            item: 'ItMi_Gold',
+            quantity: 1
+          };
+          break;
+        case 'giveInventoryItems':
+          newAction = {
+            giver: 'self',
+            receiver: 'hero',
+            item: 'ItMi_Gold',
+            quantity: 1
+          };
+          break;
+        case 'attackAction':
+          newAction = {
+            attacker: 'self',
+            target: 'hero',
+            attackReason: 'ATTACK_REASON_KILL',
+            damage: 0
+          };
+          break;
+        case 'setAttitudeAction':
+          newAction = {
+            target: 'self',
+            attitude: 'ATT_FRIENDLY'
           };
           break;
         case 'chapterTransition':
@@ -863,6 +963,21 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               <MenuItem onClick={() => { addCreateTopic(); setAddMenuAnchor(null); }}>
                 Add Create Topic
               </MenuItem>
+              <MenuItem onClick={() => { addLogSetTopicStatus(); setAddMenuAnchor(null); }}>
+                Add Log Set Status
+              </MenuItem>
+              <MenuItem onClick={() => { addCreateInventoryItems(); setAddMenuAnchor(null); }}>
+                Add Create Inventory Items
+              </MenuItem>
+              <MenuItem onClick={() => { addGiveInventoryItems(); setAddMenuAnchor(null); }}>
+                Add Give Inventory Items
+              </MenuItem>
+              <MenuItem onClick={() => { addAttackAction(); setAddMenuAnchor(null); }}>
+                Add Attack Action
+              </MenuItem>
+              <MenuItem onClick={() => { addSetAttitudeAction(); setAddMenuAnchor(null); }}>
+                Add Set Attitude
+              </MenuItem>
               <MenuItem onClick={() => { addChapterTransition(); setAddMenuAnchor(null); }}>
                 Add Chapter Transition
               </MenuItem>
@@ -1006,12 +1121,17 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   // Determine action type
   const isDialogLine = localAction.speaker !== undefined && localAction.text !== undefined && localAction.id !== undefined;
   const isChoice = localAction.dialogRef !== undefined && localAction.targetFunction !== undefined;
-  const isCreateTopic = localAction.topic !== undefined && localAction.topicType !== undefined;
+  const isCreateTopic = localAction.topic !== undefined && localAction.topicType !== undefined && !localAction.status;
   const isLogEntry = localAction.topic !== undefined && localAction.text !== undefined && !localAction.topicType;
+  const isLogSetTopicStatus = localAction.topic !== undefined && localAction.status !== undefined;
+  const isCreateInventoryItems = localAction.target !== undefined && localAction.item !== undefined && localAction.quantity !== undefined && localAction.giver === undefined && localAction.receiver === undefined;
+  const isGiveInventoryItems = localAction.giver !== undefined && localAction.receiver !== undefined && localAction.item !== undefined && localAction.quantity !== undefined;
+  const isAttackAction = localAction.attacker !== undefined && localAction.target !== undefined && localAction.attackReason !== undefined && localAction.damage !== undefined;
+  const isSetAttitudeAction = localAction.target !== undefined && localAction.attitude !== undefined && localAction.routine === undefined;
   const isChapterTransition = localAction.chapter !== undefined && localAction.world !== undefined;
-  const isExchangeRoutine = (localAction.npc !== undefined || localAction.target !== undefined) && localAction.routine !== undefined;
+  const isExchangeRoutine = (localAction.npc !== undefined || localAction.target !== undefined) && localAction.routine !== undefined && localAction.attitude === undefined;
   const isAction = localAction.action !== undefined;
-  const isUnknown = !isDialogLine && !isChoice && !isCreateTopic && !isLogEntry && !isChapterTransition && !isExchangeRoutine && !isAction;
+  const isUnknown = !isDialogLine && !isChoice && !isCreateTopic && !isLogEntry && !isLogSetTopicStatus && !isCreateInventoryItems && !isGiveInventoryItems && !isAttackAction && !isSetAttitudeAction && !isChapterTransition && !isExchangeRoutine && !isAction;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Don't process any keys if menu is open (menu will handle them)
@@ -1047,6 +1167,11 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     if (isChoice) return 'Choice';
     if (isCreateTopic) return 'Create Topic';
     if (isLogEntry) return 'Log Entry';
+    if (isLogSetTopicStatus) return 'Log Set Status';
+    if (isCreateInventoryItems) return 'Create Inventory Items';
+    if (isGiveInventoryItems) return 'Give Inventory Items';
+    if (isAttackAction) return 'Attack Action';
+    if (isSetAttitudeAction) return 'Set Attitude';
     if (isChapterTransition) return 'Chapter Transition';
     if (isExchangeRoutine) return 'Exchange Routine';
     if (isAction) return 'Action';
@@ -1058,6 +1183,11 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     if (isChoice) return <CallSplitIcon fontSize="small" />;
     if (isCreateTopic) return <LibraryBooksIcon fontSize="small" />;
     if (isLogEntry) return <DescriptionIcon fontSize="small" />;
+    if (isLogSetTopicStatus) return <DescriptionIcon fontSize="small" />;
+    if (isCreateInventoryItems) return <InventoryIcon fontSize="small" />;
+    if (isGiveInventoryItems) return <CardGiftcardIcon fontSize="small" />;
+    if (isAttackAction) return <GavelIcon fontSize="small" />;
+    if (isSetAttitudeAction) return <EmojiPeopleIcon fontSize="small" />;
     if (isChapterTransition) return <NavigationIcon fontSize="small" />;
     if (isExchangeRoutine) return <SwapHorizIcon fontSize="small" />;
     if (isAction) return <CodeIcon fontSize="small" />;
@@ -1069,6 +1199,11 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     { type: 'choice', label: 'Choice', icon: <CallSplitIcon fontSize="small" /> },
     { type: 'logEntry', label: 'Log Entry', icon: <DescriptionIcon fontSize="small" /> },
     { type: 'createTopic', label: 'Create Topic', icon: <LibraryBooksIcon fontSize="small" /> },
+    { type: 'logSetTopicStatus', label: 'Log Set Status', icon: <DescriptionIcon fontSize="small" /> },
+    { type: 'createInventoryItems', label: 'Create Inventory Items', icon: <InventoryIcon fontSize="small" /> },
+    { type: 'giveInventoryItems', label: 'Give Inventory Items', icon: <CardGiftcardIcon fontSize="small" /> },
+    { type: 'attackAction', label: 'Attack Action', icon: <GavelIcon fontSize="small" /> },
+    { type: 'setAttitudeAction', label: 'Set Attitude', icon: <EmojiPeopleIcon fontSize="small" /> },
     { type: 'chapterTransition', label: 'Chapter Transition', icon: <NavigationIcon fontSize="small" /> },
     { type: 'exchangeRoutine', label: 'Exchange Routine', icon: <SwapHorizIcon fontSize="small" /> },
     { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
@@ -1283,6 +1418,209 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
                 onChange={(e) => handleUpdate({ ...localAction, text: e.target.value })}
                 size="small"
                 inputRef={mainFieldRef}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
+          {isLogSetTopicStatus && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
+              <TextField
+                label="Topic"
+                value={localAction.topic || ''}
+                onChange={(e) => handleUpdate({ ...localAction, topic: e.target.value })}
+                size="small"
+                sx={{ minWidth: 180 }}
+                inputRef={mainFieldRef}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                fullWidth
+                label="Status"
+                value={localAction.status || ''}
+                onChange={(e) => handleUpdate({ ...localAction, status: e.target.value })}
+                size="small"
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
+          {isCreateInventoryItems && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
+              <TextField
+                label="Target"
+                value={localAction.target || ''}
+                onChange={(e) => handleUpdate({ ...localAction, target: e.target.value })}
+                size="small"
+                sx={{ width: 100 }}
+                inputRef={mainFieldRef}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Item"
+                value={localAction.item || ''}
+                onChange={(e) => handleUpdate({ ...localAction, item: e.target.value })}
+                size="small"
+                sx={{ flex: 1 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Quantity"
+                type="number"
+                value={localAction.quantity || ''}
+                onChange={(e) => handleUpdate({ ...localAction, quantity: parseInt(e.target.value) || 0 })}
+                size="small"
+                sx={{ width: 90 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
+          {isGiveInventoryItems && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
+              <TextField
+                label="Giver"
+                value={localAction.giver || ''}
+                onChange={(e) => handleUpdate({ ...localAction, giver: e.target.value })}
+                size="small"
+                sx={{ width: 80 }}
+                inputRef={mainFieldRef}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Receiver"
+                value={localAction.receiver || ''}
+                onChange={(e) => handleUpdate({ ...localAction, receiver: e.target.value })}
+                size="small"
+                sx={{ width: 90 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Item"
+                value={localAction.item || ''}
+                onChange={(e) => handleUpdate({ ...localAction, item: e.target.value })}
+                size="small"
+                sx={{ flex: 1 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Quantity"
+                type="number"
+                value={localAction.quantity || ''}
+                onChange={(e) => handleUpdate({ ...localAction, quantity: parseInt(e.target.value) || 0 })}
+                size="small"
+                sx={{ width: 90 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
+          {isAttackAction && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
+              <TextField
+                label="Attacker"
+                value={localAction.attacker || ''}
+                onChange={(e) => handleUpdate({ ...localAction, attacker: e.target.value })}
+                size="small"
+                sx={{ width: 90 }}
+                inputRef={mainFieldRef}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Target"
+                value={localAction.target || ''}
+                onChange={(e) => handleUpdate({ ...localAction, target: e.target.value })}
+                size="small"
+                sx={{ width: 80 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Reason"
+                value={localAction.attackReason || ''}
+                onChange={(e) => handleUpdate({ ...localAction, attackReason: e.target.value })}
+                size="small"
+                sx={{ flex: 1 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                label="Damage"
+                type="number"
+                value={localAction.damage || ''}
+                onChange={(e) => handleUpdate({ ...localAction, damage: parseInt(e.target.value) || 0 })}
+                size="small"
+                sx={{ width: 90 }}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
+          {isSetAttitudeAction && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title={getActionTypeLabel()} arrow>
+                <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+                  {getActionIcon()}
+                </Box>
+              </Tooltip>
+              <TextField
+                label="Target"
+                value={localAction.target || ''}
+                onChange={(e) => handleUpdate({ ...localAction, target: e.target.value })}
+                size="small"
+                sx={{ width: 120 }}
+                inputRef={mainFieldRef}
+                onBlur={flushUpdate}
+                onKeyDown={handleKeyDown}
+              />
+              <TextField
+                fullWidth
+                label="Attitude"
+                value={localAction.attitude || ''}
+                onChange={(e) => handleUpdate({ ...localAction, attitude: e.target.value })}
+                size="small"
                 onBlur={flushUpdate}
                 onKeyDown={handleKeyDown}
               />
@@ -1752,6 +2090,41 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
           newAction = {
             topic: 'TOPIC_NAME',
             topicType: 'LOG_MISSION'
+          };
+          break;
+        case 'logSetTopicStatus':
+          newAction = {
+            topic: 'TOPIC_NAME',
+            status: 'LOG_SUCCESS'
+          };
+          break;
+        case 'createInventoryItems':
+          newAction = {
+            target: 'hero',
+            item: 'ItMi_Gold',
+            quantity: 1
+          };
+          break;
+        case 'giveInventoryItems':
+          newAction = {
+            giver: 'self',
+            receiver: 'hero',
+            item: 'ItMi_Gold',
+            quantity: 1
+          };
+          break;
+        case 'attackAction':
+          newAction = {
+            attacker: 'self',
+            target: 'hero',
+            attackReason: 'ATTACK_REASON_KILL',
+            damage: 0
+          };
+          break;
+        case 'setAttitudeAction':
+          newAction = {
+            target: 'self',
+            attitude: 'ATT_FRIENDLY'
           };
           break;
         case 'chapterTransition':
