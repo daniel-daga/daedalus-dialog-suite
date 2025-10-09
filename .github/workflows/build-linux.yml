@@ -51,8 +51,10 @@ jobs:
         run: npm ci && npm run build && npm run prebuildify
 
       - name: Install dependencies
-        run: npm ci
         working-directory: dialog-editor
+        run: |
+          npm ci
+          npm install ../daedalus-parser
 
       - name: Build application
         run: npm run build && npm run package
