@@ -10,12 +10,14 @@ jobs:
     steps:
       - name: Checkout dialog editor
         uses: actions/checkout@v4
+        with:
+          path: dialog-editor
 
       - name: Checkout daedalus-parser
         uses: actions/checkout@v4
         with:
           repository: daniel-daga/daedalus-parser
-          path: ../daedalus-parser
+          path: daedalus-parser
           token: ${{ secrets.PARSER_REPO_TOKEN }}
 
       - name: Setup Node.js
@@ -24,40 +26,42 @@ jobs:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: |
-            package-lock.json
-            ../daedalus-parser/package-lock.json
+            dialog-editor/package-lock.json
+            daedalus-parser/package-lock.json
 
       - name: Cache daedalus-parser node_modules
         uses: actions/cache@v4
         with:
-          path: ../daedalus-parser/node_modules
-          key: ${{ runner.os }}-parser-${{ hashFiles('../daedalus-parser/package-lock.json') }}
+          path: daedalus-parser/node_modules
+          key: ${{ runner.os }}-parser-${{ hashFiles('daedalus-parser/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-parser-
 
       - name: Cache dialog-editor node_modules
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.os }}-editor-${{ hashFiles('package-lock.json') }}
+          path: dialog-editor/node_modules
+          key: ${{ runner.os }}-editor-${{ hashFiles('dialog-editor/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-editor-
 
       - name: Build daedalus-parser
-        working-directory: ../daedalus-parser
+        working-directory: daedalus-parser
         run: npm ci && npm run build && npm run prebuildify
 
       - name: Install dependencies
+        working-directory: dialog-editor
         run: |
           npm ci
           npm install ../daedalus-parser
 
       - name: Build application
+        working-directory: dialog-editor
         run: npm run build && npm run package
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-x64-build
-          path: dist/*.exe
+          path: dialog-editor/dist/*.exe
           retention-days: 30
