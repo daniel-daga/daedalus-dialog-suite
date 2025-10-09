@@ -22,6 +22,24 @@
   ],
   "author": "",
   "license": "MIT",
+  "build": {
+    "appId": "com.gothicmodding.daedalusdialog",
+    "productName": "Daedalus Dialog Editor",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
   "dependencies": {
     "@mui/icons-material": "^5.18.0",
     "@tanstack/react-query": "^5.28.4",
