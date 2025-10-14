@@ -1,7 +1,6 @@
 import React from 'react';
-import { Box, TextField, IconButton } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
+import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -12,30 +11,27 @@ const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <TextField
+    <ActionFieldContainer>
+      <ActionTextField
         label="Target"
         value={action.target || ''}
-        onChange={(e) => handleUpdate({ ...action, target: e.target.value })}
-        size="small"
-        sx={{ width: 120 }}
-        inputRef={mainFieldRef}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, target: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        isMainField
+        mainFieldRef={mainFieldRef}
+        sx={{ width: 120 }}
       />
-      <TextField
+      <ActionTextField
         fullWidth
         label="Attitude"
         value={action.attitude || ''}
-        onChange={(e) => handleUpdate({ ...action, attitude: e.target.value })}
-        size="small"
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, attitude: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
       />
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Box>
+      <ActionDeleteButton onClick={handleDelete} />
+    </ActionFieldContainer>
   );
 };
 

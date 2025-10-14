@@ -1,7 +1,6 @@
 import React from 'react';
-import { Box, TextField, IconButton } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
+import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 const CustomActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -12,23 +11,21 @@ const CustomActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-      <TextField
+    <ActionFieldContainer alignItems="flex-start">
+      <ActionTextField
         fullWidth
         label="Action"
         value={action.action || ''}
-        onChange={(e) => handleUpdate({ ...action, action: e.target.value })}
-        size="small"
+        onChange={(value) => handleUpdate({ ...action, action: value })}
+        onFlush={flushUpdate}
+        onKeyDown={handleKeyDown}
+        isMainField
+        mainFieldRef={mainFieldRef}
         multiline
         rows={2}
-        inputRef={mainFieldRef}
-        onBlur={flushUpdate}
-        onKeyDown={handleKeyDown}
       />
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0, mt: 0.5 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Box>
+      <ActionDeleteButton onClick={handleDelete} marginTop={0.5} />
+    </ActionFieldContainer>
   );
 };
 

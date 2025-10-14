@@ -1,7 +1,6 @@
 import React from 'react';
-import { Box, TextField, IconButton } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
+import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -12,49 +11,44 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <TextField
+    <ActionFieldContainer>
+      <ActionTextField
         label="Giver"
         value={action.giver || ''}
-        onChange={(e) => handleUpdate({ ...action, giver: e.target.value })}
-        size="small"
-        sx={{ width: 80 }}
-        inputRef={mainFieldRef}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, giver: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        isMainField
+        mainFieldRef={mainFieldRef}
+        sx={{ width: 80 }}
       />
-      <TextField
+      <ActionTextField
         label="Receiver"
         value={action.receiver || ''}
-        onChange={(e) => handleUpdate({ ...action, receiver: e.target.value })}
-        size="small"
-        sx={{ width: 90 }}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, receiver: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        sx={{ width: 90 }}
       />
-      <TextField
+      <ActionTextField
         label="Item"
         value={action.item || ''}
-        onChange={(e) => handleUpdate({ ...action, item: e.target.value })}
-        size="small"
-        sx={{ flex: 1 }}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, item: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        sx={{ flex: 1 }}
       />
-      <TextField
+      <ActionTextField
         label="Quantity"
         type="number"
         value={action.quantity || ''}
-        onChange={(e) => handleUpdate({ ...action, quantity: parseInt(e.target.value) || 0 })}
-        size="small"
-        sx={{ width: 90 }}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, quantity: parseInt(value) || 0 })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        sx={{ width: 90 }}
       />
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Box>
+      <ActionDeleteButton onClick={handleDelete} />
+    </ActionFieldContainer>
   );
 };
 

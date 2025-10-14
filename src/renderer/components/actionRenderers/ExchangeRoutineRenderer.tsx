@@ -1,7 +1,6 @@
 import React from 'react';
-import { Box, TextField, IconButton } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
+import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -12,40 +11,37 @@ const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <TextField
+    <ActionFieldContainer>
+      <ActionTextField
         label="Target NPC"
         value={action.target || action.npc || ''}
-        onChange={(e) => {
-          const updated = { ...action, routine: action.routine };
+        onChange={(value) => {
+          const updated: any = { ...action, routine: action.routine };
           if (action.target !== undefined) {
-            updated.target = e.target.value;
+            updated.target = value;
             delete updated.npc;
           } else {
-            updated.npc = e.target.value;
+            updated.npc = value;
             delete updated.target;
           }
           handleUpdate(updated);
         }}
-        size="small"
-        sx={{ width: 120 }}
-        inputRef={mainFieldRef}
-        onBlur={flushUpdate}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        isMainField
+        mainFieldRef={mainFieldRef}
+        sx={{ width: 120 }}
       />
-      <TextField
+      <ActionTextField
         fullWidth
         label="Routine"
         value={action.routine || ''}
-        onChange={(e) => handleUpdate({ ...action, routine: e.target.value })}
-        size="small"
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, routine: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
       />
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Box>
+      <ActionDeleteButton onClick={handleDelete} />
+    </ActionFieldContainer>
   );
 };
 

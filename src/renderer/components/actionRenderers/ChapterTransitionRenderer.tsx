@@ -1,7 +1,6 @@
 import React from 'react';
-import { Box, TextField, IconButton } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
+import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 const ChapterTransitionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -12,31 +11,28 @@ const ChapterTransitionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <TextField
+    <ActionFieldContainer>
+      <ActionTextField
         label="Chapter"
         type="number"
         value={action.chapter || ''}
-        onChange={(e) => handleUpdate({ ...action, chapter: parseInt(e.target.value) || 0 })}
-        size="small"
-        sx={{ width: 100 }}
-        inputRef={mainFieldRef}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, chapter: parseInt(value) || 0 })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        isMainField
+        mainFieldRef={mainFieldRef}
+        sx={{ width: 100 }}
       />
-      <TextField
+      <ActionTextField
         fullWidth
         label="World"
         value={action.world || ''}
-        onChange={(e) => handleUpdate({ ...action, world: e.target.value })}
-        size="small"
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, world: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
       />
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Box>
+      <ActionDeleteButton onClick={handleDelete} />
+    </ActionFieldContainer>
   );
 };
 

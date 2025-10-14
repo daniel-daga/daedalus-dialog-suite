@@ -1,7 +1,6 @@
 import React from 'react';
-import { Box, TextField, IconButton } from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
+import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -12,30 +11,27 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <TextField
+    <ActionFieldContainer>
+      <ActionTextField
         label="Topic"
         value={action.topic || ''}
-        onChange={(e) => handleUpdate({ ...action, topic: e.target.value })}
-        size="small"
-        sx={{ minWidth: 180 }}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, topic: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        sx={{ minWidth: 180 }}
       />
-      <TextField
+      <ActionTextField
         fullWidth
         label="Text"
         value={action.text || ''}
-        onChange={(e) => handleUpdate({ ...action, text: e.target.value })}
-        size="small"
-        inputRef={mainFieldRef}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, text: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        isMainField
+        mainFieldRef={mainFieldRef}
       />
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Box>
+      <ActionDeleteButton onClick={handleDelete} />
+    </ActionFieldContainer>
   );
 };
 
