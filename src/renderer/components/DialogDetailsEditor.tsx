@@ -5,6 +5,8 @@ import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ActionCard from './ActionCard';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
+import { createAction, createActionAfterIndex } from './actionFactory';
+import type { ActionTypeId } from './actionTypes';
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
@@ -149,171 +151,46 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     setTimeout(() => focusAction(index + 1, true), 0);
   }, [focusAction]);
 
-  const addDialogLine = () => {
+  // Unified function to add any type of action at the end
+  const addActionToEnd = useCallback((actionType: ActionTypeId) => {
     if (!localFunction) return;
-    const newAction = {
-      speaker: 'other',
-      text: 'New dialog line',
-      id: 'NEW_LINE_ID'
-    };
+
+    let newAction: any;
+
+    // Handle choice specially to create target function
+    if (actionType === 'choice' && fileState) {
+      const newFunctionName = generateUniqueChoiceFunctionName(dialogName, fileState.semanticModel);
+      const newFunction = createEmptyFunction(newFunctionName);
+
+      // Add the new function to the semantic model
+      const updatedModel = {
+        ...fileState.semanticModel,
+        functions: {
+          ...fileState.semanticModel.functions,
+          [newFunctionName]: newFunction
+        }
+      };
+      updateModel(filePath, updatedModel);
+
+      // Create choice with target function
+      newAction = createAction('choice', {
+        dialogName,
+        currentAction: undefined
+      });
+      newAction.targetFunction = newFunctionName;
+    } else {
+      // Use factory for all other action types
+      newAction = createAction(actionType, {
+        dialogName,
+        currentAction: undefined
+      });
+    }
+
     setLocalFunction({
       ...localFunction,
       actions: [...(localFunction.actions || []), newAction]
     });
-  };
-
-  const addChoice = () => {
-    if (!localFunction || !fileState) return;
-
-    // Generate unique function name and create the function
-    const newFunctionName = generateUniqueChoiceFunctionName(dialogName, fileState.semanticModel);
-    const newFunction = createEmptyFunction(newFunctionName);
-
-    // Add the new function to the semantic model
-    const updatedModel = {
-      ...fileState.semanticModel,
-      functions: {
-        ...fileState.semanticModel.functions,
-        [newFunctionName]: newFunction
-      }
-    };
-    updateModel(filePath, updatedModel);
-
-    // Create the choice action pointing to the new function
-    const newAction = {
-      dialogRef: dialogName,
-      text: '',
-      targetFunction: newFunctionName
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addLogEntry = () => {
-    if (!localFunction) return;
-    const newAction = {
-      topic: 'TOPIC_NAME',
-      text: 'New log entry'
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addCreateTopic = () => {
-    if (!localFunction) return;
-    const newAction = {
-      topic: 'TOPIC_NAME',
-      topicType: 'LOG_MISSION'
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addChapterTransition = () => {
-    if (!localFunction) return;
-    const newAction = {
-      chapter: 1,
-      world: 'NEWWORLD_ZEN'
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addExchangeRoutine = () => {
-    if (!localFunction) return;
-    const newAction = {
-      target: 'self',
-      routine: 'START'
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addLogSetTopicStatus = () => {
-    if (!localFunction) return;
-    const newAction = {
-      topic: 'TOPIC_NAME',
-      status: 'LOG_SUCCESS'
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addCreateInventoryItems = () => {
-    if (!localFunction) return;
-    const newAction = {
-      target: 'hero',
-      item: 'ItMi_Gold',
-      quantity: 1
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addGiveInventoryItems = () => {
-    if (!localFunction) return;
-    const newAction = {
-      giver: 'self',
-      receiver: 'hero',
-      item: 'ItMi_Gold',
-      quantity: 1
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addAttackAction = () => {
-    if (!localFunction) return;
-    const newAction = {
-      attacker: 'self',
-      target: 'hero',
-      attackReason: 'ATTACK_REASON_KILL',
-      damage: 0
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addSetAttitudeAction = () => {
-    if (!localFunction) return;
-    const newAction = {
-      target: 'self',
-      attitude: 'ATT_FRIENDLY'
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
-
-  const addCustomAction = () => {
-    if (!localFunction) return;
-    const newAction = {
-      action: 'AI_StopProcessInfos(self)'
-    };
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  };
+  }, [localFunction, fileState, dialogName, filePath, updateModel]);
 
   const addActionAfter = useCallback((index: number, actionType: string) => {
     // Handle choice creation specially to generate target function
@@ -331,14 +208,11 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       };
       updateModel(filePath, updatedModel);
 
-      // Now add the choice action
+      // Now add the choice action using factory
       setLocalFunction((prev) => {
         if (!prev) return prev;
-        const newAction = {
-          dialogRef: dialogName,
-          text: '',
-          targetFunction: newFunctionName
-        };
+        const newAction = createAction('choice', { dialogName });
+        newAction.targetFunction = newFunctionName;
         const newActions = [...(prev.actions || [])];
         newActions.splice(index + 1, 0, newAction);
         return { ...prev, actions: newActions };
@@ -347,96 +221,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       return;
     }
 
+    // Use factory for all other action types
     setLocalFunction((prev) => {
       if (!prev) return prev;
-      const currentAction = (prev.actions || [])[index];
-
-      let newAction: any;
-      switch (actionType) {
-        case 'dialogLine':
-          const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
-          newAction = {
-            speaker: oppositeSpeaker,
-            text: '',
-            id: 'NEW_LINE_ID'
-          };
-          break;
-        case 'choice':
-          // This case should not be reached due to the early return above
-          newAction = {
-            dialogRef: dialogName,
-            text: '',
-            targetFunction: ''
-          };
-          break;
-        case 'logEntry':
-          newAction = {
-            topic: 'TOPIC_NAME',
-            text: ''
-          };
-          break;
-        case 'createTopic':
-          newAction = {
-            topic: 'TOPIC_NAME',
-            topicType: 'LOG_MISSION'
-          };
-          break;
-        case 'logSetTopicStatus':
-          newAction = {
-            topic: 'TOPIC_NAME',
-            status: 'LOG_SUCCESS'
-          };
-          break;
-        case 'createInventoryItems':
-          newAction = {
-            target: 'hero',
-            item: 'ItMi_Gold',
-            quantity: 1
-          };
-          break;
-        case 'giveInventoryItems':
-          newAction = {
-            giver: 'self',
-            receiver: 'hero',
-            item: 'ItMi_Gold',
-            quantity: 1
-          };
-          break;
-        case 'attackAction':
-          newAction = {
-            attacker: 'self',
-            target: 'hero',
-            attackReason: 'ATTACK_REASON_KILL',
-            damage: 0
-          };
-          break;
-        case 'setAttitudeAction':
-          newAction = {
-            target: 'self',
-            attitude: 'ATT_FRIENDLY'
-          };
-          break;
-        case 'chapterTransition':
-          newAction = {
-            chapter: 1,
-            world: 'NEWWORLD_ZEN'
-          };
-          break;
-        case 'exchangeRoutine':
-          newAction = {
-            target: 'self',
-            routine: 'START'
-          };
-          break;
-        case 'customAction':
-          newAction = {
-            action: 'AI_StopProcessInfos(self)'
-          };
-          break;
-        default:
-          return prev;
-      }
-
+      const newAction = createActionAfterIndex(
+        actionType as ActionTypeId,
+        index,
+        prev.actions || [],
+        dialogName
+      );
       const newActions = [...(prev.actions || [])];
       newActions.splice(index + 1, 0, newAction);
       return { ...prev, actions: newActions };
@@ -576,7 +369,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               startIcon={<AddIcon />}
               size="small"
               variant="outlined"
-              onClick={addDialogLine}
+              onClick={() => addActionToEnd('dialogLine')}
             >
               Add Line
             </Button>
@@ -584,7 +377,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               startIcon={<AddIcon />}
               size="small"
               variant="outlined"
-              onClick={addChoice}
+              onClick={() => addActionToEnd('choice')}
             >
               Add Choice
             </Button>
@@ -600,34 +393,34 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               open={Boolean(addMenuAnchor)}
               onClose={() => setAddMenuAnchor(null)}
             >
-              <MenuItem onClick={() => { addLogEntry(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('logEntry'); setAddMenuAnchor(null); }}>
                 Add Log Entry
               </MenuItem>
-              <MenuItem onClick={() => { addCreateTopic(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('createTopic'); setAddMenuAnchor(null); }}>
                 Add Create Topic
               </MenuItem>
-              <MenuItem onClick={() => { addLogSetTopicStatus(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('logSetTopicStatus'); setAddMenuAnchor(null); }}>
                 Add Log Set Status
               </MenuItem>
-              <MenuItem onClick={() => { addCreateInventoryItems(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('createInventoryItems'); setAddMenuAnchor(null); }}>
                 Add Create Inventory Items
               </MenuItem>
-              <MenuItem onClick={() => { addGiveInventoryItems(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('giveInventoryItems'); setAddMenuAnchor(null); }}>
                 Add Give Inventory Items
               </MenuItem>
-              <MenuItem onClick={() => { addAttackAction(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('attackAction'); setAddMenuAnchor(null); }}>
                 Add Attack Action
               </MenuItem>
-              <MenuItem onClick={() => { addSetAttitudeAction(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('setAttitudeAction'); setAddMenuAnchor(null); }}>
                 Add Set Attitude
               </MenuItem>
-              <MenuItem onClick={() => { addChapterTransition(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('chapterTransition'); setAddMenuAnchor(null); }}>
                 Add Chapter Transition
               </MenuItem>
-              <MenuItem onClick={() => { addExchangeRoutine(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('exchangeRoutine'); setAddMenuAnchor(null); }}>
                 Add Exchange Routine
               </MenuItem>
-              <MenuItem onClick={() => { addCustomAction(); setAddMenuAnchor(null); }}>
+              <MenuItem onClick={() => { addActionToEnd('customAction'); setAddMenuAnchor(null); }}>
                 Add Custom Action
               </MenuItem>
             </Menu>
@@ -655,7 +448,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 deleteActionAndFocusPrev={deleteActionAndFocusPrev}
                 addActionAfter={addActionAfter}
                 semanticModel={fileState?.semanticModel}
-                onUpdateFunction={handleUpdateTargetFunction}
                 onNavigateToFunction={onNavigateToFunction}
                 onRenameFunction={handleRenameFunction}
                 dialogContextName={dialogName}

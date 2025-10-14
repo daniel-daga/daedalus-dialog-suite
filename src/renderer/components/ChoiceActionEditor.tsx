@@ -4,6 +4,8 @@ import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRi
 import { ChoiceActionEditorProps } from './dialogTypes';
 import ActionCard from './ActionCard';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
+import { createAction, createActionAfterIndex } from './actionFactory';
+import type { ActionTypeId } from './actionTypes';
 
 const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
   open,
@@ -156,15 +158,12 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
       // Expand the current node to show the new choice
       setExpandedNodes((prev) => new Set([...prev, currentFunctionName]));
 
-      // Now add the choice action
+      // Now add the choice action using factory
       setLocalFunctions((prev) => {
         const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
         if (!func) return prev;
-        const newAction = {
-          dialogRef: currentFunctionName, // Reference to the current function
-          text: '',
-          targetFunction: newFunctionName
-        };
+        const newAction = createAction('choice', { dialogName: currentFunctionName });
+        newAction.targetFunction = newFunctionName;
         const newActions = [...(func.actions || [])];
         newActions.splice(index + 1, 0, newAction);
         return {
@@ -176,97 +175,16 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
       return;
     }
 
+    // Use factory for all other action types
     setLocalFunctions((prev) => {
       const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
       if (!func) return prev;
-      const currentAction = (func.actions || [])[index];
-
-      let newAction: any;
-      switch (actionType) {
-        case 'dialogLine':
-          const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
-          newAction = {
-            speaker: oppositeSpeaker,
-            text: '',
-            id: 'NEW_LINE_ID'
-          };
-          break;
-        case 'choice':
-          // This case should not be reached due to the early return above
-          newAction = {
-            dialogRef: currentFunctionName,
-            text: '',
-            targetFunction: ''
-          };
-          break;
-        case 'logEntry':
-          newAction = {
-            topic: 'TOPIC_NAME',
-            text: ''
-          };
-          break;
-        case 'createTopic':
-          newAction = {
-            topic: 'TOPIC_NAME',
-            topicType: 'LOG_MISSION'
-          };
-          break;
-        case 'logSetTopicStatus':
-          newAction = {
-            topic: 'TOPIC_NAME',
-            status: 'LOG_SUCCESS'
-          };
-          break;
-        case 'createInventoryItems':
-          newAction = {
-            target: 'hero',
-            item: 'ItMi_Gold',
-            quantity: 1
-          };
-          break;
-        case 'giveInventoryItems':
-          newAction = {
-            giver: 'self',
-            receiver: 'hero',
-            item: 'ItMi_Gold',
-            quantity: 1
-          };
-          break;
-        case 'attackAction':
-          newAction = {
-            attacker: 'self',
-            target: 'hero',
-            attackReason: 'ATTACK_REASON_KILL',
-            damage: 0
-          };
-          break;
-        case 'setAttitudeAction':
-          newAction = {
-            target: 'self',
-            attitude: 'ATT_FRIENDLY'
-          };
-          break;
-        case 'chapterTransition':
-          newAction = {
-            chapter: 1,
-            world: 'NEWWORLD_ZEN'
-          };
-          break;
-        case 'exchangeRoutine':
-          newAction = {
-            target: 'self',
-            routine: 'START'
-          };
-          break;
-        case 'customAction':
-          newAction = {
-            action: 'AI_StopProcessInfos(self)'
-          };
-          break;
-        default:
-          return prev;
-      }
-
+      const newAction = createActionAfterIndex(
+        actionType as ActionTypeId,
+        index,
+        func.actions || [],
+        currentFunctionName
+      );
       const newActions = [...(func.actions || [])];
       newActions.splice(index + 1, 0, newAction);
       return {
@@ -279,11 +197,10 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
 
   const addDialogLine = () => {
     if (!currentFunction) return;
-    const newAction = {
-      speaker: 'other',
-      text: 'New dialog line',
-      id: 'NEW_LINE_ID'
-    };
+    const newAction = createAction('dialogLine', {
+      dialogName: currentFunctionName,
+      currentAction: undefined
+    });
     setLocalFunctions((prev) => ({
       ...prev,
       [currentFunctionName]: {
@@ -432,12 +349,6 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
                       deleteActionAndFocusPrev={deleteActionAndFocusPrev}
                       addActionAfter={addActionAfter}
                       semanticModel={semanticModel}
-                      onUpdateFunction={(funcName, func) => {
-                        setLocalFunctions((prev) => ({
-                          ...prev,
-                          [funcName]: func
-                        }));
-                      }}
                       onNavigateToFunction={(funcName) => {
                         setCurrentFunctionName(funcName);
                         setExpandedNodes((prev) => new Set([...prev, funcName]));

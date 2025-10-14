@@ -1,0 +1,94 @@
+/**
+ * Default templates for creating new actions
+ * Centralizes all default values in one place
+ */
+
+import type {
+  DialogLineAction,
+  ChoiceAction,
+  LogEntryAction,
+  CreateTopicAction,
+  LogSetTopicStatusAction,
+  CreateInventoryItemsAction,
+  GiveInventoryItemsAction,
+  AttackAction,
+  SetAttitudeAction,
+  ChapterTransitionAction,
+  ExchangeRoutineAction,
+  CustomAction
+} from './actionTypes';
+
+export const ACTION_TEMPLATES = {
+  dialogLine: (speaker: 'self' | 'other' = 'other', text: string = ''): DialogLineAction => ({
+    speaker,
+    text,
+    id: 'NEW_LINE_ID'
+  }),
+
+  choice: (dialogRef: string, text: string = '', targetFunction: string = ''): ChoiceAction => ({
+    dialogRef,
+    text,
+    targetFunction
+  }),
+
+  logEntry: (topic: string = 'TOPIC_NAME', text: string = ''): LogEntryAction => ({
+    topic,
+    text
+  }),
+
+  createTopic: (topic: string = 'TOPIC_NAME', topicType: string = 'LOG_MISSION'): CreateTopicAction => ({
+    topic,
+    topicType
+  }),
+
+  logSetTopicStatus: (topic: string = 'TOPIC_NAME', status: string = 'LOG_SUCCESS'): LogSetTopicStatusAction => ({
+    topic,
+    status
+  }),
+
+  createInventoryItems: (target: string = 'hero', item: string = 'ItMi_Gold', quantity: number = 1): CreateInventoryItemsAction => ({
+    target,
+    item,
+    quantity
+  }),
+
+  giveInventoryItems: (giver: string = 'self', receiver: string = 'hero', item: string = 'ItMi_Gold', quantity: number = 1): GiveInventoryItemsAction => ({
+    giver,
+    receiver,
+    item,
+    quantity
+  }),
+
+  attackAction: (attacker: string = 'self', target: string = 'hero', attackReason: string = 'ATTACK_REASON_KILL', damage: number = 0): AttackAction => ({
+    attacker,
+    target,
+    attackReason,
+    damage
+  }),
+
+  setAttitudeAction: (target: string = 'self', attitude: string = 'ATT_FRIENDLY'): SetAttitudeAction => ({
+    target,
+    attitude
+  }),
+
+  chapterTransition: (chapter: number = 1, world: string = 'NEWWORLD_ZEN'): ChapterTransitionAction => ({
+    chapter,
+    world
+  }),
+
+  exchangeRoutine: (target: string = 'self', routine: string = 'START'): ExchangeRoutineAction => ({
+    target,
+    routine
+  }),
+
+  customAction: (action: string = 'AI_StopProcessInfos(self)'): CustomAction => ({
+    action
+  })
+};
+
+/**
+ * Get the opposite speaker for dialog lines
+ */
+export function getOppositeSpeaker(speaker: 'self' | 'other'): 'self' | 'other' {
+  return speaker === 'self' ? 'other' : 'self';
+}

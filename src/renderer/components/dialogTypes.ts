@@ -14,7 +14,6 @@ export interface ActionCardProps {
   deleteActionAndFocusPrev: (index: number) => void;
   addActionAfter: (index: number, actionType: string) => void;
   semanticModel?: any;
-  onUpdateFunction?: (functionName: string, func: any) => void;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName?: string; // The dialog/function name for validation prefix

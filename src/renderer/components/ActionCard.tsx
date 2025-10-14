@@ -4,7 +4,7 @@ import { Add as AddIcon, Delete as DeleteIcon, Info as InfoIcon, Chat as ChatIco
 import { ActionCardProps } from './dialogTypes';
 import { validateChoiceFunctionName } from './dialogUtils';
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter, semanticModel, onUpdateFunction, onNavigateToFunction, onRenameFunction, dialogContextName }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -299,23 +299,23 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
               />
               {semanticModel && localAction.targetFunction && semanticModel.functions && semanticModel.functions[localAction.targetFunction] && onNavigateToFunction && (
                 <Tooltip title="Edit choice actions" arrow>
-                  <IconButton
-                    size="small"
-                    color="primary"
-                    onClick={() => {
-                      flushUpdate();
-                      onNavigateToFunction(localAction.targetFunction);
-                    }}
-                    sx={{ flexShrink: 0 }}
+                  <Badge
+                    badgeContent={semanticModel.functions[localAction.targetFunction]?.actions?.length || 0}
+                    color="secondary"
+                    sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', height: '16px', minWidth: '16px' } }}
                   >
-                    <Badge
-                      badgeContent={semanticModel.functions[localAction.targetFunction]?.actions?.length || 0}
-                      color="secondary"
-                      sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', height: '16px', minWidth: '16px' } }}
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => {
+                        flushUpdate();
+                        onNavigateToFunction(localAction.targetFunction);
+                      }}
+                      sx={{ flexShrink: 0 }}
                     >
                       <EditIcon fontSize="small" />
-                    </Badge>
-                  </IconButton>
+                    </IconButton>
+                  </Badge>
                 </Tooltip>
               )}
               <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
