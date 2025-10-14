@@ -1,12 +1,14 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Chip, Menu, MenuItem } from '@mui/material';
 import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ActionCard from './ActionCard';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
-import { createAction, createActionAfterIndex } from './actionFactory';
+import { createAction } from './actionFactory';
 import type { ActionTypeId } from './actionTypes';
+import { useFocusNavigation } from './hooks/useFocusNavigation';
+import { useActionManagement } from './hooks/useActionManagement';
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
@@ -21,21 +23,37 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const [localFunction, setLocalFunction] = useState(infoFunction);
   const { openFiles, saveFile, updateModel } = useEditorStore();
   const fileState = openFiles.get(filePath);
-  const actionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [propertiesExpanded, setPropertiesExpanded] = useState(true);
 
-  const handleUpdateTargetFunction = useCallback((functionName: string, updatedFunc: any) => {
+  // Use custom hooks for focus navigation and action management
+  const { actionRefs, focusAction } = useFocusNavigation();
+
+  const handleUpdateSemanticModel = useCallback((functionName: string, func: any) => {
     if (fileState) {
       const updatedModel = {
         ...fileState.semanticModel,
         functions: {
           ...fileState.semanticModel.functions,
-          [functionName]: updatedFunc
+          [functionName]: func
         }
       };
       updateModel(filePath, updatedModel);
     }
   }, [fileState, filePath, updateModel]);
+
+  const {
+    updateAction,
+    deleteAction,
+    deleteActionAndFocusPrev,
+    addDialogLineAfter,
+    addActionAfter
+  } = useActionManagement({
+    setFunction: setLocalFunction,
+    focusAction,
+    semanticModel: fileState?.semanticModel,
+    onUpdateSemanticModel: handleUpdateSemanticModel,
+    contextName: dialogName
+  });
 
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
     if (!fileState) return;
@@ -68,19 +86,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     setLocalFunction(infoFunction);
   }, [dialogName, dialog, infoFunction]);
 
-  const focusAction = useCallback((index: number, scrollIntoView = false) => {
-    const ref = actionRefs.current[index];
-    if (ref) {
-      ref.focus();
-      // Scroll the element into view smoothly if requested
-      if (scrollIntoView) {
-        requestAnimationFrame(() => {
-          ref.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-        });
-      }
-    }
-  }, []);
-
   const handleSave = () => {
     // Normalize dialog properties to use string references for functions
     const normalizedDialog = {
@@ -102,55 +107,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     }
   };
 
-  const updateAction = useCallback((index: number, updatedAction: any) => {
-    setLocalFunction((prev) => {
-      if (!prev) return prev;
-      const newActions = [...(prev.actions || [])];
-      newActions[index] = updatedAction;
-      return { ...prev, actions: newActions };
-    });
-  }, []);
-
-  const deleteAction = useCallback((index: number) => {
-    setLocalFunction((prev) => {
-      if (!prev) return prev;
-      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
-      return { ...prev, actions: newActions };
-    });
-  }, []);
-
-  const deleteActionAndFocusPrev = useCallback((index: number) => {
-    setLocalFunction((prev) => {
-      if (!prev) return prev;
-      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
-      return { ...prev, actions: newActions };
-    });
-    // Focus the previous action after state update
-    const prevIdx = index - 1;
-    if (prevIdx >= 0) {
-      setTimeout(() => focusAction(prevIdx), 0);
-    }
-  }, [focusAction]);
-
-  const addDialogLineAfter = useCallback((index: number) => {
-    setLocalFunction((prev) => {
-      if (!prev) return prev;
-      const currentAction = (prev.actions || [])[index];
-      // Toggle speaker: if current is 'self', new is 'other', and vice versa
-      const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
-      const newAction = {
-        speaker: oppositeSpeaker,
-        text: '',
-        id: 'NEW_LINE_ID'
-      };
-      const newActions = [...(prev.actions || [])];
-      newActions.splice(index + 1, 0, newAction);
-      return { ...prev, actions: newActions };
-    });
-    // Focus the new action after state update with smooth scroll
-    setTimeout(() => focusAction(index + 1, true), 0);
-  }, [focusAction]);
-
   // Unified function to add any type of action at the end
   const addActionToEnd = useCallback((actionType: ActionTypeId) => {
     if (!localFunction) return;
@@ -163,14 +119,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       const newFunction = createEmptyFunction(newFunctionName);
 
       // Add the new function to the semantic model
-      const updatedModel = {
-        ...fileState.semanticModel,
-        functions: {
-          ...fileState.semanticModel.functions,
-          [newFunctionName]: newFunction
-        }
-      };
-      updateModel(filePath, updatedModel);
+      handleUpdateSemanticModel(newFunctionName, newFunction);
 
       // Create choice with target function
       newAction = createAction('choice', {
@@ -190,53 +139,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       ...localFunction,
       actions: [...(localFunction.actions || []), newAction]
     });
-  }, [localFunction, fileState, dialogName, filePath, updateModel]);
-
-  const addActionAfter = useCallback((index: number, actionType: string) => {
-    // Handle choice creation specially to generate target function
-    if (actionType === 'choice' && fileState) {
-      const newFunctionName = generateUniqueChoiceFunctionName(dialogName, fileState.semanticModel);
-      const newFunction = createEmptyFunction(newFunctionName);
-
-      // Add the new function to the semantic model
-      const updatedModel = {
-        ...fileState.semanticModel,
-        functions: {
-          ...fileState.semanticModel.functions,
-          [newFunctionName]: newFunction
-        }
-      };
-      updateModel(filePath, updatedModel);
-
-      // Now add the choice action using factory
-      setLocalFunction((prev) => {
-        if (!prev) return prev;
-        const newAction = createAction('choice', { dialogName });
-        newAction.targetFunction = newFunctionName;
-        const newActions = [...(prev.actions || [])];
-        newActions.splice(index + 1, 0, newAction);
-        return { ...prev, actions: newActions };
-      });
-      setTimeout(() => focusAction(index + 1, true), 0);
-      return;
-    }
-
-    // Use factory for all other action types
-    setLocalFunction((prev) => {
-      if (!prev) return prev;
-      const newAction = createActionAfterIndex(
-        actionType as ActionTypeId,
-        index,
-        prev.actions || [],
-        dialogName
-      );
-      const newActions = [...(prev.actions || [])];
-      newActions.splice(index + 1, 0, newAction);
-      return { ...prev, actions: newActions };
-    });
-    // Focus the new action after state update with smooth scroll
-    setTimeout(() => focusAction(index + 1, true), 0);
-  }, [dialogName, focusAction, fileState, filePath, updateModel]);
+  }, [localFunction, fileState, dialogName, handleUpdateSemanticModel]);
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 

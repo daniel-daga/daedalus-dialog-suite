@@ -1,11 +1,11 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, List, ListItemButton, ListItemText, IconButton, Chip, Divider, Stack } from '@mui/material';
 import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { ChoiceActionEditorProps } from './dialogTypes';
 import ActionCard from './ActionCard';
-import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
-import { createAction, createActionAfterIndex } from './actionFactory';
-import type { ActionTypeId } from './actionTypes';
+import { createAction } from './actionFactory';
+import { useFocusNavigation } from './hooks/useFocusNavigation';
+import { useActionManagement } from './hooks/useActionManagement';
 
 const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
   open,
@@ -20,8 +20,34 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
   // Navigation state - which function we're currently viewing/editing
   const [currentFunctionName, setCurrentFunctionName] = useState(targetFunctionName);
   const [localFunctions, setLocalFunctions] = useState<{[key: string]: any}>({});
-  const actionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set([targetFunctionName]));
+
+  // Use custom hooks for focus navigation and action management
+  const { actionRefs, focusAction } = useFocusNavigation();
+
+  const {
+    updateAction,
+    deleteAction,
+    deleteActionAndFocusPrev,
+    addDialogLineAfter,
+    addActionAfter: addActionAfterBase
+  } = useActionManagement({
+    setFunction: setLocalFunctions,
+    focusAction,
+    semanticModel,
+    onUpdateSemanticModel: onUpdateSemanticFunction,
+    contextName: currentFunctionName,
+    functionNameKey: currentFunctionName
+  });
+
+  // Wrapper to expand nodes when adding choices
+  const addActionAfter = useCallback((index: number, actionType: string) => {
+    if (actionType === 'choice') {
+      // Expand the current node to show the new choice
+      setExpandedNodes((prev) => new Set([...prev, currentFunctionName]));
+    }
+    addActionAfterBase(index, actionType);
+  }, [addActionAfterBase, currentFunctionName]);
 
   // Initialize local functions state
   React.useEffect(() => {
@@ -34,18 +60,6 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
 
   // Get current function being edited
   const currentFunction = localFunctions[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
-
-  const focusAction = useCallback((index: number, scrollIntoView = false) => {
-    const ref = actionRefs.current[index];
-    if (ref) {
-      ref.focus();
-      if (scrollIntoView) {
-        requestAnimationFrame(() => {
-          ref.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-        });
-      }
-    }
-  }, []);
 
   const handleSave = () => {
     // Save all modified functions
@@ -79,121 +93,6 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
     // Update semantic model immediately
     onUpdateSemanticFunction(newName, { ...(localFunctions[oldName] || semanticModel?.functions?.[oldName]), name: newName });
   }, [currentFunctionName, localFunctions, semanticModel, onUpdateSemanticFunction]);
-
-  const updateAction = useCallback((index: number, updatedAction: any) => {
-    setLocalFunctions((prev) => {
-      const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
-      if (!func) return prev;
-      const newActions = [...(func.actions || [])];
-      newActions[index] = updatedAction;
-      return {
-        ...prev,
-        [currentFunctionName]: { ...func, actions: newActions }
-      };
-    });
-  }, [currentFunctionName, semanticModel]);
-
-  const deleteAction = useCallback((index: number) => {
-    setLocalFunctions((prev) => {
-      const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
-      if (!func) return prev;
-      const newActions = (func.actions || []).filter((_: any, i: number) => i !== index);
-      return {
-        ...prev,
-        [currentFunctionName]: { ...func, actions: newActions }
-      };
-    });
-  }, [currentFunctionName, semanticModel]);
-
-  const deleteActionAndFocusPrev = useCallback((index: number) => {
-    setLocalFunctions((prev) => {
-      const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
-      if (!func) return prev;
-      const newActions = (func.actions || []).filter((_: any, i: number) => i !== index);
-      return {
-        ...prev,
-        [currentFunctionName]: { ...func, actions: newActions }
-      };
-    });
-    const prevIdx = index - 1;
-    if (prevIdx >= 0) {
-      setTimeout(() => focusAction(prevIdx), 0);
-    }
-  }, [focusAction, currentFunctionName, semanticModel]);
-
-  const addDialogLineAfter = useCallback((index: number) => {
-    setLocalFunctions((prev) => {
-      const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
-      if (!func) return prev;
-      const currentAction = (func.actions || [])[index];
-      const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
-      const newAction = {
-        speaker: oppositeSpeaker,
-        text: '',
-        id: 'NEW_LINE_ID'
-      };
-      const newActions = [...(func.actions || [])];
-      newActions.splice(index + 1, 0, newAction);
-      return {
-        ...prev,
-        [currentFunctionName]: { ...func, actions: newActions }
-      };
-    });
-    setTimeout(() => focusAction(index + 1, true), 0);
-  }, [focusAction, currentFunctionName, semanticModel]);
-
-  const addActionAfter = useCallback((index: number, actionType: string) => {
-    // Handle choice creation specially to generate target function
-    if (actionType === 'choice' && semanticModel) {
-      // Use currentFunctionName as the base for nested choice function names
-      const newFunctionName = generateUniqueChoiceFunctionName(currentFunctionName, semanticModel);
-      const newFunction = createEmptyFunction(newFunctionName);
-
-      // Add the new function to local state (will be saved on modal save)
-      setLocalFunctions((prev) => ({
-        ...prev,
-        [newFunctionName]: newFunction
-      }));
-
-      // Expand the current node to show the new choice
-      setExpandedNodes((prev) => new Set([...prev, currentFunctionName]));
-
-      // Now add the choice action using factory
-      setLocalFunctions((prev) => {
-        const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
-        if (!func) return prev;
-        const newAction = createAction('choice', { dialogName: currentFunctionName });
-        newAction.targetFunction = newFunctionName;
-        const newActions = [...(func.actions || [])];
-        newActions.splice(index + 1, 0, newAction);
-        return {
-          ...prev,
-          [currentFunctionName]: { ...func, actions: newActions }
-        };
-      });
-      setTimeout(() => focusAction(index + 1, true), 0);
-      return;
-    }
-
-    // Use factory for all other action types
-    setLocalFunctions((prev) => {
-      const func = prev[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
-      if (!func) return prev;
-      const newAction = createActionAfterIndex(
-        actionType as ActionTypeId,
-        index,
-        func.actions || [],
-        currentFunctionName
-      );
-      const newActions = [...(func.actions || [])];
-      newActions.splice(index + 1, 0, newAction);
-      return {
-        ...prev,
-        [currentFunctionName]: { ...func, actions: newActions }
-      };
-    });
-    setTimeout(() => focusAction(index + 1, true), 0);
-  }, [focusAction, semanticModel, currentFunctionName]);
 
   const addDialogLine = () => {
     if (!currentFunction) return;
