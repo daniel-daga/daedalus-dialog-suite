@@ -4,7 +4,7 @@ import { TextField, TextFieldProps } from '@mui/material';
 /**
  * Props for ActionTextField (extends MUI TextFieldProps)
  */
-export interface ActionTextFieldProps extends Omit<TextFieldProps, 'size' | 'onBlur' | 'onKeyDown'> {
+export interface ActionTextFieldProps extends Omit<TextFieldProps, 'size' | 'onBlur' | 'onKeyDown' | 'onChange' | 'value'> {
   /** Current value */
   value: string | number;
   /** Callback when value changes */
