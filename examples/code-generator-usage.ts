@@ -1,7 +1,7 @@
 // Example: Using the semantic code generator programmatically
 // This demonstrates the intended usage pattern: SemanticModel -> Code
 
-import * as Parser from 'tree-sitter';
+import { createDaedalusParser } from '../src/parser-utils';
 import { SemanticModelBuilderVisitor } from '../src/semantic-visitor';
 import { SemanticCodeGenerator } from '../src/semantic-code-generator';
 import { Dialog, DialogFunction, SemanticModel } from '../src/semantic-model';
@@ -76,11 +76,7 @@ func void DIA_Merchant_Trade_Info()
 `;
 
   // Parse the code
-  const Parser = require('tree-sitter');
-  const Daedalus = require('../bindings/node');
-  const parser = new Parser();
-  parser.setLanguage(Daedalus);
-
+  const parser = createDaedalusParser();
   const tree = parser.parse(sourceCode);
   const visitor = new SemanticModelBuilderVisitor();
   visitor.pass1_createObjects(tree.rootNode);

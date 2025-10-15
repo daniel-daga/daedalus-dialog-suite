@@ -35,19 +35,16 @@ npm run build
 The semantic model approach is ideal for dialog editors and tools:
 
 ```typescript
-import * as Parser from 'tree-sitter';
 import {
+  createDaedalusParser,
   SemanticModelBuilderVisitor,
   SemanticCodeGenerator,
   Dialog,
   DialogFunction
-} from './src/semantic-visitor-index';
+} from 'daedalus-parser';
 
 // Parse Daedalus source
-const Daedalus = require('./bindings/node');
-const parser = new Parser();
-parser.setLanguage(Daedalus);
-
+const parser = createDaedalusParser();
 const tree = parser.parse(sourceCode);
 
 // Build semantic model
