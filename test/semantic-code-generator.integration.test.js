@@ -12,7 +12,7 @@ const parser = createParser();
 // ===================================================================
 
 test('SemanticCodeGenerator round-trip: parse -> generate -> parse', () => {
-	const sourceCode = `
+  const sourceCode = `
 instance DIA_Test_Exit(C_INFO)
 {
 	npc			= TEST_NPC;
@@ -34,44 +34,44 @@ func void DIA_Test_Exit_Info()
 };
 `;
 
-	// Parse original
-	const tree1 = parser.parse(sourceCode);
-	const visitor1 = new SemanticModelBuilderVisitor();
-	visitor1.pass1_createObjects(tree1.rootNode);
-	visitor1.pass2_analyzeAndLink(tree1.rootNode);
+  // Parse original
+  const tree1 = parser.parse(sourceCode);
+  const visitor1 = new SemanticModelBuilderVisitor();
+  visitor1.pass1_createObjects(tree1.rootNode);
+  visitor1.pass2_analyzeAndLink(tree1.rootNode);
 
-	// Generate code
-	const generator = new SemanticCodeGenerator({ includeComments: false });
-	const generatedCode = generator.generateSemanticModel(visitor1.semanticModel);
+  // Generate code
+  const generator = new SemanticCodeGenerator({ includeComments: false });
+  const generatedCode = generator.generateSemanticModel(visitor1.semanticModel);
 
-	// Parse generated code
-	const tree2 = parser.parse(generatedCode);
-	const visitor2 = new SemanticModelBuilderVisitor();
-	visitor2.pass1_createObjects(tree2.rootNode);
-	visitor2.pass2_analyzeAndLink(tree2.rootNode);
+  // Parse generated code
+  const tree2 = parser.parse(generatedCode);
+  const visitor2 = new SemanticModelBuilderVisitor();
+  visitor2.pass1_createObjects(tree2.rootNode);
+  visitor2.pass2_analyzeAndLink(tree2.rootNode);
 
-	// Compare semantic models
-	assert.equal(
-		Object.keys(visitor2.semanticModel.dialogs).length,
-		Object.keys(visitor1.semanticModel.dialogs).length,
-		'Should have same number of dialogs'
-	);
+  // Compare semantic models
+  assert.equal(
+    Object.keys(visitor2.semanticModel.dialogs).length,
+    Object.keys(visitor1.semanticModel.dialogs).length,
+    'Should have same number of dialogs'
+  );
 
-	assert.equal(
-		Object.keys(visitor2.semanticModel.functions).length,
-		Object.keys(visitor1.semanticModel.functions).length,
-		'Should have same number of functions'
-	);
+  assert.equal(
+    Object.keys(visitor2.semanticModel.functions).length,
+    Object.keys(visitor1.semanticModel.functions).length,
+    'Should have same number of functions'
+  );
 
-	// Check specific dialog properties
-	const dialog1 = visitor1.semanticModel.dialogs.DIA_Test_Exit;
-	const dialog2 = visitor2.semanticModel.dialogs.DIA_Test_Exit;
+  // Check specific dialog properties
+  const dialog1 = visitor1.semanticModel.dialogs.DIA_Test_Exit;
+  const dialog2 = visitor2.semanticModel.dialogs.DIA_Test_Exit;
 
-	assert.ok(dialog1, 'Original should have DIA_Test_Exit');
-	assert.ok(dialog2, 'Generated should have DIA_Test_Exit');
-	assert.equal(dialog1.properties.npc, dialog2.properties.npc);
-	assert.equal(dialog1.properties.nr, dialog2.properties.nr);
-	assert.equal(dialog1.properties.permanent, dialog2.properties.permanent);
+  assert.ok(dialog1, 'Original should have DIA_Test_Exit');
+  assert.ok(dialog2, 'Generated should have DIA_Test_Exit');
+  assert.equal(dialog1.properties.npc, dialog2.properties.npc);
+  assert.equal(dialog1.properties.nr, dialog2.properties.nr);
+  assert.equal(dialog1.properties.permanent, dialog2.properties.permanent);
 });
 
 // ===================================================================
@@ -79,7 +79,7 @@ func void DIA_Test_Exit_Info()
 // ===================================================================
 
 test('SemanticCodeGenerator should generate complex dialog with actions', () => {
-	const sourceCode = `
+  const sourceCode = `
 instance DIA_Szmyk_Hello(C_INFO)
 {
 	npc			= DEV_2130_Szmyk;
@@ -104,27 +104,27 @@ func void DIA_Szmyk_Hello_Info()
 };
 `;
 
-	// Parse and analyze
-	const tree = parser.parse(sourceCode);
-	const visitor = new SemanticModelBuilderVisitor();
-	visitor.pass1_createObjects(tree.rootNode);
-	visitor.pass2_analyzeAndLink(tree.rootNode);
+  // Parse and analyze
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
 
-	// Generate
-	const generator = new SemanticCodeGenerator();
-	const result = generator.generateSemanticModel(visitor.semanticModel);
+  // Generate
+  const generator = new SemanticCodeGenerator();
+  const result = generator.generateSemanticModel(visitor.semanticModel);
 
-	// Verify structure
-	assert.ok(result.includes('instance DIA_Szmyk_Hello(C_INFO)'));
-	assert.ok(result.includes('func int DIA_Szmyk_Hello_Condition()'));
-	assert.ok(result.includes('func void DIA_Szmyk_Hello_Info()'));
+  // Verify structure
+  assert.ok(result.includes('instance DIA_Szmyk_Hello(C_INFO)'));
+  assert.ok(result.includes('func int DIA_Szmyk_Hello_Condition()'));
+  assert.ok(result.includes('func void DIA_Szmyk_Hello_Info()'));
 
-	// Verify actions are generated
-	assert.ok(result.includes('AI_Output'));
-	assert.ok(result.includes('Log_CreateTopic'));
-	assert.ok(result.includes('B_LogEntry'));
+  // Verify actions are generated
+  assert.ok(result.includes('AI_Output'));
+  assert.ok(result.includes('Log_CreateTopic'));
+  assert.ok(result.includes('B_LogEntry'));
 
-	// Parse the generated code to ensure it's valid
-	const tree2 = parser.parse(result);
-	assert.ok(!tree2.rootNode.hasError, 'Generated code should parse without errors');
+  // Parse the generated code to ensure it's valid
+  const tree2 = parser.parse(result);
+  assert.ok(!tree2.rootNode.hasError, 'Generated code should parse without errors');
 });

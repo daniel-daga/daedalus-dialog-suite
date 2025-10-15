@@ -49,11 +49,13 @@ export interface CodeGenOptions {
 }
 
 /**
- * Interface for action code generation
- * All action classes implement this to generate their own code
+ * Interface for action code generation and display
+ * All action classes implement this to generate their own code and display strings
  */
 export interface CodeGeneratable {
   generateCode(options: CodeGenOptions): string;
+  toDisplayString(): string;
+  getTypeName(): string;
 }
 
 export class DialogLine implements CodeGeneratable {
@@ -70,6 +72,14 @@ export class DialogLine implements CodeGeneratable {
   generateCode(options: CodeGenOptions): string {
     const comment = options.includeComments ? ` //${this.text}` : '';
     return `AI_Output(${this.speaker}, other, "${this.id}");${comment}`;
+  }
+
+  toDisplayString(): string {
+    return `[DialogLine: ${this.speaker} -> "${this.text}"]`;
+  }
+
+  getTypeName(): string {
+    return 'DialogLine';
   }
 }
 
@@ -88,6 +98,14 @@ export class CreateTopic implements CodeGeneratable {
     }
     return `Log_CreateTopic(${this.topic});`;
   }
+
+  toDisplayString(): string {
+    return `[CreateTopic: ${this.topic}${this.topicType ? `, ${this.topicType}` : ''}]`;
+  }
+
+  getTypeName(): string {
+    return 'CreateTopic';
+  }
 }
 
 export class LogEntry implements CodeGeneratable {
@@ -101,6 +119,14 @@ export class LogEntry implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     return `B_LogEntry(${this.topic}, "${this.text}");`;
+  }
+
+  toDisplayString(): string {
+    return `[LogEntry: ${this.topic} -> "${this.text}"]`;
+  }
+
+  getTypeName(): string {
+    return 'LogEntry';
   }
 }
 
@@ -116,6 +142,14 @@ export class LogSetTopicStatus implements CodeGeneratable {
   generateCode(_options: CodeGenOptions): string {
     return `Log_SetTopicStatus(${this.topic}, ${this.status});`;
   }
+
+  toDisplayString(): string {
+    return `[LogSetTopicStatus: ${this.topic} -> ${this.status}]`;
+  }
+
+  getTypeName(): string {
+    return 'LogSetTopicStatus';
+  }
 }
 
 export class Action implements CodeGeneratable {
@@ -128,6 +162,14 @@ export class Action implements CodeGeneratable {
   generateCode(_options: CodeGenOptions): string {
     const code = this.action.trim();
     return code.endsWith(';') ? code : `${code};`;
+  }
+
+  toDisplayString(): string {
+    return `[Action: ${this.action}]`;
+  }
+
+  getTypeName(): string {
+    return 'Action';
   }
 }
 
@@ -145,6 +187,14 @@ export class Choice implements CodeGeneratable {
   generateCode(_options: CodeGenOptions): string {
     return `Info_AddChoice(${this.dialogRef}, "${this.text}", ${this.targetFunction});`;
   }
+
+  toDisplayString(): string {
+    return `[Choice: "${this.text}" -> ${this.targetFunction}]`;
+  }
+
+  getTypeName(): string {
+    return 'Choice';
+  }
 }
 
 export class CreateInventoryItems implements CodeGeneratable {
@@ -160,6 +210,14 @@ export class CreateInventoryItems implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     return `CreateInvItems(${this.target}, ${this.item}, ${this.quantity});`;
+  }
+
+  toDisplayString(): string {
+    return `[CreateItems: ${this.target} gets ${this.quantity}x ${this.item}]`;
+  }
+
+  getTypeName(): string {
+    return 'CreateInventoryItems';
   }
 }
 
@@ -179,6 +237,14 @@ export class GiveInventoryItems implements CodeGeneratable {
   generateCode(_options: CodeGenOptions): string {
     return `B_GiveInvItems(${this.giver}, ${this.receiver}, ${this.item}, ${this.quantity});`;
   }
+
+  toDisplayString(): string {
+    return `[GiveItems: ${this.giver} gives ${this.receiver} ${this.quantity}x ${this.item}]`;
+  }
+
+  getTypeName(): string {
+    return 'GiveInventoryItems';
+  }
 }
 
 export class AttackAction implements CodeGeneratable {
@@ -197,6 +263,14 @@ export class AttackAction implements CodeGeneratable {
   generateCode(_options: CodeGenOptions): string {
     return `B_Attack(${this.attacker}, ${this.target}, ${this.attackReason}, ${this.damage});`;
   }
+
+  toDisplayString(): string {
+    return `[Attack: ${this.attacker} attacks ${this.target} (${this.attackReason}, dmg:${this.damage})]`;
+  }
+
+  getTypeName(): string {
+    return 'AttackAction';
+  }
 }
 
 export class SetAttitudeAction implements CodeGeneratable {
@@ -210,6 +284,14 @@ export class SetAttitudeAction implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     return `B_SetAttitude(${this.target}, ${this.attitude});`;
+  }
+
+  toDisplayString(): string {
+    return `[SetAttitude: ${this.target} -> ${this.attitude}]`;
+  }
+
+  getTypeName(): string {
+    return 'SetAttitudeAction';
   }
 }
 
@@ -225,6 +307,14 @@ export class ExchangeRoutineAction implements CodeGeneratable {
   generateCode(_options: CodeGenOptions): string {
     return `Npc_ExchangeRoutine(${this.target}, "${this.routine}");`;
   }
+
+  toDisplayString(): string {
+    return `[ExchangeRoutine: ${this.target} -> "${this.routine}"]`;
+  }
+
+  getTypeName(): string {
+    return 'ExchangeRoutineAction';
+  }
 }
 
 export class ChapterTransitionAction implements CodeGeneratable {
@@ -238,6 +328,14 @@ export class ChapterTransitionAction implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     return `B_Kapitelwechsel(${this.chapter}, ${this.world});`;
+  }
+
+  toDisplayString(): string {
+    return `[ChapterTransition: Chapter ${this.chapter} in ${this.world}]`;
+  }
+
+  getTypeName(): string {
+    return 'ChapterTransitionAction';
   }
 }
 

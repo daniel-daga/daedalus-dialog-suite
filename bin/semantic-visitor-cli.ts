@@ -4,24 +4,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as Parser from 'tree-sitter';
 import {
   DialogFunction,
-  DialogLine,
-  CreateTopic,
-  LogEntry,
-  LogSetTopicStatus,
-  Action,
-  Choice,
-  CreateInventoryItems,
-  GiveInventoryItems,
-  AttackAction,
-  SetAttitudeAction,
-  ExchangeRoutineAction,
-  ChapterTransitionAction,
   TreeSitterNode,
   SemanticModelBuilderVisitor
 } from '../src/semantic-visitor-index';
+import { createDaedalusParser } from '../src/parser-utils';
 
 function main() {
   const args = process.argv.slice(2);
@@ -70,11 +58,7 @@ function main() {
 
     // Read and parse the file
     const sourceCode = fs.readFileSync(filename, 'utf8');
-    const Parser = require('tree-sitter');
-    const Daedalus = require('../bindings/node');
-    const parser = new Parser();
-    parser.setLanguage(Daedalus);
-
+    const parser = createDaedalusParser();
     const tree = parser.parse(sourceCode);
 
     // Print AST structure for debugging
@@ -161,28 +145,14 @@ function main() {
 
     // Count actions from both dialogs and functions
     let totalActions = 0;
-    let actionTypes = {
-      DialogLine: 0, CreateTopic: 0, LogEntry: 0, LogSetTopicStatus: 0, Action: 0, Choice: 0,
-      CreateInventoryItems: 0, GiveInventoryItems: 0, AttackAction: 0, SetAttitudeAction: 0,
-      ExchangeRoutineAction: 0, ChapterTransitionAction: 0
-    };
+    const actionTypes: { [key: string]: number } = {};
 
-    // Count dialog actions
+    // Count dialog actions using polymorphism
     for (const dialog of Object.values(visitor.semanticModel.dialogs)) {
       totalActions += dialog.actions.length;
       dialog.actions.forEach(action => {
-        if (action instanceof DialogLine) actionTypes.DialogLine++;
-        else if (action instanceof CreateTopic) actionTypes.CreateTopic++;
-        else if (action instanceof LogEntry) actionTypes.LogEntry++;
-        else if (action instanceof LogSetTopicStatus) actionTypes.LogSetTopicStatus++;
-        else if (action instanceof Choice) actionTypes.Choice++;
-        else if (action instanceof CreateInventoryItems) actionTypes.CreateInventoryItems++;
-        else if (action instanceof GiveInventoryItems) actionTypes.GiveInventoryItems++;
-        else if (action instanceof AttackAction) actionTypes.AttackAction++;
-        else if (action instanceof SetAttitudeAction) actionTypes.SetAttitudeAction++;
-        else if (action instanceof ExchangeRoutineAction) actionTypes.ExchangeRoutineAction++;
-        else if (action instanceof ChapterTransitionAction) actionTypes.ChapterTransitionAction++;
-        else if (action instanceof Action) actionTypes.Action++;
+        const typeName = (action as any).getTypeName();
+        actionTypes[typeName] = (actionTypes[typeName] || 0) + 1;
       });
     }
 
@@ -196,18 +166,11 @@ function main() {
     console.log(`Total Function Actions: ${totalFunctionActions}`);
     if (totalActions > 0) {
       console.log(`Dialog Action Breakdown:`);
-      console.log(`  - Dialog Lines: ${actionTypes.DialogLine}`);
-      console.log(`  - Choices: ${actionTypes.Choice}`);
-      console.log(`  - Create Topic: ${actionTypes.CreateTopic}`);
-      console.log(`  - Log Entries: ${actionTypes.LogEntry}`);
-      console.log(`  - Set Topic Status: ${actionTypes.LogSetTopicStatus}`);
-      console.log(`  - Create Inventory Items: ${actionTypes.CreateInventoryItems}`);
-      console.log(`  - Give Inventory Items: ${actionTypes.GiveInventoryItems}`);
-      console.log(`  - Attack Actions: ${actionTypes.AttackAction}`);
-      console.log(`  - Set Attitude Actions: ${actionTypes.SetAttitudeAction}`);
-      console.log(`  - Exchange Routine Actions: ${actionTypes.ExchangeRoutineAction}`);
-      console.log(`  - Chapter Transition Actions: ${actionTypes.ChapterTransitionAction}`);
-      console.log(`  - Generic Actions: ${actionTypes.Action}`);
+      Object.entries(actionTypes)
+        .sort(([, a], [, b]) => b - a) // Sort by count descending
+        .forEach(([typeName, count]) => {
+          console.log(`  - ${typeName}: ${count}`);
+        });
     }
 
   } catch (error) {
@@ -232,41 +195,9 @@ function jsonReplacer(key: string, value: any): any {
   if (value instanceof DialogFunction) {
     return `[Link to Function: ${value.name}]`;
   }
-  if (value instanceof DialogLine) {
-    return `[DialogLine: ${value.speaker} -> "${value.text}"]`;
-  }
-  if (value instanceof CreateTopic) {
-    return `[CreateTopic: ${value.topic}${value.topicType ? `, ${value.topicType}` : ''}]`;
-  }
-  if (value instanceof LogEntry) {
-    return `[LogEntry: ${value.topic} -> "${value.text}"]`;
-  }
-  if (value instanceof LogSetTopicStatus) {
-    return `[LogSetTopicStatus: ${value.topic} -> ${value.status}]`;
-  }
-  if (value instanceof Choice) {
-    return `[Choice: "${value.text}" -> ${value.targetFunction}]`;
-  }
-  if (value instanceof CreateInventoryItems) {
-    return `[CreateItems: ${value.target} gets ${value.quantity}x ${value.item}]`;
-  }
-  if (value instanceof GiveInventoryItems) {
-    return `[GiveItems: ${value.giver} gives ${value.receiver} ${value.quantity}x ${value.item}]`;
-  }
-  if (value instanceof AttackAction) {
-    return `[Attack: ${value.attacker} attacks ${value.target} (${value.attackReason}, dmg:${value.damage})]`;
-  }
-  if (value instanceof SetAttitudeAction) {
-    return `[SetAttitude: ${value.target} -> ${value.attitude}]`;
-  }
-  if (value instanceof ExchangeRoutineAction) {
-    return `[ExchangeRoutine: ${value.target} -> "${value.routine}"]`;
-  }
-  if (value instanceof ChapterTransitionAction) {
-    return `[ChapterTransition: Chapter ${value.chapter} in ${value.world}]`;
-  }
-  if (value instanceof Action) {
-    return `[Action: ${value.action}]`;
+  // Use polymorphic toDisplayString() for all actions
+  if (value && typeof value === 'object' && typeof value.toDisplayString === 'function') {
+    return value.toDisplayString();
   }
   return value;
 }

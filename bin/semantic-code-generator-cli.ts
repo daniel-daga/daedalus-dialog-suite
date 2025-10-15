@@ -5,9 +5,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as Parser from 'tree-sitter';
 import { SemanticModelBuilderVisitor } from '../src/semantic-visitor-index';
 import { SemanticCodeGenerator, CodeGeneratorOptions } from '../src/semantic-code-generator';
+import { createDaedalusParser } from '../src/parser-utils';
 
 interface CLIOptions extends CodeGeneratorOptions {
   output?: string;
@@ -108,11 +108,7 @@ function processFile(filename: string, options: CLIOptions) {
   }
 
   // Parse with tree-sitter
-  const Parser = require('tree-sitter');
-  const Daedalus = require('../bindings/node');
-  const parser = new Parser();
-  parser.setLanguage(Daedalus);
-
+  const parser = createDaedalusParser();
   const tree = parser.parse(sourceCode);
 
   if (tree.rootNode.hasError) {
