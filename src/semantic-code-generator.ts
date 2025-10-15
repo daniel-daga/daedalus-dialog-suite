@@ -6,18 +6,7 @@ import {
   Dialog,
   DialogFunction,
   DialogAction,
-  DialogLine,
-  CreateTopic,
-  LogEntry,
-  LogSetTopicStatus,
-  Action,
-  Choice,
-  CreateInventoryItems,
-  GiveInventoryItems,
-  AttackAction,
-  SetAttitudeAction,
-  ExchangeRoutineAction,
-  ChapterTransitionAction
+  CodeGeneratable
 } from './semantic-model';
 
 export interface CodeGeneratorOptions {
@@ -142,7 +131,9 @@ export class SemanticCodeGenerator {
 
     // Generate properties in conventional order
     const propertyOrder = ['npc', 'nr', 'condition', 'information', 'permanent', 'important', 'description'];
+    const orderedKeys = new Set(propertyOrder);
 
+    // Output ordered properties first
     for (const key of propertyOrder) {
       if (key in dialog.properties) {
         const value = dialog.properties[key];
@@ -150,9 +141,9 @@ export class SemanticCodeGenerator {
       }
     }
 
-    // Add any remaining properties not in the standard order
+    // Output remaining properties (using Set for O(1) lookup)
     for (const key in dialog.properties) {
-      if (!propertyOrder.includes(key)) {
+      if (!orderedKeys.has(key)) {
         const value = dialog.properties[key];
         lines.push(`${indent}${key}${this.alignProperty(key)}= ${this.formatValue(value)};`);
       }
@@ -254,89 +245,13 @@ export class SemanticCodeGenerator {
   }
 
   /**
-   * Generate code for a dialog action
+   * Generate code for a dialog action using polymorphism
+   * Each action knows how to generate its own code
    */
   generateAction(action: DialogAction): string {
-    if (action instanceof DialogLine) {
-      return this.generateDialogLine(action);
-    } else if (action instanceof Choice) {
-      return this.generateChoice(action);
-    } else if (action instanceof CreateTopic) {
-      return this.generateCreateTopic(action);
-    } else if (action instanceof LogEntry) {
-      return this.generateLogEntry(action);
-    } else if (action instanceof LogSetTopicStatus) {
-      return this.generateLogSetTopicStatus(action);
-    } else if (action instanceof CreateInventoryItems) {
-      return this.generateCreateInventoryItems(action);
-    } else if (action instanceof GiveInventoryItems) {
-      return this.generateGiveInventoryItems(action);
-    } else if (action instanceof AttackAction) {
-      return this.generateAttackAction(action);
-    } else if (action instanceof SetAttitudeAction) {
-      return this.generateSetAttitudeAction(action);
-    } else if (action instanceof ExchangeRoutineAction) {
-      return this.generateExchangeRoutineAction(action);
-    } else if (action instanceof ChapterTransitionAction) {
-      return this.generateChapterTransitionAction(action);
-    } else if (action instanceof Action) {
-      return this.generateGenericAction(action);
-    }
-    return '';
-  }
-
-  private generateDialogLine(action: DialogLine): string {
-    const comment = this.options.includeComments ? ` //${action.text}` : '';
-    return `AI_Output(${action.speaker}, other, "${action.id}");${comment}`;
-  }
-
-  private generateChoice(action: Choice): string {
-    return `Info_AddChoice(${action.dialogRef}, "${action.text}", ${action.targetFunction});`;
-  }
-
-  private generateCreateTopic(action: CreateTopic): string {
-    if (action.topicType) {
-      return `Log_CreateTopic(${action.topic}, ${action.topicType});`;
-    }
-    return `Log_CreateTopic(${action.topic});`;
-  }
-
-  private generateLogEntry(action: LogEntry): string {
-    return `B_LogEntry(${action.topic}, "${action.text}");`;
-  }
-
-  private generateLogSetTopicStatus(action: LogSetTopicStatus): string {
-    return `Log_SetTopicStatus(${action.topic}, ${action.status});`;
-  }
-
-  private generateCreateInventoryItems(action: CreateInventoryItems): string {
-    return `CreateInvItems(${action.target}, ${action.item}, ${action.quantity});`;
-  }
-
-  private generateGiveInventoryItems(action: GiveInventoryItems): string {
-    return `B_GiveInvItems(${action.giver}, ${action.receiver}, ${action.item}, ${action.quantity});`;
-  }
-
-  private generateAttackAction(action: AttackAction): string {
-    return `B_Attack(${action.attacker}, ${action.target}, ${action.attackReason}, ${action.damage});`;
-  }
-
-  private generateSetAttitudeAction(action: SetAttitudeAction): string {
-    return `B_SetAttitude(${action.target}, ${action.attitude});`;
-  }
-
-  private generateExchangeRoutineAction(action: ExchangeRoutineAction): string {
-    return `Npc_ExchangeRoutine(${action.target}, "${action.routine}");`;
-  }
-
-  private generateChapterTransitionAction(action: ChapterTransitionAction): string {
-    return `B_Kapitelwechsel(${action.chapter}, ${action.world});`;
-  }
-
-  private generateGenericAction(action: Action): string {
-    // Add semicolon if not present
-    const code = action.action.trim();
-    return code.endsWith(';') ? code : `${code};`;
+    return (action as CodeGeneratable).generateCode({
+      includeComments: this.options.includeComments
+    });
   }
 
   /**

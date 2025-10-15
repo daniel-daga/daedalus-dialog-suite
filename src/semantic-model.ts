@@ -41,7 +41,22 @@ export class DialogFunction {
 // DIALOG ACTION CLASSES
 // ===================================================================
 
-export class DialogLine {
+/**
+ * Interface for code generation options
+ */
+export interface CodeGenOptions {
+  includeComments?: boolean;
+}
+
+/**
+ * Interface for action code generation
+ * All action classes implement this to generate their own code
+ */
+export interface CodeGeneratable {
+  generateCode(options: CodeGenOptions): string;
+}
+
+export class DialogLine implements CodeGeneratable {
   public speaker: string;
   public text: string;
   public id: string;
@@ -51,9 +66,14 @@ export class DialogLine {
     this.text = text;
     this.id = id;
   }
+
+  generateCode(options: CodeGenOptions): string {
+    const comment = options.includeComments ? ` //${this.text}` : '';
+    return `AI_Output(${this.speaker}, other, "${this.id}");${comment}`;
+  }
 }
 
-export class CreateTopic {
+export class CreateTopic implements CodeGeneratable {
   public topic: string;
   public topicType: string | null;
 
@@ -61,9 +81,16 @@ export class CreateTopic {
     this.topic = topic;
     this.topicType = topicType;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    if (this.topicType) {
+      return `Log_CreateTopic(${this.topic}, ${this.topicType});`;
+    }
+    return `Log_CreateTopic(${this.topic});`;
+  }
 }
 
-export class LogEntry {
+export class LogEntry implements CodeGeneratable {
   public topic: string;
   public text: string;
 
@@ -71,9 +98,13 @@ export class LogEntry {
     this.topic = topic;
     this.text = text;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `B_LogEntry(${this.topic}, "${this.text}");`;
+  }
 }
 
-export class LogSetTopicStatus {
+export class LogSetTopicStatus implements CodeGeneratable {
   public topic: string;
   public status: string;
 
@@ -81,17 +112,26 @@ export class LogSetTopicStatus {
     this.topic = topic;
     this.status = status;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `Log_SetTopicStatus(${this.topic}, ${this.status});`;
+  }
 }
 
-export class Action {
+export class Action implements CodeGeneratable {
   public action: string;
 
   constructor(action: string) {
     this.action = action;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    const code = this.action.trim();
+    return code.endsWith(';') ? code : `${code};`;
+  }
 }
 
-export class Choice {
+export class Choice implements CodeGeneratable {
   public dialogRef: string;
   public text: string;
   public targetFunction: string;
@@ -101,9 +141,13 @@ export class Choice {
     this.text = text;
     this.targetFunction = targetFunction;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `Info_AddChoice(${this.dialogRef}, "${this.text}", ${this.targetFunction});`;
+  }
 }
 
-export class CreateInventoryItems {
+export class CreateInventoryItems implements CodeGeneratable {
   public target: string;
   public item: string;
   public quantity: number;
@@ -113,9 +157,13 @@ export class CreateInventoryItems {
     this.item = item;
     this.quantity = quantity;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `CreateInvItems(${this.target}, ${this.item}, ${this.quantity});`;
+  }
 }
 
-export class GiveInventoryItems {
+export class GiveInventoryItems implements CodeGeneratable {
   public giver: string;
   public receiver: string;
   public item: string;
@@ -127,9 +175,13 @@ export class GiveInventoryItems {
     this.item = item;
     this.quantity = quantity;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `B_GiveInvItems(${this.giver}, ${this.receiver}, ${this.item}, ${this.quantity});`;
+  }
 }
 
-export class AttackAction {
+export class AttackAction implements CodeGeneratable {
   public attacker: string;
   public target: string;
   public attackReason: string;
@@ -141,9 +193,13 @@ export class AttackAction {
     this.attackReason = attackReason;
     this.damage = damage;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `B_Attack(${this.attacker}, ${this.target}, ${this.attackReason}, ${this.damage});`;
+  }
 }
 
-export class SetAttitudeAction {
+export class SetAttitudeAction implements CodeGeneratable {
   public target: string;
   public attitude: string;
 
@@ -151,9 +207,13 @@ export class SetAttitudeAction {
     this.target = target;
     this.attitude = attitude;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `B_SetAttitude(${this.target}, ${this.attitude});`;
+  }
 }
 
-export class ExchangeRoutineAction {
+export class ExchangeRoutineAction implements CodeGeneratable {
   public target: string;
   public routine: string;
 
@@ -161,15 +221,23 @@ export class ExchangeRoutineAction {
     this.target = target;
     this.routine = routine;
   }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `Npc_ExchangeRoutine(${this.target}, "${this.routine}");`;
+  }
 }
 
-export class ChapterTransitionAction {
+export class ChapterTransitionAction implements CodeGeneratable {
   public chapter: number;
   public world: string;
 
   constructor(chapter: number, world: string) {
     this.chapter = chapter;
     this.world = world;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `B_Kapitelwechsel(${this.chapter}, ${this.world});`;
   }
 }
 
