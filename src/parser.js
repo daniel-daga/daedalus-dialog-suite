@@ -1,6 +1,5 @@
 const Parser = require('tree-sitter');
 const Daedalus = require('../bindings/node');
-const { PERFORMANCE } = require('./utils/constants');
 
 class DaedalusParser {
   constructor() {
@@ -28,12 +27,11 @@ class DaedalusParser {
       hasErrors: tree.rootNode.hasError,
       parseTime: parseTimeMs,
       sourceLength: sourceCode.length,
-      throughput: sourceCode.length / parseTimeMs * PERFORMANCE.THROUGHPUT_CALCULATION_MS // bytes per second
+      throughput: sourceCode.length / parseTimeMs * 1000 // bytes per second
     };
 
-    if (result.hasErrors) {
-      const validation = parser.validate(result.sourceCode);
-      result.errors = validation.errors;
+    if (options.includeSource) {
+      result.sourceCode = sourceCode;
     }
 
     return result;
@@ -158,7 +156,7 @@ class DaedalusParser {
    */
   getFieldText(node, fieldName) {
     const field = node.childForFieldName(fieldName);
-    return field.text;;
+    return field ? field.text : null;
   }
 
   /**

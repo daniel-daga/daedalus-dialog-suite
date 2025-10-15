@@ -10,6 +10,7 @@
   "include": [
     "src/semantic-model.ts",
     "src/semantic-visitor.ts",
+    "src/semantic-visitor-index.ts",
     "src/semantic-code-generator.ts",
     "src/action-parsers.ts"
   ],

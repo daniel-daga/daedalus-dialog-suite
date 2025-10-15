@@ -21,9 +21,7 @@
     "prebuildify": "prebuildify --napi --strip"
   },
   "bin": {
-    "daedalus-parse": "./bin/daedalus-parse.js",
-    "daedalus-format": "./bin/daedalus-format.js",
-    "daedalus-dialog-editor": "./bin/daedalus-dialog-editor.js"
+    "daedalus-parse": "./bin/daedalus-parse.js"
   },
   "keywords": [
     "parser",
@@ -91,7 +89,7 @@
     "tree-sitter": "^0.21.0"
   },
   "peerDependenciesMeta": {
-    "tree_sitter": {
+    "tree-sitter": {
       "optional": true
     }
   },
