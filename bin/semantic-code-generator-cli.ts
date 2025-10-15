@@ -4,10 +4,9 @@
 // Demonstrates round-trip: Parse -> Semantic Model -> Generate
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { SemanticModelBuilderVisitor } from '../src/semantic-visitor-index';
 import { SemanticCodeGenerator, CodeGeneratorOptions } from '../src/semantic-code-generator';
-import { createDaedalusParser } from '../src/parser-utils';
+import { createDaedalusParser, validateDaedalusFile } from '../src/parser-utils';
 
 interface CLIOptions extends CodeGeneratorOptions {
   output?: string;
@@ -88,16 +87,8 @@ function processFile(filename: string, options: CLIOptions) {
     console.log(`📄 Processing file: ${filename}`);
   }
 
-  // Check file exists
-  if (!fs.existsSync(filename)) {
-    throw new Error(`File not found: ${filename}`);
-  }
-
-  // Check extension
-  const ext = path.extname(filename);
-  if (ext !== '.d') {
-    console.warn(`Warning: Expected .d file extension, got '${ext}'`);
-  }
+  // Validate file
+  validateDaedalusFile(filename);
 
   // Read source
   const sourceCode = fs.readFileSync(filename, 'utf8');

@@ -71,33 +71,23 @@ export class ActionParsers {
 
   /**
    * Parse AI_Output function call
+   * Special handling: looks for comment after call to use as dialog text
    */
   static parseAIOutputCall(node: TreeSitterNode): DialogLine | null {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args: string[] = [];
-    for (let i = 0; i < argsNode.childCount; i++) {
-      const child = argsNode.child(i);
-      if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
-        args.push(child.text.replace(/"/g, '')); // Remove quotes from string literals
-      }
-    }
+    const args = ActionParsers.parseArguments(argsNode);
+    if (args.length < 3) return null;
 
-    if (args.length >= 3) {
-      const speaker = args[0];
-      const listener = args[1];
-      const dialogId = args[2]; // This is typically a dialog ID
+    const speaker = args[0];
+    const dialogId = args[2]; // This is typically a dialog ID
 
-      // Look for comment after this AI_Output call
-      const comment = ActionParsers.findCommentAfterStatement(node);
-      const text = comment || dialogId; // Use comment as text if available, fallback to dialogId
+    // Look for comment after this AI_Output call to use as readable text
+    const comment = ActionParsers.findCommentAfterStatement(node);
+    const text = comment || dialogId; // Use comment as text if available, fallback to dialogId
 
-
-      return new DialogLine(speaker, text, dialogId);
-    }
-
-    return null;
+    return new DialogLine(speaker, text, dialogId);
   }
 
   /**
@@ -218,18 +208,19 @@ export class ActionParsers {
   static findCommentAfterStatement(callNode: TreeSitterNode): string | null {
     // Get the parent statement node (expression_statement)
     const parent = callNode.parent;
-    if ( !parent )
+    if (!parent) {
       return null;
+    }
 
-    var nextSibling = parent.nextSibling;
+    let nextSibling = parent.nextSibling;
 
-    while ( nextSibling && nextSibling.type !== 'comment') {
+    while (nextSibling && nextSibling.type !== 'comment') {
       nextSibling = nextSibling.nextSibling;
     }
-  
 
-    if (!nextSibling)
+    if (!nextSibling) {
       return null;
+    }
 
     return nextSibling.text.replace(/^\/\/\s*/, '').trim();
   }

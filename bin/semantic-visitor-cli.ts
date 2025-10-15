@@ -3,13 +3,12 @@
 // CLI tool for running semantic visitor on Daedalus files
 
 import * as fs from 'fs';
-import * as path from 'path';
 import {
   DialogFunction,
   TreeSitterNode,
   SemanticModelBuilderVisitor
 } from '../src/semantic-visitor-index';
-import { createDaedalusParser } from '../src/parser-utils';
+import { createDaedalusParser, validateDaedalusFile } from '../src/parser-utils';
 
 function main() {
   const args = process.argv.slice(2);
@@ -42,14 +41,11 @@ function main() {
     process.exit(0);
   }
 
-  if (!fs.existsSync(filename)) {
-    console.error(`Error: File '${filename}' not found`);
+  try {
+    validateDaedalusFile(filename);
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
-  }
-
-  const ext = path.extname(filename);
-  if (ext !== '.d') {
-    console.warn(`Warning: Expected .d file extension, got '${ext}'`);
   }
 
   try {

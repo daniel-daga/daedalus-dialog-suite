@@ -13,4 +13,4 @@ export { SemanticModelBuilderVisitor } from './semantic-visitor';
 export { SemanticCodeGenerator, CodeGeneratorOptions } from './semantic-code-generator';
 
 // Export parser utilities
-export { createDaedalusParser, parseDaedalusSource } from './parser-utils';
+export { createDaedalusParser, parseDaedalusSource, validateDaedalusFile } from './parser-utils';
