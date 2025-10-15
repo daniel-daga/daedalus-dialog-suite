@@ -1,13 +1,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const Parser = require('tree-sitter');
-const Daedalus = require('../bindings/node');
+const { createParser, assertIncludes } = require('./helpers');
 const { SemanticCodeGenerator } = require('../dist/semantic-code-generator');
 const { SemanticModelBuilderVisitor } = require('../dist/semantic-visitor-index');
 
 // Initialize parser
-const parser = new Parser();
-parser.setLanguage(Daedalus);
+const parser = createParser();
 
 test('SemanticCodeGenerator should be a constructor', () => {
   assert.equal(typeof SemanticCodeGenerator, 'function');
@@ -302,11 +300,6 @@ test('SemanticCodeGenerator should generate all action types', () => {
 
   for (const { action, expected } of tests) {
     const result = generator.generateAction(action);
-    for (const expectedPart of expected) {
-      assert.ok(
-        result.includes(expectedPart),
-        `Result "${result}" should include "${expectedPart}"`
-      );
-    }
+    assertIncludes(result, expected, `Generated action for ${action.constructor.name}`);
   }
 });

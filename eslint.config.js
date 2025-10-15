@@ -83,7 +83,6 @@ module.exports = [
       'no-mixed-spaces-and-tabs': 'error',
       'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 1 }],
       'no-new-object': 'error',
-      'no-tabs': 'error',
       'no-trailing-spaces': 'error',
       'no-whitespace-before-property': 'error',
       'object-curly-spacing': ['error', 'always'],

@@ -181,9 +181,6 @@ class DaedalusParser {
   }
 
 
-
-
-
   /**
    * Collect syntax errors from parse tree
    * @private

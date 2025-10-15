@@ -52,6 +52,24 @@ export class ActionParsers {
   }
 
   /**
+   * Generic helper to parse function arguments and create action
+   * Reduces duplication across simple action parsers
+   */
+  private static parseActionWithArgs<T>(
+    node: TreeSitterNode,
+    minArgs: number,
+    factory: (args: string[]) => T | null
+  ): T | null {
+    const argsNode = node.childForFieldName('arguments');
+    if (!argsNode) return null;
+
+    const args = ActionParsers.parseArguments(argsNode);
+    if (args.length < minArgs) return null;
+
+    return factory(args);
+  }
+
+  /**
    * Parse AI_Output function call
    */
   static parseAIOutputCall(node: TreeSitterNode): DialogLine | null {
@@ -86,147 +104,90 @@ export class ActionParsers {
    * Parse Info_AddChoice function call
    */
   static parseInfoAddChoiceCall(node: TreeSitterNode): Choice | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 3) return null;
-
-    return new Choice(args[0], args[1], args[2]);
+    return ActionParsers.parseActionWithArgs(node, 3, (args) =>
+      new Choice(args[0], args[1], args[2])
+    );
   }
 
   /**
    * Parse Log_CreateTopic function call
    */
   static parseCreateTopicCall(node: TreeSitterNode): CreateTopic | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 1) return null;
-
-    return new CreateTopic(args[0], args[1] || null);
+    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
+      new CreateTopic(args[0], args[1] || null)
+    );
   }
 
   /**
    * Parse B_LogEntry function call
    */
   static parseLogEntryCall(node: TreeSitterNode): LogEntry | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 2) return null;
-
-    return new LogEntry(args[0], args[1]);
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new LogEntry(args[0], args[1])
+    );
   }
 
   /**
    * Parse Log_SetTopicStatus function call
    */
   static parseLogSetTopicStatusCall(node: TreeSitterNode): LogSetTopicStatus | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 2) return null;
-
-    return new LogSetTopicStatus(args[0], args[1]);
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new LogSetTopicStatus(args[0], args[1])
+    );
   }
 
   /**
    * Parse CreateInvItems function call
    */
   static parseCreateInventoryItemsCall(node: TreeSitterNode): CreateInventoryItems | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 3) return null;
-
-    const target = args[0];
-    const item = args[1];
-    const quantity = parseInt(args[2]) || 1;
-
-    return new CreateInventoryItems(target, item, quantity);
+    return ActionParsers.parseActionWithArgs(node, 3, (args) =>
+      new CreateInventoryItems(args[0], args[1], parseInt(args[2]) || 1)
+    );
   }
 
   /**
    * Parse B_GiveInvItems function call
    */
   static parseGiveInventoryItemsCall(node: TreeSitterNode): GiveInventoryItems | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 4) return null;
-
-    const giver = args[0];
-    const receiver = args[1];
-    const item = args[2];
-    const quantity = parseInt(args[3]) || 1;
-
-    return new GiveInventoryItems(giver, receiver, item, quantity);
+    return ActionParsers.parseActionWithArgs(node, 4, (args) =>
+      new GiveInventoryItems(args[0], args[1], args[2], parseInt(args[3]) || 1)
+    );
   }
 
   /**
    * Parse B_Attack function call
    */
   static parseAttackCall(node: TreeSitterNode): AttackAction | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 4) return null;
-
-    const attacker = args[0];
-    const target = args[1];
-    const attackReason = args[2];
-    const damage = parseInt(args[3]) || 1;
-
-    return new AttackAction(attacker, target, attackReason, damage);
+    return ActionParsers.parseActionWithArgs(node, 4, (args) =>
+      new AttackAction(args[0], args[1], args[2], parseInt(args[3]) || 1)
+    );
   }
 
   /**
    * Parse B_SetAttitude function call
    */
   static parseSetAttitudeCall(node: TreeSitterNode): SetAttitudeAction | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 2) return null;
-
-    return new SetAttitudeAction(args[0], args[1]);
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new SetAttitudeAction(args[0], args[1])
+    );
   }
 
   /**
    * Parse Npc_ExchangeRoutine function call
    */
   static parseExchangeRoutineCall(node: TreeSitterNode): ExchangeRoutineAction | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 2) return null;
-
-    return new ExchangeRoutineAction(args[0], args[1]);
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new ExchangeRoutineAction(args[0], args[1])
+    );
   }
 
   /**
    * Parse B_Kapitelwechsel function call
    */
   static parseChapterTransitionCall(node: TreeSitterNode): ChapterTransitionAction | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = ActionParsers.parseArguments(argsNode);
-    if (args.length < 2) return null;
-
-    const chapter = parseInt(args[0]) || 1;
-    const world = args[1];
-
-    return new ChapterTransitionAction(chapter, world);
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new ChapterTransitionAction(parseInt(args[0]) || 1, args[1])
+    );
   }
 
   /**

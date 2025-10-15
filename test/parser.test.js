@@ -2,7 +2,6 @@ const { test, describe } = require('node:test');
 const { strict: assert } = require('node:assert');
 const DaedalusParser = require('../src/parser');
 const fs = require('fs');
-const path = require('path');
 
 describe('Daedalus Parser', () => {
   let parser;
@@ -286,5 +285,4 @@ Prototype SpecialWeapon(BasicItem)
     const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse member access expressions without errors');
   });
-
 });
