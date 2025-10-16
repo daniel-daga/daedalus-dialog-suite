@@ -342,6 +342,60 @@ export class ChapterTransitionAction implements CodeGeneratable {
 export type DialogAction = DialogLine | CreateTopic | LogEntry | LogSetTopicStatus | Action | Choice | CreateInventoryItems | GiveInventoryItems | AttackAction | SetAttitudeAction | ExchangeRoutineAction | ChapterTransitionAction;
 
 // ===================================================================
+// DIALOG CONDITION CLASSES
+// ===================================================================
+
+/**
+ * Represents a condition that checks if the player knows a specific dialog
+ */
+export class NpcKnowsInfoCondition implements CodeGeneratable {
+  public npc: string;
+  public dialogRef: string;
+
+  constructor(npc: string, dialogRef: string) {
+    this.npc = npc;
+    this.dialogRef = dialogRef;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `Npc_KnowsInfo(${this.npc}, ${this.dialogRef})`;
+  }
+
+  toDisplayString(): string {
+    return `[NpcKnowsInfo: ${this.npc} knows ${this.dialogRef}]`;
+  }
+
+  getTypeName(): string {
+    return 'NpcKnowsInfoCondition';
+  }
+}
+
+/**
+ * Generic condition for any other condition expression
+ */
+export class Condition implements CodeGeneratable {
+  public condition: string;
+
+  constructor(condition: string) {
+    this.condition = condition;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return this.condition.trim();
+  }
+
+  toDisplayString(): string {
+    return `[Condition: ${this.condition}]`;
+  }
+
+  getTypeName(): string {
+    return 'Condition';
+  }
+}
+
+export type DialogCondition = NpcKnowsInfoCondition | Condition;
+
+// ===================================================================
 // DIALOG CLASS
 // ===================================================================
 
@@ -350,12 +404,14 @@ export class Dialog {
   public parent: string | null;
   public properties: DialogProperties;
   public actions: DialogAction[];
+  public conditions: DialogCondition[];
 
   constructor(name: string, parent: string | null) {
     this.name = name;
     this.parent = parent;
     this.properties = {};
     this.actions = [];
+    this.conditions = [];
   }
 }
 

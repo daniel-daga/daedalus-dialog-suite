@@ -6,6 +6,9 @@ export * from './semantic-model';
 // Export action parsers
 export { ActionParsers } from './action-parsers';
 
+// Export condition parsers
+export { ConditionParsers } from './condition-parsers';
+
 // Export the main visitor
 export { SemanticModelBuilderVisitor } from './semantic-visitor';
 

@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogFunction,
   DialogAction,
+  DialogCondition,
   CodeGeneratable
 } from './semantic-model';
 
@@ -80,7 +81,10 @@ export class SemanticCodeGenerator {
     const associatedFuncs = this.getAssociatedFunctions(dialog, model);
     for (const func of associatedFuncs) {
       processedFunctions.add(func.name);
-      parts.push(this.generateFunction(func));
+      // Check if this is a condition function
+      const isCondition = dialog.properties.condition instanceof DialogFunction &&
+                          dialog.properties.condition.name === func.name;
+      parts.push(this.generateFunction(func, undefined, isCondition ? dialog.conditions : undefined));
     }
 
     return parts.join('\n');
@@ -198,7 +202,7 @@ export class SemanticCodeGenerator {
   /**
    * Generate a function declaration
    */
-  generateFunction(func: DialogFunction, preservedBody?: string): string {
+  generateFunction(func: DialogFunction, preservedBody?: string, conditions?: DialogCondition[]): string {
     const indent = this.indent();
     const funcKeyword = this.keyword('func');
     const returnType = this.normalizeReturnType(func.returnType);
@@ -207,13 +211,16 @@ export class SemanticCodeGenerator {
     lines.push(`${funcKeyword} ${returnType} ${func.name}()`);
     lines.push('{');
 
-    // Use preserved body if provided, otherwise generate from actions
+    // Use preserved body if provided
     if (preservedBody) {
       // Split preserved body and indent each line
       const bodyLines = preservedBody.trim().split('\n');
       bodyLines.forEach(line => {
         lines.push(`${indent}${line}`);
       });
+    } else if (conditions && conditions.length > 0) {
+      // Generate condition function body
+      this.generateConditionBody(conditions, lines, indent);
     } else if (func.actions.length > 0) {
       // Generate body from semantic actions
       func.actions.forEach(action => {
@@ -242,6 +249,53 @@ export class SemanticCodeGenerator {
     lines.push('');
 
     return lines.join('\n');
+  }
+
+  /**
+   * Generate condition function body with if statement(s)
+   */
+  private generateConditionBody(conditions: DialogCondition[], lines: string[], indent: string): void {
+    if (conditions.length === 0) {
+      lines.push(`${indent}return TRUE;`);
+      return;
+    }
+
+    if (conditions.length === 1) {
+      // Single condition - simple if
+      const condCode = this.generateCondition(conditions[0]);
+      lines.push(`${indent}if (${condCode})`);
+      lines.push(`${indent}{`);
+      lines.push(`${indent}${indent}return TRUE;`);
+      lines.push(`${indent}};`);
+    } else {
+      // Multiple conditions - generate nested if statements (matching Gothic style)
+      // Each condition wraps the next one, with return TRUE at the innermost level
+      for (let i = 0; i < conditions.length; i++) {
+        const condCode = this.generateCondition(conditions[i]);
+        const currentIndent = indent.repeat(i + 1);
+        lines.push(`${currentIndent}if (${condCode})`);
+        lines.push(`${currentIndent}{`);
+      }
+
+      // Add return TRUE at the innermost level
+      const innerIndent = indent.repeat(conditions.length + 1);
+      lines.push(`${innerIndent}return TRUE;`);
+
+      // Close all if statements
+      for (let i = conditions.length - 1; i >= 0; i--) {
+        const currentIndent = indent.repeat(i + 1);
+        lines.push(`${currentIndent}};`);
+      }
+    }
+  }
+
+  /**
+   * Generate code for a dialog condition using polymorphism
+   */
+  private generateCondition(condition: DialogCondition): string {
+    return (condition as CodeGeneratable).generateCode({
+      includeComments: this.options.includeComments
+    });
   }
 
   /**

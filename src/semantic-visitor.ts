@@ -9,16 +9,19 @@ import {
   Choice
 } from './semantic-model';
 import { ActionParsers } from './action-parsers';
+import { ConditionParsers } from './condition-parsers';
 
 export class SemanticModelBuilderVisitor {
   public semanticModel: SemanticModel;
   private currentInstance: Dialog | null;
   private currentFunction: DialogFunction | null;
+  private conditionFunctions: Set<string>;
 
   constructor() {
     this.semanticModel = { dialogs: {}, functions: {} };
     this.currentInstance = null;
     this.currentFunction = null;
+    this.conditionFunctions = new Set<string>();
   }
 
   // ===================================================================
@@ -114,6 +117,11 @@ export class SemanticModelBuilderVisitor {
           value = (rightNode.text.toLowerCase() === 'true');
           break;
         case 'identifier':
+          // Track condition functions
+          if (propertyName === 'condition') {
+            this.conditionFunctions.add(rightNode.text);
+          }
+
           // Since all functions were created in Pass 1, this lookup will now succeed.
           if (this.semanticModel.functions[rightNode.text]) {
             value = this.semanticModel.functions[rightNode.text];
@@ -138,17 +146,31 @@ export class SemanticModelBuilderVisitor {
       const functionName = funcToCallNode.text;
       this.currentFunction.calls.push(functionName);
 
-      // Parse semantic actions and add to current function
-      const action = ActionParsers.parseSemanticAction(node, functionName);
-      if (action) {
-        this.currentFunction.actions.push(action);
-      }
+      // Check if current function is a condition function
+      const isConditionFunc = this.conditionFunctions.has(this.currentFunction.name);
 
-      // Also add to dialog if this function is a dialog information function
-      const dialog = this.findDialogForFunction(this.currentFunction.name);
-      if (dialog) {
+      if (isConditionFunc) {
+        // Parse semantic conditions and add to dialog
+        const condition = ConditionParsers.parseSemanticCondition(node, functionName);
+        if (condition) {
+          const dialog = this.findDialogForConditionFunction(this.currentFunction.name);
+          if (dialog) {
+            dialog.conditions.push(condition);
+          }
+        }
+      } else {
+        // Parse semantic actions and add to current function
+        const action = ActionParsers.parseSemanticAction(node, functionName);
         if (action) {
-          dialog.actions.push(action);
+          this.currentFunction.actions.push(action);
+        }
+
+        // Also add to dialog if this function is a dialog information function
+        const dialog = this.findDialogForFunction(this.currentFunction.name);
+        if (dialog) {
+          if (action) {
+            dialog.actions.push(action);
+          }
         }
       }
     }
@@ -166,6 +188,20 @@ export class SemanticModelBuilderVisitor {
       const dialog = this.semanticModel.dialogs[dialogName];
       if (dialog.properties.information &&
           (dialog.properties.information as DialogFunction).name === functionName) {
+        return dialog;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find which dialog uses a function as its condition function
+   */
+  private findDialogForConditionFunction(functionName: string): Dialog | null {
+    for (const dialogName in this.semanticModel.dialogs) {
+      const dialog = this.semanticModel.dialogs[dialogName];
+      if (dialog.properties.condition &&
+          (dialog.properties.condition as DialogFunction).name === functionName) {
         return dialog;
       }
     }
