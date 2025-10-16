@@ -189,8 +189,8 @@ module.exports = grammar({
       field('member', $.identifier),
     )),
 
-    call_expression: $ => prec(2, seq(
-      field('function', $._expression),
+    call_expression: $ => prec(9, seq(
+      field('function', choice($.identifier, $.member_access)),
       '(',
       field('arguments', optional($.argument_list)),
       ')',

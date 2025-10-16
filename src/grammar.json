@@ -1169,7 +1169,7 @@
     },
     "call_expression": {
       "type": "PREC",
-      "value": 2,
+      "value": 9,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1177,8 +1177,17 @@
             "type": "FIELD",
             "name": "function",
             "content": {
-              "type": "SYMBOL",
-              "name": "_expression"
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "identifier"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "member_access"
+                }
+              ]
             }
           },
           {

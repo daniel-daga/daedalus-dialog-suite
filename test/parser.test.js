@@ -285,4 +285,143 @@ Prototype SpecialWeapon(BasicItem)
     const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse member access expressions without errors');
   });
+
+  test('should parse binary expressions', () => {
+    const source = `func int TestBinary()
+{
+    var int a = 5;
+    var int b = 10;
+    var int sum = a + b;
+    var int diff = a - b;
+    var int product = a * b;
+    var int quotient = b / a;
+    return sum;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse arithmetic binary expressions without errors');
+  });
+
+  test('should parse logical binary expressions', () => {
+    const source = `func int TestLogicalBinary()
+{
+    var int a = 5;
+    var int b = 10;
+    if (a > 0 && b < 20)
+    {
+        return 1;
+    };
+    if (a == 5 || b == 15)
+    {
+        return 2;
+    };
+    return 0;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse logical binary expressions without errors');
+  });
+
+  test('should parse binary expressions with function calls', () => {
+    const source = `func int TestBinaryWithCalls()
+{
+    if (IsActive() && HasPermission())
+    {
+        return 1;
+    };
+    return 0;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse binary expressions with function calls without errors');
+  });
+
+  test('should extract all function calls from binary expressions', () => {
+    const source = `func int DIA_Test_Condition()
+{
+    if (Npc_KnowsInfo(hero, Info_Old) && Npc_HasItems(hero, ItMi_Gold) >= 50)
+    {
+        return TRUE;
+    };
+    return FALSE;
+};`;
+
+    const result = parser.parse(source, { includeSource: true });
+    assert.equal(result.hasErrors, false, 'Should parse without errors');
+
+    // Now let's check if we can extract the function calls from the tree
+    const functionCalls = [];
+
+    function traverse(node) {
+      if (node.type === 'call_expression') {
+        const funcNode = node.childForFieldName('function');
+        if (funcNode) {
+          functionCalls.push(funcNode.text);
+        }
+      }
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+
+    traverse(result.rootNode);
+
+    assert.equal(functionCalls.length, 2, 'Should find 2 function calls in binary expression');
+    assert.ok(functionCalls.includes('Npc_KnowsInfo'), 'Should find Npc_KnowsInfo call');
+    assert.ok(functionCalls.includes('Npc_HasItems'), 'Should find Npc_HasItems call');
+  });
+
+  test('should extract function calls from complex nested binary expressions', () => {
+    const source = `func int DIA_Complex_Condition()
+{
+    if ((CheckFlag() || VerifyStatus()) && (GetLevel() > 5 && HasItem()))
+    {
+        return TRUE;
+    };
+    return FALSE;
+};`;
+
+    const result = parser.parse(source, { includeSource: true });
+    assert.equal(result.hasErrors, false, 'Should parse complex nested binary expressions without errors');
+
+    // Extract all function calls
+    const functionCalls = [];
+
+    function traverse(node) {
+      if (node.type === 'call_expression') {
+        const funcNode = node.childForFieldName('function');
+        if (funcNode) {
+          functionCalls.push(funcNode.text);
+        }
+      }
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+
+    traverse(result.rootNode);
+
+    assert.equal(functionCalls.length, 4, 'Should find all 4 function calls in nested binary expressions');
+    assert.ok(functionCalls.includes('CheckFlag'), 'Should find CheckFlag call');
+    assert.ok(functionCalls.includes('VerifyStatus'), 'Should find VerifyStatus call');
+    assert.ok(functionCalls.includes('GetLevel'), 'Should find GetLevel call');
+    assert.ok(functionCalls.includes('HasItem'), 'Should find HasItem call');
+  });
+
+  test('should parse comparison binary expressions', () => {
+    const source = `func int TestComparisons()
+{
+    var int value = 10;
+    if (value < 20) { return 1; };
+    if (value <= 10) { return 2; };
+    if (value > 5) { return 3; };
+    if (value >= 10) { return 4; };
+    if (value == 10) { return 5; };
+    if (value != 0) { return 6; };
+    return 0;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse comparison binary expressions without errors');
+  });
 });
