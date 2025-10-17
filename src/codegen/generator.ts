@@ -8,7 +8,7 @@ import {
   DialogAction,
   DialogCondition,
   CodeGeneratable
-} from './semantic-model';
+} from '../semantic/semantic-model';
 
 export interface CodeGeneratorOptions {
   indentSize?: number;

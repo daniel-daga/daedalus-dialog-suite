@@ -7,8 +7,8 @@ import {
   DialogFunction,
   TreeSitterNode,
   SemanticModelBuilderVisitor
-} from '../src/semantic-visitor-index';
-import { createDaedalusParser, validateDaedalusFile } from '../src/parser-utils';
+} from '../src/semantic/semantic-visitor-index';
+import { createDaedalusParser, validateDaedalusFile } from '../src/utils/parser-utils';
 
 function main() {
   const args = process.argv.slice(2);

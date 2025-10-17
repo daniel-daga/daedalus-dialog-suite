@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
-const DaedalusParser = require('../src/parser');
+const DaedalusParser = require('../src/core/parser');
 
 function printUsage() {
   console.log(`

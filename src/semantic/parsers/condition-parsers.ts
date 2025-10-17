@@ -6,7 +6,7 @@ import {
   NpcKnowsInfoCondition,
   Condition,
   VariableCondition
-} from './semantic-model';
+} from '../semantic-model';
 
 export class ConditionParsers {
 

@@ -15,7 +15,7 @@ import {
   SetAttitudeAction,
   ExchangeRoutineAction,
   ChapterTransitionAction
-} from './semantic-model';
+} from '../semantic-model';
 
 export class ActionParsers {
 

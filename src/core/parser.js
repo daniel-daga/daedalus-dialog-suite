@@ -1,5 +1,5 @@
 const Parser = require('tree-sitter');
-const Daedalus = require('../bindings/node');
+const Daedalus = require('../../bindings/node');
 
 class DaedalusParser {
   constructor() {
@@ -29,6 +29,10 @@ class DaedalusParser {
       sourceLength: sourceCode.length,
       throughput: sourceCode.length / parseTimeMs * 1000 // bytes per second
     };
+
+    if (options.includeSource) {
+      result.sourceCode = sourceCode;
+    }
 
     if (result.hasErrors) {
       result.errors = [];

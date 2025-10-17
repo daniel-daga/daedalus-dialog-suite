@@ -8,8 +8,8 @@ import {
   DialogProperties,
   Choice
 } from './semantic-model';
-import { ActionParsers } from './action-parsers';
-import { ConditionParsers } from './condition-parsers';
+import { ActionParsers } from './parsers/action-parsers';
+import { ConditionParsers } from './parsers/condition-parsers';
 
 export class SemanticModelBuilderVisitor {
   public semanticModel: SemanticModel;

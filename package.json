@@ -2,7 +2,7 @@
   "name": "daedalus-parser",
   "version": "1.0.0",
   "description": "High-performance Tree-sitter parser for Gothic 2 Daedalus scripting language with dialog editing capabilities",
-  "main": "src/parser.js",
+  "main": "src/core/parser.js",
   "types": "index.d.ts",
   "scripts": {
     "test": "npm run build && node --test test/*.test.js",
@@ -38,26 +38,26 @@
   "exports": {
     ".": {
       "types": "./index.d.ts",
-      "require": "./src/parser.js",
-      "import": "./src/parser.js"
+      "require": "./src/core/parser.js",
+      "import": "./src/core/parser.js"
     },
     "./types": {
       "types": "./index.d.ts"
     },
     "./semantic-model": {
-      "types": "./dist/semantic-model.d.ts",
-      "require": "./dist/semantic-model.js",
-      "import": "./dist/semantic-model.js"
+      "types": "./dist/semantic/semantic-model.d.ts",
+      "require": "./dist/semantic/semantic-model.js",
+      "import": "./dist/semantic/semantic-model.js"
     },
     "./semantic-visitor": {
-      "types": "./dist/semantic-visitor.d.ts",
-      "require": "./dist/semantic-visitor.js",
-      "import": "./dist/semantic-visitor.js"
+      "types": "./dist/semantic/semantic-visitor.d.ts",
+      "require": "./dist/semantic/semantic-visitor.js",
+      "import": "./dist/semantic/semantic-visitor.js"
     },
     "./semantic-code-generator": {
-      "types": "./dist/semantic-code-generator.d.ts",
-      "require": "./dist/semantic-code-generator.js",
-      "import": "./dist/semantic-code-generator.js"
+      "types": "./dist/codegen/generator.d.ts",
+      "require": "./dist/codegen/generator.js",
+      "import": "./dist/codegen/generator.js"
     },
     "./bindings/node": {
       "require": "./bindings/node/index.js"

@@ -4,9 +4,9 @@
 // Demonstrates round-trip: Parse -> Semantic Model -> Generate
 
 import * as fs from 'fs';
-import { SemanticModelBuilderVisitor } from '../src/semantic-visitor-index';
-import { SemanticCodeGenerator, CodeGeneratorOptions } from '../src/semantic-code-generator';
-import { createDaedalusParser, validateDaedalusFile } from '../src/parser-utils';
+import { SemanticModelBuilderVisitor } from '../src/semantic/semantic-visitor-index';
+import { SemanticCodeGenerator, CodeGeneratorOptions } from '../src/codegen/generator';
+import { createDaedalusParser, validateDaedalusFile } from '../src/utils/parser-utils';
 
 interface CLIOptions extends CodeGeneratorOptions {
   output?: string;

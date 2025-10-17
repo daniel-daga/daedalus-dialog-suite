@@ -2,8 +2,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { SemanticModelBuilderVisitor } from './semantic-visitor';
-import { SemanticModel } from './semantic-model';
+import { SemanticModelBuilderVisitor } from '../semantic/semantic-visitor';
+import { SemanticModel } from '../semantic/semantic-model';
 
 /**
  * Create and configure a Daedalus parser instance
@@ -11,7 +11,7 @@ import { SemanticModel } from './semantic-model';
  */
 export function createDaedalusParser(): any {
   const Parser = require('tree-sitter');
-  const Daedalus = require('../bindings/node');
+  const Daedalus = require('../../bindings/node');
   const parser = new Parser();
   parser.setLanguage(Daedalus);
   return parser;

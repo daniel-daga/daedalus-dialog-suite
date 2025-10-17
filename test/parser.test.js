@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const { strict: assert } = require('node:assert');
-const DaedalusParser = require('../src/parser');
+const DaedalusParser = require('../src/core/parser');
 const fs = require('fs');
 
 describe('Daedalus Parser', () => {
