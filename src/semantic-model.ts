@@ -32,12 +32,14 @@ export class DialogFunction {
   public returnType: string;
   public calls: string[];
   public actions: DialogAction[];
+  public conditions: DialogCondition[];
 
   constructor(name: string, returnType: string) {
     this.name = name;
     this.returnType = returnType;
     this.calls = [];
     this.actions = [];
+    this.conditions = [];
   }
 }
 
@@ -434,14 +436,12 @@ export class Dialog {
   public parent: string | null;
   public properties: DialogProperties;
   public actions: DialogAction[];
-  public conditions: DialogCondition[];
 
   constructor(name: string, parent: string | null) {
     this.name = name;
     this.parent = parent;
     this.properties = {};
     this.actions = [];
-    this.conditions = [];
   }
 }
 

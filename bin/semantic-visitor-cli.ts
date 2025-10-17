@@ -106,7 +106,7 @@ function main() {
     // Display results
     console.log('--- ✅ Semantic Model ---');
 
-    // Create a display version that shows function actions
+    // Create a display version that shows function actions and conditions
     const displayModel = {
       dialogs: visitor.semanticModel.dialogs,
       functions: Object.fromEntries(
@@ -115,7 +115,8 @@ function main() {
           {
             name: func.name,
             returnType: func.returnType,
-            actions: func.actions
+            actions: func.actions,
+            conditions: func.conditions
           }
         ])
       )

@@ -80,12 +80,14 @@ test('Should parse Npc_KnowsInfo condition', () => {
 
   const dialog = model.dialogs['DIA_Farim_FirstEXIT'];
 
-  // Check conditions array exists and has content
-  assert.ok(dialog.conditions, 'Dialog should have conditions array');
-  assert.strictEqual(dialog.conditions.length, 1, 'Dialog should have 1 condition');
+  // Check condition function exists
+  assert.ok(dialog.properties.condition, 'Dialog should have condition function');
+  const conditionFunc = dialog.properties.condition;
+  assert.ok(conditionFunc.conditions, 'Condition function should have conditions array');
+  assert.strictEqual(conditionFunc.conditions.length, 1, 'Condition function should have 1 condition');
 
   // Check condition type
-  const condition = dialog.conditions[0];
+  const condition = conditionFunc.conditions[0];
   assert.ok(condition instanceof NpcKnowsInfoCondition, 'Condition should be NpcKnowsInfoCondition');
   assert.strictEqual(condition.npc, 'other', 'NPC should be "other"');
   assert.strictEqual(condition.dialogRef, 'DIA_Farim_Hallo', 'Dialog reference should be correct');
@@ -116,8 +118,9 @@ test('Should round-trip dialog with Npc_KnowsInfo condition', () => {
   const dialog2 = model2.dialogs['DIA_Farim_FirstEXIT'];
 
   assert.ok(dialog2, 'Re-parsed dialog should exist');
-  assert.strictEqual(dialog2.conditions.length, 1, 'Re-parsed dialog should have 1 condition');
-  assert.ok(dialog2.conditions[0] instanceof NpcKnowsInfoCondition,
+  const conditionFunc2 = dialog2.properties.condition;
+  assert.strictEqual(conditionFunc2.conditions.length, 1, 'Re-parsed condition function should have 1 condition');
+  assert.ok(conditionFunc2.conditions[0] instanceof NpcKnowsInfoCondition,
            'Re-parsed condition should be NpcKnowsInfoCondition');
 });
 
@@ -127,8 +130,9 @@ test('Should handle dialog without conditions', () => {
 
   // The condition function just returns true without any semantic conditions
   assert.ok(dialog, 'Dialog should exist');
-  assert.strictEqual(dialog.conditions.length, 0,
-                     'Dialog with simple return should have no semantic conditions');
+  const conditionFunc = dialog.properties.condition;
+  assert.strictEqual(conditionFunc.conditions.length, 0,
+                     'Condition function with simple return should have no semantic conditions');
 });
 
 test('Should display condition correctly', () => {
@@ -210,12 +214,13 @@ func void DIA_Test_Multi_Info()
 
   const model = parseAndBuildModel(dialogWithMultipleConditions);
   const dialog = model.dialogs['DIA_Test_Multi'];
+  const conditionFunc = dialog.properties.condition;
 
-  assert.strictEqual(dialog.conditions.length, 2, 'Should parse 2 conditions');
-  assert.ok(dialog.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
-  assert.ok(dialog.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
-  assert.strictEqual(dialog.conditions[0].dialogRef, 'DIA_First', 'First ref should be DIA_First');
-  assert.strictEqual(dialog.conditions[1].dialogRef, 'DIA_Second', 'Second ref should be DIA_Second');
+  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse 2 conditions');
+  assert.ok(conditionFunc.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(conditionFunc.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
+  assert.strictEqual(conditionFunc.conditions[0].dialogRef, 'DIA_First', 'First ref should be DIA_First');
+  assert.strictEqual(conditionFunc.conditions[1].dialogRef, 'DIA_Second', 'Second ref should be DIA_Second');
 });
 
 test('Should parse variable conditions with negation', () => {
@@ -249,22 +254,23 @@ func void DIA_Test_Variables_Info()
 
   const model = parseAndBuildModel(dialogWithVariables);
   const dialog = model.dialogs['DIA_Test_Variables'];
+  const conditionFunc = dialog.properties.condition;
 
-  assert.strictEqual(dialog.conditions.length, 4, 'Should parse 4 conditions');
+  assert.strictEqual(conditionFunc.conditions.length, 4, 'Should parse 4 conditions');
 
   // First two should be NpcKnowsInfo
-  assert.ok(dialog.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
-  assert.ok(dialog.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
+  assert.ok(conditionFunc.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(conditionFunc.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
 
   // Third should be negated variable
-  assert.ok(dialog.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
-  assert.strictEqual(dialog.conditions[2].variableName, 'EntscheidungBuddlerMapTaken', 'Variable name should match');
-  assert.strictEqual(dialog.conditions[2].negated, true, 'Should be negated');
+  assert.ok(conditionFunc.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
+  assert.strictEqual(conditionFunc.conditions[2].variableName, 'EntscheidungBuddlerMapTaken', 'Variable name should match');
+  assert.strictEqual(conditionFunc.conditions[2].negated, true, 'Should be negated');
 
   // Fourth should be plain variable
-  assert.ok(dialog.conditions[3] instanceof VariableCondition, 'Fourth should be VariableCondition');
-  assert.strictEqual(dialog.conditions[3].variableName, 'EntscheidungVergessenTaken', 'Variable name should match');
-  assert.strictEqual(dialog.conditions[3].negated, false, 'Should not be negated');
+  assert.ok(conditionFunc.conditions[3] instanceof VariableCondition, 'Fourth should be VariableCondition');
+  assert.strictEqual(conditionFunc.conditions[3].variableName, 'EntscheidungVergessenTaken', 'Variable name should match');
+  assert.strictEqual(conditionFunc.conditions[3].negated, false, 'Should not be negated');
 });
 
 test('Should generate code for variable conditions', () => {
@@ -328,12 +334,13 @@ func void DIA_Test_Roundtrip_Info()
   // Parse generated code and verify it matches
   const model2 = parseAndBuildModel(generatedCode);
   const dialog2 = model2.dialogs['DIA_Test_Roundtrip'];
+  const conditionFunc2 = dialog2.properties.condition;
 
   assert.ok(dialog2, 'Re-parsed dialog should exist');
-  assert.strictEqual(dialog2.conditions.length, 3, 'Re-parsed dialog should have 3 conditions');
-  assert.ok(dialog2.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
-  assert.ok(dialog2.conditions[1] instanceof VariableCondition, 'Second should be VariableCondition');
-  assert.strictEqual(dialog2.conditions[1].negated, true, 'Second should be negated');
-  assert.ok(dialog2.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
-  assert.strictEqual(dialog2.conditions[2].negated, false, 'Third should not be negated');
+  assert.strictEqual(conditionFunc2.conditions.length, 3, 'Re-parsed condition function should have 3 conditions');
+  assert.ok(conditionFunc2.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(conditionFunc2.conditions[1] instanceof VariableCondition, 'Second should be VariableCondition');
+  assert.strictEqual(conditionFunc2.conditions[1].negated, true, 'Second should be negated');
+  assert.ok(conditionFunc2.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
+  assert.strictEqual(conditionFunc2.conditions[2].negated, false, 'Third should not be negated');
 });

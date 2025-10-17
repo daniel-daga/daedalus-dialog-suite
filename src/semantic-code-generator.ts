@@ -81,10 +81,7 @@ export class SemanticCodeGenerator {
     const associatedFuncs = this.getAssociatedFunctions(dialog, model);
     for (const func of associatedFuncs) {
       processedFunctions.add(func.name);
-      // Check if this is a condition function
-      const isCondition = dialog.properties.condition instanceof DialogFunction &&
-                          dialog.properties.condition.name === func.name;
-      parts.push(this.generateFunction(func, undefined, isCondition ? dialog.conditions : undefined));
+      parts.push(this.generateFunction(func));
     }
 
     return parts.join('\n');
@@ -202,7 +199,7 @@ export class SemanticCodeGenerator {
   /**
    * Generate a function declaration
    */
-  generateFunction(func: DialogFunction, preservedBody?: string, conditions?: DialogCondition[]): string {
+  generateFunction(func: DialogFunction, preservedBody?: string): string {
     const indent = this.indent();
     const funcKeyword = this.keyword('func');
     const returnType = this.normalizeReturnType(func.returnType);
@@ -218,9 +215,9 @@ export class SemanticCodeGenerator {
       bodyLines.forEach(line => {
         lines.push(`${indent}${line}`);
       });
-    } else if (conditions && conditions.length > 0) {
+    } else if (func.conditions.length > 0) {
       // Generate condition function body
-      this.generateConditionBody(conditions, lines, indent);
+      this.generateConditionBody(func.conditions, lines, indent);
     } else if (func.actions.length > 0) {
       // Generate body from semantic actions
       func.actions.forEach(action => {

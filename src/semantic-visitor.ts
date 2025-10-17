@@ -222,10 +222,7 @@ export class SemanticModelBuilderVisitor {
 
     const condition = ConditionParsers.parseSemanticCondition(node, functionName);
     if (condition) {
-      const dialog = this.findDialogForConditionFunction(this.currentFunction.name);
-      if (dialog) {
-        dialog.conditions.push(condition);
-      }
+      this.currentFunction.conditions.push(condition);
     }
   }
 
@@ -241,20 +238,6 @@ export class SemanticModelBuilderVisitor {
       const dialog = this.semanticModel.dialogs[dialogName];
       if (dialog.properties.information &&
           (dialog.properties.information as DialogFunction).name === functionName) {
-        return dialog;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Find which dialog uses a function as its condition function
-   */
-  private findDialogForConditionFunction(functionName: string): Dialog | null {
-    for (const dialogName in this.semanticModel.dialogs) {
-      const dialog = this.semanticModel.dialogs[dialogName];
-      if (dialog.properties.condition &&
-          (dialog.properties.condition as DialogFunction).name === functionName) {
         return dialog;
       }
     }
