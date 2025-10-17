@@ -268,24 +268,16 @@ export class SemanticCodeGenerator {
       lines.push(`${indent}${indent}return TRUE;`);
       lines.push(`${indent}};`);
     } else {
-      // Multiple conditions - generate nested if statements (matching Gothic style)
-      // Each condition wraps the next one, with return TRUE at the innermost level
-      for (let i = 0; i < conditions.length; i++) {
-        const condCode = this.generateCondition(conditions[i]);
-        const currentIndent = indent.repeat(i + 1);
-        lines.push(`${currentIndent}if (${condCode})`);
-        lines.push(`${currentIndent}{`);
+      // Multiple conditions - generate single if with && operators (matching Gothic style)
+      const condCodes = conditions.map(c => this.generateCondition(c));
+      lines.push(`${indent}if (${condCodes[0]}`);
+      for (let i = 1; i < condCodes.length; i++) {
+        lines.push(`${indent}&& ${condCodes[i]}`);
       }
-
-      // Add return TRUE at the innermost level
-      const innerIndent = indent.repeat(conditions.length + 1);
-      lines.push(`${innerIndent}return TRUE;`);
-
-      // Close all if statements
-      for (let i = conditions.length - 1; i >= 0; i--) {
-        const currentIndent = indent.repeat(i + 1);
-        lines.push(`${currentIndent}};`);
-      }
+      lines.push(`${indent})`);
+      lines.push(`${indent}{`);
+      lines.push(`${indent}${indent}return TRUE;`);
+      lines.push(`${indent}};`);
     }
   }
 

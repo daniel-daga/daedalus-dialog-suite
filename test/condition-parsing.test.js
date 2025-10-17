@@ -6,7 +6,8 @@ const {
   SemanticModelBuilderVisitor,
   SemanticCodeGenerator,
   NpcKnowsInfoCondition,
-  Condition
+  Condition,
+  VariableCondition
 } = require('../dist/semantic-visitor-index');
 
 // Test data: Dialog with Npc_KnowsInfo condition
@@ -215,4 +216,124 @@ func void DIA_Test_Multi_Info()
   assert.ok(dialog.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
   assert.strictEqual(dialog.conditions[0].dialogRef, 'DIA_First', 'First ref should be DIA_First');
   assert.strictEqual(dialog.conditions[1].dialogRef, 'DIA_Second', 'Second ref should be DIA_Second');
+});
+
+test('Should parse variable conditions with negation', () => {
+  const dialogWithVariables = `
+instance DIA_Test_Variables(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Variables_Condition;
+	information	= DIA_Test_Variables_Info;
+	permanent	= true;
+	description = "Test";
+};
+
+func int DIA_Test_Variables_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_AlchemistWald_Amnesie)
+	&& Npc_KnowsInfo(other, DIA_Arog_Buddler)
+	&& !EntscheidungBuddlerMapTaken
+	&& EntscheidungVergessenTaken)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Variables_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(dialogWithVariables);
+  const dialog = model.dialogs['DIA_Test_Variables'];
+
+  assert.strictEqual(dialog.conditions.length, 4, 'Should parse 4 conditions');
+
+  // First two should be NpcKnowsInfo
+  assert.ok(dialog.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(dialog.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
+
+  // Third should be negated variable
+  assert.ok(dialog.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
+  assert.strictEqual(dialog.conditions[2].variableName, 'EntscheidungBuddlerMapTaken', 'Variable name should match');
+  assert.strictEqual(dialog.conditions[2].negated, true, 'Should be negated');
+
+  // Fourth should be plain variable
+  assert.ok(dialog.conditions[3] instanceof VariableCondition, 'Fourth should be VariableCondition');
+  assert.strictEqual(dialog.conditions[3].variableName, 'EntscheidungVergessenTaken', 'Variable name should match');
+  assert.strictEqual(dialog.conditions[3].negated, false, 'Should not be negated');
+});
+
+test('Should generate code for variable conditions', () => {
+  const plainVar = new VariableCondition('myVariable', false);
+  const negatedVar = new VariableCondition('myVariable', true);
+
+  assert.strictEqual(plainVar.generateCode({}), 'myVariable', 'Plain variable should generate correctly');
+  assert.strictEqual(negatedVar.generateCode({}), '!myVariable', 'Negated variable should generate correctly');
+});
+
+test('Should display variable conditions correctly', () => {
+  const plainVar = new VariableCondition('EntscheidungVergessenTaken', false);
+  const negatedVar = new VariableCondition('EntscheidungBuddlerMapTaken', true);
+
+  assert.strictEqual(plainVar.toDisplayString(), '[Variable: EntscheidungVergessenTaken]',
+                     'Plain variable display should be correct');
+  assert.strictEqual(negatedVar.toDisplayString(), '[Not: EntscheidungBuddlerMapTaken]',
+                     'Negated variable display should be correct');
+});
+
+test('Should round-trip dialog with variable conditions', () => {
+  const dialogWithVariables = `
+instance DIA_Test_Roundtrip(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Roundtrip_Condition;
+	information	= DIA_Test_Roundtrip_Info;
+	permanent	= true;
+	description = "Test";
+};
+
+func int DIA_Test_Roundtrip_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_Test)
+	&& !someFlag
+	&& anotherFlag)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Roundtrip_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(dialogWithVariables);
+  const generator = new SemanticCodeGenerator();
+  const generatedCode = generator.generateSemanticModel(model);
+
+  // Verify generated code contains the conditions
+  assert.ok(generatedCode.includes('Npc_KnowsInfo(other, DIA_Test)'),
+           'Generated code should contain Npc_KnowsInfo');
+  assert.ok(generatedCode.includes('!someFlag'),
+           'Generated code should contain negated variable');
+  assert.ok(generatedCode.includes('anotherFlag'),
+           'Generated code should contain plain variable');
+
+  // Parse generated code and verify it matches
+  const model2 = parseAndBuildModel(generatedCode);
+  const dialog2 = model2.dialogs['DIA_Test_Roundtrip'];
+
+  assert.ok(dialog2, 'Re-parsed dialog should exist');
+  assert.strictEqual(dialog2.conditions.length, 3, 'Re-parsed dialog should have 3 conditions');
+  assert.ok(dialog2.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(dialog2.conditions[1] instanceof VariableCondition, 'Second should be VariableCondition');
+  assert.strictEqual(dialog2.conditions[1].negated, true, 'Second should be negated');
+  assert.ok(dialog2.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
+  assert.strictEqual(dialog2.conditions[2].negated, false, 'Third should not be negated');
 });

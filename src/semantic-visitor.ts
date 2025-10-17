@@ -116,6 +116,13 @@ export class SemanticModelBuilderVisitor {
         this.processAssignment(node);
     } else if (node.type === 'call_expression' && this.currentFunction) {
         this.processFunctionCall(node);
+    } else if (this.currentFunction && this.conditionFunctions.has(this.currentFunction.name)) {
+        // Process condition-specific node types (identifier, unary_expression)
+        // Only if they are part of a binary expression (to filter out function names, params, etc.)
+        if ((node.type === 'identifier' || node.type === 'unary_expression') &&
+            node.parent && node.parent.type === 'binary_expression') {
+          this.processCondition(node);
+        }
     }
 
     // Recurse to children
@@ -188,13 +195,7 @@ export class SemanticModelBuilderVisitor {
 
       if (isConditionFunc) {
         // Parse semantic conditions and add to dialog
-        const condition = ConditionParsers.parseSemanticCondition(node, functionName);
-        if (condition) {
-          const dialog = this.findDialogForConditionFunction(this.currentFunction.name);
-          if (dialog) {
-            dialog.conditions.push(condition);
-          }
-        }
+        this.processCondition(node, functionName);
       } else {
         // Parse semantic actions and add to current function
         const action = ActionParsers.parseSemanticAction(node, functionName);
@@ -209,6 +210,21 @@ export class SemanticModelBuilderVisitor {
             dialog.actions.push(action);
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Process condition expressions (call expressions, identifiers, unary expressions)
+   */
+  private processCondition(node: TreeSitterNode, functionName?: string): void {
+    if (!this.currentFunction) return;
+
+    const condition = ConditionParsers.parseSemanticCondition(node, functionName);
+    if (condition) {
+      const dialog = this.findDialogForConditionFunction(this.currentFunction.name);
+      if (dialog) {
+        dialog.conditions.push(condition);
       }
     }
   }

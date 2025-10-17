@@ -397,7 +397,33 @@ export class Condition implements CodeGeneratable {
   }
 }
 
-export type DialogCondition = NpcKnowsInfoCondition | Condition;
+/**
+ * Represents a variable reference condition (e.g., EntscheidungVergessenTaken)
+ * or negated variable (e.g., !EntscheidungBuddlerMapTaken)
+ */
+export class VariableCondition implements CodeGeneratable {
+  public variableName: string;
+  public negated: boolean;
+
+  constructor(variableName: string, negated: boolean = false) {
+    this.variableName = variableName;
+    this.negated = negated;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return this.negated ? `!${this.variableName}` : this.variableName;
+  }
+
+  toDisplayString(): string {
+    return this.negated ? `[Not: ${this.variableName}]` : `[Variable: ${this.variableName}]`;
+  }
+
+  getTypeName(): string {
+    return 'VariableCondition';
+  }
+}
+
+export type DialogCondition = NpcKnowsInfoCondition | Condition | VariableCondition;
 
 // ===================================================================
 // DIALOG CLASS
