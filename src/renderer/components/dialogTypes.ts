@@ -29,17 +29,6 @@ export interface DialogDetailsEditorProps {
   onNavigateToFunction?: (functionName: string) => void;
 }
 
-export interface ChoiceActionEditorProps {
-  open: boolean;
-  onClose: () => void;
-  targetFunctionName: string;
-  targetFunction: any;
-  onUpdateFunction: (func: any) => void;
-  npcName: string;
-  semanticModel: any;
-  onUpdateSemanticFunction: (functionName: string, func: any) => void;
-}
-
 export interface NPCListProps {
   npcs: string[];
   npcMap: Map<string, string[]>;

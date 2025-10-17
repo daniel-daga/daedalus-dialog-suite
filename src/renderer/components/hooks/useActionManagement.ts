@@ -17,13 +17,12 @@ export interface ActionManagementConfig {
   onUpdateSemanticModel?: (functionName: string, func: any) => void;
   /** Context name for dialog/function (used for generating unique names) */
   contextName: string;
-  /** Optional function name key if managing multiple functions (for ChoiceActionEditor) */
+  /** Optional function name key if managing multiple functions */
   functionNameKey?: string;
 }
 
 /**
  * Custom hook for managing dialog actions (add, update, delete operations)
- * Eliminates code duplication between DialogDetailsEditor and ChoiceActionEditor
  */
 export function useActionManagement(config: ActionManagementConfig) {
   const {
@@ -42,7 +41,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     setFunction((prev: any) => {
       if (!prev) return prev;
 
-      // Handle multi-function case (ChoiceActionEditor)
+      // Handle multi-function case
       if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
         const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
         if (!func) return prev;
@@ -54,7 +53,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         };
       }
 
-      // Handle single function case (DialogDetailsEditor)
+      // Handle single function case
       const newActions = [...(prev.actions || [])];
       newActions[index] = updatedAction;
       return { ...prev, actions: newActions };
@@ -68,7 +67,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     setFunction((prev: any) => {
       if (!prev) return prev;
 
-      // Handle multi-function case (ChoiceActionEditor)
+      // Handle multi-function case
       if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
         const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
         if (!func) return prev;
@@ -79,7 +78,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         };
       }
 
-      // Handle single function case (DialogDetailsEditor)
+      // Handle single function case
       const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
       return { ...prev, actions: newActions };
     });
@@ -92,7 +91,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     setFunction((prev: any) => {
       if (!prev) return prev;
 
-      // Handle multi-function case (ChoiceActionEditor)
+      // Handle multi-function case
       if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
         const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
         if (!func) return prev;
@@ -103,7 +102,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         };
       }
 
-      // Handle single function case (DialogDetailsEditor)
+      // Handle single function case
       const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
       return { ...prev, actions: newActions };
     });
@@ -148,7 +147,7 @@ export function useActionManagement(config: ActionManagementConfig) {
       const newActions = [...actions];
       newActions.splice(index + 1, 0, newAction);
 
-      // Handle multi-function case (ChoiceActionEditor)
+      // Handle multi-function case
       if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
         const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
         return {
@@ -157,7 +156,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         };
       }
 
-      // Handle single function case (DialogDetailsEditor)
+      // Handle single function case
       return { ...prev, actions: newActions };
     });
 
@@ -189,7 +188,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         const newAction = createAction('choice', { dialogName: baseName });
         newAction.targetFunction = newFunctionName;
 
-        // Handle multi-function case (ChoiceActionEditor)
+        // Handle multi-function case
         if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
           const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
           if (!func) return prev;
@@ -201,7 +200,7 @@ export function useActionManagement(config: ActionManagementConfig) {
           };
         }
 
-        // Handle single function case (DialogDetailsEditor)
+        // Handle single function case
         const newActions = [...(prev.actions || [])];
         newActions.splice(index + 1, 0, newAction);
         return { ...prev, actions: newActions };
@@ -235,7 +234,7 @@ export function useActionManagement(config: ActionManagementConfig) {
       const newActions = [...actions];
       newActions.splice(index + 1, 0, newAction);
 
-      // Handle multi-function case (ChoiceActionEditor)
+      // Handle multi-function case
       if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
         const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
         return {
@@ -244,7 +243,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         };
       }
 
-      // Handle single function case (DialogDetailsEditor)
+      // Handle single function case
       return { ...prev, actions: newActions };
     });
 
