@@ -286,5 +286,7 @@ test('SemanticCodeGenerator should handle X', () => {
 2. **Do NOT create temporary test files** - Use proper test infrastructure
    - All tests go in `test/*.test.js` files
    - Do NOT create `/tmp/test_*.js` files or similar
+   - Do NOT create temporary test files of any kind
+   - If you need a test file, it should be a permanent test fixture belonging to a meaningful test that can be added to the suite
    - Use `node --test` to run specific test files
    - Clean up any temporary files immediately after debugging
