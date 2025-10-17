@@ -2,6 +2,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { SemanticModelBuilderVisitor } from './semantic-visitor';
+import { SemanticModel } from './semantic-model';
 
 /**
  * Create and configure a Daedalus parser instance
@@ -23,6 +25,32 @@ export function createDaedalusParser(): any {
 export function parseDaedalusSource(sourceCode: string): any {
   const parser = createDaedalusParser();
   return parser.parse(sourceCode);
+}
+
+/**
+ * Parse Daedalus source code and build semantic model with error handling
+ * @param sourceCode - Daedalus source code to parse
+ * @returns Semantic model with error information if syntax errors exist
+ */
+export function parseSemanticModel(sourceCode: string): SemanticModel {
+  const parser = createDaedalusParser();
+  const tree = parser.parse(sourceCode);
+
+  const visitor = new SemanticModelBuilderVisitor();
+
+  // Check for syntax errors first
+  visitor.checkForSyntaxErrors(tree.rootNode, sourceCode);
+
+  // If there are syntax errors, return the model with errors
+  if (visitor.semanticModel.hasErrors) {
+    return visitor.semanticModel;
+  }
+
+  // Otherwise, proceed with normal semantic analysis
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  return visitor.semanticModel;
 }
 
 /**

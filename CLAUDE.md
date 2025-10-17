@@ -274,3 +274,17 @@ test('SemanticCodeGenerator should handle X', () => {
 - The visitor pattern uses **two passes**: Pass 1 creates objects, Pass 2 links and analyzes
 - Code generator input is **always** a `SemanticModel`, never file paths
 - When adding new action types, update: `semantic-model.ts`, `action-parsers.ts`, and `semantic-code-generator.ts`
+
+### Agent Rules
+
+1. **Do NOT over-document** - This is a working codebase, not a documentation repository
+   - Do NOT create markdown documentation files unless explicitly requested
+   - Do NOT create example files unless explicitly requested
+   - Code should be self-documenting with clear names and concise comments
+   - Tests serve as usage examples
+
+2. **Do NOT create temporary test files** - Use proper test infrastructure
+   - All tests go in `test/*.test.js` files
+   - Do NOT create `/tmp/test_*.js` files or similar
+   - Use `node --test` to run specific test files
+   - Clean up any temporary files immediately after debugging

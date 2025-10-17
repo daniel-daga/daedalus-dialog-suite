@@ -10,7 +10,11 @@ export interface TreeSitterNode {
   parent: TreeSitterNode | null;
   startIndex: number;
   endIndex: number;
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
   nextSibling: TreeSitterNode | null;
+  hasError: boolean;
+  isMissing: boolean;
   childForFieldName(fieldName: string): TreeSitterNode | null;
   child(index: number): TreeSitterNode;
 }
@@ -419,7 +423,19 @@ export class Dialog {
 // SEMANTIC MODEL INTERFACE
 // ===================================================================
 
+export interface SyntaxError {
+  type: 'syntax_error' | 'missing_token';
+  message: string;
+  position: {
+    row: number;
+    column: number;
+  };
+  text: string;
+}
+
 export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
+  errors?: SyntaxError[];
+  hasErrors?: boolean;
 }

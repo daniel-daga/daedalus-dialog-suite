@@ -30,8 +30,9 @@ class DaedalusParser {
       throughput: sourceCode.length / parseTimeMs * 1000 // bytes per second
     };
 
-    if (options.includeSource) {
-      result.sourceCode = sourceCode;
+    if (result.hasErrors) {
+      result.errors = [];
+      this.collectErrors(tree.rootNode, sourceCode, result.errors);
     }
 
     return result;

@@ -66,6 +66,32 @@ function main() {
     const visitor = new SemanticModelBuilderVisitor();
 
     console.log('--- 📊 Semantic Analysis ---');
+    console.log('Checking for syntax errors...');
+    visitor.checkForSyntaxErrors(tree.rootNode, sourceCode);
+
+    // If syntax errors exist, display them and exit
+    if (visitor.semanticModel.hasErrors) {
+      console.log('');
+      console.log('--- ❌ Syntax Errors Found ---');
+      console.log(`Found ${visitor.semanticModel.errors!.length} syntax error(s):\n`);
+
+      visitor.semanticModel.errors!.forEach((err, idx) => {
+        console.log(`Error ${idx + 1}:`);
+        console.log(`  Type: ${err.type}`);
+        console.log(`  Location: Line ${err.position.row}, Column ${err.position.column}`);
+        console.log(`  Message: ${err.message}`);
+        if (err.text) {
+          const preview = err.text.length > 50 ? err.text.substring(0, 50) + '...' : err.text;
+          console.log(`  Text: ${preview.replace(/\n/g, '\\n')}`);
+        }
+        console.log('');
+      });
+
+      console.log('Semantic analysis skipped due to syntax errors.');
+      process.exit(1);
+    }
+
+    console.log('No syntax errors found.');
     console.log('Running Pass 1: Creating all objects...');
     visitor.pass1_createObjects(tree.rootNode);
 

@@ -16,7 +16,7 @@ FUNC INT DIA_Farim_FirstEXIT_Condition()
 {
 	if (Npc_KnowsInfo (other, DIA_Farim_Hallo))
 	{
-		return TRUE;
+		return TRUE
 	};
 };
 

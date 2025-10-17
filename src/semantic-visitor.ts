@@ -18,10 +18,47 @@ export class SemanticModelBuilderVisitor {
   private conditionFunctions: Set<string>;
 
   constructor() {
-    this.semanticModel = { dialogs: {}, functions: {} };
+    this.semanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
+  }
+
+  /**
+   * Check for syntax errors in the parse tree and populate semantic model errors
+   */
+  checkForSyntaxErrors(node: TreeSitterNode, sourceCode?: string): void {
+    if (node.hasError) {
+      this.semanticModel.hasErrors = true;
+    }
+
+    if (node.type === 'ERROR') {
+      this.semanticModel.errors!.push({
+        type: 'syntax_error',
+        message: `Syntax error at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
+        position: {
+          row: node.startPosition.row + 1,
+          column: node.startPosition.column + 1
+        },
+        text: sourceCode ? sourceCode.slice(node.startIndex, node.endIndex) : node.text
+      });
+    }
+
+    if (node.isMissing) {
+      this.semanticModel.errors!.push({
+        type: 'missing_token',
+        message: `Missing ${node.type} at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
+        position: {
+          row: node.startPosition.row + 1,
+          column: node.startPosition.column + 1
+        },
+        text: ''
+      });
+    }
+
+    for (const child of node.children) {
+      this.checkForSyntaxErrors(child, sourceCode);
+    }
   }
 
   // ===================================================================
