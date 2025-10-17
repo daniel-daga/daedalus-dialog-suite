@@ -25,8 +25,17 @@ export function useFocusNavigation() {
     }
   }, []);
 
+  /**
+   * Trim the refs array to match the current number of actions
+   * Call this after rendering when actions change
+   */
+  const trimRefs = useCallback((length: number) => {
+    actionRefs.current.length = length;
+  }, []);
+
   return {
     actionRefs,
-    focusAction
+    focusAction,
+    trimRefs
   };
 }

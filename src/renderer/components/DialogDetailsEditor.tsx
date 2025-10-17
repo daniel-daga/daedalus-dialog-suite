@@ -26,7 +26,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const [propertiesExpanded, setPropertiesExpanded] = useState(true);
 
   // Use custom hooks for focus navigation and action management
-  const { actionRefs, focusAction } = useFocusNavigation();
+  const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
 
   const handleUpdateSemanticModel = useCallback((functionName: string, func: any) => {
     if (fileState) {
@@ -85,6 +85,12 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     setLocalDialog(dialog);
     setLocalFunction(infoFunction);
   }, [dialogName, dialog, infoFunction]);
+
+  // Trim refs array to match current actions length
+  React.useEffect(() => {
+    const actionsLength = localFunction?.actions?.length || 0;
+    trimRefs(actionsLength);
+  }, [localFunction?.actions?.length, trimRefs]);
 
   const handleSave = () => {
     // Normalize dialog properties to use string references for functions
@@ -338,7 +344,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           <Stack spacing={2}>
             {(localFunction.actions || []).map((action: any, idx: number) => (
               <ActionCard
-                key={idx}
+                key={action.id || idx}
                 ref={(el) => (actionRefs.current[idx] = el)}
                 action={action}
                 index={idx}

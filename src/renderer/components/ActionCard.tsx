@@ -67,8 +67,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     }
   }, [focusAction, index]);
 
-  const handleAddNewAfter = useCallback(() => {
-    addDialogLineAfter(index);
+  const handleAddNewAfter = useCallback((toggleSpeaker: boolean = true) => {
+    addDialogLineAfter(index, toggleSpeaker);
   }, [addDialogLineAfter, index]);
 
   const handleDeleteAndFocusPrev = useCallback(() => {
@@ -97,15 +97,22 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       e.preventDefault();
       flushUpdate();
       handleTabToPrev();
-    } else if (e.key === 'Enter' && e.shiftKey) {
+    } else if (e.key === 'Enter' && e.ctrlKey) {
+      // Ctrl+Enter opens the action dropdown menu
       e.preventDefault();
       flushUpdate();
       setMenuAnchor(actionBoxRef.current);
       setSelectedMenuIndex(0);
-    } else if (e.key === 'Enter' && isDialogLine && localAction.text && localAction.text.trim() !== '') {
+    } else if (e.key === 'Enter' && e.shiftKey && isDialogLine && localAction.text && localAction.text.trim() !== '') {
+      // Shift+Enter creates a new dialog line WITHOUT toggling speaker
       e.preventDefault();
       flushUpdate();
-      handleAddNewAfter();
+      handleAddNewAfter(false);
+    } else if (e.key === 'Enter' && isDialogLine && localAction.text && localAction.text.trim() !== '') {
+      // Enter creates a new dialog line WITH toggling speaker (default behavior)
+      e.preventDefault();
+      flushUpdate();
+      handleAddNewAfter(true);
     } else if (e.key === 'Backspace' && isDialogLine && (!localAction.text || localAction.text.trim() === '')) {
       e.preventDefault();
       handleDeleteAndFocusPrev();
@@ -305,7 +312,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
           <AddIcon fontSize="small" sx={{ color: 'primary.main' }} />
           {hasFocus && (
             <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', whiteSpace: 'nowrap' }}>
-              Shift+Enter
+              Ctrl+Enter
             </Typography>
           )}
         </Box>

@@ -6,6 +6,13 @@
 import { ACTION_TEMPLATES, getOppositeSpeaker } from './actionTemplates';
 import type { ActionTypeId } from './actionTypes';
 
+/**
+ * Generate a unique ID for an action
+ */
+export function generateActionId(): string {
+  return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 export interface ActionCreationContext {
   dialogName?: string;
   currentAction?: any;
@@ -21,51 +28,71 @@ export function createAction(
 ): any {
   const { dialogName, currentAction } = context;
 
+  let action: any;
   switch (actionType) {
     case 'dialogLine': {
       // Toggle speaker if we have a current action
       const speaker = currentAction?.speaker
         ? getOppositeSpeaker(currentAction.speaker)
         : 'other';
-      return ACTION_TEMPLATES.dialogLine(speaker, '');
+      action = ACTION_TEMPLATES.dialogLine(speaker, '');
+      break;
     }
 
     case 'choice':
-      return ACTION_TEMPLATES.choice(dialogName || '', '', '');
+      action = ACTION_TEMPLATES.choice(dialogName || '', '', '');
+      break;
 
     case 'logEntry':
-      return ACTION_TEMPLATES.logEntry();
+      action = ACTION_TEMPLATES.logEntry();
+      break;
 
     case 'createTopic':
-      return ACTION_TEMPLATES.createTopic();
+      action = ACTION_TEMPLATES.createTopic();
+      break;
 
     case 'logSetTopicStatus':
-      return ACTION_TEMPLATES.logSetTopicStatus();
+      action = ACTION_TEMPLATES.logSetTopicStatus();
+      break;
 
     case 'createInventoryItems':
-      return ACTION_TEMPLATES.createInventoryItems();
+      action = ACTION_TEMPLATES.createInventoryItems();
+      break;
 
     case 'giveInventoryItems':
-      return ACTION_TEMPLATES.giveInventoryItems();
+      action = ACTION_TEMPLATES.giveInventoryItems();
+      break;
 
     case 'attackAction':
-      return ACTION_TEMPLATES.attackAction();
+      action = ACTION_TEMPLATES.attackAction();
+      break;
 
     case 'setAttitudeAction':
-      return ACTION_TEMPLATES.setAttitudeAction();
+      action = ACTION_TEMPLATES.setAttitudeAction();
+      break;
 
     case 'chapterTransition':
-      return ACTION_TEMPLATES.chapterTransition();
+      action = ACTION_TEMPLATES.chapterTransition();
+      break;
 
     case 'exchangeRoutine':
-      return ACTION_TEMPLATES.exchangeRoutine();
+      action = ACTION_TEMPLATES.exchangeRoutine();
+      break;
 
     case 'customAction':
-      return ACTION_TEMPLATES.customAction();
+      action = ACTION_TEMPLATES.customAction();
+      break;
 
     default:
       throw new Error(`Unknown action type: ${actionType}`);
   }
+
+  // Ensure every action has a unique ID
+  if (action && (!action.id || action.id === 'NEW_LINE_ID')) {
+    action.id = generateActionId();
+  }
+
+  return action;
 }
 
 /**

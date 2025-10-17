@@ -23,7 +23,7 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set([targetFunctionName]));
 
   // Use custom hooks for focus navigation and action management
-  const { actionRefs, focusAction } = useFocusNavigation();
+  const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
 
   const {
     updateAction,
@@ -60,6 +60,12 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
 
   // Get current function being edited
   const currentFunction = localFunctions[currentFunctionName] || semanticModel?.functions?.[currentFunctionName];
+
+  // Trim refs array to match current actions length
+  React.useEffect(() => {
+    const actionsLength = currentFunction?.actions?.length || 0;
+    trimRefs(actionsLength);
+  }, [currentFunction?.actions?.length, trimRefs]);
 
   const handleSave = () => {
     // Save all modified functions
@@ -235,7 +241,7 @@ const ChoiceActionEditor: React.FC<ChoiceActionEditorProps> = ({
                 <Stack spacing={2}>
                   {(currentFunction.actions || []).map((action: any, idx: number) => (
                     <ActionCard
-                      key={idx}
+                      key={action.id || idx}
                       ref={(el) => (actionRefs.current[idx] = el)}
                       action={action}
                       index={idx}

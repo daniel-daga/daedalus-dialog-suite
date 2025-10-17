@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
-import { createAction, createActionAfterIndex } from '../actionFactory';
+import { createAction, createActionAfterIndex, generateActionId } from '../actionFactory';
 import type { ActionTypeId } from '../actionTypes';
 
 /**
@@ -117,9 +117,9 @@ export function useActionManagement(config: ActionManagementConfig) {
 
   /**
    * Add a dialog line after a specific index
-   * Automatically toggles the speaker (self/other)
+   * By default toggles the speaker (self/other), unless toggleSpeaker is false
    */
-  const addDialogLineAfter = useCallback((index: number) => {
+  const addDialogLineAfter = useCallback((index: number, toggleSpeaker: boolean = true) => {
     setFunction((prev: any) => {
       if (!prev) return prev;
 
@@ -135,11 +135,14 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       const currentAction = actions[index];
       // Toggle speaker: if current is 'self', new is 'other', and vice versa
-      const oppositeSpeaker = currentAction?.speaker === 'self' ? 'other' : 'self';
+      // Unless toggleSpeaker is false, then keep the same speaker
+      const newSpeaker = toggleSpeaker
+        ? (currentAction?.speaker === 'self' ? 'other' : 'self')
+        : (currentAction?.speaker || 'self');
       const newAction = {
-        speaker: oppositeSpeaker,
+        speaker: newSpeaker,
         text: '',
-        id: 'NEW_LINE_ID'
+        id: generateActionId()
       };
 
       const newActions = [...actions];

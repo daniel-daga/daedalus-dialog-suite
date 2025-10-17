@@ -1,4 +1,27 @@
 import { create } from 'zustand';
+import { generateActionId } from '../components/actionFactory';
+
+/**
+ * Ensure all actions in the model have unique IDs
+ */
+function ensureActionIds(model: any): any {
+  if (!model || !model.functions) return model;
+
+  const updatedFunctions = { ...model.functions };
+  Object.keys(updatedFunctions).forEach(funcName => {
+    const func = updatedFunctions[funcName];
+    if (func.actions && Array.isArray(func.actions)) {
+      func.actions = func.actions.map((action: any) => {
+        if (!action.id || action.id === 'NEW_LINE_ID') {
+          return { ...action, id: generateActionId() };
+        }
+        return action;
+      });
+    }
+  });
+
+  return { ...model, functions: updatedFunctions };
+}
 
 interface FileState {
   filePath: string;
@@ -70,9 +93,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const sourceCode = await window.editorAPI.readFile(filePath);
       const model = await window.editorAPI.parseSource(sourceCode);
 
+      // Ensure all actions have unique IDs
+      const modelWithIds = ensureActionIds(model);
+
       const fileState: FileState = {
         filePath,
-        semanticModel: model,
+        semanticModel: modelWithIds,
         isDirty: false,
         lastSaved: new Date(),
         originalCode: sourceCode,
