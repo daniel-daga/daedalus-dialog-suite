@@ -24,7 +24,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const [localFunction, setLocalFunction] = useState(infoFunction);
   const { openFiles, saveFile, updateModel } = useEditorStore();
   const fileState = openFiles.get(filePath);
-  const [propertiesExpanded, setPropertiesExpanded] = useState(true);
+  const [propertiesExpanded, setPropertiesExpanded] = useState(false);
 
   // Use custom hooks for focus navigation and action management
   const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
@@ -208,7 +208,30 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', mb: propertiesExpanded ? 2 : 0 }}
           onClick={() => setPropertiesExpanded(!propertiesExpanded)}
         >
-          <Typography variant="h6">Properties</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="h6">Properties</Typography>
+            {!propertiesExpanded && (
+              <>
+                {localDialog.properties?.npc && (
+                  <Chip
+                    label={`NPC: ${localDialog.properties.npc}`}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                    sx={{ fontSize: '0.75rem' }}
+                  />
+                )}
+                {localDialog.properties?.description && (
+                  <Chip
+                    label={localDialog.properties.description}
+                    size="small"
+                    color="default"
+                    sx={{ fontSize: '0.75rem', maxWidth: '400px' }}
+                  />
+                )}
+              </>
+            )}
+          </Box>
           <IconButton size="small">
             {propertiesExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
           </IconButton>
@@ -224,29 +247,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               properties: { ...localDialog.properties, npc: e.target.value }
             })}
             size="small"
-          />
-          <TextField
-            fullWidth
-            label="Info Function"
-            value={typeof localDialog.properties?.information === 'string' ? localDialog.properties.information : localDialog.properties?.information?.name || ''}
-            onChange={(e) => setLocalDialog({
-              ...localDialog,
-              properties: { ...localDialog.properties, information: e.target.value }
-            })}
-            size="small"
-            helperText="Function that runs when dialog is shown"
-            disabled
-          />
-          <TextField
-            fullWidth
-            label="Condition Function"
-            value={typeof localDialog.properties?.condition === 'string' ? localDialog.properties.condition : localDialog.properties?.condition?.name || ''}
-            onChange={(e) => setLocalDialog({
-              ...localDialog,
-              properties: { ...localDialog.properties, condition: e.target.value }
-            })}
-            size="small"
-            helperText="Function that determines if dialog is available"
           />
           <TextField
             fullWidth

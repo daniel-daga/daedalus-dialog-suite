@@ -62,6 +62,15 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     );
   };
 
+  // Sort dialogs by priority (nr field)
+  const sortedDialogs = [...dialogsForNPC].sort((a, b) => {
+    const dialogA = semanticModel.dialogs[a];
+    const dialogB = semanticModel.dialogs[b];
+    const priorityA = dialogA?.properties?.nr ?? 999999;
+    const priorityB = dialogB?.properties?.nr ?? 999999;
+    return priorityA - priorityB;
+  });
+
   return (
     <Paper sx={{ width: 350, overflow: 'auto', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0 }} elevation={1}>
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
@@ -74,7 +83,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
       </Box>
       <List dense>
         {selectedNPC ? (
-          dialogsForNPC.map((dialogName) => {
+          sortedDialogs.map((dialogName) => {
             const dialog = semanticModel.dialogs[dialogName];
             const infoFunc = dialog.properties?.information as any;
             const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;

@@ -19,7 +19,7 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   dialogName
 }) => {
   const [localFunction, setLocalFunction] = useState(conditionFunction);
-  const [conditionsExpanded, setConditionsExpanded] = useState(true);
+  const [conditionsExpanded, setConditionsExpanded] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
   const conditionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -146,6 +146,14 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
               size="small"
               variant="outlined"
               sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+            />
+          )}
+          {!conditionsExpanded && (
+            <Chip
+              label={`${(localFunction.conditions || []).length} condition${(localFunction.conditions || []).length !== 1 ? 's' : ''}`}
+              size="small"
+              color="default"
+              sx={{ fontSize: '0.75rem' }}
             />
           )}
           {isDirty && <Chip label="Unsaved" size="small" color="warning" />}
