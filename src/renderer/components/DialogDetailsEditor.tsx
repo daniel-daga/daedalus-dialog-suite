@@ -4,6 +4,7 @@ import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore 
 import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ActionCard from './ActionCard';
+import ConditionEditor from './ConditionEditor';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
 import { createAction } from './actionFactory';
 import type { ActionTypeId } from './actionTypes';
@@ -263,6 +264,29 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         </Stack>
         )}
       </Paper>
+
+      {/* Condition Editor */}
+      {localDialog.properties?.condition && fileState?.semanticModel?.functions?.[
+        typeof localDialog.properties.condition === 'string'
+          ? localDialog.properties.condition
+          : localDialog.properties.condition.name
+      ] && (
+        <ConditionEditor
+          conditionFunction={
+            fileState.semanticModel.functions[
+              typeof localDialog.properties.condition === 'string'
+                ? localDialog.properties.condition
+                : localDialog.properties.condition.name
+            ]
+          }
+          onUpdateFunction={(func: any) => {
+            handleUpdateSemanticModel(func.name, func);
+          }}
+          semanticModel={fileState.semanticModel}
+          filePath={filePath}
+          dialogName={dialogName}
+        />
+      )}
 
       {/* Dialog Lines/Choices */}
       <Paper sx={{ p: 2 }}>

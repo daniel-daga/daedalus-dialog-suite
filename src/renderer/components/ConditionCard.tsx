@@ -1,0 +1,234 @@
+import React, { useState, useRef, useCallback } from 'react';
+import { Box, TextField, IconButton, Tooltip, Chip, Typography, Switch, FormControlLabel } from '@mui/material';
+import { Delete as DeleteIcon, Info as InfoIcon, Code as CodeIcon, Check as CheckIcon } from '@mui/icons-material';
+
+interface ConditionCardProps {
+  condition: any;
+  index: number;
+  totalConditions: number;
+  updateCondition: (index: number, updated: any) => void;
+  deleteCondition: (index: number) => void;
+  focusCondition: (index: number) => void;
+  semanticModel?: any;
+}
+
+const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCardProps>(({
+  condition,
+  index,
+  totalConditions,
+  updateCondition,
+  deleteCondition,
+  focusCondition,
+  semanticModel
+}, ref) => {
+  const mainFieldRef = useRef<HTMLInputElement>(null);
+  const [localCondition, setLocalCondition] = useState(condition);
+  const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync local state when condition prop changes from parent
+  React.useEffect(() => {
+    setLocalCondition(condition);
+  }, [condition]);
+
+  // Expose the ref to parent
+  React.useImperativeHandle(ref, () => mainFieldRef.current!);
+
+  const flushUpdate = useCallback(() => {
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = null;
+    }
+    updateCondition(index, localCondition);
+  }, [updateCondition, index, localCondition]);
+
+  const handleUpdate = useCallback((updated: any) => {
+    setLocalCondition(updated);
+    // Debounced update to parent
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+    }
+    updateTimerRef.current = setTimeout(() => {
+      updateCondition(index, updated);
+    }, 300);
+  }, [updateCondition, index]);
+
+  const handleDelete = useCallback(() => {
+    deleteCondition(index);
+  }, [deleteCondition, index]);
+
+  const getConditionType = (): string => {
+    if (typeof localCondition.getTypeName === 'function') {
+      return localCondition.getTypeName();
+    }
+    if (localCondition.npc && localCondition.dialogRef !== undefined) {
+      return 'NpcKnowsInfoCondition';
+    }
+    if (localCondition.variableName !== undefined) {
+      return 'VariableCondition';
+    }
+    return 'Condition';
+  };
+
+  const conditionType = getConditionType();
+
+  const getConditionIcon = () => {
+    switch (conditionType) {
+      case 'NpcKnowsInfoCondition':
+        return <InfoIcon fontSize="small" />;
+      case 'VariableCondition':
+        return <CheckIcon fontSize="small" />;
+      case 'Condition':
+      default:
+        return <CodeIcon fontSize="small" />;
+    }
+  };
+
+  const getConditionLabel = () => {
+    switch (conditionType) {
+      case 'NpcKnowsInfoCondition':
+        return 'NPC Knows Dialog';
+      case 'VariableCondition':
+        return localCondition.negated ? 'Variable is False' : 'Variable is True';
+      case 'Condition':
+      default:
+        return 'Custom Condition';
+    }
+  };
+
+  const renderConditionFields = () => {
+    switch (conditionType) {
+      case 'NpcKnowsInfoCondition':
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <TextField
+              label="NPC"
+              value={localCondition.npc || ''}
+              onChange={(e) => handleUpdate({ ...localCondition, npc: e.target.value })}
+              onBlur={flushUpdate}
+              size="small"
+              inputRef={mainFieldRef}
+              sx={{ flex: '1 1 30%', minWidth: 120 }}
+            />
+            <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem', flexShrink: 0 }}>
+              knows
+            </Typography>
+            <TextField
+              label="Dialog"
+              value={localCondition.dialogRef || ''}
+              onChange={(e) => handleUpdate({ ...localCondition, dialogRef: e.target.value })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ flex: '1 1 60%', minWidth: 150 }}
+            />
+          </Box>
+        );
+
+      case 'VariableCondition':
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={localCondition.negated || false}
+                  onChange={(e) => {
+                    const updated = { ...localCondition, negated: e.target.checked };
+                    setLocalCondition(updated);
+                    updateCondition(index, updated);
+                  }}
+                  size="small"
+                />
+              }
+              label="NOT"
+              sx={{ mr: 1 }}
+            />
+            <TextField
+              label="Variable Name"
+              value={localCondition.variableName || ''}
+              onChange={(e) => handleUpdate({ ...localCondition, variableName: e.target.value })}
+              onBlur={flushUpdate}
+              size="small"
+              inputRef={mainFieldRef}
+              sx={{ flex: 1 }}
+              placeholder="e.g., MIS_QuestCompleted"
+            />
+          </Box>
+        );
+
+      case 'Condition':
+      default:
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <TextField
+              label="Condition Expression"
+              value={localCondition.condition || ''}
+              onChange={(e) => handleUpdate({ ...localCondition, condition: e.target.value })}
+              onBlur={flushUpdate}
+              size="small"
+              inputRef={mainFieldRef}
+              sx={{ flex: 1 }}
+              placeholder="e.g., hero.attribute[ATR_STRENGTH] >= 50"
+              multiline
+              maxRows={3}
+            />
+          </Box>
+        );
+    }
+  };
+
+  // Cleanup timer on unmount
+  React.useEffect(() => {
+    return () => {
+      if (updateTimerRef.current) {
+        clearTimeout(updateTimerRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <Box
+      sx={{
+        p: 2,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+        bgcolor: 'background.default',
+        '&:hover': {
+          borderColor: 'primary.main',
+          bgcolor: 'action.hover'
+        }
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+        <Tooltip title={getConditionLabel()} arrow>
+          <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
+            {getConditionIcon()}
+          </Box>
+        </Tooltip>
+        <Chip
+          label={getConditionLabel()}
+          size="small"
+          variant="outlined"
+          sx={{ fontSize: '0.7rem' }}
+        />
+        {index < totalConditions - 1 && (
+          <Chip
+            label="AND"
+            size="small"
+            color="primary"
+            sx={{ fontSize: '0.65rem', height: '20px' }}
+          />
+        )}
+        <Box sx={{ flex: 1 }} />
+        <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
+          <DeleteIcon fontSize="small" />
+        </IconButton>
+      </Box>
+
+      {renderConditionFields()}
+    </Box>
+  );
+}));
+
+ConditionCard.displayName = 'ConditionCard';
+
+export default ConditionCard;
