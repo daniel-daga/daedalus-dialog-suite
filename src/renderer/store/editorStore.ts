@@ -29,6 +29,13 @@ interface FileState {
   isDirty: boolean;
   lastSaved: Date;
   originalCode?: string;
+  hasErrors?: boolean;
+  errors?: Array<{
+    type: string;
+    message: string;
+    position?: { row: number; column: number };
+    text?: string;
+  }>;
 }
 
 interface EditorProject {
@@ -93,7 +100,31 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const sourceCode = await window.editorAPI.readFile(filePath);
       const model = await window.editorAPI.parseSource(sourceCode);
 
-      // Ensure all actions have unique IDs
+      // Check for syntax errors
+      if (model.hasErrors) {
+        // Do not process the model if there are syntax errors
+        const fileState: FileState = {
+          filePath,
+          semanticModel: model,
+          isDirty: false,
+          lastSaved: new Date(),
+          originalCode: sourceCode,
+          hasErrors: true,
+          errors: model.errors || [],
+        };
+
+        set((state) => {
+          const newOpenFiles = new Map(state.openFiles);
+          newOpenFiles.set(filePath, fileState);
+          return {
+            openFiles: newOpenFiles,
+            activeFile: filePath,
+          };
+        });
+        return;
+      }
+
+      // Ensure all actions have unique IDs (only for valid models)
       const modelWithIds = ensureActionIds(model);
 
       const fileState: FileState = {
@@ -102,6 +133,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isDirty: false,
         lastSaved: new Date(),
         originalCode: sourceCode,
+        hasErrors: false,
+        errors: [],
       };
 
       set((state) => {

@@ -16,11 +16,22 @@ export class ParserService {
   /**
    * Parse Daedalus source code and return semantic model
    * Returns a plain serializable object (no class instances with methods)
+   * If syntax errors are detected, returns model with hasErrors: true and errors array
    */
   parseSource(sourceCode: string): any {
     const tree = this.parser.parse(sourceCode);
 
     const visitor = new SemanticModelBuilderVisitor();
+
+    // Check for syntax errors first
+    visitor.checkForSyntaxErrors(tree.rootNode as any, sourceCode);
+
+    // If there are syntax errors, return the model with errors immediately
+    if (visitor.semanticModel.hasErrors) {
+      return visitor.semanticModel;
+    }
+
+    // Otherwise, proceed with semantic analysis
     visitor.pass1_createObjects(tree.rootNode as any);
     visitor.pass2_analyzeAndLink(tree.rootNode as any);
 
