@@ -37,8 +37,16 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   const handleUpdate = useCallback((updated: any) => {
     // Update local state immediately for responsive UI
     setLocalAction(updated);
-    // Don't update parent during typing - only on flush
-  }, []);
+
+    // Debounce parent updates - only sync after user stops typing
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+    }
+    updateTimerRef.current = setTimeout(() => {
+      updateAction(index, updated);
+      updateTimerRef.current = null;
+    }, 300); // 300ms debounce
+  }, [updateAction, index]);
 
   // Cleanup timer on unmount and flush pending updates
   React.useEffect(() => {
@@ -319,7 +327,23 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       </Box>
     </Box>
   );
-}));
+}), (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  // Compare by action ID and check if action content is deeply equal
+  // This prevents re-renders when only function props change (which happens often)
+
+  if (prevProps.index !== nextProps.index) return false;
+  if (prevProps.totalActions !== nextProps.totalActions) return false;
+  if (prevProps.npcName !== nextProps.npcName) return false;
+  if (prevProps.dialogContextName !== nextProps.dialogContextName) return false;
+
+  // Deep comparison for action - only re-render if action data actually changed
+  // Use JSON stringify for simplicity (action objects are small)
+  const prevActionStr = JSON.stringify(prevProps.action);
+  const nextActionStr = JSON.stringify(nextProps.action);
+
+  return prevActionStr === nextActionStr;
+});
 
 ActionCard.displayName = 'ActionCard';
 

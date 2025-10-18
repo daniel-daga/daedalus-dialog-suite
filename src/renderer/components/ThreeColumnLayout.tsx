@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Box, Typography, Alert, Paper, List, ListItem, ListItemText } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import NPCList from './NPCList';
@@ -118,17 +118,21 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     };
   }, [semanticModel]);
 
-  // Extract unique NPCs from all dialogs
-  const npcMap = new Map<string, string[]>();
-  Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]: [string, any]) => {
-    const npcName = dialog.properties?.npc || 'Unknown NPC';
-    if (!npcMap.has(npcName)) {
-      npcMap.set(npcName, []);
-    }
-    npcMap.get(npcName)!.push(dialogName);
-  });
+  // Memoize NPC map extraction to avoid rebuilding on every render
+  const { npcMap, npcs } = useMemo(() => {
+    const map = new Map<string, string[]>();
+    Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]: [string, any]) => {
+      const npcName = dialog.properties?.npc || 'Unknown NPC';
+      if (!map.has(npcName)) {
+        map.set(npcName, []);
+      }
+      map.get(npcName)!.push(dialogName);
+    });
 
-  const npcs = Array.from(npcMap.keys()).sort();
+    const npcList = Array.from(map.keys()).sort();
+
+    return { npcMap: map, npcs: npcList };
+  }, [semanticModel.dialogs]);
 
   // Get dialogs for selected NPC
   const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];

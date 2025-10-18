@@ -1,9 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Chip, Menu, MenuItem } from '@mui/material';
 import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
-import ActionCard from './ActionCard';
+import ActionsList from './ActionsList';
 import ConditionEditor from './ConditionEditor';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
 import { createAction } from './actionFactory';
@@ -85,6 +85,9 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   React.useEffect(() => {
     setLocalDialog(dialog);
     setLocalFunction(infoFunction);
+    // Update the refs when props change
+    initialDialogRef.current = dialog;
+    initialFunctionRef.current = infoFunction;
   }, [dialogName, dialog, infoFunction]);
 
   // Trim refs array to match current actions length
@@ -150,8 +153,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
-  const isDirty = JSON.stringify(dialog) !== JSON.stringify(localDialog) ||
-                  JSON.stringify(infoFunction) !== JSON.stringify(localFunction);
+  // Optimize dirty check - use shallow comparison instead of JSON.stringify for better performance
+  // Cache the initial values to avoid re-stringifying on every render
+  const initialDialogRef = useRef(dialog);
+  const initialFunctionRef = useRef(infoFunction);
+
+  const isDirty = useMemo(() => {
+    return JSON.stringify(initialDialogRef.current) !== JSON.stringify(localDialog) ||
+           JSON.stringify(initialFunctionRef.current) !== JSON.stringify(localFunction);
+  }, [localDialog, localFunction]);
 
   return (
     <Box>
@@ -365,28 +375,21 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             No dialog actions yet. Use the buttons above to add actions.
           </Typography>
         ) : (
-          <Stack spacing={2}>
-            {(localFunction.actions || []).map((action: any, idx: number) => (
-              <ActionCard
-                key={action.id || idx}
-                ref={(el) => (actionRefs.current[idx] = el)}
-                action={action}
-                index={idx}
-                totalActions={(localFunction.actions || []).length}
-                npcName={localDialog.properties?.npc || 'NPC'}
-                updateAction={updateAction}
-                deleteAction={deleteAction}
-                focusAction={focusAction}
-                addDialogLineAfter={addDialogLineAfter}
-                deleteActionAndFocusPrev={deleteActionAndFocusPrev}
-                addActionAfter={addActionAfter}
-                semanticModel={fileState?.semanticModel}
-                onNavigateToFunction={onNavigateToFunction}
-                onRenameFunction={handleRenameFunction}
-                dialogContextName={dialogName}
-              />
-            ))}
-          </Stack>
+          <ActionsList
+            actions={localFunction.actions || []}
+            actionRefs={actionRefs}
+            npcName={localDialog.properties?.npc || 'NPC'}
+            updateAction={updateAction}
+            deleteAction={deleteAction}
+            focusAction={focusAction}
+            addDialogLineAfter={addDialogLineAfter}
+            deleteActionAndFocusPrev={deleteActionAndFocusPrev}
+            addActionAfter={addActionAfter}
+            semanticModel={fileState?.semanticModel}
+            onNavigateToFunction={onNavigateToFunction}
+            onRenameFunction={handleRenameFunction}
+            dialogContextName={dialogName}
+          />
         )}
       </Paper>
     </Box>
