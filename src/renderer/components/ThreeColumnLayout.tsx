@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { Box, Typography, Alert, Paper, List, ListItem, ListItemText } from '@mui/material';
+import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect } from 'react';
+import { Box, Typography, Alert, Paper, List, ListItem, ListItemText, Skeleton, Stack, Fade } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
 import DialogDetailsEditor from './DialogDetailsEditor';
+import DialogLoadingSkeleton from './DialogLoadingSkeleton';
 
 interface ThreeColumnLayoutProps {
   filePath: string;
@@ -18,6 +19,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [selectedFunctionName, setSelectedFunctionName] = useState<string | null>(null); // Can be dialog info function or choice function
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
+  const [isPending, startTransition] = useTransition();
+  const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
+  const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   if (!fileState) {
     return <Typography>Loading...</Typography>;
@@ -154,8 +158,22 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   };
 
   const handleSelectDialog = (dialogName: string, functionName: string | null) => {
-    setSelectedDialog(dialogName);
-    setSelectedFunctionName(functionName);
+    // Show loading immediately to prevent flickering
+    setIsLoadingDialog(true);
+
+    // Scroll to top immediately when selecting a dialog
+    if (editorScrollRef.current) {
+      editorScrollRef.current.scrollTop = 0;
+    }
+
+    // Use startTransition to keep UI responsive when switching to dialogs with many actions
+    startTransition(() => {
+      setSelectedDialog(dialogName);
+      setSelectedFunctionName(functionName);
+      // Keep skeleton visible longer to ensure content is fully stable
+      // This prevents glimpses of intermediate states
+      setTimeout(() => setIsLoadingDialog(false), 200);
+    });
   };
 
   const handleToggleDialogExpand = (dialogName: string) => {
@@ -217,40 +235,59 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       />
 
       {/* Column 3: Function Action Editor */}
-      <Box sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      <Box ref={editorScrollRef} sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         {selectedDialog && dialogData && currentFunctionName && currentFunctionData ? (
-          <Box sx={{ width: '100%' }}>
-            <DialogDetailsEditor
-              key={`${selectedDialog}-${currentFunctionName}`}
-              dialogName={selectedDialog}
-              dialog={dialogData}
-              infoFunction={currentFunctionData}
-              filePath={filePath}
-              onUpdateDialog={(updatedDialog) => {
-                const updatedModel = {
-                  ...semanticModel,
-                  dialogs: {
-                    ...semanticModel.dialogs,
-                    [selectedDialog]: updatedDialog
-                  }
-                };
-                updateModel(filePath, updatedModel);
-              }}
-              onUpdateFunction={(updatedFunction) => {
-                if (currentFunctionName) {
+          <>
+            {/* Show loading skeleton during transition - positioned relative to this box */}
+            <Fade in={isLoadingDialog} unmountOnExit timeout={{ enter: 100, exit: 200 }}>
+              <Box sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                p: 2,
+                bgcolor: 'background.default',
+                zIndex: 10,
+                overflow: 'hidden'
+              }}>
+                <DialogLoadingSkeleton />
+              </Box>
+            </Fade>
+
+            {/* Show actual content - hidden when loading */}
+            <Box sx={{ width: '100%', opacity: isLoadingDialog ? 0 : 1, transition: 'opacity 0.2s' }}>
+              <DialogDetailsEditor
+                dialogName={selectedDialog}
+                dialog={dialogData}
+                infoFunction={currentFunctionData}
+                filePath={filePath}
+                onUpdateDialog={(updatedDialog) => {
                   const updatedModel = {
                     ...semanticModel,
-                    functions: {
-                      ...semanticModel.functions,
-                      [currentFunctionName]: updatedFunction
+                    dialogs: {
+                      ...semanticModel.dialogs,
+                      [selectedDialog]: updatedDialog
                     }
                   };
                   updateModel(filePath, updatedModel);
-                }
-              }}
-              onNavigateToFunction={handleNavigateToFunction}
-            />
-          </Box>
+                }}
+                onUpdateFunction={(updatedFunction) => {
+                  if (currentFunctionName) {
+                    const updatedModel = {
+                      ...semanticModel,
+                      functions: {
+                        ...semanticModel.functions,
+                        [currentFunctionName]: updatedFunction
+                      }
+                    };
+                    updateModel(filePath, updatedModel);
+                  }
+                }}
+                onNavigateToFunction={handleNavigateToFunction}
+              />
+            </Box>
+          </>
         ) : (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Typography variant="body1" color="text.secondary">

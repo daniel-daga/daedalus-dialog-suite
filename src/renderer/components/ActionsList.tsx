@@ -1,5 +1,5 @@
-import React from 'react';
-import { Stack } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Stack, Box } from '@mui/material';
 import ActionCard from './ActionCard';
 
 interface ActionsListProps {
@@ -18,9 +18,14 @@ interface ActionsListProps {
   dialogContextName: string;
 }
 
+// Progressive rendering threshold - render all if less than this
+const IMMEDIATE_RENDER_THRESHOLD = 20;
+const INITIAL_BATCH_SIZE = 10;
+const BATCH_DELAY_MS = 16; // ~1 frame at 60fps
+
 /**
  * Optimized list component that only re-renders when actions array changes
- * This prevents unnecessary re-renders of all ActionCards when parent state changes
+ * Uses progressive rendering for large lists to keep initial render fast
  */
 const ActionsList = React.memo<ActionsListProps>(({
   actions,
@@ -37,9 +42,31 @@ const ActionsList = React.memo<ActionsListProps>(({
   onRenameFunction,
   dialogContextName
 }) => {
+  // Progressive rendering for large lists
+  const [renderedCount, setRenderedCount] = useState(() =>
+    actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : INITIAL_BATCH_SIZE
+  );
+
+  useEffect(() => {
+    // Reset rendered count when actions change
+    setRenderedCount(
+      actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : INITIAL_BATCH_SIZE
+    );
+  }, [actions.length]);
+
+  useEffect(() => {
+    // Progressively render remaining items
+    if (renderedCount < actions.length) {
+      const timer = setTimeout(() => {
+        setRenderedCount(prev => Math.min(prev + 10, actions.length));
+      }, BATCH_DELAY_MS);
+      return () => clearTimeout(timer);
+    }
+  }, [renderedCount, actions.length]);
+
   return (
     <Stack spacing={2}>
-      {actions.map((action: any, idx: number) => (
+      {actions.slice(0, renderedCount).map((action: any, idx: number) => (
         <ActionCard
           key={action.id || idx}
           ref={(el) => (actionRefs.current[idx] = el)}
@@ -59,19 +86,31 @@ const ActionsList = React.memo<ActionsListProps>(({
           dialogContextName={dialogContextName}
         />
       ))}
+      {renderedCount < actions.length && (
+        <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary', fontStyle: 'italic' }}>
+          Loading {actions.length - renderedCount} more actions...
+        </Box>
+      )}
     </Stack>
   );
 }, (prevProps, nextProps) => {
-  // Only re-render if actions array length changes or actions content changes
-  // This is a shallow comparison - ActionCard's memo will handle deep comparison
+  // Fast bailout checks
+  if (prevProps.actions === nextProps.actions) return true; // Same reference
   if (prevProps.actions.length !== nextProps.actions.length) return false;
   if (prevProps.npcName !== nextProps.npcName) return false;
   if (prevProps.dialogContextName !== nextProps.dialogContextName) return false;
 
-  // Check if any action actually changed using IDs
+  // Quick check - if the arrays have the same actions in the same order
+  // We rely on action IDs for identity, and ActionCard memo for deep comparison
   for (let i = 0; i < prevProps.actions.length; i++) {
-    if (prevProps.actions[i].id !== nextProps.actions[i].id) {
-      return false; // Actions order/identity changed
+    // Only check if the action reference changed
+    // Don't do deep comparison here - let ActionCard handle that
+    if (prevProps.actions[i] !== nextProps.actions[i]) {
+      // Actions array was recreated but might have same content
+      // Check IDs as a fast heuristic
+      if (prevProps.actions[i]?.id !== nextProps.actions[i]?.id) {
+        return false; // Different action
+      }
     }
   }
 
