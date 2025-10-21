@@ -40,9 +40,9 @@ describe('Daedalus Parser', () => {
   return 42;
 };`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse without errors');
-    assert.ok(result.sourceCode, 'Should include source when requested');
+    assert.ok(result.rootNode.text, 'Should have source text in AST');
 
     const declarations = parser.extractDeclarations(result);
     assert.equal(declarations.length, 1);
@@ -63,7 +63,7 @@ func void InitHero()
   name = "Test";
 };`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     const declarations = parser.extractDeclarations(result);
 
     assert.equal(declarations.length, 2);
@@ -132,7 +132,7 @@ instance Test (Base) // inline comment
     const source = `const int MAX_VALUE = 100;
 const string PLAYER_NAME = "Hero";`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse const declarations without errors');
 
     const declarations = parser.extractDeclarations(result);
@@ -147,7 +147,7 @@ const string PLAYER_NAME = "Hero";`;
     const source = `var int currentHealth;
 var string currentWeapon = "sword";`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse var declarations without errors');
 
     const declarations = parser.extractDeclarations(result);
@@ -174,7 +174,7 @@ Const Float damage_multiplier = 1.5;`;
     var string name;
 };`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse class declarations without errors');
 
     const declarations = parser.extractDeclarations(result);
@@ -191,7 +191,7 @@ Const Float damage_multiplier = 1.5;`;
     var int level;
 };`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse prototype declarations without errors');
 
     const declarations = parser.extractDeclarations(result);
@@ -346,7 +346,7 @@ Prototype SpecialWeapon(BasicItem)
     return FALSE;
 };`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse without errors');
 
     // Now let's check if we can extract the function calls from the tree
@@ -381,7 +381,7 @@ Prototype SpecialWeapon(BasicItem)
     return FALSE;
 };`;
 
-    const result = parser.parse(source, { includeSource: true });
+    const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse complex nested binary expressions without errors');
 
     // Extract all function calls

@@ -30,10 +30,6 @@ class DaedalusParser {
       throughput: sourceCode.length / parseTimeMs * 1000 // bytes per second
     };
 
-    if (options.includeSource) {
-      result.sourceCode = sourceCode;
-    }
-
     if (result.hasErrors) {
       result.errors = [];
       this.collectErrors(tree.rootNode, sourceCode, result.errors);
@@ -46,13 +42,41 @@ class DaedalusParser {
    * Parse file from filesystem
    * @param {string} filePath - Path to Daedalus file
    * @param {Object} options - Parsing options
+   * @param {string} options.encoding - Specific encoding to use (e.g., 'windows-1250', 'utf8'). If not specified, auto-detection is used.
+   * @param {boolean} options.detectEncoding - Whether to detect encoding (default: true)
    * @returns {Object} Parse result
    */
   parseFile(filePath, options = {}) {
     const fs = require('fs');
-    const sourceCode = fs.readFileSync(filePath, 'utf8');
-    const result = this.parse(sourceCode, options);
+    const iconv = require('iconv-lite');
+    const jschardet = require('jschardet');
+
+    // Read file as buffer first
+    const buffer = fs.readFileSync(filePath);
+
+    let sourceCode;
+    let detectedEncoding = null;
+    let confidence = 100;
+
+    if (options.encoding) {
+      // Use specified encoding
+      sourceCode = iconv.decode(buffer, options.encoding);
+      detectedEncoding = options.encoding;
+    } else {
+      // Auto-detect encoding using jschardet
+      const detection = jschardet.detect(buffer);
+      detectedEncoding = detection.encoding || 'utf-8'; // Default to UTF-8 if detection fails
+      confidence = detection.confidence ? detection.confidence * 100 : 100;
+
+      // Decode with detected encoding using iconv-lite
+      sourceCode = iconv.decode(buffer, detectedEncoding);
+    }
+
+    const result = this.parse(sourceCode, detectedEncoding, options);
     result.filePath = filePath;
+    result.encoding = detectedEncoding;
+    result.encodingConfidence = confidence;
+
     return result;
   }
 
