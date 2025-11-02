@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { createParser } = require('./helpers');
-const { SemanticCodeGenerator } = require('../dist/semantic-code-generator');
-const { SemanticModelBuilderVisitor } = require('../dist/semantic-visitor-index');
+const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+const { SemanticModelBuilderVisitor } = require('../dist/semantic/semantic-visitor-index');
 
 // Initialize parser
 const parser = createParser();

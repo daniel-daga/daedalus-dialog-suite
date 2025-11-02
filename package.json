@@ -5,7 +5,7 @@
   "main": "src/core/parser.js",
   "types": "index.d.ts",
   "scripts": {
-    "test": "npm run build && node --test test/*.test.js",
+    "test": "npm run build && npm run build:ts && node --test test/*.test.js",
     "build": "tree-sitter generate",
     "build:ts": "tsc --project tsconfig.build.json",
     "parse": "node bin/daedalus-parse.js",
@@ -99,7 +99,7 @@
     "@types/react": "^19.1.14",
     "eslint": "^9.36.0",
     "prebuildify": "^6.0.0",
-    "tree-sitter-cli": "^0.22.0",
+    "tree-sitter-cli": "^0.25.10",
     "typescript": "^5.9.2"
   },
   "tree-sitter": [

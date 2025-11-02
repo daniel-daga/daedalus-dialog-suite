@@ -8,7 +8,7 @@ const {
   NpcKnowsInfoCondition,
   Condition,
   VariableCondition
-} = require('../dist/semantic-visitor-index');
+} = require('../dist/semantic/semantic-visitor-index');
 
 // Test data: Dialog with Npc_KnowsInfo condition
 const dialogWithNpcKnowsInfo = `

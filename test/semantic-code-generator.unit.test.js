@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { assertIncludes } = require('./helpers');
-const { SemanticCodeGenerator } = require('../dist/semantic-code-generator');
+const { SemanticCodeGenerator } = require('../dist/codegen/generator');
 
 // ===================================================================
 // CONSTRUCTOR TESTS
@@ -33,7 +33,7 @@ test('SemanticCodeGenerator should have generateSemanticModel method', () => {
 
 test('SemanticCodeGenerator should generate dialog instance', () => {
   const generator = new SemanticCodeGenerator();
-  const { Dialog } = require('../dist/semantic-visitor-index');
+  const { Dialog } = require('../dist/semantic/semantic-visitor-index');
 
   const dialog = new Dialog('DIA_Test_Hello', 'C_INFO');
   dialog.properties.npc = 'TEST_NPC';
@@ -59,7 +59,7 @@ test('SemanticCodeGenerator should generate dialog instance', () => {
 
 test('SemanticCodeGenerator should generate function declaration', () => {
   const generator = new SemanticCodeGenerator();
-  const { DialogFunction } = require('../dist/semantic-visitor-index');
+  const { DialogFunction } = require('../dist/semantic/semantic-visitor-index');
 
   const func = new DialogFunction('TestFunc', 'int');
   const result = generator.generateFunction(func);
@@ -76,7 +76,7 @@ test('SemanticCodeGenerator should generate function declaration', () => {
 
 test('SemanticCodeGenerator should generate dialog line action', () => {
   const generator = new SemanticCodeGenerator();
-  const { DialogLine } = require('../dist/semantic-visitor-index');
+  const { DialogLine } = require('../dist/semantic/semantic-visitor-index');
 
   const action = new DialogLine('self', 'Hello world', 'TEST_01');
   const result = generator.generateAction(action);
@@ -90,7 +90,7 @@ test('SemanticCodeGenerator should generate dialog line action', () => {
 
 test('SemanticCodeGenerator should generate choice action', () => {
   const generator = new SemanticCodeGenerator();
-  const { Choice } = require('../dist/semantic-visitor-index');
+  const { Choice } = require('../dist/semantic/semantic-visitor-index');
 
   const action = new Choice('DIA_Test', 'Choose this', 'TestFunc');
   const result = generator.generateAction(action);
@@ -104,7 +104,7 @@ test('SemanticCodeGenerator should generate choice action', () => {
 
 test('SemanticCodeGenerator should generate create topic action', () => {
   const generator = new SemanticCodeGenerator();
-  const { CreateTopic } = require('../dist/semantic-visitor-index');
+  const { CreateTopic } = require('../dist/semantic/semantic-visitor-index');
 
   const action = new CreateTopic('TOPIC_Quest', 'LOG_MISSION');
   const result = generator.generateAction(action);
@@ -117,7 +117,7 @@ test('SemanticCodeGenerator should generate create topic action', () => {
 
 test('SemanticCodeGenerator should generate log entry action', () => {
   const generator = new SemanticCodeGenerator();
-  const { LogEntry } = require('../dist/semantic-visitor-index');
+  const { LogEntry } = require('../dist/semantic/semantic-visitor-index');
 
   const action = new LogEntry('TOPIC_Quest', 'Quest started');
   const result = generator.generateAction(action);
@@ -138,7 +138,7 @@ test('SemanticCodeGenerator should generate all action types', () => {
     ExchangeRoutineAction,
     ChapterTransitionAction,
     LogSetTopicStatus
-  } = require('../dist/semantic-visitor-index');
+  } = require('../dist/semantic/semantic-visitor-index');
 
   const tests = [
     {
@@ -185,7 +185,7 @@ test('SemanticCodeGenerator should respect includeComments option', () => {
   const generator1 = new SemanticCodeGenerator({ includeComments: true });
   const generator2 = new SemanticCodeGenerator({ includeComments: false });
 
-  const { DialogLine } = require('../dist/semantic-visitor-index');
+  const { DialogLine } = require('../dist/semantic/semantic-visitor-index');
   const action = new DialogLine('self', 'Hello world', 'TEST_01');
 
   const result1 = generator1.generateAction(action);

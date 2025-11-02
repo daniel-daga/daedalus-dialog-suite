@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseSemanticModel, SemanticModelBuilderVisitor, createDaedalusParser } = require('../dist/semantic-visitor-index');
+const { parseSemanticModel, SemanticModelBuilderVisitor, createDaedalusParser } = require('../dist/semantic/semantic-visitor-index');
 
 // ===================================================================
 // SYNTAX ERROR DETECTION TESTS
