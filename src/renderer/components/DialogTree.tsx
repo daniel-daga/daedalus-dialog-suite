@@ -64,10 +64,14 @@ const DialogTree: React.FC<DialogTreeProps> = ({
 
   // Sort dialogs by priority (nr field)
   const sortedDialogs = [...dialogsForNPC].sort((a, b) => {
-    const dialogA = semanticModel.dialogs[a];
-    const dialogB = semanticModel.dialogs[b];
-    const priorityA = dialogA?.properties?.nr ?? 999999;
-    const priorityB = dialogB?.properties?.nr ?? 999999;
+    const dialogA = semanticModel.dialogs?.[a];
+    const dialogB = semanticModel.dialogs?.[b];
+
+    // Safety check: skip sorting if dialogs or properties are missing
+    if (!dialogA || !dialogB) return 0;
+
+    const priorityA = typeof dialogA.properties?.nr === 'number' ? dialogA.properties.nr : 999999;
+    const priorityB = typeof dialogB.properties?.nr === 'number' ? dialogB.properties.nr : 999999;
     return priorityA - priorityB;
   });
 
@@ -84,10 +88,14 @@ const DialogTree: React.FC<DialogTreeProps> = ({
       <List dense>
         {selectedNPC ? (
           sortedDialogs.map((dialogName) => {
-            const dialog = semanticModel.dialogs[dialogName];
+            const dialog = semanticModel.dialogs?.[dialogName];
+
+            // Safety check: skip rendering if dialog is missing
+            if (!dialog) return null;
+
             const infoFunc = dialog.properties?.information as any;
             const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-            const infoFuncData = infoFuncName ? semanticModel.functions[infoFuncName] : null;
+            const infoFuncData = infoFuncName ? semanticModel.functions?.[infoFuncName] : null;
             const isExpanded = expandedDialogs.has(dialogName);
             const functionTree = infoFuncName ? buildFunctionTree(infoFuncName) : null;
             const hasChoices = functionTree && functionTree.children && functionTree.children.length > 0;

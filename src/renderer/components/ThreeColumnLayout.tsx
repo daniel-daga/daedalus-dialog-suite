@@ -142,7 +142,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
 
   // Get selected dialog data
-  const dialogData = selectedDialog ? semanticModel.dialogs[selectedDialog] : null;
+  const dialogData = selectedDialog ? semanticModel.dialogs?.[selectedDialog] : null;
 
   // Get the information function for the selected dialog
   const infoFunction = dialogData?.properties?.information as any;
@@ -150,7 +150,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Get the currently selected function (either dialog info or choice function)
   const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
-  const currentFunctionData = currentFunctionName ? semanticModel.functions[currentFunctionName] : null;
+  const currentFunctionData = currentFunctionName ? semanticModel.functions?.[currentFunctionName] : null;
 
   const handleSelectNPC = (npc: string) => {
     setSelectedNPC(npc);
@@ -236,7 +236,24 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
       {/* Column 3: Function Action Editor */}
       <Box ref={editorScrollRef} sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        {selectedDialog && dialogData && currentFunctionName && currentFunctionData ? (
+        {selectedDialog && dialogData ? (
+          !currentFunctionName ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+              <Alert severity="warning">
+                <Typography variant="body2">
+                  This dialog does not have an information function defined.
+                </Typography>
+              </Alert>
+            </Box>
+          ) : !currentFunctionData ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+              <Alert severity="error">
+                <Typography variant="body2">
+                  Function "{currentFunctionName}" not found in the file.
+                </Typography>
+              </Alert>
+            </Box>
+          ) : (
           <>
             {/* Show loading skeleton during transition - positioned relative to this box */}
             <Fade in={isLoadingDialog} unmountOnExit timeout={{ enter: 100, exit: 200 }}>
@@ -288,6 +305,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
               />
             </Box>
           </>
+          )
         ) : (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Typography variant="body1" color="text.secondary">
