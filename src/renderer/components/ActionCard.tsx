@@ -17,6 +17,24 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   const [localAction, setLocalAction] = useState(action);
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Use refs to store latest values without triggering re-renders
+  const localActionRef = useRef(localAction);
+  const indexRef = useRef(index);
+  const updateActionRef = useRef(updateAction);
+
+  // Keep refs in sync with latest values
+  React.useEffect(() => {
+    localActionRef.current = localAction;
+  }, [localAction]);
+
+  React.useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
+
+  React.useEffect(() => {
+    updateActionRef.current = updateAction;
+  }, [updateAction]);
+
   // Sync local state when action prop changes from parent
   React.useEffect(() => {
     setLocalAction(action);
@@ -48,16 +66,17 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     }, 300); // 300ms debounce
   }, [updateAction, index]);
 
-  // Cleanup timer on unmount and flush pending updates
+  // Cleanup timer on unmount - use refs to avoid stale closures
   React.useEffect(() => {
     return () => {
       if (updateTimerRef.current) {
         clearTimeout(updateTimerRef.current);
-        // Actually flush the pending update to prevent data loss
-        updateAction(index, localAction);
+        // Flush using refs to get latest values and avoid data corruption
+        // This ensures we use the current index/action, not stale values from closure
+        updateActionRef.current(indexRef.current, localActionRef.current);
       }
     };
-  }, [updateAction, index, localAction]);
+  }, []); // Empty deps - cleanup function only created once, uses refs for latest values
 
   const handleDelete = useCallback(() => {
     deleteAction(index);
