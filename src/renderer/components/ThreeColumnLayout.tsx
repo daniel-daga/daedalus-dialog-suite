@@ -23,6 +23,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
+  // Cache for buildFunctionTree to prevent exponential recomputation
+  const functionTreeCacheRef = useRef<Map<string, any>>(new Map());
+
   if (!fileState) {
     return <Typography>Loading...</Typography>;
   }
@@ -90,12 +93,26 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   const { semanticModel } = fileState;
 
+  // Clear cache when semantic model changes
+  useEffect(() => {
+    functionTreeCacheRef.current.clear();
+  }, [semanticModel]);
+
   // Build function tree for a given function (recursively find choices)
   // ancestorPath tracks the path from root to current node to prevent direct cycles
+  // Uses memoization to prevent exponential recomputation in diamond patterns
   const buildFunctionTree = useCallback((funcName: string, ancestorPath: string[] = []): any => {
     // Prevent direct cycles (A -> B -> A), but allow diamonds (A -> B, A -> C, both -> D)
     if (ancestorPath.includes(funcName)) {
       return null; // Direct cycle detected
+    }
+
+    // Create cache key including ancestor path to handle different contexts
+    const cacheKey = `${funcName}|${ancestorPath.join(',')}`;
+
+    // Check cache first
+    if (functionTreeCacheRef.current.has(cacheKey)) {
+      return functionTreeCacheRef.current.get(cacheKey);
     }
 
     const func = semanticModel.functions?.[funcName];
@@ -107,7 +124,14 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
     const newPath = [...ancestorPath, funcName];
 
-    return {
+    // Pre-compute isShared for all choices at once (O(n) instead of O(n²))
+    const targetCounts = new Map<string, number>();
+    choices.forEach((choice: any) => {
+      const target = choice.targetFunction;
+      targetCounts.set(target, (targetCounts.get(target) || 0) + 1);
+    });
+
+    const result = {
       name: funcName,
       function: func,
       children: choices.map((choice: any) => {
@@ -116,10 +140,15 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
           text: choice.text || '(no text)',
           targetFunction: choice.targetFunction,
           subtree: subtree,
-          isShared: choices.filter((c: any) => c.targetFunction === choice.targetFunction).length > 1
+          isShared: (targetCounts.get(choice.targetFunction) || 0) > 1
         };
       }).filter((c: any) => c.subtree !== null)
     };
+
+    // Cache the result
+    functionTreeCacheRef.current.set(cacheKey, result);
+
+    return result;
   }, [semanticModel]);
 
   // Memoize NPC map extraction to avoid rebuilding on every render
@@ -161,18 +190,23 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     // Show loading immediately to prevent flickering
     setIsLoadingDialog(true);
 
-    // Scroll to top immediately when selecting a dialog
-    if (editorScrollRef.current) {
-      editorScrollRef.current.scrollTop = 0;
-    }
-
     // Use startTransition to keep UI responsive when switching to dialogs with many actions
     startTransition(() => {
       setSelectedDialog(dialogName);
       setSelectedFunctionName(functionName);
-      // Keep skeleton visible longer to ensure content is fully stable
-      // This prevents glimpses of intermediate states
-      setTimeout(() => setIsLoadingDialog(false), 200);
+
+      // Use requestAnimationFrame to ensure state changes are committed and painted
+      requestAnimationFrame(() => {
+        // Scroll to top after content has changed
+        if (editorScrollRef.current) {
+          editorScrollRef.current.scrollTop = 0;
+        }
+
+        // Wait one more frame to ensure rendering is complete
+        requestAnimationFrame(() => {
+          setIsLoadingDialog(false);
+        });
+      });
     });
   };
 
