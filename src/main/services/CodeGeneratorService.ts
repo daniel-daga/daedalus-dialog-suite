@@ -56,7 +56,14 @@ export class CodeGeneratorService {
         // Check if this property references a function
         if (typeof value === 'object' && value !== null && 'name' in value && 'returnType' in value) {
           // Link to the reconstructed function
-          dialog.properties[key] = model.functions[value.name];
+          const linkedFunc = model.functions[value.name];
+          if (!linkedFunc) {
+            console.error(`Function '${value.name}' referenced but not found in model`);
+            // Preserve as function name string instead of assigning undefined
+            dialog.properties[key] = value.name;
+          } else {
+            dialog.properties[key] = linkedFunc;
+          }
         } else if (typeof value === 'string' && model.functions[value]) {
           // Handle case where it was normalized to just a string name
           dialog.properties[key] = model.functions[value];
