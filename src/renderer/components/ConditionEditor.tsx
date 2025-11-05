@@ -30,7 +30,8 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
 
   const isDirty = JSON.stringify(conditionFunction) !== JSON.stringify(localFunction);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
+    // Apply changes to semantic model (which will trigger file save in parent)
     onUpdateFunction(localFunction);
   }, [localFunction, onUpdateFunction]);
 
@@ -183,6 +184,7 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
               </Button>
               <Button
                 variant="contained"
+                color="success"
                 size="small"
                 disabled={!isDirty}
                 onClick={(e) => {
@@ -190,7 +192,7 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
                   handleSave();
                 }}
               >
-                Apply
+                Save
               </Button>
             </Stack>
           </Box>

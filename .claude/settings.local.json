@@ -5,7 +5,8 @@
       "Bash(npx concurrently --help:*)",
       "Bash(npm install:*)",
       "Bash(npm run build:main:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(npx vite build)"
     ],
     "deny": [],
     "ask": []

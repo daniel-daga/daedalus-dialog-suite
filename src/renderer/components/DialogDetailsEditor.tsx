@@ -96,7 +96,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     trimRefs(actionsLength);
   }, [localFunction?.actions?.length, trimRefs]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // Normalize dialog properties to use string references for functions
     const normalizedDialog = {
       ...localDialog,
@@ -111,10 +111,18 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       }
     };
 
+    // Apply changes to semantic model
     onUpdateDialog(normalizedDialog);
     if (localFunction) {
       onUpdateFunction(localFunction);
     }
+
+    // Save to disk immediately
+    await saveFile(filePath);
+
+    // Update refs to mark this as the new "clean" state
+    initialDialogRef.current = localDialog;
+    initialFunctionRef.current = localFunction;
   };
 
   // Unified function to add any type of action at the end
@@ -184,20 +192,12 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           </Button>
           <Button
             variant="contained"
+            color="success"
             startIcon={<SaveIcon />}
             disabled={!isDirty}
             onClick={handleSave}
           >
-            Apply
-          </Button>
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<SaveIcon />}
-            disabled={!fileState?.isDirty}
-            onClick={() => saveFile(filePath)}
-          >
-            Save File
+            Save
           </Button>
         </Stack>
       </Box>
