@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Button, Menu, MenuItem, Chip } from '@mui/material';
 import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Delete as DeleteIcon, Code as CodeIcon, Check as CheckIcon, NotInterested as NotInterestedIcon, Info as InfoIcon } from '@mui/icons-material';
 import ConditionCard from './ConditionCard';
@@ -22,17 +22,26 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   const [conditionsExpanded, setConditionsExpanded] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
   const conditionRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const initialFunctionRef = useRef(conditionFunction);
+  const [saveCounter, setSaveCounter] = useState(0);
 
   // Sync local state when prop changes
   React.useEffect(() => {
     setLocalFunction(conditionFunction);
+    initialFunctionRef.current = conditionFunction;
   }, [conditionFunction]);
 
-  const isDirty = JSON.stringify(conditionFunction) !== JSON.stringify(localFunction);
+  const isDirty = useMemo(() => {
+    return JSON.stringify(initialFunctionRef.current) !== JSON.stringify(localFunction);
+  }, [localFunction, saveCounter]);
 
   const handleSave = useCallback(async () => {
     // Apply changes to semantic model (which will trigger file save in parent)
     onUpdateFunction(localFunction);
+    // Mark this as the new "clean" state
+    initialFunctionRef.current = localFunction;
+    // Force isDirty recalculation
+    setSaveCounter(c => c + 1);
   }, [localFunction, onUpdateFunction]);
 
   const handleReset = useCallback(() => {

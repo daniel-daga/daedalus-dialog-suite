@@ -25,6 +25,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const { openFiles, saveFile, updateModel } = useEditorStore();
   const fileState = openFiles.get(filePath);
   const [propertiesExpanded, setPropertiesExpanded] = useState(false);
+  const [saveCounter, setSaveCounter] = useState(0);
 
   // Use custom hooks for focus navigation and action management
   const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
@@ -123,6 +124,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     // Update refs to mark this as the new "clean" state
     initialDialogRef.current = localDialog;
     initialFunctionRef.current = localFunction;
+    // Force isDirty recalculation by updating counter
+    setSaveCounter(c => c + 1);
   };
 
   // Unified function to add any type of action at the end
@@ -169,14 +172,13 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const isDirty = useMemo(() => {
     return JSON.stringify(initialDialogRef.current) !== JSON.stringify(localDialog) ||
            JSON.stringify(initialFunctionRef.current) !== JSON.stringify(localFunction);
-  }, [localDialog, localFunction]);
+  }, [localDialog, localFunction, saveCounter]);
 
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="h5">{dialogName}</Typography>
-          {fileState?.isDirty && <Chip label="File Modified" size="small" color="warning" />}
           {isDirty && <Chip label="Unsaved Changes" size="small" color="error" />}
         </Box>
         <Stack direction="row" spacing={1}>
