@@ -53,9 +53,11 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     return () => {
       if (updateTimerRef.current) {
         clearTimeout(updateTimerRef.current);
+        // Actually flush the pending update to prevent data loss
+        updateAction(index, localAction);
       }
     };
-  }, []);
+  }, [updateAction, index, localAction]);
 
   const handleDelete = useCallback(() => {
     deleteAction(index);

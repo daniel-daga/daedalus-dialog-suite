@@ -25,6 +25,38 @@ export class FileServiceError extends Error {
 const fileEncodingCache = new Map<string, string>();
 
 /**
+ * Simple lock mechanism to prevent race conditions during file operations
+ * Maps file paths to pending operation promises
+ */
+const fileLocks = new Map<string, Promise<any>>();
+
+/**
+ * Acquires a lock for a file operation
+ * Ensures only one operation per file can proceed at a time
+ */
+async function acquireLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
+  // Wait for any existing operation on this file to complete
+  const existingLock = fileLocks.get(filePath);
+  if (existingLock) {
+    await existingLock.catch(() => {}); // Ignore errors from previous operations
+  }
+
+  // Create a new lock for this operation
+  const lockPromise = operation();
+  fileLocks.set(filePath, lockPromise);
+
+  try {
+    const result = await lockPromise;
+    return result;
+  } finally {
+    // Only delete if this is still the current lock
+    if (fileLocks.get(filePath) === lockPromise) {
+      fileLocks.delete(filePath);
+    }
+  }
+}
+
+/**
  * Service for handling file system operations
  * Uses fs.promises API for modern async/await support
  * Automatically detects and preserves file encodings
@@ -37,56 +69,96 @@ export class FileService {
    * @throws {FileServiceError} If file cannot be read
    */
   async readFile(filePath: string): Promise<string> {
-    try {
-      // Read file as buffer first
-      const buffer = await fs.readFile(filePath);
+    return acquireLock(filePath, async () => {
+      try {
+        // Read file as buffer first
+        const buffer = await fs.readFile(filePath);
 
-      // Detect encoding
-      let detectedEncoding = chardet.detect(buffer);
+        // Detect encoding
+        let detectedEncoding = chardet.detect(buffer);
 
-      // Normalize encoding names and handle common variants
-      // chardet sometimes detects windows-1252 when it should be windows-1250
-      // For Central European files, prefer win1250
-      if (detectedEncoding === 'windows-1252' || detectedEncoding === 'ISO-8859-1') {
-        // Try to detect if it's actually windows-1250 by checking for specific byte patterns
-        // Windows-1250 is commonly used for Central European languages
-        detectedEncoding = 'windows-1250';
+        // Intelligent encoding detection for Central European vs Western European
+        // chardet sometimes confuses windows-1252 with windows-1250
+        if (detectedEncoding === 'windows-1252' || detectedEncoding === 'ISO-8859-1') {
+          // Check for Central European character byte patterns specific to windows-1250
+          // Windows-1250 uses different byte positions than windows-1252 for certain characters
+          const hasCentralEuropeanBytes = this.detectCentralEuropeanPattern(buffer);
+
+          if (hasCentralEuropeanBytes) {
+            // File contains Central European characters, use windows-1250
+            detectedEncoding = 'windows-1250';
+          }
+          // Otherwise, keep the detected encoding (windows-1252 or ISO-8859-1)
+        }
+
+        const encoding = detectedEncoding || 'utf8';
+
+        // Store the detected encoding for later use when writing
+        fileEncodingCache.set(filePath, encoding);
+
+        // Decode the buffer using the detected encoding
+        const data = iconv.decode(buffer, encoding);
+        return data;
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+
+        if (err.code === 'ENOENT') {
+          throw new FileServiceError(
+            `File not found: ${filePath}`,
+            'FILE_NOT_FOUND',
+            filePath,
+            err
+          );
+        } else if (err.code === 'EACCES') {
+          throw new FileServiceError(
+            `Permission denied: ${filePath}`,
+            'PERMISSION_DENIED',
+            filePath,
+            err
+          );
+        } else {
+          throw new FileServiceError(
+            `Failed to read file: ${err.message}`,
+            'READ_ERROR',
+            filePath,
+            err
+          );
+        }
       }
+    });
+  }
 
-      const encoding = detectedEncoding || 'utf8';
+  /**
+   * Detect if a buffer contains Central European character byte patterns
+   * specific to windows-1250 encoding
+   * @param buffer - The file buffer to analyze
+   * @returns true if Central European patterns are found
+   */
+  private detectCentralEuropeanPattern(buffer: Buffer): boolean {
+    // Byte values that are distinct to windows-1250 and commonly used in Central European languages:
+    // 0x8A (Š), 0x8C (Ś), 0x8D (Ť), 0x8E (Ž), 0x8F (Ź)
+    // 0x9A (š), 0x9C (ś), 0x9D (ť), 0x9E (ž), 0x9F (ź)
+    // 0xA5 (Ą), 0xAA (Ş), 0xAF (Ż)
+    // 0xB9 (ą), 0xBA (ş), 0xBC (ľ), 0xBE (ľ), 0xBF (ż)
+    // 0xC8 (Č), 0xD2 (Ň), 0xD5 (Ő), 0xD8 (Ř), 0xDD (Ý)
+    // 0xE8 (č), 0xF2 (ň), 0xF5 (ő), 0xF8 (ř)
+    const centralEuropeanBytes = new Set([
+      0x8A, 0x8C, 0x8D, 0x8E, 0x8F,
+      0x9A, 0x9C, 0x9D, 0x9E, 0x9F,
+      0xA5, 0xAA, 0xAF,
+      0xB9, 0xBA, 0xBC, 0xBE, 0xBF,
+      0xC8, 0xD2, 0xD5, 0xD8, 0xDD,
+      0xE8, 0xF2, 0xF5, 0xF8
+    ]);
 
-      // Store the detected encoding for later use when writing
-      fileEncodingCache.set(filePath, encoding);
-
-      // Decode the buffer using the detected encoding
-      const data = iconv.decode(buffer, encoding);
-      return data;
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-
-      if (err.code === 'ENOENT') {
-        throw new FileServiceError(
-          `File not found: ${filePath}`,
-          'FILE_NOT_FOUND',
-          filePath,
-          err
-        );
-      } else if (err.code === 'EACCES') {
-        throw new FileServiceError(
-          `Permission denied: ${filePath}`,
-          'PERMISSION_DENIED',
-          filePath,
-          err
-        );
-      } else {
-        throw new FileServiceError(
-          `Failed to read file: ${err.message}`,
-          'READ_ERROR',
-          filePath,
-          err
-        );
+    // Check if any of these bytes appear in the file
+    for (let i = 0; i < buffer.length; i++) {
+      if (centralEuropeanBytes.has(buffer[i])) {
+        return true;
       }
     }
+
+    return false;
   }
 
   /**
@@ -97,41 +169,43 @@ export class FileService {
    * @throws {FileServiceError} If file cannot be written
    */
   async writeFile(filePath: string, content: string): Promise<{ success: boolean; encoding?: string }> {
-    try {
-      // Use the cached encoding if available, otherwise default to utf8
-      const encoding = fileEncodingCache.get(filePath) || 'utf8';
+    return acquireLock(filePath, async () => {
+      try {
+        // Use the cached encoding if available, otherwise default to utf8
+        const encoding = fileEncodingCache.get(filePath) || 'utf8';
 
-      // Encode the content using the appropriate encoding
-      const buffer = iconv.encode(content, encoding);
+        // Encode the content using the appropriate encoding
+        const buffer = iconv.encode(content, encoding);
 
-      await fs.writeFile(filePath, buffer);
-      return { success: true, encoding };
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
+        await fs.writeFile(filePath, buffer);
+        return { success: true, encoding };
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
 
-      if (err.code === 'EACCES') {
-        throw new FileServiceError(
-          `Permission denied: ${filePath}`,
-          'PERMISSION_DENIED',
-          filePath,
-          err
-        );
-      } else if (err.code === 'ENOSPC') {
-        throw new FileServiceError(
-          `No space left on device: ${filePath}`,
-          'NO_SPACE',
-          filePath,
-          err
-        );
-      } else {
-        throw new FileServiceError(
-          `Failed to write file: ${err.message}`,
-          'WRITE_ERROR',
-          filePath,
-          err
-        );
+        if (err.code === 'EACCES') {
+          throw new FileServiceError(
+            `Permission denied: ${filePath}`,
+            'PERMISSION_DENIED',
+            filePath,
+            err
+          );
+        } else if (err.code === 'ENOSPC') {
+          throw new FileServiceError(
+            `No space left on device: ${filePath}`,
+            'NO_SPACE',
+            filePath,
+            err
+          );
+        } else {
+          throw new FileServiceError(
+            `Failed to write file: ${err.message}`,
+            'WRITE_ERROR',
+            filePath,
+            err
+          );
+        }
       }
-    }
+    });
   }
 
   /**

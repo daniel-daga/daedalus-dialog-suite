@@ -16,6 +16,9 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   onRenameFunction,
   dialogContextName
 }) => {
+  // Track the original function name when editing starts
+  const originalFunctionNameRef = React.useRef<string | null>(null);
+
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <TextField
@@ -31,30 +34,41 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
       <TextField
         label="Function"
         value={action.targetFunction || ''}
+        onFocus={() => {
+          // Capture the original function name when editing starts
+          originalFunctionNameRef.current = action.targetFunction || null;
+        }}
         onChange={(e) => {
           const newName = e.target.value;
           handleUpdate({ ...action, targetFunction: newName });
         }}
         onBlur={() => {
           flushUpdate();
+
+          const originalName = originalFunctionNameRef.current;
+          const newName = action.targetFunction;
+
           // Validate and handle rename if needed
-          if (dialogContextName && onRenameFunction && action.targetFunction !== action.targetFunction) {
+          if (dialogContextName && onRenameFunction && originalName && newName !== originalName) {
             const validationError = validateChoiceFunctionName(
-              action.targetFunction,
+              newName,
               dialogContextName,
               semanticModel,
-              action.targetFunction
+              originalName
             );
 
             if (validationError) {
               // Revert to original name on validation error
-              handleUpdate({ ...action, targetFunction: action.targetFunction });
+              handleUpdate({ ...action, targetFunction: originalName });
               alert(validationError);
-            } else if (action.targetFunction !== action.targetFunction) {
+            } else {
               // Valid rename - trigger the rename callback
-              onRenameFunction(action.targetFunction, action.targetFunction);
+              onRenameFunction(originalName, newName);
             }
           }
+
+          // Clear the original name reference
+          originalFunctionNameRef.current = null;
         }}
         size="small"
         sx={{ flex: '1 1 40%', minWidth: 150 }}
