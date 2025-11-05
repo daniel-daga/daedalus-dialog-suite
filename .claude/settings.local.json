@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm uninstall:*)",
       "Bash(npx concurrently --help:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm run build:main:*)",
+      "Bash(npx tsx:*)"
     ],
     "deny": [],
     "ask": []

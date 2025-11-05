@@ -1,5 +1,7 @@
 import { promises as fs } from 'fs';
 import { dialog } from 'electron';
+import * as chardet from 'chardet';
+import * as iconv from 'iconv-lite';
 
 /**
  * Error types for FileService operations
@@ -17,19 +19,47 @@ export class FileServiceError extends Error {
 }
 
 /**
+ * Mapping of file paths to their detected encodings
+ * This allows us to preserve the original encoding when saving files
+ */
+const fileEncodingCache = new Map<string, string>();
+
+/**
  * Service for handling file system operations
  * Uses fs.promises API for modern async/await support
+ * Automatically detects and preserves file encodings
  */
 export class FileService {
   /**
-   * Read a file from the file system
+   * Read a file from the file system with automatic encoding detection
    * @param filePath - Absolute path to the file
    * @returns File contents as a string
    * @throws {FileServiceError} If file cannot be read
    */
   async readFile(filePath: string): Promise<string> {
     try {
-      const data = await fs.readFile(filePath, 'utf8');
+      // Read file as buffer first
+      const buffer = await fs.readFile(filePath);
+
+      // Detect encoding
+      let detectedEncoding = chardet.detect(buffer);
+
+      // Normalize encoding names and handle common variants
+      // chardet sometimes detects windows-1252 when it should be windows-1250
+      // For Central European files, prefer win1250
+      if (detectedEncoding === 'windows-1252' || detectedEncoding === 'ISO-8859-1') {
+        // Try to detect if it's actually windows-1250 by checking for specific byte patterns
+        // Windows-1250 is commonly used for Central European languages
+        detectedEncoding = 'windows-1250';
+      }
+
+      const encoding = detectedEncoding || 'utf8';
+
+      // Store the detected encoding for later use when writing
+      fileEncodingCache.set(filePath, encoding);
+
+      // Decode the buffer using the detected encoding
+      const data = iconv.decode(buffer, encoding);
       return data;
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
@@ -60,16 +90,22 @@ export class FileService {
   }
 
   /**
-   * Write content to a file
+   * Write content to a file using the original encoding if available
    * @param filePath - Absolute path to the file
    * @param content - Content to write
-   * @returns Success status
+   * @returns Success status with encoding information
    * @throws {FileServiceError} If file cannot be written
    */
-  async writeFile(filePath: string, content: string): Promise<{ success: boolean }> {
+  async writeFile(filePath: string, content: string): Promise<{ success: boolean; encoding?: string }> {
     try {
-      await fs.writeFile(filePath, content, 'utf8');
-      return { success: true };
+      // Use the cached encoding if available, otherwise default to utf8
+      const encoding = fileEncodingCache.get(filePath) || 'utf8';
+
+      // Encode the content using the appropriate encoding
+      const buffer = iconv.encode(content, encoding);
+
+      await fs.writeFile(filePath, buffer);
+      return { success: true, encoding };
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
 
@@ -95,6 +131,27 @@ export class FileService {
           err
         );
       }
+    }
+  }
+
+  /**
+   * Get the detected encoding for a file
+   * @param filePath - Absolute path to the file
+   * @returns The detected encoding or undefined if not cached
+   */
+  getFileEncoding(filePath: string): string | undefined {
+    return fileEncodingCache.get(filePath);
+  }
+
+  /**
+   * Clear the encoding cache for a specific file or all files
+   * @param filePath - Optional path to clear specific file, omit to clear all
+   */
+  clearEncodingCache(filePath?: string): void {
+    if (filePath) {
+      fileEncodingCache.delete(filePath);
+    } else {
+      fileEncodingCache.clear();
     }
   }
 
