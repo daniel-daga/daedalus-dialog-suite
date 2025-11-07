@@ -3,6 +3,13 @@ import ReactDOM from 'react-dom/client';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import App from './App';
+import { mockEditorAPI } from './utils/mockAPI';
+
+// Browser mode detection: inject mock API if running outside Electron
+if (!window.editorAPI) {
+  console.log('[Browser Mode] Using mock EditorAPI for development');
+  window.editorAPI = mockEditorAPI;
+}
 
 const darkTheme = createTheme({
   palette: {
