@@ -136,10 +136,76 @@ function parseSource(sourceCode: string): any {
     return { ...SAMPLE_MODEL };
   }
 
-  // For other code, return a minimal valid model
+  // Try to extract basic dialog information using regex
+  // This is a very simplified parser for testing purposes
+  const dialogs: any = {};
+  const functions: any = {};
+
+  // Match INSTANCE declarations
+  const instanceRegex = /INSTANCE\s+(\w+)\s*\([^)]+\)\s*\{([^}]+)\}/gi;
+  let match;
+
+  while ((match = instanceRegex.exec(sourceCode)) !== null) {
+    const dialogName = match[1];
+    const body = match[2];
+
+    // Parse properties
+    const properties: any = {};
+    const propRegex = /(\w+)\s*=\s*([^;]+);/g;
+    let propMatch;
+
+    while ((propMatch = propRegex.exec(body)) !== null) {
+      const key = propMatch[1].trim();
+      let value = propMatch[2].trim();
+
+      // Convert TRUE/FALSE to boolean
+      if (value === 'TRUE') value = true;
+      else if (value === 'FALSE') value = false;
+
+      properties[key] = value;
+    }
+
+    dialogs[dialogName] = {
+      name: dialogName,
+      parent: 'C_INFO',
+      properties,
+    };
+  }
+
+  // Match FUNC declarations
+  const funcRegex = /FUNC\s+(INT|VOID|STRING)\s+(\w+)\s*\(\)\s*\{([^}]+)\}/gi;
+
+  while ((match = funcRegex.exec(sourceCode)) !== null) {
+    const returnType = match[1];
+    const funcName = match[2];
+    const body = match[3];
+
+    // Parse AI_Output calls
+    const actions: any[] = [];
+    const aiOutputRegex = /AI_Output\s*\([^,]+,\s*[^,]+,\s*"([^"]+)"\s*\)/g;
+    let actionMatch;
+
+    while ((actionMatch = aiOutputRegex.exec(body)) !== null) {
+      const textId = actionMatch[1];
+      actions.push({
+        speaker: 'self',
+        text: textId,
+        id: textId,
+        type: 'DialogLine',
+      });
+    }
+
+    functions[funcName] = {
+      name: funcName,
+      returnType,
+      actions,
+      calls: [],
+    };
+  }
+
   return {
-    dialogs: {},
-    functions: {},
+    dialogs,
+    functions,
     hasErrors: false,
     errors: [],
   };
