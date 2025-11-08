@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect } from 'react';
-import { Box, Typography, Alert, Paper, List, ListItem, ListItemText, Skeleton, Stack, Fade } from '@mui/material';
+import { Box, Typography, Alert, Paper, List, ListItem, ListItemText, Fade } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
@@ -19,12 +19,22 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [selectedFunctionName, setSelectedFunctionName] = useState<string | null>(null); // Can be dialog info function or choice function
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
-  const [isPending, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   // Cache for buildFunctionTree to prevent exponential recomputation
   const functionTreeCacheRef = useRef<Map<string, any>>(new Map());
+
+  // Refs to track RAF IDs for cleanup (Bug #1 fix)
+  const rafId1Ref = useRef<number | null>(null);
+  const rafId2Ref = useRef<number | null>(null);
+
+  // Ref to track previous semantic model for cache invalidation (Bug #2 fix)
+  const prevSemanticModelRef = useRef<any>(null);
+
+  // Max cache size to prevent unbounded growth (Bug #4 fix)
+  const MAX_CACHE_SIZE = 1000;
 
   if (!fileState) {
     return <Typography>Loading...</Typography>;
@@ -93,10 +103,54 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   const { semanticModel } = fileState;
 
-  // Clear cache when semantic model changes
-  useEffect(() => {
+  // Clear cache synchronously when semantic model changes (Bug #2 fix)
+  // This must happen BEFORE buildFunctionTree is called during render
+  if (semanticModel !== prevSemanticModelRef.current) {
     functionTreeCacheRef.current.clear();
-  }, [semanticModel]);
+    prevSemanticModelRef.current = semanticModel;
+  }
+
+  // Cleanup RAF callbacks on unmount (Bug #1 fix)
+  useEffect(() => {
+    return () => {
+      if (rafId1Ref.current !== null) {
+        cancelAnimationFrame(rafId1Ref.current);
+      }
+      if (rafId2Ref.current !== null) {
+        cancelAnimationFrame(rafId2Ref.current);
+      }
+    };
+  }, []);
+
+  // LRU cache helpers (Bug #4 fix)
+  const lruCacheGet = useCallback((key: string): any => {
+    const cache = functionTreeCacheRef.current;
+    if (!cache.has(key)) return undefined;
+
+    // Move to end (most recently used)
+    const value = cache.get(key);
+    cache.delete(key);
+    cache.set(key, value);
+    return value;
+  }, []);
+
+  const lruCacheSet = useCallback((key: string, value: any): void => {
+    const cache = functionTreeCacheRef.current;
+
+    // Remove old position if exists
+    if (cache.has(key)) {
+      cache.delete(key);
+    }
+
+    // Add at end (most recent)
+    cache.set(key, value);
+
+    // Evict oldest if over limit
+    if (cache.size > MAX_CACHE_SIZE) {
+      const oldestKey = cache.keys().next().value;
+      cache.delete(oldestKey);
+    }
+  }, [MAX_CACHE_SIZE]);
 
   // Build function tree for a given function (recursively find choices)
   // ancestorPath tracks the path from root to current node to prevent direct cycles
@@ -110,9 +164,10 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     // Create cache key including ancestor path to handle different contexts
     const cacheKey = `${funcName}|${ancestorPath.join(',')}`;
 
-    // Check cache first
-    if (functionTreeCacheRef.current.has(cacheKey)) {
-      return functionTreeCacheRef.current.get(cacheKey);
+    // Check cache first (LRU - Bug #4 fix)
+    const cached = lruCacheGet(cacheKey);
+    if (cached !== undefined) {
+      return cached;
     }
 
     const func = semanticModel.functions?.[funcName];
@@ -145,11 +200,11 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       }).filter((c: any) => c.subtree !== null)
     };
 
-    // Cache the result
-    functionTreeCacheRef.current.set(cacheKey, result);
+    // Cache the result (LRU - Bug #4 fix)
+    lruCacheSet(cacheKey, result);
 
     return result;
-  }, [semanticModel]);
+  }, [semanticModel, lruCacheGet, lruCacheSet]);
 
   // Memoize NPC map extraction to avoid rebuilding on every render
   const { npcMap, npcs } = useMemo(() => {
@@ -187,6 +242,16 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   };
 
   const handleSelectDialog = (dialogName: string, functionName: string | null) => {
+    // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
+    if (rafId1Ref.current !== null) {
+      cancelAnimationFrame(rafId1Ref.current);
+      rafId1Ref.current = null;
+    }
+    if (rafId2Ref.current !== null) {
+      cancelAnimationFrame(rafId2Ref.current);
+      rafId2Ref.current = null;
+    }
+
     // Show loading immediately to prevent flickering
     setIsLoadingDialog(true);
 
@@ -196,15 +261,18 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       setSelectedFunctionName(functionName);
 
       // Use requestAnimationFrame to ensure state changes are committed and painted
-      requestAnimationFrame(() => {
+      rafId1Ref.current = requestAnimationFrame(() => {
         // Scroll to top after content has changed
         if (editorScrollRef.current) {
           editorScrollRef.current.scrollTop = 0;
         }
 
         // Wait one more frame to ensure rendering is complete
-        requestAnimationFrame(() => {
+        rafId2Ref.current = requestAnimationFrame(() => {
           setIsLoadingDialog(false);
+          // Clear refs after execution
+          rafId1Ref.current = null;
+          rafId2Ref.current = null;
         });
       });
     });
