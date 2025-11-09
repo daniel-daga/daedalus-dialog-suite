@@ -8,9 +8,13 @@
       "Bash(npx tsx:*)",
       "Bash(npx vite build)",
       "Bash(npm test:*)",
-      "Bash(npm run test:e2e:*)"
+      "Bash(npm run test:e2e:*)",
+      "WebFetch(domain:code.claude.com)",
+      "mcp__memory__create_entities",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true
 }

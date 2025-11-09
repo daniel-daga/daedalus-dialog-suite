@@ -13,9 +13,12 @@ import {
   AttackAction,
   SetAttitudeAction,
   ExchangeRoutineAction,
-  ChapterTransitionAction
+  ChapterTransitionAction,
+  NpcKnowsInfoCondition,
+  VariableCondition,
+  Condition
 } from 'daedalus-parser/semantic-model';
-import type { SemanticModel } from 'daedalus-parser/semantic-model';
+import type { SemanticModel, DialogCondition } from 'daedalus-parser/semantic-model';
 
 interface CodeGeneratorSettings {
   indentChar: '\t' | ' ';
@@ -41,6 +44,7 @@ export class CodeGeneratorService {
       const func = new DialogFunction(plainFunc.name, plainFunc.returnType);
       func.calls = plainFunc.calls || [];
       func.actions = (plainFunc.actions || []).map((action: any) => this.reconstructAction(action));
+      func.conditions = (plainFunc.conditions || []).map((condition: any) => this.reconstructCondition(condition));
       model.functions[funcName] = func;
     }
 
@@ -111,6 +115,32 @@ export class CodeGeneratorService {
 
     // Fallback to plain object
     return plainAction;
+  }
+
+  /**
+   * Reconstruct condition objects from plain objects
+   */
+  private reconstructCondition(plainCondition: any): DialogCondition {
+    // Check for NpcKnowsInfoCondition (has npc and dialogRef)
+    if ('npc' in plainCondition && 'dialogRef' in plainCondition) {
+      return new NpcKnowsInfoCondition(plainCondition.npc, plainCondition.dialogRef);
+    }
+
+    // Check for VariableCondition (has variableName)
+    if ('variableName' in plainCondition) {
+      return new VariableCondition(
+        plainCondition.variableName,
+        plainCondition.negated || false
+      );
+    }
+
+    // Check for generic Condition (has condition property)
+    if ('condition' in plainCondition) {
+      return new Condition(plainCondition.condition);
+    }
+
+    // Fallback to generic Condition with empty string
+    return new Condition('');
   }
 
   /**

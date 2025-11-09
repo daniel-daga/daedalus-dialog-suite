@@ -21,11 +21,8 @@ export interface ActionCardProps {
 
 export interface DialogDetailsEditorProps {
   dialogName: string;
-  dialog: any;
-  infoFunction: any;
   filePath: string;
-  onUpdateDialog: (dialog: any) => void;
-  onUpdateFunction: (func: any) => void;
+  functionName?: string; // Optional: if editing a choice function instead of the info function
   onNavigateToFunction?: (functionName: string) => void;
 }
 

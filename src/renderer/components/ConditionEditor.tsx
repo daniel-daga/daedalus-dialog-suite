@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Button, Menu, MenuItem, Chip } from '@mui/material';
-import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Delete as DeleteIcon, Code as CodeIcon, Check as CheckIcon, NotInterested as NotInterestedIcon, Info as InfoIcon } from '@mui/icons-material';
+import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon } from '@mui/icons-material';
 import ConditionCard from './ConditionCard';
 
 interface ConditionEditorProps {
@@ -18,54 +18,61 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   filePath,
   dialogName
 }) => {
-  const [localFunction, setLocalFunction] = useState(conditionFunction);
   const [conditionsExpanded, setConditionsExpanded] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
   const conditionRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const initialFunctionRef = useRef(conditionFunction);
-  const [saveCounter, setSaveCounter] = useState(0);
 
-  // Sync local state when prop changes
-  React.useEffect(() => {
-    setLocalFunction(conditionFunction);
-    initialFunctionRef.current = conditionFunction;
-  }, [conditionFunction]);
+  // Helper to strip non-serializable functions from conditions
+  const sanitizeCondition = (condition: any) => {
+    const { getTypeName, ...rest } = condition;
+    return rest;
+  };
 
-  const isDirty = useMemo(() => {
-    return JSON.stringify(initialFunctionRef.current) !== JSON.stringify(localFunction);
-  }, [localFunction, saveCounter]);
+  // Helper to add getTypeName to conditions for UI usage
+  const hydrateCondition = (condition: any) => {
+    // If already has getTypeName, return as-is
+    if (typeof condition.getTypeName === 'function') {
+      return condition;
+    }
 
-  const handleSave = useCallback(async () => {
-    // Apply changes to semantic model (which will trigger file save in parent)
-    onUpdateFunction(localFunction);
-    // Mark this as the new "clean" state
-    initialFunctionRef.current = localFunction;
-    // Force isDirty recalculation
-    setSaveCounter(c => c + 1);
-  }, [localFunction, onUpdateFunction]);
+    // Add getTypeName based on condition properties
+    if (condition.npc !== undefined && condition.dialogRef !== undefined) {
+      return { ...condition, getTypeName: () => 'NpcKnowsInfoCondition' };
+    }
+    if (condition.variableName !== undefined) {
+      return { ...condition, getTypeName: () => 'VariableCondition' };
+    }
+    return { ...condition, getTypeName: () => 'Condition' };
+  };
 
-  const handleReset = useCallback(() => {
-    setLocalFunction(conditionFunction);
-  }, [conditionFunction]);
+  // Hydrate conditions with getTypeName for UI (store doesn't have these functions)
+  const localFunction = conditionFunction ? {
+    ...conditionFunction,
+    conditions: (conditionFunction.conditions || []).map(hydrateCondition)
+  } : null;
 
   const updateCondition = useCallback((index: number, updated: any) => {
     if (!localFunction) return;
     const newConditions = [...(localFunction.conditions || [])];
     newConditions[index] = updated;
-    setLocalFunction({
+    const updatedFunction = {
       ...localFunction,
-      conditions: newConditions
-    });
-  }, [localFunction]);
+      conditions: newConditions.map(sanitizeCondition)
+    };
+    // Update store directly
+    onUpdateFunction(updatedFunction);
+  }, [localFunction, onUpdateFunction]);
 
   const deleteCondition = useCallback((index: number) => {
     if (!localFunction) return;
     const newConditions = (localFunction.conditions || []).filter((_: any, i: number) => i !== index);
-    setLocalFunction({
+    const updatedFunction = {
       ...localFunction,
-      conditions: newConditions
-    });
-  }, [localFunction]);
+      conditions: newConditions.map(sanitizeCondition)
+    };
+    // Update store directly
+    onUpdateFunction(updatedFunction);
+  }, [localFunction, onUpdateFunction]);
 
   const focusCondition = useCallback((index: number) => {
     setTimeout(() => {
@@ -101,17 +108,19 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
     }
 
     const newConditions = [...(localFunction.conditions || []), newCondition];
-    setLocalFunction({
+    const updatedFunction = {
       ...localFunction,
-      conditions: newConditions
-    });
+      conditions: newConditions.map(sanitizeCondition)
+    };
+    // Update store directly
+    onUpdateFunction(updatedFunction);
 
     // Focus the new condition
     setTimeout(() => {
       const newIndex = newConditions.length - 1;
       conditionRefs.current[newIndex]?.focus();
     }, 10);
-  }, [localFunction]);
+  }, [localFunction, onUpdateFunction]);
 
   const getConditionType = (condition: any): string => {
     if (typeof condition.getTypeName === 'function') {
@@ -166,7 +175,6 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
               sx={{ fontSize: '0.75rem' }}
             />
           )}
-          {isDirty && <Chip label="Unsaved" size="small" color="warning" />}
         </Box>
         <IconButton size="small">
           {conditionsExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
@@ -175,35 +183,10 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
 
       {conditionsExpanded && (
         <>
-          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ mb: 2 }}>
             <Typography variant="caption" color="text.secondary">
               {(localFunction.conditions || []).length} condition(s) - ALL must be true
             </Typography>
-            <Stack direction="row" spacing={1}>
-              <Button
-                variant="outlined"
-                size="small"
-                disabled={!isDirty}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleReset();
-                }}
-              >
-                Reset
-              </Button>
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                disabled={!isDirty}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSave();
-                }}
-              >
-                Save
-              </Button>
-            </Stack>
           </Box>
 
           {!localFunction.conditions || localFunction.conditions.length === 0 ? (

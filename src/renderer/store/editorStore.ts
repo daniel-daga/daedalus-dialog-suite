@@ -74,6 +74,8 @@ interface EditorStore {
   openFile: (filePath: string) => Promise<void>;
   closeFile: (filePath: string) => void;
   updateModel: (filePath: string, model: any) => void;
+  updateDialog: (filePath: string, dialogName: string, dialog: any) => void;
+  updateFunction: (filePath: string, functionName: string, func: any) => void;
   saveFile: (filePath: string) => Promise<void>;
   generateCode: (filePath: string) => Promise<string>;
   setSelectedDialog: (dialogName: string | null) => void;
@@ -176,6 +178,54 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         return { openFiles: newOpenFiles };
       }
       return state;
+    });
+  },
+
+  updateDialog: (filePath: string, dialogName: string, dialog: any) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return state;
+      }
+      const updatedModel = {
+        ...fileState.semanticModel,
+        dialogs: {
+          ...fileState.semanticModel.dialogs,
+          [dialogName]: dialog
+        }
+      };
+      const updatedFileState: FileState = {
+        ...fileState,
+        semanticModel: updatedModel,
+        isDirty: true,
+      };
+      const newOpenFiles = new Map(state.openFiles);
+      newOpenFiles.set(filePath, updatedFileState);
+      return { openFiles: newOpenFiles };
+    });
+  },
+
+  updateFunction: (filePath: string, functionName: string, func: any) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return state;
+      }
+      const updatedModel = {
+        ...fileState.semanticModel,
+        functions: {
+          ...fileState.semanticModel.functions,
+          [functionName]: func
+        }
+      };
+      const updatedFileState: FileState = {
+        ...fileState,
+        semanticModel: updatedModel,
+        isDirty: true,
+      };
+      const newOpenFiles = new Map(state.openFiles);
+      newOpenFiles.set(filePath, updatedFileState);
+      return { openFiles: newOpenFiles };
     });
   },
 

@@ -378,31 +378,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
             <Box sx={{ width: '100%', opacity: isLoadingDialog ? 0 : 1, transition: 'opacity 0.2s' }}>
               <DialogDetailsEditor
                 dialogName={selectedDialog}
-                dialog={dialogData}
-                infoFunction={currentFunctionData}
                 filePath={filePath}
-                onUpdateDialog={(updatedDialog) => {
-                  const updatedModel = {
-                    ...semanticModel,
-                    dialogs: {
-                      ...semanticModel.dialogs,
-                      [selectedDialog]: updatedDialog
-                    }
-                  };
-                  updateModel(filePath, updatedModel);
-                }}
-                onUpdateFunction={(updatedFunction) => {
-                  if (currentFunctionName) {
-                    const updatedModel = {
-                      ...semanticModel,
-                      functions: {
-                        ...semanticModel.functions,
-                        [currentFunctionName]: updatedFunction
-                      }
-                    };
-                    updateModel(filePath, updatedModel);
-                  }
-                }}
+                functionName={selectedFunctionName || undefined}
                 onNavigateToFunction={handleNavigateToFunction}
               />
             </Box>

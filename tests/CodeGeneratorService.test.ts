@@ -282,6 +282,146 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
       // The function should not cause a crash and should handle the missing reference gracefully
     });
   });
+
+  describe('Condition Reconstruction', () => {
+    test('should reconstruct NpcKnowsInfoCondition objects from plain data', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              {
+                npc: 'self',
+                dialogRef: 'DIA_Test'
+              }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      // Should not throw - conditions must be reconstructed as class instances
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('Npc_KnowsInfo(self, DIA_Test)');
+    });
+
+    test('should reconstruct VariableCondition objects from plain data', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              {
+                variableName: 'QuestActive',
+                negated: false
+              },
+              {
+                variableName: 'QuestCompleted',
+                negated: true
+              }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('QuestActive');
+      expect(result).toContain('!QuestCompleted');
+    });
+
+    test('should reconstruct generic Condition objects from plain data', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              {
+                condition: 'hero.attribute[ATR_LEVEL] >= 10'
+              }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('hero.attribute[ATR_LEVEL] >= 10');
+    });
+
+    test('should handle mixed condition types', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              { npc: 'self', dialogRef: 'DIA_Test' },
+              { variableName: 'QuestActive', negated: false },
+              { condition: 'hero.guild == GIL_NONE' }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('Npc_KnowsInfo(self, DIA_Test)');
+      expect(result).toContain('QuestActive');
+      expect(result).toContain('hero.guild == GIL_NONE');
+    });
+  });
 });
 
 /**

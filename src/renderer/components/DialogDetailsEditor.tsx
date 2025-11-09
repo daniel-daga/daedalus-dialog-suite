@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Chip, Menu, MenuItem } from '@mui/material';
 import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
@@ -13,35 +13,31 @@ import { useActionManagement } from './hooks/useActionManagement';
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
-  dialog,
-  infoFunction,
   filePath,
-  onUpdateDialog,
-  onUpdateFunction,
+  functionName,
   onNavigateToFunction
 }) => {
-  const [localDialog, setLocalDialog] = useState(dialog);
-  const [localFunction, setLocalFunction] = useState(infoFunction);
-  const { openFiles, saveFile, updateModel } = useEditorStore();
+  const { openFiles, saveFile, updateDialog, updateFunction } = useEditorStore();
   const fileState = openFiles.get(filePath);
   const [propertiesExpanded, setPropertiesExpanded] = useState(false);
-  const [saveCounter, setSaveCounter] = useState(0);
+
+  // Read directly from store
+  const dialog = fileState?.semanticModel?.dialogs?.[dialogName];
+  const infoFunctionName = typeof dialog?.properties?.information === 'string'
+    ? dialog.properties.information
+    : dialog?.properties?.information?.name;
+  const currentFunctionName = functionName || infoFunctionName;
+  const currentFunction = currentFunctionName ? fileState?.semanticModel?.functions?.[currentFunctionName] : null;
 
   // Use custom hooks for focus navigation and action management
   const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
 
-  const handleUpdateSemanticModel = useCallback((functionName: string, func: any) => {
-    if (fileState) {
-      const updatedModel = {
-        ...fileState.semanticModel,
-        functions: {
-          ...fileState.semanticModel.functions,
-          [functionName]: func
-        }
-      };
-      updateModel(filePath, updatedModel);
+  // Callback that updates function in store (for useActionManagement)
+  const setFunction = useCallback((updatedFunction: any) => {
+    if (currentFunctionName) {
+      updateFunction(filePath, currentFunctionName, updatedFunction);
     }
-  }, [fileState, filePath, updateModel]);
+  }, [currentFunctionName, filePath, updateFunction]);
 
   const {
     updateAction,
@@ -50,10 +46,12 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     addDialogLineAfter,
     addActionAfter
   } = useActionManagement({
-    setFunction: setLocalFunction,
+    setFunction,
     focusAction,
     semanticModel: fileState?.semanticModel,
-    onUpdateSemanticModel: handleUpdateSemanticModel,
+    onUpdateSemanticModel: (funcName: string, func: any) => {
+      updateFunction(filePath, funcName, func);
+    },
     contextName: dialogName
   });
 
@@ -74,63 +72,24 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       ...fileState.semanticModel,
       functions: updatedFunctions
     };
-    updateModel(filePath, updatedModel);
-
-    // Update local function state if we're editing the renamed function
-    if (localFunction && infoFunction?.name === oldName) {
-      setLocalFunction({ ...localFunction, name: newName });
-    }
-  }, [fileState, filePath, updateModel, localFunction, infoFunction]);
-
-  // Reset local state when dialog changes
-  React.useEffect(() => {
-    setLocalDialog(dialog);
-    setLocalFunction(infoFunction);
-    // Update the refs when props change
-    initialDialogRef.current = dialog;
-    initialFunctionRef.current = infoFunction;
-  }, [dialogName, dialog, infoFunction]);
+    // Use updateModel for this complex operation
+    useEditorStore.getState().updateModel(filePath, updatedModel);
+  }, [fileState, filePath]);
 
   // Trim refs array to match current actions length
   React.useEffect(() => {
-    const actionsLength = localFunction?.actions?.length || 0;
+    const actionsLength = currentFunction?.actions?.length || 0;
     trimRefs(actionsLength);
-  }, [localFunction?.actions?.length, trimRefs]);
+  }, [currentFunction?.actions?.length, trimRefs]);
 
   const handleSave = async () => {
-    // Normalize dialog properties to use string references for functions
-    const normalizedDialog = {
-      ...localDialog,
-      properties: {
-        ...localDialog.properties,
-        information: typeof localDialog.properties?.information === 'object'
-          ? localDialog.properties.information.name
-          : localDialog.properties?.information,
-        condition: typeof localDialog.properties?.condition === 'object'
-          ? localDialog.properties.condition.name
-          : localDialog.properties?.condition
-      }
-    };
-
-    // Apply changes to semantic model
-    onUpdateDialog(normalizedDialog);
-    if (localFunction) {
-      onUpdateFunction(localFunction);
-    }
-
-    // Save to disk immediately
+    // Just save to disk - all changes are already in the store!
     await saveFile(filePath);
-
-    // Update refs to mark this as the new "clean" state
-    initialDialogRef.current = localDialog;
-    initialFunctionRef.current = localFunction;
-    // Force isDirty recalculation by updating counter
-    setSaveCounter(c => c + 1);
   };
 
   // Unified function to add any type of action at the end
   const addActionToEnd = useCallback((actionType: ActionTypeId) => {
-    if (!localFunction) return;
+    if (!currentFunction) return;
 
     let newAction: any;
 
@@ -140,7 +99,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       const newFunction = createEmptyFunction(newFunctionName);
 
       // Add the new function to the semantic model
-      handleUpdateSemanticModel(newFunctionName, newFunction);
+      updateFunction(filePath, newFunctionName, newFunction);
 
       // Create choice with target function
       newAction = createAction('choice', {
@@ -156,23 +115,40 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       });
     }
 
-    setLocalFunction({
-      ...localFunction,
-      actions: [...(localFunction.actions || []), newAction]
-    });
-  }, [localFunction, fileState, dialogName, handleUpdateSemanticModel]);
+    // Update function with new action
+    const updatedFunction = {
+      ...currentFunction,
+      actions: [...(currentFunction.actions || []), newAction]
+    };
+    setFunction(updatedFunction);
+  }, [currentFunction, fileState, dialogName, filePath, updateFunction, setFunction]);
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
-  // Optimize dirty check - use shallow comparison instead of JSON.stringify for better performance
-  // Cache the initial values to avoid re-stringifying on every render
-  const initialDialogRef = useRef(dialog);
-  const initialFunctionRef = useRef(infoFunction);
+  // isDirty comes directly from store
+  const isDirty = fileState?.isDirty || false;
 
-  const isDirty = useMemo(() => {
-    return JSON.stringify(initialDialogRef.current) !== JSON.stringify(localDialog) ||
-           JSON.stringify(initialFunctionRef.current) !== JSON.stringify(localFunction);
-  }, [localDialog, localFunction, saveCounter]);
+  const handleDialogPropertyChange = useCallback((updatedDialog: any) => {
+    // Normalize dialog properties to use string references for functions
+    const normalizedDialog = {
+      ...updatedDialog,
+      properties: {
+        ...updatedDialog.properties,
+        information: typeof updatedDialog.properties?.information === 'object'
+          ? updatedDialog.properties.information.name
+          : updatedDialog.properties?.information,
+        condition: typeof updatedDialog.properties?.condition === 'object'
+          ? updatedDialog.properties.condition.name
+          : updatedDialog.properties?.condition
+      }
+    };
+    updateDialog(filePath, dialogName, normalizedDialog);
+  }, [filePath, dialogName, updateDialog]);
+
+  const handleReset = async () => {
+    // Reload file from disk
+    await useEditorStore.getState().openFile(filePath);
+  };
 
   return (
     <Box>
@@ -185,10 +161,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           <Button
             variant="outlined"
             disabled={!isDirty}
-            onClick={() => {
-              setLocalDialog(dialog);
-              setLocalFunction(infoFunction);
-            }}
+            onClick={handleReset}
           >
             Reset
           </Button>
@@ -205,94 +178,96 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       </Box>
 
       {/* Dialog Properties */}
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Box
-          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', mb: propertiesExpanded ? 2 : 0 }}
-          onClick={() => setPropertiesExpanded(!propertiesExpanded)}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            <Typography variant="h6">Properties</Typography>
-            {!propertiesExpanded && (
-              <>
-                {localDialog.properties?.npc && (
-                  <Chip
-                    label={`NPC: ${localDialog.properties.npc}`}
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    sx={{ fontSize: '0.75rem' }}
-                  />
-                )}
-                {localDialog.properties?.description && (
-                  <Chip
-                    label={localDialog.properties.description}
-                    size="small"
-                    color="default"
-                    sx={{ fontSize: '0.75rem', maxWidth: '400px' }}
-                  />
-                )}
-              </>
-            )}
+      {dialog && (
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', mb: propertiesExpanded ? 2 : 0 }}
+            onClick={() => setPropertiesExpanded(!propertiesExpanded)}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="h6">Properties</Typography>
+              {!propertiesExpanded && (
+                <>
+                  {dialog.properties?.npc && (
+                    <Chip
+                      label={`NPC: ${dialog.properties.npc}`}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      sx={{ fontSize: '0.75rem' }}
+                    />
+                  )}
+                  {dialog.properties?.description && (
+                    <Chip
+                      label={dialog.properties.description}
+                      size="small"
+                      color="default"
+                      sx={{ fontSize: '0.75rem', maxWidth: '400px' }}
+                    />
+                  )}
+                </>
+              )}
+            </Box>
+            <IconButton size="small">
+              {propertiesExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+            </IconButton>
           </Box>
-          <IconButton size="small">
-            {propertiesExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
-          </IconButton>
-        </Box>
-        {propertiesExpanded && (
-        <Stack spacing={2}>
-          <TextField
-            fullWidth
-            label="NPC"
-            value={localDialog.properties?.npc || ''}
-            onChange={(e) => setLocalDialog({
-              ...localDialog,
-              properties: { ...localDialog.properties, npc: e.target.value }
-            })}
-            size="small"
-          />
-          <TextField
-            fullWidth
-            label="Number (Priority)"
-            type="number"
-            value={localDialog.properties?.nr || ''}
-            onChange={(e) => setLocalDialog({
-              ...localDialog,
-              properties: { ...localDialog.properties, nr: parseInt(e.target.value) || 0 }
-            })}
-            size="small"
-          />
-          <TextField
-            fullWidth
-            label="Description"
-            value={localDialog.properties?.description || ''}
-            onChange={(e) => setLocalDialog({
-              ...localDialog,
-              properties: { ...localDialog.properties, description: e.target.value }
-            })}
-            size="small"
-            multiline
-            rows={2}
-          />
-        </Stack>
-        )}
-      </Paper>
+          {propertiesExpanded && (
+            <Stack spacing={2}>
+              <TextField
+                fullWidth
+                label="NPC"
+                value={dialog.properties?.npc || ''}
+                onChange={(e) => handleDialogPropertyChange({
+                  ...dialog,
+                  properties: { ...dialog.properties, npc: e.target.value }
+                })}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Number (Priority)"
+                type="number"
+                value={dialog.properties?.nr || ''}
+                onChange={(e) => handleDialogPropertyChange({
+                  ...dialog,
+                  properties: { ...dialog.properties, nr: parseInt(e.target.value) || 0 }
+                })}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Description"
+                value={dialog.properties?.description || ''}
+                onChange={(e) => handleDialogPropertyChange({
+                  ...dialog,
+                  properties: { ...dialog.properties, description: e.target.value }
+                })}
+                size="small"
+                multiline
+                rows={2}
+              />
+            </Stack>
+          )}
+        </Paper>
+      )}
 
       {/* Condition Editor */}
-      {localDialog.properties?.condition && fileState?.semanticModel?.functions?.[
-        typeof localDialog.properties.condition === 'string'
-          ? localDialog.properties.condition
-          : localDialog.properties.condition.name
+      {dialog?.properties?.condition && fileState?.semanticModel?.functions?.[
+        typeof dialog.properties.condition === 'string'
+          ? dialog.properties.condition
+          : dialog.properties.condition.name
       ] && (
         <ConditionEditor
           conditionFunction={
             fileState.semanticModel.functions[
-              typeof localDialog.properties.condition === 'string'
-                ? localDialog.properties.condition
-                : localDialog.properties.condition.name
+              typeof dialog.properties.condition === 'string'
+                ? dialog.properties.condition
+                : dialog.properties.condition.name
             ]
           }
           onUpdateFunction={(func: any) => {
-            handleUpdateSemanticModel(func.name, func);
+            updateFunction(filePath, func.name, func);
           }}
           semanticModel={fileState.semanticModel}
           filePath={filePath}
@@ -301,99 +276,101 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       )}
 
       {/* Dialog Lines/Choices */}
-      <Paper sx={{ p: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box>
-            <Typography variant="h6">{localFunction?.name || 'Dialog Actions'}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {(localFunction?.actions || []).length} action(s)
-            </Typography>
+      {currentFunction && (
+        <Paper sx={{ p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box>
+              <Typography variant="h6">{currentFunction.name || 'Dialog Actions'}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {(currentFunction.actions || []).length} action(s)
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1}>
+              <Button
+                startIcon={<AddIcon />}
+                size="small"
+                variant="outlined"
+                onClick={() => addActionToEnd('dialogLine')}
+              >
+                Add Line
+              </Button>
+              <Button
+                startIcon={<AddIcon />}
+                size="small"
+                variant="outlined"
+                onClick={() => addActionToEnd('choice')}
+              >
+                Add Choice
+              </Button>
+              <IconButton
+                size="small"
+                onClick={(e) => setAddMenuAnchor(e.currentTarget)}
+                sx={{ ml: 0.5 }}
+              >
+                <MoreVertIcon fontSize="small" />
+              </IconButton>
+              <Menu
+                anchorEl={addMenuAnchor}
+                open={Boolean(addMenuAnchor)}
+                onClose={() => setAddMenuAnchor(null)}
+              >
+                <MenuItem onClick={() => { addActionToEnd('logEntry'); setAddMenuAnchor(null); }}>
+                  Add Log Entry
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('createTopic'); setAddMenuAnchor(null); }}>
+                  Add Create Topic
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('logSetTopicStatus'); setAddMenuAnchor(null); }}>
+                  Add Log Set Status
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('createInventoryItems'); setAddMenuAnchor(null); }}>
+                  Add Create Inventory Items
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('giveInventoryItems'); setAddMenuAnchor(null); }}>
+                  Add Give Inventory Items
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('attackAction'); setAddMenuAnchor(null); }}>
+                  Add Attack Action
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('setAttitudeAction'); setAddMenuAnchor(null); }}>
+                  Add Set Attitude
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('chapterTransition'); setAddMenuAnchor(null); }}>
+                  Add Chapter Transition
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('exchangeRoutine'); setAddMenuAnchor(null); }}>
+                  Add Exchange Routine
+                </MenuItem>
+                <MenuItem onClick={() => { addActionToEnd('customAction'); setAddMenuAnchor(null); }}>
+                  Add Custom Action
+                </MenuItem>
+              </Menu>
+            </Stack>
           </Box>
-          <Stack direction="row" spacing={1}>
-            <Button
-              startIcon={<AddIcon />}
-              size="small"
-              variant="outlined"
-              onClick={() => addActionToEnd('dialogLine')}
-            >
-              Add Line
-            </Button>
-            <Button
-              startIcon={<AddIcon />}
-              size="small"
-              variant="outlined"
-              onClick={() => addActionToEnd('choice')}
-            >
-              Add Choice
-            </Button>
-            <IconButton
-              size="small"
-              onClick={(e) => setAddMenuAnchor(e.currentTarget)}
-              sx={{ ml: 0.5 }}
-            >
-              <MoreVertIcon fontSize="small" />
-            </IconButton>
-            <Menu
-              anchorEl={addMenuAnchor}
-              open={Boolean(addMenuAnchor)}
-              onClose={() => setAddMenuAnchor(null)}
-            >
-              <MenuItem onClick={() => { addActionToEnd('logEntry'); setAddMenuAnchor(null); }}>
-                Add Log Entry
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('createTopic'); setAddMenuAnchor(null); }}>
-                Add Create Topic
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('logSetTopicStatus'); setAddMenuAnchor(null); }}>
-                Add Log Set Status
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('createInventoryItems'); setAddMenuAnchor(null); }}>
-                Add Create Inventory Items
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('giveInventoryItems'); setAddMenuAnchor(null); }}>
-                Add Give Inventory Items
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('attackAction'); setAddMenuAnchor(null); }}>
-                Add Attack Action
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('setAttitudeAction'); setAddMenuAnchor(null); }}>
-                Add Set Attitude
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('chapterTransition'); setAddMenuAnchor(null); }}>
-                Add Chapter Transition
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('exchangeRoutine'); setAddMenuAnchor(null); }}>
-                Add Exchange Routine
-              </MenuItem>
-              <MenuItem onClick={() => { addActionToEnd('customAction'); setAddMenuAnchor(null); }}>
-                Add Custom Action
-              </MenuItem>
-            </Menu>
-          </Stack>
-        </Box>
 
-        {!localFunction || (localFunction.actions || []).length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            No dialog actions yet. Use the buttons above to add actions.
-          </Typography>
-        ) : (
-          <ActionsList
-            actions={localFunction.actions || []}
-            actionRefs={actionRefs}
-            npcName={localDialog.properties?.npc || 'NPC'}
-            updateAction={updateAction}
-            deleteAction={deleteAction}
-            focusAction={focusAction}
-            addDialogLineAfter={addDialogLineAfter}
-            deleteActionAndFocusPrev={deleteActionAndFocusPrev}
-            addActionAfter={addActionAfter}
-            semanticModel={fileState?.semanticModel}
-            onNavigateToFunction={onNavigateToFunction}
-            onRenameFunction={handleRenameFunction}
-            dialogContextName={dialogName}
-          />
-        )}
-      </Paper>
+          {(currentFunction.actions || []).length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No dialog actions yet. Use the buttons above to add actions.
+            </Typography>
+          ) : (
+            <ActionsList
+              actions={currentFunction.actions || []}
+              actionRefs={actionRefs}
+              npcName={dialog?.properties?.npc || 'NPC'}
+              updateAction={updateAction}
+              deleteAction={deleteAction}
+              focusAction={focusAction}
+              addDialogLineAfter={addDialogLineAfter}
+              deleteActionAndFocusPrev={deleteActionAndFocusPrev}
+              addActionAfter={addActionAfter}
+              semanticModel={fileState?.semanticModel}
+              onNavigateToFunction={onNavigateToFunction}
+              onRenameFunction={handleRenameFunction}
+              dialogContextName={dialogName}
+            />
+          )}
+        </Paper>
+      )}
     </Box>
   );
 };
