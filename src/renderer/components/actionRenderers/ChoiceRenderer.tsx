@@ -19,6 +19,14 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   // Track the original function name when editing starts
   const originalFunctionNameRef = React.useRef<string | null>(null);
 
+  // Track the current local value to avoid race condition with debounced updates
+  const [localTargetFunction, setLocalTargetFunction] = React.useState(action.targetFunction || '');
+
+  // Sync local state when action prop changes (e.g., from external updates)
+  React.useEffect(() => {
+    setLocalTargetFunction(action.targetFunction || '');
+  }, [action.targetFunction]);
+
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <TextField
@@ -33,20 +41,21 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <TextField
         label="Function"
-        value={action.targetFunction || ''}
+        value={localTargetFunction}
         onFocus={() => {
           // Capture the original function name when editing starts
-          originalFunctionNameRef.current = action.targetFunction || null;
+          originalFunctionNameRef.current = localTargetFunction || null;
         }}
         onChange={(e) => {
           const newName = e.target.value;
+          setLocalTargetFunction(newName);
           handleUpdate({ ...action, targetFunction: newName });
         }}
         onBlur={() => {
           flushUpdate();
 
           const originalName = originalFunctionNameRef.current;
-          const newName = action.targetFunction;
+          const newName = localTargetFunction; // Use local state, not stale props
 
           // Validate and handle rename if needed
           if (dialogContextName && onRenameFunction && originalName && newName !== originalName) {
@@ -59,6 +68,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
 
             if (validationError) {
               // Revert to original name on validation error
+              setLocalTargetFunction(originalName);
               handleUpdate({ ...action, targetFunction: originalName });
               alert(validationError);
             } else {
@@ -72,7 +82,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
         }}
         size="small"
         sx={{ flex: '1 1 40%', minWidth: 150 }}
-        error={dialogContextName && action.targetFunction ? !action.targetFunction.startsWith(dialogContextName) : false}
+        error={dialogContextName && localTargetFunction ? !localTargetFunction.startsWith(dialogContextName) : false}
       />
       {semanticModel && action.targetFunction && semanticModel.functions && semanticModel.functions[action.targetFunction] && onNavigateToFunction && (
         <Tooltip title="Edit choice actions" arrow>
