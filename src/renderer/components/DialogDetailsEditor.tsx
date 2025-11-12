@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Chip, Menu, MenuItem } from '@mui/material';
+import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Chip, Menu, MenuItem, Snackbar, Alert, CircularProgress } from '@mui/material';
 import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
@@ -21,6 +21,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const fileState = openFiles.get(filePath);
   const [propertiesExpanded, setPropertiesExpanded] = useState(false);
 
+  // Loading and error states
+  const [isSaving, setIsSaving] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error' | 'info';
+  }>({ open: false, message: '', severity: 'info' });
+
   // Read directly from store
   const dialog = fileState?.semanticModel?.dialogs?.[dialogName];
   const infoFunctionName = typeof dialog?.properties?.information === 'string'
@@ -33,9 +42,29 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
 
   // Callback that updates function in store (for useActionManagement)
-  const setFunction = useCallback((updatedFunction: any) => {
-    if (currentFunctionName) {
+  // Supports both direct values and updater functions (like React setState)
+  const setFunction = useCallback((updatedFunctionOrUpdater: any) => {
+    if (!currentFunctionName) return;
+
+    // Check if it's an updater function (callback pattern)
+    if (typeof updatedFunctionOrUpdater === 'function') {
+      // Get current function from store - read from the store directly, not from closure
+      const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+      const currentFunc = latestFileState?.semanticModel?.functions?.[currentFunctionName];
+
+      if (!currentFunc) return;
+
+      // Call the updater function with current value to get new value
+      const updatedFunction = updatedFunctionOrUpdater(currentFunc);
+
+      // Validate that updater returned a valid function
+      if (!updatedFunction) return;
+
       updateFunction(filePath, currentFunctionName, updatedFunction);
+    } else {
+      // Direct value - use as-is
+      if (!updatedFunctionOrUpdater) return;
+      updateFunction(filePath, currentFunctionName, updatedFunctionOrUpdater);
     }
   }, [currentFunctionName, filePath, updateFunction]);
 
@@ -83,8 +112,25 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   }, [currentFunction?.actions?.length, trimRefs]);
 
   const handleSave = async () => {
-    // Just save to disk - all changes are already in the store!
-    await saveFile(filePath);
+    setIsSaving(true);
+    try {
+      // Just save to disk - all changes are already in the store!
+      await saveFile(filePath);
+      setSnackbar({
+        open: true,
+        message: 'File saved successfully!',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.error('Failed to save file:', error);
+      setSnackbar({
+        open: true,
+        message: `Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        severity: 'error'
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Unified function to add any type of action at the end
@@ -146,8 +192,25 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   }, [filePath, dialogName, updateDialog]);
 
   const handleReset = async () => {
-    // Reload file from disk
-    await useEditorStore.getState().openFile(filePath);
+    setIsResetting(true);
+    try {
+      // Reload file from disk
+      await useEditorStore.getState().openFile(filePath);
+      setSnackbar({
+        open: true,
+        message: 'File reset successfully!',
+        severity: 'info'
+      });
+    } catch (error) {
+      console.error('Failed to reset file:', error);
+      setSnackbar({
+        open: true,
+        message: `Failed to reset file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        severity: 'error'
+      });
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   return (
@@ -160,19 +223,20 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         <Stack direction="row" spacing={1}>
           <Button
             variant="outlined"
-            disabled={!isDirty}
+            disabled={!isDirty || isResetting || isSaving}
             onClick={handleReset}
+            startIcon={isResetting ? <CircularProgress size={16} /> : undefined}
           >
-            Reset
+            {isResetting ? 'Resetting...' : 'Reset'}
           </Button>
           <Button
             variant="contained"
             color="success"
-            startIcon={<SaveIcon />}
-            disabled={!isDirty}
+            startIcon={isSaving ? <CircularProgress size={16} sx={{ color: 'white' }} /> : <SaveIcon />}
+            disabled={!isDirty || isSaving || isResetting}
             onClick={handleSave}
           >
-            Save
+            {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </Stack>
       </Box>
@@ -371,6 +435,22 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           )}
         </Paper>
       )}
+
+      {/* Snackbar for user feedback */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

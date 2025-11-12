@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const treeKill = require('tree-kill');
 
 // Colors for output
 const colors = {
@@ -49,11 +50,34 @@ function createProcess(name, command, args, color) {
 }
 
 function killAll() {
+  let killed = 0;
+  const total = processes.length;
+
+  if (total === 0) {
+    process.exit(0);
+    return;
+  }
+
   processes.forEach(proc => {
-    try {
-      proc.kill();
-    } catch (e) {
-      // Process might already be dead
+    if (proc && proc.pid) {
+      // Use tree-kill to kill the entire process tree
+      // This ensures child processes are cleaned up on Windows
+      treeKill(proc.pid, 'SIGTERM', (err) => {
+        if (err && err.code !== 'ESRCH') {
+          // ESRCH means process doesn't exist (already dead), which is fine
+          console.error(`Error killing process ${proc.pid}:`, err.message);
+        }
+        killed++;
+        if (killed === total) {
+          // All processes killed, safe to exit
+          setTimeout(() => process.exit(0), 100);
+        }
+      });
+    } else {
+      killed++;
+      if (killed === total) {
+        setTimeout(() => process.exit(0), 100);
+      }
     }
   });
 }
@@ -83,9 +107,14 @@ waitForFile(mainJsPath, () => {
   createProcess('Electron', 'electron', ['.', '--enable-logging', '--no-sandbox'], colors.magenta);
 });
 
-// Handle Ctrl+C
+// Handle Ctrl+C (SIGINT)
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
   killAll();
-  process.exit(0);
+});
+
+// Handle SIGTERM (graceful shutdown)
+process.on('SIGTERM', () => {
+  console.log('\nReceived SIGTERM, shutting down...');
+  killAll();
 });

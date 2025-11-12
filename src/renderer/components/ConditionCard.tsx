@@ -25,6 +25,24 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   const [localCondition, setLocalCondition] = useState(condition);
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Use refs to store latest values without triggering re-renders
+  const localConditionRef = useRef(localCondition);
+  const indexRef = useRef(index);
+  const updateConditionRef = useRef(updateCondition);
+
+  // Keep refs in sync with latest values
+  React.useEffect(() => {
+    localConditionRef.current = localCondition;
+  }, [localCondition]);
+
+  React.useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
+
+  React.useEffect(() => {
+    updateConditionRef.current = updateCondition;
+  }, [updateCondition]);
+
   // Sync local state when condition prop changes from parent
   React.useEffect(() => {
     setLocalCondition(condition);
@@ -175,14 +193,17 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
     }
   };
 
-  // Cleanup timer on unmount
+  // Cleanup timer on unmount - use refs to avoid stale closures
   React.useEffect(() => {
     return () => {
       if (updateTimerRef.current) {
         clearTimeout(updateTimerRef.current);
+        // Flush using refs to get latest values and avoid data loss
+        // This ensures we use the current index/condition, not stale values from closure
+        updateConditionRef.current(indexRef.current, localConditionRef.current);
       }
     };
-  }, []);
+  }, []); // Empty deps - cleanup function only created once, uses refs for latest values
 
   return (
     <Box
