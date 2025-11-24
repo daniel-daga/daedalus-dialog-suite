@@ -13,7 +13,17 @@ interface ThreeColumnLayoutProps {
 
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { openFiles, updateModel } = useEditorStore();
-  const { projectPath, npcList: projectNpcs, dialogIndex, selectNpc, selectedNpc: projectSelectedNpc, getSelectedNpcDialogs, getSemanticModel } = useProjectStore();
+  const {
+    projectPath,
+    npcList: projectNpcs,
+    dialogIndex,
+    selectNpc,
+    selectedNpc: projectSelectedNpc,
+    getSelectedNpcDialogs,
+    getSemanticModel,
+    mergedSemanticModel,
+    loadAndMergeNpcModels
+  } = useProjectStore();
   const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [selectedNPC, setSelectedNPC] = useState<string | null>(null);
@@ -23,7 +33,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
   const [isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
-  const [projectSemanticModel, setProjectSemanticModel] = useState<any>({}); // Merged semantic model for project mode
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   // Cache for buildFunctionTree to prevent exponential recomputation
@@ -41,7 +50,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Determine which mode we're in: project mode or single-file mode
   const isProjectMode = !!projectPath;
-  const semanticModel = isProjectMode ? projectSemanticModel : (fileState?.semanticModel || {});
+  const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
 
   // In project mode, we might not have a file loaded yet
   if (!isProjectMode && !fileState) {
@@ -273,7 +282,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const handleSelectNPC = async (npc: string) => {
     setSelectedDialog(null);
 
-    // In project mode, load semantic models for this NPC's dialogs BEFORE setting selectedNPC
+    // In project mode, load semantic models for this NPC's dialogs
     if (isProjectMode) {
       selectNpc(npc);
 
@@ -285,56 +294,14 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
       console.log(`[ThreeColumnLayout] Loading ${uniqueFilePaths.length} unique files:`, uniqueFilePaths);
 
-      // Load semantic models for all files
-      const semanticModels = await Promise.all(
+      // Load semantic models for all files (populates the parsedFiles cache)
+      await Promise.all(
         uniqueFilePaths.map(filePath => getSemanticModel(filePath))
       );
-      console.log(`[ThreeColumnLayout] Loaded ${semanticModels.length} semantic models`);
 
-      // Check for errors in any of the models
-      const modelsWithErrors = semanticModels.filter(model => model?.hasErrors);
-      if (modelsWithErrors.length > 0) {
-        console.error(`[ThreeColumnLayout] ${modelsWithErrors.length} file(s) have parsing errors:`);
-        modelsWithErrors.forEach((model, index) => {
-          console.error(`  File ${index + 1}:`, model.errors);
-        });
-      }
+      // Load and merge models for this NPC using the store
+      loadAndMergeNpcModels(npc);
 
-      // Merge all semantic models (skip models with errors)
-      const mergedModel = {
-        dialogs: {},
-        functions: {},
-        constants: {},
-        instances: {},
-        hasErrors: modelsWithErrors.length > 0,
-        errors: modelsWithErrors.flatMap(model => model.errors || [])
-      };
-
-      semanticModels.forEach(model => {
-        // Skip models with errors to avoid corrupting the merged model
-        if (model?.hasErrors) {
-          console.warn('[ThreeColumnLayout] Skipping model with errors during merge');
-          return;
-        }
-
-        if (model.dialogs) {
-          Object.assign(mergedModel.dialogs, model.dialogs);
-        }
-        if (model.functions) {
-          Object.assign(mergedModel.functions, model.functions);
-        }
-        if (model.constants) {
-          Object.assign(mergedModel.constants, model.constants);
-        }
-        if (model.instances) {
-          Object.assign(mergedModel.instances, model.instances);
-        }
-      });
-
-      console.log(`[ThreeColumnLayout] Merged model has ${Object.keys(mergedModel.dialogs).length} dialogs, ${Object.keys(mergedModel.functions).length} functions`);
-
-      // Set semantic model and selected NPC together to avoid race condition
-      setProjectSemanticModel(mergedModel);
       setSelectedNPC(npc);
     } else {
       // Single-file mode: just set the selected NPC

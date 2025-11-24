@@ -30,6 +30,9 @@ interface ProjectState {
   // Cached parsed files (full semantic models)
   parsedFiles: Map<string, ParsedFileCache>;
 
+  // Merged semantic model for currently selected NPC
+  mergedSemanticModel: any;
+
   // Current selection
   selectedNpc: string | null;
 
@@ -54,6 +57,15 @@ interface ProjectActions {
   // Get or parse a dialog file
   getSemanticModel: (filePath: string) => Promise<any>;
 
+  // Merge multiple semantic models into one
+  mergeSemanticModels: (models: any[]) => void;
+
+  // Load and merge semantic models for a specific NPC
+  loadAndMergeNpcModels: (npcId: string) => void;
+
+  // Clear merged semantic model
+  clearMergedModel: () => void;
+
   // Clear cached semantic models (free memory)
   clearCache: () => void;
 }
@@ -68,6 +80,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   dialogIndex: new Map(),
   allDialogFiles: [],
   parsedFiles: new Map(),
+  mergedSemanticModel: {
+    dialogs: {},
+    functions: {},
+    constants: {},
+    instances: {},
+    hasErrors: false,
+    errors: []
+  },
   selectedNpc: null,
   isLoading: false,
   loadError: null,
@@ -131,6 +151,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       dialogIndex: new Map(),
       allDialogFiles: [],
       parsedFiles: new Map(),
+      mergedSemanticModel: {
+        dialogs: {},
+        functions: {},
+        constants: {},
+        instances: {},
+        hasErrors: false,
+        errors: []
+      },
       selectedNpc: null,
       loadError: null
     });
@@ -172,6 +200,84 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ parsedFiles: newCache });
 
     return semanticModel;
+  },
+
+  mergeSemanticModels: (models: any[]) => {
+    const mergedModel = {
+      dialogs: {},
+      functions: {},
+      constants: {},
+      instances: {},
+      hasErrors: false,
+      errors: []
+    };
+
+    const modelsWithErrors = models.filter(model => model?.hasErrors);
+    if (modelsWithErrors.length > 0) {
+      mergedModel.hasErrors = true;
+      mergedModel.errors = modelsWithErrors.flatMap(model => model.errors || []);
+    }
+
+    // Merge all models, skipping those with errors
+    models.forEach(model => {
+      // Skip models with errors to avoid corrupting the merged model
+      if (model?.hasErrors) {
+        console.warn('[projectStore] Skipping model with errors during merge');
+        return;
+      }
+
+      if (model?.dialogs) {
+        Object.assign(mergedModel.dialogs, model.dialogs);
+      }
+      if (model?.functions) {
+        Object.assign(mergedModel.functions, model.functions);
+      }
+      if (model?.constants) {
+        Object.assign(mergedModel.constants, model.constants);
+      }
+      if (model?.instances) {
+        Object.assign(mergedModel.instances, model.instances);
+      }
+    });
+
+    console.log(`[projectStore] Merged ${models.length} models: ${Object.keys(mergedModel.dialogs).length} dialogs, ${Object.keys(mergedModel.functions).length} functions`);
+
+    set({ mergedSemanticModel: mergedModel });
+  },
+
+  loadAndMergeNpcModels: (npcId: string) => {
+    const { dialogIndex, parsedFiles } = get();
+
+    // Get dialog metadata for this NPC
+    const dialogMetadata = dialogIndex.get(npcId) || [];
+
+    // Extract unique file paths
+    const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
+
+    console.log(`[projectStore] Loading models for NPC ${npcId} from ${uniqueFilePaths.length} files`);
+
+    // Get semantic models from cache
+    const semanticModels = uniqueFilePaths
+      .map(filePath => parsedFiles.get(filePath)?.semanticModel)
+      .filter(model => model !== undefined);
+
+    console.log(`[projectStore] Found ${semanticModels.length} cached models`);
+
+    // Merge the models
+    get().mergeSemanticModels(semanticModels);
+  },
+
+  clearMergedModel: () => {
+    set({
+      mergedSemanticModel: {
+        dialogs: {},
+        functions: {},
+        constants: {},
+        instances: {},
+        hasErrors: false,
+        errors: []
+      }
+    });
   },
 
   clearCache: () => {
