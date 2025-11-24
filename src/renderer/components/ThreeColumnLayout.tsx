@@ -1,18 +1,20 @@
 import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect } from 'react';
 import { Box, Typography, Alert, Paper, List, ListItem, ListItemText, Fade } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
+import { useProjectStore } from '../store/projectStore';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
 import DialogDetailsEditor from './DialogDetailsEditor';
 import DialogLoadingSkeleton from './DialogLoadingSkeleton';
 
 interface ThreeColumnLayoutProps {
-  filePath: string;
+  filePath: string | null;
 }
 
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { openFiles, updateModel } = useEditorStore();
-  const fileState = openFiles.get(filePath);
+  const { projectPath, npcList: projectNpcs, dialogIndex, selectNpc, selectedNpc: projectSelectedNpc, getSelectedNpcDialogs, getSemanticModel } = useProjectStore();
+  const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [selectedNPC, setSelectedNPC] = useState<string | null>(null);
   const [selectedDialog, setSelectedDialog] = useState<string | null>(null);
@@ -21,6 +23,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
   const [isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
+  const [projectSemanticModel, setProjectSemanticModel] = useState<any>({}); // Merged semantic model for project mode
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   // Cache for buildFunctionTree to prevent exponential recomputation
@@ -36,12 +39,17 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Max cache size to prevent unbounded growth (Bug #4 fix)
   const MAX_CACHE_SIZE = 1000;
 
-  if (!fileState) {
+  // Determine which mode we're in: project mode or single-file mode
+  const isProjectMode = !!projectPath;
+  const semanticModel = isProjectMode ? projectSemanticModel : (fileState?.semanticModel || {});
+
+  // In project mode, we might not have a file loaded yet
+  if (!isProjectMode && !fileState) {
     return <Typography>Loading...</Typography>;
   }
 
   // Check for syntax errors - if present, show error display instead of editor
-  if (fileState.hasErrors) {
+  if (fileState?.hasErrors) {
     return (
       <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -100,8 +108,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       </Box>
     );
   }
-
-  const { semanticModel } = fileState;
 
   // Clear cache synchronously when semantic model changes (Bug #2 fix)
   // This must happen BEFORE buildFunctionTree is called during render
@@ -207,7 +213,19 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   }, [semanticModel, lruCacheGet, lruCacheSet]);
 
   // Memoize NPC map extraction to avoid rebuilding on every render
+  // In project mode, use project NPCs; in single-file mode, extract from file
   const { npcMap, npcs } = useMemo(() => {
+    if (isProjectMode) {
+      // In project mode, populate npcMap from dialogIndex
+      const map = new Map<string, string[]>();
+      dialogIndex.forEach((dialogMetadataArray, npcId) => {
+        const dialogNames = dialogMetadataArray.map(metadata => metadata.dialogName);
+        map.set(npcId, dialogNames);
+      });
+      return { npcMap: map, npcs: projectNpcs };
+    }
+
+    // Single-file mode: extract NPCs from current file
     const map = new Map<string, string[]>();
     Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]: [string, any]) => {
       const npcName = dialog.properties?.npc || 'Unknown NPC';
@@ -220,13 +238,18 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     const npcList = Array.from(map.keys()).sort();
 
     return { npcMap: map, npcs: npcList };
-  }, [semanticModel.dialogs]);
+  }, [isProjectMode, projectNpcs, dialogIndex, semanticModel.dialogs]);
 
   // Get dialogs for selected NPC
   const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
 
   // Get selected dialog data
   const dialogData = selectedDialog ? semanticModel.dialogs?.[selectedDialog] : null;
+
+  // Debug logging
+  if (selectedDialog) {
+    console.log(`[ThreeColumnLayout] Rendering with selectedDialog=${selectedDialog}, dialogData=${dialogData ? 'exists' : 'MISSING'}, semanticModel has ${Object.keys(semanticModel.dialogs || {}).length} dialogs`);
+  }
 
   // Get the information function for the selected dialog
   const infoFunction = dialogData?.properties?.information as any;
@@ -236,12 +259,92 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
   const currentFunctionData = currentFunctionName ? semanticModel.functions?.[currentFunctionName] : null;
 
-  const handleSelectNPC = (npc: string) => {
-    setSelectedNPC(npc);
+  // More debug logging
+  if (selectedDialog) {
+    console.log(`[ThreeColumnLayout] currentFunctionName=${currentFunctionName}, currentFunctionData=${currentFunctionData ? 'exists' : 'MISSING'}, semanticModel has ${Object.keys(semanticModel.functions || {}).length} functions`);
+    if (!currentFunctionName) {
+      console.warn(`[ThreeColumnLayout] No information function defined for dialog ${selectedDialog}`);
+    }
+    if (currentFunctionName && !currentFunctionData) {
+      console.error(`[ThreeColumnLayout] Function ${currentFunctionName} not found in semanticModel.functions. Available functions:`, Object.keys(semanticModel.functions || {}));
+    }
+  }
+
+  const handleSelectNPC = async (npc: string) => {
     setSelectedDialog(null);
+
+    // In project mode, load semantic models for this NPC's dialogs BEFORE setting selectedNPC
+    if (isProjectMode) {
+      selectNpc(npc);
+
+      // Get dialog metadata for this NPC
+      const dialogMetadata = dialogIndex.get(npc) || [];
+      console.log(`[ThreeColumnLayout] NPC ${npc} has ${dialogMetadata.length} dialogs`);
+
+      // Extract unique file paths
+      const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
+      console.log(`[ThreeColumnLayout] Loading ${uniqueFilePaths.length} unique files:`, uniqueFilePaths);
+
+      // Load semantic models for all files
+      const semanticModels = await Promise.all(
+        uniqueFilePaths.map(filePath => getSemanticModel(filePath))
+      );
+      console.log(`[ThreeColumnLayout] Loaded ${semanticModels.length} semantic models`);
+
+      // Check for errors in any of the models
+      const modelsWithErrors = semanticModels.filter(model => model?.hasErrors);
+      if (modelsWithErrors.length > 0) {
+        console.error(`[ThreeColumnLayout] ${modelsWithErrors.length} file(s) have parsing errors:`);
+        modelsWithErrors.forEach((model, index) => {
+          console.error(`  File ${index + 1}:`, model.errors);
+        });
+      }
+
+      // Merge all semantic models (skip models with errors)
+      const mergedModel = {
+        dialogs: {},
+        functions: {},
+        constants: {},
+        instances: {},
+        hasErrors: modelsWithErrors.length > 0,
+        errors: modelsWithErrors.flatMap(model => model.errors || [])
+      };
+
+      semanticModels.forEach(model => {
+        // Skip models with errors to avoid corrupting the merged model
+        if (model?.hasErrors) {
+          console.warn('[ThreeColumnLayout] Skipping model with errors during merge');
+          return;
+        }
+
+        if (model.dialogs) {
+          Object.assign(mergedModel.dialogs, model.dialogs);
+        }
+        if (model.functions) {
+          Object.assign(mergedModel.functions, model.functions);
+        }
+        if (model.constants) {
+          Object.assign(mergedModel.constants, model.constants);
+        }
+        if (model.instances) {
+          Object.assign(mergedModel.instances, model.instances);
+        }
+      });
+
+      console.log(`[ThreeColumnLayout] Merged model has ${Object.keys(mergedModel.dialogs).length} dialogs, ${Object.keys(mergedModel.functions).length} functions`);
+
+      // Set semantic model and selected NPC together to avoid race condition
+      setProjectSemanticModel(mergedModel);
+      setSelectedNPC(npc);
+    } else {
+      // Single-file mode: just set the selected NPC
+      setSelectedNPC(npc);
+    }
   };
 
   const handleSelectDialog = (dialogName: string, functionName: string | null) => {
+    console.log(`[ThreeColumnLayout] handleSelectDialog called: dialog=${dialogName}, function=${functionName}`);
+
     // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
     if (rafId1Ref.current !== null) {
       cancelAnimationFrame(rafId1Ref.current);
@@ -259,6 +362,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     startTransition(() => {
       setSelectedDialog(dialogName);
       setSelectedFunctionName(functionName);
+
+      const dialogData = semanticModel.dialogs?.[dialogName];
+      console.log(`[ThreeColumnLayout] Dialog data for ${dialogName}:`, dialogData ? 'exists' : 'MISSING');
 
       // Use requestAnimationFrame to ensure state changes are committed and painted
       rafId1Ref.current = requestAnimationFrame(() => {
@@ -322,19 +428,32 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       />
 
       {/* Column 2: Dialog Tree with Nested Choices */}
-      <DialogTree
-        selectedNPC={selectedNPC}
-        dialogsForNPC={dialogsForNPC}
-        semanticModel={semanticModel}
-        selectedDialog={selectedDialog}
-        selectedFunctionName={selectedFunctionName}
-        expandedDialogs={expandedDialogs}
-        expandedChoices={expandedChoices}
-        onSelectDialog={handleSelectDialog}
-        onToggleDialogExpand={handleToggleDialogExpand}
-        onToggleChoiceExpand={handleToggleChoiceExpand}
-        buildFunctionTree={buildFunctionTree}
-      />
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: '0 0 350px', overflow: 'hidden' }}>
+        {/* Error Alert for Parsing Errors */}
+        {isProjectMode && semanticModel.hasErrors && (
+          <Alert severity="error" sx={{ borderRadius: 0, flexShrink: 0 }}>
+            <Typography variant="body2" gutterBottom>
+              Failed to parse dialog file(s) for {selectedNPC}
+            </Typography>
+            <Typography variant="caption" component="div">
+              {semanticModel.errors?.length || 0} error(s) found. Check console for details.
+            </Typography>
+          </Alert>
+        )}
+        <DialogTree
+          selectedNPC={selectedNPC}
+          dialogsForNPC={dialogsForNPC}
+          semanticModel={semanticModel}
+          selectedDialog={selectedDialog}
+          selectedFunctionName={selectedFunctionName}
+          expandedDialogs={expandedDialogs}
+          expandedChoices={expandedChoices}
+          onSelectDialog={handleSelectDialog}
+          onToggleDialogExpand={handleToggleDialogExpand}
+          onToggleChoiceExpand={handleToggleChoiceExpand}
+          buildFunctionTree={buildFunctionTree}
+        />
+      </Box>
 
       {/* Column 3: Function Action Editor */}
       <Box ref={editorScrollRef} sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -381,6 +500,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
                 filePath={filePath}
                 functionName={selectedFunctionName || undefined}
                 onNavigateToFunction={handleNavigateToFunction}
+                semanticModel={semanticModel}
+                isProjectMode={isProjectMode}
               />
             </Box>
           </>

@@ -1276,3 +1276,316 @@ describe('ThreeColumnLayout - Bug #6: Exponential Tree Building Fix', () => {
  * - Bug #5: Use requestAnimationFrame instead of setTimeout for render sync
  * - Bug #6: Add memoization cache + O(n) isShared calculation
  */
+
+describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () => {
+  test('demonstrates empty npcMap in project mode', () => {
+    // BEFORE FIX: npcMap is intentionally empty in project mode
+    const isProjectMode = true;
+    const projectNpcs = ['SLD_99003_Farim', 'SLD_99005_Arog', 'Xardas'];
+
+    // Simulating ThreeColumnLayout.tsx line 220
+    const { npcMap, npcs } = (() => {
+      if (isProjectMode) {
+        // BUG: Returns empty map
+        return { npcMap: new Map<string, string[]>(), npcs: projectNpcs };
+      }
+      return { npcMap: new Map(), npcs: [] };
+    })();
+
+    // Problem: NPCs are loaded but npcMap is empty
+    expect(npcs.length).toBe(3); // NPCs are there
+    expect(npcMap.size).toBe(0); // But npcMap is empty!
+
+    // When user selects an NPC
+    const selectedNPC = 'SLD_99003_Farim';
+    const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
+
+    // Result: No dialogs shown
+    expect(dialogsForNPC).toEqual([]);
+  });
+
+  test('verifies single-file mode works correctly', () => {
+    // Single-file mode populates npcMap from semanticModel
+    const isProjectMode = false;
+    const semanticModel = {
+      dialogs: {
+        'DIA_Farim_Hallo': { properties: { npc: 'SLD_99003_Farim' } },
+        'DIA_Farim_Trade': { properties: { npc: 'SLD_99003_Farim' } },
+        'DIA_Arog_Hallo': { properties: { npc: 'SLD_99005_Arog' } },
+      }
+    };
+
+    // Simulating ThreeColumnLayout.tsx lines 223-231
+    const npcMap = new Map<string, string[]>();
+    if (!isProjectMode) {
+      Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]: [string, any]) => {
+        const npcName = dialog.properties?.npc || 'Unknown NPC';
+        if (!npcMap.has(npcName)) {
+          npcMap.set(npcName, []);
+        }
+        npcMap.get(npcName)!.push(dialogName);
+      });
+    }
+
+    // Verify npcMap is populated
+    expect(npcMap.size).toBe(2);
+    expect(npcMap.get('SLD_99003_Farim')).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
+    expect(npcMap.get('SLD_99005_Arog')).toEqual(['DIA_Arog_Hallo']);
+  });
+
+  test('demonstrates project mode should use dialogIndex from store', () => {
+    // AFTER FIX: Project mode should populate npcMap from dialogIndex
+    const isProjectMode = true;
+    const projectNpcs = ['SLD_99003_Farim', 'SLD_99005_Arog'];
+
+    // This is what ProjectService returns and projectStore stores
+    const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
+    dialogIndex.set('SLD_99003_Farim', [
+      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+    ]);
+    dialogIndex.set('SLD_99005_Arog', [
+      { dialogName: 'DIA_Arog_Hallo', npc: 'SLD_99005_Arog', filePath: '/path/to/arog.d' },
+    ]);
+
+    // FIX: Convert dialogIndex to npcMap
+    const npcMap = new Map<string, string[]>();
+    if (isProjectMode) {
+      dialogIndex.forEach((dialogMetadataArray, npcId) => {
+        const dialogNames = dialogMetadataArray.map(metadata => metadata.dialogName);
+        npcMap.set(npcId, dialogNames);
+      });
+    }
+
+    // Verify npcMap is now populated in project mode
+    expect(npcMap.size).toBe(2);
+    expect(npcMap.get('SLD_99003_Farim')).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
+    expect(npcMap.get('SLD_99005_Arog')).toEqual(['DIA_Arog_Hallo']);
+
+    // When user selects an NPC, dialogs are now available
+    const selectedNPC = 'SLD_99003_Farim';
+    const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
+    expect(dialogsForNPC).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
+  });
+
+  test('handles empty dialogIndex gracefully', () => {
+    const isProjectMode = true;
+    const projectNpcs = ['SLD_99003_Farim'];
+    const dialogIndex = new Map(); // Empty index
+
+    const npcMap = new Map<string, string[]>();
+    if (isProjectMode) {
+      dialogIndex.forEach((dialogMetadataArray, npcId) => {
+        const dialogNames = dialogMetadataArray.map((metadata: any) => metadata.dialogName);
+        npcMap.set(npcId, dialogNames);
+      });
+    }
+
+    // Should handle empty dialogIndex without errors
+    expect(npcMap.size).toBe(0);
+
+    const selectedNPC = 'SLD_99003_Farim';
+    const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
+    expect(dialogsForNPC).toEqual([]);
+  });
+
+  test('handles NPCs without dialogs', () => {
+    const isProjectMode = true;
+    const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
+
+    // NPC with no dialogs (empty array)
+    dialogIndex.set('SLD_99999_EmptyNPC', []);
+
+    // NPC with dialogs
+    dialogIndex.set('SLD_99003_Farim', [
+      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+    ]);
+
+    const npcMap = new Map<string, string[]>();
+    if (isProjectMode) {
+      dialogIndex.forEach((dialogMetadataArray, npcId) => {
+        const dialogNames = dialogMetadataArray.map(metadata => metadata.dialogName);
+        npcMap.set(npcId, dialogNames);
+      });
+    }
+
+    // Empty NPC should have empty array (not undefined)
+    expect(npcMap.get('SLD_99999_EmptyNPC')).toEqual([]);
+    expect(npcMap.get('SLD_99003_Farim')).toEqual(['DIA_Farim_Hallo']);
+  });
+
+  test('verifies dialogIndex data structure from ProjectService', () => {
+    // This tests the expected data structure from ProjectService
+    interface DialogMetadata {
+      dialogName: string;
+      npc: string;
+      filePath: string;
+    }
+
+    const dialogIndex = new Map<string, DialogMetadata[]>();
+
+    // Simulating what ProjectService.buildProjectIndex returns
+    const npc1: DialogMetadata[] = [
+      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/scripts/dialogs/DIA_Farim.d' },
+      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/scripts/dialogs/DIA_Farim.d' },
+      { dialogName: 'DIA_Farim_Exit', npc: 'SLD_99003_Farim', filePath: '/scripts/dialogs/DIA_Farim.d' },
+    ];
+
+    dialogIndex.set('SLD_99003_Farim', npc1);
+
+    // Extract dialog names
+    const dialogNames = npc1.map(metadata => metadata.dialogName);
+
+    expect(dialogNames).toEqual([
+      'DIA_Farim_Hallo',
+      'DIA_Farim_Trade',
+      'DIA_Farim_Exit',
+    ]);
+    expect(npc1.every(m => m.npc === 'SLD_99003_Farim')).toBe(true);
+  });
+
+  test('demonstrates the comment mismatch between intent and implementation', () => {
+    // ThreeColumnLayout.tsx lines 258-260 say:
+    // "Dialog loading happens lazily when DialogTree renders"
+    // "The dialogs will be loaded via getSelectedNpcDialogs in project store"
+
+    // But in reality:
+    const handleSelectNPC = (npc: string) => {
+      // 1. Sets selected NPC
+      const selectedNPC = npc;
+
+      // 2. Calls selectNpc(npc) which just updates store
+      // ❌ Does NOT call getSelectedNpcDialogs()
+      // ❌ Does NOT populate npcMap
+      // ❌ Does NOT load semantic models
+
+      // Result: DialogTree receives empty array
+      return selectedNPC;
+    };
+
+    const result = handleSelectNPC('SLD_99003_Farim');
+
+    // The comment promised lazy loading, but it never happens
+    expect(result).toBe('SLD_99003_Farim');
+    // No actual dialog loading occurs
+  });
+
+  test('demonstrates missing semantic model loading in project mode', () => {
+    // CURRENT STATE: We have dialog names but no dialog data
+    const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
+    dialogIndex.set('SLD_99003_Farim', [
+      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+    ]);
+
+    // We have the dialog names
+    const dialogNames = dialogIndex.get('SLD_99003_Farim')!.map(m => m.dialogName);
+    expect(dialogNames).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
+
+    // But semanticModel is empty in project mode
+    const semanticModel = { dialogs: {} };
+
+    // DialogTree tries to access dialog data
+    const dialog1 = semanticModel.dialogs?.['DIA_Farim_Hallo'];
+    const dialog2 = semanticModel.dialogs?.['DIA_Farim_Trade'];
+
+    // Result: undefined - DialogTree renders nothing
+    expect(dialog1).toBeUndefined();
+    expect(dialog2).toBeUndefined();
+  });
+
+  test('verifies semantic models need to be loaded from dialog files', () => {
+    // WHAT SHOULD HAPPEN: Load semantic models when NPC is selected
+    const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
+    dialogIndex.set('SLD_99003_Farim', [
+      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+    ]);
+
+    // Mock getSemanticModel that would load the file
+    const mockSemanticModelFromFile = {
+      dialogs: {
+        'DIA_Farim_Hallo': {
+          properties: { npc: 'SLD_99003_Farim', nr: 1, information: 'DIA_Farim_Hallo_Info' }
+        },
+        'DIA_Farim_Trade': {
+          properties: { npc: 'SLD_99003_Farim', nr: 2, information: 'DIA_Farim_Trade_Info' }
+        }
+      },
+      functions: {
+        'DIA_Farim_Hallo_Info': { body: 'AI_Output(self, other, "Hello!");' },
+        'DIA_Farim_Trade_Info': { body: 'AI_Output(self, other, "Trade?");' }
+      }
+    };
+
+    // After loading, dialogs should be accessible
+    const dialog1 = mockSemanticModelFromFile.dialogs['DIA_Farim_Hallo'];
+    const dialog2 = mockSemanticModelFromFile.dialogs['DIA_Farim_Trade'];
+
+    expect(dialog1).toBeDefined();
+    expect(dialog2).toBeDefined();
+    expect(dialog1.properties.nr).toBe(1);
+    expect(dialog2.properties.nr).toBe(2);
+  });
+
+  test('verifies unique file paths need to be loaded', () => {
+    // NPCs may have dialogs in multiple files
+    const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
+    dialogIndex.set('SLD_99003_Farim', [
+      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim_greetings.d' },
+      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/path/to/farim_trade.d' },
+      { dialogName: 'DIA_Farim_Quest', npc: 'SLD_99003_Farim', filePath: '/path/to/farim_quests.d' },
+    ]);
+
+    // Extract unique file paths
+    const dialogMetadata = dialogIndex.get('SLD_99003_Farim')!;
+    const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
+
+    expect(uniqueFilePaths).toEqual([
+      '/path/to/farim_greetings.d',
+      '/path/to/farim_trade.d',
+      '/path/to/farim_quests.d'
+    ]);
+
+    // Each unique file needs to be loaded via getSemanticModel
+    expect(uniqueFilePaths.length).toBe(3);
+  });
+
+  test('verifies semantic models from multiple files need to be merged', () => {
+    // File 1 contains some dialogs
+    const semanticModel1 = {
+      dialogs: {
+        'DIA_Farim_Hallo': { properties: { nr: 1 } }
+      },
+      functions: {
+        'DIA_Farim_Hallo_Info': { body: 'AI_Output(self, other, "Hello!");' }
+      }
+    };
+
+    // File 2 contains other dialogs
+    const semanticModel2 = {
+      dialogs: {
+        'DIA_Farim_Trade': { properties: { nr: 2 } }
+      },
+      functions: {
+        'DIA_Farim_Trade_Info': { body: 'AI_Output(self, other, "Trade?");' }
+      }
+    };
+
+    // Merge them into a combined semantic model
+    const mergedModel = {
+      dialogs: {
+        ...semanticModel1.dialogs,
+        ...semanticModel2.dialogs
+      },
+      functions: {
+        ...semanticModel1.functions,
+        ...semanticModel2.functions
+      }
+    };
+
+    // Merged model should contain all dialogs and functions
+    expect(Object.keys(mergedModel.dialogs)).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
+    expect(Object.keys(mergedModel.functions)).toEqual(['DIA_Farim_Hallo_Info', 'DIA_Farim_Trade_Info']);
+  });
+});

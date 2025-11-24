@@ -21,9 +21,11 @@ export interface ActionCardProps {
 
 export interface DialogDetailsEditorProps {
   dialogName: string;
-  filePath: string;
+  filePath: string | null;
   functionName?: string; // Optional: if editing a choice function instead of the info function
   onNavigateToFunction?: (functionName: string) => void;
+  semanticModel?: any; // Optional: if provided, use this instead of reading from store
+  isProjectMode?: boolean; // Optional: indicates project mode (no file saving)
 }
 
 export interface NPCListProps {

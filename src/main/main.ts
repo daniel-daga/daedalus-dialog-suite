@@ -1,13 +1,15 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import { FileService } from './services/FileService';
 import { ParserService } from './services/ParserService';
 import { CodeGeneratorService } from './services/CodeGeneratorService';
+import ProjectService from './services/ProjectService';
 
 let mainWindow: BrowserWindow | null = null;
 const fileService = new FileService();
 const parserService = new ParserService();
 const codeGeneratorService = new CodeGeneratorService();
+const projectService = new ProjectService();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -83,5 +85,28 @@ function setupIpcHandlers() {
 
   ipcMain.handle('file:saveDialog', async () => {
     return fileService.saveFileDialog();
+  });
+
+  // Project handlers
+  ipcMain.handle('project:openFolderDialog', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Gothic Mod Project Folder'
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('project:buildIndex', async (_event, folderPath: string) => {
+    return projectService.buildProjectIndex(folderPath);
+  });
+
+  ipcMain.handle('project:parseDialogFile', async (_event, filePath: string) => {
+    const content = await fileService.readFile(filePath);
+    return parserService.parseSource(content);
   });
 }

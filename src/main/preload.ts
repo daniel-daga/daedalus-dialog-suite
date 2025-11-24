@@ -16,4 +16,9 @@ contextBridge.exposeInMainWorld('editorAPI', {
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('file:write', filePath, content),
   openFileDialog: () => ipcRenderer.invoke('file:openDialog'),
   saveFileDialog: () => ipcRenderer.invoke('file:saveDialog'),
+
+  // Project API
+  openProjectFolderDialog: () => ipcRenderer.invoke('project:openFolderDialog'),
+  buildProjectIndex: (folderPath: string) => ipcRenderer.invoke('project:buildIndex', folderPath),
+  parseDialogFile: (filePath: string) => ipcRenderer.invoke('project:parseDialogFile', filePath),
 });

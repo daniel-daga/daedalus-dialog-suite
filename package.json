@@ -5,7 +5,7 @@
   "main": "dist/main/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "npm run build && node scripts/dev.js",
+    "dev": "npm run build  && node scripts/dev.js",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
     "dev:browser": "vite",

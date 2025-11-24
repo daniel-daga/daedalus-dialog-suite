@@ -15,10 +15,12 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
   filePath,
   functionName,
-  onNavigateToFunction
+  onNavigateToFunction,
+  semanticModel: passedSemanticModel,
+  isProjectMode = false
 }) => {
   const { openFiles, saveFile, updateDialog, updateFunction } = useEditorStore();
-  const fileState = openFiles.get(filePath);
+  const fileState = filePath ? openFiles.get(filePath) : null;
   const [propertiesExpanded, setPropertiesExpanded] = useState(false);
 
   // Loading and error states
@@ -30,13 +32,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     severity: 'success' | 'error' | 'info';
   }>({ open: false, message: '', severity: 'info' });
 
-  // Read directly from store
-  const dialog = fileState?.semanticModel?.dialogs?.[dialogName];
+  // Use passed semantic model in project mode, otherwise read from store
+  const semanticModel = passedSemanticModel || fileState?.semanticModel;
+
+  // Read directly from semantic model (either passed or from store)
+  const dialog = semanticModel?.dialogs?.[dialogName];
   const infoFunctionName = typeof dialog?.properties?.information === 'string'
     ? dialog.properties.information
     : dialog?.properties?.information?.name;
   const currentFunctionName = functionName || infoFunctionName;
-  const currentFunction = currentFunctionName ? fileState?.semanticModel?.functions?.[currentFunctionName] : null;
+  const currentFunction = currentFunctionName ? semanticModel?.functions?.[currentFunctionName] : null;
 
   // Use custom hooks for focus navigation and action management
   const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
@@ -44,7 +49,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   // Callback that updates function in store (for useActionManagement)
   // Supports both direct values and updater functions (like React setState)
   const setFunction = useCallback((updatedFunctionOrUpdater: any) => {
-    if (!currentFunctionName) return;
+    if (!currentFunctionName || !filePath) return;
 
     // Check if it's an updater function (callback pattern)
     if (typeof updatedFunctionOrUpdater === 'function') {
@@ -77,33 +82,35 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   } = useActionManagement({
     setFunction,
     focusAction,
-    semanticModel: fileState?.semanticModel,
+    semanticModel: semanticModel,
     onUpdateSemanticModel: (funcName: string, func: any) => {
-      updateFunction(filePath, funcName, func);
+      if (filePath) {
+        updateFunction(filePath, funcName, func);
+      }
     },
     contextName: dialogName
   });
 
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
-    if (!fileState) return;
+    if (!semanticModel || !filePath) return;
 
     // Get the function to rename
-    const func = fileState.semanticModel.functions[oldName];
+    const func = semanticModel.functions[oldName];
     if (!func) return;
 
     // Create updated functions map
-    const updatedFunctions = { ...fileState.semanticModel.functions };
+    const updatedFunctions = { ...semanticModel.functions };
     delete updatedFunctions[oldName];
     updatedFunctions[newName] = { ...func, name: newName };
 
     // Update semantic model
     const updatedModel = {
-      ...fileState.semanticModel,
+      ...semanticModel,
       functions: updatedFunctions
     };
     // Use updateModel for this complex operation
     useEditorStore.getState().updateModel(filePath, updatedModel);
-  }, [fileState, filePath]);
+  }, [semanticModel, filePath]);
 
   // Trim refs array to match current actions length
   React.useEffect(() => {
@@ -112,6 +119,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   }, [currentFunction?.actions?.length, trimRefs]);
 
   const handleSave = async () => {
+    if (!filePath) {
+      setSnackbar({
+        open: true,
+        message: 'Cannot save in project mode',
+        severity: 'warning'
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       // Just save to disk - all changes are already in the store!
@@ -135,13 +151,13 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
 
   // Unified function to add any type of action at the end
   const addActionToEnd = useCallback((actionType: ActionTypeId) => {
-    if (!currentFunction) return;
+    if (!currentFunction || !filePath) return;
 
     let newAction: any;
 
     // Handle choice specially to create target function
-    if (actionType === 'choice' && fileState) {
-      const newFunctionName = generateUniqueChoiceFunctionName(dialogName, fileState.semanticModel);
+    if (actionType === 'choice' && semanticModel) {
+      const newFunctionName = generateUniqueChoiceFunctionName(dialogName, semanticModel);
       const newFunction = createEmptyFunction(newFunctionName);
 
       // Add the new function to the semantic model
@@ -167,7 +183,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       actions: [...(currentFunction.actions || []), newAction]
     };
     setFunction(updatedFunction);
-  }, [currentFunction, fileState, dialogName, filePath, updateFunction, setFunction]);
+  }, [currentFunction, semanticModel, dialogName, filePath, updateFunction, setFunction]);
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
@@ -175,6 +191,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const isDirty = fileState?.isDirty || false;
 
   const handleDialogPropertyChange = useCallback((updatedDialog: any) => {
+    if (!filePath) return;
+
     // Normalize dialog properties to use string references for functions
     const normalizedDialog = {
       ...updatedDialog,
@@ -192,6 +210,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   }, [filePath, dialogName, updateDialog]);
 
   const handleReset = async () => {
+    if (!filePath) {
+      setSnackbar({
+        open: true,
+        message: 'Cannot reset in project mode',
+        severity: 'warning'
+      });
+      return;
+    }
+
     setIsResetting(true);
     try {
       // Reload file from disk
@@ -317,23 +344,25 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       )}
 
       {/* Condition Editor */}
-      {dialog?.properties?.condition && fileState?.semanticModel?.functions?.[
+      {dialog?.properties?.condition && semanticModel?.functions?.[
         typeof dialog.properties.condition === 'string'
           ? dialog.properties.condition
           : dialog.properties.condition.name
       ] && (
         <ConditionEditor
           conditionFunction={
-            fileState.semanticModel.functions[
+            semanticModel.functions[
               typeof dialog.properties.condition === 'string'
                 ? dialog.properties.condition
                 : dialog.properties.condition.name
             ]
           }
           onUpdateFunction={(func: any) => {
-            updateFunction(filePath, func.name, func);
+            if (filePath) {
+              updateFunction(filePath, func.name, func);
+            }
           }}
-          semanticModel={fileState.semanticModel}
+          semanticModel={semanticModel}
           filePath={filePath}
           dialogName={dialogName}
         />
@@ -427,7 +456,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               addDialogLineAfter={addDialogLineAfter}
               deleteActionAndFocusPrev={deleteActionAndFocusPrev}
               addActionAfter={addActionAfter}
-              semanticModel={fileState?.semanticModel}
+              semanticModel={semanticModel}
               onNavigateToFunction={onNavigateToFunction}
               onRenameFunction={handleRenameFunction}
               dialogContextName={dialogName}
