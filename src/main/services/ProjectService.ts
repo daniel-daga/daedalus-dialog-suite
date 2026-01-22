@@ -7,47 +7,43 @@
  * - Build project index with NPCs and their dialogs
  */
 
-import * as fs from 'fs';
+import { promises as fs } from 'fs';
 import * as path from 'path';
+import type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
-export interface DialogMetadata {
-  dialogName: string;
-  npc: string;
-  filePath: string;
-}
-
-export interface ProjectIndex {
-  npcs: string[];                                    // Sorted list of NPC identifiers
-  dialogsByNpc: Map<string, DialogMetadata[]>;      // Dialogs grouped by NPC
-  allFiles: string[];                                // All .d files in project
-}
+// Re-export types for consumers of this service
+export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
 class ProjectService {
   /**
-   * Recursively scan directory for .d files
+   * Recursively scan directory for .d files (async)
    */
   async scanDirectory(rootPath: string): Promise<string[]> {
     const files: string[] = [];
 
-    const scanRecursive = (dir: string) => {
+    const scanRecursive = async (dir: string): Promise<void> => {
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+
+        const promises: Promise<void>[] = [];
 
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
 
           if (entry.isDirectory()) {
-            scanRecursive(fullPath);
+            promises.push(scanRecursive(fullPath));
           } else if (entry.isFile() && entry.name.endsWith('.d')) {
             files.push(fullPath);
           }
         }
-      } catch (error) {
-        console.error(`Error scanning directory ${dir}:`, error);
+
+        await Promise.all(promises);
+      } catch {
+        // Silently skip directories that can't be read (permissions, etc.)
       }
     };
 
-    scanRecursive(rootPath);
+    await scanRecursive(rootPath);
     return files;
   }
 
@@ -91,7 +87,7 @@ class ProjectService {
   }
 
   /**
-   * Build complete project index from directory
+   * Build complete project index from directory (async)
    */
   async buildProjectIndex(rootPath: string): Promise<ProjectIndex> {
     // Scan for all .d files
@@ -100,21 +96,31 @@ class ProjectService {
     // Map to store dialogs by NPC
     const dialogsByNpc = new Map<string, DialogMetadata[]>();
 
-    // Process each file
-    for (const filePath of allFiles) {
-      try {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const dialogs = this.extractDialogMetadata(content, filePath);
+    // Process files in parallel batches for better performance
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+      const batch = allFiles.slice(i, i + BATCH_SIZE);
 
-        // Group dialogs by NPC
+      const results = await Promise.all(
+        batch.map(async (filePath) => {
+          try {
+            const content = await fs.readFile(filePath, 'utf-8');
+            return this.extractDialogMetadata(content, filePath);
+          } catch {
+            // Silently skip files that can't be read
+            return [];
+          }
+        })
+      );
+
+      // Group dialogs by NPC
+      for (const dialogs of results) {
         for (const dialog of dialogs) {
           if (!dialogsByNpc.has(dialog.npc)) {
             dialogsByNpc.set(dialog.npc, []);
           }
           dialogsByNpc.get(dialog.npc)!.push(dialog);
         }
-      } catch (error) {
-        console.error(`Error reading file ${filePath}:`, error);
       }
     }
 

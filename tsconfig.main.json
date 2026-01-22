@@ -15,6 +15,6 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/main/**/*"],
+  "include": ["src/main/**/*", "src/shared/**/*"],
   "exclude": ["src/renderer", "node_modules", "../daedalus-parser"]
 }

@@ -52,71 +52,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
 
-  // In project mode, we might not have a file loaded yet
-  if (!isProjectMode && !fileState) {
-    return <Typography>Loading...</Typography>;
-  }
-
-  // Check for syntax errors - if present, show error display instead of editor
-  if (fileState?.hasErrors) {
-    return (
-      <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
-        <Alert severity="error" sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Syntax Errors Detected
-          </Typography>
-          <Typography variant="body2">
-            This file contains syntax errors and cannot be edited until they are fixed.
-            Please correct the errors in a text editor and reload the file.
-          </Typography>
-        </Alert>
-
-        <Paper sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Error Details:
-          </Typography>
-          <List>
-            {(fileState.errors || []).map((error, index) => (
-              <ListItem key={index} sx={{ flexDirection: 'column', alignItems: 'flex-start', borderBottom: '1px solid', borderColor: 'divider' }}>
-                <ListItemText
-                  primary={error.message}
-                  secondary={
-                    <>
-                      <Typography component="span" variant="body2" color="text.secondary">
-                        Type: {error.type}
-                      </Typography>
-                      {error.position && (
-                        <>
-                          <br />
-                          <Typography component="span" variant="body2" color="text.secondary">
-                            Location: Line {error.position.row}, Column {error.position.column}
-                          </Typography>
-                        </>
-                      )}
-                      {error.text && (
-                        <>
-                          <br />
-                          <Typography component="span" variant="body2" color="error" sx={{ fontFamily: 'monospace', mt: 1, display: 'block' }}>
-                            {error.text}
-                          </Typography>
-                        </>
-                      )}
-                    </>
-                  }
-                />
-              </ListItem>
-            ))}
-          </List>
-        </Paper>
-
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="body2" color="text.secondary">
-            File path: {filePath}
-          </Typography>
-        </Box>
-      </Box>
-    );
-  }
+  // Determine early return conditions (but don't return yet - hooks must be called first)
+  const showLoading = !isProjectMode && !fileState;
+  const showSyntaxErrors = fileState?.hasErrors;
 
   // Clear cache synchronously when semantic model changes (Bug #2 fix)
   // This must happen BEFORE buildFunctionTree is called during render
@@ -255,29 +193,13 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Get selected dialog data
   const dialogData = selectedDialog ? semanticModel.dialogs?.[selectedDialog] : null;
 
-  // Debug logging
-  if (selectedDialog) {
-    console.log(`[ThreeColumnLayout] Rendering with selectedDialog=${selectedDialog}, dialogData=${dialogData ? 'exists' : 'MISSING'}, semanticModel has ${Object.keys(semanticModel.dialogs || {}).length} dialogs`);
-  }
-
   // Get the information function for the selected dialog
-  const infoFunction = dialogData?.properties?.information as any;
-  const dialogInfoFunctionName = typeof infoFunction === 'string' ? infoFunction : infoFunction?.name;
+  const infoFunction = dialogData?.properties?.information;
+  const dialogInfoFunctionName = typeof infoFunction === 'string' ? infoFunction : (infoFunction as { name?: string })?.name;
 
   // Get the currently selected function (either dialog info or choice function)
   const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
   const currentFunctionData = currentFunctionName ? semanticModel.functions?.[currentFunctionName] : null;
-
-  // More debug logging
-  if (selectedDialog) {
-    console.log(`[ThreeColumnLayout] currentFunctionName=${currentFunctionName}, currentFunctionData=${currentFunctionData ? 'exists' : 'MISSING'}, semanticModel has ${Object.keys(semanticModel.functions || {}).length} functions`);
-    if (!currentFunctionName) {
-      console.warn(`[ThreeColumnLayout] No information function defined for dialog ${selectedDialog}`);
-    }
-    if (currentFunctionName && !currentFunctionData) {
-      console.error(`[ThreeColumnLayout] Function ${currentFunctionName} not found in semanticModel.functions. Available functions:`, Object.keys(semanticModel.functions || {}));
-    }
-  }
 
   const handleSelectNPC = async (npc: string) => {
     setSelectedDialog(null);
@@ -288,11 +210,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
       // Get dialog metadata for this NPC
       const dialogMetadata = dialogIndex.get(npc) || [];
-      console.log(`[ThreeColumnLayout] NPC ${npc} has ${dialogMetadata.length} dialogs`);
 
       // Extract unique file paths
       const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
-      console.log(`[ThreeColumnLayout] Loading ${uniqueFilePaths.length} unique files:`, uniqueFilePaths);
 
       // Load semantic models for all files (populates the parsedFiles cache)
       await Promise.all(
@@ -310,8 +230,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   };
 
   const handleSelectDialog = (dialogName: string, functionName: string | null) => {
-    console.log(`[ThreeColumnLayout] handleSelectDialog called: dialog=${dialogName}, function=${functionName}`);
-
     // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
     if (rafId1Ref.current !== null) {
       cancelAnimationFrame(rafId1Ref.current);
@@ -329,9 +247,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     startTransition(() => {
       setSelectedDialog(dialogName);
       setSelectedFunctionName(functionName);
-
-      const dialogData = semanticModel.dialogs?.[dialogName];
-      console.log(`[ThreeColumnLayout] Dialog data for ${dialogName}:`, dialogData ? 'exists' : 'MISSING');
 
       // Use requestAnimationFrame to ensure state changes are committed and painted
       rafId1Ref.current = requestAnimationFrame(() => {
@@ -383,6 +298,73 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       setExpandedDialogs((prev) => new Set([...prev, selectedDialog]));
     }
   };
+
+  // Handle early return conditions after all hooks have been called
+  // In project mode, we might not have a file loaded yet
+  if (showLoading) {
+    return <Typography>Loading...</Typography>;
+  }
+
+  // Check for syntax errors - if present, show error display instead of editor
+  if (showSyntaxErrors && fileState) {
+    return (
+      <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Syntax Errors Detected
+          </Typography>
+          <Typography variant="body2">
+            This file contains syntax errors and cannot be edited until they are fixed.
+            Please correct the errors in a text editor and reload the file.
+          </Typography>
+        </Alert>
+
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Error Details:
+          </Typography>
+          <List>
+            {(fileState.errors || []).map((error, index) => (
+              <ListItem key={index} sx={{ flexDirection: 'column', alignItems: 'flex-start', borderBottom: '1px solid', borderColor: 'divider' }}>
+                <ListItemText
+                  primary={error.message}
+                  secondary={
+                    <>
+                      <Typography component="span" variant="body2" color="text.secondary">
+                        Type: {error.type}
+                      </Typography>
+                      {error.position && (
+                        <>
+                          <br />
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            Location: Line {error.position.row}, Column {error.position.column}
+                          </Typography>
+                        </>
+                      )}
+                      {error.text && (
+                        <>
+                          <br />
+                          <Typography component="span" variant="body2" color="error" sx={{ fontFamily: 'monospace', mt: 1, display: 'block' }}>
+                            {error.text}
+                          </Typography>
+                        </>
+                      )}
+                    </>
+                  }
+                />
+              </ListItem>
+            ))}
+          </List>
+        </Paper>
+
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="body2" color="text.secondary">
+            File path: {filePath}
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>
