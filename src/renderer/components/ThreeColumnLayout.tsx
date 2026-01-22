@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect } from 'react';
-import { Box, Typography, Alert, Paper, List, ListItem, ListItemText, Fade } from '@mui/material';
+import { Box, Typography, Alert } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
-import DialogDetailsEditor from './DialogDetailsEditor';
-import DialogLoadingSkeleton from './DialogLoadingSkeleton';
+import EditorPane from './EditorPane';
+import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
+import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction } from '../types/global';
 
 interface ThreeColumnLayoutProps {
   filePath: string | null;
@@ -36,14 +37,14 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   // Cache for buildFunctionTree to prevent exponential recomputation
-  const functionTreeCacheRef = useRef<Map<string, any>>(new Map());
+  const functionTreeCacheRef = useRef<Map<string, FunctionTreeNode | null>>(new Map());
 
   // Refs to track RAF IDs for cleanup (Bug #1 fix)
   const rafId1Ref = useRef<number | null>(null);
   const rafId2Ref = useRef<number | null>(null);
 
   // Ref to track previous semantic model for cache invalidation (Bug #2 fix)
-  const prevSemanticModelRef = useRef<any>(null);
+  const prevSemanticModelRef = useRef<SemanticModel | Record<string, never> | null>(null);
 
   // Max cache size to prevent unbounded growth (Bug #4 fix)
   const MAX_CACHE_SIZE = 1000;
@@ -76,18 +77,18 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   }, []);
 
   // LRU cache helpers (Bug #4 fix)
-  const lruCacheGet = useCallback((key: string): any => {
+  const lruCacheGet = useCallback((key: string): FunctionTreeNode | null | undefined => {
     const cache = functionTreeCacheRef.current;
     if (!cache.has(key)) return undefined;
 
     // Move to end (most recently used)
     const value = cache.get(key);
     cache.delete(key);
-    cache.set(key, value);
+    cache.set(key, value!);
     return value;
   }, []);
 
-  const lruCacheSet = useCallback((key: string, value: any): void => {
+  const lruCacheSet = useCallback((key: string, value: FunctionTreeNode | null): void => {
     const cache = functionTreeCacheRef.current;
 
     // Remove old position if exists
@@ -101,14 +102,14 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     // Evict oldest if over limit
     if (cache.size > MAX_CACHE_SIZE) {
       const oldestKey = cache.keys().next().value;
-      cache.delete(oldestKey);
+      if (oldestKey) cache.delete(oldestKey);
     }
   }, [MAX_CACHE_SIZE]);
 
   // Build function tree for a given function (recursively find choices)
   // ancestorPath tracks the path from root to current node to prevent direct cycles
   // Uses memoization to prevent exponential recomputation in diamond patterns
-  const buildFunctionTree = useCallback((funcName: string, ancestorPath: string[] = []): any => {
+  const buildFunctionTree = useCallback((funcName: string, ancestorPath: string[] = []): FunctionTreeNode | null => {
     // Prevent direct cycles (A -> B -> A), but allow diamonds (A -> B, A -> C, both -> D)
     if (ancestorPath.includes(funcName)) {
       return null; // Direct cycle detected
@@ -126,23 +127,22 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     const func = semanticModel.functions?.[funcName];
     if (!func) return null;
 
-    const choices = (func.actions || []).filter((action: any) =>
-      action.dialogRef !== undefined && action.targetFunction !== undefined
+    // Filter actions that are choices (have dialogRef and targetFunction)
+    const choices = (func.actions || []).filter((action): action is ChoiceAction =>
+      'dialogRef' in action && 'targetFunction' in action
     );
 
     const newPath = [...ancestorPath, funcName];
 
     // Pre-compute isShared for all choices at once (O(n) instead of O(n²))
     const targetCounts = new Map<string, number>();
-    choices.forEach((choice: any) => {
+    choices.forEach((choice) => {
       const target = choice.targetFunction;
       targetCounts.set(target, (targetCounts.get(target) || 0) + 1);
     });
 
-    const result = {
-      name: funcName,
-      function: func,
-      children: choices.map((choice: any) => {
+    const children: FunctionTreeChild[] = choices
+      .map((choice) => {
         const subtree = buildFunctionTree(choice.targetFunction, newPath);
         return {
           text: choice.text || '(no text)',
@@ -150,7 +150,13 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
           subtree: subtree,
           isShared: (targetCounts.get(choice.targetFunction) || 0) > 1
         };
-      }).filter((c: any) => c.subtree !== null)
+      })
+      .filter((c): c is FunctionTreeChild => c.subtree !== null);
+
+    const result: FunctionTreeNode = {
+      name: funcName,
+      function: func,
+      children
     };
 
     // Cache the result (LRU - Bug #4 fix)
@@ -174,7 +180,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
     // Single-file mode: extract NPCs from current file
     const map = new Map<string, string[]>();
-    Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]: [string, any]) => {
+    Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]) => {
       const npcName = dialog.properties?.npc || 'Unknown NPC';
       if (!map.has(npcName)) {
         map.set(npcName, []);
@@ -307,63 +313,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Check for syntax errors - if present, show error display instead of editor
   if (showSyntaxErrors && fileState) {
-    return (
-      <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
-        <Alert severity="error" sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Syntax Errors Detected
-          </Typography>
-          <Typography variant="body2">
-            This file contains syntax errors and cannot be edited until they are fixed.
-            Please correct the errors in a text editor and reload the file.
-          </Typography>
-        </Alert>
-
-        <Paper sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Error Details:
-          </Typography>
-          <List>
-            {(fileState.errors || []).map((error, index) => (
-              <ListItem key={index} sx={{ flexDirection: 'column', alignItems: 'flex-start', borderBottom: '1px solid', borderColor: 'divider' }}>
-                <ListItemText
-                  primary={error.message}
-                  secondary={
-                    <>
-                      <Typography component="span" variant="body2" color="text.secondary">
-                        Type: {error.type}
-                      </Typography>
-                      {error.position && (
-                        <>
-                          <br />
-                          <Typography component="span" variant="body2" color="text.secondary">
-                            Location: Line {error.position.row}, Column {error.position.column}
-                          </Typography>
-                        </>
-                      )}
-                      {error.text && (
-                        <>
-                          <br />
-                          <Typography component="span" variant="body2" color="error" sx={{ fontFamily: 'monospace', mt: 1, display: 'block' }}>
-                            {error.text}
-                          </Typography>
-                        </>
-                      )}
-                    </>
-                  }
-                />
-              </ListItem>
-            ))}
-          </List>
-        </Paper>
-
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="body2" color="text.secondary">
-            File path: {filePath}
-          </Typography>
-        </Box>
-      </Box>
-    );
+    return <SyntaxErrorsDisplay errors={fileState.errors || []} filePath={filePath} />;
   }
 
   return (
@@ -405,64 +355,19 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       </Box>
 
       {/* Column 3: Function Action Editor */}
-      <Box ref={editorScrollRef} sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        {selectedDialog && dialogData ? (
-          !currentFunctionName ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Alert severity="warning">
-                <Typography variant="body2">
-                  This dialog does not have an information function defined.
-                </Typography>
-              </Alert>
-            </Box>
-          ) : !currentFunctionData ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Alert severity="error">
-                <Typography variant="body2">
-                  Function "{currentFunctionName}" not found in the file.
-                </Typography>
-              </Alert>
-            </Box>
-          ) : (
-          <>
-            {/* Show loading skeleton during transition - positioned relative to this box */}
-            <Fade in={isLoadingDialog} unmountOnExit timeout={{ enter: 100, exit: 200 }}>
-              <Box sx={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                p: 2,
-                bgcolor: 'background.default',
-                zIndex: 10,
-                overflow: 'hidden'
-              }}>
-                <DialogLoadingSkeleton />
-              </Box>
-            </Fade>
-
-            {/* Show actual content - hidden when loading */}
-            <Box sx={{ width: '100%', opacity: isLoadingDialog ? 0 : 1, transition: 'opacity 0.2s' }}>
-              <DialogDetailsEditor
-                dialogName={selectedDialog}
-                filePath={filePath}
-                functionName={selectedFunctionName || undefined}
-                onNavigateToFunction={handleNavigateToFunction}
-                semanticModel={semanticModel}
-                isProjectMode={isProjectMode}
-              />
-            </Box>
-          </>
-          )
-        ) : (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <Typography variant="body1" color="text.secondary">
-              Select a dialog to edit
-            </Typography>
-          </Box>
-        )}
-      </Box>
+      <EditorPane
+        ref={editorScrollRef}
+        selectedDialog={selectedDialog}
+        dialogData={dialogData}
+        currentFunctionName={currentFunctionName}
+        currentFunctionData={currentFunctionData}
+        selectedFunctionName={selectedFunctionName}
+        filePath={filePath}
+        semanticModel={semanticModel as SemanticModel}
+        isProjectMode={isProjectMode}
+        isLoadingDialog={isLoadingDialog}
+        onNavigateToFunction={handleNavigateToFunction}
+      />
     </Box>
   );
 };
