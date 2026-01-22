@@ -3,6 +3,7 @@ import * as path from 'path';
 import { FileService } from './services/FileService';
 import { ParserService } from './services/ParserService';
 import { CodeGeneratorService } from './services/CodeGeneratorService';
+import { ValidationService } from './services/ValidationService';
 import ProjectService from './services/ProjectService';
 import { PathValidationService, PathValidationError } from './services/PathValidationService';
 
@@ -10,6 +11,7 @@ let mainWindow: BrowserWindow | null = null;
 const fileService = new FileService();
 const parserService = new ParserService();
 const codeGeneratorService = new CodeGeneratorService();
+const validationService = new ValidationService(parserService, codeGeneratorService);
 const projectService = new ProjectService();
 // Path validator starts empty - paths are added when user opens files/projects via dialogs
 const pathValidator = new PathValidationService([]);
@@ -75,11 +77,44 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any) => {
+  // Validation handler - validates model without saving
+  ipcMain.handle('validation:validate', async (_event, model: any, settings: any, options?: any) => {
+    try {
+      return validationService.validate(model, settings, options);
+    } catch (error) {
+      console.error('[IPC] validation:validate error:', error);
+      throw new Error(`Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean }) => {
     try {
       // Validate path before saving
       pathValidator.validatePath(filePath);
 
+      // Validate model unless explicitly skipped
+      if (!options?.skipValidation) {
+        const validationResult = await validationService.validate(model, settings);
+
+        // If validation failed and not forcing save, return validation result
+        if (!validationResult.isValid && !options?.forceOnErrors) {
+          return {
+            success: false,
+            validationResult
+          };
+        }
+
+        // Use pre-generated code from validation if available
+        if (validationResult.generatedCode) {
+          const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode);
+          return {
+            ...writeResult,
+            validationResult
+          };
+        }
+      }
+
+      // Fallback: generate code directly
       const code = codeGeneratorService.generateCode(model, settings);
       return fileService.writeFile(filePath, code);
     } catch (error) {

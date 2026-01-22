@@ -7,9 +7,13 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // Parser API
   parseSource: (sourceCode: string) => ipcRenderer.invoke('parser:parseSource', sourceCode),
 
+  // Validation API
+  validateModel: (model: any, settings: any, options?: any) => ipcRenderer.invoke('validation:validate', model, settings, options),
+
   // Code Generator API
   generateCode: (model: any, settings: any) => ipcRenderer.invoke('generator:generateCode', model, settings),
-  saveFile: (filePath: string, model: any, settings: any) => ipcRenderer.invoke('generator:saveFile', filePath, model, settings),
+  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean }) =>
+    ipcRenderer.invoke('generator:saveFile', filePath, model, settings, options),
 
   // File I/O API
   readFile: (filePath: string) => ipcRenderer.invoke('file:read', filePath),

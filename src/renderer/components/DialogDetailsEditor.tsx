@@ -5,9 +5,11 @@ import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ActionsList from './ActionsList';
 import ConditionEditor from './ConditionEditor';
+import ValidationErrorDialog from './ValidationErrorDialog';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
 import { createAction } from './actionFactory';
 import type { ActionTypeId } from './actionTypes';
+import type { ValidationResult } from '../types/global';
 import { useFocusNavigation } from './hooks/useFocusNavigation';
 import { useActionManagement } from './hooks/useActionManagement';
 
@@ -29,8 +31,14 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
-    severity: 'success' | 'error' | 'info';
+    severity: 'success' | 'error' | 'info' | 'warning';
   }>({ open: false, message: '', severity: 'info' });
+
+  // Validation dialog state
+  const [validationDialog, setValidationDialog] = useState<{
+    open: boolean;
+    validationResult: ValidationResult | null;
+  }>({ open: false, validationResult: null });
 
   // Use passed semantic model in project mode, otherwise read from store
   const semanticModel = passedSemanticModel || fileState?.semanticModel;
@@ -118,7 +126,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     trimRefs(actionsLength);
   }, [currentFunction?.actions?.length, trimRefs]);
 
-  const handleSave = async () => {
+  const handleSave = async (forceOnErrors = false) => {
     if (!filePath) {
       setSnackbar({
         open: true,
@@ -130,13 +138,23 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
 
     setIsSaving(true);
     try {
-      // Just save to disk - all changes are already in the store!
-      await saveFile(filePath);
-      setSnackbar({
-        open: true,
-        message: 'File saved successfully!',
-        severity: 'success'
-      });
+      // Save with validation - validation happens in main process
+      const result = await saveFile(filePath, { forceOnErrors });
+
+      if (!result.success && result.validationResult) {
+        // Validation failed - show dialog
+        setValidationDialog({
+          open: true,
+          validationResult: result.validationResult
+        });
+      } else {
+        // Success
+        setSnackbar({
+          open: true,
+          message: 'File saved successfully!',
+          severity: 'success'
+        });
+      }
     } catch (error) {
       console.error('Failed to save file:', error);
       setSnackbar({
@@ -147,6 +165,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSaveAnyway = async () => {
+    setValidationDialog({ open: false, validationResult: null });
+    await handleSave(true);
+  };
+
+  const handleCancelValidation = () => {
+    setValidationDialog({ open: false, validationResult: null });
   };
 
   // Unified function to add any type of action at the end
@@ -261,7 +288,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             color="success"
             startIcon={isSaving ? <CircularProgress size={16} sx={{ color: 'white' }} /> : <SaveIcon />}
             disabled={!isDirty || isSaving || isResetting}
-            onClick={handleSave}
+            onClick={() => handleSave()}
           >
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
@@ -464,6 +491,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           )}
         </Paper>
       )}
+
+      {/* Validation Error Dialog */}
+      <ValidationErrorDialog
+        open={validationDialog.open}
+        validationResult={validationDialog.validationResult}
+        onClose={handleCancelValidation}
+        onSaveAnyway={handleSaveAnyway}
+        onCancel={handleCancelValidation}
+      />
 
       {/* Snackbar for user feedback */}
       <Snackbar
