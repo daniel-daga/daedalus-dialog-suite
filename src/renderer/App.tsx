@@ -1,14 +1,28 @@
 import React from 'react';
-import { Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip } from '@mui/material';
-import { FolderOpen as FolderOpenIcon, Folder as FolderIcon } from '@mui/icons-material';
+import { Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip } from '@mui/material';
+import { FolderOpen as FolderOpenIcon, Folder as FolderIcon, Save as SaveIcon } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
+import { useAutoSave } from './hooks/useAutoSave';
 import ThreeColumnLayout from './components/ThreeColumnLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 
 const App: React.FC = () => {
   const { openFile, activeFile } = useEditorStore();
   const { openProject, projectPath, projectName } = useProjectStore();
+  const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
+
+  const formatLastSaved = (date: Date | null): string => {
+    if (!date) return '';
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSecs = Math.floor(diffMs / 1000);
+    if (diffSecs < 60) return 'Just now';
+    const diffMins = Math.floor(diffSecs / 60);
+    if (diffMins === 1) return '1 min ago';
+    if (diffMins < 60) return `${diffMins} mins ago`;
+    return date.toLocaleTimeString();
+  };
 
   const handleOpenFile = async () => {
     const filePath = await window.editorAPI.openFileDialog();
@@ -31,6 +45,24 @@ const App: React.FC = () => {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             Dandelion
           </Typography>
+          {isAutoSaving && (
+            <Chip
+              icon={<SaveIcon />}
+              label="Saving..."
+              size="small"
+              sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
+            />
+          )}
+          {!isAutoSaving && lastAutoSaveTime && (
+            <Tooltip title={`Last auto-saved: ${lastAutoSaveTime.toLocaleTimeString()}`}>
+              <Chip
+                icon={<SaveIcon />}
+                label={formatLastSaved(lastAutoSaveTime)}
+                size="small"
+                sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
+              />
+            </Tooltip>
+          )}
           {projectName && (
             <Chip
               icon={<FolderIcon />}

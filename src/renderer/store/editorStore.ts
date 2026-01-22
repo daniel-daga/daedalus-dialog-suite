@@ -70,6 +70,10 @@ interface EditorStore {
   // Code generation settings
   codeSettings: CodeGenerationSettings;
 
+  // Auto-save settings
+  autoSaveEnabled: boolean;
+  autoSaveInterval: number;
+
   // Actions
   openFile: (filePath: string) => Promise<void>;
   closeFile: (filePath: string) => void;
@@ -81,6 +85,8 @@ interface EditorStore {
   setSelectedDialog: (dialogName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
+  setAutoSaveEnabled: (enabled: boolean) => void;
+  setAutoSaveInterval: (interval: number) => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -95,6 +101,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     sectionHeaders: true,
     uppercaseKeywords: true,
   },
+  autoSaveEnabled: true,
+  autoSaveInterval: 2000,
 
   openFile: async (filePath: string) => {
     try {
@@ -279,5 +287,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => ({
       codeSettings: { ...state.codeSettings, ...settings },
     }));
+  },
+
+  setAutoSaveEnabled: (enabled: boolean) => {
+    set({ autoSaveEnabled: enabled });
+  },
+
+  setAutoSaveInterval: (interval: number) => {
+    set({ autoSaveInterval: interval });
   },
 }));
