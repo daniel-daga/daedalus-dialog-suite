@@ -1,22 +1,58 @@
-export interface DialogMetadata {
-  dialogName: string;
-  npc: string;
-  filePath: string;
-}
+/**
+ * Global type definitions for the renderer process
+ *
+ * Re-exports shared types and defines renderer-specific types like EditorAPI
+ */
 
-export interface ProjectIndex {
-  npcs: string[];
-  dialogsByNpc: Map<string, DialogMetadata[]>;
-  allFiles: string[];
-}
+// Re-export all shared types
+export type {
+  DialogMetadata,
+  ProjectIndex,
+  CodeGenerationSettings,
+  DialogLineAction,
+  ChoiceAction,
+  LogEntryAction,
+  CreateTopicAction,
+  LogSetTopicStatusAction,
+  CreateInventoryItemsAction,
+  GiveInventoryItemsAction,
+  AttackActionType,
+  SetAttitudeActionType,
+  ChapterTransitionAction,
+  ExchangeRoutineAction,
+  CustomAction,
+  DialogAction,
+  NpcKnowsInfoCondition,
+  VariableCondition,
+  GenericCondition,
+  DialogCondition,
+  DialogFunction,
+  DialogProperties,
+  Dialog,
+  ParseError,
+  SemanticModel,
+  FunctionTreeChild,
+  FunctionTreeNode
+} from '../../shared/types';
+
+// Import types needed for EditorAPI definition
+import type {
+  SemanticModel,
+  CodeGenerationSettings,
+  ProjectIndex
+} from '../../shared/types';
+
+// ============================================================================
+// Editor API (renderer-specific)
+// ============================================================================
 
 export interface EditorAPI {
   // Parser API - runs in main process (has access to native modules)
-  parseSource: (sourceCode: string) => Promise<any>;
+  parseSource: (sourceCode: string) => Promise<SemanticModel>;
 
   // Code Generator API - runs in main process
-  generateCode: (model: any, settings: any) => Promise<string>;
-  saveFile: (filePath: string, model: any, settings: any) => Promise<{ success: boolean }>;
+  generateCode: (model: SemanticModel, settings: CodeGenerationSettings) => Promise<string>;
+  saveFile: (filePath: string, model: SemanticModel, settings: CodeGenerationSettings) => Promise<{ success: boolean }>;
 
   // File I/O API
   readFile: (filePath: string) => Promise<string>;
@@ -27,7 +63,7 @@ export interface EditorAPI {
   // Project API
   openProjectFolderDialog: () => Promise<string | null>;
   buildProjectIndex: (folderPath: string) => Promise<ProjectIndex>;
-  parseDialogFile: (filePath: string) => Promise<any>;
+  parseDialogFile: (filePath: string) => Promise<SemanticModel>;
 }
 
 declare global {

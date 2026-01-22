@@ -4,6 +4,7 @@ import { FolderOpen as FolderOpenIcon, Folder as FolderIcon } from '@mui/icons-m
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
 import ThreeColumnLayout from './components/ThreeColumnLayout';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const App: React.FC = () => {
   const { openFile, activeFile } = useEditorStore();
@@ -47,9 +48,10 @@ const App: React.FC = () => {
       </AppBar>
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
-        {activeFile || projectPath ? (
-          <ThreeColumnLayout filePath={activeFile} />
-        ) : (
+        <ErrorBoundary>
+          {activeFile || projectPath ? (
+            <ThreeColumnLayout filePath={activeFile} />
+          ) : (
           <Box sx={{
             flex: 1,
             display: 'flex',
@@ -93,7 +95,8 @@ const App: React.FC = () => {
               </Stack>
             </Container>
           </Box>
-        )}
+          )}
+        </ErrorBoundary>
       </Box>
     </Box>
   );

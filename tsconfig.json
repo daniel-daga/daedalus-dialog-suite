@@ -18,6 +18,5 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/renderer"],
-  "references": [{ "path": "./tsconfig.main.json" }]
+  "include": ["src/renderer", "src/shared"]
 }

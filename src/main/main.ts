@@ -80,10 +80,7 @@ function setupIpcHandlers() {
       // Validate path before saving
       pathValidator.validatePath(filePath);
 
-      console.log('Generating code for model:', JSON.stringify(model, null, 2));
       const code = codeGeneratorService.generateCode(model, settings);
-      console.log('Generated code type:', typeof code);
-      console.log('Generated code:', code);
       return fileService.writeFile(filePath, code);
     } catch (error) {
       if (error instanceof PathValidationError) {
@@ -136,7 +133,6 @@ function setupIpcHandlers() {
       if (filePath) {
         const fileDir = path.dirname(filePath);
         pathValidator.addAllowedPath(fileDir);
-        console.log(`[Security] Added allowed path: ${fileDir}`);
       }
 
       return filePath;
@@ -154,7 +150,6 @@ function setupIpcHandlers() {
       if (filePath) {
         const fileDir = path.dirname(filePath);
         pathValidator.addAllowedPath(fileDir);
-        console.log(`[Security] Added allowed path: ${fileDir}`);
       }
 
       return filePath;
@@ -180,7 +175,6 @@ function setupIpcHandlers() {
 
       // When user selects a project folder, add it to allowed paths
       pathValidator.addAllowedPath(folderPath);
-      console.log(`[Security] Added allowed project path: ${folderPath}`);
 
       return folderPath;
     } catch (error) {

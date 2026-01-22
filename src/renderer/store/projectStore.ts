@@ -9,12 +9,24 @@
  */
 
 import { create } from 'zustand';
-import type { DialogMetadata, ProjectIndex } from '../types/global';
+import type { DialogMetadata, SemanticModel } from '../types/global';
 
 interface ParsedFileCache {
   filePath: string;
-  semanticModel: any;
+  semanticModel: SemanticModel;
   lastParsed: Date;
+}
+
+/** Empty semantic model factory */
+function createEmptySemanticModel(): SemanticModel {
+  return {
+    dialogs: {},
+    functions: {},
+    constants: {},
+    instances: {},
+    hasErrors: false,
+    errors: []
+  };
 }
 
 interface ProjectState {
@@ -31,7 +43,7 @@ interface ProjectState {
   parsedFiles: Map<string, ParsedFileCache>;
 
   // Merged semantic model for currently selected NPC
-  mergedSemanticModel: any;
+  mergedSemanticModel: SemanticModel;
 
   // Current selection
   selectedNpc: string | null;
@@ -55,10 +67,10 @@ interface ProjectActions {
   getSelectedNpcDialogs: () => DialogMetadata[];
 
   // Get or parse a dialog file
-  getSemanticModel: (filePath: string) => Promise<any>;
+  getSemanticModel: (filePath: string) => Promise<SemanticModel>;
 
   // Merge multiple semantic models into one
-  mergeSemanticModels: (models: any[]) => void;
+  mergeSemanticModels: (models: SemanticModel[]) => void;
 
   // Load and merge semantic models for a specific NPC
   loadAndMergeNpcModels: (npcId: string) => void;
@@ -80,14 +92,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   dialogIndex: new Map(),
   allDialogFiles: [],
   parsedFiles: new Map(),
-  mergedSemanticModel: {
-    dialogs: {},
-    functions: {},
-    constants: {},
-    instances: {},
-    hasErrors: false,
-    errors: []
-  },
+  mergedSemanticModel: createEmptySemanticModel(),
   selectedNpc: null,
   isLoading: false,
   loadError: null,
@@ -130,12 +135,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         parsedFiles: new Map(), // Clear any previous cache
         selectedNpc: null
       });
-
-      console.log(`Project loaded: ${projectName}`);
-      console.log(`Found ${rawIndex.npcs?.length || 0} NPCs`);
-      console.log(`Found ${rawIndex.allFiles?.length || 0} .d files`);
     } catch (error) {
-      console.error('Error loading project:', error);
       set({
         isLoading: false,
         loadError: error instanceof Error ? error.message : 'Unknown error'
@@ -151,14 +151,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       dialogIndex: new Map(),
       allDialogFiles: [],
       parsedFiles: new Map(),
-      mergedSemanticModel: {
-        dialogs: {},
-        functions: {},
-        constants: {},
-        instances: {},
-        hasErrors: false,
-        errors: []
-      },
+      mergedSemanticModel: createEmptySemanticModel(),
       selectedNpc: null,
       loadError: null
     });
@@ -180,14 +173,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     // Check if already cached
     const cached = parsedFiles.get(filePath);
     if (cached) {
-      console.log(`Using cached semantic model for ${filePath}`);
       return cached.semanticModel;
     }
 
     // Parse file via IPC
-    console.log(`Parsing file: ${filePath}`);
     const semanticModel = await window.editorAPI.parseDialogFile(filePath);
-    console.log(`[projectStore] Parsed model has ${Object.keys(semanticModel?.dialogs || {}).length} dialogs, ${Object.keys(semanticModel?.functions || {}).length} functions`);
 
     // Cache the result
     const newCache = new Map(parsedFiles);
@@ -202,15 +192,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return semanticModel;
   },
 
-  mergeSemanticModels: (models: any[]) => {
-    const mergedModel = {
-      dialogs: {},
-      functions: {},
-      constants: {},
-      instances: {},
-      hasErrors: false,
-      errors: []
-    };
+  mergeSemanticModels: (models: SemanticModel[]) => {
+    const mergedModel: SemanticModel = createEmptySemanticModel();
 
     const modelsWithErrors = models.filter(model => model?.hasErrors);
     if (modelsWithErrors.length > 0) {
@@ -222,7 +205,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     models.forEach(model => {
       // Skip models with errors to avoid corrupting the merged model
       if (model?.hasErrors) {
-        console.warn('[projectStore] Skipping model with errors during merge');
         return;
       }
 
@@ -240,8 +222,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       }
     });
 
-    console.log(`[projectStore] Merged ${models.length} models: ${Object.keys(mergedModel.dialogs).length} dialogs, ${Object.keys(mergedModel.functions).length} functions`);
-
     set({ mergedSemanticModel: mergedModel });
   },
 
@@ -254,14 +234,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     // Extract unique file paths
     const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
 
-    console.log(`[projectStore] Loading models for NPC ${npcId} from ${uniqueFilePaths.length} files`);
-
     // Get semantic models from cache
     const semanticModels = uniqueFilePaths
       .map(filePath => parsedFiles.get(filePath)?.semanticModel)
-      .filter(model => model !== undefined);
-
-    console.log(`[projectStore] Found ${semanticModels.length} cached models`);
+      .filter((model): model is SemanticModel => model !== undefined);
 
     // Merge the models
     get().mergeSemanticModels(semanticModels);
@@ -269,19 +245,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   clearMergedModel: () => {
     set({
-      mergedSemanticModel: {
-        dialogs: {},
-        functions: {},
-        constants: {},
-        instances: {},
-        hasErrors: false,
-        errors: []
-      }
+      mergedSemanticModel: createEmptySemanticModel()
     });
   },
 
   clearCache: () => {
     set({ parsedFiles: new Map() });
-    console.log('Cleared parsed files cache');
   }
 }));

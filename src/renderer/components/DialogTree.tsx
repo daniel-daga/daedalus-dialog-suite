@@ -75,8 +75,6 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     return priorityA - priorityB;
   });
 
-  console.log(`[DialogTree] NPC: ${selectedNPC}, dialogsForNPC: ${dialogsForNPC.length}, semanticModel has ${Object.keys(semanticModel.dialogs || {}).length} dialogs`);
-
   return (
     <Paper sx={{ width: 350, overflow: 'auto', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0 }} elevation={1}>
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>

@@ -1,22 +1,34 @@
 import { create } from 'zustand';
 import { generateActionId } from '../components/actionFactory';
+import type {
+  SemanticModel,
+  Dialog,
+  DialogFunction,
+  DialogAction,
+  ParseError,
+  CodeGenerationSettings
+} from '../types/global';
 
 /**
  * Ensure all actions in the model have unique IDs
  */
-function ensureActionIds(model: any): any {
+function ensureActionIds(model: SemanticModel): SemanticModel {
   if (!model || !model.functions) return model;
 
   const updatedFunctions = { ...model.functions };
   Object.keys(updatedFunctions).forEach(funcName => {
     const func = updatedFunctions[funcName];
     if (func.actions && Array.isArray(func.actions)) {
-      func.actions = func.actions.map((action: any) => {
-        if (!action.id || action.id === 'NEW_LINE_ID') {
-          return { ...action, id: generateActionId() };
-        }
-        return action;
-      });
+      updatedFunctions[funcName] = {
+        ...func,
+        actions: func.actions.map((action: DialogAction) => {
+          // Check if action has id property (DialogLineAction)
+          if ('id' in action && (!action.id || action.id === 'NEW_LINE_ID')) {
+            return { ...action, id: generateActionId() };
+          }
+          return action;
+        })
+      };
     }
   });
 
@@ -25,17 +37,12 @@ function ensureActionIds(model: any): any {
 
 interface FileState {
   filePath: string;
-  semanticModel: any;
+  semanticModel: SemanticModel;
   isDirty: boolean;
   lastSaved: Date;
   originalCode?: string;
   hasErrors?: boolean;
-  errors?: Array<{
-    type: string;
-    message: string;
-    position?: { row: number; column: number };
-    text?: string;
-  }>;
+  errors?: ParseError[];
 }
 
 interface EditorProject {
@@ -44,13 +51,6 @@ interface EditorProject {
   rootPath: string;
   lastOpened: Date;
   recentFiles: string[];
-}
-
-interface CodeGenerationSettings {
-  indentChar: '\t' | ' ';
-  includeComments: boolean;
-  sectionHeaders: boolean;
-  uppercaseKeywords: boolean;
 }
 
 interface EditorStore {
@@ -73,9 +73,9 @@ interface EditorStore {
   // Actions
   openFile: (filePath: string) => Promise<void>;
   closeFile: (filePath: string) => void;
-  updateModel: (filePath: string, model: any) => void;
-  updateDialog: (filePath: string, dialogName: string, dialog: any) => void;
-  updateFunction: (filePath: string, functionName: string, func: any) => void;
+  updateModel: (filePath: string, model: SemanticModel) => void;
+  updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => void;
+  updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
   saveFile: (filePath: string) => Promise<void>;
   generateCode: (filePath: string) => Promise<string>;
   setSelectedDialog: (dialogName: string | null) => void;
@@ -164,7 +164,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
-  updateModel: (filePath: string, model: any) => {
+  updateModel: (filePath: string, model: SemanticModel) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (fileState) {
@@ -181,13 +181,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
-  updateDialog: (filePath: string, dialogName: string, dialog: any) => {
+  updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
         return state;
       }
-      const updatedModel = {
+      const updatedModel: SemanticModel = {
         ...fileState.semanticModel,
         dialogs: {
           ...fileState.semanticModel.dialogs,
@@ -205,13 +205,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
-  updateFunction: (filePath: string, functionName: string, func: any) => {
+  updateFunction: (filePath: string, functionName: string, func: DialogFunction) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
         return state;
       }
-      const updatedModel = {
+      const updatedModel: SemanticModel = {
         ...fileState.semanticModel,
         functions: {
           ...fileState.semanticModel.functions,
