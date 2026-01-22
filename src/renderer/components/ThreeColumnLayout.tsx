@@ -2,10 +2,12 @@ import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect
 import { Box, Typography, Alert } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
+import { useSearchStore, SearchResult } from '../store/searchStore';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
 import EditorPane from './EditorPane';
 import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
+import SearchPanel from './SearchPanel';
 import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction } from '../types/global';
 
 interface ThreeColumnLayoutProps {
@@ -34,6 +36,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
   const [isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
+  const [isSearchOpen, setIsSearchOpen] = useState(false); // Search panel visibility
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   // Cache for buildFunctionTree to prevent exponential recomputation
@@ -63,6 +66,24 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     functionTreeCacheRef.current.clear();
     prevSemanticModelRef.current = semanticModel;
   }
+
+  // Keyboard shortcut handler for Ctrl+F
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+      if (e.key === 'Escape' && isSearchOpen) {
+        setIsSearchOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSearchOpen]);
 
   // Cleanup RAF callbacks on unmount (Bug #1 fix)
   useEffect(() => {
@@ -305,6 +326,56 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   };
 
+  // Handle search result click - navigate to the appropriate NPC/dialog/function
+  const handleSearchResultClick = useCallback(async (result: SearchResult) => {
+    // For NPC results, select the NPC
+    if (result.type === 'npc') {
+      await handleSelectNPC(result.name);
+      return;
+    }
+
+    // For dialog results, find the NPC and select dialog
+    if (result.type === 'dialog' && result.npc) {
+      // First select the NPC if different
+      if (selectedNPC !== result.npc) {
+        await handleSelectNPC(result.npc);
+      }
+      // Then select the dialog
+      if (result.dialogName) {
+        const dialog = semanticModel.dialogs?.[result.dialogName];
+        if (dialog) {
+          const infoFunc = dialog.properties?.information as any;
+          const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+          handleSelectDialog(result.dialogName, infoFuncName);
+        }
+      }
+      return;
+    }
+
+    // For function or text results, try to navigate to the function
+    if (result.functionName) {
+      // Try to find which dialog this function belongs to
+      const dialogs = semanticModel.dialogs || {};
+      for (const [dialogName, dialog] of Object.entries(dialogs)) {
+        const infoFunc = dialog.properties?.information as any;
+        const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+
+        if (infoFuncName === result.functionName) {
+          // Found the dialog, select the NPC first if needed
+          const npc = dialog.properties?.npc;
+          if (npc && selectedNPC !== npc) {
+            await handleSelectNPC(npc);
+          }
+          handleSelectDialog(dialogName, result.functionName);
+          return;
+        }
+      }
+
+      // If not found as a direct dialog function, just navigate to the function
+      setSelectedFunctionName(result.functionName);
+    }
+  }, [selectedNPC, semanticModel, handleSelectNPC, handleSelectDialog]);
+
   // Handle early return conditions after all hooks have been called
   // In project mode, we might not have a file loaded yet
   if (showLoading) {
@@ -317,7 +388,16 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   }
 
   return (
-    <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden', position: 'relative' }}>
+      {/* Search Panel (positioned absolutely) */}
+      <SearchPanel
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        semanticModel={semanticModel as SemanticModel}
+        dialogIndex={dialogIndex}
+        onResultClick={handleSearchResultClick}
+      />
+
       {/* Column 1: NPC List */}
       <NPCList
         npcs={npcs}
