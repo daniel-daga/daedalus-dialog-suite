@@ -6,7 +6,7 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult } from '../types/global';
 
 // Sample semantic model for testing
 const SAMPLE_MODEL = {
@@ -340,15 +340,64 @@ export const mockEditorAPI: EditorAPI = {
     }
   },
 
-  async saveFile(filePath: string, model: any, settings: any): Promise<{ success: boolean }> {
+  async validateModel(model: any, settings: any, options?: any): Promise<ValidationResult> {
+    // Mock validation - always passes in browser mode
+    console.log('[Mock API] Validating model');
+    const generatedCode = generateCode(model, settings);
+    return {
+      isValid: true,
+      errors: [],
+      warnings: [],
+      generatedCode
+    };
+  },
+
+  async saveFile(filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean }): Promise<SaveResult> {
     try {
       const code = generateCode(model, settings);
       MockFileSystem.writeFile(filePath, code);
       console.log(`[Mock API] File saved: ${filePath}`);
-      return { success: true };
+      return {
+        success: true,
+        validationResult: {
+          isValid: true,
+          errors: [],
+          warnings: [],
+          generatedCode: code
+        }
+      };
     } catch (error) {
       console.error('Mock saveFile error:', error);
       return { success: false };
+    }
+  },
+
+  async openProjectFolderDialog(): Promise<string | null> {
+    const path = prompt('Enter project folder path:', '/project');
+    return path || null;
+  },
+
+  async buildProjectIndex(folderPath: string): Promise<any> {
+    console.log('[Mock API] Building project index for:', folderPath);
+    return {
+      npcs: ['PC_Hero'],
+      dialogsByNpc: new Map([['PC_Hero', []]]),
+      allFiles: []
+    };
+  },
+
+  async parseDialogFile(filePath: string): Promise<any> {
+    try {
+      const content = MockFileSystem.readFile(filePath);
+      return parseSource(content);
+    } catch (error) {
+      console.error('Mock parseDialogFile error:', error);
+      return {
+        dialogs: {},
+        functions: {},
+        hasErrors: true,
+        errors: []
+      };
     }
   },
 };

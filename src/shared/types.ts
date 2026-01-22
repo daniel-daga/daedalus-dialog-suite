@@ -198,3 +198,47 @@ export interface FunctionTreeNode {
   function: DialogFunction;
   children: FunctionTreeChild[];
 }
+
+// ============================================================================
+// Validation Types
+// ============================================================================
+
+export type ValidationErrorType =
+  | 'syntax_error'
+  | 'duplicate_dialog'
+  | 'missing_function'
+  | 'missing_required_property'
+  | 'circular_dependency';
+
+export interface ValidationError {
+  type: ValidationErrorType;
+  message: string;
+  dialogName?: string;
+  functionName?: string;
+  position?: { row: number; column: number };
+}
+
+export interface ValidationWarning {
+  type: string;
+  message: string;
+  dialogName?: string;
+  functionName?: string;
+}
+
+export interface ValidationOptions {
+  existingDialogs?: string[];
+  skipSyntaxValidation?: boolean;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+  generatedCode?: string;
+}
+
+export interface SaveResult {
+  success: boolean;
+  encoding?: string;
+  validationResult?: ValidationResult;
+}

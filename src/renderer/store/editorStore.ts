@@ -6,7 +6,8 @@ import type {
   DialogFunction,
   DialogAction,
   ParseError,
-  CodeGenerationSettings
+  CodeGenerationSettings,
+  ValidationResult
 } from '../types/global';
 
 /**
@@ -43,6 +44,7 @@ interface FileState {
   originalCode?: string;
   hasErrors?: boolean;
   errors?: ParseError[];
+  lastValidationResult?: ValidationResult;
 }
 
 interface EditorProject {
@@ -51,6 +53,11 @@ interface EditorProject {
   rootPath: string;
   lastOpened: Date;
   recentFiles: string[];
+}
+
+interface SaveFileResult {
+  success: boolean;
+  validationResult?: ValidationResult;
 }
 
 interface EditorStore {
@@ -67,6 +74,12 @@ interface EditorStore {
   selectedDialog: string | null;
   selectedAction: number | null;
 
+  // Validation dialog state
+  pendingValidation: {
+    filePath: string;
+    validationResult: ValidationResult;
+  } | null;
+
   // Code generation settings
   codeSettings: CodeGenerationSettings;
 
@@ -76,7 +89,9 @@ interface EditorStore {
   updateModel: (filePath: string, model: SemanticModel) => void;
   updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => void;
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
-  saveFile: (filePath: string) => Promise<void>;
+  validateFile: (filePath: string) => Promise<ValidationResult>;
+  saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<SaveFileResult>;
+  clearPendingValidation: () => void;
   generateCode: (filePath: string) => Promise<string>;
   setSelectedDialog: (dialogName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
@@ -89,6 +104,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   activeFile: null,
   selectedDialog: null,
   selectedAction: null,
+  pendingValidation: null,
   codeSettings: {
     indentChar: '\t',
     includeComments: true,
@@ -229,7 +245,37 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
-  saveFile: async (filePath: string) => {
+  validateFile: async (filePath: string) => {
+    const state = get();
+    const fileState = state.openFiles.get(filePath);
+    if (!fileState) {
+      throw new Error('File not open');
+    }
+
+    const validationResult = await window.editorAPI.validateModel(
+      fileState.semanticModel,
+      state.codeSettings
+    );
+
+    // Store validation result in file state
+    set((state) => {
+      const currentFileState = state.openFiles.get(filePath);
+      if (currentFileState) {
+        const updatedFileState: FileState = {
+          ...currentFileState,
+          lastValidationResult: validationResult,
+        };
+        const newOpenFiles = new Map(state.openFiles);
+        newOpenFiles.set(filePath, updatedFileState);
+        return { openFiles: newOpenFiles };
+      }
+      return state;
+    });
+
+    return validationResult;
+  },
+
+  saveFile: async (filePath: string, options?: { forceOnErrors?: boolean }) => {
     const state = get();
     const fileState = state.openFiles.get(filePath);
     if (!fileState) {
@@ -237,23 +283,63 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
 
     try {
-      // Generate code and save in main process
-      await window.editorAPI.saveFile(filePath, fileState.semanticModel, state.codeSettings);
+      // Save with validation (main process handles validation)
+      const result = await window.editorAPI.saveFile(
+        filePath,
+        fileState.semanticModel,
+        state.codeSettings,
+        { forceOnErrors: options?.forceOnErrors }
+      );
 
+      // If validation failed and we didn't force save
+      if (!result.success && result.validationResult) {
+        // Store pending validation for UI to display
+        set({ pendingValidation: { filePath, validationResult: result.validationResult } });
+
+        // Update file state with validation result
+        set((state) => {
+          const currentFileState = state.openFiles.get(filePath);
+          if (currentFileState) {
+            const updatedFileState: FileState = {
+              ...currentFileState,
+              lastValidationResult: result.validationResult,
+            };
+            const newOpenFiles = new Map(state.openFiles);
+            newOpenFiles.set(filePath, updatedFileState);
+            return { openFiles: newOpenFiles };
+          }
+          return state;
+        });
+
+        return { success: false, validationResult: result.validationResult };
+      }
+
+      // Save succeeded
       set((state) => {
-        const updatedFileState: FileState = {
-          ...fileState,
-          isDirty: false,
-          lastSaved: new Date(),
-        };
-        const newOpenFiles = new Map(state.openFiles);
-        newOpenFiles.set(filePath, updatedFileState);
-        return { openFiles: newOpenFiles };
+        const currentFileState = state.openFiles.get(filePath);
+        if (currentFileState) {
+          const updatedFileState: FileState = {
+            ...currentFileState,
+            isDirty: false,
+            lastSaved: new Date(),
+            lastValidationResult: result.validationResult,
+          };
+          const newOpenFiles = new Map(state.openFiles);
+          newOpenFiles.set(filePath, updatedFileState);
+          return { openFiles: newOpenFiles, pendingValidation: null };
+        }
+        return state;
       });
+
+      return { success: true, validationResult: result.validationResult };
     } catch (error) {
       console.error('Failed to save file:', error);
       throw error;
     }
+  },
+
+  clearPendingValidation: () => {
+    set({ pendingValidation: null });
   },
 
   generateCode: async (filePath: string) => {
