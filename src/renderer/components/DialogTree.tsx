@@ -1,7 +1,23 @@
-import React from 'react';
-import { Paper, Box, Typography, List, ListItemButton, ListItemText, IconButton } from '@mui/material';
-import { CallSplit as CallSplitIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
+import React, { useMemo } from 'react';
+import {
+  Paper,
+  Box,
+  Typography,
+  List,
+  ListItemButton,
+  ListItemText,
+  IconButton,
+  TextField,
+  InputAdornment
+} from '@mui/material';
+import {
+  CallSplit as CallSplitIcon,
+  ExpandMore as ExpandMoreIcon,
+  ChevronRight as ChevronRightIcon,
+  FilterList as FilterListIcon
+} from '@mui/icons-material';
 import { DialogTreeProps } from './dialogTypes';
+import { useSearchStore } from '../store/searchStore';
 
 const DialogTree: React.FC<DialogTreeProps> = ({
   selectedNPC,
@@ -16,6 +32,8 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   onToggleChoiceExpand,
   buildFunctionTree
 }) => {
+  const { dialogFilter, setDialogFilter, filterDialogs } = useSearchStore();
+
   // Recursive function to render choice subtree
   const renderChoiceTree = (choice: any, depth: number = 1, index: number = 0, dialogName: string): React.ReactNode => {
     if (!choice.subtree) return null;
@@ -63,79 +81,113 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   };
 
   // Sort dialogs by priority (nr field)
-  const sortedDialogs = [...dialogsForNPC].sort((a, b) => {
-    const dialogA = semanticModel.dialogs?.[a];
-    const dialogB = semanticModel.dialogs?.[b];
+  const sortedDialogs = useMemo(() => {
+    return [...dialogsForNPC].sort((a, b) => {
+      const dialogA = semanticModel.dialogs?.[a];
+      const dialogB = semanticModel.dialogs?.[b];
 
-    // Safety check: skip sorting if dialogs or properties are missing
-    if (!dialogA || !dialogB) return 0;
+      // Safety check: skip sorting if dialogs or properties are missing
+      if (!dialogA || !dialogB) return 0;
 
-    const priorityA = typeof dialogA.properties?.nr === 'number' ? dialogA.properties.nr : 999999;
-    const priorityB = typeof dialogB.properties?.nr === 'number' ? dialogB.properties.nr : 999999;
-    return priorityA - priorityB;
-  });
+      const priorityA = typeof dialogA.properties?.nr === 'number' ? dialogA.properties.nr : 999999;
+      const priorityB = typeof dialogB.properties?.nr === 'number' ? dialogB.properties.nr : 999999;
+      return priorityA - priorityB;
+    });
+  }, [dialogsForNPC, semanticModel.dialogs]);
+
+  // Filter dialogs based on the current filter
+  const filteredDialogs = useMemo(() => {
+    return filterDialogs(sortedDialogs);
+  }, [sortedDialogs, filterDialogs, dialogFilter]);
 
   return (
-    <Paper sx={{ width: 350, overflow: 'auto', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0 }} elevation={1}>
-      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+    <Paper sx={{ width: 350, overflow: 'hidden', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0, display: 'flex', flexDirection: 'column' }} elevation={1}>
+      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
         <Typography variant="h6">Dialogs</Typography>
         {selectedNPC && (
           <Typography variant="caption" color="text.secondary">
-            {selectedNPC} - {dialogsForNPC.length} dialog(s)
+            {selectedNPC} - {filteredDialogs.length} of {dialogsForNPC.length} shown
           </Typography>
         )}
       </Box>
-      <List dense>
+      {selectedNPC && (
+        <Box sx={{ px: 1, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+          <TextField
+            size="small"
+            fullWidth
+            placeholder="Filter dialogs..."
+            value={dialogFilter}
+            onChange={(e) => setDialogFilter(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <FilterListIcon fontSize="small" color="action" />
+                </InputAdornment>
+              )
+            }}
+          />
+        </Box>
+      )}
+      <List dense sx={{ overflow: 'auto', flexGrow: 1 }}>
         {selectedNPC ? (
-          sortedDialogs.map((dialogName) => {
-            const dialog = semanticModel.dialogs?.[dialogName];
+          <>
+            {filteredDialogs.map((dialogName) => {
+              const dialog = semanticModel.dialogs?.[dialogName];
 
-            // Safety check: skip rendering if dialog is missing
-            if (!dialog) return null;
+              // Safety check: skip rendering if dialog is missing
+              if (!dialog) return null;
 
-            const infoFunc = dialog.properties?.information as any;
-            const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-            const infoFuncData = infoFuncName ? semanticModel.functions?.[infoFuncName] : null;
-            const isExpanded = expandedDialogs.has(dialogName);
-            const functionTree = infoFuncName ? buildFunctionTree(infoFuncName) : null;
-            const hasChoices = functionTree && functionTree.children && functionTree.children.length > 0;
+              const infoFunc = dialog.properties?.information as any;
+              const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+              const infoFuncData = infoFuncName ? semanticModel.functions?.[infoFuncName] : null;
+              const isExpanded = expandedDialogs.has(dialogName);
+              const functionTree = infoFuncName ? buildFunctionTree(infoFuncName) : null;
+              const hasChoices = functionTree && functionTree.children && functionTree.children.length > 0;
 
-            return (
-              <Box key={dialogName}>
-                <ListItemButton
-                  selected={selectedDialog === dialogName && selectedFunctionName === infoFuncName}
-                  onClick={() => {
-                    onSelectDialog(dialogName, infoFuncName);
-                  }}
-                  sx={{ pr: 1 }}
-                >
-                  {hasChoices ? (
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleDialogExpand(dialogName);
-                      }}
-                      sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }}
-                    >
-                      {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-                    </IconButton>
-                  ) : (
-                    <Box sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }} />
+              return (
+                <Box key={dialogName}>
+                  <ListItemButton
+                    selected={selectedDialog === dialogName && selectedFunctionName === infoFuncName}
+                    onClick={() => {
+                      onSelectDialog(dialogName, infoFuncName);
+                    }}
+                    sx={{ pr: 1 }}
+                  >
+                    {hasChoices ? (
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleDialogExpand(dialogName);
+                        }}
+                        sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }}
+                      >
+                        {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+                      </IconButton>
+                    ) : (
+                      <Box sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }} />
+                    )}
+                    <ListItemText
+                      primary={dialog.properties?.description || dialogName}
+                      secondary={dialogName}
+                      primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isExpanded ? 600 : 400 }}
+                      secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                    />
+                  </ListItemButton>
+                  {isExpanded && hasChoices && functionTree.children.map((choice: any, idx: number) =>
+                    renderChoiceTree(choice, 1, idx, dialogName)
                   )}
-                  <ListItemText
-                    primary={dialog.properties?.description || dialogName}
-                    secondary={dialogName}
-                    primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isExpanded ? 600 : 400 }}
-                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                  />
-                </ListItemButton>
-                {isExpanded && hasChoices && functionTree.children.map((choice: any, idx: number) =>
-                  renderChoiceTree(choice, 1, idx, dialogName)
-                )}
+                </Box>
+              );
+            })}
+            {filteredDialogs.length === 0 && dialogFilter && (
+              <Box sx={{ p: 2, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  No dialogs match "{dialogFilter}"
+                </Typography>
               </Box>
-            );
-          })
+            )}
+          </>
         ) : (
           <Box sx={{ p: 2 }}>
             <Typography variant="body2" color="text.secondary">
