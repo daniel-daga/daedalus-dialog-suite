@@ -16,12 +16,14 @@ export class SemanticModelBuilderVisitor {
   private currentInstance: Dialog | null;
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
+  private functionToDialog: Map<string, Dialog>;
 
   constructor() {
     this.semanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
+    this.functionToDialog = new Map<string, Dialog>();
   }
 
   /**
@@ -169,6 +171,11 @@ export class SemanticModelBuilderVisitor {
           // Since all functions were created in Pass 1, this lookup will now succeed.
           if (this.semanticModel.functions[rightNode.text]) {
             value = this.semanticModel.functions[rightNode.text];
+
+            // Optimize lookup: Map information function to dialog
+            if (propertyName === 'information') {
+              this.functionToDialog.set(rightNode.text, this.currentInstance);
+            }
           } else {
             value = rightNode.text;
           }
@@ -234,13 +241,6 @@ export class SemanticModelBuilderVisitor {
    * Find which dialog uses a function as its information function
    */
   private findDialogForFunction(functionName: string): Dialog | null {
-    for (const dialogName in this.semanticModel.dialogs) {
-      const dialog = this.semanticModel.dialogs[dialogName];
-      if (dialog.properties.information &&
-          (dialog.properties.information as DialogFunction).name === functionName) {
-        return dialog;
-      }
-    }
-    return null;
+    return this.functionToDialog.get(functionName) || null;
   }
 }
