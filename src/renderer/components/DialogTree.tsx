@@ -141,8 +141,18 @@ const DialogTree: React.FC<DialogTreeProps> = ({
               const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
               const infoFuncData = infoFuncName ? semanticModel.functions?.[infoFuncName] : null;
               const isExpanded = expandedDialogs.has(dialogName);
-              const functionTree = infoFuncName ? buildFunctionTree(infoFuncName) : null;
-              const hasChoices = functionTree && functionTree.children && functionTree.children.length > 0;
+
+              // Optimization: Only build deep tree if expanded. Otherwise verify if function has potential choices.
+              let functionTree = null;
+              let hasChoices = false;
+
+              if (isExpanded) {
+                functionTree = infoFuncName ? buildFunctionTree(infoFuncName) : null;
+                hasChoices = !!(functionTree && functionTree.children && functionTree.children.length > 0);
+              } else if (infoFuncData && infoFuncData.actions) {
+                // Shallow check for existence of choice actions
+                hasChoices = infoFuncData.actions.some((a: any) => 'dialogRef' in a && 'targetFunction' in a);
+              }
 
               return (
                 <Box key={dialogName}>
@@ -174,7 +184,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
                       secondaryTypographyProps={{ fontSize: '0.75rem' }}
                     />
                   </ListItemButton>
-                  {isExpanded && hasChoices && functionTree.children.map((choice: any, idx: number) =>
+                  {isExpanded && hasChoices && functionTree?.children?.map((choice: any, idx: number) =>
                     renderChoiceTree(choice, 1, idx, dialogName)
                   )}
                 </Box>
