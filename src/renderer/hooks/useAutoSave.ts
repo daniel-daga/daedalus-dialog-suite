@@ -40,32 +40,51 @@ export function useAutoSave(): AutoSaveStatus {
 
     try {
       // Save all dirty files
+      const successfulSaves: string[] = [];
+      const errors: unknown[] = [];
+
       await Promise.all(
         filesToSave.map(async (filePath) => {
           const fileState = state.openFiles.get(filePath);
           if (fileState) {
-            await window.editorAPI.saveFile(
-              filePath,
-              fileState.semanticModel,
-              state.codeSettings
-            );
-
-            // Update file state to mark as not dirty
-            useEditorStore.setState((currentState) => {
-              const newOpenFiles = new Map(currentState.openFiles);
-              const currentFileState = newOpenFiles.get(filePath);
-              if (currentFileState) {
-                newOpenFiles.set(filePath, {
-                  ...currentFileState,
-                  isDirty: false,
-                  lastSaved: new Date(),
-                });
-              }
-              return { openFiles: newOpenFiles };
-            });
+            try {
+              await window.editorAPI.saveFile(
+                filePath,
+                fileState.semanticModel,
+                state.codeSettings
+              );
+              successfulSaves.push(filePath);
+            } catch (err) {
+              errors.push(err);
+            }
           }
         })
       );
+
+      if (successfulSaves.length > 0) {
+        // Batch update file state to mark as not dirty for all saved files
+        useEditorStore.setState((currentState) => {
+          const newOpenFiles = new Map(currentState.openFiles);
+          const now = new Date();
+
+          successfulSaves.forEach((filePath) => {
+            const currentFileState = newOpenFiles.get(filePath);
+            if (currentFileState) {
+              newOpenFiles.set(filePath, {
+                ...currentFileState,
+                isDirty: false,
+                lastSaved: now,
+              });
+            }
+          });
+
+          return { openFiles: newOpenFiles };
+        });
+      }
+
+      if (errors.length > 0) {
+        throw errors[0];
+      }
 
       setLastAutoSaveTime(new Date());
     } catch (error) {
