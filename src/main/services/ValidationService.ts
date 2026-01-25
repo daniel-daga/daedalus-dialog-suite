@@ -114,8 +114,11 @@ export class ValidationService {
     const duplicateErrors = this.validateDuplicateDialogs(model, options.existingDialogs);
     errors.push(...duplicateErrors);
 
+    // Compute function names set once for multiple validations
+    const functionNames = new Set<string>(Object.keys(model.functions || {}));
+
     // Step 4: Missing function reference detection
-    const missingFuncErrors = this.validateFunctionReferences(model);
+    const missingFuncErrors = this.validateFunctionReferences(model, functionNames);
     errors.push(...missingFuncErrors);
 
     // Step 5: Required property validation
@@ -123,7 +126,7 @@ export class ValidationService {
     errors.push(...requiredPropErrors);
 
     // Step 6: Choice target validation
-    const choiceErrors = this.validateChoiceTargets(model);
+    const choiceErrors = this.validateChoiceTargets(model, functionNames);
     errors.push(...choiceErrors);
 
     return {
@@ -193,9 +196,8 @@ export class ValidationService {
   /**
    * Check for missing function references in dialogs
    */
-  private validateFunctionReferences(model: any): ValidationError[] {
+  private validateFunctionReferences(model: any, functionNames: Set<string>): ValidationError[] {
     const errors: ValidationError[] = [];
-    const functionNames = new Set(Object.keys(model.functions || {}));
 
     for (const dialogName in model.dialogs) {
       const dialog = model.dialogs[dialogName];
@@ -270,9 +272,8 @@ export class ValidationService {
   /**
    * Validate choice action target functions
    */
-  private validateChoiceTargets(model: any): ValidationError[] {
+  private validateChoiceTargets(model: any, functionNames: Set<string>): ValidationError[] {
     const errors: ValidationError[] = [];
-    const functionNames = new Set(Object.keys(model.functions || {}));
 
     for (const funcName in model.functions) {
       const func = model.functions[funcName];
