@@ -5,6 +5,7 @@ import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
 import { getActionType } from './actionTypes';
 import type { BaseActionRendererProps } from './actionRenderers/types';
+import { shallowEqual } from '../utils/shallowEqual';
 
 const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
@@ -358,12 +359,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   if (prevProps.npcName !== nextProps.npcName) return false;
   if (prevProps.dialogContextName !== nextProps.dialogContextName) return false;
 
-  // Deep comparison for action - only re-render if action data actually changed
-  // Use JSON stringify for simplicity (action objects are small)
-  const prevActionStr = JSON.stringify(prevProps.action);
-  const nextActionStr = JSON.stringify(nextProps.action);
-
-  return prevActionStr === nextActionStr;
+  // Shallow comparison for action - only re-render if action data actually changed
+  // This is faster than JSON.stringify for shallow objects like DialogAction
+  return shallowEqual(prevProps.action, nextProps.action);
 });
 
 ActionCard.displayName = 'ActionCard';
