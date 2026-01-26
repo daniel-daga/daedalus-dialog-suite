@@ -239,6 +239,7 @@ export class SemanticModelBuilderVisitor {
 
   /**
    * Find which dialog uses a function as its information function
+   * Optimized to O(1) lookup using functionToDialog map
    */
   private findDialogForFunction(functionName: string): Dialog | null {
     return this.functionToDialog.get(functionName) || null;
