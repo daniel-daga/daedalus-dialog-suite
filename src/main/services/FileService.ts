@@ -142,18 +142,20 @@ export class FileService {
     // 0xB9 (ą), 0xBA (ş), 0xBC (ľ), 0xBE (ľ), 0xBF (ż)
     // 0xC8 (Č), 0xD2 (Ň), 0xD5 (Ő), 0xD8 (Ř), 0xDD (Ý)
     // 0xE8 (č), 0xF2 (ň), 0xF5 (ő), 0xF8 (ř)
-    const centralEuropeanBytes = new Set([
+    const centralEuropeanBytes = [
       0x8A, 0x8C, 0x8D, 0x8E, 0x8F,
       0x9A, 0x9C, 0x9D, 0x9E, 0x9F,
       0xA5, 0xAA, 0xAF,
       0xB9, 0xBA, 0xBC, 0xBE, 0xBF,
       0xC8, 0xD2, 0xD5, 0xD8, 0xDD,
       0xE8, 0xF2, 0xF5, 0xF8
-    ]);
+    ];
 
     // Check if any of these bytes appear in the file
-    for (let i = 0; i < buffer.length; i++) {
-      if (centralEuropeanBytes.has(buffer[i])) {
+    // Optimization: Use buffer.includes() which uses native memchr and is significantly faster
+    // than a JavaScript loop, even when checking multiple bytes.
+    for (const byte of centralEuropeanBytes) {
+      if (buffer.includes(byte)) {
         return true;
       }
     }
