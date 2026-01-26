@@ -14,7 +14,10 @@ import * as os from 'os';
 
 describe('PathValidationService', () => {
   let PathValidationService: any;
-  const projectPath = path.join('C:', 'Users', 'Test', 'MyGothicMod');
+  const isWin = os.platform() === 'win32';
+  const projectPath = isWin
+    ? path.join('C:', 'Users', 'Test', 'MyGothicMod')
+    : path.join('/tmp', 'Users', 'Test', 'MyGothicMod');
   const allowedPaths = [projectPath];
 
   beforeAll(async () => {
@@ -35,7 +38,9 @@ describe('PathValidationService', () => {
     });
 
     it('should normalize allowed paths on construction', () => {
-      const unnormalizedPath = 'C:/Users/Test/../Test/MyGothicMod';
+      const unnormalizedPath = isWin
+        ? 'C:/Users/Test/../Test/MyGothicMod'
+        : '/tmp/Users/Test/../Test/MyGothicMod';
       const service = new PathValidationService([unnormalizedPath]);
 
       // Should accept a file in the normalized location
@@ -249,8 +254,8 @@ describe('PathValidationService', () => {
 
   describe('isPathAllowed - with multiple allowed directories', () => {
     it('should allow paths in any of the allowed directories', () => {
-      const projectPath1 = 'C:\\Users\\Test\\Project1';
-      const projectPath2 = 'C:\\Users\\Test\\Project2';
+      const projectPath1 = isWin ? 'C:\\Users\\Test\\Project1' : '/tmp/Users/Test/Project1';
+      const projectPath2 = isWin ? 'C:\\Users\\Test\\Project2' : '/tmp/Users/Test/Project2';
       const service = new PathValidationService([projectPath1, projectPath2]);
 
       const file1 = path.join(projectPath1, 'file1.d');
@@ -261,11 +266,11 @@ describe('PathValidationService', () => {
     });
 
     it('should reject paths outside all allowed directories', () => {
-      const projectPath1 = 'C:\\Users\\Test\\Project1';
-      const projectPath2 = 'C:\\Users\\Test\\Project2';
+      const projectPath1 = isWin ? 'C:\\Users\\Test\\Project1' : '/tmp/Users/Test/Project1';
+      const projectPath2 = isWin ? 'C:\\Users\\Test\\Project2' : '/tmp/Users/Test/Project2';
       const service = new PathValidationService([projectPath1, projectPath2]);
 
-      const outsideFile = 'C:\\Users\\Test\\Project3\\file.d';
+      const outsideFile = isWin ? 'C:\\Users\\Test\\Project3\\file.d' : '/tmp/Users/Test/Project3/file.d';
       expect(service.isPathAllowed(outsideFile)).toBe(false);
     });
   });
@@ -314,7 +319,7 @@ describe('PathValidationService', () => {
   describe('addAllowedPath', () => {
     it('should allow adding new allowed path at runtime', () => {
       const service = new PathValidationService([projectPath]);
-      const newProjectPath = 'C:\\Users\\Test\\NewProject';
+      const newProjectPath = isWin ? 'C:\\Users\\Test\\NewProject' : '/tmp/Users/Test/NewProject';
 
       // Initially should reject
       const filePath = path.join(newProjectPath, 'test.d');
@@ -329,7 +334,9 @@ describe('PathValidationService', () => {
 
     it('should normalize paths when adding', () => {
       const service = new PathValidationService([projectPath]);
-      const unnormalizedPath = 'C:/Users/Test/../Test/NewProject';
+      const unnormalizedPath = isWin
+        ? 'C:/Users/Test/../Test/NewProject'
+        : '/tmp/Users/Test/../Test/NewProject';
 
       service.addAllowedPath(unnormalizedPath);
 
@@ -357,7 +364,7 @@ describe('PathValidationService', () => {
 
   describe('getAllowedPaths', () => {
     it('should return array of allowed paths', () => {
-      const paths = [projectPath, 'C:\\Users\\Test\\Project2'];
+      const paths = [projectPath, isWin ? 'C:\\Users\\Test\\Project2' : '/tmp/Users/Test/Project2'];
       const service = new PathValidationService(paths);
 
       const allowed = service.getAllowedPaths();
@@ -370,9 +377,9 @@ describe('PathValidationService', () => {
       const allowed = service.getAllowedPaths();
 
       // Mutating returned array shouldn't affect service
-      allowed.push('C:\\Malicious\\Path');
+      allowed.push(isWin ? 'C:\\Malicious\\Path' : '/tmp/Malicious/Path');
 
-      const maliciousFile = 'C:\\Malicious\\Path\\file.d';
+      const maliciousFile = isWin ? 'C:\\Malicious\\Path\\file.d' : '/tmp/Malicious/Path/file.d';
       expect(service.isPathAllowed(maliciousFile)).toBe(false);
     });
   });
