@@ -14,6 +14,13 @@ import type { DialogMetadata, ProjectIndex } from '../../shared/types';
 // Re-export types for consumers of this service
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
+// Regex to match start of INSTANCE declarations
+// Matches: INSTANCE <name> (C_INFO) {
+const INSTANCE_START_REGEX = /INSTANCE\s+(\w+)\s*\(([^)]+)\)\s*\{/gi;
+
+// Regex to match npc property inside the body
+const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/i;
+
 class ProjectService {
   /**
    * Recursively scan directory for .d files (async)
@@ -56,29 +63,59 @@ class ProjectService {
   extractDialogMetadata(content: string, filePath: string): DialogMetadata[] {
     const metadata: DialogMetadata[] = [];
 
-    // Regex to match INSTANCE declarations
-    // Matches: INSTANCE <name> (C_INFO) { ... npc = <npcId>; ... };
-    const instanceRegex = /INSTANCE\s+(\w+)\s*\(([^)]+)\)\s*\{([^}]+)\}/gi;
+    // Reset regex state
+    INSTANCE_START_REGEX.lastIndex = 0;
 
     let match;
-    while ((match = instanceRegex.exec(content)) !== null) {
+    while ((match = INSTANCE_START_REGEX.exec(content)) !== null) {
       const instanceName = match[1];
       const parentType = match[2].trim();
-      const body = match[3];
 
       // Only process C_INFO instances (dialogs)
       if (parentType.toUpperCase() === 'C_INFO') {
-        // Extract npc property
-        const npcMatch = body.match(/npc\s*=\s*([^;}\s]+)/i);
+        let braceCount = 1;
+        let currentIndex = INSTANCE_START_REGEX.lastIndex;
+        const startIndex = currentIndex;
 
-        if (npcMatch) {
-          const npcId = npcMatch[1].trim();
+        // Scan for matching closing brace, handling nested braces
+        while (braceCount > 0 && currentIndex < content.length) {
+          // Find next brace (open or close)
+          const nextClose = content.indexOf('}', currentIndex);
+          const nextOpen = content.indexOf('{', currentIndex);
 
-          metadata.push({
-            dialogName: instanceName,
-            npc: npcId,
-            filePath
-          });
+          if (nextClose === -1) {
+            // Malformed: no closing brace found
+            break;
+          }
+
+          if (nextOpen !== -1 && nextOpen < nextClose) {
+            braceCount++;
+            currentIndex = nextOpen + 1;
+          } else {
+            braceCount--;
+            currentIndex = nextClose + 1;
+          }
+        }
+
+        if (braceCount === 0) {
+          // Extract body content (exclude the final '}')
+          const body = content.substring(startIndex, currentIndex - 1);
+
+          // Extract npc property
+          const npcMatch = body.match(NPC_REGEX);
+
+          if (npcMatch) {
+            const npcId = npcMatch[1].trim();
+
+            metadata.push({
+              dialogName: instanceName,
+              npc: npcId,
+              filePath
+            });
+          }
+
+          // Update regex search position to resume after this instance
+          INSTANCE_START_REGEX.lastIndex = currentIndex;
         }
       }
     }

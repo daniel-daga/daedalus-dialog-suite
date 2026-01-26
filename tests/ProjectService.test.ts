@@ -171,6 +171,26 @@ FUNC void SomeFunction()
 
       expect(metadata).toHaveLength(0);
     });
+
+    it('should extract NPC correctly when nested braces exist', async () => {
+      const content = `
+INSTANCE DIA_Nested (C_INFO)
+{
+    condition = function() {
+        if (TRUE) { return TRUE; };
+    };
+    npc = SLD_Nested_NPC;
+    description = "Nested test";
+};
+      `;
+
+      const service = new ProjectService();
+      const metadata = service.extractDialogMetadata(content, '/test/nested.d');
+
+      expect(metadata).toHaveLength(1);
+      expect(metadata[0].dialogName).toBe('DIA_Nested');
+      expect(metadata[0].npc).toBe('SLD_Nested_NPC');
+    });
   });
 
   describe('buildProjectIndex', () => {
