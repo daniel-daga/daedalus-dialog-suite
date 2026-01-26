@@ -5,15 +5,21 @@ import * as path from 'path';
 import { SemanticModelBuilderVisitor } from '../semantic/semantic-visitor';
 import { SemanticModel } from '../semantic/semantic-model';
 
+let cachedParser: any | null = null;
+
 /**
  * Create and configure a Daedalus parser instance
  * @returns Configured tree-sitter parser ready for Daedalus source
  */
 export function createDaedalusParser(): any {
+  if (cachedParser) {
+    return cachedParser;
+  }
   const Parser = require('tree-sitter');
   const Daedalus = require('../../bindings/node');
   const parser = new Parser();
   parser.setLanguage(Daedalus);
+  cachedParser = parser;
   return parser;
 }
 
