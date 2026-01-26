@@ -95,6 +95,11 @@ const ActionsList = React.memo<ActionsListProps>(({
   );
 }, (prevProps, nextProps) => {
   // Fast bailout checks
+  // If semantic model changed, we must re-render because callbacks (like onRenameFunction)
+  // likely depend on it and need to be updated to capture the latest model.
+  if (prevProps.semanticModel !== nextProps.semanticModel) return false;
+  if (prevProps.onRenameFunction !== nextProps.onRenameFunction) return false;
+
   if (prevProps.actions === nextProps.actions) return true; // Same reference
   if (prevProps.actions.length !== nextProps.actions.length) return false;
   if (prevProps.npcName !== nextProps.npcName) return false;
