@@ -100,25 +100,31 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   });
 
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
-    if (!semanticModel || !filePath) return;
+    if (!filePath) return;
+
+    // Get latest semantic model from store to avoid stale closures
+    const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+    const latestModel = latestFileState?.semanticModel;
+
+    if (!latestModel) return;
 
     // Get the function to rename
-    const func = semanticModel.functions[oldName];
+    const func = latestModel.functions[oldName];
     if (!func) return;
 
     // Create updated functions map
-    const updatedFunctions = { ...semanticModel.functions };
+    const updatedFunctions = { ...latestModel.functions };
     delete updatedFunctions[oldName];
     updatedFunctions[newName] = { ...func, name: newName };
 
     // Update semantic model
     const updatedModel = {
-      ...semanticModel,
+      ...latestModel,
       functions: updatedFunctions
     };
     // Use updateModel for this complex operation
     useEditorStore.getState().updateModel(filePath, updatedModel);
-  }, [semanticModel, filePath]);
+  }, [filePath]);
 
   // Trim refs array to match current actions length
   React.useEffect(() => {
@@ -217,8 +223,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   // isDirty comes directly from store
   const isDirty = fileState?.isDirty || false;
 
-  const handleDialogPropertyChange = useCallback((updatedDialog: any) => {
+  const handleDialogPropertyChange = useCallback((updater: (d: any) => any) => {
     if (!filePath) return;
+
+    // Get latest state directly from store to avoid stale closures
+    const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+    const currentDialog = latestFileState?.semanticModel?.dialogs?.[dialogName];
+
+    if (!currentDialog) return;
+
+    const updatedDialog = updater(currentDialog);
 
     // Normalize dialog properties to use string references for functions
     const normalizedDialog = {
@@ -336,10 +350,10 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 fullWidth
                 label="NPC"
                 value={dialog.properties?.npc || ''}
-                onChange={(e) => handleDialogPropertyChange({
-                  ...dialog,
-                  properties: { ...dialog.properties, npc: e.target.value }
-                })}
+                onChange={(e) => handleDialogPropertyChange((d) => ({
+                  ...d,
+                  properties: { ...d.properties, npc: e.target.value }
+                }))}
                 size="small"
               />
               <TextField
@@ -347,20 +361,20 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 label="Number (Priority)"
                 type="number"
                 value={dialog.properties?.nr || ''}
-                onChange={(e) => handleDialogPropertyChange({
-                  ...dialog,
-                  properties: { ...dialog.properties, nr: parseInt(e.target.value) || 0 }
-                })}
+                onChange={(e) => handleDialogPropertyChange((d) => ({
+                  ...d,
+                  properties: { ...d.properties, nr: parseInt(e.target.value) || 0 }
+                }))}
                 size="small"
               />
               <TextField
                 fullWidth
                 label="Description"
                 value={dialog.properties?.description || ''}
-                onChange={(e) => handleDialogPropertyChange({
-                  ...dialog,
-                  properties: { ...dialog.properties, description: e.target.value }
-                })}
+                onChange={(e) => handleDialogPropertyChange((d) => ({
+                  ...d,
+                  properties: { ...d.properties, description: e.target.value }
+                }))}
                 size="small"
                 multiline
                 rows={2}
@@ -384,9 +398,29 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 : dialog.properties.condition.name
             ]
           }
-          onUpdateFunction={(func: any) => {
-            if (filePath) {
-              updateFunction(filePath, func.name, func);
+          onUpdateFunction={(funcOrUpdater: any) => {
+            if (!filePath) return;
+
+            if (typeof funcOrUpdater === 'function') {
+              const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+              const latestModel = latestFileState?.semanticModel;
+              const latestDialog = latestModel?.dialogs?.[dialogName];
+
+              const conditionFuncName = typeof latestDialog?.properties?.condition === 'object'
+                ? latestDialog.properties.condition.name
+                : latestDialog?.properties?.condition;
+
+              if (!conditionFuncName) return;
+
+              const currentFunc = latestModel?.functions?.[conditionFuncName];
+              if (!currentFunc) return;
+
+              const updatedFunc = funcOrUpdater(currentFunc);
+              if (updatedFunc) {
+                 updateFunction(filePath, conditionFuncName, updatedFunc);
+              }
+            } else {
+              updateFunction(filePath, funcOrUpdater.name, funcOrUpdater);
             }
           }}
           semanticModel={semanticModel}

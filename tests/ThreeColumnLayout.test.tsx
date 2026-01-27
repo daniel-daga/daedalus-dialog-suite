@@ -55,60 +55,78 @@ describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
   });
 
   test('verifies RAF cleanup prevents memory leaks and conflicts', () => {
-    // AFTER FIX: Cancel previous RAF callbacks when new dialog selected
-    const simulateWithCleanup = () => {
-      const stateUpdates: string[] = [];
-      let rafId1: number | null = null;
-      let rafId2: number | null = null;
+    // Use fake timers to verify async RAF cancellation
+    jest.useFakeTimers();
 
-      // Simulate first dialog selection
-      const selectDialog1 = () => {
-        stateUpdates.push('dialog1:loading:true');
+    try {
+      // AFTER FIX: Cancel previous RAF callbacks when new dialog selected
+      const simulateWithCleanup = () => {
+        const stateUpdates: string[] = [];
+        let rafId1: number | null = null;
+        let rafId2: number | null = null;
 
-        rafId1 = requestAnimationFrame(() => {
-          stateUpdates.push('dialog1:raf1:scroll');
+        // Simulate first dialog selection
+        const selectDialog1 = () => {
+          stateUpdates.push('dialog1:loading:true');
 
-          requestAnimationFrame(() => {
-            stateUpdates.push('dialog1:raf2:loading:false');
+          rafId1 = requestAnimationFrame(() => {
+            stateUpdates.push('dialog1:raf1:scroll');
+
+            requestAnimationFrame(() => {
+              stateUpdates.push('dialog1:raf2:loading:false');
+            });
           });
-        });
 
-        return rafId1;
+          return rafId1;
+        };
+
+        // Simulate rapid second dialog selection WITH cleanup
+        const selectDialog2 = (previousRafId: number | null) => {
+          // CLEANUP: Cancel previous RAF
+          if (previousRafId !== null) {
+            cancelAnimationFrame(previousRafId);
+            stateUpdates.push('dialog1:cancelled');
+          }
+
+          stateUpdates.push('dialog2:loading:true');
+
+          rafId2 = requestAnimationFrame(() => {
+            stateUpdates.push('dialog2:raf1:scroll');
+
+            requestAnimationFrame(() => {
+              stateUpdates.push('dialog2:raf2:loading:false');
+            });
+          });
+
+          return rafId2;
+        };
+
+        const raf1 = selectDialog1();
+        selectDialog2(raf1); // Clean up dialog1's RAF!
+
+        return { stateUpdates };
       };
 
-      // Simulate rapid second dialog selection WITH cleanup
-      const selectDialog2 = (previousRafId: number | null) => {
-        // CLEANUP: Cancel previous RAF
-        if (previousRafId !== null) {
-          cancelAnimationFrame(previousRafId);
-          stateUpdates.push('dialog1:cancelled');
-        }
+      const result = simulateWithCleanup();
 
-        stateUpdates.push('dialog2:loading:true');
+      // Verify cleanup happened (synchronous check)
+      expect(result.stateUpdates).toContain('dialog1:cancelled');
+      // Only dialog2's state updates should execute (synchronous check)
+      expect(result.stateUpdates).toContain('dialog2:loading:true');
 
-        rafId2 = requestAnimationFrame(() => {
-          stateUpdates.push('dialog2:raf1:scroll');
+      // Fast-forward RAFs to verify cancellation worked
+      jest.runAllTimers();
 
-          requestAnimationFrame(() => {
-            stateUpdates.push('dialog2:raf2:loading:false');
-          });
-        });
+      // Dialog 1 RAFs should NOT have executed (cancelled)
+      expect(result.stateUpdates).not.toContain('dialog1:raf1:scroll');
+      expect(result.stateUpdates).not.toContain('dialog1:raf2:loading:false');
 
-        return rafId2;
-      };
-
-      const raf1 = selectDialog1();
-      selectDialog2(raf1); // Clean up dialog1's RAF!
-
-      return { stateUpdates };
-    };
-
-    const result = simulateWithCleanup();
-
-    // Verify cleanup happened
-    expect(result.stateUpdates).toContain('dialog1:cancelled');
-    // Only dialog2's state updates should execute
-    expect(result.stateUpdates).toContain('dialog2:loading:true');
+      // Dialog 2 RAFs SHOULD have executed
+      expect(result.stateUpdates).toContain('dialog2:raf1:scroll');
+      expect(result.stateUpdates).toContain('dialog2:raf2:loading:false');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('verifies cleanup on component unmount', () => {
@@ -189,7 +207,7 @@ describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
 
 describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () => {
   test('demonstrates the race condition problem with setTimeout', () => {
-    // BEFORE FIX: Using arbitrary 200ms timeout
+    // BEFORE FIX: Using arbitrary 200ms timeout (Simulated)
     const simulateOldBehavior = async () => {
       let loadingState = false;
       const events: string[] = [];
@@ -229,10 +247,17 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 
   test('verifies requestAnimationFrame ensures proper render synchronization', () => {
     // AFTER FIX: Using requestAnimationFrame
+    // This simulation mirrors the handleSelectDialog logic in ThreeColumnLayout.tsx
     const simulateNewBehavior = () => {
       let loadingState = false;
       let scrollPosition = 100; // Simulated scroll
       const events: string[] = [];
+
+      // Mock RAF behavior
+      const requestAnimationFrameMock = (callback: () => void) => {
+        callback();
+        return Math.random();
+      };
 
       const selectDialog = () => {
         loadingState = true;
@@ -241,25 +266,21 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
         // Simulate state update
         events.push('state:updated');
 
-        // Mock requestAnimationFrame behavior
-        // In real implementation, this waits for browser paint
-        const raf1 = () => {
+        // Use nested requestAnimationFrame to ensure proper sequencing
+        requestAnimationFrameMock(() => {
           events.push('raf1:frame_painted');
 
           // Scroll happens after content changes
           scrollPosition = 0;
           events.push('scroll:0');
 
-          const raf2 = () => {
+          // Wait one more frame to ensure rendering is complete
+          requestAnimationFrameMock(() => {
             events.push('raf2:render_complete');
             loadingState = false;
             events.push('loading:false');
-          };
-
-          raf2();
-        };
-
-        raf1();
+          });
+        });
       };
 
       selectDialog();
@@ -343,18 +364,18 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 });
 
 describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', () => {
-  test('demonstrates cache stale data problem with useEffect', () => {
-    // BEFORE FIX: Cache cleared in useEffect runs AFTER render
+  test('demonstrates stale data with useEffect cache clearing', () => {
+    // BEFORE FIX: Cache cleared in useEffect (too late for next render)
     const simulateUseEffectTiming = () => {
       const cache = new Map<string, any>();
       let semanticModel = { version: 1, dialogs: { DialogA: {} } };
+      let prevSemanticModel = semanticModel;
       const events: string[] = [];
 
       // Simulate initial render
       const render1 = () => {
         events.push('render1:start');
 
-        // buildFunctionTree is called during render
         const buildFunctionTree = (name: string) => {
           if (cache.has(name)) {
             events.push(`render1:${name}:cache-hit`);
@@ -368,16 +389,15 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
 
         buildFunctionTree('DialogA');
         events.push('render1:end');
-      };
 
-      // Simulate useEffect running after render
-      const effect1 = () => {
-        events.push('effect1:cache-clear');
-        // Cache cleared in useEffect - too late!
+        // useEffect runs AFTER render
+        if (semanticModel !== prevSemanticModel) {
+          cache.clear();
+          prevSemanticModel = semanticModel;
+        }
       };
 
       render1();
-      effect1();
 
       // Semantic model changes
       semanticModel = { version: 2, dialogs: { DialogA: {} } };
@@ -386,11 +406,17 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
       const render2 = () => {
         events.push('render2:start');
 
-        // buildFunctionTree recreated with new semanticModel
+        // Cache NOT cleared yet (wait for useEffect)
+
         const buildFunctionTree = (name: string) => {
           if (cache.has(name)) {
-            events.push(`render2:${name}:cache-hit-STALE`); // BUG: Using v1 data!
-            return cache.get(name);
+            const cached = cache.get(name);
+            if (cached.version !== semanticModel.version) {
+              events.push(`render2:${name}:cache-hit-STALE`);
+            } else {
+              events.push(`render2:${name}:cache-hit`);
+            }
+            return cached;
           }
           events.push(`render2:${name}:cache-miss`);
           const result = { name, version: semanticModel.version };
@@ -401,16 +427,16 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
         const result = buildFunctionTree('DialogA');
         events.push(`render2:result-version:${result.version}`);
         events.push('render2:end');
-      };
 
-      // Simulate useEffect running AFTER render2
-      const effect2 = () => {
-        cache.clear();
-        events.push('effect2:cache-clear-too-late');
+        // useEffect runs AFTER render
+        if (semanticModel !== prevSemanticModel) {
+          events.push('effect2:cache-clear-too-late');
+          cache.clear();
+          prevSemanticModel = semanticModel;
+        }
       };
 
       render2();
-      effect2();
 
       return events;
     };
@@ -572,6 +598,7 @@ describe('ThreeColumnLayout - Bug #3: Incorrect useTransition Destructuring', ()
     // Problem: isPending is ignored, we only get startTransition
 
     expect(startTransition).toBeDefined();
+    expect(typeof startTransition).toBe('boolean');
     // But we lost access to isPending state!
   });
 
@@ -586,6 +613,7 @@ describe('ThreeColumnLayout - Bug #3: Incorrect useTransition Destructuring', ()
 
     expect(isPending).toBe(false);
     expect(startTransition).toBeDefined();
+    expect(typeof startTransition).toBe('function');
     // Now we have access to both values!
   });
 

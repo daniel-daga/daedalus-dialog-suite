@@ -159,9 +159,9 @@ describe('searchStore', () => {
       ['Gorn', [{ dialogName: 'DIA_Gorn_Trade', npc: 'Gorn', filePath: '/test/gorn.d' }]]
     ]);
 
-    it('should find matches in dialog names', () => {
+    it('should find matches in dialog names', async () => {
       useSearchStore.getState().setSearchQuery('Diego');
-      useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
+      await useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
 
       const results = useSearchStore.getState().searchResults;
       const dialogResult = results.find(r => r.type === 'dialog' && r.name === 'DIA_Diego_Info');
@@ -169,9 +169,9 @@ describe('searchStore', () => {
       expect(dialogResult).toBeDefined();
     });
 
-    it('should find matches in dialog text content', () => {
+    it('should find matches in dialog text content', async () => {
       useSearchStore.getState().setSearchQuery('Old Camp');
-      useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
+      await useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
 
       const results = useSearchStore.getState().searchResults;
       const textResult = results.find(r => r.type === 'text');
@@ -180,9 +180,9 @@ describe('searchStore', () => {
       expect(textResult?.match).toContain('Old Camp');
     });
 
-    it('should find matches in function names', () => {
+    it('should find matches in function names', async () => {
       useSearchStore.getState().setSearchQuery('Trade_Info');
-      useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
+      await useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
 
       const results = useSearchStore.getState().searchResults;
       const functionResult = results.find(r => r.type === 'function');
@@ -190,9 +190,9 @@ describe('searchStore', () => {
       expect(functionResult).toBeDefined();
     });
 
-    it('should find matches in NPC names', () => {
+    it('should find matches in NPC names', async () => {
       useSearchStore.getState().setSearchQuery('Gorn');
-      useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
+      await useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
 
       const results = useSearchStore.getState().searchResults;
       const npcResult = results.find(r => r.type === 'npc');
@@ -200,10 +200,10 @@ describe('searchStore', () => {
       expect(npcResult).toBeDefined();
     });
 
-    it('should respect search scope options', () => {
+    it('should respect search scope options', async () => {
       useSearchStore.getState().setSearchQuery('Diego');
       useSearchStore.getState().setSearchScope({ dialogNames: false, npcNames: false });
-      useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
+      await useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
 
       const results = useSearchStore.getState().searchResults;
       const dialogResult = results.find(r => r.type === 'dialog');
@@ -213,16 +213,16 @@ describe('searchStore', () => {
       expect(npcResult).toBeUndefined();
     });
 
-    it('should return empty results for empty query', () => {
+    it('should return empty results for empty query', async () => {
       useSearchStore.getState().setSearchQuery('');
-      useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
+      await useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
 
       expect(useSearchStore.getState().searchResults).toHaveLength(0);
     });
 
-    it('should be case insensitive', () => {
+    it('should be case insensitive', async () => {
       useSearchStore.getState().setSearchQuery('diego');
-      useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
+      await useSearchStore.getState().performSearch(mockSemanticModel, mockDialogIndex);
 
       const results = useSearchStore.getState().searchResults;
       expect(results.length).toBeGreaterThan(0);

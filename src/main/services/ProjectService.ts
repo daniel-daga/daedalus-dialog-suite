@@ -79,22 +79,13 @@ class ProjectService {
 
         // Scan for matching closing brace, handling nested braces
         while (braceCount > 0 && currentIndex < content.length) {
-          // Find next brace (open or close)
-          const nextClose = content.indexOf('}', currentIndex);
-          const nextOpen = content.indexOf('{', currentIndex);
-
-          if (nextClose === -1) {
-            // Malformed: no closing brace found
-            break;
-          }
-
-          if (nextOpen !== -1 && nextOpen < nextClose) {
+          const char = content[currentIndex];
+          if (char === '{') {
             braceCount++;
-            currentIndex = nextOpen + 1;
-          } else {
+          } else if (char === '}') {
             braceCount--;
-            currentIndex = nextClose + 1;
           }
+          currentIndex++;
         }
 
         if (braceCount === 0) {
@@ -138,11 +129,30 @@ class ProjectService {
     for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
       const batch = allFiles.slice(i, i + BATCH_SIZE);
 
+      // Serialize CPU-intensive parsing to avoid blocking the event loop
+      // We read files in parallel (I/O bound), but parse sequentially (CPU bound) with yields
+      let parsingChain = Promise.resolve();
+
       const results = await Promise.all(
         batch.map(async (filePath) => {
           try {
             const content = await fs.readFile(filePath, 'utf-8');
-            return this.extractDialogMetadata(content, filePath);
+
+            // Queue parsing task
+            return new Promise<DialogMetadata[]>((resolve) => {
+              const task = async () => {
+                // Yield to event loop to allow UI updates/interactivity
+                await new Promise<void>((r) => setImmediate(r));
+                try {
+                  resolve(this.extractDialogMetadata(content, filePath));
+                } catch {
+                  resolve([]);
+                }
+              };
+
+              // Append to chain, running regardless of previous task success
+              parsingChain = parsingChain.then(task, task);
+            });
           } catch {
             // Silently skip files that can't be read
             return [];
