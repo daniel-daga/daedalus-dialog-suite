@@ -156,7 +156,7 @@ describe('Condition Saving Bug', () => {
       semanticModel = newModel;
     });
 
-    // FIX: Callbacks should get latest semantic model from store, not use closure
+    // Callbacks should get latest semantic model from store, not use closure
     const createCallbacks = (getSemanticModel: () => any) => ({
       onUpdateDialog: (updatedDialog: any) => {
         const currentModel = getSemanticModel(); // Get latest from store
