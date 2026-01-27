@@ -257,7 +257,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   };
 
-  const handleSelectDialog = (dialogName: string, functionName: string | null) => {
+  const handleSelectDialog = useCallback((dialogName: string, functionName: string | null) => {
     // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
     if (rafId1Ref.current !== null) {
       cancelAnimationFrame(rafId1Ref.current);
@@ -292,9 +292,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         });
       });
     });
-  };
+  }, []);
 
-  const handleToggleDialogExpand = (dialogName: string) => {
+  const handleToggleDialogExpand = useCallback((dialogName: string) => {
     setExpandedDialogs((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(dialogName)) {
@@ -304,9 +304,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       }
       return newSet;
     });
-  };
+  }, []);
 
-  const handleToggleChoiceExpand = (choiceKey: string) => {
+  const handleToggleChoiceExpand = useCallback((choiceKey: string) => {
     setExpandedChoices((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(choiceKey)) {
@@ -316,7 +316,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       }
       return newSet;
     });
-  };
+  }, []);
 
   const handleNavigateToFunction = (functionName: string) => {
     // Navigate to the choice function
