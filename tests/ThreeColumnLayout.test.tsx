@@ -207,7 +207,7 @@ describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
 
 describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () => {
   test('demonstrates the race condition problem with setTimeout', () => {
-    // BEFORE FIX: Using arbitrary 200ms timeout
+    // BEFORE FIX: Using arbitrary 200ms timeout (Simulated)
     const simulateOldBehavior = async () => {
       let loadingState = false;
       const events: string[] = [];
