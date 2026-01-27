@@ -151,11 +151,21 @@ export class FileService {
       0xE8, 0xF2, 0xF5, 0xF8
     ];
 
-    // Check if any of these bytes appear in the file
+    // Optimization: Limit the scan to the first 256KB of the file
+    // This provides a massive performance boost for large files (O(1) vs O(N))
+    // while still being accurate enough for encoding detection as special characters
+    // typically appear early in text files.
+    const MAX_SCAN_SIZE = 256 * 1024; // 256KB
+    const limit = Math.min(buffer.length, MAX_SCAN_SIZE);
+
+    // Create a view of the buffer (no copy)
+    const sample = buffer.subarray(0, limit);
+
+    // Check if any of these bytes appear in the sample
     // Optimization: Use buffer.includes() which uses native memchr and is significantly faster
     // than a JavaScript loop, even when checking multiple bytes.
     for (const byte of centralEuropeanBytes) {
-      if (buffer.includes(byte)) {
+      if (sample.includes(byte)) {
         return true;
       }
     }
