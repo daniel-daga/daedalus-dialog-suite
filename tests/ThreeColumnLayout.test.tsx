@@ -1348,7 +1348,7 @@ describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () =>
       { dialogName: 'DIA_Arog_Hallo', npc: 'SLD_99005_Arog', filePath: '/path/to/arog.d' },
     ]);
 
-    // FIX: Convert dialogIndex to npcMap
+    // AFTER FIX: Convert dialogIndex to npcMap
     const npcMap = new Map<string, string[]>();
     if (isProjectMode) {
       dialogIndex.forEach((dialogMetadataArray, npcId) => {
