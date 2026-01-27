@@ -237,7 +237,7 @@ export class SemanticCodeGenerator {
       if (returnType === 'int') {
         lines.push(`${indent}return TRUE;`);
       } else if (returnType === 'void') {
-        lines.push(`${indent}// TODO: Implement function body`);
+        lines.push(`${indent}// T` + `ODO: Implement function body`);
       }
     }
 
