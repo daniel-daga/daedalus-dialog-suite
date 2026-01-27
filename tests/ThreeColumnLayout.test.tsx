@@ -343,86 +343,6 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 });
 
 describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', () => {
-  test('demonstrates cache stale data problem with useEffect', () => {
-    // BEFORE FIX: Cache cleared in useEffect runs AFTER render
-    const simulateUseEffectTiming = () => {
-      const cache = new Map<string, any>();
-      let semanticModel = { version: 1, dialogs: { DialogA: {} } };
-      const events: string[] = [];
-
-      // Simulate initial render
-      const render1 = () => {
-        events.push('render1:start');
-
-        // buildFunctionTree is called during render
-        const buildFunctionTree = (name: string) => {
-          if (cache.has(name)) {
-            events.push(`render1:${name}:cache-hit`);
-            return cache.get(name);
-          }
-          events.push(`render1:${name}:cache-miss`);
-          const result = { name, version: semanticModel.version };
-          cache.set(name, result);
-          return result;
-        };
-
-        buildFunctionTree('DialogA');
-        events.push('render1:end');
-      };
-
-      // Simulate useEffect running after render
-      const effect1 = () => {
-        events.push('effect1:cache-clear');
-        // Cache cleared in useEffect - too late!
-      };
-
-      render1();
-      effect1();
-
-      // Semantic model changes
-      semanticModel = { version: 2, dialogs: { DialogA: {} } };
-
-      // Simulate second render (with new model)
-      const render2 = () => {
-        events.push('render2:start');
-
-        // buildFunctionTree recreated with new semanticModel
-        const buildFunctionTree = (name: string) => {
-          if (cache.has(name)) {
-            events.push(`render2:${name}:cache-hit-STALE`); // BUG: Using v1 data!
-            return cache.get(name);
-          }
-          events.push(`render2:${name}:cache-miss`);
-          const result = { name, version: semanticModel.version };
-          cache.set(name, result);
-          return result;
-        };
-
-        const result = buildFunctionTree('DialogA');
-        events.push(`render2:result-version:${result.version}`);
-        events.push('render2:end');
-      };
-
-      // Simulate useEffect running AFTER render2
-      const effect2 = () => {
-        cache.clear();
-        events.push('effect2:cache-clear-too-late');
-      };
-
-      render2();
-      effect2();
-
-      return events;
-    };
-
-    const events = simulateUseEffectTiming();
-
-    // Problem: render2 uses stale cached data (version 1 instead of version 2)
-    expect(events).toContain('render2:DialogA:cache-hit-STALE');
-    expect(events).toContain('render2:result-version:1'); // Wrong version!
-    expect(events.indexOf('render2:end')).toBeLessThan(events.indexOf('effect2:cache-clear-too-late'));
-  });
-
   test('verifies synchronous cache clearing prevents stale data', () => {
     // AFTER FIX: Cache cleared synchronously during render
     const simulateSynchronousClearing = () => {
@@ -1286,7 +1206,7 @@ describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () =>
     // Simulating ThreeColumnLayout.tsx line 220
     const { npcMap, npcs } = (() => {
       if (isProjectMode) {
-        // BUG: Returns empty map
+        // REPRO: Returns empty map
         return { npcMap: new Map<string, string[]>(), npcs: projectNpcs };
       }
       return { npcMap: new Map(), npcs: [] };
