@@ -102,7 +102,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
     if (!filePath) return;
 
-    // Get latest semantic model from store to avoid stale closures
+    // Get latest model from store to avoid closure staleness
     const latestFileState = useEditorStore.getState().openFiles.get(filePath);
     const latestModel = latestFileState?.semanticModel;
 
@@ -189,8 +189,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     let newAction: any;
 
     // Handle choice specially to create target function
-    if (actionType === 'choice' && semanticModel) {
-      const newFunctionName = generateUniqueChoiceFunctionName(dialogName, semanticModel);
+    if (actionType === 'choice') {
+      // Use latest model for checking uniqueness if possible
+      // In project mode, semanticModel prop (merged model) is used
+      // In single file mode, we fetch latest from store to ensure we don't use stale data
+      const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+      const modelForUniqueness = isProjectMode ? semanticModel : (latestFileState?.semanticModel || semanticModel);
+
+      if (!modelForUniqueness) return;
+
+      const newFunctionName = generateUniqueChoiceFunctionName(dialogName, modelForUniqueness);
       const newFunction = createEmptyFunction(newFunctionName);
 
       // Add the new function to the semantic model
@@ -210,13 +218,12 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       });
     }
 
-    // Update function with new action
-    const updatedFunction = {
-      ...currentFunction,
-      actions: [...(currentFunction.actions || []), newAction]
-    };
-    setFunction(updatedFunction);
-  }, [currentFunction, semanticModel, dialogName, filePath, updateFunction, setFunction]);
+    // Update function with new action using functional update to avoid stale closures
+    setFunction((prevFunc: any) => ({
+      ...prevFunc,
+      actions: [...(prevFunc.actions || []), newAction]
+    }));
+  }, [currentFunction, semanticModel, dialogName, filePath, updateFunction, setFunction, isProjectMode]);
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
