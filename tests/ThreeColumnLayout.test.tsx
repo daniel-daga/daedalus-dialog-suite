@@ -247,10 +247,17 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 
   test('verifies requestAnimationFrame ensures proper render synchronization', () => {
     // AFTER FIX: Using requestAnimationFrame
+    // This simulation mirrors the handleSelectDialog logic in ThreeColumnLayout.tsx
     const simulateNewBehavior = () => {
       let loadingState = false;
       let scrollPosition = 100; // Simulated scroll
       const events: string[] = [];
+
+      // Mock RAF behavior
+      const requestAnimationFrameMock = (callback: () => void) => {
+        callback();
+        return Math.random();
+      };
 
       const selectDialog = () => {
         loadingState = true;
@@ -259,25 +266,21 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
         // Simulate state update
         events.push('state:updated');
 
-        // Mock requestAnimationFrame behavior
-        // In real implementation, this waits for browser paint
-        const raf1 = () => {
+        // Use nested requestAnimationFrame to ensure proper sequencing
+        requestAnimationFrameMock(() => {
           events.push('raf1:frame_painted');
 
           // Scroll happens after content changes
           scrollPosition = 0;
           events.push('scroll:0');
 
-          const raf2 = () => {
+          // Wait one more frame to ensure rendering is complete
+          requestAnimationFrameMock(() => {
             events.push('raf2:render_complete');
             loadingState = false;
             events.push('loading:false');
-          };
-
-          raf2();
-        };
-
-        raf1();
+          });
+        });
       };
 
       selectDialog();
