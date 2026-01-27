@@ -58,8 +58,8 @@ export class SemanticModelBuilderVisitor {
       });
     }
 
-    for (const child of node.children) {
-      this.checkForSyntaxErrors(child, sourceCode);
+    for (let i = 0; i < node.childCount; i++) {
+      this.checkForSyntaxErrors(node.child(i), sourceCode);
     }
   }
 
