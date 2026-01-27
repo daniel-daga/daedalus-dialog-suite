@@ -364,6 +364,91 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 });
 
 describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', () => {
+  test('demonstrates stale data with useEffect cache clearing', () => {
+    // BEFORE FIX: Cache cleared in useEffect (too late for next render)
+    const simulateUseEffectTiming = () => {
+      const cache = new Map<string, any>();
+      let semanticModel = { version: 1, dialogs: { DialogA: {} } };
+      let prevSemanticModel = semanticModel;
+      const events: string[] = [];
+
+      // Simulate initial render
+      const render1 = () => {
+        events.push('render1:start');
+
+        const buildFunctionTree = (name: string) => {
+          if (cache.has(name)) {
+            events.push(`render1:${name}:cache-hit`);
+            return cache.get(name);
+          }
+          events.push(`render1:${name}:cache-miss`);
+          const result = { name, version: semanticModel.version };
+          cache.set(name, result);
+          return result;
+        };
+
+        buildFunctionTree('DialogA');
+        events.push('render1:end');
+
+        // useEffect runs AFTER render
+        if (semanticModel !== prevSemanticModel) {
+          cache.clear();
+          prevSemanticModel = semanticModel;
+        }
+      };
+
+      render1();
+
+      // Semantic model changes
+      semanticModel = { version: 2, dialogs: { DialogA: {} } };
+
+      // Simulate second render (with new model)
+      const render2 = () => {
+        events.push('render2:start');
+
+        // Cache NOT cleared yet (wait for useEffect)
+
+        const buildFunctionTree = (name: string) => {
+          if (cache.has(name)) {
+            const cached = cache.get(name);
+            if (cached.version !== semanticModel.version) {
+              events.push(`render2:${name}:cache-hit-STALE`);
+            } else {
+              events.push(`render2:${name}:cache-hit`);
+            }
+            return cached;
+          }
+          events.push(`render2:${name}:cache-miss`);
+          const result = { name, version: semanticModel.version };
+          cache.set(name, result);
+          return result;
+        };
+
+        const result = buildFunctionTree('DialogA');
+        events.push(`render2:result-version:${result.version}`);
+        events.push('render2:end');
+
+        // useEffect runs AFTER render
+        if (semanticModel !== prevSemanticModel) {
+          events.push('effect2:cache-clear-too-late');
+          cache.clear();
+          prevSemanticModel = semanticModel;
+        }
+      };
+
+      render2();
+
+      return events;
+    };
+
+    const events = simulateUseEffectTiming();
+
+    // Problem: render2 uses stale cached data (version 1 instead of version 2)
+    expect(events).toContain('render2:DialogA:cache-hit-STALE');
+    expect(events).toContain('render2:result-version:1'); // Wrong version!
+    expect(events.indexOf('render2:end')).toBeLessThan(events.indexOf('effect2:cache-clear-too-late'));
+  });
+
   test('verifies synchronous cache clearing prevents stale data', () => {
     // AFTER FIX: Cache cleared synchronously during render
     const simulateSynchronousClearing = () => {
