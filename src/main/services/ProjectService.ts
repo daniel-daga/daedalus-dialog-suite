@@ -79,22 +79,13 @@ class ProjectService {
 
         // Scan for matching closing brace, handling nested braces
         while (braceCount > 0 && currentIndex < content.length) {
-          // Find next brace (open or close)
-          const nextClose = content.indexOf('}', currentIndex);
-          const nextOpen = content.indexOf('{', currentIndex);
-
-          if (nextClose === -1) {
-            // Malformed: no closing brace found
-            break;
-          }
-
-          if (nextOpen !== -1 && nextOpen < nextClose) {
+          const char = content[currentIndex];
+          if (char === '{') {
             braceCount++;
-            currentIndex = nextOpen + 1;
-          } else {
+          } else if (char === '}') {
             braceCount--;
-            currentIndex = nextClose + 1;
           }
+          currentIndex++;
         }
 
         if (braceCount === 0) {
