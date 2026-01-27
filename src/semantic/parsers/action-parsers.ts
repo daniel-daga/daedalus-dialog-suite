@@ -213,15 +213,29 @@ export class ActionParsers {
     }
 
     let nextSibling = parent.nextSibling;
+    let distance = 0;
+    const MAX_SEARCH_DISTANCE = 5;
 
-    while (nextSibling && nextSibling.type !== 'comment') {
+    while (nextSibling && distance < MAX_SEARCH_DISTANCE) {
+      if (nextSibling.type === 'comment') {
+        return nextSibling.text.replace(/^\/\/\s*/, '').trim();
+      }
+
+      // Stop if we hit another statement, declaration, or block end
+      // This prevents finding comments that belong to subsequent code
+      if (
+        nextSibling.type.endsWith('_statement') ||
+        nextSibling.type.endsWith('_declaration') ||
+        nextSibling.type === 'block' ||
+        nextSibling.type === '}'
+      ) {
+        return null;
+      }
+
       nextSibling = nextSibling.nextSibling;
+      distance++;
     }
 
-    if (!nextSibling) {
-      return null;
-    }
-
-    return nextSibling.text.replace(/^\/\/\s*/, '').trim();
+    return null;
   }
 }
