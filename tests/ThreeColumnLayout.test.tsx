@@ -492,6 +492,7 @@ describe('ThreeColumnLayout - Bug #3: Incorrect useTransition Destructuring', ()
     // Problem: isPending is ignored, we only get startTransition
 
     expect(startTransition).toBeDefined();
+    expect(typeof startTransition).toBe('boolean');
     // But we lost access to isPending state!
   });
 
@@ -506,6 +507,7 @@ describe('ThreeColumnLayout - Bug #3: Incorrect useTransition Destructuring', ()
 
     expect(isPending).toBe(false);
     expect(startTransition).toBeDefined();
+    expect(typeof startTransition).toBe('function');
     // Now we have access to both values!
   });
 
