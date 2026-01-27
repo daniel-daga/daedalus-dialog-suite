@@ -35,6 +35,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
   const [isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
+  void isPending;
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
   const [isSearchOpen, setIsSearchOpen] = useState(false); // Search panel visibility
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
