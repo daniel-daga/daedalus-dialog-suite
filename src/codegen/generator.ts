@@ -18,6 +18,9 @@ export interface CodeGeneratorOptions {
   uppercaseKeywords?: boolean;
 }
 
+const PROPERTY_ORDER = ['npc', 'nr', 'condition', 'information', 'permanent', 'important', 'description'];
+const ORDERED_KEYS = new Set(PROPERTY_ORDER);
+
 export class SemanticCodeGenerator {
   private options: Required<CodeGeneratorOptions>;
 
@@ -130,12 +133,8 @@ export class SemanticCodeGenerator {
     lines.push(`${instanceKeyword} ${dialog.name}(C_INFO)`);
     lines.push('{');
 
-    // Generate properties in conventional order
-    const propertyOrder = ['npc', 'nr', 'condition', 'information', 'permanent', 'important', 'description'];
-    const orderedKeys = new Set(propertyOrder);
-
     // Output ordered properties first
-    for (const key of propertyOrder) {
+    for (const key of PROPERTY_ORDER) {
       if (key in dialog.properties) {
         const value = dialog.properties[key];
         lines.push(`${indent}${key}${this.alignProperty(key)}= ${this.formatValue(value)};`);
@@ -144,7 +143,7 @@ export class SemanticCodeGenerator {
 
     // Output remaining properties (using Set for O(1) lookup)
     for (const key in dialog.properties) {
-      if (!orderedKeys.has(key)) {
+      if (!ORDERED_KEYS.has(key)) {
         const value = dialog.properties[key];
         lines.push(`${indent}${key}${this.alignProperty(key)}= ${this.formatValue(value)};`);
       }
