@@ -213,10 +213,10 @@ export class ActionParsers {
     }
 
     let nextSibling = parent.nextSibling;
-    let distance = 0;
     const MAX_SEARCH_DISTANCE = 5;
 
-    while (nextSibling && distance < MAX_SEARCH_DISTANCE) {
+    // Limit search distance to prevent O(N^2) complexity in large blocks
+    for (let distance = 0; nextSibling && distance < MAX_SEARCH_DISTANCE; distance++) {
       if (nextSibling.type === 'comment') {
         return nextSibling.text.replace(/^\/\/\s*/, '').trim();
       }
@@ -233,7 +233,6 @@ export class ActionParsers {
       }
 
       nextSibling = nextSibling.nextSibling;
-      distance++;
     }
 
     return null;
