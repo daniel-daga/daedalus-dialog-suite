@@ -87,8 +87,9 @@ export class SemanticModelBuilderVisitor {
       }
     }
 
-    for (const child of node.children) {
-      this.pass1_createObjects(child);
+    const childCount = node.childCount;
+    for (let i = 0; i < childCount; i++) {
+      this.pass1_createObjects(node.child(i));
     }
   }
 
