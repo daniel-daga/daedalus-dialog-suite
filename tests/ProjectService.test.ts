@@ -5,6 +5,7 @@
  * - Scan directories recursively for .d files
  * - Extract NPCs from dialog INSTANCE declarations
  * - Build lightweight project index without full parsing
+ * @jest-environment node
  */
 
 import * as fs from 'fs';

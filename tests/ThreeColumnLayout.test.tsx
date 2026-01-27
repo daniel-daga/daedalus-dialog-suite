@@ -55,60 +55,78 @@ describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
   });
 
   test('verifies RAF cleanup prevents memory leaks and conflicts', () => {
-    // AFTER FIX: Cancel previous RAF callbacks when new dialog selected
-    const simulateWithCleanup = () => {
-      const stateUpdates: string[] = [];
-      let rafId1: number | null = null;
-      let rafId2: number | null = null;
+    // Use fake timers to verify async RAF cancellation
+    jest.useFakeTimers();
 
-      // Simulate first dialog selection
-      const selectDialog1 = () => {
-        stateUpdates.push('dialog1:loading:true');
+    try {
+      // AFTER FIX: Cancel previous RAF callbacks when new dialog selected
+      const simulateWithCleanup = () => {
+        const stateUpdates: string[] = [];
+        let rafId1: number | null = null;
+        let rafId2: number | null = null;
 
-        rafId1 = requestAnimationFrame(() => {
-          stateUpdates.push('dialog1:raf1:scroll');
+        // Simulate first dialog selection
+        const selectDialog1 = () => {
+          stateUpdates.push('dialog1:loading:true');
 
-          requestAnimationFrame(() => {
-            stateUpdates.push('dialog1:raf2:loading:false');
+          rafId1 = requestAnimationFrame(() => {
+            stateUpdates.push('dialog1:raf1:scroll');
+
+            requestAnimationFrame(() => {
+              stateUpdates.push('dialog1:raf2:loading:false');
+            });
           });
-        });
 
-        return rafId1;
+          return rafId1;
+        };
+
+        // Simulate rapid second dialog selection WITH cleanup
+        const selectDialog2 = (previousRafId: number | null) => {
+          // CLEANUP: Cancel previous RAF
+          if (previousRafId !== null) {
+            cancelAnimationFrame(previousRafId);
+            stateUpdates.push('dialog1:cancelled');
+          }
+
+          stateUpdates.push('dialog2:loading:true');
+
+          rafId2 = requestAnimationFrame(() => {
+            stateUpdates.push('dialog2:raf1:scroll');
+
+            requestAnimationFrame(() => {
+              stateUpdates.push('dialog2:raf2:loading:false');
+            });
+          });
+
+          return rafId2;
+        };
+
+        const raf1 = selectDialog1();
+        selectDialog2(raf1); // Clean up dialog1's RAF!
+
+        return { stateUpdates };
       };
 
-      // Simulate rapid second dialog selection WITH cleanup
-      const selectDialog2 = (previousRafId: number | null) => {
-        // CLEANUP: Cancel previous RAF
-        if (previousRafId !== null) {
-          cancelAnimationFrame(previousRafId);
-          stateUpdates.push('dialog1:cancelled');
-        }
+      const result = simulateWithCleanup();
 
-        stateUpdates.push('dialog2:loading:true');
+      // Verify cleanup happened (synchronous check)
+      expect(result.stateUpdates).toContain('dialog1:cancelled');
+      // Only dialog2's state updates should execute (synchronous check)
+      expect(result.stateUpdates).toContain('dialog2:loading:true');
 
-        rafId2 = requestAnimationFrame(() => {
-          stateUpdates.push('dialog2:raf1:scroll');
+      // Fast-forward RAFs to verify cancellation worked
+      jest.runAllTimers();
 
-          requestAnimationFrame(() => {
-            stateUpdates.push('dialog2:raf2:loading:false');
-          });
-        });
+      // Dialog 1 RAFs should NOT have executed (cancelled)
+      expect(result.stateUpdates).not.toContain('dialog1:raf1:scroll');
+      expect(result.stateUpdates).not.toContain('dialog1:raf2:loading:false');
 
-        return rafId2;
-      };
-
-      const raf1 = selectDialog1();
-      selectDialog2(raf1); // Clean up dialog1's RAF!
-
-      return { stateUpdates };
-    };
-
-    const result = simulateWithCleanup();
-
-    // Verify cleanup happened
-    expect(result.stateUpdates).toContain('dialog1:cancelled');
-    // Only dialog2's state updates should execute
-    expect(result.stateUpdates).toContain('dialog2:loading:true');
+      // Dialog 2 RAFs SHOULD have executed
+      expect(result.stateUpdates).toContain('dialog2:raf1:scroll');
+      expect(result.stateUpdates).toContain('dialog2:raf2:loading:false');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('verifies cleanup on component unmount', () => {
@@ -189,7 +207,7 @@ describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
 
 describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () => {
   test('demonstrates the race condition problem with setTimeout', () => {
-    // BEFORE FIX: Using arbitrary 200ms timeout
+    // BEFORE FIX: Using arbitrary 200ms timeout (Simulated)
     const simulateOldBehavior = async () => {
       let loadingState = false;
       const events: string[] = [];
@@ -229,10 +247,17 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 
   test('verifies requestAnimationFrame ensures proper render synchronization', () => {
     // AFTER FIX: Using requestAnimationFrame
+    // This simulation mirrors the handleSelectDialog logic in ThreeColumnLayout.tsx
     const simulateNewBehavior = () => {
       let loadingState = false;
       let scrollPosition = 100; // Simulated scroll
       const events: string[] = [];
+
+      // Mock RAF behavior
+      const requestAnimationFrameMock = (callback: () => void) => {
+        callback();
+        return Math.random();
+      };
 
       const selectDialog = () => {
         loadingState = true;
@@ -241,25 +266,21 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
         // Simulate state update
         events.push('state:updated');
 
-        // Mock requestAnimationFrame behavior
-        // In real implementation, this waits for browser paint
-        const raf1 = () => {
+        // Use nested requestAnimationFrame to ensure proper sequencing
+        requestAnimationFrameMock(() => {
           events.push('raf1:frame_painted');
 
           // Scroll happens after content changes
           scrollPosition = 0;
           events.push('scroll:0');
 
-          const raf2 = () => {
+          // Wait one more frame to ensure rendering is complete
+          requestAnimationFrameMock(() => {
             events.push('raf2:render_complete');
             loadingState = false;
             events.push('loading:false');
-          };
-
-          raf2();
-        };
-
-        raf1();
+          });
+        });
       };
 
       selectDialog();
@@ -343,18 +364,18 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 });
 
 describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', () => {
-  test('demonstrates cache stale data problem with useEffect', () => {
-    // BEFORE FIX: Cache cleared in useEffect runs AFTER render
+  test('demonstrates stale data with useEffect cache clearing', () => {
+    // BEFORE FIX: Cache cleared in useEffect (too late for next render)
     const simulateUseEffectTiming = () => {
       const cache = new Map<string, any>();
       let semanticModel = { version: 1, dialogs: { DialogA: {} } };
+      let prevSemanticModel = semanticModel;
       const events: string[] = [];
 
       // Simulate initial render
       const render1 = () => {
         events.push('render1:start');
 
-        // buildFunctionTree is called during render
         const buildFunctionTree = (name: string) => {
           if (cache.has(name)) {
             events.push(`render1:${name}:cache-hit`);
@@ -368,16 +389,15 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
 
         buildFunctionTree('DialogA');
         events.push('render1:end');
-      };
 
-      // Simulate useEffect running after render
-      const effect1 = () => {
-        events.push('effect1:cache-clear');
-        // Cache cleared in useEffect - too late!
+        // useEffect runs AFTER render
+        if (semanticModel !== prevSemanticModel) {
+          cache.clear();
+          prevSemanticModel = semanticModel;
+        }
       };
 
       render1();
-      effect1();
 
       // Semantic model changes
       semanticModel = { version: 2, dialogs: { DialogA: {} } };
@@ -386,11 +406,17 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
       const render2 = () => {
         events.push('render2:start');
 
-        // buildFunctionTree recreated with new semanticModel
+        // Cache NOT cleared yet (wait for useEffect)
+
         const buildFunctionTree = (name: string) => {
           if (cache.has(name)) {
-            events.push(`render2:${name}:cache-hit-STALE`); // BUG: Using v1 data!
-            return cache.get(name);
+            const cached = cache.get(name);
+            if (cached.version !== semanticModel.version) {
+              events.push(`render2:${name}:cache-hit-STALE`);
+            } else {
+              events.push(`render2:${name}:cache-hit`);
+            }
+            return cached;
           }
           events.push(`render2:${name}:cache-miss`);
           const result = { name, version: semanticModel.version };
@@ -401,16 +427,16 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
         const result = buildFunctionTree('DialogA');
         events.push(`render2:result-version:${result.version}`);
         events.push('render2:end');
-      };
 
-      // Simulate useEffect running AFTER render2
-      const effect2 = () => {
-        cache.clear();
-        events.push('effect2:cache-clear-too-late');
+        // useEffect runs AFTER render
+        if (semanticModel !== prevSemanticModel) {
+          events.push('effect2:cache-clear-too-late');
+          cache.clear();
+          prevSemanticModel = semanticModel;
+        }
       };
 
       render2();
-      effect2();
 
       return events;
     };
@@ -572,6 +598,7 @@ describe('ThreeColumnLayout - Bug #3: Incorrect useTransition Destructuring', ()
     // Problem: isPending is ignored, we only get startTransition
 
     expect(startTransition).toBeDefined();
+    expect(typeof startTransition).toBe('boolean');
     // But we lost access to isPending state!
   });
 
@@ -586,6 +613,7 @@ describe('ThreeColumnLayout - Bug #3: Incorrect useTransition Destructuring', ()
 
     expect(isPending).toBe(false);
     expect(startTransition).toBeDefined();
+    expect(typeof startTransition).toBe('function');
     // Now we have access to both values!
   });
 
@@ -1278,30 +1306,46 @@ describe('ThreeColumnLayout - Bug #6: Exponential Tree Building Fix', () => {
  */
 
 describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () => {
-  test('demonstrates empty npcMap in project mode', () => {
-    // BEFORE FIX: npcMap is intentionally empty in project mode
+  test('verifies npcMap is correctly populated in project mode', () => {
+    // AFTER FIX: npcMap is populated from dialogIndex
     const isProjectMode = true;
     const projectNpcs = ['SLD_99003_Farim', 'SLD_99005_Arog', 'Xardas'];
 
-    // Simulating ThreeColumnLayout.tsx line 220
+    // This is what ProjectService returns and projectStore stores
+    const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
+    dialogIndex.set('SLD_99003_Farim', [
+      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
+    ]);
+    dialogIndex.set('SLD_99005_Arog', [
+      { dialogName: 'DIA_Arog_Hallo', npc: 'SLD_99005_Arog', filePath: '/path/to/arog.d' },
+    ]);
+    // Xardas has no dialogs in this test
+
+    // Simulating ThreeColumnLayout.tsx logic
     const { npcMap, npcs } = (() => {
       if (isProjectMode) {
-        // BUG: Returns empty map
-        return { npcMap: new Map<string, string[]>(), npcs: projectNpcs };
+        // In project mode, populate npcMap from dialogIndex
+        const map = new Map<string, string[]>();
+        dialogIndex.forEach((dialogMetadataArray, npcId) => {
+          const dialogNames = dialogMetadataArray.map(metadata => metadata.dialogName);
+          map.set(npcId, dialogNames);
+        });
+        return { npcMap: map, npcs: projectNpcs };
       }
       return { npcMap: new Map(), npcs: [] };
     })();
 
-    // Problem: NPCs are loaded but npcMap is empty
-    expect(npcs.length).toBe(3); // NPCs are there
-    expect(npcMap.size).toBe(0); // But npcMap is empty!
+    // Problem Solved: npcMap is populated correctly
+    expect(npcs.length).toBe(3);
+    expect(npcMap.size).toBe(2);
 
     // When user selects an NPC
     const selectedNPC = 'SLD_99003_Farim';
     const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
 
-    // Result: No dialogs shown
-    expect(dialogsForNPC).toEqual([]);
+    // Result: Dialogs are shown
+    expect(dialogsForNPC).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
   });
 
   test('verifies single-file mode works correctly', () => {
@@ -1331,41 +1375,6 @@ describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () =>
     expect(npcMap.size).toBe(2);
     expect(npcMap.get('SLD_99003_Farim')).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
     expect(npcMap.get('SLD_99005_Arog')).toEqual(['DIA_Arog_Hallo']);
-  });
-
-  test('demonstrates project mode should use dialogIndex from store', () => {
-    // AFTER FIX: Project mode should populate npcMap from dialogIndex
-    const isProjectMode = true;
-    const projectNpcs = ['SLD_99003_Farim', 'SLD_99005_Arog'];
-
-    // This is what ProjectService returns and projectStore stores
-    const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
-    dialogIndex.set('SLD_99003_Farim', [
-      { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
-      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
-    ]);
-    dialogIndex.set('SLD_99005_Arog', [
-      { dialogName: 'DIA_Arog_Hallo', npc: 'SLD_99005_Arog', filePath: '/path/to/arog.d' },
-    ]);
-
-    // FIX: Convert dialogIndex to npcMap
-    const npcMap = new Map<string, string[]>();
-    if (isProjectMode) {
-      dialogIndex.forEach((dialogMetadataArray, npcId) => {
-        const dialogNames = dialogMetadataArray.map(metadata => metadata.dialogName);
-        npcMap.set(npcId, dialogNames);
-      });
-    }
-
-    // Verify npcMap is now populated in project mode
-    expect(npcMap.size).toBe(2);
-    expect(npcMap.get('SLD_99003_Farim')).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
-    expect(npcMap.get('SLD_99005_Arog')).toEqual(['DIA_Arog_Hallo']);
-
-    // When user selects an NPC, dialogs are now available
-    const selectedNPC = 'SLD_99003_Farim';
-    const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
-    expect(dialogsForNPC).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
   });
 
   test('handles empty dialogIndex gracefully', () => {
@@ -1444,54 +1453,51 @@ describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () =>
     expect(npc1.every(m => m.npc === 'SLD_99003_Farim')).toBe(true);
   });
 
-  test('demonstrates the comment mismatch between intent and implementation', () => {
-    // ThreeColumnLayout.tsx lines 258-260 say:
-    // "Dialog loading happens lazily when DialogTree renders"
-    // "The dialogs will be loaded via getSelectedNpcDialogs in project store"
+  test('verifies semantic models are loaded in project mode', async () => {
+    // Verify that handleSelectNPC correctly calls functions to load and merge models
 
-    // But in reality:
-    const handleSelectNPC = (npc: string) => {
-      // 1. Sets selected NPC
-      const selectedNPC = npc;
-
-      // 2. Calls selectNpc(npc) which just updates store
-      // ❌ Does NOT call getSelectedNpcDialogs()
-      // ❌ Does NOT populate npcMap
-      // ❌ Does NOT load semantic models
-
-      // Result: DialogTree receives empty array
-      return selectedNPC;
-    };
-
-    const result = handleSelectNPC('SLD_99003_Farim');
-
-    // The comment promised lazy loading, but it never happens
-    expect(result).toBe('SLD_99003_Farim');
-    // No actual dialog loading occurs
-  });
-
-  test('demonstrates missing semantic model loading in project mode', () => {
-    // CURRENT STATE: We have dialog names but no dialog data
+    // Setup data
     const dialogIndex = new Map<string, Array<{ dialogName: string; npc: string; filePath: string }>>();
     dialogIndex.set('SLD_99003_Farim', [
       { dialogName: 'DIA_Farim_Hallo', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
-      { dialogName: 'DIA_Farim_Trade', npc: 'SLD_99003_Farim', filePath: '/path/to/farim.d' },
     ]);
 
-    // We have the dialog names
-    const dialogNames = dialogIndex.get('SLD_99003_Farim')!.map(m => m.dialogName);
-    expect(dialogNames).toEqual(['DIA_Farim_Hallo', 'DIA_Farim_Trade']);
+    // Mock store functions
+    const selectNpc = jest.fn();
+    const loadAndMergeNpcModels = jest.fn();
+    const setSelectedNPC = jest.fn();
+    const getSemanticModel = jest.fn().mockResolvedValue({ dialogs: {} });
 
-    // But semanticModel is empty in project mode
-    const semanticModel = { dialogs: {} };
+    // Mock handleSelectNPC implementation
+    const handleSelectNPC = async (npc: string) => {
+      selectNpc(npc);
 
-    // DialogTree tries to access dialog data
-    const dialog1 = semanticModel.dialogs?.['DIA_Farim_Hallo'];
-    const dialog2 = semanticModel.dialogs?.['DIA_Farim_Trade'];
+      // Get dialog metadata for this NPC
+      const dialogMetadata = dialogIndex.get(npc) || [];
 
-    // Result: undefined - DialogTree renders nothing
-    expect(dialog1).toBeUndefined();
-    expect(dialog2).toBeUndefined();
+      // Extract unique file paths
+      const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
+
+      // Load semantic models for all files
+      await Promise.all(
+        uniqueFilePaths.map(filePath => getSemanticModel(filePath))
+      );
+
+      // Load and merge models for this NPC using the store
+      loadAndMergeNpcModels(npc);
+
+      setSelectedNPC(npc);
+
+      return npc;
+    };
+
+    await handleSelectNPC('SLD_99003_Farim');
+
+    // Verification
+    expect(selectNpc).toHaveBeenCalledWith('SLD_99003_Farim');
+    expect(getSemanticModel).toHaveBeenCalledWith('/path/to/farim.d');
+    expect(loadAndMergeNpcModels).toHaveBeenCalledWith('SLD_99003_Farim');
+    expect(setSelectedNPC).toHaveBeenCalledWith('SLD_99003_Farim');
   });
 
   test('verifies semantic models need to be loaded from dialog files', () => {

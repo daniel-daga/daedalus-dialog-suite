@@ -49,7 +49,7 @@ interface SearchActions {
   performSearch: (
     semanticModel: SemanticModel,
     dialogIndex: Map<string, DialogMetadata[]>
-  ) => void;
+  ) => Promise<void>;
 }
 
 type SearchStore = SearchState & SearchActions;
@@ -60,6 +60,9 @@ const initialSearchScope: SearchScope = {
   functionNames: true,
   npcNames: true
 };
+
+// Global search ID to handle cancellation
+let currentSearchId = 0;
 
 export const useSearchStore = create<SearchStore>((set, get) => ({
   // Initial state
@@ -116,10 +119,11 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
     return dialogs.filter((dialog) => dialog.toLowerCase().includes(lowerFilter));
   },
 
-  performSearch: (
+  performSearch: async (
     semanticModel: SemanticModel,
     dialogIndex: Map<string, DialogMetadata[]>
   ) => {
+    const searchId = ++currentSearchId;
     const { searchQuery, searchScope } = get();
 
     if (!searchQuery.trim()) {
@@ -129,6 +133,7 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
 
     set({ isSearching: true });
 
+    // Use a local results array to avoid frequent state updates
     const results: SearchResult[] = [];
     const lowerQuery = searchQuery.toLowerCase();
     const addedKeys = new Set<string>();
@@ -208,27 +213,50 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
 
     // Search in dialog text content
     if (searchScope.dialogText && semanticModel.functions) {
-      Object.entries(semanticModel.functions).forEach(([funcName, func]) => {
-        func.actions?.forEach((action) => {
-          // Check if it's a dialog line action
-          if ('text' in action && 'speaker' in action) {
-            const dialogLine = action as DialogLineAction;
-            if (dialogLine.text.toLowerCase().includes(lowerQuery)) {
-              const key = `text:${funcName}:${dialogLine.id}`;
-              if (!addedKeys.has(key)) {
-                addedKeys.add(key);
-                results.push({
-                  type: 'text',
-                  name: funcName,
-                  match: dialogLine.text,
-                  context: `[${dialogLine.speaker}]`,
-                  functionName: funcName
-                });
+      const entries = Object.entries(semanticModel.functions);
+      const CHUNK_SIZE = 500;
+
+      for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+        // Check for cancellation
+        if (searchId !== currentSearchId) {
+          return;
+        }
+
+        const end = Math.min(i + CHUNK_SIZE, entries.length);
+
+        for (let j = i; j < end; j++) {
+          const [funcName, func] = entries[j];
+          func.actions?.forEach((action) => {
+            // Check if it's a dialog line action
+            if ('text' in action && 'speaker' in action) {
+              const dialogLine = action as DialogLineAction;
+              if (dialogLine.text.toLowerCase().includes(lowerQuery)) {
+                const key = `text:${funcName}:${dialogLine.id}`;
+                if (!addedKeys.has(key)) {
+                  addedKeys.add(key);
+                  results.push({
+                    type: 'text',
+                    name: funcName,
+                    match: dialogLine.text,
+                    context: `[${dialogLine.speaker}]`,
+                    functionName: funcName
+                  });
+                }
               }
             }
-          }
-        });
-      });
+          });
+        }
+
+        // Yield to main thread if there are more chunks
+        if (i + CHUNK_SIZE < entries.length) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+    }
+
+    // Final cancellation check
+    if (searchId !== currentSearchId) {
+      return;
     }
 
     set({ searchResults: results, isSearching: false });

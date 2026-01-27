@@ -5,7 +5,7 @@ import ConditionCard from './ConditionCard';
 
 interface ConditionEditorProps {
   conditionFunction: any;
-  onUpdateFunction: (func: any) => void;
+  onUpdateFunction: (funcOrUpdater: any | ((func: any) => any)) => void;
   semanticModel?: any;
   filePath: string;
   dialogName: string;
@@ -52,27 +52,33 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   } : null;
 
   const updateCondition = useCallback((index: number, updated: any) => {
-    if (!localFunction) return;
-    const newConditions = [...(localFunction.conditions || [])];
-    newConditions[index] = updated;
-    const updatedFunction = {
-      ...localFunction,
-      conditions: newConditions.map(sanitizeCondition)
-    };
-    // Update store directly
-    onUpdateFunction(updatedFunction);
-  }, [localFunction, onUpdateFunction]);
+    onUpdateFunction((currentFunc: any) => {
+      if (!currentFunc) return currentFunc;
+      const newConditions = [...(currentFunc.conditions || [])];
+      // Note: we assume index is valid. If array changed concurrently, this might be risky,
+      // but it's better than overwriting the whole function.
+      if (index >= 0 && index < newConditions.length) {
+        newConditions[index] = sanitizeCondition(updated);
+      } else if (index === newConditions.length) {
+        newConditions.push(sanitizeCondition(updated));
+      }
+      return {
+        ...currentFunc,
+        conditions: newConditions
+      };
+    });
+  }, [onUpdateFunction]);
 
   const deleteCondition = useCallback((index: number) => {
-    if (!localFunction) return;
-    const newConditions = (localFunction.conditions || []).filter((_: any, i: number) => i !== index);
-    const updatedFunction = {
-      ...localFunction,
-      conditions: newConditions.map(sanitizeCondition)
-    };
-    // Update store directly
-    onUpdateFunction(updatedFunction);
-  }, [localFunction, onUpdateFunction]);
+    onUpdateFunction((currentFunc: any) => {
+      if (!currentFunc) return currentFunc;
+      const newConditions = (currentFunc.conditions || []).filter((_: any, i: number) => i !== index);
+      return {
+        ...currentFunc,
+        conditions: newConditions
+      };
+    });
+  }, [onUpdateFunction]);
 
   const focusCondition = useCallback((index: number) => {
     setTimeout(() => {
@@ -81,8 +87,6 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   }, []);
 
   const addCondition = useCallback((conditionType: 'npcKnowsInfo' | 'variable' | 'generic') => {
-    if (!localFunction) return;
-
     let newCondition: any;
     switch (conditionType) {
       case 'npcKnowsInfo':
@@ -107,18 +111,20 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
         break;
     }
 
-    const newConditions = [...(localFunction.conditions || []), newCondition];
-    const updatedFunction = {
-      ...localFunction,
-      conditions: newConditions.map(sanitizeCondition)
-    };
-    // Update store directly
-    onUpdateFunction(updatedFunction);
+    onUpdateFunction((currentFunc: any) => {
+      if (!currentFunc) return currentFunc;
+      const newConditions = [...(currentFunc.conditions || []), sanitizeCondition(newCondition)];
+      return {
+        ...currentFunc,
+        conditions: newConditions
+      };
+    });
 
     // Focus the new condition
+    // We use localFunction length as approximation for where it will be
+    const estimatedIndex = localFunction?.conditions?.length || 0;
     setTimeout(() => {
-      const newIndex = newConditions.length - 1;
-      conditionRefs.current[newIndex]?.focus();
+      conditionRefs.current[estimatedIndex]?.focus();
     }, 10);
   }, [localFunction, onUpdateFunction]);
 
