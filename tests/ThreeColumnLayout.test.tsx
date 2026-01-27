@@ -343,6 +343,91 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 });
 
 describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', () => {
+  test('demonstrates cache stale data problem with useEffect', () => {
+    // BEFORE FIX: Cache cleared in useEffect runs AFTER render
+    const simulateUseEffectTiming = () => {
+      const cache = new Map<string, any>();
+      let semanticModel = { version: 1, dialogs: { DialogA: {} } };
+      const events: string[] = [];
+
+      // Simulate initial render
+      const render1 = () => {
+        events.push('render1:start');
+
+        // buildFunctionTree is called during render
+        const buildFunctionTree = (name: string) => {
+          if (cache.has(name)) {
+            events.push(`render1:${name}:cache-hit`);
+            return cache.get(name);
+          }
+          events.push(`render1:${name}:cache-miss`);
+          const result = { name, version: semanticModel.version };
+          cache.set(name, result);
+          return result;
+        };
+
+        buildFunctionTree('DialogA');
+        events.push('render1:end');
+      };
+
+      // Simulate useEffect running AFTER render
+      const useEffect1 = () => {
+        // This is where cache clearing WOULD happen in the buggy version
+        // But it only runs after render
+        events.push('useEffect1:run');
+      };
+
+      render1();
+      useEffect1();
+
+      // Semantic model changes
+      semanticModel = { version: 2, dialogs: { DialogA: {} } };
+
+      // Simulate second render
+      const render2 = () => {
+        events.push('render2:start');
+
+        // In the buggy version, cache hasn't been cleared for the NEW model yet
+        const buildFunctionTree = (name: string) => {
+          if (cache.has(name)) {
+            events.push(`render2:${name}:cache-hit`);
+            return cache.get(name);
+          }
+          events.push(`render2:${name}:cache-miss`);
+          const result = { name, version: semanticModel.version };
+          cache.set(name, result);
+          return result;
+        };
+
+        const result = buildFunctionTree('DialogA');
+        events.push(`render2:result-version:${result.version}`);
+        events.push('render2:end');
+      };
+
+      render2();
+
+      // Now useEffect 2 runs
+      const useEffect2 = () => {
+        events.push('useEffect2:clearing-cache');
+        cache.clear();
+      };
+      useEffect2();
+
+      return events;
+    };
+
+    const events = simulateUseEffectTiming();
+
+    // Verify the problem: Stale data used in render2
+    expect(events).toContain('render2:DialogA:cache-hit');
+    expect(events).toContain('render2:result-version:1'); // STALE! Should be 2
+
+    // Verify cleanup happened TOO LATE
+    const buildIndex = events.indexOf('render2:DialogA:cache-hit');
+    const clearIndex = events.indexOf('useEffect2:clearing-cache');
+    expect(buildIndex).toBeLessThan(clearIndex);
+  });
+
   test('verifies synchronous cache clearing prevents stale data', () => {
     // AFTER FIX: Cache cleared synchronously during render
     const simulateSynchronousClearing = () => {
