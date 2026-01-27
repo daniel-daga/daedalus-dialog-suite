@@ -55,60 +55,78 @@ describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
   });
 
   test('verifies RAF cleanup prevents memory leaks and conflicts', () => {
-    // AFTER FIX: Cancel previous RAF callbacks when new dialog selected
-    const simulateWithCleanup = () => {
-      const stateUpdates: string[] = [];
-      let rafId1: number | null = null;
-      let rafId2: number | null = null;
+    // Use fake timers to verify async RAF cancellation
+    jest.useFakeTimers();
 
-      // Simulate first dialog selection
-      const selectDialog1 = () => {
-        stateUpdates.push('dialog1:loading:true');
+    try {
+      // AFTER FIX: Cancel previous RAF callbacks when new dialog selected
+      const simulateWithCleanup = () => {
+        const stateUpdates: string[] = [];
+        let rafId1: number | null = null;
+        let rafId2: number | null = null;
 
-        rafId1 = requestAnimationFrame(() => {
-          stateUpdates.push('dialog1:raf1:scroll');
+        // Simulate first dialog selection
+        const selectDialog1 = () => {
+          stateUpdates.push('dialog1:loading:true');
 
-          requestAnimationFrame(() => {
-            stateUpdates.push('dialog1:raf2:loading:false');
+          rafId1 = requestAnimationFrame(() => {
+            stateUpdates.push('dialog1:raf1:scroll');
+
+            requestAnimationFrame(() => {
+              stateUpdates.push('dialog1:raf2:loading:false');
+            });
           });
-        });
 
-        return rafId1;
+          return rafId1;
+        };
+
+        // Simulate rapid second dialog selection WITH cleanup
+        const selectDialog2 = (previousRafId: number | null) => {
+          // CLEANUP: Cancel previous RAF
+          if (previousRafId !== null) {
+            cancelAnimationFrame(previousRafId);
+            stateUpdates.push('dialog1:cancelled');
+          }
+
+          stateUpdates.push('dialog2:loading:true');
+
+          rafId2 = requestAnimationFrame(() => {
+            stateUpdates.push('dialog2:raf1:scroll');
+
+            requestAnimationFrame(() => {
+              stateUpdates.push('dialog2:raf2:loading:false');
+            });
+          });
+
+          return rafId2;
+        };
+
+        const raf1 = selectDialog1();
+        selectDialog2(raf1); // Clean up dialog1's RAF!
+
+        return { stateUpdates };
       };
 
-      // Simulate rapid second dialog selection WITH cleanup
-      const selectDialog2 = (previousRafId: number | null) => {
-        // CLEANUP: Cancel previous RAF
-        if (previousRafId !== null) {
-          cancelAnimationFrame(previousRafId);
-          stateUpdates.push('dialog1:cancelled');
-        }
+      const result = simulateWithCleanup();
 
-        stateUpdates.push('dialog2:loading:true');
+      // Verify cleanup happened (synchronous check)
+      expect(result.stateUpdates).toContain('dialog1:cancelled');
+      // Only dialog2's state updates should execute (synchronous check)
+      expect(result.stateUpdates).toContain('dialog2:loading:true');
 
-        rafId2 = requestAnimationFrame(() => {
-          stateUpdates.push('dialog2:raf1:scroll');
+      // Fast-forward RAFs to verify cancellation worked
+      jest.runAllTimers();
 
-          requestAnimationFrame(() => {
-            stateUpdates.push('dialog2:raf2:loading:false');
-          });
-        });
+      // Dialog 1 RAFs should NOT have executed (cancelled)
+      expect(result.stateUpdates).not.toContain('dialog1:raf1:scroll');
+      expect(result.stateUpdates).not.toContain('dialog1:raf2:loading:false');
 
-        return rafId2;
-      };
-
-      const raf1 = selectDialog1();
-      selectDialog2(raf1); // Clean up dialog1's RAF!
-
-      return { stateUpdates };
-    };
-
-    const result = simulateWithCleanup();
-
-    // Verify cleanup happened
-    expect(result.stateUpdates).toContain('dialog1:cancelled');
-    // Only dialog2's state updates should execute
-    expect(result.stateUpdates).toContain('dialog2:loading:true');
+      // Dialog 2 RAFs SHOULD have executed
+      expect(result.stateUpdates).toContain('dialog2:raf1:scroll');
+      expect(result.stateUpdates).toContain('dialog2:raf2:loading:false');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('verifies cleanup on component unmount', () => {
