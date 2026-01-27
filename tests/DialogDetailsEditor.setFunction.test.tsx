@@ -145,7 +145,7 @@ describe('DialogDetailsEditor setFunction Fix', () => {
     expect(savedFunction.actions).toHaveLength(2);
   });
 
-  test('bug scenario: updater function should not be saved as the function object', () => {
+  test('regression test: updater function should not be saved as the function object (simulating previous bug)', () => {
     let savedFunction: any = null;
     const updateFunction = jest.fn((filePath: string, functionName: string, func: any) => {
       savedFunction = func;
@@ -158,8 +158,8 @@ describe('DialogDetailsEditor setFunction Fix', () => {
       actions: [{ text: 'Hello' }]
     };
 
-    // OLD BUGGY IMPLEMENTATION (what we had before)
-    const buggySetFunction = (updatedFunction: any) => {
+    // REPRODUCE OLD BUGGY IMPLEMENTATION (what we had before)
+    const reproBuggySetFunction = (updatedFunction: any) => {
       if (currentFunctionName) {
         updateFunction(filePath, currentFunctionName, updatedFunction);
       }
@@ -171,9 +171,9 @@ describe('DialogDetailsEditor setFunction Fix', () => {
       actions: [...prev.actions, { text: 'World' }]
     });
 
-    buggySetFunction(updaterFn);
+    reproBuggySetFunction(updaterFn);
 
-    // BUG: The callback function itself gets saved!
+    // CONFIRM REPRO: The callback function itself gets saved in the buggy implementation!
     expect(typeof savedFunction).toBe('function');
     // This means savedFunction.actions would be undefined
     expect(savedFunction.actions).toBeUndefined();
