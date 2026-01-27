@@ -180,14 +180,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const semanticModel = await window.editorAPI.parseDialogFile(filePath);
 
     // Cache the result
-    const newCache = new Map(parsedFiles);
-    newCache.set(filePath, {
-      filePath,
-      semanticModel,
-      lastParsed: new Date()
+    set((state) => {
+      const newCache = new Map(state.parsedFiles);
+      newCache.set(filePath, {
+        filePath,
+        semanticModel,
+        lastParsed: new Date()
+      });
+      return { parsedFiles: newCache };
     });
-
-    set({ parsedFiles: newCache });
 
     return semanticModel;
   },
