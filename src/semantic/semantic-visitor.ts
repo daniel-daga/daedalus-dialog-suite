@@ -128,8 +128,8 @@ export class SemanticModelBuilderVisitor {
     }
 
     // Recurse to children
-    for (const child of node.children) {
-      this.pass2_analyzeAndLink(child);
+    for (let i = 0; i < node.childCount; i++) {
+      this.pass2_analyzeAndLink(node.child(i));
     }
 
     // Unset the context after visiting all children
