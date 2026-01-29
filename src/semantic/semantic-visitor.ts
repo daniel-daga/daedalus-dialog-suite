@@ -30,6 +30,11 @@ export class SemanticModelBuilderVisitor {
    * Check for syntax errors in the parse tree and populate semantic model errors
    */
   checkForSyntaxErrors(node: TreeSitterNode, sourceCode?: string): void {
+    // Optimization: Skip subtrees that don't contain errors
+    if (!node.hasError) {
+      return;
+    }
+
     if (node.hasError) {
       this.semanticModel.hasErrors = true;
     }
@@ -78,6 +83,7 @@ export class SemanticModelBuilderVisitor {
         const func = new DialogFunction(nameNode.text, typeNode.text);
         this.semanticModel.functions[func.name] = func;
       }
+      return; // Optimization: Don't recurse into function bodies during object creation
     } else if (node.type === 'instance_declaration') {
       const nameNode = node.childForFieldName('name');
       const parentNode = node.childForFieldName('parent');
@@ -85,6 +91,7 @@ export class SemanticModelBuilderVisitor {
         const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
         this.semanticModel.dialogs[dialog.name] = dialog;
       }
+      return; // Optimization: Don't recurse into instance bodies during object creation
     }
 
     const childCount = node.childCount;
