@@ -8,6 +8,12 @@ import userEvent from '@testing-library/user-event';
 import SearchResults from '../src/renderer/components/SearchResults';
 import { useSearchStore, SearchResult } from '../src/renderer/store/searchStore';
 
+// Mock react-virtualized-auto-sizer
+jest.mock('react-virtualized-auto-sizer', () => ({
+  __esModule: true,
+  default: ({ children }: any) => children({ height: 500, width: 300 }),
+}));
+
 const mockResults: SearchResult[] = [
   {
     type: 'npc',
