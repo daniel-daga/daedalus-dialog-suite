@@ -3,7 +3,7 @@
  */
 
 import React, { useRef, useEffect, useCallback } from 'react';
-import { Box, Paper, IconButton, Collapse, Typography, Divider } from '@mui/material';
+import { Box, Paper, IconButton, Collapse, Typography, Divider, Tooltip } from '@mui/material';
 import { Close as CloseIcon } from '@mui/icons-material';
 import SearchBar from './SearchBar';
 import SearchResults from './SearchResults';
@@ -78,9 +78,15 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
             <Typography variant="caption" color="text.secondary">
               Ctrl+F
             </Typography>
-            <IconButton size="small" onClick={handleClose}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title="Close search">
+              <IconButton
+                size="small"
+                onClick={handleClose}
+                aria-label="Close search panel"
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
           <SearchBar
             placeholder="Search dialogs, NPCs, text..."

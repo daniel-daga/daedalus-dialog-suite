@@ -3,7 +3,7 @@
  */
 
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { TextField, InputAdornment, IconButton } from '@mui/material';
+import { TextField, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
 import { useSearchStore } from '../store/searchStore';
 import { debounce } from '../utils/debounce';
@@ -67,14 +67,16 @@ const SearchBar: React.FC<SearchBarProps> = ({
         ),
         endAdornment: searchQuery ? (
           <InputAdornment position="end">
-            <IconButton
-              size="small"
-              onClick={handleClear}
-              aria-label="clear"
-              edge="end"
-            >
-              <ClearIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title="Clear search">
+              <IconButton
+                size="small"
+                onClick={handleClear}
+                aria-label="clear"
+                edge="end"
+              >
+                <ClearIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </InputAdornment>
         ) : null
       }}
