@@ -7,9 +7,14 @@ import {
   ListItemButton,
   ListItemText,
   TextField,
-  InputAdornment
+  InputAdornment,
+  IconButton,
+  Tooltip
 } from '@mui/material';
-import { FilterList as FilterListIcon } from '@mui/icons-material';
+import {
+  FilterList as FilterListIcon,
+  Clear as ClearIcon
+} from '@mui/icons-material';
 import { NPCListProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
@@ -51,6 +56,10 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
     npcMap
   }), [filteredNpcs, selectedNPC, onSelectNPC, npcMap]);
 
+  const handleClear = () => {
+    setNpcFilter('');
+  };
+
   return (
     <Paper sx={{ width: 250, height: '100%', overflow: 'hidden', borderRadius: 0, flexShrink: 0, display: 'flex', flexDirection: 'column' }} elevation={1}>
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
@@ -71,7 +80,21 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
               <InputAdornment position="start">
                 <FilterListIcon fontSize="small" color="action" />
               </InputAdornment>
-            )
+            ),
+            endAdornment: npcFilter ? (
+              <InputAdornment position="end">
+                <Tooltip title="Clear filter">
+                  <IconButton
+                    size="small"
+                    onClick={handleClear}
+                    aria-label="Clear filter"
+                    edge="end"
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </InputAdornment>
+            ) : null
           }}
         />
       </Box>
