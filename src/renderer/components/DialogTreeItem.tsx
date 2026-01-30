@@ -6,11 +6,11 @@ import {
   IconButton
 } from '@mui/material';
 import {
-  CallSplit as CallSplitIcon,
   ExpandMore as ExpandMoreIcon,
   ChevronRight as ChevronRightIcon
 } from '@mui/icons-material';
 import type { SemanticModel, FunctionTreeNode } from '../types/global';
+import ChoiceTreeItem from './ChoiceTreeItem';
 
 interface DialogTreeItemProps {
   dialogName: string;
@@ -58,52 +58,6 @@ const DialogTreeItem = memo(({
     hasChoices = infoFuncData.actions.some((a: any) => 'dialogRef' in a && 'targetFunction' in a);
   }
 
-  // Recursive function to render choice subtree
-  const renderChoiceTree = (choice: any, depth: number = 1, index: number = 0): React.ReactNode => {
-    if (!choice.subtree) return null;
-    const isChoiceSelected = selectedFunctionName === choice.targetFunction;
-    const hasSubchoices = choice.subtree.children && choice.subtree.children.length > 0;
-    const choiceKey = `${choice.targetFunction}-${depth}-${index}`;
-    const isChoiceExpanded = expandedChoices.has(choiceKey);
-
-    return (
-      <Box key={choiceKey}>
-        <ListItemButton
-          selected={isChoiceSelected}
-          onClick={() => {
-            onSelectDialog(dialogName, choice.targetFunction);
-          }}
-          sx={{ pl: (depth + 1) * 2, pr: 1 }}
-        >
-          {hasSubchoices ? (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleChoiceExpand(choiceKey);
-              }}
-              sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }}
-            >
-              {isChoiceExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-            </IconButton>
-          ) : (
-            <Box sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }} />
-          )}
-          <CallSplitIcon fontSize="small" sx={{ mr: 1, fontSize: '1rem', color: 'text.secondary', flexShrink: 0 }} />
-          <ListItemText
-            primary={choice.text}
-            secondary={choice.targetFunction}
-            primaryTypographyProps={{ fontSize: '0.85rem' }}
-            secondaryTypographyProps={{ fontSize: '0.7rem' }}
-          />
-        </ListItemButton>
-        {isChoiceExpanded && hasSubchoices && choice.subtree.children.map((subchoice: any, idx: number) =>
-          renderChoiceTree(subchoice, depth + 1, idx)
-        )}
-      </Box>
-    );
-  };
-
   return (
     <Box>
       <ListItemButton
@@ -134,9 +88,19 @@ const DialogTreeItem = memo(({
           secondaryTypographyProps={{ fontSize: '0.75rem' }}
         />
       </ListItemButton>
-      {isExpanded && hasChoices && functionTree?.children?.map((choice: any, idx: number) =>
-        renderChoiceTree(choice, 1, idx)
-      )}
+      {isExpanded && hasChoices && functionTree?.children?.map((choice: any, idx: number) => (
+        <ChoiceTreeItem
+          key={`${choice.targetFunction}-1-${idx}`}
+          choice={choice}
+          depth={1}
+          index={idx}
+          expandedChoices={expandedChoices}
+          selectedFunctionName={selectedFunctionName}
+          dialogName={dialogName}
+          onSelectDialog={onSelectDialog}
+          onToggleChoiceExpand={onToggleChoiceExpand}
+        />
+      ))}
     </Box>
   );
 }, (prev, next) => {
