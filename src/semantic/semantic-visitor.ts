@@ -76,6 +76,19 @@ export class SemanticModelBuilderVisitor {
    * First pass: Create all skeleton objects to ensure they exist before linking
    */
   pass1_createObjects(node: TreeSitterNode): void {
+    // Optimization: Handle root node specifically to skip non-declaration children
+    if (node.type === 'program' || node.type === 'source_file') {
+      const childCount = node.childCount;
+      for (let i = 0; i < childCount; i++) {
+        const child = node.child(i);
+        // Only recurse into declarations we care about
+        if (child.type === 'function_declaration' || child.type === 'instance_declaration') {
+          this.pass1_createObjects(child);
+        }
+      }
+      return;
+    }
+
     if (node.type === 'function_declaration') {
       const nameNode = node.childForFieldName('name');
       const typeNode = node.childForFieldName('return_type');
@@ -94,10 +107,8 @@ export class SemanticModelBuilderVisitor {
       return; // Optimization: Don't recurse into instance bodies during object creation
     }
 
-    const childCount = node.childCount;
-    for (let i = 0; i < childCount; i++) {
-      this.pass1_createObjects(node.child(i));
-    }
+    // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
+    // so we don't need to recurse.
   }
 
   // ===================================================================
@@ -108,6 +119,27 @@ export class SemanticModelBuilderVisitor {
    * Second pass: Link properties and analyze function bodies
    */
   pass2_analyzeAndLink(node: TreeSitterNode): void {
+    // Optimization: Handle root node specifically to skip non-declaration children
+    if (node.type === 'program' || node.type === 'source_file') {
+      const childCount = node.childCount;
+      for (let i = 0; i < childCount; i++) {
+        const child = node.child(i);
+        // Only recurse into declarations we care about
+        if (child.type === 'function_declaration' || child.type === 'instance_declaration') {
+          this.analyzeNode(child);
+        }
+      }
+      return;
+    }
+
+    // Fallback for non-root nodes (e.g. tests)
+    this.analyzeNode(node);
+  }
+
+  /**
+   * Internal method for analyzing nodes recursively
+   */
+  private analyzeNode(node: TreeSitterNode): void {
     // Set the current context when entering an instance or function
     if (node.type === 'instance_declaration') {
       const nameNode = node.childForFieldName('name');
@@ -137,7 +169,7 @@ export class SemanticModelBuilderVisitor {
 
     // Recurse to children
     for (let i = 0; i < node.childCount; i++) {
-      this.pass2_analyzeAndLink(node.child(i));
+      this.analyzeNode(node.child(i));
     }
 
     // Unset the context after visiting all children
