@@ -98,6 +98,7 @@
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.14",
     "eslint": "^9.36.0",
+    "node-addon-api": "^8.5.0",
     "prebuildify": "^6.0.0",
     "tree-sitter-cli": "^0.25.10",
     "typescript": "^5.9.2"
