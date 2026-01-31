@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": [
+    "src/semantic/semantic-model.ts",
+    "src/semantic/semantic-visitor.ts",
+    "src/semantic/semantic-visitor-index.ts",
+    "src/semantic/parsers/action-parsers.ts",
+    "src/semantic/parsers/condition-parsers.ts",
+    "src/codegen/generator.ts",
+    "src/utils/parser-utils.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*-cli.ts"
+  ]
+}

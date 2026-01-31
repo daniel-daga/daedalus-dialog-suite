@@ -1,0 +1,111 @@
+{
+  "name": "daedalus-parser",
+  "version": "1.0.0",
+  "description": "High-performance Tree-sitter parser for Gothic 2 Daedalus scripting language with dialog editing capabilities",
+  "main": "src/core/parser.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "npm run build && npm run build:ts && node --test test/*.test.js",
+    "build": "tree-sitter generate",
+    "build:ts": "tsc --project tsconfig.build.json",
+    "parse": "node bin/daedalus-parse.js",
+    "semantic": "npx ts-node bin/semantic-visitor-cli.ts",
+    "format": "npx ts-node bin/semantic-code-generator-cli.ts",
+    "lint": "eslint src/ test/ bin/ --max-warnings 0",
+    "lint:fix": "eslint src/ test/ bin/ --fix",
+    "typecheck": "tsc --noEmit",
+    "install": "node-gyp-build",
+    "postinstall": "npm run build && npm run build:ts",
+    "prebuildify": "prebuildify --napi --strip"
+  },
+  "bin": {
+    "daedalus-parse": "./bin/daedalus-parse.js"
+  },
+  "keywords": [
+    "parser",
+    "daedalus",
+    "gothic",
+    "scripting",
+    "tree-sitter",
+    "dialog-editor",
+    "game-modding",
+    "ast",
+    "syntax-tree",
+    "compiler"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./src/core/parser.js",
+      "import": "./src/core/parser.js"
+    },
+    "./types": {
+      "types": "./index.d.ts"
+    },
+    "./semantic-model": {
+      "types": "./dist/semantic/semantic-model.d.ts",
+      "require": "./dist/semantic/semantic-model.js",
+      "import": "./dist/semantic/semantic-model.js"
+    },
+    "./semantic-visitor": {
+      "types": "./dist/semantic/semantic-visitor.d.ts",
+      "require": "./dist/semantic/semantic-visitor.js",
+      "import": "./dist/semantic/semantic-visitor.js"
+    },
+    "./semantic-code-generator": {
+      "types": "./dist/codegen/generator.d.ts",
+      "require": "./dist/codegen/generator.js",
+      "import": "./dist/codegen/generator.js"
+    },
+    "./bindings/node": {
+      "require": "./bindings/node/index.js"
+    }
+  },
+  "files": [
+    "index.d.ts",
+    "grammar.js",
+    "binding.gyp",
+    "prebuilds/**",
+    "bindings/node/*",
+    "queries/*",
+    "src/**",
+    "dist/**",
+    "examples/**",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3",
+    "jschardet": "^3.1.4",
+    "node-gyp-build": "^4.8.0",
+    "tree-sitter": "^0.21.0"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "tree-sitter": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.14",
+    "eslint": "^9.36.0",
+    "prebuildify": "^6.0.0",
+    "tree-sitter-cli": "^0.25.10",
+    "typescript": "^5.9.2"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.daedalus",
+      "injection-regex": "^daedalus$"
+    }
+  ]
+}
