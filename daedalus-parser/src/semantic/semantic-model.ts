@@ -41,6 +41,14 @@ export class DialogFunction {
     this.actions = [];
     this.conditions = [];
   }
+
+  static fromJSON(json: any): DialogFunction {
+    const func = new DialogFunction(json.name, json.returnType);
+    func.calls = json.calls || [];
+    func.actions = (json.actions || []).map((action: any) => deserializeAction(action));
+    func.conditions = (json.conditions || []).map((condition: any) => deserializeCondition(condition));
+    return func;
+  }
 }
 
 // ===================================================================
@@ -87,6 +95,10 @@ export class DialogLine implements CodeGeneratable {
   getTypeName(): string {
     return 'DialogLine';
   }
+
+  static fromJSON(json: any): DialogLine {
+    return new DialogLine(json.speaker, json.text, json.id);
+  }
 }
 
 export class CreateTopic implements CodeGeneratable {
@@ -112,6 +124,10 @@ export class CreateTopic implements CodeGeneratable {
   getTypeName(): string {
     return 'CreateTopic';
   }
+
+  static fromJSON(json: any): CreateTopic {
+    return new CreateTopic(json.topic, json.topicType);
+  }
 }
 
 export class LogEntry implements CodeGeneratable {
@@ -133,6 +149,10 @@ export class LogEntry implements CodeGeneratable {
 
   getTypeName(): string {
     return 'LogEntry';
+  }
+
+  static fromJSON(json: any): LogEntry {
+    return new LogEntry(json.topic, json.text);
   }
 }
 
@@ -156,6 +176,10 @@ export class LogSetTopicStatus implements CodeGeneratable {
   getTypeName(): string {
     return 'LogSetTopicStatus';
   }
+
+  static fromJSON(json: any): LogSetTopicStatus {
+    return new LogSetTopicStatus(json.topic, json.status);
+  }
 }
 
 export class Action implements CodeGeneratable {
@@ -176,6 +200,10 @@ export class Action implements CodeGeneratable {
 
   getTypeName(): string {
     return 'Action';
+  }
+
+  static fromJSON(json: any): Action {
+    return new Action(json.action);
   }
 }
 
@@ -201,6 +229,10 @@ export class Choice implements CodeGeneratable {
   getTypeName(): string {
     return 'Choice';
   }
+
+  static fromJSON(json: any): Choice {
+    return new Choice(json.dialogRef, json.text, json.targetFunction);
+  }
 }
 
 export class CreateInventoryItems implements CodeGeneratable {
@@ -224,6 +256,10 @@ export class CreateInventoryItems implements CodeGeneratable {
 
   getTypeName(): string {
     return 'CreateInventoryItems';
+  }
+
+  static fromJSON(json: any): CreateInventoryItems {
+    return new CreateInventoryItems(json.target, json.item, json.quantity);
   }
 }
 
@@ -251,6 +287,10 @@ export class GiveInventoryItems implements CodeGeneratable {
   getTypeName(): string {
     return 'GiveInventoryItems';
   }
+
+  static fromJSON(json: any): GiveInventoryItems {
+    return new GiveInventoryItems(json.giver, json.receiver, json.item, json.quantity);
+  }
 }
 
 export class AttackAction implements CodeGeneratable {
@@ -277,6 +317,10 @@ export class AttackAction implements CodeGeneratable {
   getTypeName(): string {
     return 'AttackAction';
   }
+
+  static fromJSON(json: any): AttackAction {
+    return new AttackAction(json.attacker, json.target, json.attackReason, json.damage);
+  }
 }
 
 export class SetAttitudeAction implements CodeGeneratable {
@@ -298,6 +342,10 @@ export class SetAttitudeAction implements CodeGeneratable {
 
   getTypeName(): string {
     return 'SetAttitudeAction';
+  }
+
+  static fromJSON(json: any): SetAttitudeAction {
+    return new SetAttitudeAction(json.target, json.attitude);
   }
 }
 
@@ -321,6 +369,10 @@ export class ExchangeRoutineAction implements CodeGeneratable {
   getTypeName(): string {
     return 'ExchangeRoutineAction';
   }
+
+  static fromJSON(json: any): ExchangeRoutineAction {
+    return new ExchangeRoutineAction(json.target, json.routine);
+  }
 }
 
 export class ChapterTransitionAction implements CodeGeneratable {
@@ -343,9 +395,43 @@ export class ChapterTransitionAction implements CodeGeneratable {
   getTypeName(): string {
     return 'ChapterTransitionAction';
   }
+
+  static fromJSON(json: any): ChapterTransitionAction {
+    return new ChapterTransitionAction(json.chapter, json.world);
+  }
 }
 
 export type DialogAction = DialogLine | CreateTopic | LogEntry | LogSetTopicStatus | Action | Choice | CreateInventoryItems | GiveInventoryItems | AttackAction | SetAttitudeAction | ExchangeRoutineAction | ChapterTransitionAction;
+
+// Helper to deserialize any action
+export function deserializeAction(json: any): DialogAction | any {
+  if ('speaker' in json && 'text' in json && 'id' in json) {
+    return DialogLine.fromJSON(json);
+  } else if ('topic' in json && 'topicType' in json) {
+    return CreateTopic.fromJSON(json);
+  } else if ('topic' in json && 'text' in json) {
+    return LogEntry.fromJSON(json);
+  } else if ('topic' in json && 'status' in json) {
+    return LogSetTopicStatus.fromJSON(json);
+  } else if ('dialogRef' in json && 'targetFunction' in json) {
+    return Choice.fromJSON(json);
+  } else if ('target' in json && 'item' in json && 'quantity' in json && !('giver' in json)) {
+    return CreateInventoryItems.fromJSON(json);
+  } else if ('giver' in json && 'receiver' in json) {
+    return GiveInventoryItems.fromJSON(json);
+  } else if ('attacker' in json && 'attackReason' in json) {
+    return AttackAction.fromJSON(json);
+  } else if ('attitude' in json) {
+    return SetAttitudeAction.fromJSON(json);
+  } else if ('routine' in json) {
+    return ExchangeRoutineAction.fromJSON(json);
+  } else if ('chapter' in json && 'world' in json) {
+    return ChapterTransitionAction.fromJSON(json);
+  } else if ('action' in json) {
+    return Action.fromJSON(json);
+  }
+  return json;
+}
 
 // ===================================================================
 // DIALOG CONDITION CLASSES
@@ -374,6 +460,10 @@ export class NpcKnowsInfoCondition implements CodeGeneratable {
   getTypeName(): string {
     return 'NpcKnowsInfoCondition';
   }
+
+  static fromJSON(json: any): NpcKnowsInfoCondition {
+    return new NpcKnowsInfoCondition(json.npc, json.dialogRef);
+  }
 }
 
 /**
@@ -396,6 +486,10 @@ export class Condition implements CodeGeneratable {
 
   getTypeName(): string {
     return 'Condition';
+  }
+
+  static fromJSON(json: any): Condition {
+    return new Condition(json.condition);
   }
 }
 
@@ -423,9 +517,26 @@ export class VariableCondition implements CodeGeneratable {
   getTypeName(): string {
     return 'VariableCondition';
   }
+
+  static fromJSON(json: any): VariableCondition {
+    return new VariableCondition(json.variableName, json.negated || false);
+  }
 }
 
 export type DialogCondition = NpcKnowsInfoCondition | Condition | VariableCondition;
+
+// Helper to deserialize any condition
+export function deserializeCondition(json: any): DialogCondition {
+  if ('npc' in json && 'dialogRef' in json) {
+    return NpcKnowsInfoCondition.fromJSON(json);
+  } else if ('variableName' in json) {
+    return VariableCondition.fromJSON(json);
+  } else if ('condition' in json) {
+    return Condition.fromJSON(json);
+  }
+  // Fallback
+  return new Condition('');
+}
 
 // ===================================================================
 // DIALOG CLASS
@@ -442,6 +553,37 @@ export class Dialog {
     this.parent = parent;
     this.properties = {};
     this.actions = [];
+  }
+
+  static fromJSON(json: any, functionsMap: { [key: string]: DialogFunction }): Dialog {
+    const dialog = new Dialog(json.name, json.parent);
+
+    // Reconstruct properties, linking to DialogFunction instances
+    for (const key in json.properties) {
+      const value = json.properties[key];
+
+      // Check if this property references a function
+      if (typeof value === 'object' && value !== null && 'name' in value && 'returnType' in value) {
+        // Link to the reconstructed function from the map
+        const linkedFunc = functionsMap[value.name];
+        if (!linkedFunc) {
+          console.warn(`Function '${value.name}' referenced in dialog '${json.name}' but not found in model`);
+          // Preserve as function name string instead of assigning undefined
+          // Or if we want to match the previous logic exactly, we keep it as is if it's already a DialogFunction-like object
+          // But since we are reconstructing, we really want the reference to the object in functionsMap
+          dialog.properties[key] = value.name; 
+        } else {
+          dialog.properties[key] = linkedFunc;
+        }
+      } else if (typeof value === 'string' && functionsMap[value]) {
+        // Handle case where it was normalized to just a string name
+        dialog.properties[key] = functionsMap[value];
+      } else {
+        dialog.properties[key] = value;
+      }
+    }
+
+    return dialog;
   }
 }
 
@@ -464,4 +606,26 @@ export interface SemanticModel {
   functions: { [key: string]: DialogFunction };
   errors?: SyntaxError[];
   hasErrors?: boolean;
+}
+
+// Helper to deserialize full semantic model
+export function deserializeSemanticModel(json: any): SemanticModel {
+  const model: SemanticModel = {
+    dialogs: {},
+    functions: {},
+    errors: json.errors,
+    hasErrors: json.hasErrors
+  };
+
+  // 1. Reconstruct functions first
+  for (const funcName in json.functions) {
+    model.functions[funcName] = DialogFunction.fromJSON(json.functions[funcName]);
+  }
+
+  // 2. Reconstruct dialogs and link to functions
+  for (const dialogName in json.dialogs) {
+    model.dialogs[dialogName] = Dialog.fromJSON(json.dialogs[dialogName], model.functions);
+  }
+
+  return model;
 }
