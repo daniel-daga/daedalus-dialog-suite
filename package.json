@@ -1,0 +1,12 @@
+{
+  "name": "daedalus-dialog-suite",
+  "private": true,
+  "workspaces": [
+    "daedalus-dialog-editor",
+    "daedalus-parser"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces"
+  }
+}
