@@ -1,0 +1,105 @@
+{
+  "name": "daedalus-dialog-editor",
+  "version": "0.1.0",
+  "description": "Visual dialog editor for Gothic 2 Daedalus scripting language",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "npm run build  && node scripts/dev.js",
+    "dev:main": "tsc -p tsconfig.main.json --watch",
+    "dev:renderer": "vite",
+    "dev:browser": "vite",
+    "dev:electron": "wait-on dist/main/main.js && electron . --enable-logging --no-sandbox",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "package": "electron-builder",
+    "test": "jest",
+    "test:mocked": "jest --config jest.mocked.config.js",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:actioncard": "jest ActionCard.test.tsx",
+    "test:encoding": "npm run build:main && tsx tests/encoding.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug"
+  },
+  "keywords": [
+    "gothic",
+    "modding",
+    "dialog",
+    "daedalus"
+  ],
+  "author": "",
+  "license": "MIT",
+  "build": {
+    "appId": "com.gothicmodding.daedalusdialog",
+    "productName": "Daedalus Dialog Editor",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "publish": null
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.4",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.18.0",
+    "@mui/material": "^5.15.14",
+    "@tanstack/react-query": "^5.28.4",
+    "chardet": "^2.1.1",
+    "daedalus-parser": "*",
+    "iconv-lite": "^0.7.0",
+    "react": "^18.2.0",
+    "react-beautiful-dnd": "^13.1.1",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "react-virtualized-auto-sizer": "^1.0.24",
+    "react-window": "^1.8.10",
+    "reactflow": "^11.11.1",
+    "tree-sitter": "^0.21.1",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@playwright/test": "^1.56.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/chardet": "^0.8.3",
+    "@types/node": "^20.11.30",
+    "@types/react": "^18.2.73",
+    "@types/react-beautiful-dnd": "^13.1.8",
+    "@types/react-dom": "^18.2.23",
+    "@types/react-virtualized-auto-sizer": "^1.0.4",
+    "@types/react-window": "^1.8.8",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0",
+    "electron": "^29.4.6",
+    "electron-builder": "^24.13.3",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "npm-run-all": "^4.1.5",
+    "tree-kill": "^1.2.2",
+    "ts-jest": "^29.4.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.4.3",
+    "vite": "^5.2.6",
+    "vite-plugin-electron": "^0.28.4",
+    "wait-on": "^9.0.1"
+  }
+}

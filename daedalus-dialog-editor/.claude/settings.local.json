@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm uninstall:*)",
+      "Bash(npx concurrently --help:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:main:*)",
+      "Bash(npx tsx:*)",
+      "Bash(npx vite build)",
+      "Bash(npm test:*)",
+      "Bash(npm run test:e2e:*)",
+      "WebFetch(domain:code.claude.com)",
+      "mcp__memory__create_entities",
+      "Bash(npm run build:*)",
+      "Bash(npm run test:e2e:headed:*)",
+      "Bash(dir:*)",
+      "Bash(npm run dev:browser:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enableAllProjectMcpServers": true
+}
