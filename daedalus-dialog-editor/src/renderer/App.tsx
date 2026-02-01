@@ -4,7 +4,7 @@ import { FolderOpen as FolderOpenIcon, Folder as FolderIcon, Save as SaveIcon } 
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
-import ThreeColumnLayout from './components/ThreeColumnLayout';
+import MainLayout from './components/MainLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 
 const App: React.FC = () => {
@@ -82,7 +82,7 @@ const App: React.FC = () => {
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
         <ErrorBoundary>
           {activeFile || projectPath ? (
-            <ThreeColumnLayout filePath={activeFile} />
+            <MainLayout filePath={activeFile} />
           ) : (
           <Box sx={{
             flex: 1,

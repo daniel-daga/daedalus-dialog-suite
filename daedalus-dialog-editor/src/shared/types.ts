@@ -173,10 +173,22 @@ export interface ParseError {
   text?: string;
 }
 
+export interface GlobalConstant {
+  name: string;
+  type: string;
+  value: string | number | boolean;
+}
+
+export interface GlobalVariable {
+  name: string;
+  type: string;
+}
+
 export interface SemanticModel {
   dialogs: Record<string, Dialog>;
   functions: Record<string, DialogFunction>;
-  constants?: Record<string, unknown>;
+  constants?: Record<string, GlobalConstant>;
+  variables?: Record<string, GlobalVariable>;
   instances?: Record<string, unknown>;
   hasErrors: boolean;
   errors: ParseError[];
