@@ -30,6 +30,8 @@ export type {
   DialogProperties,
   Dialog,
   ParseError,
+  GlobalConstant,
+  GlobalVariable,
   SemanticModel,
   FunctionTreeChild,
   FunctionTreeNode,
