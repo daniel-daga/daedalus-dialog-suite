@@ -23,6 +23,36 @@ export interface TreeSitterNode {
 // SEMANTIC MODEL CLASSES
 // ===================================================================
 
+export class GlobalConstant {
+  public name: string;
+  public type: string;
+  public value: string | number | boolean;
+
+  constructor(name: string, type: string, value: string | number | boolean) {
+    this.name = name;
+    this.type = type;
+    this.value = value;
+  }
+
+  static fromJSON(json: any): GlobalConstant {
+    return new GlobalConstant(json.name, json.type, json.value);
+  }
+}
+
+export class GlobalVariable {
+  public name: string;
+  public type: string;
+
+  constructor(name: string, type: string) {
+    this.name = name;
+    this.type = type;
+  }
+
+  static fromJSON(json: any): GlobalVariable {
+    return new GlobalVariable(json.name, json.type);
+  }
+}
+
 export interface DialogProperties {
   [key: string]: string | number | boolean | DialogFunction;
 }
@@ -604,6 +634,8 @@ export interface SyntaxError {
 export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
+  constants?: { [key: string]: GlobalConstant };
+  variables?: { [key: string]: GlobalVariable };
   errors?: SyntaxError[];
   hasErrors?: boolean;
 }
@@ -613,6 +645,8 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   const model: SemanticModel = {
     dialogs: {},
     functions: {},
+    constants: {},
+    variables: {},
     errors: json.errors,
     hasErrors: json.hasErrors
   };
@@ -625,6 +659,20 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   // 2. Reconstruct dialogs and link to functions
   for (const dialogName in json.dialogs) {
     model.dialogs[dialogName] = Dialog.fromJSON(json.dialogs[dialogName], model.functions);
+  }
+
+  // 3. Reconstruct constants
+  if (json.constants) {
+    for (const key in json.constants) {
+      model.constants![key] = GlobalConstant.fromJSON(json.constants[key]);
+    }
+  }
+
+  // 4. Reconstruct variables
+  if (json.variables) {
+    for (const key in json.variables) {
+      model.variables![key] = GlobalVariable.fromJSON(json.variables[key]);
+    }
   }
 
   return model;

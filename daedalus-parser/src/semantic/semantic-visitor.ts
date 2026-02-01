@@ -6,7 +6,9 @@ import {
   DialogFunction,
   SemanticModel,
   DialogProperties,
-  Choice
+  Choice,
+  GlobalConstant,
+  GlobalVariable
 } from './semantic-model';
 import { ActionParsers } from './parsers/action-parsers';
 import { ConditionParsers } from './parsers/condition-parsers';
@@ -20,7 +22,14 @@ export class SemanticModelBuilderVisitor {
   private functionNameMap: Map<string, string>; // Maps lowercase name -> original name
 
   constructor() {
-    this.semanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
+    this.semanticModel = {
+      dialogs: {},
+      functions: {},
+      constants: {},
+      variables: {},
+      hasErrors: false,
+      errors: []
+    };
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
@@ -84,7 +93,9 @@ export class SemanticModelBuilderVisitor {
       for (let i = 0; i < childCount; i++) {
         const child = node.child(i);
         // Only recurse into declarations we care about
-        if (child.type === 'function_declaration' || child.type === 'instance_declaration') {
+        if (child.type === 'function_declaration' ||
+            child.type === 'instance_declaration' ||
+            child.type === 'variable_declaration') {
           this.pass1_createObjects(child);
         }
       }
@@ -108,10 +119,60 @@ export class SemanticModelBuilderVisitor {
         this.semanticModel.dialogs[dialog.name] = dialog;
       }
       return; // Optimization: Don't recurse into instance bodies during object creation
+    } else if (node.type === 'variable_declaration') {
+      this.createGlobalSymbol(node);
+      return;
     }
 
     // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
     // so we don't need to recurse.
+  }
+
+  /**
+   * Create GlobalConstant or GlobalVariable from variable declaration node
+   */
+  private createGlobalSymbol(node: TreeSitterNode): void {
+    const keywordNode = node.childForFieldName('keyword');
+    const typeNode = node.childForFieldName('type');
+    const nameNode = node.childForFieldName('name');
+    const valueNode = node.childForFieldName('value');
+
+    if (!keywordNode || !typeNode || !nameNode) {
+      return;
+    }
+
+    const keyword = keywordNode.text.toLowerCase();
+    const type = typeNode.text;
+    const name = nameNode.text;
+
+    if (keyword === 'const') {
+      let value: string | number | boolean = 0;
+      if (valueNode) {
+        if (valueNode.type === 'string') {
+          value = valueNode.text;
+        } else if (valueNode.type === 'number') {
+          value = Number(valueNode.text);
+        } else if (valueNode.type === 'boolean') {
+          value = (valueNode.text.toLowerCase() === 'true');
+        } else {
+          // Identifier or expression
+          value = valueNode.text;
+        }
+      }
+
+      const constant = new GlobalConstant(name, type, value);
+      if (!this.semanticModel.constants) {
+        this.semanticModel.constants = {};
+      }
+      this.semanticModel.constants[name] = constant;
+
+    } else if (keyword === 'var') {
+      const variable = new GlobalVariable(name, type);
+      if (!this.semanticModel.variables) {
+        this.semanticModel.variables = {};
+      }
+      this.semanticModel.variables[name] = variable;
+    }
   }
 
   // ===================================================================

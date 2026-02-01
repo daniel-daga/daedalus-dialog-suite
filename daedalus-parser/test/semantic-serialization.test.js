@@ -109,3 +109,34 @@ test('deserializeSemanticModel should handle various action types', () => {
   assert.ok(actions[1] instanceof Choice);
   assert.equal(actions[1].text, 'Option 1');
 });
+
+test('deserializeSemanticModel should handle global constants and variables', () => {
+  const plainJson = {
+    functions: {},
+    dialogs: {},
+    constants: {
+      'TOPIC_Test': {
+        name: 'TOPIC_Test',
+        type: 'string',
+        value: 'Test Topic'
+      }
+    },
+    variables: {
+      'MIS_Test': {
+        name: 'MIS_Test',
+        type: 'int'
+      }
+    }
+  };
+
+  const model = deserializeSemanticModel(plainJson);
+  const { GlobalConstant, GlobalVariable } = require('../dist/semantic/semantic-visitor-index');
+
+  assert.ok(model.constants['TOPIC_Test'] instanceof GlobalConstant);
+  assert.equal(model.constants['TOPIC_Test'].name, 'TOPIC_Test');
+  assert.equal(model.constants['TOPIC_Test'].value, 'Test Topic');
+
+  assert.ok(model.variables['MIS_Test'] instanceof GlobalVariable);
+  assert.equal(model.variables['MIS_Test'].name, 'MIS_Test');
+  assert.equal(model.variables['MIS_Test'].type, 'int');
+});
