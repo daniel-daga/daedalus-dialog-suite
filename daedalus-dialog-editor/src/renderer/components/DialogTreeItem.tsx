@@ -109,7 +109,19 @@ const DialogTreeItem = memo(({
   );
 }, (prev, next) => {
   if (prev.dialogName !== next.dialogName) return false;
-  if (prev.semanticModel !== next.semanticModel) return false;
+
+  // Optimization: specific check for relevant semantic model parts
+  // 1. Check if specific dialog object changed
+  const prevDialog = prev.semanticModel.dialogs?.[prev.dialogName];
+  const nextDialog = next.semanticModel.dialogs?.[next.dialogName];
+  if (prevDialog !== nextDialog) return false;
+
+  // 2. Check if functions map changed (needed for info function lookup)
+  if (prev.semanticModel.functions !== next.semanticModel.functions) return false;
+
+  // 3. Check if tree builder changed (it depends on functions)
+  if (prev.buildFunctionTree !== next.buildFunctionTree) return false;
+
   if (prev.isSelected !== next.isSelected) return false;
   if (prev.isExpanded !== next.isExpanded) return false;
   if (prev.selectedFunctionName !== next.selectedFunctionName) return false;
