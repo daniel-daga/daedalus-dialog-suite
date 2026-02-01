@@ -106,7 +106,7 @@ export class ValidationService {
 
     // Step 2: Syntax validation via round-trip parsing
     if (!options.skipSyntaxValidation) {
-      const syntaxErrors = this.validateSyntax(generatedCode);
+      const syntaxErrors = await this.validateSyntax(generatedCode);
       errors.push(...syntaxErrors);
     }
 
@@ -140,11 +140,11 @@ export class ValidationService {
   /**
    * Validate generated code by parsing it back
    */
-  private validateSyntax(code: string): ValidationError[] {
+  private async validateSyntax(code: string): Promise<ValidationError[]> {
     const errors: ValidationError[] = [];
 
     try {
-      const parseResult = this.parserService.parseSource(code);
+      const parseResult = await this.parserService.parseSource(code);
 
       if (parseResult.hasErrors && parseResult.errors) {
         for (const parseError of parseResult.errors) {
