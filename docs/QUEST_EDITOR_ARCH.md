@@ -38,6 +38,12 @@ Quests are manipulated inside Dialogs (`instance ... (C_INFO)`) or other events 
     *   Directly updating the variable is common for logic checks.
     *   *Example:* `MIS_MyQuest = LOG_SUCCESS;`
 
+### 2.4. Conditional Logic (The Flow)
+The progression of a quest is dictated by **Conditions**. A dialog (and thus a quest update) can only trigger if its `condition` function returns `TRUE`.
+*   **`Npc_KnowsInfo(hero, DIA_OtherDialog)`**: Checks if the player has heard a previous dialog. This creates a linear dependency chain.
+*   **`Npc_HasItems(hero, ItMi_QuestItem, 1)`**: Checks if the player has collected a required item.
+*   **`MIS_MyQuest == LOG_RUNNING`**: Checks the quest state itself.
+
 ---
 
 ## 3. Semantic Model Mapping & Gap Analysis
@@ -47,8 +53,9 @@ The `daedalus-parser` currently excels at parsing **Dialogs** and **Function Bod
 *   `Dialog` instances.
 *   `DialogFunction` bodies.
 *   Specific actions like `CreateTopic`, `LogEntry`, and `LogSetTopicStatus` within those bodies.
+*   **Conditions**: The `SemanticModelBuilderVisitor` captures `NpcKnowsInfoCondition`, `VariableCondition`, and generic conditions.
 
-This means we can currently answer: *"Which dialogs modify a quest?"* (by looking at the arguments passed to `Log_*` functions).
+This means we can currently answer: *"Which dialogs modify a quest?"* (by looking at the arguments passed to `Log_*` functions) and *"What enables this dialog?"* (by looking at the conditions).
 
 ### 3.2. The Gap: Global Scope
 The current `SemanticModelBuilderVisitor` primarily focuses on `instance_declaration` (Dialogs) and `function_declaration` (Functions). It **ignores** global `const` and `var` declarations.
@@ -108,19 +115,20 @@ Moving beyond linear lists, a **Node-Based View** would visualize the non-linear
 
 ### 5.1. Concept
 *   **Nodes:** Represent **Events** or **Dialogs** where the quest state changes or a log entry is added.
-*   **Edges:** Represent the **Requirements** or **Flow** between these events.
+*   **Edges:** Represent the **Conditions** (Dependencies) that allow the flow to proceed from one node to another.
 
 ### 5.2. Visualization Logic
 *   **Start Node:** The Dialog containing `Log_CreateTopic`.
 *   **Intermediate Nodes:** Dialogs containing `B_LogEntry`.
 *   **End Nodes:** Dialogs setting `LOG_SUCCESS` or `LOG_FAILED`.
-*   **Connections:**
-    *   If `DIA_B` requires `Npc_KnowsInfo(hero, DIA_A)`, draw an arrow from A to B.
-    *   This creates a directed graph showing the path the player must take to complete the quest.
+*   **Connections (Edges):**
+    *   **Dialog Dependency:** If `DIA_B` has condition `Npc_KnowsInfo(hero, DIA_A)`, draw a solid arrow from `DIA_A` to `DIA_B`.
+    *   **Item Dependency:** If `DIA_C` has condition `Npc_HasItems(..., ItMi_QuestItem)`, draw a dashed arrow or annotation indicating "Requires Item".
+    *   **Variable Dependency:** If `DIA_D` checks `MIS_MyQuest == LOG_RUNNING`, it explicitly visually belongs to the "Active" phase of the quest.
 
 ### 5.3. Swimlanes
 Since quests often involve multiple NPCs, the node graph could be organized into **Swimlanes**, where each horizontal lane represents a specific NPC.
 *   *Lane 1 (Shepherd):* [Start Quest] -> [Reward]
 *   *Lane 2 (Wolf):* [Kill Wolf]
 
-This visual abstraction allows writers to spot dead ends, missing logic, or overly complex dependency chains at a glance.
+This visual abstraction allows writers to spot dead ends, missing logic (e.g., a node with no incoming arrows), or overly complex dependency chains at a glance.
