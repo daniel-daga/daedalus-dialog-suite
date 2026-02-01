@@ -17,6 +17,7 @@ export class SemanticModelBuilderVisitor {
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
   private functionToDialog: Map<string, Dialog>;
+  private functionNameMap: Map<string, string>; // Maps lowercase name -> original name
 
   constructor() {
     this.semanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
@@ -24,6 +25,7 @@ export class SemanticModelBuilderVisitor {
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
     this.functionToDialog = new Map<string, Dialog>();
+    this.functionNameMap = new Map<string, string>();
   }
 
   /**
@@ -95,6 +97,7 @@ export class SemanticModelBuilderVisitor {
       if (nameNode && typeNode) {
         const func = new DialogFunction(nameNode.text, typeNode.text);
         this.semanticModel.functions[func.name] = func;
+        this.functionNameMap.set(func.name.toLowerCase(), func.name);
       }
       return; // Optimization: Don't recurse into function bodies during object creation
     } else if (node.type === 'instance_declaration') {
@@ -209,12 +212,16 @@ export class SemanticModelBuilderVisitor {
           }
 
           // Since all functions were created in Pass 1, this lookup will now succeed.
-          if (this.semanticModel.functions[rightNode.text]) {
-            value = this.semanticModel.functions[rightNode.text];
+          // Handle case-insensitive lookup
+          const originalName = this.functionNameMap.get(rightNode.text.toLowerCase());
+          const functionName = originalName || rightNode.text;
+
+          if (this.semanticModel.functions[functionName]) {
+            value = this.semanticModel.functions[functionName];
 
             // Optimize lookup: Map information function to dialog
             if (propertyName === 'information') {
-              this.functionToDialog.set(rightNode.text, this.currentInstance);
+              this.functionToDialog.set(functionName, this.currentInstance);
             }
           } else {
             value = rightNode.text;
