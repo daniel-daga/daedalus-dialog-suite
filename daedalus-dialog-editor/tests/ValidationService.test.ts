@@ -35,7 +35,7 @@ describe('ValidationService', () => {
 
     // Default successful behavior
     mockGenerateCode.mockReturnValue('// Generated code');
-    mockParseSource.mockReturnValue({
+    mockParseSource.mockResolvedValue({
       dialogs: {},
       functions: {},
       hasErrors: false,
@@ -70,7 +70,7 @@ describe('ValidationService', () => {
       };
 
       mockGenerateCode.mockReturnValue('FUNC INT DIA_Test_Condition() { return TRUE; };');
-      mockParseSource.mockReturnValue({ hasErrors: false, errors: [] });
+      mockParseSource.mockResolvedValue({ hasErrors: false, errors: [] });
 
       const result = await validationService.validate(validModel, defaultSettings);
 
@@ -97,7 +97,7 @@ describe('ValidationService', () => {
       };
 
       mockGenerateCode.mockReturnValue('FUNC VOID BrokenFunc() { broken };');
-      mockParseSource.mockReturnValue({
+      mockParseSource.mockResolvedValue({
         hasErrors: true,
         errors: [
           { type: 'syntax_error', message: 'Unexpected token', position: { row: 0, column: 25 } }
