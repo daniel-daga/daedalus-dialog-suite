@@ -3,7 +3,8 @@ import {
   Box,
   ListItemButton,
   ListItemText,
-  IconButton
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import {
   CallSplit as CallSplitIcon,
@@ -47,16 +48,19 @@ const ChoiceTreeItem = memo(({
         sx={{ pl: (depth + 1) * 2, pr: 1 }}
       >
         {hasSubchoices ? (
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleChoiceExpand(choiceKey);
-            }}
-            sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }}
-          >
-            {isChoiceExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-          </IconButton>
+          <Tooltip title={isChoiceExpanded ? 'Collapse' : 'Expand'}>
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleChoiceExpand(choiceKey);
+              }}
+              sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }}
+              aria-label={isChoiceExpanded ? 'Collapse choice' : 'Expand choice'}
+            >
+              {isChoiceExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
         ) : (
           <Box sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }} />
         )}

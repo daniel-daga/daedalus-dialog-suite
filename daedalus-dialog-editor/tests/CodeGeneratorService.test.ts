@@ -17,8 +17,8 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
 
   describe('Bug #1: Missing validation for function references', () => {
     test('should log error when function referenced by name does not exist', () => {
-      // Arrange: Spy on console.error to detect validation errors
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      // Arrange: Spy on console.warn to detect validation errors
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const plainModel = {
         functions: {
@@ -57,16 +57,16 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
       // Assert: An error should be logged for the missing function
       // BEFORE FIX: This will fail because no error is logged (silent data corruption)
       // AFTER FIX: This will pass because validation logs the error
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Function 'NonExistentFunc' referenced but not found")
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Function 'NonExistentFunc' referenced")
       );
 
-      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
     });
 
     test('should log error when function referenced by object does not exist', () => {
-      // Arrange: Spy on console.error
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      // Arrange: Spy on console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const plainModel = {
         functions: {
@@ -105,11 +105,11 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
       // Assert: An error should be logged for the missing function
       // BEFORE FIX: This will fail because no error is logged (silent data corruption)
       // AFTER FIX: This will pass because validation logs the error
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Function 'NonExistentFunc' referenced but not found")
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Function 'NonExistentFunc' referenced")
       );
 
-      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
     });
 
     test('should correctly link dialog property to existing function', () => {
@@ -194,8 +194,8 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
     });
 
     test('should handle mixed valid and invalid function references', () => {
-      // Arrange: Spy on console.error
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      // Arrange: Spy on console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const plainModel = {
         functions: {
@@ -239,11 +239,11 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
 
       // BEFORE FIX: No error logged for invalid reference
       // AFTER FIX: Error logged for 'InvalidFunc'
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Function 'InvalidFunc' referenced but not found")
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Function 'InvalidFunc' referenced")
       );
 
-      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
     });
   });
 

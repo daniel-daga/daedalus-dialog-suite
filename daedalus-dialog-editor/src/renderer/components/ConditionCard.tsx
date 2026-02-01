@@ -240,9 +240,17 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
           />
         )}
         <Box sx={{ flex: 1 }} />
-        <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-          <DeleteIcon fontSize="small" />
-        </IconButton>
+        <Tooltip title="Delete condition">
+          <IconButton
+            size="small"
+            color="error"
+            onClick={handleDelete}
+            sx={{ flexShrink: 0 }}
+            aria-label="Delete condition"
+          >
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Box>
 
       {renderConditionFields()}

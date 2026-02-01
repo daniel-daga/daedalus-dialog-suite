@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, TextField, IconButton, Typography } from '@mui/material';
+import { Box, TextField, IconButton, Typography, Tooltip } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
 
@@ -37,9 +37,11 @@ const UnknownActionRenderer: React.FC<BaseActionRendererProps> = ({
             Properties: {Object.keys(action).join(', ')}
           </Typography>
         </Box>
-        <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-          <DeleteIcon fontSize="small" />
-        </IconButton>
+        <Tooltip title="Delete action">
+          <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }} aria-label="Delete action">
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Box>
     </Box>
   );

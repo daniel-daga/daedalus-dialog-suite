@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
-import { Box, IconButton, Tooltip, Typography, Menu, MenuItem } from '@mui/material';
+import { Box, Tooltip, Typography, Menu, MenuItem } from '@mui/material';
 import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon } from '@mui/icons-material';
 import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
@@ -312,40 +312,52 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
           zIndex: 1
         }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0.5,
-            bgcolor: 'background.paper',
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: '16px',
-            height: '32px',
-            px: 1,
-            boxShadow: 1,
-            transition: 'all 0.2s ease-in-out',
-            '&:hover': {
-              bgcolor: 'action.hover',
-              borderColor: 'primary.main',
-              boxShadow: 2
-            },
-            cursor: 'pointer'
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setMenuAnchor(e.currentTarget);
-            setSelectedMenuIndex(0);
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          <AddIcon fontSize="small" sx={{ color: 'primary.main' }} />
-          {hasFocus && (
+        <Tooltip title="Add new action">
+          <Box
+            role="button"
+            aria-label="Add new action"
+            tabIndex={0}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              bgcolor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: '16px',
+              height: '32px',
+              px: 1,
+              boxShadow: 1,
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                bgcolor: 'action.hover',
+                borderColor: 'primary.main',
+                boxShadow: 2
+              },
+              cursor: 'pointer'
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuAnchor(e.currentTarget);
+              setSelectedMenuIndex(0);
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setMenuAnchor(e.currentTarget);
+                setSelectedMenuIndex(0);
+              }
+            }}
+          >
+            <AddIcon fontSize="small" sx={{ color: 'primary.main' }} />
+            {hasFocus && (
             <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', whiteSpace: 'nowrap' }}>
               Ctrl+Enter
             </Typography>
           )}
-        </Box>
+          </Box>
+        </Tooltip>
       </Box>
     </Box>
   );

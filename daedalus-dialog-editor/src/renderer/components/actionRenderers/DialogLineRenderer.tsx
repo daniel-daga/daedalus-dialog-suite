@@ -39,14 +39,16 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
       />
       {action.id && (
         <Tooltip title={`Dialog ID: ${action.id}`} arrow>
-          <IconButton size="small" sx={{ flexShrink: 0 }}>
+          <IconButton size="small" sx={{ flexShrink: 0 }} aria-label={`Dialog ID: ${action.id}`}>
             <InfoIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       )}
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
+      <Tooltip title="Delete dialog line">
+        <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }} aria-label="Delete dialog line">
+          <DeleteIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
     </Box>
   );
 };

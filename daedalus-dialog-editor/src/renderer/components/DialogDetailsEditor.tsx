@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Chip, Menu, MenuItem, Snackbar, Alert, CircularProgress } from '@mui/material';
+import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Tooltip, Chip, Menu, MenuItem, Snackbar, Alert, CircularProgress } from '@mui/material';
 import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
@@ -347,9 +347,11 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 </>
               )}
             </Box>
-            <IconButton size="small">
-              {propertiesExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
-            </IconButton>
+            <Tooltip title={propertiesExpanded ? 'Collapse properties' : 'Expand properties'}>
+              <IconButton size="small" aria-label={propertiesExpanded ? 'Collapse properties' : 'Expand properties'}>
+                {propertiesExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+              </IconButton>
+            </Tooltip>
           </Box>
           {propertiesExpanded && (
             <Stack spacing={2}>
@@ -463,13 +465,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               >
                 Add Choice
               </Button>
-              <IconButton
-                size="small"
-                onClick={(e) => setAddMenuAnchor(e.currentTarget)}
-                sx={{ ml: 0.5 }}
-              >
-                <MoreVertIcon fontSize="small" />
-              </IconButton>
+              <Tooltip title="More actions">
+                <IconButton
+                  size="small"
+                  onClick={(e) => setAddMenuAnchor(e.currentTarget)}
+                  sx={{ ml: 0.5 }}
+                  aria-label="More actions"
+                >
+                  <MoreVertIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
               <Menu
                 anchorEl={addMenuAnchor}
                 open={Boolean(addMenuAnchor)}
