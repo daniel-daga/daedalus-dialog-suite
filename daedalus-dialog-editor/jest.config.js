@@ -4,8 +4,9 @@ const path = require('path');
 // Check if daedalus-parser is available (either in node_modules or as a sibling)
 // We check node_modules first because that's where the code imports it from
 const daedalusParserPath = path.resolve(__dirname, 'node_modules/daedalus-parser');
+const daedalusParserRootPath = path.resolve(__dirname, '../node_modules/daedalus-parser');
 // existsSync returns false for broken symlinks
-const hasDaedalusParser = fs.existsSync(daedalusParserPath);
+const hasDaedalusParser = fs.existsSync(daedalusParserPath) || fs.existsSync(daedalusParserRootPath);
 
 const moduleNameMapper = {
   '\\.(css|less|scss|sass)$': 'identity-obj-proxy',

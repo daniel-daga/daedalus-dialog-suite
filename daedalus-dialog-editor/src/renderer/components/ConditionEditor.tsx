@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { Box, Paper, Typography, Stack, IconButton, Button, Menu, MenuItem, Chip } from '@mui/material';
+import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
 import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon } from '@mui/icons-material';
 import ConditionCard from './ConditionCard';
 
@@ -182,9 +182,11 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
             />
           )}
         </Box>
-        <IconButton size="small">
-          {conditionsExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
-        </IconButton>
+        <Tooltip title={conditionsExpanded ? 'Collapse conditions' : 'Expand conditions'}>
+          <IconButton size="small" aria-label={conditionsExpanded ? 'Collapse conditions' : 'Expand conditions'}>
+            {conditionsExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+          </IconButton>
+        </Tooltip>
       </Box>
 
       {conditionsExpanded && (

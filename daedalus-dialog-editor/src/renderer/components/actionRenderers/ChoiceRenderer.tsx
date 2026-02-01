@@ -99,15 +99,18 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
                 onNavigateToFunction(action.targetFunction);
               }}
               sx={{ flexShrink: 0 }}
+              aria-label="Edit choice actions"
             >
               <EditIcon fontSize="small" />
             </IconButton>
           </Badge>
         </Tooltip>
       )}
-      <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
+      <Tooltip title="Delete choice">
+        <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }} aria-label="Delete choice">
+          <DeleteIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
     </Box>
   );
 };

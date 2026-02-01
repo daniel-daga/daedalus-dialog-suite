@@ -30,6 +30,7 @@ const ActionDeleteButton: React.FC<ActionDeleteButtonProps> = ({
         color="error"
         onClick={onClick}
         sx={{ flexShrink: 0, ...(marginTop !== undefined && { mt: marginTop }) }}
+        aria-label={tooltip}
       >
         <DeleteIcon fontSize="small" />
       </IconButton>

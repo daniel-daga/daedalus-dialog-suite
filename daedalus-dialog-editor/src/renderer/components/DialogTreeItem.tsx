@@ -3,7 +3,8 @@ import {
   Box,
   ListItemButton,
   ListItemText,
-  IconButton
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -68,16 +69,19 @@ const DialogTreeItem = memo(({
         sx={{ pr: 1 }}
       >
         {hasChoices ? (
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleDialogExpand(dialogName);
-            }}
-            sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }}
-          >
-            {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-          </IconButton>
+          <Tooltip title={isExpanded ? 'Collapse' : 'Expand'}>
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleDialogExpand(dialogName);
+              }}
+              sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }}
+              aria-label={isExpanded ? 'Collapse dialog' : 'Expand dialog'}
+            >
+              {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
         ) : (
           <Box sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }} />
         )}
