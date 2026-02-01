@@ -16,6 +16,7 @@ export interface ProjectIndex {
   npcs: string[];
   dialogsByNpc: Map<string, DialogMetadata[]>;
   allFiles: string[];
+  questFiles: string[];
 }
 
 // ============================================================================

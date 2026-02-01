@@ -265,6 +265,44 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
 
       expect(index.npcs).toEqual(['Alpha', 'Beta', 'Zebra']);
     });
+
+    it('should detect quest files containing TOPIC_ constants or MIS_ variables', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      // File with TOPIC_ constant
+      fs.writeFileSync(path.join(storyDir, 'Log_Constants.d'), `
+        const string TOPIC_MyQuest = "The Lost Sheep";
+        const string TOPIC_Another = "Another Quest";
+      `);
+
+      // File with MIS_ variable
+      fs.writeFileSync(path.join(storyDir, 'Story_Globals.d'), `
+        var int MIS_MyQuest;
+        var int MIS_OtherQuest;
+      `);
+
+      // File with both
+      fs.writeFileSync(path.join(storyDir, 'Mixed.d'), `
+        const string TOPIC_Mixed = "Mixed Quest";
+        var int MIS_Mixed;
+      `);
+
+      // File with neither
+      fs.writeFileSync(path.join(storyDir, 'Other.d'), `
+        const int NOT_A_QUEST = 1;
+        var int not_a_quest_var;
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.questFiles).toHaveLength(3);
+      expect(index.questFiles).toContain(path.join(storyDir, 'Log_Constants.d'));
+      expect(index.questFiles).toContain(path.join(storyDir, 'Story_Globals.d'));
+      expect(index.questFiles).toContain(path.join(storyDir, 'Mixed.d'));
+      expect(index.questFiles).not.toContain(path.join(storyDir, 'Other.d'));
+    });
   });
 
   describe('getDialogsForNpc', () => {

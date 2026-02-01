@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, ToggleButton, ToggleButtonGroup, Paper, Tooltip } from '@mui/material';
 import { Chat as ChatIcon, Book as BookIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
@@ -14,11 +14,17 @@ interface MainLayoutProps {
 const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   const [view, setView] = useState<'dialog' | 'quest'>('dialog');
   const { openFiles } = useEditorStore();
-  const { projectPath, mergedSemanticModel } = useProjectStore();
+  const { projectPath, mergedSemanticModel, loadQuestData } = useProjectStore();
 
   const fileState = filePath ? openFiles.get(filePath) : null;
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
+
+  useEffect(() => {
+    if (view === 'quest' && isProjectMode) {
+      loadQuestData();
+    }
+  }, [view, isProjectMode, loadQuestData]);
 
   return (
     <Box sx={{ display: 'flex', height: '100%', width: '100%' }}>

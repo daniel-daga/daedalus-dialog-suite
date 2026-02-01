@@ -21,6 +21,10 @@ const INSTANCE_START_REGEX = /INSTANCE\s+(\w+)\s*\(([^)]+)\)\s*\{/gi;
 // Regex to match npc property inside the body
 const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/i;
 
+// Regex to detect quest definitions
+const TOPIC_REGEX = /const\s+string\s+TOPIC_\w+/i;
+const MIS_REGEX = /var\s+int\s+MIS_\w+/i;
+
 class ProjectService {
   /**
    * Recursively scan directory for .d files (async)
@@ -123,6 +127,7 @@ class ProjectService {
 
     // Map to store dialogs by NPC
     const dialogsByNpc = new Map<string, DialogMetadata[]>();
+    const questFiles: string[] = [];
 
     // Process files in parallel batches for better performance
     const BATCH_SIZE = 50;
@@ -139,14 +144,16 @@ class ProjectService {
             const content = await fs.readFile(filePath, 'utf-8');
 
             // Queue parsing task
-            return new Promise<DialogMetadata[]>((resolve) => {
+            return new Promise<{ dialogs: DialogMetadata[]; isQuestFile: boolean }>((resolve) => {
               const task = async () => {
                 // Yield to event loop to allow UI updates/interactivity
                 await new Promise<void>((r) => setImmediate(r));
                 try {
-                  resolve(this.extractDialogMetadata(content, filePath));
+                  const dialogs = this.extractDialogMetadata(content, filePath);
+                  const isQuestFile = TOPIC_REGEX.test(content) || MIS_REGEX.test(content);
+                  resolve({ dialogs, isQuestFile });
                 } catch {
-                  resolve([]);
+                  resolve({ dialogs: [], isQuestFile: false });
                 }
               };
 
@@ -155,18 +162,27 @@ class ProjectService {
             });
           } catch {
             // Silently skip files that can't be read
-            return [];
+            return { dialogs: [], isQuestFile: false };
           }
         })
       );
 
-      // Group dialogs by NPC
-      for (const dialogs of results) {
-        for (const dialog of dialogs) {
+      // Process results
+      for (let j = 0; j < batch.length; j++) {
+        const result = results[j];
+        const filePath = batch[j];
+
+        // Group dialogs by NPC
+        for (const dialog of result.dialogs) {
           if (!dialogsByNpc.has(dialog.npc)) {
             dialogsByNpc.set(dialog.npc, []);
           }
           dialogsByNpc.get(dialog.npc)!.push(dialog);
+        }
+
+        // Collect quest files
+        if (result.isQuestFile) {
+          questFiles.push(filePath);
         }
       }
     }
@@ -177,7 +193,8 @@ class ProjectService {
     return {
       npcs,
       dialogsByNpc,
-      allFiles
+      allFiles,
+      questFiles
     };
   }
 
