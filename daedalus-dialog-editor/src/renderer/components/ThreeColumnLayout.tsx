@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect, useDeferredValue } from 'react';
 import { Box, Typography, Alert } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
@@ -53,6 +53,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Determine which mode we're in: project mode or single-file mode
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
+
+  // Defer the semantic model update for the heavy tree view to prevent blocking the main thread
+  const deferredSemanticModel = useDeferredValue(semanticModel);
 
   // Determine early return conditions (but don't return yet - hooks must be called first)
   const showLoading = !isProjectMode && !fileState;
@@ -121,7 +124,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Build function tree for a given function (recursively find choices)
   // ancestorPath tracks the path from root to current node to prevent direct cycles
   // Uses memoization to prevent exponential recomputation in diamond patterns
-  const functions = semanticModel.functions;
+  // Uses deferred functions to avoid re-calculating the tree on every keystroke
+  const deferredFunctions = deferredSemanticModel.functions;
   const buildFunctionTree = useCallback((funcName: string, ancestorPath: string[] = []): FunctionTreeNode | null => {
     // Prevent direct cycles (A -> B -> A), but allow diamonds (A -> B, A -> C, both -> D)
     if (ancestorPath.includes(funcName)) {
@@ -131,7 +135,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     // Create cache key including ancestor path to handle different contexts
     const cacheKey = `${funcName}|${ancestorPath.join(',')}`;
 
-    const func = functions?.[funcName];
+    const func = deferredFunctions?.[funcName];
     if (!func) return null;
 
     // Check cache first (LRU - Bug #4 fix)
@@ -219,7 +223,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     lruCacheSet(cacheKey, result);
 
     return result;
-  }, [functions, lruCacheGet, lruCacheSet]);
+  }, [deferredFunctions, lruCacheGet, lruCacheSet]);
 
   // Memoize NPC map extraction to avoid rebuilding on every render
   // In project mode, use project NPCs; in single-file mode, extract from file
@@ -457,7 +461,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         <DialogTree
           selectedNPC={selectedNPC}
           dialogsForNPC={dialogsForNPC}
-          semanticModel={semanticModel}
+          semanticModel={deferredSemanticModel}
           selectedDialog={selectedDialog}
           selectedFunctionName={selectedFunctionName}
           expandedDialogs={expandedDialogs}
