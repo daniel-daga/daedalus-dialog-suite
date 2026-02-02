@@ -17,6 +17,26 @@ export interface TreeSitterNode {
   isMissing: boolean;
   childForFieldName(fieldName: string): TreeSitterNode | null;
   child(index: number): TreeSitterNode;
+  walk(): TreeCursor;
+}
+
+export interface TreeCursor {
+  nodeType: string;
+  nodeText: string;
+  nodeIsMissing: boolean;
+  nodeIsNamed: boolean;
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
+  startIndex: number;
+  endIndex: number;
+  currentNode: TreeSitterNode;
+
+  reset(node: TreeSitterNode): void;
+  delete(): void;
+  gotoParent(): boolean;
+  gotoFirstChild(): boolean;
+  gotoFirstChildForIndex(index: number): boolean;
+  gotoNextSibling(): boolean;
 }
 
 // ===================================================================

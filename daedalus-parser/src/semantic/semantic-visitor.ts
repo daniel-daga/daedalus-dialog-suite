@@ -2,6 +2,7 @@
 
 import {
   TreeSitterNode,
+  TreeCursor,
   Dialog,
   DialogFunction,
   SemanticModel,
@@ -41,6 +42,13 @@ export class SemanticModelBuilderVisitor {
    * Check for syntax errors in the parse tree and populate semantic model errors
    */
   checkForSyntaxErrors(node: TreeSitterNode, sourceCode?: string): void {
+    const cursor = node.walk();
+    this.checkForSyntaxErrorsRecursively(cursor, sourceCode);
+  }
+
+  private checkForSyntaxErrorsRecursively(cursor: TreeCursor, sourceCode?: string): void {
+    const node = cursor.currentNode;
+
     // Optimization: Skip subtrees that don't contain errors
     if (!node.hasError) {
       return;
@@ -74,8 +82,11 @@ export class SemanticModelBuilderVisitor {
       });
     }
 
-    for (let i = 0; i < node.childCount; i++) {
-      this.checkForSyntaxErrors(node.child(i), sourceCode);
+    if (cursor.gotoFirstChild()) {
+      do {
+        this.checkForSyntaxErrorsRecursively(cursor, sourceCode);
+      } while (cursor.gotoNextSibling());
+      cursor.gotoParent();
     }
   }
 
@@ -87,17 +98,26 @@ export class SemanticModelBuilderVisitor {
    * First pass: Create all skeleton objects to ensure they exist before linking
    */
   pass1_createObjects(node: TreeSitterNode): void {
+    const cursor = node.walk();
+    this.pass1_createObjectsRecursively(cursor);
+  }
+
+  private pass1_createObjectsRecursively(cursor: TreeCursor): void {
+    const node = cursor.currentNode;
+
     // Optimization: Handle root node specifically to skip non-declaration children
     if (node.type === 'program' || node.type === 'source_file') {
-      const childCount = node.childCount;
-      for (let i = 0; i < childCount; i++) {
-        const child = node.child(i);
-        // Only recurse into declarations we care about
-        if (child.type === 'function_declaration' ||
-            child.type === 'instance_declaration' ||
-            child.type === 'variable_declaration') {
-          this.pass1_createObjects(child);
-        }
+      if (cursor.gotoFirstChild()) {
+        do {
+          const child = cursor.currentNode;
+          // Only recurse into declarations we care about
+          if (child.type === 'function_declaration' ||
+              child.type === 'instance_declaration' ||
+              child.type === 'variable_declaration') {
+            this.pass1_createObjectsRecursively(cursor);
+          }
+        } while (cursor.gotoNextSibling());
+        cursor.gotoParent();
       }
       return;
     }
@@ -183,34 +203,44 @@ export class SemanticModelBuilderVisitor {
    * Second pass: Link properties and analyze function bodies
    */
   pass2_analyzeAndLink(node: TreeSitterNode): void {
+    const cursor = node.walk();
+    const currentNode = cursor.currentNode;
+
     // Optimization: Handle root node specifically to skip non-declaration children
-    if (node.type === 'program' || node.type === 'source_file') {
-      const childCount = node.childCount;
-      for (let i = 0; i < childCount; i++) {
-        const child = node.child(i);
-        // Only recurse into declarations we care about
-        if (child.type === 'function_declaration' || child.type === 'instance_declaration') {
-          this.analyzeNode(child);
-        }
+    if (currentNode.type === 'program' || currentNode.type === 'source_file') {
+      if (cursor.gotoFirstChild()) {
+        do {
+          const child = cursor.currentNode;
+          // Only recurse into declarations we care about
+          if (child.type === 'function_declaration' || child.type === 'instance_declaration') {
+            this.analyzeNodeRecursively(cursor);
+          }
+        } while (cursor.gotoNextSibling());
+        cursor.gotoParent();
       }
       return;
     }
 
     // Fallback for non-root nodes (e.g. tests)
-    this.analyzeNode(node);
+    this.analyzeNodeRecursively(cursor);
   }
 
   /**
    * Internal method for analyzing nodes recursively
    */
-  private analyzeNode(node: TreeSitterNode): void {
+  private analyzeNodeRecursively(cursor: TreeCursor): void {
+    const type = cursor.nodeType;
+    let node: TreeSitterNode | null = null;
+
     // Set the current context when entering an instance or function
-    if (node.type === 'instance_declaration') {
+    if (type === 'instance_declaration') {
+      node = cursor.currentNode;
       const nameNode = node.childForFieldName('name');
       if (nameNode) {
         this.currentInstance = this.semanticModel.dialogs[nameNode.text];
       }
-    } else if (node.type === 'function_declaration') {
+    } else if (type === 'function_declaration') {
+      node = cursor.currentNode;
       const nameNode = node.childForFieldName('name');
       if (nameNode) {
         this.currentFunction = this.semanticModel.functions[nameNode.text];
@@ -218,28 +248,35 @@ export class SemanticModelBuilderVisitor {
     }
 
     // Process nodes based on the current context
-    if (node.type === 'assignment_statement' && this.currentInstance) {
+    if (type === 'assignment_statement' && this.currentInstance) {
+        if (!node) node = cursor.currentNode;
         this.processAssignment(node);
-    } else if (node.type === 'call_expression' && this.currentFunction) {
+    } else if (type === 'call_expression' && this.currentFunction) {
+        if (!node) node = cursor.currentNode;
         this.processFunctionCall(node);
     } else if (this.currentFunction && this.conditionFunctions.has(this.currentFunction.name)) {
         // Process condition-specific node types (identifier, unary_expression)
         // Only if they are part of a binary expression (to filter out function names, params, etc.)
-        if ((node.type === 'identifier' || node.type === 'unary_expression') &&
-            node.parent && node.parent.type === 'binary_expression') {
-          this.processCondition(node);
+        if (type === 'identifier' || type === 'unary_expression') {
+            if (!node) node = cursor.currentNode;
+            if (node.parent && node.parent.type === 'binary_expression') {
+              this.processCondition(node);
+            }
         }
     }
 
     // Recurse to children
-    for (let i = 0; i < node.childCount; i++) {
-      this.analyzeNode(node.child(i));
+    if (cursor.gotoFirstChild()) {
+      do {
+        this.analyzeNodeRecursively(cursor);
+      } while (cursor.gotoNextSibling());
+      cursor.gotoParent();
     }
 
     // Unset the context after visiting all children
-    if (node.type === 'instance_declaration') {
+    if (type === 'instance_declaration') {
       this.currentInstance = null;
-    } else if (node.type === 'function_declaration') {
+    } else if (type === 'function_declaration') {
       this.currentFunction = null;
     }
   }
