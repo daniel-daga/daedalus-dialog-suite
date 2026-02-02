@@ -1,18 +1,21 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   Paper,
   Box,
   Typography,
-  List,
   TextField,
   InputAdornment
 } from '@mui/material';
 import {
   FilterList as FilterListIcon
 } from '@mui/icons-material';
+import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
 import { DialogTreeProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
 import DialogTreeItem from './DialogTreeItem';
+import ChoiceTreeItem from './ChoiceTreeItem';
+import { flattenDialogs } from './dialogTreeUtils';
 
 const DialogTree: React.FC<DialogTreeProps> = ({
   selectedNPC,
@@ -49,8 +52,59 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     return filterDialogs(sortedDialogs);
   }, [sortedDialogs, filterDialogs, dialogFilter]);
 
+  // Flatten the dialogs and choices into a single list
+  const flatItems = useMemo(() => {
+    if (!selectedNPC) return [];
+    return flattenDialogs(
+      filteredDialogs,
+      semanticModel,
+      expandedDialogs,
+      expandedChoices,
+      buildFunctionTree
+    );
+  }, [selectedNPC, filteredDialogs, semanticModel, expandedDialogs, expandedChoices, buildFunctionTree]);
+
+  // Row renderer for FixedSizeList
+  const Row = useCallback(({ index, style }: ListChildComponentProps) => {
+    const item = flatItems[index];
+
+    if (item.type === 'dialog') {
+      const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information as any;
+      const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+
+      return (
+        <DialogTreeItem
+          dialogName={item.dialogName}
+          semanticModel={semanticModel}
+          isSelected={selectedDialog === item.dialogName && selectedFunctionName === infoFuncName}
+          isExpanded={item.isExpanded}
+          onSelectDialog={onSelectDialog}
+          onToggleDialogExpand={onToggleDialogExpand}
+          hasChildren={item.hasChildren}
+          style={style}
+        />
+      );
+    } else {
+      return (
+        <ChoiceTreeItem
+          choice={item.choice}
+          depth={item.depth}
+          index={item.index}
+          choiceKey={item.id}
+          isExpanded={item.isExpanded}
+          hasChildren={item.hasChildren}
+          selectedFunctionName={selectedFunctionName}
+          dialogName={item.dialogName}
+          onSelectDialog={onSelectDialog}
+          onToggleChoiceExpand={onToggleChoiceExpand}
+          style={style}
+        />
+      );
+    }
+  }, [flatItems, semanticModel, selectedDialog, selectedFunctionName, onSelectDialog, onToggleDialogExpand, onToggleChoiceExpand]);
+
   return (
-    <Paper sx={{ width: 350, overflow: 'hidden', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0, display: 'flex', flexDirection: 'column' }} elevation={1}>
+    <Paper sx={{ width: 350, overflow: 'hidden', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }} elevation={1}>
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
         <Typography variant="h6">Dialogs</Typography>
         {selectedNPC && (
@@ -77,40 +131,30 @@ const DialogTree: React.FC<DialogTreeProps> = ({
           />
         </Box>
       )}
-      <List dense sx={{ overflow: 'auto', flexGrow: 1 }}>
+
+      <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
         {selectedNPC ? (
-          <>
-            {filteredDialogs.map((dialogName) => {
-              const dialog = semanticModel.dialogs?.[dialogName];
-              if (!dialog) return null;
-
-              const infoFunc = dialog.properties?.information as any;
-              const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-
-              return (
-                <DialogTreeItem
-                  key={dialogName}
-                  dialogName={dialogName}
-                  semanticModel={semanticModel}
-                  isSelected={selectedDialog === dialogName && selectedFunctionName === infoFuncName}
-                  isExpanded={expandedDialogs.has(dialogName)}
-                  expandedChoices={expandedChoices}
-                  selectedFunctionName={selectedFunctionName}
-                  onSelectDialog={onSelectDialog}
-                  onToggleDialogExpand={onToggleDialogExpand}
-                  onToggleChoiceExpand={onToggleChoiceExpand}
-                  buildFunctionTree={buildFunctionTree}
-                />
-              );
-            })}
-            {filteredDialogs.length === 0 && dialogFilter && (
-              <Box sx={{ p: 2, textAlign: 'center' }}>
-                <Typography variant="body2" color="text.secondary">
-                  No dialogs match "{dialogFilter}"
-                </Typography>
-              </Box>
-            )}
-          </>
+          flatItems.length > 0 ? (
+            <AutoSizer>
+              {({ height, width }: { height: number; width: number }) => (
+                <List
+                  height={height}
+                  itemCount={flatItems.length}
+                  itemSize={40}
+                  width={width}
+                  overscanCount={5}
+                >
+                  {Row}
+                </List>
+              )}
+            </AutoSizer>
+          ) : (
+            <Box sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                 {dialogFilter ? `No dialogs match "${dialogFilter}"` : 'No dialogs available'}
+              </Typography>
+            </Box>
+          )
         ) : (
           <Box sx={{ p: 2 }}>
             <Typography variant="body2" color="text.secondary">
@@ -118,7 +162,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
             </Typography>
           </Box>
         )}
-      </List>
+      </Box>
     </Paper>
   );
 };
