@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect, useDeferredValue } from 'react';
 import { Box, Typography, Alert } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
@@ -47,9 +47,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const rafId1Ref = useRef<number | null>(null);
   const rafId2Ref = useRef<number | null>(null);
 
-  // Ref to track previous semantic model for cache invalidation (Bug #2 fix)
-  const prevSemanticModelRef = useRef<SemanticModel | Record<string, never> | null>(null);
-
   // Max cache size to prevent unbounded growth (Bug #4 fix)
   const MAX_CACHE_SIZE = 1000;
 
@@ -57,16 +54,12 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
 
+  // Defer the semantic model update for the heavy tree view to prevent blocking the main thread
+  const deferredSemanticModel = useDeferredValue(semanticModel);
+
   // Determine early return conditions (but don't return yet - hooks must be called first)
   const showLoading = !isProjectMode && !fileState;
   const showSyntaxErrors = fileState?.hasErrors;
-
-  // Clear cache synchronously when semantic model changes (Bug #2 fix)
-  // This must happen BEFORE buildFunctionTree is called during render
-  if (semanticModel !== prevSemanticModelRef.current) {
-    functionTreeCacheRef.current.clear();
-    prevSemanticModelRef.current = semanticModel;
-  }
 
   // Keyboard shortcut handler for Ctrl+F
   useEffect(() => {
@@ -131,7 +124,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Build function tree for a given function (recursively find choices)
   // ancestorPath tracks the path from root to current node to prevent direct cycles
   // Uses memoization to prevent exponential recomputation in diamond patterns
-  const functions = semanticModel.functions;
+  // Uses deferred functions to avoid re-calculating the tree on every keystroke
+  const deferredFunctions = deferredSemanticModel.functions;
   const buildFunctionTree = useCallback((funcName: string, ancestorPath: string[] = []): FunctionTreeNode | null => {
     // Prevent direct cycles (A -> B -> A), but allow diamonds (A -> B, A -> C, both -> D)
     if (ancestorPath.includes(funcName)) {
@@ -141,14 +135,57 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     // Create cache key including ancestor path to handle different contexts
     const cacheKey = `${funcName}|${ancestorPath.join(',')}`;
 
-    // Check cache first (LRU - Bug #4 fix)
-    const cached = lruCacheGet(cacheKey);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const func = functions?.[funcName];
+    const func = deferredFunctions?.[funcName];
     if (!func) return null;
+
+    // Check cache first (LRU - Bug #4 fix)
+    // PERFORMANCE OPTIMIZATION: Lazy Verification
+    // Instead of clearing the entire cache when semanticModel changes, we verify if the cached node is still valid.
+    const cached = lruCacheGet(cacheKey);
+    if (cached !== undefined && cached !== null) {
+      // 1. Fast Path: Reference equality (Same model or same object)
+      if (cached.function === func) {
+        return cached;
+      }
+
+      // 2. Optimization: Content equality
+      // Check if function definition is identical (using JSON.stringify for deep comparison)
+      if (JSON.stringify(func) === JSON.stringify(cached.function)) {
+        // Function definition is same, but children might have changed (if their functions changed)
+        // We must verify children subtrees recursively.
+        const newPath = [...ancestorPath, funcName];
+        let childrenChanged = false;
+
+        const newChildren = cached.children
+          .map((child) => {
+            const newSubtree = buildFunctionTree(child.targetFunction, newPath);
+            // Reference comparison: if subtree changed, it returns a new object
+            if (newSubtree !== child.subtree) {
+              childrenChanged = true;
+              return { ...child, subtree: newSubtree };
+            }
+            return child;
+          })
+          .filter((child) => child.subtree !== null);
+
+        // If all children are identical to cached version, return cached node
+        if (!childrenChanged) {
+          // Update the cached function reference to the new one to hit fast path next time!
+          const updatedNode = { ...cached, function: func };
+          lruCacheSet(cacheKey, updatedNode);
+          return updatedNode;
+        }
+
+        // If children changed, create new node but avoid reparsing actions
+        const newNode: FunctionTreeNode = {
+          ...cached,
+          function: func, // Update function ref
+          children: newChildren
+        };
+        lruCacheSet(cacheKey, newNode);
+        return newNode;
+      }
+    }
 
     // Filter actions that are choices (have dialogRef and targetFunction)
     const choices = (func.actions || []).filter((action): action is ChoiceAction =>
@@ -186,7 +223,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     lruCacheSet(cacheKey, result);
 
     return result;
-  }, [functions, lruCacheGet, lruCacheSet]);
+  }, [deferredFunctions, lruCacheGet, lruCacheSet]);
 
   // Memoize NPC map extraction to avoid rebuilding on every render
   // In project mode, use project NPCs; in single-file mode, extract from file
@@ -424,7 +461,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         <DialogTree
           selectedNPC={selectedNPC}
           dialogsForNPC={dialogsForNPC}
-          semanticModel={semanticModel}
+          semanticModel={deferredSemanticModel}
           selectedDialog={selectedDialog}
           selectedFunctionName={selectedFunctionName}
           expandedDialogs={expandedDialogs}

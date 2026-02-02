@@ -16,6 +16,17 @@ export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
 import { extractDialogMetadata } from '../utils/metadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
+// Regex to match start of INSTANCE declarations
+// Matches: INSTANCE <name> (C_INFO) {
+const INSTANCE_START_REGEX = /INSTANCE\s+(\w+)\s*\(([^)]+)\)\s*\{/gi;
+
+// Regex to match npc property inside the body
+const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/gi;
+
+// Regex to detect quest definitions
+const TOPIC_REGEX = /const\s+string\s+TOPIC_\w+/i;
+const MIS_REGEX = /var\s+int\s+MIS_\w+/i;
+const BRACE_REGEX = /[{}]/g;
 
 class ProjectService {
   /**
