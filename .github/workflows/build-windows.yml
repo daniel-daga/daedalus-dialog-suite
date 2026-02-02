@@ -1,0 +1,38 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build Parser
+      run: npm run build -w daedalus-parser
+
+    - name: Build Editor
+      run: npm run build -w daedalus-dialog-editor
+
+    - name: Package Editor
+      run: npm run package -w daedalus-dialog-editor
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: daedalus-dialog-editor-windows
+        path: daedalus-dialog-editor/dist/*.exe
