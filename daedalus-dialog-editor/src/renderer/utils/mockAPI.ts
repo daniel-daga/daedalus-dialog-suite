@@ -29,6 +29,9 @@ const SAMPLE_MODEL = {
       returnType: 'INT',
       actions: [],
       calls: [],
+      conditions: [
+          { variableName: 'MIS_MyQuest', negated: false }
+      ]
     },
     'DIA_Example_Hello_Info': {
       name: 'DIA_Example_Hello_Info',
@@ -47,8 +50,28 @@ const SAMPLE_MODEL = {
           id: 'action_1234567891_reply',
           type: 'DialogLine',
         },
+        {
+           type: 'CreateTopic',
+           topic: 'TOPIC_MyQuest',
+           topicType: 'LOG_MISSION'
+        }
       ],
     },
+  },
+  constants: {
+    'TOPIC_MyQuest': {
+      name: 'TOPIC_MyQuest',
+      type: 'string',
+      value: '"The Lost Sheep"',
+      filePath: 'sample.d'
+    }
+  },
+  variables: {
+    'MIS_MyQuest': {
+      name: 'MIS_MyQuest',
+      type: 'int',
+      filePath: 'sample.d'
+    }
   },
   hasErrors: false,
   errors: [],
