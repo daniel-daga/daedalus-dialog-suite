@@ -23,6 +23,7 @@ function createEmptySemanticModel(): SemanticModel {
     dialogs: {},
     functions: {},
     constants: {},
+    variables: {},
     instances: {},
     hasErrors: false,
     errors: []
@@ -38,6 +39,7 @@ interface ProjectState {
   npcList: string[];
   dialogIndex: Map<string, DialogMetadata[]>; // NPC ID → dialogs
   allDialogFiles: string[];
+  questFiles: string[];
 
   // Cached parsed files (full semantic models)
   parsedFiles: Map<string, ParsedFileCache>;
@@ -75,6 +77,9 @@ interface ProjectActions {
   // Load and merge semantic models for a specific NPC
   loadAndMergeNpcModels: (npcId: string) => void;
 
+  // Load and merge quest data (global constants/vars)
+  loadQuestData: () => Promise<void>;
+
   // Clear merged semantic model
   clearMergedModel: () => void;
 
@@ -91,6 +96,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   npcList: [],
   dialogIndex: new Map(),
   allDialogFiles: [],
+  questFiles: [],
   parsedFiles: new Map(),
   mergedSemanticModel: createEmptySemanticModel(),
   selectedNpc: null,
@@ -131,6 +137,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         npcList: rawIndex.npcs || [],
         dialogIndex: dialogsByNpc,
         allDialogFiles: rawIndex.allFiles || [],
+        questFiles: rawIndex.questFiles || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
         selectedNpc: null
@@ -218,12 +225,89 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       if (model?.constants) {
         Object.assign(mergedModel.constants, model.constants);
       }
+      if (model?.variables) {
+        Object.assign(mergedModel.variables, model.variables);
+      }
       if (model?.instances) {
         Object.assign(mergedModel.instances, model.instances);
       }
     });
 
     set({ mergedSemanticModel: mergedModel });
+  },
+
+  loadQuestData: async () => {
+    const { questFiles, getSemanticModel, mergeSemanticModels, mergedSemanticModel } = get();
+
+    // Parse all quest files
+    const models = await Promise.all(
+        questFiles.map(filePath => getSemanticModel(filePath))
+    );
+
+    // If we already have a merged model, we should merge into it, not replace it
+    // But mergeSemanticModels replaces it.
+    // So we should take the current merged model and merge the new ones into it?
+    // Actually, mergeSemanticModels takes an array of models and creates a NEW merged model.
+    // So if we only pass quest models, we lose the previously loaded NPC models.
+
+    // Better approach: Since `mergedSemanticModel` is currently "current NPC view",
+    // maybe we should just append the quest data to it?
+    // OR, we assume that when looking at Quests, we want a global view.
+
+    // If we are in Quest Mode, we might want to load EVERYTHING related to quests.
+    // That includes quest definitions (LOG_Constants) AND functions that use them (which might be in dialog files).
+    // This is tricky. Dialog files are loaded by NPC selection.
+
+    // Ideally, for the Quest Editor, we want a "Global Project Model" which is distinct from "Current NPC Model".
+    // But for now, let's just merge quest files into the current merged model.
+    // However, if we switch NPCs, `loadAndMergeNpcModels` will be called and overwrite `mergedSemanticModel`.
+    // So we need to ensure quest data persists or is re-merged.
+
+    // Since `mergedSemanticModel` is transient based on selection, maybe we should keep `questModels` separate?
+    // For simplicity, let's merge into `mergedSemanticModel` but we need to be careful about overwriting.
+
+    // A simple hack: Pass current merged model as one of the models to merge?
+    // No, `mergedSemanticModel` is a result, not a source with source file tracking.
+
+    // Let's rely on `loadAndMergeNpcModels` to be called when NPC is selected.
+    // When Quest View is active, we might not have an NPC selected.
+    // If we just want to show the list of quests, we need quest files parsed.
+
+    // Let's update mergeSemanticModels to NOT clear everything if we don't want to?
+    // No, `mergeSemanticModels` creates a fresh object.
+
+    // For now, let's just load the quest files and merge them.
+    // If the user selects an NPC later, it will overwrite.
+    // This implies Quest Editor should probably trigger this load every time it's focused,
+    // OR we should maintain a `globalQuestModel` in the store.
+
+    // But let's stick to the plan: merge into mergedSemanticModel.
+    // If an NPC is selected, we might lose this data unless we also merge it there.
+    // We can modify `loadAndMergeNpcModels` to also include quest files?
+    // That seems safer.
+
+    // But `loadQuestData` is explicit.
+    // Let's make `loadQuestData` merge quest files with whatever is currently in `mergedSemanticModel`?
+    // The `mergeSemanticModels` function takes `SemanticModel[]`.
+    // We can't easily decompose `mergedSemanticModel` back to its sources.
+
+    // Re-architecture choice:
+    // 1. Always load quest files when loading NPC models.
+    // 2. OR `mergedSemanticModel` accumulates.
+
+    // Let's go with 1. It ensures consistency.
+    // But `loadAndMergeNpcModels` is for *Npc*.
+
+    // Let's make `loadQuestData` explicit. When called, it merges quest files.
+    // But what about the existing data?
+    // We can merge [currentMergedModel, ...questModels].
+
+    // Check `mergeSemanticModels` implementation again.
+    // It creates a NEW empty model and merges into it.
+    // So passing `mergedSemanticModel` as one of the inputs works!
+
+    const currentModel = get().mergedSemanticModel;
+    mergeSemanticModels([currentModel, ...models]);
   },
 
   loadAndMergeNpcModels: (npcId: string) => {
