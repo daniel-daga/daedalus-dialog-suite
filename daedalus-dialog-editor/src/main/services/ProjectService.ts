@@ -19,7 +19,7 @@ export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 const INSTANCE_START_REGEX = /INSTANCE\s+(\w+)\s*\(([^)]+)\)\s*\{/gi;
 
 // Regex to match npc property inside the body
-const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/i;
+const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/gi;
 
 // Regex to detect quest definitions
 const TOPIC_REGEX = /const\s+string\s+TOPIC_\w+/i;
@@ -93,13 +93,14 @@ class ProjectService {
         }
 
         if (braceCount === 0) {
-          // Extract body content (exclude the final '}')
-          const body = content.substring(startIndex, currentIndex - 1);
+          // Search for NPC property within the body boundaries
+          // We set the regex search position to the start of the body
+          NPC_REGEX.lastIndex = startIndex;
+          const npcMatch = NPC_REGEX.exec(content);
 
-          // Extract npc property
-          const npcMatch = body.match(NPC_REGEX);
-
-          if (npcMatch) {
+          // Ensure we found a match AND it is strictly within the body
+          // The body ends at (currentIndex - 1), which is the position of '}'
+          if (npcMatch && npcMatch.index < currentIndex - 1) {
             const npcId = npcMatch[1].trim();
 
             metadata.push({
