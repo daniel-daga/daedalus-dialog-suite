@@ -49,7 +49,7 @@ const ChoiceTreeItem = memo(({
         onClick={() => {
           onSelectDialog(dialogName, choice.targetFunction);
         }}
-        sx={{ pl: (depth + 1) * 2, pr: 1 }}
+        sx={{ pl: (depth + 1) * 2, pr: 1, height: '100%' }}
       >
         {hasChildren ? (
           <Tooltip title={isExpanded ? 'Collapse' : 'Expand'}>
@@ -72,8 +72,8 @@ const ChoiceTreeItem = memo(({
         <ListItemText
           primary={choice.text}
           secondary={choice.targetFunction}
-          primaryTypographyProps={{ fontSize: '0.85rem' }}
-          secondaryTypographyProps={{ fontSize: '0.7rem' }}
+          primaryTypographyProps={{ fontSize: '0.85rem', noWrap: true }}
+          secondaryTypographyProps={{ fontSize: '0.7rem', noWrap: true }}
         />
       </ListItemButton>
     </Box>

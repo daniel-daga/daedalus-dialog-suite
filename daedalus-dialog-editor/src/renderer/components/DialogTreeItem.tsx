@@ -48,7 +48,7 @@ const DialogTreeItem = memo(({
         onClick={() => {
           onSelectDialog(dialogName, infoFuncName);
         }}
-        sx={{ pr: 1 }}
+        sx={{ pr: 1, height: '100%' }}
       >
         {hasChildren ? (
           <Tooltip title={isExpanded ? 'Collapse' : 'Expand'}>
@@ -70,8 +70,8 @@ const DialogTreeItem = memo(({
         <ListItemText
           primary={dialog.properties?.description || dialogName}
           secondary={dialogName}
-          primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isExpanded ? 600 : 400 }}
-          secondaryTypographyProps={{ fontSize: '0.75rem' }}
+          primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isExpanded ? 600 : 400, noWrap: true }}
+          secondaryTypographyProps={{ fontSize: '0.75rem', noWrap: true }}
         />
       </ListItemButton>
     </Box>

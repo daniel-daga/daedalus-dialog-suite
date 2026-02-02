@@ -140,7 +140,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
                 <List
                   height={height}
                   itemCount={flatItems.length}
-                  itemSize={40}
+                  itemSize={60}
                   width={width}
                   overscanCount={5}
                 >

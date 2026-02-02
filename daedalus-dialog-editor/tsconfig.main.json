@@ -4,7 +4,7 @@
     "lib": ["ES2020"],
     "module": "Node16",
     "moduleResolution": "node16",
-    "outDir": "dist/main",
+    "outDir": "dist",
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
