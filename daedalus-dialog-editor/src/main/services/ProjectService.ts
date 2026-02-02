@@ -24,6 +24,7 @@ const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/gi;
 // Regex to detect quest definitions
 const TOPIC_REGEX = /const\s+string\s+TOPIC_\w+/i;
 const MIS_REGEX = /var\s+int\s+MIS_\w+/i;
+const BRACE_REGEX = /[{}]/g;
 
 class ProjectService {
   /**
@@ -82,17 +83,18 @@ class ProjectService {
         const startIndex = currentIndex;
 
         // Scan for matching closing brace, handling nested braces
-        while (braceCount > 0 && currentIndex < content.length) {
-          const char = content[currentIndex];
-          if (char === '{') {
+        BRACE_REGEX.lastIndex = currentIndex;
+        let braceMatch;
+        while (braceCount > 0 && (braceMatch = BRACE_REGEX.exec(content)) !== null) {
+          if (braceMatch[0] === '{') {
             braceCount++;
-          } else if (char === '}') {
+          } else {
             braceCount--;
           }
-          currentIndex++;
         }
 
         if (braceCount === 0) {
+          currentIndex = BRACE_REGEX.lastIndex;
           // Search for NPC property within the body boundaries
           // We set the regex search position to the start of the body
           NPC_REGEX.lastIndex = startIndex;
