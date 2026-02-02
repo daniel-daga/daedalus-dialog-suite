@@ -1,8 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import DialogTree from '../src/renderer/components/DialogTree';
-import { DialogTreeProps } from '../src/renderer/components/dialogTypes';
-import { SemanticModel } from '../src/shared/types';
 import '@testing-library/jest-dom';
 
 // Mock useSearchStore
@@ -10,12 +8,15 @@ jest.mock('../src/renderer/store/searchStore', () => ({
   useSearchStore: jest.fn(() => ({
     dialogFilter: '',
     setDialogFilter: jest.fn(),
-    filterDialogs: (dialogs: string[]) => dialogs,
+    filterDialogs: (dialogs) => dialogs,
   })),
 }));
 
+// Mock AutoSizer
+jest.mock('react-virtualized-auto-sizer', () => (props) => props.children({ height: 500, width: 300 }));
+
 describe('DialogTree Performance', () => {
-  const mockSemanticModel: SemanticModel = {
+  const mockSemanticModel = {
     dialogs: {
       'Dialog1': {
         name: 'Dialog1',
@@ -51,7 +52,7 @@ describe('DialogTree Performance', () => {
                     dialogRef: 'Dialog1',
                     targetFunction: 'ChoiceFunc1',
                     text: 'Choice 1'
-                } as any
+                }
             ],
             conditions: [],
             calls: []
@@ -82,7 +83,7 @@ describe('DialogTree Performance', () => {
     errors: []
   };
 
-  const defaultProps: DialogTreeProps = {
+  const defaultProps = {
     selectedNPC: 'TestNPC',
     dialogsForNPC: ['Dialog1', 'Dialog2', 'Dialog3'],
     semanticModel: mockSemanticModel,
@@ -106,7 +107,6 @@ describe('DialogTree Performance', () => {
       />
     );
 
-    // Optimized behavior: It should NOT call buildFunctionTree for collapsed dialogs
     expect(buildFunctionTreeSpy).toHaveBeenCalledTimes(0);
   });
 
@@ -122,7 +122,6 @@ describe('DialogTree Performance', () => {
       />
     );
 
-    // Should call ONLY for Dialog2
     expect(buildFunctionTreeSpy).toHaveBeenCalledTimes(1);
     expect(buildFunctionTreeSpy).toHaveBeenCalledWith('InfoFunc2');
   });
@@ -137,26 +136,8 @@ describe('DialogTree Performance', () => {
       />
     );
 
-    // Dialog1 has actions that look like choices (shallow check passes)
-    // It should render an expand icon.
-    // Dialog2 and Dialog3 have no choices.
-
-    // We can't easily distinguish which button belongs to which dialog without more specific queries,
-    // but we know there should be exactly 1 expand button (for Dialog1)
-    // MUI IconButton usually renders a button element.
     const buttons = screen.getAllByRole('button');
-
-    // Each dialog item is a button (ListItemButton).
-    // Plus the expand IconButton inside it.
-
-    // Dialog1: ListItemButton + IconButton
-    // Dialog2: ListItemButton
-    // Dialog3: ListItemButton
-    // Total buttons: 4
-
     expect(buttons.length).toBe(4);
-
-    // We can also verify that buildFunctionTree was NOT called
     expect(buildFunctionTreeSpy).toHaveBeenCalledTimes(0);
   });
 });
