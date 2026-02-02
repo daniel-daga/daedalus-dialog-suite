@@ -82,7 +82,27 @@ const DialogTreeItem = memo(({
   // Optimization: specific check for relevant semantic model parts
   const prevDialog = prev.semanticModel.dialogs?.[prev.dialogName];
   const nextDialog = next.semanticModel.dialogs?.[next.dialogName];
-  if (prevDialog !== nextDialog) return false;
+
+  // Check for deep equality of relevant properties because semanticModel reference
+  // often changes due to worker serialization, breaking simple reference equality.
+  if (!prevDialog && !nextDialog) {
+    // Both missing, effectively equal
+  } else if (!prevDialog || !nextDialog) {
+    return false; // One missing, one present -> changed
+  } else {
+    // Both exist, check relevant properties used in render
+    if (prevDialog.properties?.description !== nextDialog.properties?.description) return false;
+
+    // Check information function name
+    const prevInfo = prevDialog.properties?.information;
+    const nextInfo = nextDialog.properties?.information;
+
+    if (prevInfo !== nextInfo) {
+      const prevName = typeof prevInfo === 'object' ? (prevInfo as any)?.name : prevInfo;
+      const nextName = typeof nextInfo === 'object' ? (nextInfo as any)?.name : nextInfo;
+      if (prevName !== nextName) return false;
+    }
+  }
 
   if (prev.isSelected !== next.isSelected) return false;
   if (prev.isExpanded !== next.isExpanded) return false;
