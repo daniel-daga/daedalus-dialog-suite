@@ -27,6 +27,7 @@ export class GlobalConstant {
   public name: string;
   public type: string;
   public value: string | number | boolean;
+  public filePath?: string;
 
   constructor(name: string, type: string, value: string | number | boolean) {
     this.name = name;
@@ -42,6 +43,7 @@ export class GlobalConstant {
 export class GlobalVariable {
   public name: string;
   public type: string;
+  public filePath?: string;
 
   constructor(name: string, type: string) {
     this.name = name;

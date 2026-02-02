@@ -178,11 +178,13 @@ export interface GlobalConstant {
   name: string;
   type: string;
   value: string | number | boolean;
+  filePath?: string;
 }
 
 export interface GlobalVariable {
   name: string;
   type: string;
+  filePath?: string;
 }
 
 export interface SemanticModel {

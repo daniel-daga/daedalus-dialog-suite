@@ -80,6 +80,9 @@ interface ProjectActions {
   // Load and merge quest data (global constants/vars)
   loadQuestData: () => Promise<void>;
 
+  // Create a new quest
+  createQuest: (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => Promise<void>;
+
   // Clear merged semantic model
   clearMergedModel: () => void;
 
@@ -185,6 +188,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     // Parse file via IPC
     const semanticModel = await window.editorAPI.parseDialogFile(filePath);
+
+    // Inject file path into constants and variables for tracking
+    if (semanticModel.constants) {
+      Object.values(semanticModel.constants).forEach(c => { c.filePath = filePath; });
+    }
+    if (semanticModel.variables) {
+      Object.values(semanticModel.variables).forEach(v => { v.filePath = filePath; });
+    }
 
     // Cache the result
     set((state) => {
@@ -308,6 +319,59 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     const currentModel = get().mergedSemanticModel;
     mergeSemanticModels([currentModel, ...models]);
+  },
+
+  createQuest: async (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => {
+    const { getSemanticModel, mergeSemanticModels } = get();
+
+    try {
+      set({ isLoading: true });
+
+      // 1. Prepare content to append
+      // Check if files are the same
+      if (topicFilePath === variableFilePath) {
+        const content = `\n// Quest: ${title}\nconst string TOPIC_${internalName} = "${title}";\nvar int MIS_${internalName};\n`;
+
+        // Read current content to ensure we append correctly (newline check)
+        let currentContent = await window.editorAPI.readFile(topicFilePath);
+        if (!currentContent.endsWith('\n')) currentContent += '\n';
+
+        await window.editorAPI.writeFile(topicFilePath, currentContent + content);
+      } else {
+        // Append constant
+        const constContent = `\nconst string TOPIC_${internalName} = "${title}";\n`;
+        let topicFileContent = await window.editorAPI.readFile(topicFilePath);
+        if (!topicFileContent.endsWith('\n')) topicFileContent += '\n';
+        await window.editorAPI.writeFile(topicFilePath, topicFileContent + constContent);
+
+        // Append variable
+        const varContent = `\nvar int MIS_${internalName};\n`;
+        let varFileContent = await window.editorAPI.readFile(variableFilePath);
+        if (!varFileContent.endsWith('\n')) varFileContent += '\n';
+        await window.editorAPI.writeFile(variableFilePath, varFileContent + varContent);
+      }
+
+      // 2. Clear cache for modified files
+      const { parsedFiles } = get();
+      const newCache = new Map(parsedFiles);
+      newCache.delete(topicFilePath);
+      newCache.delete(variableFilePath);
+      set({ parsedFiles: newCache });
+
+      // 3. Re-load quest data (re-parse the modified files)
+      const topicModel = await get().getSemanticModel(topicFilePath);
+      const variableModel = (topicFilePath === variableFilePath) ? topicModel : await get().getSemanticModel(variableFilePath);
+
+      // Merge into current model
+      // Note: This assumes adding new symbols doesn't conflict with existing ones in a way that requires full re-merge
+      get().mergeSemanticModels([get().mergedSemanticModel, topicModel, variableModel]);
+
+      set({ isLoading: false });
+
+    } catch (error) {
+      set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to create quest' });
+      throw error; // Re-throw so UI can handle it
+    }
   },
 
   loadAndMergeNpcModels: (npcId: string) => {

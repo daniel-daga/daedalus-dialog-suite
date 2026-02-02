@@ -10,10 +10,13 @@ import {
   InputAdornment,
   Divider,
   ToggleButton,
-  ToggleButtonGroup
+  ToggleButtonGroup,
+  IconButton,
+  Tooltip
 } from '@mui/material';
-import { Search as SearchIcon } from '@mui/icons-material';
+import { Search as SearchIcon, Add as AddIcon } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
+import CreateQuestDialog from './CreateQuestDialog';
 
 interface QuestListProps {
   semanticModel: SemanticModel;
@@ -24,6 +27,7 @@ interface QuestListProps {
 const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onSelectQuest }) => {
   const [filter, setFilter] = useState('');
   const [viewMode, setViewMode] = useState<'all' | 'active'>('all');
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   // Memoize the list of all TOPIC_ constants
   const quests = useMemo(() => {
@@ -68,7 +72,14 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', borderRight: 1, borderColor: 'divider' }}>
       <Box sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom>Quests</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Typography variant="h6">Quests</Typography>
+          <Tooltip title="Create New Quest">
+            <IconButton onClick={() => setIsCreateDialogOpen(true)} size="small">
+              <AddIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
         <TextField
           fullWidth
           size="small"
@@ -116,6 +127,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
           </ListItem>
         )}
       </List>
+      <CreateQuestDialog open={isCreateDialogOpen} onClose={() => setIsCreateDialogOpen(false)} />
     </Box>
   );
 };
