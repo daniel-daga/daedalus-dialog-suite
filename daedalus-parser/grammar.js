@@ -6,6 +6,14 @@ module.exports = grammar({
     $.comment,
   ],
 
+  conflicts: $ => [
+    [$.if_statement],
+  ],
+
+  conflicts: $ => [
+    [$.if_statement],
+  ],
+
   rules: {
     program: $ => repeat($._declaration),
 
@@ -19,7 +27,7 @@ module.exports = grammar({
 
     // Instance declaration: instance DEV_2130_Szmyk (Npc_Default)
     instance_declaration: $ => seq(
-      field('keyword', choice('instance', 'INSTANCE', 'Instance')),
+      field('keyword', alias(/[iI][nN][sS][tT][aA][nN][cC][eE]/, 'instance')),
       field('name', $.identifier),
       '(',
       field('parent', $.identifier),
@@ -30,7 +38,7 @@ module.exports = grammar({
 
     // Function declaration: func void/int functionName()
     function_declaration: $ => seq(
-      field('keyword', choice('func', 'FUNC', 'Func')),
+      field('keyword', alias(/[fF][uU][nN][cC]/, 'func')),
       field('return_type', $._type),
       field('name', $.identifier),
       '(',
@@ -42,7 +50,10 @@ module.exports = grammar({
 
     // Variable declaration: const/var type name[size] = value;
     variable_declaration: $ => seq(
-      field('keyword', choice('const', 'CONST', 'Const', 'var', 'VAR', 'Var')),
+      field('keyword', choice(
+        alias(/[cC][oO][nN][sS][tT]/, 'const'),
+        alias(/[vV][aA][rR]/, 'var'),
+      )),
       field('type', $._type),
       field('name', $.identifier),
       optional(seq(
@@ -59,7 +70,7 @@ module.exports = grammar({
 
     // Class declaration: class ClassName { ... }
     class_declaration: $ => seq(
-      field('keyword', choice('class', 'CLASS', 'Class')),
+      field('keyword', alias(/[cC][lL][aA][sS][sS]/, 'class')),
       field('name', $.identifier),
       field('body', $.class_body),
       optional(';'),
@@ -67,7 +78,7 @@ module.exports = grammar({
 
     // Prototype declaration: prototype PrototypeName(ParentClass) { ... }
     prototype_declaration: $ => seq(
-      field('keyword', choice('prototype', 'PROTOTYPE', 'Prototype')),
+      field('keyword', alias(/[pP][rR][oO][tT][oO][tT][yY][pP][eE]/, 'prototype')),
       field('name', $.identifier),
       '(',
       field('parent', $.identifier),
@@ -92,15 +103,16 @@ module.exports = grammar({
     ),
 
     parameter: $ => seq(
+      optional(choice(/[vV][aA][rR]/, /[cC][oO][nN][sS][tT]/)),
       field('type', $._type),
       field('name', $.identifier),
     ),
 
     _type: $ => choice(
-      choice('void', 'VOID', 'Void'),
-      choice('int', 'INT', 'Int'),
-      choice('float', 'FLOAT', 'Float'),
-      choice('string', 'STRING', 'String'),
+      alias(/[vV][oO][iI][dD]/, 'void'),
+      alias(/[iI][nN][tT]/, 'int'),
+      alias(/[fF][lL][oO][aA][tT]/, 'float'),
+      alias(/[sS][tT][rR][iI][nN][gG]/, 'string'),
       $.identifier, // custom types
     ),
 
@@ -130,21 +142,19 @@ module.exports = grammar({
     )),
 
     if_statement: $ => seq(
-      choice('if', 'IF', 'If'),
-      '(',
+      alias(/[iI][fF]/, 'if'),
       field('condition', $._expression),
-      ')',
       field('consequence', $.block),
       optional(';'), // Allow semicolon after if block
       optional(seq(
-        choice('else', 'ELSE', 'Else'),
-        field('alternative', $.block),
+        alias(/[eE][lL][sS][eE]/, 'else'),
+        field('alternative', choice($.block, $.if_statement)),
         optional(';')
       )),
     ),
 
     return_statement: $ => prec.right(seq(
-      choice('return', 'RETURN', 'Return'),
+      alias(/[rR][eE][tT][uU][rR][nN]/, 'return'),
       optional(field('value', $._expression)),
       ';',
     )),
@@ -207,7 +217,7 @@ module.exports = grammar({
       ')',
     ),
 
-    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/, // Supports constants like LOG_NOTE, Topic_Trader_Out
+    identifier: $ => prec(-1, /[a-zA-Z_\u0080-\u00FF][a-zA-Z0-9_\u0080-\u00FF]*/), 
 
     number: $ => /\d+(\.\d+)?/,
 
@@ -231,8 +241,8 @@ module.exports = grammar({
     )),
 
     boolean: $ => choice(
-      'true', 'TRUE', 'True',
-      'false', 'FALSE', 'False'
+      /[tT][rR][uU][eE]/,
+      /[fF][aA][lL][sS][eE]/
     ),
 
     comment: $ => token(choice(

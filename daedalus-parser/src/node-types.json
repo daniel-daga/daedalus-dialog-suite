@@ -369,14 +369,6 @@
         "required": true,
         "types": [
           {
-            "type": "CLASS",
-            "named": false
-          },
-          {
-            "type": "Class",
-            "named": false
-          },
-          {
             "type": "class",
             "named": false
           }
@@ -464,14 +456,6 @@
         "required": true,
         "types": [
           {
-            "type": "FUNC",
-            "named": false
-          },
-          {
-            "type": "Func",
-            "named": false
-          },
-          {
             "type": "func",
             "named": false
           }
@@ -502,38 +486,6 @@
         "required": true,
         "types": [
           {
-            "type": "FLOAT",
-            "named": false
-          },
-          {
-            "type": "Float",
-            "named": false
-          },
-          {
-            "type": "INT",
-            "named": false
-          },
-          {
-            "type": "Int",
-            "named": false
-          },
-          {
-            "type": "STRING",
-            "named": false
-          },
-          {
-            "type": "String",
-            "named": false
-          },
-          {
-            "type": "VOID",
-            "named": false
-          },
-          {
-            "type": "Void",
-            "named": false
-          },
-          {
             "type": "float",
             "named": false
           },
@@ -558,6 +510,11 @@
     }
   },
   {
+    "type": "identifier",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "if_statement",
     "named": true,
     "fields": {
@@ -567,6 +524,10 @@
         "types": [
           {
             "type": "block",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           }
         ]
@@ -647,14 +608,6 @@
         "multiple": false,
         "required": true,
         "types": [
-          {
-            "type": "INSTANCE",
-            "named": false
-          },
-          {
-            "type": "Instance",
-            "named": false
-          },
           {
             "type": "instance",
             "named": false
@@ -763,38 +716,6 @@
         "multiple": false,
         "required": true,
         "types": [
-          {
-            "type": "FLOAT",
-            "named": false
-          },
-          {
-            "type": "Float",
-            "named": false
-          },
-          {
-            "type": "INT",
-            "named": false
-          },
-          {
-            "type": "Int",
-            "named": false
-          },
-          {
-            "type": "STRING",
-            "named": false
-          },
-          {
-            "type": "String",
-            "named": false
-          },
-          {
-            "type": "VOID",
-            "named": false
-          },
-          {
-            "type": "Void",
-            "named": false
-          },
           {
             "type": "float",
             "named": false
@@ -935,14 +856,6 @@
         "multiple": false,
         "required": true,
         "types": [
-          {
-            "type": "PROTOTYPE",
-            "named": false
-          },
-          {
-            "type": "Prototype",
-            "named": false
-          },
           {
             "type": "prototype",
             "named": false
@@ -1106,22 +1019,6 @@
         "required": true,
         "types": [
           {
-            "type": "CONST",
-            "named": false
-          },
-          {
-            "type": "Const",
-            "named": false
-          },
-          {
-            "type": "VAR",
-            "named": false
-          },
-          {
-            "type": "Var",
-            "named": false
-          },
-          {
             "type": "const",
             "named": false
           },
@@ -1191,38 +1088,6 @@
         "multiple": false,
         "required": true,
         "types": [
-          {
-            "type": "FLOAT",
-            "named": false
-          },
-          {
-            "type": "Float",
-            "named": false
-          },
-          {
-            "type": "INT",
-            "named": false
-          },
-          {
-            "type": "Int",
-            "named": false
-          },
-          {
-            "type": "STRING",
-            "named": false
-          },
-          {
-            "type": "String",
-            "named": false
-          },
-          {
-            "type": "VOID",
-            "named": false
-          },
-          {
-            "type": "Void",
-            "named": false
-          },
           {
             "type": "float",
             "named": false
@@ -1370,126 +1235,6 @@
     "named": false
   },
   {
-    "type": "CLASS",
-    "named": false
-  },
-  {
-    "type": "CONST",
-    "named": false
-  },
-  {
-    "type": "Class",
-    "named": false
-  },
-  {
-    "type": "Const",
-    "named": false
-  },
-  {
-    "type": "ELSE",
-    "named": false
-  },
-  {
-    "type": "Else",
-    "named": false
-  },
-  {
-    "type": "FALSE",
-    "named": false
-  },
-  {
-    "type": "FLOAT",
-    "named": false
-  },
-  {
-    "type": "FUNC",
-    "named": false
-  },
-  {
-    "type": "False",
-    "named": false
-  },
-  {
-    "type": "Float",
-    "named": false
-  },
-  {
-    "type": "Func",
-    "named": false
-  },
-  {
-    "type": "IF",
-    "named": false
-  },
-  {
-    "type": "INSTANCE",
-    "named": false
-  },
-  {
-    "type": "INT",
-    "named": false
-  },
-  {
-    "type": "If",
-    "named": false
-  },
-  {
-    "type": "Instance",
-    "named": false
-  },
-  {
-    "type": "Int",
-    "named": false
-  },
-  {
-    "type": "PROTOTYPE",
-    "named": false
-  },
-  {
-    "type": "Prototype",
-    "named": false
-  },
-  {
-    "type": "RETURN",
-    "named": false
-  },
-  {
-    "type": "Return",
-    "named": false
-  },
-  {
-    "type": "STRING",
-    "named": false
-  },
-  {
-    "type": "String",
-    "named": false
-  },
-  {
-    "type": "TRUE",
-    "named": false
-  },
-  {
-    "type": "True",
-    "named": false
-  },
-  {
-    "type": "VAR",
-    "named": false
-  },
-  {
-    "type": "VOID",
-    "named": false
-  },
-  {
-    "type": "Var",
-    "named": false
-  },
-  {
-    "type": "Void",
-    "named": false
-  },
-  {
     "type": "[",
     "named": false
   },
@@ -1515,20 +1260,12 @@
     "named": false
   },
   {
-    "type": "false",
-    "named": false
-  },
-  {
     "type": "float",
     "named": false
   },
   {
     "type": "func",
     "named": false
-  },
-  {
-    "type": "identifier",
-    "named": true
   },
   {
     "type": "if",
@@ -1556,15 +1293,11 @@
   },
   {
     "type": "string",
-    "named": true
+    "named": false
   },
   {
     "type": "string",
-    "named": false
-  },
-  {
-    "type": "true",
-    "named": false
+    "named": true
   },
   {
     "type": "var",
