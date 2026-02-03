@@ -15,9 +15,12 @@ mockParsedFiles.set('C:/test/file2.d', {
   lastParsed: new Date('2023-01-01T12:05:00'),
 });
 
+const mockAllDialogFiles = ['C:/test/file1.d', 'C:/test/file2.d', 'C:/test/file3.d'];
+
 jest.mock('../src/renderer/store/projectStore', () => ({
   useProjectStore: (selector: any) => selector({
-    parsedFiles: mockParsedFiles
+    parsedFiles: mockParsedFiles,
+    allDialogFiles: mockAllDialogFiles
   }),
 }));
 
@@ -30,10 +33,19 @@ describe('IngestedFilesDialog', () => {
       />
     );
 
-    expect(screen.getByText('Ingested Files (2)')).toBeInTheDocument();
+    expect(screen.getByText('Project Files (3)')).toBeInTheDocument();
+    
+    // File 1 - Parsed OK
     expect(screen.getByText('C:/test/file1.d')).toBeInTheDocument();
-    expect(screen.getByText('OK')).toBeInTheDocument();
+    expect(screen.getByText('Parsed')).toBeInTheDocument();
+    
+    // File 2 - Parsed Error
     expect(screen.getByText('C:/test/file2.d')).toBeInTheDocument();
     expect(screen.getByText('1 Errors')).toBeInTheDocument();
+
+    // File 3 - Pending
+    expect(screen.getByText('C:/test/file3.d')).toBeInTheDocument();
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('Not loaded yet')).toBeInTheDocument();
   });
 });

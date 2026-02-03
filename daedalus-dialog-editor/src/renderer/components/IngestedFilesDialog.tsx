@@ -22,27 +22,49 @@ interface IngestedFilesDialogProps {
 }
 
 export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, onClose }) => {
-  const parsedFiles = useProjectStore((state) => state.parsedFiles);
-  const files = Array.from(parsedFiles.values()).sort((a, b) => b.lastParsed.getTime() - a.lastParsed.getTime());
+  const { parsedFiles, allDialogFiles } = useProjectStore((state) => ({
+    parsedFiles: state.parsedFiles,
+    allDialogFiles: state.allDialogFiles
+  }));
+
+  // Merge all known files with their parsed status
+  const fileList = allDialogFiles.map(filePath => {
+    const parsed = parsedFiles.get(filePath);
+    return {
+      filePath,
+      isParsed: !!parsed,
+      hasErrors: parsed?.semanticModel.hasErrors || false,
+      errorCount: parsed?.semanticModel.errors?.length || 0,
+      lastParsed: parsed?.lastParsed
+    };
+  });
+
+  // Sort: Parsed first, then alphabetical
+  fileList.sort((a, b) => {
+    if (a.isParsed === b.isParsed) {
+      return a.filePath.localeCompare(b.filePath);
+    }
+    return a.isParsed ? -1 : 1;
+  });
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
         <Box display="flex" alignItems="center" justifyContent="space-between">
-          Ingested Files ({files.length})
+          Project Files ({fileList.length})
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
           </IconButton>
         </Box>
       </DialogTitle>
       <DialogContent dividers>
-        {files.length === 0 ? (
+        {fileList.length === 0 ? (
           <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
-            No files ingested yet.
+            No files found in project.
           </Typography>
         ) : (
           <List>
-            {files.map((file: ParsedFileCache) => (
+            {fileList.map((file) => (
               <ListItem key={file.filePath} divider>
                 <ListItemText
                   primary={
@@ -50,25 +72,34 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
                       <Typography variant="body1" component="span" sx={{ wordBreak: 'break-all' }}>
                         {file.filePath}
                       </Typography>
-                      {file.semanticModel.hasErrors ? (
-                         <Chip
-                           icon={<ErrorIcon />}
-                           label={`${file.semanticModel.errors?.length || 0} Errors`}
-                           color="error"
-                           size="small"
-                         />
+                      {file.isParsed ? (
+                        file.hasErrors ? (
+                           <Chip
+                             icon={<ErrorIcon />}
+                             label={`${file.errorCount} Errors`}
+                             color="error"
+                             size="small"
+                           />
+                        ) : (
+                          <Chip
+                            icon={<CheckCircleIcon />}
+                            label="Parsed"
+                            color="success"
+                            size="small"
+                            variant="outlined"
+                          />
+                        )
                       ) : (
                         <Chip
-                          icon={<CheckCircleIcon />}
-                          label="OK"
-                          color="success"
+                          label="Pending"
                           size="small"
                           variant="outlined"
+                          sx={{ opacity: 0.6 }}
                         />
                       )}
                     </Box>
                   }
-                  secondary={`Last parsed: ${file.lastParsed.toLocaleTimeString()}`}
+                  secondary={file.isParsed && file.lastParsed ? `Last parsed: ${file.lastParsed.toLocaleTimeString()}` : 'Not loaded yet'}
                 />
               </ListItem>
             ))}
