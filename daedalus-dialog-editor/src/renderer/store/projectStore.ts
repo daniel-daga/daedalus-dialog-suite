@@ -167,7 +167,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   startBackgroundIngestion: async () => {
-    const { allDialogFiles, questFiles, getSemanticModel, abortIngestion } = get();
+    const { allDialogFiles, questFiles, abortIngestion } = get();
     
     // Cancel previous ingestion if running
     if (abortIngestion) {
@@ -182,31 +182,65 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const remainingFiles = allDialogFiles.filter(f => !priorityFiles.has(f));
     const ingestionQueue = [...priorityFiles, ...remainingFiles];
 
+    // Batch updates to avoid excessive re-renders
+    const pendingUpdates = new Map<string, ParsedFileCache>();
+    const flushUpdates = () => {
+      if (pendingUpdates.size > 0) {
+        set((state) => {
+          const newCache = new Map(state.parsedFiles);
+          pendingUpdates.forEach((value, key) => newCache.set(key, value));
+          return { parsedFiles: newCache };
+        });
+        pendingUpdates.clear();
+      }
+    };
+    
+    const flushInterval = setInterval(flushUpdates, 500);
+
     // Process in background
     try {
-      // We use a small concurrency limit to not block the IPC/Worker too much
-      // Since getSemanticModel awaits the IPC call, we can just loop
-      // But we want to check the abort signal
+      // Concurrency limit for parallel ingestion
+      // Increased to 20 to utilize backend worker pool (max 8 workers)
+      const CONCURRENCY_LIMIT = 20;
       
-      for (const filePath of ingestionQueue) {
-        if (controller.signal.aborted) break;
-
-        // Skip if already parsed
-        if (get().parsedFiles.has(filePath)) continue;
-
-        try {
-          // Parse the file
-          await getSemanticModel(filePath);
+      let currentIndex = 0;
+      const processNext = async (): Promise<void> => {
+        if (controller.signal.aborted) return;
+        
+        while (currentIndex < ingestionQueue.length) {
+          if (controller.signal.aborted) return;
           
-          // Small delay to yield to UI/other tasks
-          await new Promise(resolve => setTimeout(resolve, 5));
-        } catch (e) {
-          console.warn(`Background ingestion failed for ${filePath}:`, e);
+          const filePath = ingestionQueue[currentIndex++];
           
-          // Mark as parsed with error so it doesn't stay "Pending"
-          set((state) => {
-             const newCache = new Map(state.parsedFiles);
-             newCache.set(filePath, {
+          // Skip if already parsed (check both store and pending)
+          if (get().parsedFiles.has(filePath) || pendingUpdates.has(filePath)) continue;
+
+          try {
+            // Parse the file directly to avoid state update in getSemanticModel
+            const semanticModel = await window.editorAPI.parseDialogFile(filePath);
+
+            // Inject file path into constants and variables for tracking
+            if (semanticModel.constants) {
+              Object.values(semanticModel.constants).forEach(c => { c.filePath = filePath; });
+            }
+            if (semanticModel.variables) {
+              Object.values(semanticModel.variables).forEach(v => { v.filePath = filePath; });
+            }
+
+            // Add to batch
+            pendingUpdates.set(filePath, {
+              filePath,
+              semanticModel,
+              lastParsed: new Date()
+            });
+
+          } catch (e) {
+            console.warn(`Background ingestion failed for ${filePath}:`, e);
+            
+            if (controller.signal.aborted) return;
+
+            // Add error to batch
+            pendingUpdates.set(filePath, {
                filePath,
                semanticModel: {
                  ...createEmptySemanticModel(),
@@ -217,12 +251,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
                  }]
                },
                lastParsed: new Date()
-             });
-             return { parsedFiles: newCache };
-          });
+            });
+          }
         }
-      }
+      };
+
+      // Start initial batch of workers
+      const workers = Array(CONCURRENCY_LIMIT).fill(null).map(() => processNext());
+      await Promise.all(workers);
+
     } finally {
+      clearInterval(flushInterval);
+      // Final flush
+      flushUpdates();
+      
       if (!controller.signal.aborted) {
         set({ isIngesting: false, abortIngestion: null });
       }

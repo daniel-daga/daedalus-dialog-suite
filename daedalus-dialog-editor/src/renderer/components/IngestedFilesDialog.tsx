@@ -43,12 +43,22 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
     };
   });
 
-  // Sort: Parsed first, then alphabetical
+  // Sort: Errors first, then Parsed, then Pending, then Alphabetical
   fileList.sort((a, b) => {
-    if (a.isParsed === b.isParsed) {
-      return a.filePath.localeCompare(b.filePath);
+    const getPriority = (f: typeof fileList[0]) => {
+      if (f.hasErrors) return 0; // Highest priority
+      if (f.isParsed) return 1;  // Second priority
+      return 2;                  // Lowest priority (Pending)
+    };
+
+    const priorityA = getPriority(a);
+    const priorityB = getPriority(b);
+
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
     }
-    return a.isParsed ? -1 : 1;
+    
+    return a.filePath.localeCompare(b.filePath);
   });
 
   const parsedCount = fileList.filter(f => f.isParsed).length;
