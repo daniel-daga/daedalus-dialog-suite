@@ -6,7 +6,12 @@
     "daedalus-parser"
   ],
   "scripts": {
+    "dev": "npm run dev -w daedalus-dialog-editor",
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces"
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "package": "npm run package -w daedalus-dialog-editor",
+    "preview": "npm run preview -w daedalus-dialog-editor"
   }
 }
