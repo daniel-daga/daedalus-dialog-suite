@@ -131,7 +131,7 @@ module.exports = grammar({
 
     assignment_statement: $ => seq(
       field('left', choice($.identifier, $.member_access, $.array_access)),
-      '=',
+      choice('=', '+=', '-=', '*=', '/='),
       field('right', $._expression),
       ';',
     ),
@@ -175,31 +175,35 @@ module.exports = grammar({
     binary_expression: $ => choice(
       prec.left(1, seq($._expression, '||', $._expression)),
       prec.left(2, seq($._expression, '&&', $._expression)),
-      prec.left(3, seq($._expression, choice('==', '!='), $._expression)),
-      prec.left(4, seq($._expression, choice('<', '<=', '>', '>='), $._expression)),
-      prec.left(5, seq($._expression, choice('+', '-'), $._expression)),
-      prec.left(6, seq($._expression, choice('*', '/', '%'), $._expression)),
+      prec.left(3, seq($._expression, '|', $._expression)),
+      prec.left(4, seq($._expression, '^', $._expression)),
+      prec.left(5, seq($._expression, '&', $._expression)),
+      prec.left(6, seq($._expression, choice('==', '!='), $._expression)),
+      prec.left(7, seq($._expression, choice('<', '<=', '>', '>='), $._expression)),
+      prec.left(8, seq($._expression, choice('<<', '>>'), $._expression)),
+      prec.left(9, seq($._expression, choice('+', '-'), $._expression)),
+      prec.left(10, seq($._expression, choice('*', '/', '%'), $._expression)),
     ),
 
-    unary_expression: $ => prec(7, seq(
+    unary_expression: $ => prec(11, seq(
       field('operator', choice('!', '~', '+', '-')),
       field('operand', $._expression),
     )),
 
-    array_access: $ => prec(8, seq(
+    array_access: $ => prec(12, seq(
       field('array', $._expression),
       '[',
       field('index', $._expression),
       ']',
     )),
 
-    member_access: $ => prec(8, seq(
+    member_access: $ => prec(12, seq(
       field('object', $._expression),
       '.',
       field('member', $.identifier),
     )),
 
-    call_expression: $ => prec(9, seq(
+    call_expression: $ => prec(13, seq(
       field('function', choice($.identifier, $.member_access)),
       '(',
       field('arguments', optional($.argument_list)),
