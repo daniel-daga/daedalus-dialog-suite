@@ -63,9 +63,17 @@ module.exports = grammar({
       )),
       optional(seq(
         '=',
-        field('value', $._expression)
+        field('value', choice($._expression, $.array_initialization))
       )),
       ';',
+    ),
+
+    array_initialization: $ => seq(
+      '{',
+      $._expression,
+      repeat(seq(',', $._expression)),
+      optional(','), // Allow trailing comma
+      '}'
     ),
 
     // Class declaration: class ClassName { ... }
