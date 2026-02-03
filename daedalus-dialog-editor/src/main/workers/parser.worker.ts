@@ -1,21 +1,25 @@
 import { parentPort } from 'worker_threads';
-import Parser from 'tree-sitter';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
 // @ts-ignore - CommonJS module
 const DaedalusParser = require('daedalus-parser');
-const Daedalus = DaedalusParser.DaedalusLanguage;
 
-const parser = new Parser();
-parser.setLanguage(Daedalus);
+// Use the parser instance from the library to ensure ABI compatibility
+// between the Language object and the Parser implementation.
+// This avoids "Invalid argument" errors caused by mismatched tree-sitter versions.
+const daedalusWrapper = new DaedalusParser();
 
 if (parentPort) {
   parentPort.on('message', (message: { id: string; sourceCode: string }) => {
     try {
       const { id, sourceCode } = message;
 
-      // Perform parsing
-      const tree = parser.parse(sourceCode);
+      if (typeof sourceCode !== 'string') {
+        throw new Error(`Invalid sourceCode type: ${typeof sourceCode}`);
+      }
+
+      // Perform parsing using the wrapper's internal parser
+      const tree = daedalusWrapper.parser.parse(sourceCode);
       const visitor = new SemanticModelBuilderVisitor();
 
       // Check for syntax errors first
@@ -34,6 +38,7 @@ if (parentPort) {
       // Return the semantic model
       parentPort!.postMessage({ id, result: visitor.semanticModel });
     } catch (error) {
+      console.error('[Worker] Error during parsing:', error);
       parentPort!.postMessage({
         id: message.id,
         error: error instanceof Error ? error.message : 'Unknown worker error'
