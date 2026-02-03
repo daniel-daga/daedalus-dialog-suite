@@ -1,16 +1,18 @@
-import React from 'react';
-import { Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip } from '@mui/material';
-import { FolderOpen as FolderOpenIcon, Folder as FolderIcon, Save as SaveIcon } from '@mui/icons-material';
+import React, { useState } from 'react';
+import { Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip, IconButton } from '@mui/material';
+import { FolderOpen as FolderOpenIcon, Folder as FolderIcon, Save as SaveIcon, ListAlt as ListAltIcon } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
 import MainLayout from './components/MainLayout';
 import ErrorBoundary from './components/ErrorBoundary';
+import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 
 const App: React.FC = () => {
   const { openFile, activeFile } = useEditorStore();
   const { openProject, projectPath, projectName } = useProjectStore();
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
+  const [isIngestedFilesOpen, setIsIngestedFilesOpen] = useState(false);
 
   const formatLastSaved = (date: Date | null): string => {
     if (!date) return '';
@@ -70,6 +72,15 @@ const App: React.FC = () => {
               sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
             />
           )}
+           <Tooltip title="Ingested Files">
+            <IconButton
+              color="inherit"
+              onClick={() => setIsIngestedFilesOpen(true)}
+              sx={{ mr: 1 }}
+            >
+              <ListAltIcon />
+            </IconButton>
+          </Tooltip>
           <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
             Open Project
           </Button>
@@ -78,6 +89,11 @@ const App: React.FC = () => {
           </Button>
         </Toolbar>
       </AppBar>
+
+      <IngestedFilesDialog 
+        open={isIngestedFilesOpen} 
+        onClose={() => setIsIngestedFilesOpen(false)} 
+      />
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
         <ErrorBoundary>

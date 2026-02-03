@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import type { DialogMetadata, SemanticModel } from '../types/global';
 
-interface ParsedFileCache {
+export interface ParsedFileCache {
   filePath: string;
   semanticModel: SemanticModel;
   lastParsed: Date;
