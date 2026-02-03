@@ -20,12 +20,13 @@ const mockAllDialogFiles = ['C:/test/file1.d', 'C:/test/file2.d', 'C:/test/file3
 jest.mock('../src/renderer/store/projectStore', () => ({
   useProjectStore: (selector: any) => selector({
     parsedFiles: mockParsedFiles,
-    allDialogFiles: mockAllDialogFiles
+    allDialogFiles: mockAllDialogFiles,
+    isIngesting: true
   }),
 }));
 
 describe('IngestedFilesDialog', () => {
-  it('renders correctly with files', () => {
+  it('renders correctly with files and progress', () => {
     render(
       <IngestedFilesDialog
         open={true}
@@ -34,6 +35,9 @@ describe('IngestedFilesDialog', () => {
     );
 
     expect(screen.getByText('Project Files (3)')).toBeInTheDocument();
+    
+    // Progress bar text check
+    expect(screen.getByText('Ingesting... 2 / 3')).toBeInTheDocument();
     
     // File 1 - Parsed OK
     expect(screen.getByText('C:/test/file1.d')).toBeInTheDocument();

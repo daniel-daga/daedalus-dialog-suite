@@ -53,11 +53,18 @@ interface ProjectState {
   // Loading state
   isLoading: boolean;
   loadError: string | null;
+  
+  // Background ingestion
+  isIngesting: boolean;
+  abortIngestion: (() => void) | null;
 }
 
 interface ProjectActions {
   // Open and index a project
   openProject: (folderPath: string) => Promise<void>;
+
+  // Start background ingestion of all files
+  startBackgroundIngestion: () => void;
 
   // Close project
   closeProject: () => void;
@@ -105,6 +112,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   selectedNpc: null,
   isLoading: false,
   loadError: null,
+  isIngesting: false,
+  abortIngestion: null,
 
   // Actions
   openProject: async (folderPath: string) => {
@@ -145,6 +154,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         parsedFiles: new Map(), // Clear any previous cache
         selectedNpc: null
       });
+
+      // Start background ingestion
+      get().startBackgroundIngestion();
+
     } catch (error) {
       set({
         isLoading: false,
@@ -153,7 +166,59 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
+  startBackgroundIngestion: async () => {
+    const { allDialogFiles, questFiles, getSemanticModel, abortIngestion } = get();
+    
+    // Cancel previous ingestion if running
+    if (abortIngestion) {
+      abortIngestion();
+    }
+
+    const controller = new AbortController();
+    set({ isIngesting: true, abortIngestion: () => controller.abort() });
+
+    // Prioritize quest files, then the rest
+    const priorityFiles = new Set([...questFiles]);
+    const remainingFiles = allDialogFiles.filter(f => !priorityFiles.has(f));
+    const ingestionQueue = [...priorityFiles, ...remainingFiles];
+
+    // Process in background
+    try {
+      // We use a small concurrency limit to not block the IPC/Worker too much
+      // Since getSemanticModel awaits the IPC call, we can just loop
+      // But we want to check the abort signal
+      
+      for (const filePath of ingestionQueue) {
+        if (controller.signal.aborted) break;
+
+        // Skip if already parsed
+        if (get().parsedFiles.has(filePath)) continue;
+
+        try {
+          // Parse the file
+          await getSemanticModel(filePath);
+          
+          // Small delay to yield to UI/other tasks
+          await new Promise(resolve => setTimeout(resolve, 5));
+        } catch (e) {
+          console.warn(`Background ingestion failed for ${filePath}:`, e);
+          // Continue to next file even on error
+        }
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        set({ isIngesting: false, abortIngestion: null });
+      }
+    }
+  },
+
   closeProject: () => {
+    // Abort any running ingestion
+    const { abortIngestion } = get();
+    if (abortIngestion) {
+      abortIngestion();
+    }
+
     set({
       projectPath: null,
       projectName: null,
@@ -163,7 +228,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       parsedFiles: new Map(),
       mergedSemanticModel: createEmptySemanticModel(),
       selectedNpc: null,
-      loadError: null
+      loadError: null,
+      isIngesting: false,
+      abortIngestion: null
     });
   },
 
