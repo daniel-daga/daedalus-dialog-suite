@@ -16,7 +16,12 @@ class DaedalusParser {
   parse(sourceCode, options = {}) {
     const startTime = process.hrtime.bigint();
 
-    const tree = this.parser.parse(sourceCode);
+    const parseOptions = {
+      bufferSize: options.bufferSize || (sourceCode.length + 1),
+      ...options
+    };
+
+    const tree = this.parser.parse(sourceCode, undefined, parseOptions);
 
     const endTime = process.hrtime.bigint();
     const parseTimeMs = Number(endTime - startTime) / 1_000_000;

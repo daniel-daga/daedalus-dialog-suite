@@ -30,7 +30,7 @@ export function createDaedalusParser(): any {
  */
 export function parseDaedalusSource(sourceCode: string): any {
   const parser = createDaedalusParser();
-  return parser.parse(sourceCode);
+  return parser.parse(sourceCode, undefined, { bufferSize: sourceCode.length + 1 });
 }
 
 /**
@@ -40,7 +40,7 @@ export function parseDaedalusSource(sourceCode: string): any {
  */
 export function parseSemanticModel(sourceCode: string): SemanticModel {
   const parser = createDaedalusParser();
-  const tree = parser.parse(sourceCode);
+  const tree = parser.parse(sourceCode, undefined, { bufferSize: sourceCode.length + 1 });
 
   const visitor = new SemanticModelBuilderVisitor();
 

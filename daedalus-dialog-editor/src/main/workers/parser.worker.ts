@@ -18,8 +18,10 @@ if (parentPort) {
         throw new Error(`Invalid sourceCode type: ${typeof sourceCode}`);
       }
 
-      // Perform parsing using the wrapper's internal parser
-      const tree = daedalusWrapper.parser.parse(sourceCode);
+      // Perform parsing using the wrapper's high-level parse method
+      // This ensures that options like bufferSize are correctly applied for large files
+      const parseResult = daedalusWrapper.parse(sourceCode);
+      const tree = parseResult.tree;
       const visitor = new SemanticModelBuilderVisitor();
 
       // Check for syntax errors first
