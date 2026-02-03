@@ -202,7 +202,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           await new Promise(resolve => setTimeout(resolve, 5));
         } catch (e) {
           console.warn(`Background ingestion failed for ${filePath}:`, e);
-          // Continue to next file even on error
+          
+          // Mark as parsed with error so it doesn't stay "Pending"
+          set((state) => {
+             const newCache = new Map(state.parsedFiles);
+             newCache.set(filePath, {
+               filePath,
+               semanticModel: {
+                 ...createEmptySemanticModel(),
+                 hasErrors: true,
+                 errors: [{
+                    type: 'ingestion_error',
+                    message: e instanceof Error ? e.message : String(e)
+                 }]
+               },
+               lastParsed: new Date()
+             });
+             return { parsedFiles: newCache };
+          });
         }
       }
     } finally {

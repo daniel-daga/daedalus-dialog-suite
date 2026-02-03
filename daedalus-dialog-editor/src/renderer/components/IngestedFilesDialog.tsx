@@ -12,7 +12,8 @@ import {
   Chip,
   Box,
   IconButton,
-  LinearProgress
+  LinearProgress,
+  Tooltip
 } from '@mui/material';
 import { Close as CloseIcon, CheckCircle as CheckCircleIcon, Error as ErrorIcon } from '@mui/icons-material';
 import { useProjectStore, ParsedFileCache } from '../store/projectStore';
@@ -36,6 +37,7 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
       filePath,
       isParsed: !!parsed,
       hasErrors: parsed?.semanticModel.hasErrors || false,
+      errors: parsed?.semanticModel.errors || [],
       errorCount: parsed?.semanticModel.errors?.length || 0,
       lastParsed: parsed?.lastParsed
     };
@@ -89,12 +91,27 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
                       </Typography>
                       {file.isParsed ? (
                         file.hasErrors ? (
-                           <Chip
-                             icon={<ErrorIcon />}
-                             label={`${file.errorCount} Errors`}
-                             color="error"
-                             size="small"
-                           />
+                           <Tooltip title={
+                             <Box sx={{ p: 0.5 }}>
+                               {file.errors.slice(0, 10).map((e, i) => (
+                                 <Typography key={i} variant="caption" display="block" sx={{ whiteSpace: 'pre-wrap', mb: 0.5 }}>
+                                   {e.message}
+                                 </Typography>
+                               ))}
+                               {file.errors.length > 10 && (
+                                 <Typography variant="caption" display="block" fontStyle="italic">
+                                   ...and {file.errors.length - 10} more
+                                 </Typography>
+                               )}
+                             </Box>
+                           }>
+                             <Chip
+                               icon={<ErrorIcon />}
+                               label={`${file.errorCount} Errors`}
+                               color="error"
+                               size="small"
+                             />
+                           </Tooltip>
                         ) : (
                           <Chip
                             icon={<CheckCircleIcon />}
