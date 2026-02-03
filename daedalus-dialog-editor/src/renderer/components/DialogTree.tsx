@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import {
   Paper,
   Box,
@@ -9,13 +9,78 @@ import {
 import {
   FilterList as FilterListIcon
 } from '@mui/icons-material';
-import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+import { FixedSizeList as List, ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { DialogTreeProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
 import DialogTreeItem from './DialogTreeItem';
 import ChoiceTreeItem from './ChoiceTreeItem';
 import { flattenDialogs } from './dialogTreeUtils';
+import { SemanticModel } from '../types/global';
+
+interface DialogTreeItemData {
+  flatItems: any[];
+  semanticModel: SemanticModel;
+  selectedDialog: string | null;
+  selectedFunctionName: string | null;
+  onSelectDialog: (dialogName: string, functionName: string | null) => void;
+  onToggleDialogExpand: (dialogName: string) => void;
+  onToggleChoiceExpand: (choiceKey: string) => void;
+}
+
+// Optimized Row component defined outside to ensure stable reference
+// This prevents react-window from unmounting/remounting rows on every render
+const Row = React.memo(({ index, style, data }: ListChildComponentProps<DialogTreeItemData>) => {
+  const {
+    flatItems,
+    semanticModel,
+    selectedDialog,
+    selectedFunctionName,
+    onSelectDialog,
+    onToggleDialogExpand,
+    onToggleChoiceExpand
+  } = data;
+
+  const item = flatItems[index];
+
+  // Safety check
+  if (!item) return null;
+
+  if (item.type === 'dialog') {
+    const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information as any;
+    const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+    const isSelected = selectedDialog === item.dialogName && selectedFunctionName === infoFuncName;
+
+    return (
+      <DialogTreeItem
+        dialogName={item.dialogName}
+        semanticModel={semanticModel}
+        isSelected={isSelected}
+        isExpanded={item.isExpanded}
+        onSelectDialog={onSelectDialog}
+        onToggleDialogExpand={onToggleDialogExpand}
+        hasChildren={item.hasChildren}
+        style={style}
+      />
+    );
+  } else {
+    return (
+      <ChoiceTreeItem
+        choice={item.choice}
+        depth={item.depth}
+        index={item.index}
+        choiceKey={item.id}
+        isExpanded={item.isExpanded}
+        hasChildren={item.hasChildren}
+        selectedFunctionName={selectedFunctionName}
+        dialogName={item.dialogName}
+        onSelectDialog={onSelectDialog}
+        onToggleChoiceExpand={onToggleChoiceExpand}
+        style={style}
+      />
+    );
+  }
+}, areEqual);
 
 const DialogTree: React.FC<DialogTreeProps> = ({
   selectedNPC,
@@ -64,44 +129,24 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     );
   }, [selectedNPC, filteredDialogs, semanticModel, expandedDialogs, expandedChoices, buildFunctionTree]);
 
-  // Row renderer for FixedSizeList
-  const Row = useCallback(({ index, style }: ListChildComponentProps) => {
-    const item = flatItems[index];
-
-    if (item.type === 'dialog') {
-      const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information as any;
-      const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-
-      return (
-        <DialogTreeItem
-          dialogName={item.dialogName}
-          semanticModel={semanticModel}
-          isSelected={selectedDialog === item.dialogName && selectedFunctionName === infoFuncName}
-          isExpanded={item.isExpanded}
-          onSelectDialog={onSelectDialog}
-          onToggleDialogExpand={onToggleDialogExpand}
-          hasChildren={item.hasChildren}
-          style={style}
-        />
-      );
-    } else {
-      return (
-        <ChoiceTreeItem
-          choice={item.choice}
-          depth={item.depth}
-          index={item.index}
-          choiceKey={item.id}
-          isExpanded={item.isExpanded}
-          hasChildren={item.hasChildren}
-          selectedFunctionName={selectedFunctionName}
-          dialogName={item.dialogName}
-          onSelectDialog={onSelectDialog}
-          onToggleChoiceExpand={onToggleChoiceExpand}
-          style={style}
-        />
-      );
-    }
-  }, [flatItems, semanticModel, selectedDialog, selectedFunctionName, onSelectDialog, onToggleDialogExpand, onToggleChoiceExpand]);
+  // Memoize item data to prevent unnecessary re-renders of the list
+  const itemData = useMemo<DialogTreeItemData>(() => ({
+    flatItems,
+    semanticModel,
+    selectedDialog,
+    selectedFunctionName,
+    onSelectDialog,
+    onToggleDialogExpand,
+    onToggleChoiceExpand
+  }), [
+    flatItems,
+    semanticModel,
+    selectedDialog,
+    selectedFunctionName,
+    onSelectDialog,
+    onToggleDialogExpand,
+    onToggleChoiceExpand
+  ]);
 
   return (
     <Paper sx={{ width: 350, overflow: 'hidden', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }} elevation={1}>
@@ -143,6 +188,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
                   itemSize={60}
                   width={width}
                   overscanCount={5}
+                  itemData={itemData}
                 >
                   {Row}
                 </List>

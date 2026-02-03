@@ -1,3 +1,7 @@
 ## 2026-02-01 - Monolithic State vs React Memoization
 **Learning:** The `semanticModel` object is a large monolithic state that is recreated on every edit. Passing this entire object to list items like `DialogTreeItem` defeats `React.memo` unless a custom comparator is used to check only relevant sub-properties. Furthermore, callbacks like `buildFunctionTree` that depend on the entire model will break memoization of child components.
 **Action:** When working with `semanticModel`, extract stable sub-properties (like `functions` map) for dependencies, and use granular checks in `React.memo` comparators to avoid O(N) re-renders on single-item updates.
+
+## 2026-02-04 - Virtualized List Render Props
+**Learning:** Using an inline component definition (e.g., `useCallback` returning a component) as the `children` prop for `react-window`'s `FixedSizeList` causes the list to unmount and remount all rows on every update, because the child component type changes.
+**Action:** Always define the row component outside the parent component or use a stable reference. Pass dynamic data via the `itemData` prop and memoize that data object.
