@@ -1,6 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Box, TextField, IconButton, Tooltip, Chip, Typography, Switch, FormControlLabel } from '@mui/material';
 import { Delete as DeleteIcon, Info as InfoIcon, Code as CodeIcon, Check as CheckIcon } from '@mui/icons-material';
+import VariableAutocomplete from './common/VariableAutocomplete';
+import type { SemanticModel } from '../../shared/types';
 
 interface ConditionCardProps {
   condition: any;
@@ -9,7 +11,7 @@ interface ConditionCardProps {
   updateCondition: (index: number, updated: any) => void;
   deleteCondition: (index: number) => void;
   focusCondition: (index: number) => void;
-  semanticModel?: any;
+  semanticModel?: SemanticModel;
 }
 
 const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCardProps>(({
@@ -18,7 +20,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   totalConditions,
   updateCondition,
   deleteCondition,
-  focusCondition,
+  focusCondition: _focusCondition,
   semanticModel
 }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
@@ -118,25 +120,30 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
       case 'NpcKnowsInfoCondition':
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-            <TextField
+            <VariableAutocomplete
               label="NPC"
               value={localCondition.npc || ''}
-              onChange={(e) => handleUpdate({ ...localCondition, npc: e.target.value })}
-              onBlur={flushUpdate}
-              size="small"
-              inputRef={mainFieldRef}
+              onChange={(value) => handleUpdate({ ...localCondition, npc: value })}
+              onFlush={flushUpdate}
+              showInstances
+              typeFilter="C_NPC"
+              isMainField
+              mainFieldRef={mainFieldRef}
               sx={{ flex: '1 1 30%', minWidth: 120 }}
+              semanticModel={semanticModel}
             />
             <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem', flexShrink: 0 }}>
               knows
             </Typography>
-            <TextField
+            <VariableAutocomplete
               label="Dialog"
               value={localCondition.dialogRef || ''}
-              onChange={(e) => handleUpdate({ ...localCondition, dialogRef: e.target.value })}
-              onBlur={flushUpdate}
-              size="small"
+              onChange={(value) => handleUpdate({ ...localCondition, dialogRef: value })}
+              onFlush={flushUpdate}
+              showInstances
+              typeFilter="C_INFO"
               sx={{ flex: '1 1 60%', minWidth: 150 }}
+              semanticModel={semanticModel}
             />
           </Box>
         );
@@ -159,15 +166,17 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               label="NOT"
               sx={{ mr: 1 }}
             />
-            <TextField
+            <VariableAutocomplete
               label="Variable Name"
               value={localCondition.variableName || ''}
-              onChange={(e) => handleUpdate({ ...localCondition, variableName: e.target.value })}
-              onBlur={flushUpdate}
-              size="small"
-              inputRef={mainFieldRef}
+              onChange={(value) => handleUpdate({ ...localCondition, variableName: value })}
+              onFlush={flushUpdate}
+              typeFilter="int"
+              isMainField
+              mainFieldRef={mainFieldRef}
               sx={{ flex: 1 }}
               placeholder="e.g., MIS_QuestCompleted"
+              semanticModel={semanticModel}
             />
           </Box>
         );

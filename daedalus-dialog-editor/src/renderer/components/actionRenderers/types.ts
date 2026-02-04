@@ -1,6 +1,7 @@
 /**
  * Shared types for action renderer components
  */
+import type { SemanticModel } from '../../../shared/types';
 
 export interface BaseActionRendererProps {
   action: any;
@@ -10,7 +11,7 @@ export interface BaseActionRendererProps {
   flushUpdate: () => void;
   handleKeyDown: (e: React.KeyboardEvent) => void;
   mainFieldRef: React.RefObject<HTMLInputElement>;
-  semanticModel?: any;
+  semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName?: string;

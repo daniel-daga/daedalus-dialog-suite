@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
-import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
+import { ActionFieldContainer, ActionDeleteButton } from '../common';
+import VariableAutocomplete from '../common/VariableAutocomplete';
 
 const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -8,11 +9,12 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef
+  mainFieldRef,
+  semanticModel
 }) => {
   return (
     <ActionFieldContainer>
-      <ActionTextField
+      <VariableAutocomplete
         label="Topic"
         value={action.topic || ''}
         onChange={(value) => handleUpdate({ ...action, topic: value })}
@@ -21,14 +23,18 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 180 }}
+        typeFilter="string"
+        semanticModel={semanticModel}
       />
-      <ActionTextField
+      <VariableAutocomplete
         fullWidth
         label="Status"
         value={action.status || ''}
         onChange={(value) => handleUpdate({ ...action, status: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        typeFilter="int"
+        semanticModel={semanticModel}
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>
