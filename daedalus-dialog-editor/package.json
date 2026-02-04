@@ -59,7 +59,7 @@
     "@mui/material": "^5.15.14",
     "@tanstack/react-query": "^5.28.4",
     "chardet": "^2.1.1",
-    "daedalus-parser": "*",
+    "daedalus-parser": "workspace:*",
     "iconv-lite": "^0.7.0",
     "react": "^18.2.0",
     "react-beautiful-dnd": "^13.1.1",
