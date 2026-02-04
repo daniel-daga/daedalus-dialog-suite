@@ -4,12 +4,11 @@ import ReactFlow, {
   Controls,
   Node,
   Edge,
-  Position,
   MarkerType,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Box, Typography, Paper } from '@mui/material';
-import type { SemanticModel, DialogFunction, Dialog } from '../types/global';
+import { Box, Typography } from '@mui/material';
+import type { SemanticModel } from '../types/global';
 import { getActionType } from './actionTypes';
 
 interface QuestFlowProps {
@@ -58,6 +57,9 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
       npc: string;
     }>();
 
+    // Map status value (e.g. LOG_RUNNING) to Set of functions that set it
+    const producersByStatus = new Map<string, Set<string>>();
+
     Object.values(semanticModel.functions).forEach(func => {
       let isRelevant = false;
       let type: 'start' | 'update' | 'end' | 'check' = 'check';
@@ -68,15 +70,23 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         if ('topic' in action && action.topic === questName) {
           isRelevant = true;
           const actionType = getActionType(action);
-          if (actionType === 'createTopic') type = 'start';
-          else if (actionType === 'logSetTopicStatus') {
+          if (actionType === 'createTopic') {
+              type = 'start';
+              // Implicitly sets LOG_RUNNING
+              if (!producersByStatus.has('LOG_RUNNING')) producersByStatus.set('LOG_RUNNING', new Set());
+              producersByStatus.get('LOG_RUNNING')?.add(func.name);
+          } else if (actionType === 'logSetTopicStatus') {
              // If status is SUCCESS or FAILED (numeric 2 or 3 usually, or const)
-             // simplified check:
              const status = (action as any).status;
              if (String(status).includes('SUCCESS') || String(status).includes('FAILED')) {
                 type = 'end';
              } else {
                 type = 'update';
+             }
+
+             if (status) {
+                 if (!producersByStatus.has(status)) producersByStatus.set(status, new Set());
+                 producersByStatus.get(status)?.add(func.name);
              }
           } else if (actionType === 'logEntry') {
              if (type !== 'start' && type !== 'end') type = 'update';
@@ -88,7 +98,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
       func.conditions?.forEach(cond => {
         if ('variableName' in cond && (cond as any).variableName === misVarName) {
           isRelevant = true;
-          // specific label for condition?
         }
       });
 
@@ -99,7 +108,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
       }
     });
 
-    // 2. Build dependency graph (Npc_KnowsInfo)
+    // 2. Build dependency graph (Npc_KnowsInfo + Variable State)
     const adjacency = new Map<string, string[]>();
     const inDegree = new Map<string, number>();
 
@@ -109,6 +118,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
 
       const func = semanticModel.functions[funcName];
       func.conditions?.forEach(cond => {
+        // Handle Npc_KnowsInfo
         if ('dialogRef' in cond) { // NpcKnowsInfoCondition
             // cond.dialogRef is the Dialog Instance Name.
             // We need to find the function associated with that dialog.
@@ -122,13 +132,25 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
                 else if (info && typeof info === 'object') targetFuncName = info.name;
 
                 if (targetFuncName && relevantFunctions.has(targetFuncName)) {
-                    adjacency.get(funcName)?.push(targetFuncName); // Reverse? No, KnowsInfo(A) means A -> current
-                    // Wait. If B checks KnowsInfo(A), then A must happen BEFORE B.
-                    // So Edge: A -> B.
-                    // My adjacency here is: Current depends on Target.
-                    // So Edge: Target -> Current.
+                    adjacency.get(funcName)?.push(targetFuncName);
                 }
             }
+        }
+
+        // Handle Variable Condition (MIS_Var == Value)
+        if ('variableName' in cond && (cond as any).variableName === misVarName) {
+           const op = (cond as any).operator;
+           const val = (cond as any).value;
+
+           if (op === '==' && val) {
+               // Depends on anyone producing 'val'
+               const producers = producersByStatus.get(String(val)) || new Set();
+               producers.forEach(producer => {
+                   if (producer !== funcName) {
+                       adjacency.get(funcName)?.push(producer);
+                   }
+               });
+           }
         }
       });
     });

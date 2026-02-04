@@ -130,6 +130,8 @@ export interface NpcKnowsInfoCondition {
 export interface VariableCondition {
   variableName: string;
   negated: boolean;
+  operator?: string;
+  value?: string | number | boolean;
 }
 
 export interface GenericCondition {
