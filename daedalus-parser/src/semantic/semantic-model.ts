@@ -48,6 +48,16 @@ export class GlobalConstant {
   public type: string;
   public value: string | number | boolean;
   public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
 
   constructor(name: string, type: string, value: string | number | boolean) {
     this.name = name;
@@ -56,7 +66,11 @@ export class GlobalConstant {
   }
 
   static fromJSON(json: any): GlobalConstant {
-    return new GlobalConstant(json.name, json.type, json.value);
+    const obj = new GlobalConstant(json.name, json.type, json.value);
+    obj.filePath = json.filePath;
+    obj.position = json.position;
+    obj.range = json.range;
+    return obj;
   }
 }
 
@@ -64,6 +78,16 @@ export class GlobalVariable {
   public name: string;
   public type: string;
   public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
 
   constructor(name: string, type: string) {
     this.name = name;
@@ -71,7 +95,11 @@ export class GlobalVariable {
   }
 
   static fromJSON(json: any): GlobalVariable {
-    return new GlobalVariable(json.name, json.type);
+    const obj = new GlobalVariable(json.name, json.type);
+    obj.filePath = json.filePath;
+    obj.position = json.position;
+    obj.range = json.range;
+    return obj;
   }
 }
 
