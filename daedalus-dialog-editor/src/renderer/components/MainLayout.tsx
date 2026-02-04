@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Box, ToggleButton, ToggleButtonGroup, Paper, Tooltip } from '@mui/material';
-import { Chat as ChatIcon, Book as BookIcon } from '@mui/icons-material';
+import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
 import QuestEditor from './QuestEditor';
+import VariableManager from './VariableManager';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import type { SemanticModel } from '../types/global';
@@ -12,7 +13,7 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
-  const [view, setView] = useState<'dialog' | 'quest'>('dialog');
+  const [view, setView] = useState<'dialog' | 'quest' | 'variable'>('dialog');
   const { openFiles } = useEditorStore();
   const { projectPath, mergedSemanticModel, loadQuestData } = useProjectStore();
 
@@ -21,7 +22,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
 
   useEffect(() => {
-    if (view === 'quest' && isProjectMode) {
+    if ((view === 'quest' || view === 'variable') && isProjectMode) {
       loadQuestData();
     }
   }, [view, isProjectMode, loadQuestData]);
@@ -47,6 +48,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                     <BookIcon />
                 </ToggleButton>
             </Tooltip>
+            <Tooltip title="Variable Manager" placement="right">
+                <ToggleButton value="variable" aria-label="Variable Manager">
+                    <VariableIcon />
+                </ToggleButton>
+            </Tooltip>
          </ToggleButtonGroup>
       </Paper>
 
@@ -60,6 +66,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
          {view === 'quest' && (
              <Box sx={{ height: '100%' }}>
                  <QuestEditor semanticModel={semanticModel as SemanticModel} />
+             </Box>
+         )}
+
+         {view === 'variable' && (
+             <Box sx={{ height: '100%' }}>
+                 <VariableManager />
              </Box>
          )}
       </Box>

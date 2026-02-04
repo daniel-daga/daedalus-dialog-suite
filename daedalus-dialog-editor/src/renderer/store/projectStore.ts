@@ -93,6 +93,12 @@ interface ProjectActions {
   // Create a new quest
   createQuest: (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => Promise<void>;
 
+  // Add a new global variable or constant
+  addVariable: (name: string, type: string, value: string | number | boolean | undefined, filePath: string, isConstant: boolean) => Promise<void>;
+
+  // Delete a global variable or constant
+  deleteVariable: (filePath: string, range: { startIndex: number, endIndex: number }) => Promise<void>;
+
   // Clear merged semantic model
   clearMergedModel: () => void;
 
@@ -516,6 +522,90 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     } catch (error) {
       set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to create quest' });
       throw error; // Re-throw so UI can handle it
+    }
+  },
+
+  addVariable: async (name: string, type: string, value: string | number | boolean | undefined, filePath: string, isConstant: boolean) => {
+    const { getSemanticModel, mergeSemanticModels } = get();
+
+    try {
+      set({ isLoading: true });
+
+      let content = '';
+      if (isConstant) {
+          // Format value based on type or just as string if complex
+          let valueStr = String(value);
+          // Only quote if type is string
+          if (type === 'string') {
+              valueStr = `"${value}"`;
+          }
+          content = `\nconst ${type} ${name} = ${valueStr};\n`;
+      } else {
+          content = `\nvar ${type} ${name};\n`;
+      }
+
+      // Read current content to ensure we append correctly (newline check)
+      let currentContent = await window.editorAPI.readFile(filePath);
+      if (!currentContent.endsWith('\n')) currentContent += '\n';
+
+      await window.editorAPI.writeFile(filePath, currentContent + content);
+
+      // Clear cache for modified file
+      const { parsedFiles } = get();
+      const newCache = new Map(parsedFiles);
+      newCache.delete(filePath);
+      set({ parsedFiles: newCache });
+
+      // Re-parse the modified file
+      const updatedModel = await get().getSemanticModel(filePath);
+
+      // Merge into current model
+      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+
+      set({ isLoading: false });
+
+    } catch (error) {
+       set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to add variable' });
+       throw error;
+    }
+  },
+
+  deleteVariable: async (filePath: string, range: { startIndex: number, endIndex: number }) => {
+    const { getSemanticModel, mergeSemanticModels } = get();
+
+    try {
+      set({ isLoading: true });
+
+      // Read current content
+      const content = await window.editorAPI.readFile(filePath);
+
+      // Remove the variable definition
+      // We also check for a following newline to remove blank lines if possible
+      let end = range.endIndex;
+      if (content[end] === '\n') end++;
+      else if (content[end] === '\r' && content[end + 1] === '\n') end += 2;
+
+      const newContent = content.slice(0, range.startIndex) + content.slice(end);
+
+      await window.editorAPI.writeFile(filePath, newContent);
+
+      // Clear cache for modified file
+      const { parsedFiles } = get();
+      const newCache = new Map(parsedFiles);
+      newCache.delete(filePath);
+      set({ parsedFiles: newCache });
+
+      // Re-parse the modified file
+      const updatedModel = await get().getSemanticModel(filePath);
+
+      // Merge into current model
+      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+
+      set({ isLoading: false });
+
+    } catch (error) {
+       set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to delete variable' });
+       throw error;
     }
   },
 

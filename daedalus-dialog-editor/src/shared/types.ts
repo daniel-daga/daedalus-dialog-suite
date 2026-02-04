@@ -181,12 +181,32 @@ export interface GlobalConstant {
   type: string;
   value: string | number | boolean;
   filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
 }
 
 export interface GlobalVariable {
   name: string;
   type: string;
   filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
 }
 
 export interface SemanticModel {

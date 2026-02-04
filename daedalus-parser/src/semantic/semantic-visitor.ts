@@ -181,6 +181,17 @@ export class SemanticModelBuilderVisitor {
       }
 
       const constant = new GlobalConstant(name, type, value);
+      constant.position = {
+        startLine: node.startPosition.row + 1,
+        startColumn: node.startPosition.column + 1,
+        endLine: node.endPosition.row + 1,
+        endColumn: node.endPosition.column + 1
+      };
+      constant.range = {
+        startIndex: node.startIndex,
+        endIndex: node.endIndex
+      };
+
       if (!this.semanticModel.constants) {
         this.semanticModel.constants = {};
       }
@@ -188,6 +199,17 @@ export class SemanticModelBuilderVisitor {
 
     } else if (keyword === 'var') {
       const variable = new GlobalVariable(name, type);
+      variable.position = {
+        startLine: node.startPosition.row + 1,
+        startColumn: node.startPosition.column + 1,
+        endLine: node.endPosition.row + 1,
+        endColumn: node.endPosition.column + 1
+      };
+      variable.range = {
+        startIndex: node.startIndex,
+        endIndex: node.endIndex
+      };
+
       if (!this.semanticModel.variables) {
         this.semanticModel.variables = {};
       }
