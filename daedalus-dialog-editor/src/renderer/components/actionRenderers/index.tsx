@@ -19,6 +19,9 @@ import AttackActionRenderer from './AttackActionRenderer';
 import SetAttitudeActionRenderer from './SetAttitudeActionRenderer';
 import ChapterTransitionRenderer from './ChapterTransitionRenderer';
 import ExchangeRoutineRenderer from './ExchangeRoutineRenderer';
+import SetVariableActionRenderer from './SetVariableActionRenderer';
+import StopProcessInfosActionRenderer from './StopProcessInfosActionRenderer';
+import PlayAniActionRenderer from './PlayAniActionRenderer';
 import CustomActionRenderer from './CustomActionRenderer';
 import UnknownActionRenderer from './UnknownActionRenderer';
 
@@ -37,6 +40,9 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   setAttitudeAction: SetAttitudeActionRenderer,
   chapterTransition: ChapterTransitionRenderer,
   exchangeRoutine: ExchangeRoutineRenderer,
+  setVariableAction: SetVariableActionRenderer,
+  stopProcessInfosAction: StopProcessInfosActionRenderer,
+  playAniAction: PlayAniActionRenderer,
   customAction: CustomActionRenderer
 };
 
@@ -63,6 +69,9 @@ export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
   setAttitudeAction: 'Set Attitude',
   chapterTransition: 'Chapter Transition',
   exchangeRoutine: 'Exchange Routine',
+  setVariableAction: 'Set Variable',
+  stopProcessInfosAction: 'End Dialog',
+  playAniAction: 'Play Animation',
   customAction: 'Action'
 };
 

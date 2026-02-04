@@ -1,9 +1,10 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { Box, Tooltip, Typography, Menu, MenuItem } from '@mui/material';
-import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon } from '@mui/icons-material';
+import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon } from '@mui/icons-material';
 import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
 import { getActionType } from './actionTypes';
+import type { ActionTypeId } from './actionTypes';
 import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
 
@@ -105,7 +106,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     deleteActionAndFocusPrev(index);
   }, [deleteActionAndFocusPrev, index]);
 
-  const handleAddActionAfter = useCallback((actionType: string) => {
+  const handleAddActionAfter = useCallback((actionType: ActionTypeId) => {
     addActionAfter(index, actionType);
   }, [addActionAfter, index]);
 
@@ -133,21 +134,21 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       flushUpdate();
       setMenuAnchor(actionBoxRef.current);
       setSelectedMenuIndex(0);
-    } else if (e.key === 'Enter' && e.shiftKey && isDialogLine && localAction.text && localAction.text.trim() !== '') {
+    } else if (e.key === 'Enter' && e.shiftKey && isDialogLine && (localAction as any).text && (localAction as any).text.trim() !== '') {
       // Shift+Enter creates a new dialog line WITHOUT toggling speaker
       e.preventDefault();
       flushUpdate();
       handleAddNewAfter(false);
-    } else if (e.key === 'Enter' && isDialogLine && localAction.text && localAction.text.trim() !== '') {
+    } else if (e.key === 'Enter' && isDialogLine && (localAction as any).text && (localAction as any).text.trim() !== '') {
       // Enter creates a new dialog line WITH toggling speaker (default behavior)
       e.preventDefault();
       flushUpdate();
       handleAddNewAfter(true);
-    } else if (e.key === 'Backspace' && isDialogLine && (!localAction.text || localAction.text.trim() === '')) {
+    } else if (e.key === 'Backspace' && isDialogLine && (!(localAction as any).text || (localAction as any).text.trim() === '')) {
       e.preventDefault();
       handleDeleteAndFocusPrev();
     }
-  }, [menuAnchor, isDialogLine, localAction.text, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev]);
+  }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev]);
 
   const getActionIcon = () => {
     switch (actionType) {
@@ -162,12 +163,15 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       case 'setAttitudeAction': return <EmojiPeopleIcon fontSize="small" />;
       case 'chapterTransition': return <NavigationIcon fontSize="small" />;
       case 'exchangeRoutine': return <SwapHorizIcon fontSize="small" />;
+      case 'setVariableAction': return <EditIcon fontSize="small" />;
+      case 'stopProcessInfosAction': return <StopIcon fontSize="small" />;
+      case 'playAniAction': return <PlayArrowIcon fontSize="small" />;
       case 'customAction': return <CodeIcon fontSize="small" />;
-      default: return <Code fontSize="small" />;
+      default: return <CodeIcon fontSize="small" />;
     }
   };
 
-  const actionTypes = useMemo(() => [
+  const actionTypes = useMemo<{ type: ActionTypeId; label: string; icon: React.ReactNode }[]>(() => [
     { type: 'dialogLine', label: 'Dialog Line', icon: <ChatIcon fontSize="small" /> },
     { type: 'choice', label: 'Choice', icon: <CallSplitIcon fontSize="small" /> },
     { type: 'logEntry', label: 'Log Entry', icon: <DescriptionIcon fontSize="small" /> },
@@ -179,6 +183,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     { type: 'setAttitudeAction', label: 'Set Attitude', icon: <EmojiPeopleIcon fontSize="small" /> },
     { type: 'chapterTransition', label: 'Chapter Transition', icon: <NavigationIcon fontSize="small" /> },
     { type: 'exchangeRoutine', label: 'Exchange Routine', icon: <SwapHorizIcon fontSize="small" /> },
+    { type: 'setVariableAction', label: 'Set Variable', icon: <EditIcon fontSize="small" /> },
+    { type: 'stopProcessInfosAction', label: 'End Dialog', icon: <StopIcon fontSize="small" /> },
+    { type: 'playAniAction', label: 'Play Animation', icon: <PlayArrowIcon fontSize="small" /> },
     { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
   ], []);
 

@@ -79,6 +79,18 @@ export function createAction(
       action = ACTION_TEMPLATES.exchangeRoutine();
       break;
 
+    case 'setVariableAction':
+      action = ACTION_TEMPLATES.setVariableAction();
+      break;
+
+    case 'stopProcessInfosAction':
+      action = ACTION_TEMPLATES.stopProcessInfosAction();
+      break;
+
+    case 'playAniAction':
+      action = ACTION_TEMPLATES.playAniAction();
+      break;
+
     case 'customAction':
       action = ACTION_TEMPLATES.customAction();
       break;

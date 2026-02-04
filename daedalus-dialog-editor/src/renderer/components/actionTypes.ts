@@ -65,6 +65,21 @@ export interface ExchangeRoutineAction {
   routine: string;
 }
 
+export interface SetVariableAction {
+  variableName: string;
+  operator: string;
+  value: string | number | boolean;
+}
+
+export interface StopProcessInfosAction {
+  target: string;
+}
+
+export interface PlayAniAction {
+  target: string;
+  animationName: string;
+}
+
 export interface CustomAction {
   action: string;
 }
@@ -84,6 +99,9 @@ export type ActionType =
   | SetAttitudeAction
   | ChapterTransitionAction
   | ExchangeRoutineAction
+  | SetVariableAction
+  | StopProcessInfosAction
+  | PlayAniAction
   | CustomAction;
 
 /**
@@ -101,6 +119,9 @@ export type ActionTypeId =
   | 'setAttitudeAction'
   | 'chapterTransition'
   | 'exchangeRoutine'
+  | 'setVariableAction'
+  | 'stopProcessInfosAction'
+  | 'playAniAction'
   | 'customAction';
 
 /**
@@ -140,6 +161,20 @@ export function getActionType(action: any): ActionTypeId {
   }
   if ((action.npc !== undefined || action.target !== undefined) && action.routine !== undefined && action.attitude === undefined) {
     return 'exchangeRoutine';
+  }
+  if (action.variableName !== undefined && action.operator !== undefined && action.value !== undefined) {
+    return 'setVariableAction';
+  }
+  if (action.target !== undefined && action.animationName !== undefined) {
+    return 'playAniAction';
+  }
+  // Loose check for StopProcessInfos - assuming it only has target
+  if (action.target !== undefined &&
+      action.item === undefined &&
+      action.attitude === undefined &&
+      action.routine === undefined &&
+      action.animationName === undefined) {
+    return 'stopProcessInfosAction';
   }
   if (action.action !== undefined) {
     return 'customAction';

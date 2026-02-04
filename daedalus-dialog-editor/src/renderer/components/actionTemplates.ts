@@ -15,6 +15,9 @@ import type {
   SetAttitudeAction,
   ChapterTransitionAction,
   ExchangeRoutineAction,
+  SetVariableAction,
+  StopProcessInfosAction,
+  PlayAniAction,
   CustomAction
 } from './actionTypes';
 
@@ -79,6 +82,21 @@ export const ACTION_TEMPLATES = {
   exchangeRoutine: (target: string = 'self', routine: string = 'START'): ExchangeRoutineAction => ({
     target,
     routine
+  }),
+
+  setVariableAction: (variableName: string = 'MIS_Quest', operator: string = '=', value: string | number | boolean = 'LOG_RUNNING'): SetVariableAction => ({
+    variableName,
+    operator,
+    value
+  }),
+
+  stopProcessInfosAction: (target: string = 'self'): StopProcessInfosAction => ({
+    target
+  }),
+
+  playAniAction: (target: string = 'self', animationName: string = 'T_SEARCH'): PlayAniAction => ({
+    target,
+    animationName
   }),
 
   customAction: (action: string = 'AI_StopProcessInfos(self)'): CustomAction => ({
