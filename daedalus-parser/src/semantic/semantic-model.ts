@@ -481,7 +481,85 @@ export class ChapterTransitionAction implements CodeGeneratable {
   }
 }
 
-export type DialogAction = DialogLine | CreateTopic | LogEntry | LogSetTopicStatus | Action | Choice | CreateInventoryItems | GiveInventoryItems | AttackAction | SetAttitudeAction | ExchangeRoutineAction | ChapterTransitionAction;
+export class SetVariableAction implements CodeGeneratable {
+  public variableName: string;
+  public operator: string;
+  public value: string | number | boolean;
+
+  constructor(variableName: string, operator: string, value: string | number | boolean) {
+    this.variableName = variableName;
+    this.operator = operator;
+    this.value = value;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `${this.variableName} ${this.operator} ${this.value};`;
+  }
+
+  toDisplayString(): string {
+    return `[SetVariable: ${this.variableName} ${this.operator} ${this.value}]`;
+  }
+
+  getTypeName(): string {
+    return 'SetVariableAction';
+  }
+
+  static fromJSON(json: any): SetVariableAction {
+    return new SetVariableAction(json.variableName, json.operator, json.value);
+  }
+}
+
+export class StopProcessInfosAction implements CodeGeneratable {
+  public target: string;
+
+  constructor(target: string = 'self') {
+    this.target = target;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `AI_StopProcessInfos(${this.target});`;
+  }
+
+  toDisplayString(): string {
+    return `[StopProcessInfos: ${this.target}]`;
+  }
+
+  getTypeName(): string {
+    return 'StopProcessInfosAction';
+  }
+
+  static fromJSON(json: any): StopProcessInfosAction {
+    return new StopProcessInfosAction(json.target);
+  }
+}
+
+export class PlayAniAction implements CodeGeneratable {
+  public target: string;
+  public animationName: string;
+
+  constructor(target: string, animationName: string) {
+    this.target = target;
+    this.animationName = animationName;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `AI_PlayAni(${this.target}, "${this.animationName}");`;
+  }
+
+  toDisplayString(): string {
+    return `[PlayAni: ${this.target} -> "${this.animationName}"]`;
+  }
+
+  getTypeName(): string {
+    return 'PlayAniAction';
+  }
+
+  static fromJSON(json: any): PlayAniAction {
+    return new PlayAniAction(json.target, json.animationName);
+  }
+}
+
+export type DialogAction = DialogLine | CreateTopic | LogEntry | LogSetTopicStatus | Action | Choice | CreateInventoryItems | GiveInventoryItems | AttackAction | SetAttitudeAction | ExchangeRoutineAction | ChapterTransitionAction | SetVariableAction | StopProcessInfosAction | PlayAniAction;
 
 // Helper to deserialize any action
 export function deserializeAction(json: any): DialogAction | any {
@@ -507,6 +585,14 @@ export function deserializeAction(json: any): DialogAction | any {
     return ExchangeRoutineAction.fromJSON(json);
   } else if ('chapter' in json && 'world' in json) {
     return ChapterTransitionAction.fromJSON(json);
+  } else if ('variableName' in json && 'operator' in json && 'value' in json) {
+    return SetVariableAction.fromJSON(json);
+  } else if ('target' in json && 'animationName' in json) {
+    return PlayAniAction.fromJSON(json);
+  } else if ('target' in json && Object.keys(json).length === 1) {
+    // Only target is present (plus maybe prototype stuff?) - best guess for StopProcessInfos
+    // But be careful not to match other things.
+    return StopProcessInfosAction.fromJSON(json);
   } else if ('action' in json) {
     return Action.fromJSON(json);
   }

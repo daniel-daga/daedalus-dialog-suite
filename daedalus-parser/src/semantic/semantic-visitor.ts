@@ -9,7 +9,8 @@ import {
   DialogProperties,
   Choice,
   GlobalConstant,
-  GlobalVariable
+  GlobalVariable,
+  SetVariableAction
 } from './semantic-model';
 import { ActionParsers } from './parsers/action-parsers';
 import { ConditionParsers } from './parsers/condition-parsers';
@@ -270,9 +271,13 @@ export class SemanticModelBuilderVisitor {
     }
 
     // Process nodes based on the current context
-    if (type === 'assignment_statement' && this.currentInstance) {
+    if (type === 'assignment_statement') {
         if (!node) node = cursor.currentNode;
-        this.processAssignment(node);
+        if (this.currentInstance) {
+            this.processAssignment(node);
+        } else if (this.currentFunction) {
+            this.processFunctionAssignment(node);
+        }
     } else if (type === 'call_expression' && this.currentFunction) {
         if (!node) node = cursor.currentNode;
         this.processFunctionCall(node);
@@ -379,6 +384,47 @@ export class SemanticModelBuilderVisitor {
       }
       this.currentInstance.properties[propertyName] = value;
     }
+  }
+
+  /**
+   * Process assignment statements in function bodies (variable updates)
+   */
+  private processFunctionAssignment(node: TreeSitterNode): void {
+      if (!this.currentFunction) return;
+
+      const leftNode = node.childForFieldName('left');
+      const rightNode = node.childForFieldName('right');
+      const operatorNode = node.childForFieldName('operator');
+
+      if (leftNode && rightNode) {
+          const variableName = leftNode.text;
+          const operator = operatorNode ? operatorNode.text : '=';
+
+          let value: string | number | boolean;
+          if (rightNode.type === 'number') {
+              value = Number(rightNode.text);
+          } else if (rightNode.type === 'boolean') {
+              value = (rightNode.text.toLowerCase() === 'true');
+          } else {
+              // For identifier or strings, keep the text
+              value = rightNode.text;
+          }
+
+          const action = new SetVariableAction(variableName, operator, value);
+
+          // Check if this is a condition function logic
+          const isConditionFunc = this.conditionFunctions.has(this.currentFunction.name);
+
+          if (!isConditionFunc) {
+            this.currentFunction.actions.push(action);
+
+            // Also add to dialog if linked
+            const dialog = this.findDialogForFunction(this.currentFunction.name);
+            if (dialog) {
+              dialog.actions.push(action);
+            }
+          }
+      }
   }
 
   /**

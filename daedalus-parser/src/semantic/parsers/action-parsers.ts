@@ -14,7 +14,9 @@ import {
   AttackAction,
   SetAttitudeAction,
   ExchangeRoutineAction,
-  ChapterTransitionAction
+  ChapterTransitionAction,
+  StopProcessInfosAction,
+  PlayAniAction
 } from '../semantic-model';
 
 export class ActionParsers {
@@ -46,6 +48,10 @@ export class ActionParsers {
         return ActionParsers.parseExchangeRoutineCall(node);
       case 'B_Kapitelwechsel':
         return ActionParsers.parseChapterTransitionCall(node);
+      case 'AI_StopProcessInfos':
+        return ActionParsers.parseStopProcessInfosCall(node);
+      case 'AI_PlayAni':
+        return ActionParsers.parsePlayAniCall(node);
       default:
         return ActionParsers.parseGenericAction(node);
     }
@@ -177,6 +183,24 @@ export class ActionParsers {
   static parseChapterTransitionCall(node: TreeSitterNode): ChapterTransitionAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
       new ChapterTransitionAction(parseInt(args[0]) || 1, args[1])
+    );
+  }
+
+  /**
+   * Parse AI_StopProcessInfos function call
+   */
+  static parseStopProcessInfosCall(node: TreeSitterNode): StopProcessInfosAction | null {
+    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
+      new StopProcessInfosAction(args[0])
+    );
+  }
+
+  /**
+   * Parse AI_PlayAni function call
+   */
+  static parsePlayAniCall(node: TreeSitterNode): PlayAniAction | null {
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new PlayAniAction(args[0], args[1])
     );
   }
 
