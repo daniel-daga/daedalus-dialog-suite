@@ -17,6 +17,7 @@ import {
 import { Search as SearchIcon, Add as AddIcon } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
+import { useProjectStore } from '../store/projectStore';
 
 interface QuestListProps {
   semanticModel: SemanticModel;
@@ -29,17 +30,35 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
   const [viewMode, setViewMode] = useState<'all' | 'used'>('all');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
+  // Use symbols from store for the complete list of available quests
+  // Fallback to semanticModel (passed prop) if store is empty (e.g. single file mode)
+  const { symbols } = useProjectStore();
+
   // Memoize the list of all TOPIC_ constants
   const quests = useMemo(() => {
+    // Priority: Store symbols (Global) > Semantic Model (Local/Merged)
+
+    if (symbols && symbols.size > 0) {
+        const questSymbols = Array.from(symbols.values())
+            .filter(s => s.name.startsWith('TOPIC_'));
+        return questSymbols;
+    }
+
     const constants = semanticModel.constants || {};
     return Object.values(constants).filter(c => c.name.startsWith('TOPIC_'));
-  }, [semanticModel.constants]);
+  }, [semanticModel.constants, symbols]);
 
   // Memoize the set of used topics to enable "Used" filtering
   const usedTopics = useMemo(() => {
     const used = new Set<string>();
 
     // Check all functions for Log_* calls
+    // For this, we DO need the semantic model (actions), which might be partial.
+    // However, for "Used" filter to be accurate across the project, we'd need full analysis.
+    // Given the lazy loading architecture, "Used" might only show usage in *loaded* files.
+    // To support "Used" fully, we might need to use `questReferences` from store.
+
+    // Check local model first
     Object.values(semanticModel.functions || {}).forEach(func => {
       func.actions?.forEach(action => {
         if ('topic' in action && action.topic) {
@@ -47,9 +66,6 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
         }
       });
     });
-
-    // Also check dialog information functions (if any actions are directly on dialogs, though actions are usually on functions)
-    // The parser puts actions on DialogFunction, which are linked from Dialog.
 
     return used;
   }, [semanticModel.functions]);

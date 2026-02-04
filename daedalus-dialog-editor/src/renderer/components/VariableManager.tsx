@@ -29,10 +29,10 @@ import {
 } from '@mui/material';
 import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useProjectStore } from '../store/projectStore';
-import type { GlobalConstant, GlobalVariable } from '../types/global';
+import type { GlobalConstant, GlobalVariable, GlobalSymbol } from '../types/global';
 
 const VariableManager: React.FC = () => {
-  const { mergedSemanticModel, addVariable, deleteVariable, allDialogFiles, questFiles } = useProjectStore();
+  const { mergedSemanticModel, addVariable, deleteVariable, allDialogFiles, questFiles, symbols } = useProjectStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Add Variable Dialog State
@@ -45,7 +45,13 @@ const VariableManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const variables = useMemo(() => {
-    const vars: (GlobalConstant | GlobalVariable)[] = [];
+    // Priority: Use symbols from lightweight index (covers all files)
+    if (symbols && symbols.size > 0) {
+        return Array.from(symbols.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    // Fallback: Use parsed model (e.g. single file mode or empty project index)
+    const vars: (GlobalConstant | GlobalVariable | GlobalSymbol)[] = [];
     if (mergedSemanticModel.constants) {
       vars.push(...Object.values(mergedSemanticModel.constants));
     }
@@ -54,7 +60,7 @@ const VariableManager: React.FC = () => {
     }
     // Sort by name
     return vars.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel]);
+  }, [mergedSemanticModel, symbols]);
 
   const filteredVariables = useMemo(() => {
     if (!searchQuery) return variables;
@@ -97,14 +103,36 @@ const VariableManager: React.FC = () => {
       }
   };
 
-  const handleDelete = async (v: GlobalConstant | GlobalVariable) => {
-      if (!v.filePath || !v.range) {
-          // Cannot delete if no file path or range (e.g. implicitly defined or legacy parser)
-          return;
+  const handleDelete = async (v: GlobalConstant | GlobalVariable | GlobalSymbol) => {
+      // For lightweight symbols, we might not have 'range' if it came from regex scan (which captures basic info).
+      // However, we can re-scan or rely on parsing.
+      // Actually, extractFileMetadata DOES NOT return range for symbols currently.
+      // This is a limitation. If we want to delete, we might need to parse the file or find it via regex again.
+      // But `ProjectStore.deleteVariable` requires a range.
+
+      if (!v.filePath) return;
+
+      // Strategy: If range is missing (from regex symbol), we can't easily delete via byte range.
+      // We might need to implement "deleteByName" or just force parse the file first.
+
+      // Check if it has range (parsed model symbol)
+      const hasRange = 'range' in v && v.range;
+
+      if (!hasRange) {
+         // It's a lightweight symbol. We can try to open the file and find it,
+         // or we can tell the user they need to open the file first?
+         // Better UX: The store action `deleteVariable` takes range.
+         // We should update `deleteVariable` to accept Name + FilePath, or compute range here.
+         alert("Please open the file containing this variable to delete it (Lazy loading limitation: precise location not loaded yet).");
+         return;
       }
+
+      // Cast to type with range (checked above)
+      const symbolWithRange = v as (GlobalConstant | GlobalVariable);
+
       if (confirm(`Are you sure you want to delete ${v.name}?`)) {
           try {
-              await deleteVariable(v.filePath, v.range);
+              await deleteVariable(v.filePath, symbolWithRange.range!);
           } catch (e) {
               console.error(e);
               alert('Failed to delete variable: ' + (e instanceof Error ? e.message : String(e)));
@@ -161,7 +189,7 @@ const VariableManager: React.FC = () => {
                   <Chip
                     label={v.type}
                     size="small"
-                    color={'value' in v ? 'primary' : 'default'}
+                    color={'value' in v && v.value !== undefined ? 'primary' : 'default'}
                     variant="outlined"
                   />
                 </TableCell>
@@ -179,9 +207,9 @@ const VariableManager: React.FC = () => {
                     <IconButton
                         size="small"
                         onClick={() => handleDelete(v)}
-                        disabled={!v.filePath || !v.range}
+                        disabled={!v.filePath || !('range' in v)}
                         color="error"
-                        title="Delete variable"
+                        title={!('range' in v) ? "Open file to enable deletion" : "Delete variable"}
                     >
                         <DeleteIcon fontSize="small" />
                     </IconButton>

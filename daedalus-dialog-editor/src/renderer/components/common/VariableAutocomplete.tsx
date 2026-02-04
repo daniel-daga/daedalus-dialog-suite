@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps } from '@mui/material';
 import { useProjectStore } from '../../store/projectStore';
-import { GlobalConstant, GlobalVariable, SemanticModel } from '../../types/global';
+import { GlobalConstant, GlobalVariable, SemanticModel, GlobalSymbol } from '../../types/global';
 
 // Instance definition might not be strictly typed in global types yet
 interface InstanceDefinition {
@@ -71,7 +71,7 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
   onKeyDown,
   semanticModel
 }) => {
-  const { mergedSemanticModel } = useProjectStore();
+  const { mergedSemanticModel, symbols } = useProjectStore();
 
   const options = useMemo(() => {
     const opts: OptionType[] = [];
@@ -83,13 +83,36 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
       return filters.includes(type);
     };
 
-    // Add constants
-    const constants = { ...mergedSemanticModel.constants, ...semanticModel?.constants };
-    if (constants) {
-      Object.values(constants).forEach((c: GlobalConstant) => {
+    const addedNames = new Set<string>();
+
+    // 1. Add symbols from lightweight index (covers all files)
+    if (symbols) {
+        symbols.forEach((s: GlobalSymbol) => {
+             if (isTypeMatch(s.type)) {
+                 if (addedNames.has(s.name)) return;
+                 addedNames.add(s.name);
+
+                 opts.push({
+                     name: s.name,
+                     type: s.type,
+                     source: s.value !== undefined ? 'constant' : 'variable',
+                     filePath: s.filePath,
+                     value: s.value
+                 });
+             }
+        });
+    }
+
+    // 2. Add detailed constants/variables from parsed models (might override or add details)
+    // Note: Since we prioritize presence, lightweight index is good enough for autocomplete.
+    // But we check local semanticModel (passed as prop) which usually has local scope.
+
+    // Local Constants
+    if (semanticModel?.constants) {
+      Object.values(semanticModel.constants).forEach((c: GlobalConstant) => {
         if (isTypeMatch(c.type)) {
-          // Avoid duplicates if merging
-          if (opts.some(o => o.name === c.name)) return;
+          if (addedNames.has(c.name)) return;
+          addedNames.add(c.name);
 
           opts.push({
             name: c.name,
@@ -102,12 +125,12 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
       });
     }
 
-    // Add variables
-    const variables = { ...mergedSemanticModel.variables, ...semanticModel?.variables };
-    if (variables) {
-      Object.values(variables).forEach((v: GlobalVariable) => {
+    // Local Variables
+    if (semanticModel?.variables) {
+      Object.values(semanticModel.variables).forEach((v: GlobalVariable) => {
         if (isTypeMatch(v.type)) {
-          if (opts.some(o => o.name === v.name)) return;
+          if (addedNames.has(v.name)) return;
+          addedNames.add(v.name);
 
           opts.push({
             name: v.name,
@@ -119,16 +142,23 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
       });
     }
 
-    // Add instances
+    // Merged Model (parsed files) - technically covered by symbols map for globals,
+    // but might have more accurate types if parsing is better than regex.
+    // We skip iterating mergedSemanticModel to rely on 'symbols' map for performance
+    // and because symbols map covers everything.
+
+    // 3. Add instances (not fully covered by symbols map yet, unless we expand regex)
+    // For now, we still rely on mergedSemanticModel for instances, which means
+    // instances only show up if parsed.
+    // TODO: Expand regex to capture instances too if needed.
     if (showInstances) {
       const instances = { ...mergedSemanticModel.instances, ...semanticModel?.instances };
       if (instances) {
         Object.values(instances).forEach((i: unknown) => {
             const instance = i as InstanceDefinition;
-            // Instances usually have a class (parent), e.g., C_NPC, C_ITEM.
-            // If typeFilter is provided, we might want to match against the class name.
             if (isTypeMatch(instance.parent || 'instance') || !filters) {
-                if (opts.some(o => o.name === instance.name)) return;
+                if (addedNames.has(instance.name)) return;
+                addedNames.add(instance.name);
 
                 opts.push({
                     name: instance.name,
@@ -142,7 +172,7 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
     }
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel, semanticModel, typeFilter, showInstances]);
+  }, [mergedSemanticModel, semanticModel, symbols, typeFilter, showInstances]);
 
   return (
     <Autocomplete
