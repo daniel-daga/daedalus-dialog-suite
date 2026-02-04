@@ -5,9 +5,10 @@ import ReactFlow, {
   Node,
   Edge,
   MarkerType,
+  Position,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, Chip, Paper } from '@mui/material';
 import type { SemanticModel } from '../types/global';
 import { getActionType } from './actionTypes';
 
@@ -19,7 +20,7 @@ interface QuestFlowProps {
 // Helper to extract NPC from dialog or function
 const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): string | null => {
   // Check if it's a dialog info function or condition
-  for (const dialog of Object.values(semanticModel.dialogs)) {
+  for (const dialog of Object.values(semanticModel.dialogs || {})) {
     // Check information
     const info = dialog.properties.information;
     if (typeof info === 'string' && info.toLowerCase() === funcName.toLowerCase()) {
@@ -41,55 +42,71 @@ const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): stri
   return null;
 };
 
+// Custom Node Component could be defined here if we want richer UI,
+// but using standard nodes with custom styles is easier for now.
+
 const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
   const { nodes, edges } = useMemo(() => {
-    if (!questName) return { nodes: [], edges: [] };
+    if (!questName || !semanticModel) return { nodes: [], edges: [] };
 
     const nodes: Node[] = [];
     const edges: Edge[] = [];
     const misVarName = questName.replace('TOPIC_', 'MIS_');
 
-    // 1. Identify relevant functions/dialogs
-    const relevantFunctions = new Set<string>();
-    const functionDetails = new Map<string, {
-      type: 'start' | 'update' | 'end' | 'check';
+    // 1. Identify relevant functions/dialogs and classify them
+    interface NodeData {
+      id: string;
+      type: 'start' | 'update' | 'success' | 'failed' | 'check';
       label: string;
       npc: string;
-    }>();
+      description?: string;
+    }
 
-    // Map status value (e.g. LOG_RUNNING) to Set of functions that set it
-    const producersByStatus = new Map<string, Set<string>>();
+    const nodeDataMap = new Map<string, NodeData>();
+    // Track producers of specific variable values
+    const producersByValue = new Map<string, Set<string>>();
 
-    Object.values(semanticModel.functions).forEach(func => {
+    Object.values(semanticModel.functions || {}).forEach(func => {
       let isRelevant = false;
-      let type: 'start' | 'update' | 'end' | 'check' = 'check';
-      let label = func.name;
+      let type: NodeData['type'] = 'check';
+      let description = '';
 
       // Check actions
       func.actions?.forEach(action => {
         if ('topic' in action && action.topic === questName) {
           isRelevant = true;
           const actionType = getActionType(action);
+
           if (actionType === 'createTopic') {
               type = 'start';
-              // Implicitly sets LOG_RUNNING
-              if (!producersByStatus.has('LOG_RUNNING')) producersByStatus.set('LOG_RUNNING', new Set());
-              producersByStatus.get('LOG_RUNNING')?.add(func.name);
+              description = 'Start Quest';
+              // Implicitly sets LOG_RUNNING (1)
+              if (!producersByValue.has('1')) producersByValue.set('1', new Set());
+              producersByValue.get('1')?.add(func.name);
           } else if (actionType === 'logSetTopicStatus') {
-             // If status is SUCCESS or FAILED (numeric 2 or 3 usually, or const)
-             const status = (action as any).status;
-             if (String(status).includes('SUCCESS') || String(status).includes('FAILED')) {
-                type = 'end';
+             const status = String((action as any).status);
+             if (status.includes('SUCCESS') || status === '2') { // LOG_SUCCESS = 2
+                type = 'success';
+                description = 'Finish (Success)';
+                if (!producersByValue.has('2')) producersByValue.set('2', new Set());
+                producersByValue.get('2')?.add(func.name);
+             } else if (status.includes('FAILED') || status === '3') { // LOG_FAILED = 3
+                type = 'failed';
+                description = 'Finish (Failed)';
+                if (!producersByValue.has('3')) producersByValue.set('3', new Set());
+                producersByValue.get('3')?.add(func.name);
+             } else if (status.includes('RUNNING') || status === '1') {
+                type = 'update';
+                description = 'Set Running';
+                if (!producersByValue.has('1')) producersByValue.set('1', new Set());
+                producersByValue.get('1')?.add(func.name);
              } else {
                 type = 'update';
-             }
-
-             if (status) {
-                 if (!producersByStatus.has(status)) producersByStatus.set(status, new Set());
-                 producersByStatus.get(status)?.add(func.name);
+                description = `Set Status: ${status}`;
              }
           } else if (actionType === 'logEntry') {
-             if (type !== 'start' && type !== 'end') type = 'update';
+             if (type === 'check') type = 'update'; // Only upgrade if not already start/end
+             if (!description) description = 'Log Entry';
           }
         }
       });
@@ -102,102 +119,137 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
       });
 
       if (isRelevant) {
-        relevantFunctions.add(func.name);
         const npc = getNpcForFunction(func.name, semanticModel) || 'Global/Other';
-        functionDetails.set(func.name, { type, label, npc });
-      }
-    });
-
-    // 2. Build dependency graph (Npc_KnowsInfo + Variable State)
-    const adjacency = new Map<string, string[]>();
-    const inDegree = new Map<string, number>();
-
-    relevantFunctions.forEach(funcName => {
-      if (!adjacency.has(funcName)) adjacency.set(funcName, []);
-      if (!inDegree.has(funcName)) inDegree.set(funcName, 0);
-
-      const func = semanticModel.functions[funcName];
-      func.conditions?.forEach(cond => {
-        // Handle Npc_KnowsInfo
-        if ('dialogRef' in cond) { // NpcKnowsInfoCondition
-            // cond.dialogRef is the Dialog Instance Name.
-            // We need to find the function associated with that dialog.
-            const dialogRef = (cond as any).dialogRef;
-            const dialog = semanticModel.dialogs[dialogRef];
-            if (dialog) {
-                // Find the information function of this dialog
-                let targetFuncName: string | null = null;
-                const info = dialog.properties.information;
-                if (typeof info === 'string') targetFuncName = info;
-                else if (info && typeof info === 'object') targetFuncName = info.name;
-
-                if (targetFuncName && relevantFunctions.has(targetFuncName)) {
-                    adjacency.get(funcName)?.push(targetFuncName);
-                }
+        // Try to find readable name (Dialog name instead of function name)
+        let displayName = func.name;
+        // Search dialogs for this function
+        for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
+            const info = d.properties.information;
+            if ((typeof info === 'string' && info === func.name) ||
+                (typeof info === 'object' && info.name === func.name)) {
+                displayName = dName;
+                break;
             }
         }
 
-        // Handle Variable Condition (MIS_Var == Value)
-        if ('variableName' in cond && (cond as any).variableName === misVarName) {
-           const op = (cond as any).operator;
-           const val = (cond as any).value;
-
-           if (op === '==' && val) {
-               // Depends on anyone producing 'val'
-               const producers = producersByStatus.get(String(val)) || new Set();
-               producers.forEach(producer => {
-                   if (producer !== funcName) {
-                       adjacency.get(funcName)?.push(producer);
-                   }
-               });
-           }
-        }
-      });
+        nodeDataMap.set(func.name, {
+            id: func.name,
+            type,
+            label: displayName,
+            npc,
+            description
+        });
+      }
     });
 
-    // Rebuild adjacency for A -> B (A is prerequisite for B)
-    const graph = new Map<string, string[]>();
-    relevantFunctions.forEach(f => graph.set(f, []));
-    const incoming = new Map<string, number>();
-    relevantFunctions.forEach(f => incoming.set(f, 0));
+    // 2. Build Dependencies (Edges)
+    const adjacency = new Map<string, string[]>(); // Producer -> Consumers
+    const incomingCount = new Map<string, number>();
 
-    relevantFunctions.forEach(consumer => {
-       const prerequisites = adjacency.get(consumer) || [];
-       prerequisites.forEach(producer => {
-           graph.get(producer)?.push(consumer);
-           incoming.set(consumer, (incoming.get(consumer) || 0) + 1);
-
-           edges.push({
-             id: `${producer}-${consumer}`,
-             source: producer,
-             target: consumer,
-             markerEnd: { type: MarkerType.ArrowClosed },
-             animated: false,
-           });
-       });
+    nodeDataMap.forEach((data, funcName) => {
+        if (!adjacency.has(funcName)) adjacency.set(funcName, []);
+        if (!incomingCount.has(funcName)) incomingCount.set(funcName, 0);
     });
 
-    // 3. Layout (Swimlanes + Topological Layering)
-    // Simple layering: Assign level based on depth from roots (nodes with 0 incoming edges)
-    // But cycles might exist? (Hopefully not in quest flow, but possible).
-    // Use BFS/DFS to assign levels.
+    nodeDataMap.forEach((consumerData, consumerId) => {
+        const func = semanticModel.functions[consumerId];
+        if (!func) return;
 
+        func.conditions?.forEach(cond => {
+            // A. Npc_KnowsInfo Dependency
+            if ('dialogRef' in cond) {
+                const producerDialogName = (cond as any).dialogRef;
+                // Resolve Dialog Name to Function Name
+                const producerDialog = semanticModel.dialogs[producerDialogName];
+                if (producerDialog) {
+                    let producerFunc = null;
+                    const info = producerDialog.properties.information;
+                    if (typeof info === 'string') producerFunc = info;
+                    else if (info && typeof info === 'object') producerFunc = info.name;
+
+                    if (producerFunc && nodeDataMap.has(producerFunc)) {
+                         // Add Edge
+                         edges.push({
+                             id: `knows-${producerFunc}-${consumerId}`,
+                             source: producerFunc,
+                             target: consumerId,
+                             label: 'Knows Info',
+                             type: 'smoothstep',
+                             markerEnd: { type: MarkerType.ArrowClosed },
+                             style: { stroke: '#b1b1b7' },
+                             labelStyle: { fill: '#b1b1b7', fontSize: 10 }
+                         });
+
+                         // Update Graph Logic
+                         adjacency.get(producerFunc)?.push(consumerId);
+                         incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+                    }
+                }
+            }
+
+            // B. Variable Dependency (MIS_Val == X)
+            if ('variableName' in cond && (cond as any).variableName === misVarName) {
+                const op = (cond as any).operator;
+                const val = String((cond as any).value);
+
+                // Map common constants to values
+                let checkVal = val;
+                if (val === 'LOG_RUNNING') checkVal = '1';
+                if (val === 'LOG_SUCCESS') checkVal = '2';
+                if (val === 'LOG_FAILED') checkVal = '3';
+
+                if (op === '==' && checkVal) {
+                    const producers = producersByValue.get(checkVal) || new Set();
+                    producers.forEach(producerId => {
+                        if (producerId !== consumerId && nodeDataMap.has(producerId)) {
+                             edges.push({
+                                 id: `state-${producerId}-${consumerId}`,
+                                 source: producerId,
+                                 target: consumerId,
+                                 label: val,
+                                 type: 'smoothstep',
+                                 animated: true,
+                                 markerEnd: { type: MarkerType.ArrowClosed },
+                                 style: { stroke: '#2196f3' },
+                                 labelStyle: { fill: '#2196f3', fontSize: 10 }
+                             });
+
+                             adjacency.get(producerId)?.push(consumerId);
+                             incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+                        }
+                    });
+                }
+            }
+        });
+    });
+
+    // 3. Swimlane Layout
+    const npcs = Array.from(new Set(Array.from(nodeDataMap.values()).map(d => d.npc))).sort();
+    const LANE_HEIGHT = 250;
+    const NODE_WIDTH = 200;
+    const LEVEL_WIDTH = 300;
+
+    // Calculate topological levels
     const levels = new Map<string, number>();
     const queue: string[] = [];
 
-    relevantFunctions.forEach(f => {
-        if ((incoming.get(f) || 0) === 0) {
-            levels.set(f, 0);
-            queue.push(f);
+    // Initialize roots
+    nodeDataMap.forEach((_, id) => {
+        if ((incomingCount.get(id) || 0) === 0) {
+            levels.set(id, 0);
+            queue.push(id);
         }
     });
 
+    // BFS for levels
     while (queue.length > 0) {
         const u = queue.shift()!;
         const currentLevel = levels.get(u)!;
-        const neighbors = graph.get(u) || [];
+        const neighbors = adjacency.get(u) || [];
+
         neighbors.forEach(v => {
             const existingLevel = levels.get(v);
+            // Push to next level if deeper path found
             if (existingLevel === undefined || existingLevel < currentLevel + 1) {
                 levels.set(v, currentLevel + 1);
                 queue.push(v);
@@ -205,58 +257,80 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         });
     }
 
-    // Group by NPC (Swimlanes)
-    const npcs = Array.from(new Set(Array.from(functionDetails.values()).map(d => d.npc))).sort();
-    const npcY = new Map<string, number>();
-    npcs.forEach((npc, index) => npcY.set(npc, index * 200)); // 200px height per lane
+    // Resolve overlapping nodes in same lane/level
+    const laneOccupancy = new Map<string, Map<number, number>>(); // NPC -> Level -> Count
+    npcs.forEach(npc => laneOccupancy.set(npc, new Map()));
 
-    // Generate Nodes
-    relevantFunctions.forEach(funcName => {
-        const details = functionDetails.get(funcName)!;
-        const level = levels.get(funcName) || 0;
-        const yBase = npcY.get(details.npc) || 0;
+    nodeDataMap.forEach((data, id) => {
+        const level = levels.get(id) || 0;
+        const npcMap = laneOccupancy.get(data.npc)!;
+        const count = npcMap.get(level) || 0;
+        npcMap.set(level, count + 1);
 
-        // Add some jitter or sub-sorting to X if multiple nodes on same level?
-        // For now, just X = level * 250.
-        // And Y = yBase + (some offset if collisions?)
-        // Simple grid: X = level * 300, Y = yBase.
+        const x = level * LEVEL_WIDTH + 50;
+        const npcIndex = npcs.indexOf(data.npc);
+        const yBase = npcIndex * LANE_HEIGHT;
+        const yOffset = count * 60; // Offset for collisions
 
-        // To avoid overlapping in the same swimlane at the same level:
-        // We need to count how many nodes are at (npc, level) so far.
-        // But doing that cleanly is hard without a proper layout engine.
-        // Let's just create the nodes and let ReactFlow handle them (or user can drag).
-        // I will add a small offset based on hash or index to avoid perfect overlap.
+        const y = yBase + 50 + yOffset;
+
+        // Color coding
+        let bg = '#fff';
+        let border = '#777';
+        if (data.type === 'start') { bg = '#e3f2fd'; border = '#2196f3'; }
+        if (data.type === 'success') { bg = '#e8f5e9'; border = '#4caf50'; }
+        if (data.type === 'failed') { bg = '#ffebee'; border = '#f44336'; }
+        if (data.type === 'update') { bg = '#fff3e0'; border = '#ff9800'; }
 
         nodes.push({
-            id: funcName,
-            position: { x: level * 300 + 50, y: yBase + 50 },
-            data: { label: `${details.npc}: ${details.label}` },
-            style: {
-                background: details.type === 'start' ? '#e3f2fd' :
-                            details.type === 'end' ? '#e8f5e9' :
-                            details.type === 'update' ? '#fff3e0' : '#f5f5f5',
-                border: '1px solid #777',
-                width: 180,
-                fontSize: 12
+            id,
+            position: { x, y },
+            type: 'default',
+            data: {
+                label: (
+                    <Box>
+                        <Typography variant="caption" display="block" color="textSecondary" sx={{ fontSize: 10 }}>
+                            {data.npc}
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                            {data.label}
+                        </Typography>
+                        {data.description && (
+                            <Typography variant="caption" display="block" sx={{ fontStyle: 'italic', fontSize: 10 }}>
+                                {data.description}
+                            </Typography>
+                        )}
+                    </Box>
+                )
             },
-            type: 'default' // or input/output
+            style: {
+                background: bg,
+                borderColor: border,
+                borderWidth: 2,
+                width: NODE_WIDTH,
+                padding: 10,
+                borderRadius: 8
+            }
         });
     });
 
-    // Add Swimlane Labels (as background group nodes?)
+    // Add Swimlane Visuals (Group Nodes)
     npcs.forEach((npc, index) => {
-        nodes.push({
+        const maxLevel = Math.max(...Array.from(levels.values()), 0);
+
+        nodes.unshift({
             id: `swimlane-${npc}`,
             type: 'group',
-            position: { x: 0, y: index * 200 },
+            position: { x: 0, y: index * LANE_HEIGHT },
             style: {
-                width: (Math.max(...Array.from(levels.values()), 0) + 1) * 300 + 100,
-                height: 180,
-                backgroundColor: 'rgba(240, 240, 240, 0.2)',
+                width: (maxLevel + 1) * LEVEL_WIDTH + 100,
+                height: LANE_HEIGHT - 20,
+                backgroundColor: 'rgba(240, 240, 240, 0.3)',
                 border: '1px dashed #ccc',
                 zIndex: -1,
+                padding: 10,
             },
-            data: { label: npc },
+            data: { label: <Typography variant="subtitle2" color="textSecondary">{npc}</Typography> },
             selectable: false,
             draggable: false,
         });

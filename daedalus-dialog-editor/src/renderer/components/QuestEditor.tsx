@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Box, ToggleButton, ToggleButtonGroup, Paper } from '@mui/material';
+import React, { useState, useMemo } from 'react';
+import { Box, ToggleButton, ToggleButtonGroup, Paper, Alert, LinearProgress } from '@mui/material';
 import { FormatListBulleted, AccountTree } from '@mui/icons-material';
 import QuestList from './QuestList';
 import QuestDetails from './QuestDetails';
 import QuestFlow from './QuestFlow';
+import { useProjectStore } from '../store/projectStore';
 import type { SemanticModel } from '../types/global';
 
 interface QuestEditorProps {
@@ -14,17 +15,49 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel }) => {
   const [selectedQuest, setSelectedQuest] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'details' | 'flow'>('details');
 
+  const { getQuestUsage, isIngesting, parsedFiles, projectPath } = useProjectStore(state => ({
+      getQuestUsage: state.getQuestUsage,
+      isIngesting: state.isIngesting,
+      parsedFiles: state.parsedFiles,
+      projectPath: state.projectPath
+  }));
+
+  const isProjectMode = !!projectPath;
+
+  // Use global project analysis when in project mode, otherwise fall back to provided model
+  const activeModel = useMemo(() => {
+      if (!selectedQuest) return semanticModel;
+
+      if (isProjectMode) {
+          return getQuestUsage(selectedQuest);
+      }
+
+      return semanticModel;
+  }, [selectedQuest, isProjectMode, parsedFiles, getQuestUsage, semanticModel]);
+
   return (
     <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>
         <Box sx={{ width: 300, flexShrink: 0 }}>
             <QuestList
-                semanticModel={semanticModel}
+                semanticModel={semanticModel} // List always uses the base loaded model (definitions)
                 selectedQuest={selectedQuest}
                 onSelectQuest={setSelectedQuest}
             />
         </Box>
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <Paper square elevation={0} sx={{ p: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'flex-end' }}>
+            <Paper square elevation={0} sx={{ p: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box sx={{ flexGrow: 1, mr: 2 }}>
+                    {isIngesting && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Alert severity="info" sx={{ py: 0, '& .MuiAlert-message': { overflow: 'visible' } }}>
+                                Scanning project files...
+                            </Alert>
+                            <Box sx={{ width: 100 }}>
+                                <LinearProgress />
+                            </Box>
+                        </Box>
+                    )}
+                </Box>
                 <ToggleButtonGroup
                     value={viewMode}
                     exclusive
@@ -43,12 +76,12 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel }) => {
             <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
                 {viewMode === 'details' ? (
                     <QuestDetails
-                        semanticModel={semanticModel}
+                        semanticModel={activeModel}
                         questName={selectedQuest}
                     />
                 ) : (
                     <QuestFlow
-                        semanticModel={semanticModel}
+                        semanticModel={activeModel}
                         questName={selectedQuest}
                     />
                 )}
