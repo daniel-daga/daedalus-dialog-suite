@@ -552,17 +552,31 @@ export class Condition implements CodeGeneratable {
 export class VariableCondition implements CodeGeneratable {
   public variableName: string;
   public negated: boolean;
+  public operator?: string;
+  public value?: string | number | boolean;
 
-  constructor(variableName: string, negated: boolean = false) {
+  constructor(variableName: string, negated: boolean = false, operator?: string, value?: string | number | boolean) {
     this.variableName = variableName;
     this.negated = negated;
+    if (operator !== undefined) {
+      this.operator = operator;
+    }
+    if (value !== undefined) {
+      this.value = value;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
+    if (this.operator && this.value !== undefined) {
+      return `${this.variableName} ${this.operator} ${this.value}`;
+    }
     return this.negated ? `!${this.variableName}` : this.variableName;
   }
 
   toDisplayString(): string {
+    if (this.operator && this.value !== undefined) {
+      return `[Variable: ${this.variableName} ${this.operator} ${this.value}]`;
+    }
     return this.negated ? `[Not: ${this.variableName}]` : `[Variable: ${this.variableName}]`;
   }
 
@@ -571,7 +585,7 @@ export class VariableCondition implements CodeGeneratable {
   }
 
   static fromJSON(json: any): VariableCondition {
-    return new VariableCondition(json.variableName, json.negated || false);
+    return new VariableCondition(json.variableName, json.negated || false, json.operator, json.value);
   }
 }
 

@@ -255,12 +255,38 @@ export class SemanticModelBuilderVisitor {
         if (!node) node = cursor.currentNode;
         this.processFunctionCall(node);
     } else if (this.currentFunction && this.conditionFunctions.has(this.currentFunction.name)) {
-        // Process condition-specific node types (identifier, unary_expression)
-        // Only if they are part of a binary expression (to filter out function names, params, etc.)
-        if (type === 'identifier' || type === 'unary_expression') {
+        // Process condition-specific node types
+        if (type === 'binary_expression') {
             if (!node) node = cursor.currentNode;
-            if (node.parent && node.parent.type === 'binary_expression') {
-              this.processCondition(node);
+            // Only process comparison binaries. Logical binaries (&&, ||) are containers.
+            // binary_expression has children [left, operator, right]
+            const operator = node.childCount >= 2 ? node.child(1).text : null;
+            if (operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
+                this.processCondition(node);
+            }
+        } else if (type === 'identifier' || type === 'unary_expression') {
+            if (!node) node = cursor.currentNode;
+            const parent = node.parent;
+            if (!parent) return;
+
+            // If we are identifier, and parent is unary, we SKIP (let unary handle it).
+            if (type === 'identifier' && parent.type === 'unary_expression') return;
+
+            // Determine if this node is in a "Condition Context"
+            const allowedParents = ['if_statement', 'parenthesized_expression'];
+            let isAllowed = allowedParents.includes(parent.type);
+
+            if (parent.type === 'binary_expression') {
+                 // Check if logical (&&, ||)
+                 const operator = parent.childCount >= 2 ? parent.child(1).text : null;
+                 const isComparison = operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator);
+                 if (!isComparison) {
+                     isAllowed = true;
+                 }
+            }
+
+            if (isAllowed) {
+                this.processCondition(node);
             }
         }
     }

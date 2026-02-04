@@ -30,9 +30,43 @@ export class ConditionParsers {
         return ConditionParsers.parseVariableCondition(node);
       case 'unary_expression':
         return ConditionParsers.parseUnaryExpression(node);
+      case 'binary_expression':
+        return ConditionParsers.parseBinaryExpression(node) || ConditionParsers.parseGenericCondition(node);
       default:
         return ConditionParsers.parseGenericCondition(node);
     }
+  }
+
+  /**
+   * Parse binary expression (e.g. MIS_Test == LOG_RUNNING)
+   */
+  static parseBinaryExpression(node: TreeSitterNode): VariableCondition | null {
+    // binary_expression structure: [left, operator, right]
+    // The grammar does not assign field names to binary_expression parts
+    if (node.childCount < 3) return null;
+
+    const left = node.child(0);
+    const operator = node.child(1);
+    const right = node.child(2);
+
+    if (!left || !operator || !right) return null;
+
+    // Support comparisons like (VAR == VALUE)
+    // We assume the variable is on the left, but it could be on the right.
+    // For now, let's assume left is identifier.
+    if (left.type === 'identifier') {
+      const variableName = left.text;
+      const op = operator.text;
+      const value = right.text;
+
+      let parsedValue: string | number | boolean = value;
+      if (right.type === 'number') parsedValue = Number(value);
+      else if (right.type === 'string') parsedValue = value.replace(/"/g, '');
+
+      return new VariableCondition(variableName, false, op, parsedValue);
+    }
+
+    return null;
   }
 
   /**

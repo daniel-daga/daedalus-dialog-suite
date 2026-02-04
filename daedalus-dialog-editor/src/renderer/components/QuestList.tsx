@@ -26,7 +26,7 @@ interface QuestListProps {
 
 const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onSelectQuest }) => {
   const [filter, setFilter] = useState('');
-  const [viewMode, setViewMode] = useState<'all' | 'active'>('all');
+  const [viewMode, setViewMode] = useState<'all' | 'used'>('all');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   // Memoize the list of all TOPIC_ constants
@@ -35,7 +35,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
     return Object.values(constants).filter(c => c.name.startsWith('TOPIC_'));
   }, [semanticModel.constants]);
 
-  // Memoize the set of used topics to enable "Active" filtering
+  // Memoize the set of used topics to enable "Used" filtering
   const usedTopics = useMemo(() => {
     const used = new Set<string>();
 
@@ -61,7 +61,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
 
       if (!matchesSearch) return false;
 
-      if (viewMode === 'active') {
+      if (viewMode === 'used') {
         return usedTopics.has(q.name);
       }
 
@@ -103,7 +103,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
           size="small"
         >
           <ToggleButton value="all">All</ToggleButton>
-          <ToggleButton value="active">Active</ToggleButton>
+          <ToggleButton value="used">Used</ToggleButton>
         </ToggleButtonGroup>
       </Box>
       <Divider />
