@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
+import VariableAutocomplete from '../common/VariableAutocomplete';
 
 const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -8,11 +9,12 @@ const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef
+  mainFieldRef,
+  semanticModel
 }) => {
   return (
     <ActionFieldContainer>
-      <ActionTextField
+      <VariableAutocomplete
         label="Target NPC"
         value={action.target || action.npc || ''}
         onChange={(value) => {
@@ -31,6 +33,9 @@ const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ width: 120 }}
+        showInstances
+        typeFilter="C_NPC"
+        semanticModel={semanticModel}
       />
       <ActionTextField
         fullWidth

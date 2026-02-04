@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
+import VariableAutocomplete from '../common/VariableAutocomplete';
 
 const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -8,11 +9,12 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef
+  mainFieldRef,
+  semanticModel
 }) => {
   return (
     <ActionFieldContainer>
-      <ActionTextField
+      <VariableAutocomplete
         label="Giver"
         value={action.giver || ''}
         onChange={(value) => handleUpdate({ ...action, giver: value })}
@@ -21,22 +23,31 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ width: 80 }}
+        showInstances
+        typeFilter="C_NPC"
+        semanticModel={semanticModel}
       />
-      <ActionTextField
+      <VariableAutocomplete
         label="Receiver"
         value={action.receiver || ''}
         onChange={(value) => handleUpdate({ ...action, receiver: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}
+        showInstances
+        typeFilter="C_NPC"
+        semanticModel={semanticModel}
       />
-      <ActionTextField
+      <VariableAutocomplete
         label="Item"
         value={action.item || ''}
         onChange={(value) => handleUpdate({ ...action, item: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ flex: 1 }}
+        showInstances
+        typeFilter="C_ITEM"
+        semanticModel={semanticModel}
       />
       <ActionTextField
         label="Quantity"
