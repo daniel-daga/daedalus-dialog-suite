@@ -127,4 +127,4 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
   );
 };
 
-export default NPCList;
+export default React.memo(NPCList);

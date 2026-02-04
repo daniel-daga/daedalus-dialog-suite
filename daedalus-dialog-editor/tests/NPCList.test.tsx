@@ -93,9 +93,14 @@ describe('NPCList', () => {
 
     // Simulate the state update
     mockNpcFilter = '';
+
+    // In a real application, the store update would trigger a re-render.
+    // Since we are mocking the store with a simple function that doesn't trigger updates,
+    // we need to force a re-render by changing props (passing a new array reference)
+    // to ensure the component picks up the new mock value through React.memo.
     rerender(
        <NPCList
-        npcs={mockNpcs}
+        npcs={[...mockNpcs]}
         npcMap={mockNpcMap}
         selectedNPC={null}
         onSelectNPC={mockOnSelectNPC}

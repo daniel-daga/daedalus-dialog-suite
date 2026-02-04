@@ -267,7 +267,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
   const currentFunctionData = currentFunctionName ? semanticModel.functions?.[currentFunctionName] : null;
 
-  const handleSelectNPC = async (npc: string) => {
+  const handleSelectNPC = useCallback(async (npc: string) => {
     setSelectedDialog(null);
 
     // In project mode, load semantic models for this NPC's dialogs
@@ -293,7 +293,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       // Single-file mode: just set the selected NPC
       setSelectedNPC(npc);
     }
-  };
+  }, [isProjectMode, selectNpc, dialogIndex, getSemanticModel, loadAndMergeNpcModels]);
 
   const handleSelectDialog = useCallback((dialogName: string, functionName: string | null) => {
     // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
