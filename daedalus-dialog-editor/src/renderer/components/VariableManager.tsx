@@ -32,7 +32,7 @@ import { useProjectStore } from '../store/projectStore';
 import type { GlobalConstant, GlobalVariable } from '../types/global';
 
 const VariableManager: React.FC = () => {
-  const { mergedSemanticModel, addVariable, deleteVariable, allDialogFiles, questFiles } = useProjectStore();
+  const { mergedSemanticModel, addVariable, deleteVariable, allDialogFiles, questFiles, isLoading } = useProjectStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Add Variable Dialog State
@@ -138,6 +138,9 @@ const VariableManager: React.FC = () => {
               </InputAdornment>
             ),
           }}
+          inputProps={{
+            'aria-label': 'Search variables'
+          }}
           sx={{ width: 300 }}
         />
       </Box>
@@ -176,15 +179,19 @@ const VariableManager: React.FC = () => {
                   </Tooltip>
                 </TableCell>
                 <TableCell align="right">
-                    <IconButton
-                        size="small"
-                        onClick={() => handleDelete(v)}
-                        disabled={!v.filePath || !v.range}
-                        color="error"
-                        title="Delete variable"
-                    >
-                        <DeleteIcon fontSize="small" />
-                    </IconButton>
+                    <Tooltip title="Delete variable">
+                        <span>
+                            <IconButton
+                                size="small"
+                                onClick={() => handleDelete(v)}
+                                disabled={!v.filePath || !v.range}
+                                color="error"
+                                aria-label="Delete variable"
+                            >
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
                 </TableCell>
               </TableRow>
             ))}
@@ -263,7 +270,9 @@ const VariableManager: React.FC = () => {
           </DialogContent>
           <DialogActions>
               <Button onClick={() => setOpenAdd(false)}>Cancel</Button>
-              <Button onClick={handleAddSubmit} variant="contained">Add</Button>
+              <Button onClick={handleAddSubmit} variant="contained" disabled={isLoading}>
+                  {isLoading ? 'Adding...' : 'Add'}
+              </Button>
           </DialogActions>
       </Dialog>
     </Box>
