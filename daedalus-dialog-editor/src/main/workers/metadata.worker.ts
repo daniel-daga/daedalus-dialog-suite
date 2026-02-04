@@ -1,6 +1,6 @@
 import { parentPort } from 'worker_threads';
 import { promises as fs } from 'fs';
-import { extractDialogMetadata, TOPIC_REGEX, MIS_REGEX } from '../utils/metadataUtils';
+import { extractFileMetadata, FileMetadata } from '../utils/metadataUtils';
 
 if (parentPort) {
   parentPort.on('message', async (message: { id: string; filePath: string }) => {
@@ -8,13 +8,16 @@ if (parentPort) {
 
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const dialogs = extractDialogMetadata(content, filePath);
+      const metadata = extractFileMetadata(content, filePath);
 
-      const isQuestFile = TOPIC_REGEX.test(content) || MIS_REGEX.test(content);
+      // Determine if this is a quest file based on symbols found
+      const isQuestFile = metadata.symbols.some(s =>
+        s.name.startsWith('TOPIC_') || s.name.startsWith('MIS_')
+      );
 
       parentPort!.postMessage({
         id,
-        dialogs,
+        metadata,
         isQuestFile
       });
     } catch (error) {

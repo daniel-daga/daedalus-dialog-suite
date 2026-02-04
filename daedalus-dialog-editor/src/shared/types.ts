@@ -12,11 +12,20 @@ export interface DialogMetadata {
   filePath: string;
 }
 
+export interface GlobalSymbol {
+  name: string;
+  type: string;
+  value?: string | number | boolean;
+  filePath: string;
+}
+
 export interface ProjectIndex {
   npcs: string[];
   dialogsByNpc: Map<string, DialogMetadata[]>;
   allFiles: string[];
   questFiles: string[];
+  symbols: Map<string, GlobalSymbol>;
+  questReferences: Map<string, string[]>;
 }
 
 // ============================================================================

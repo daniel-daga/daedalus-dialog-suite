@@ -17,7 +17,9 @@ def verify_variable_manager(page: Page):
                 npcs: ["TestNPC"],
                 dialogsByNpc: {},
                 allFiles: ["test.d"],
-                questFiles: ["test.d"]
+                questFiles: ["test.d"],
+                symbols: {},
+                questReferences: {}
             }),
             parseDialogFile: async () => ({
                 dialogs: {},

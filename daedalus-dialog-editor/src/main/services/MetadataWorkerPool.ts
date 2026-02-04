@@ -3,10 +3,17 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import type { DialogMetadata } from '../../shared/types';
+import type { DialogMetadata, GlobalSymbol } from '../../shared/types';
+import type { FileMetadata } from '../utils/metadataUtils';
+
+// Define the expected result from worker
+interface WorkerResult {
+  metadata: FileMetadata;
+  isQuestFile: boolean;
+}
 
 interface PendingTask {
-  resolve: (value: { dialogs: DialogMetadata[]; isQuestFile: boolean }) => void;
+  resolve: (value: WorkerResult) => void;
   reject: (reason?: any) => void;
 }
 
@@ -38,17 +45,23 @@ export class MetadataWorkerPool {
     for (let i = 0; i < numWorkers; i++) {
       const worker = new Worker(workerPath);
 
-      worker.on('message', (message: { id: string; dialogs?: DialogMetadata[]; isQuestFile?: boolean; error?: string }) => {
-        const { id, dialogs, isQuestFile, error } = message;
+      worker.on('message', (message: { id: string; metadata?: FileMetadata; isQuestFile?: boolean; error?: string }) => {
+        const { id, metadata, isQuestFile, error } = message;
         const pending = this.pendingRequests.get(id);
 
         if (pending) {
           if (error) {
             // On error, we resolve with empty result to continue processing other files
             // consistent with original ProjectService behavior
-            pending.resolve({ dialogs: [], isQuestFile: false });
+            pending.resolve({
+              metadata: { dialogs: [], symbols: [], referencedQuests: [] },
+              isQuestFile: false
+            });
           } else {
-            pending.resolve({ dialogs: dialogs || [], isQuestFile: !!isQuestFile });
+            pending.resolve({
+              metadata: metadata || { dialogs: [], symbols: [], referencedQuests: [] },
+              isQuestFile: !!isQuestFile
+            });
           }
           this.pendingRequests.delete(id);
         }
@@ -82,7 +95,7 @@ export class MetadataWorkerPool {
     }
   }
 
-  public processFile(filePath: string): Promise<{ dialogs: DialogMetadata[]; isQuestFile: boolean }> {
+  public processFile(filePath: string): Promise<WorkerResult> {
     if (this.isTerminated) {
         return Promise.reject(new Error('Pool terminated'));
     }

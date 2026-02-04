@@ -9,24 +9,13 @@
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import type { DialogMetadata, ProjectIndex } from '../../shared/types';
+import type { DialogMetadata, ProjectIndex, GlobalSymbol } from '../../shared/types';
 
 // Re-export types for consumers of this service
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
 import { extractDialogMetadata } from '../utils/metadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
-// Regex to match start of INSTANCE declarations
-// Matches: INSTANCE <name> (C_INFO) {
-const INSTANCE_START_REGEX = /INSTANCE\s+(\w+)\s*\(([^)]+)\)\s*\{/gi;
-
-// Regex to match npc property inside the body
-const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/gi;
-
-// Regex to detect quest definitions
-const TOPIC_REGEX = /const\s+string\s+TOPIC_\w+/i;
-const MIS_REGEX = /var\s+int\s+MIS_\w+/i;
-const BRACE_REGEX = /[{}]/g;
 
 class ProjectService {
   /**
@@ -78,9 +67,11 @@ class ProjectService {
     // Scan for all .d files
     const allFiles = await this.scanDirectory(rootPath);
 
-    // Map to store dialogs by NPC
+    // Maps and lists for index
     const dialogsByNpc = new Map<string, DialogMetadata[]>();
     const questFiles: string[] = [];
+    const symbols = new Map<string, GlobalSymbol>();
+    const questReferences = new Map<string, string[]>();
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
@@ -96,11 +87,24 @@ class ProjectService {
         const filePath = allFiles[i];
 
         // Group dialogs by NPC
-        for (const dialog of result.dialogs) {
+        for (const dialog of result.metadata.dialogs) {
           if (!dialogsByNpc.has(dialog.npc)) {
             dialogsByNpc.set(dialog.npc, []);
           }
           dialogsByNpc.get(dialog.npc)!.push(dialog);
+        }
+
+        // Collect symbols
+        for (const symbol of result.metadata.symbols) {
+          symbols.set(symbol.name, symbol);
+        }
+
+        // Collect quest references
+        for (const questName of result.metadata.referencedQuests) {
+          if (!questReferences.has(questName)) {
+            questReferences.set(questName, []);
+          }
+          questReferences.get(questName)!.push(filePath);
         }
 
         // Collect quest files
@@ -119,7 +123,9 @@ class ProjectService {
       npcs,
       dialogsByNpc,
       allFiles,
-      questFiles
+      questFiles,
+      symbols,
+      questReferences
     };
   }
 

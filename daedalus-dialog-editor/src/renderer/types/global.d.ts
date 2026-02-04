@@ -31,6 +31,7 @@ export type {
   Dialog,
   ParseError,
   GlobalConstant,
+  GlobalSymbol,
   GlobalVariable,
   SemanticModel,
   FunctionTreeChild,

@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand';
-import type { DialogMetadata, SemanticModel } from '../types/global';
+import type { DialogMetadata, SemanticModel, GlobalSymbol } from '../types/global';
 
 export interface ParsedFileCache {
   filePath: string;
@@ -40,6 +40,8 @@ interface ProjectState {
   dialogIndex: Map<string, DialogMetadata[]>; // NPC ID → dialogs
   allDialogFiles: string[];
   questFiles: string[];
+  symbols: Map<string, GlobalSymbol>;
+  questReferences: Map<string, string[]>;
 
   // Cached parsed files (full semantic models)
   parsedFiles: Map<string, ParsedFileCache>;
@@ -53,18 +55,11 @@ interface ProjectState {
   // Loading state
   isLoading: boolean;
   loadError: string | null;
-  
-  // Background ingestion
-  isIngesting: boolean;
-  abortIngestion: (() => void) | null;
 }
 
 interface ProjectActions {
   // Open and index a project
   openProject: (folderPath: string) => Promise<void>;
-
-  // Start background ingestion of all files
-  startBackgroundIngestion: () => void;
 
   // Close project
   closeProject: () => void;
@@ -78,6 +73,9 @@ interface ProjectActions {
   // Get or parse a dialog file
   getSemanticModel: (filePath: string) => Promise<SemanticModel>;
 
+  // Ensure specific files are parsed and cached
+  ensureFilesParsed: (filePaths: string[]) => Promise<void>;
+
   // Merge multiple semantic models into one
   mergeSemanticModels: (models: SemanticModel[]) => void;
 
@@ -87,7 +85,10 @@ interface ProjectActions {
   // Load and merge quest data (global constants/vars)
   loadQuestData: () => Promise<void>;
 
-  // Get usage data for a specific quest across the entire project
+  // Load files relevant to a quest
+  loadQuestFiles: (questName: string) => Promise<void>;
+
+  // Get usage data for a specific quest from loaded files
   getQuestUsage: (questName: string) => SemanticModel;
 
   // Create a new quest
@@ -116,13 +117,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   dialogIndex: new Map(),
   allDialogFiles: [],
   questFiles: [],
+  symbols: new Map(),
+  questReferences: new Map(),
   parsedFiles: new Map(),
   mergedSemanticModel: createEmptySemanticModel(),
   selectedNpc: null,
   isLoading: false,
   loadError: null,
-  isIngesting: false,
-  abortIngestion: null,
 
   // Actions
   openProject: async (folderPath: string) => {
@@ -135,16 +136,32 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       // Convert the plain object back to Map (IPC serialization loses Map type)
       const dialogsByNpc = new Map<string, DialogMetadata[]>();
       if (rawIndex.dialogsByNpc) {
-        // If it's already a Map
         if (rawIndex.dialogsByNpc instanceof Map) {
           rawIndex.dialogsByNpc.forEach((value, key) => {
             dialogsByNpc.set(key, value);
           });
         } else {
-          // If it was serialized as an object
           Object.entries(rawIndex.dialogsByNpc).forEach(([key, value]) => {
             dialogsByNpc.set(key, value as DialogMetadata[]);
           });
+        }
+      }
+
+      const symbols = new Map<string, GlobalSymbol>();
+      if (rawIndex.symbols) {
+        if (rawIndex.symbols instanceof Map) {
+            rawIndex.symbols.forEach((value, key) => symbols.set(key, value));
+        } else {
+            Object.entries(rawIndex.symbols).forEach(([key, value]) => symbols.set(key, value as GlobalSymbol));
+        }
+      }
+
+      const questReferences = new Map<string, string[]>();
+      if (rawIndex.questReferences) {
+        if (rawIndex.questReferences instanceof Map) {
+            rawIndex.questReferences.forEach((value, key) => questReferences.set(key, value));
+        } else {
+            Object.entries(rawIndex.questReferences).forEach(([key, value]) => questReferences.set(key, value as string[]));
         }
       }
 
@@ -159,13 +176,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         dialogIndex: dialogsByNpc,
         allDialogFiles: rawIndex.allFiles || [],
         questFiles: rawIndex.questFiles || [],
+        symbols,
+        questReferences,
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
         selectedNpc: null
       });
 
-      // Start background ingestion
-      get().startBackgroundIngestion();
+      // We do NOT ingest all files automatically anymore (Performance fix)
+      // Only load quest data to ensure global constants are available
+      await get().loadQuestData();
 
     } catch (error) {
       set({
@@ -175,130 +195,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  startBackgroundIngestion: async () => {
-    const { allDialogFiles, questFiles, abortIngestion } = get();
-    
-    // Cancel previous ingestion if running
-    if (abortIngestion) {
-      abortIngestion();
-    }
-
-    const controller = new AbortController();
-    set({ isIngesting: true, abortIngestion: () => controller.abort() });
-
-    // Prioritize quest files, then the rest
-    const priorityFiles = new Set([...questFiles]);
-    const remainingFiles = allDialogFiles.filter(f => !priorityFiles.has(f));
-    const ingestionQueue = [...priorityFiles, ...remainingFiles];
-
-    // Batch updates to avoid excessive re-renders
-    const pendingUpdates = new Map<string, ParsedFileCache>();
-    const flushUpdates = () => {
-      if (pendingUpdates.size > 0) {
-        set((state) => {
-          const newCache = new Map(state.parsedFiles);
-          pendingUpdates.forEach((value, key) => newCache.set(key, value));
-          return { parsedFiles: newCache };
-        });
-        pendingUpdates.clear();
-      }
-    };
-    
-    const flushInterval = setInterval(flushUpdates, 500);
-
-    // Process in background
-    try {
-      // Concurrency limit for parallel ingestion
-      // Increased to 20 to utilize backend worker pool (max 8 workers)
-      const CONCURRENCY_LIMIT = 20;
-      
-      let currentIndex = 0;
-      const processNext = async (): Promise<void> => {
-        if (controller.signal.aborted) return;
-        
-        while (currentIndex < ingestionQueue.length) {
-          if (controller.signal.aborted) return;
-          
-          const filePath = ingestionQueue[currentIndex++];
-          
-          // Skip if already parsed (check both store and pending)
-          if (get().parsedFiles.has(filePath) || pendingUpdates.has(filePath)) continue;
-
-          try {
-            // Parse the file directly to avoid state update in getSemanticModel
-            const semanticModel = await window.editorAPI.parseDialogFile(filePath);
-
-            // Inject file path into constants and variables for tracking
-            if (semanticModel.constants) {
-              Object.values(semanticModel.constants).forEach(c => { c.filePath = filePath; });
-            }
-            if (semanticModel.variables) {
-              Object.values(semanticModel.variables).forEach(v => { v.filePath = filePath; });
-            }
-
-            // Add to batch
-            pendingUpdates.set(filePath, {
-              filePath,
-              semanticModel,
-              lastParsed: new Date()
-            });
-
-          } catch (e) {
-            console.warn(`Background ingestion failed for ${filePath}:`, e);
-            
-            if (controller.signal.aborted) return;
-
-            // Add error to batch
-            pendingUpdates.set(filePath, {
-               filePath,
-               semanticModel: {
-                 ...createEmptySemanticModel(),
-                 hasErrors: true,
-                 errors: [{
-                    type: 'ingestion_error',
-                    message: e instanceof Error ? e.message : String(e)
-                 }]
-               },
-               lastParsed: new Date()
-            });
-          }
-        }
-      };
-
-      // Start initial batch of workers
-      const workers = Array(CONCURRENCY_LIMIT).fill(null).map(() => processNext());
-      await Promise.all(workers);
-
-    } finally {
-      clearInterval(flushInterval);
-      // Final flush
-      flushUpdates();
-      
-      if (!controller.signal.aborted) {
-        set({ isIngesting: false, abortIngestion: null });
-      }
-    }
-  },
-
   closeProject: () => {
-    // Abort any running ingestion
-    const { abortIngestion } = get();
-    if (abortIngestion) {
-      abortIngestion();
-    }
-
     set({
       projectPath: null,
       projectName: null,
       npcList: [],
       dialogIndex: new Map(),
       allDialogFiles: [],
+      questFiles: [],
+      symbols: new Map(),
+      questReferences: new Map(),
       parsedFiles: new Map(),
       mergedSemanticModel: createEmptySemanticModel(),
       selectedNpc: null,
-      loadError: null,
-      isIngesting: false,
-      abortIngestion: null
+      loadError: null
     });
   },
 
@@ -346,6 +256,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return semanticModel;
   },
 
+  ensureFilesParsed: async (filePaths: string[]) => {
+    const { parsedFiles, getSemanticModel } = get();
+    const uncachedFiles = filePaths.filter(p => !parsedFiles.has(p));
+
+    // Process in parallel with concurrency limit if needed,
+    // but typically user selection implies small working set.
+    // Using simple Promise.all for now as it shouldn't be 1000s of files.
+    await Promise.all(uncachedFiles.map(f => getSemanticModel(f)));
+  },
+
   mergeSemanticModels: (models: SemanticModel[]) => {
     const mergedModel: SemanticModel = createEmptySemanticModel();
 
@@ -383,15 +303,37 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   loadQuestData: async () => {
-    const { questFiles, getSemanticModel, mergeSemanticModels } = get();
+    const { questFiles, ensureFilesParsed, parsedFiles, mergeSemanticModels } = get();
 
-    // Parse all quest files
-    const models = await Promise.all(
-        questFiles.map(filePath => getSemanticModel(filePath))
-    );
+    // Ensure all quest files are parsed
+    await ensureFilesParsed(questFiles);
+
+    // Collect models
+    const models = questFiles
+        .map(f => parsedFiles.get(f)?.semanticModel)
+        .filter((m): m is SemanticModel => !!m);
 
     const currentModel = get().mergedSemanticModel;
     mergeSemanticModels([currentModel, ...models]);
+  },
+
+  loadQuestFiles: async (questName: string) => {
+    const { questReferences, ensureFilesParsed, symbols } = get();
+
+    const referencingFiles = questReferences.get(questName) || [];
+
+    // Also find where the quest is defined (TOPIC_ variable)
+    const definitionFile = symbols.get(questName)?.filePath;
+    const misVarName = questName.replace('TOPIC_', 'MIS_');
+    const misVarFile = symbols.get(misVarName)?.filePath;
+
+    const filesToLoad = new Set([
+        ...referencingFiles,
+        ...(definitionFile ? [definitionFile] : []),
+        ...(misVarFile ? [misVarFile] : [])
+    ]);
+
+    await ensureFilesParsed(Array.from(filesToLoad));
   },
 
   getQuestUsage: (questName: string) => {
@@ -514,8 +456,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const variableModel = (topicFilePath === variableFilePath) ? topicModel : await get().getSemanticModel(variableFilePath);
 
       // Merge into current model
-      // Note: This assumes adding new symbols doesn't conflict with existing ones in a way that requires full re-merge
       get().mergeSemanticModels([get().mergedSemanticModel, topicModel, variableModel]);
+
+      // Note: We don't update local 'symbols' or 'questReferences' here manually because
+      // it's complex to replicate regex logic. They will be out of sync until project reload.
+      // However, 'parsedFiles' IS updated, so 'getQuestUsage' will still work fine.
 
       set({ isLoading: false });
 
