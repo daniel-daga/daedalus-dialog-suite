@@ -3,6 +3,7 @@ import { Box, Typography, Alert } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSearchStore, SearchResult } from '../store/searchStore';
+import { useNavigation } from '../hooks/useNavigation';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
 import EditorPane from './EditorPane';
@@ -27,6 +28,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     mergedSemanticModel,
     loadAndMergeNpcModels
   } = useProjectStore();
+  const { navigateToDialog } = useNavigation();
   const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [selectedNPC, setSelectedNPC] = useState<string | null>(null);
@@ -373,21 +375,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       return;
     }
 
-    // For dialog results, find the NPC and select dialog
-    if (result.type === 'dialog' && result.npc) {
-      // First select the NPC if different
-      if (selectedNPC !== result.npc) {
-        await handleSelectNPC(result.npc);
-      }
-      // Then select the dialog
-      if (result.dialogName) {
-        const dialog = semanticModel.dialogs?.[result.dialogName];
-        if (dialog) {
-          const infoFunc = dialog.properties?.information as any;
-          const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-          handleSelectDialog(result.dialogName, infoFuncName);
-        }
-      }
+    // For dialog results, use the navigation hook
+    if (result.type === 'dialog' && result.dialogName) {
+      await navigateToDialog(result.dialogName);
       return;
     }
 
@@ -400,12 +390,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
 
         if (infoFuncName === result.functionName) {
-          // Found the dialog, select the NPC first if needed
-          const npc = dialog.properties?.npc;
-          if (npc && selectedNPC !== npc) {
-            await handleSelectNPC(npc);
-          }
-          handleSelectDialog(dialogName, result.functionName);
+          await navigateToDialog(dialogName);
           return;
         }
       }
@@ -413,7 +398,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       // If not found as a direct dialog function, just navigate to the function
       setSelectedFunctionName(result.functionName);
     }
-  }, [selectedNPC, semanticModel, handleSelectNPC, handleSelectDialog]);
+  }, [selectedNPC, semanticModel, handleSelectNPC, navigateToDialog]);
 
   // Handle early return conditions after all hooks have been called
   // In project mode, we might not have a file loaded yet

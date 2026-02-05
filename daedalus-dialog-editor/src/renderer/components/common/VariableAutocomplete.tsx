@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
-import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps } from '@mui/material';
+import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
+import { OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import { useProjectStore } from '../../store/projectStore';
 import { GlobalConstant, GlobalVariable, SemanticModel } from '../../types/global';
+import { useNavigation } from '../../hooks/useNavigation';
 
 // Instance definition might not be strictly typed in global types yet
 interface InstanceDefinition {
@@ -24,6 +26,8 @@ export interface VariableAutocompleteProps {
   typeFilter?: string | string[];
   /** Whether to include instances (e.g. NPCs, items) */
   showInstances?: boolean;
+  /** Whether to include dialogs from the project index */
+  showDialogs?: boolean;
   /** Whether to allow values that are not in the list */
   allowFreeInput?: boolean;
   /** Custom styles */
@@ -42,12 +46,14 @@ export interface VariableAutocompleteProps {
   onKeyDown?: (e: React.KeyboardEvent) => void;
   /** Optional semantic model to merge with global project model */
   semanticModel?: SemanticModel;
+  /** Whether to show the navigation button (default: true) */
+  showNavigation?: boolean;
 }
 
 type OptionType = {
   name: string;
   type: string;
-  source: 'variable' | 'constant' | 'instance';
+  source: 'variable' | 'constant' | 'instance' | 'dialog';
   filePath?: string;
   value?: string | number | boolean;
 };
@@ -61,6 +67,7 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
   placeholder,
   typeFilter,
   showInstances = false,
+  showDialogs = false,
   allowFreeInput = true,
   sx,
   fullWidth = false,
@@ -69,9 +76,11 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
   textFieldProps,
   onFlush,
   onKeyDown,
-  semanticModel
+  semanticModel,
+  showNavigation = true
 }) => {
-  const { mergedSemanticModel } = useProjectStore();
+  const { mergedSemanticModel, dialogIndex } = useProjectStore();
+  const { navigateToSymbol, navigateToDialog } = useNavigation();
 
   const options = useMemo(() => {
     const opts: OptionType[] = [];
@@ -141,8 +150,44 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
       }
     }
 
+    // Add dialogs
+    if (showDialogs && dialogIndex) {
+      dialogIndex.forEach((dialogs) => {
+        dialogs.forEach((d) => {
+          if (isTypeMatch('C_INFO') || !filters) {
+            if (opts.some(o => o.name === d.dialogName)) return;
+
+            opts.push({
+              name: d.dialogName,
+              type: 'C_INFO',
+              source: 'dialog',
+              filePath: d.filePath
+            });
+          }
+        });
+      });
+    }
+
     return opts.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel, semanticModel, typeFilter, showInstances]);
+  }, [mergedSemanticModel, semanticModel, typeFilter, showInstances, showDialogs, dialogIndex]);
+
+  // Check if current value exists in options (to enable navigation)
+  const canNavigate = useMemo(() => {
+    if (!value) return false;
+    return options.some(o => o.name === value);
+  }, [value, options]);
+
+  const handleNavigate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (value) {
+      const option = options.find(o => o.name === value);
+      if (option?.source === 'dialog') {
+        navigateToDialog(value);
+      } else {
+        navigateToSymbol(value);
+      }
+    }
+  };
 
   return (
     <Autocomplete
@@ -215,6 +260,28 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
           onBlur={onFlush}
           onKeyDown={onKeyDown}
           sx={sx}
+          InputProps={{
+            ...params.InputProps,
+            endAdornment: (
+              <React.Fragment>
+                {showNavigation && canNavigate && (
+                  <InputAdornment position="end" sx={{ mr: 1 }}>
+                    <Tooltip title="Follow reference" arrow>
+                      <IconButton
+                        size="small"
+                        onClick={handleNavigate}
+                        edge="end"
+                        onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking icon
+                      >
+                        <OpenInNewIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                )}
+                {params.InputProps.endAdornment}
+              </React.Fragment>
+            )
+          }}
         />
       )}
       sx={sx}

@@ -141,6 +141,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               onChange={(value) => handleUpdate({ ...localCondition, dialogRef: value })}
               onFlush={flushUpdate}
               showInstances
+              showDialogs
               typeFilter="C_INFO"
               sx={{ flex: '1 1 60%', minWidth: 150 }}
               semanticModel={semanticModel}

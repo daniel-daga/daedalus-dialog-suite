@@ -13,6 +13,8 @@ import type { ValidationResult } from '../types/global';
 import { useFocusNavigation } from './hooks/useFocusNavigation';
 import { useActionManagement } from './hooks/useActionManagement';
 
+import VariableAutocomplete from './common/VariableAutocomplete';
+
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
   filePath,
@@ -355,15 +357,17 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           </Box>
           {propertiesExpanded && (
             <Stack spacing={2}>
-              <TextField
+              <VariableAutocomplete
                 fullWidth
                 label="NPC"
                 value={dialog.properties?.npc || ''}
-                onChange={(e) => handleDialogPropertyChange((d) => ({
+                onChange={(value) => handleDialogPropertyChange((d) => ({
                   ...d,
-                  properties: { ...d.properties, npc: e.target.value }
+                  properties: { ...d.properties, npc: value }
                 }))}
-                size="small"
+                showInstances
+                typeFilter="C_NPC"
+                semanticModel={semanticModel}
               />
               <TextField
                 fullWidth
