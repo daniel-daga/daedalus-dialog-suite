@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import { OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import { useProjectStore } from '../../store/projectStore';
+import { useEditorStore } from '../../store/editorStore';
 import { GlobalConstant, GlobalVariable, SemanticModel } from '../../types/global';
 import { useNavigation } from '../../hooks/useNavigation';
 
@@ -46,6 +47,8 @@ export interface VariableAutocompleteProps {
   onKeyDown?: (e: React.KeyboardEvent) => void;
   /** Optional semantic model to merge with global project model */
   semanticModel?: SemanticModel;
+  /** Optional file path to prefer semantic model from editor store */
+  filePath?: string;
   /** Whether to show the navigation button (default: true) */
   showNavigation?: boolean;
 }
@@ -77,10 +80,22 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   onFlush,
   onKeyDown,
   semanticModel,
+  filePath,
   showNavigation = true
 }) => {
   const { mergedSemanticModel, dialogIndex } = useProjectStore();
+  const { openFiles } = useEditorStore();
   const { navigateToSymbol, navigateToDialog } = useNavigation();
+
+  const effectiveSemanticModel = useMemo(() => {
+    if (filePath) {
+      const fileState = openFiles.get(filePath);
+      if (fileState?.semanticModel) {
+        return fileState.semanticModel;
+      }
+    }
+    return semanticModel;
+  }, [filePath, openFiles, semanticModel]);
 
   const options = useMemo(() => {
     const opts: OptionType[] = [];
@@ -121,16 +136,16 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     };
 
     // Add constants (highest priority for same names)
-    addFromRecord(semanticModel?.constants, 'constant');
+    addFromRecord(effectiveSemanticModel?.constants, 'constant');
     addFromRecord(mergedSemanticModel.constants, 'constant');
 
     // Add variables
-    addFromRecord(semanticModel?.variables, 'variable');
+    addFromRecord(effectiveSemanticModel?.variables, 'variable');
     addFromRecord(mergedSemanticModel.variables, 'variable');
 
     // Add instances
     if (showInstances) {
-      addFromRecord(semanticModel?.instances, 'instance');
+      addFromRecord(effectiveSemanticModel?.instances, 'instance');
       addFromRecord(mergedSemanticModel.instances, 'instance');
     }
 
@@ -153,7 +168,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     }
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel, semanticModel, typeFilter, showInstances, showDialogs, dialogIndex]);
+  }, [mergedSemanticModel, effectiveSemanticModel, typeFilter, showInstances, showDialogs, dialogIndex]);
 
   // Check if current value exists in options (to enable navigation)
   const canNavigate = useMemo(() => {

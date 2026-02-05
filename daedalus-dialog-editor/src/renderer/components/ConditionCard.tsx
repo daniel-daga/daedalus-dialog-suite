@@ -12,6 +12,7 @@ interface ConditionCardProps {
   deleteCondition: (index: number) => void;
   focusCondition: (index: number) => void;
   semanticModel?: SemanticModel;
+  filePath?: string;
 }
 
 const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCardProps>(({
@@ -21,7 +22,8 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   updateCondition,
   deleteCondition,
   focusCondition: _focusCondition,
-  semanticModel
+  semanticModel,
+  filePath
 }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const [localCondition, setLocalCondition] = useState(condition);
@@ -131,6 +133,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               mainFieldRef={mainFieldRef}
               sx={{ flex: '1 1 30%', minWidth: 120 }}
               semanticModel={semanticModel}
+              filePath={filePath}
             />
             <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem', flexShrink: 0 }}>
               knows
@@ -145,6 +148,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               typeFilter="C_INFO"
               sx={{ flex: '1 1 60%', minWidth: 150 }}
               semanticModel={semanticModel}
+              filePath={filePath}
             />
           </Box>
         );
@@ -178,6 +182,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               sx={{ flex: 1 }}
               placeholder="e.g., MIS_QuestCompleted"
               semanticModel={semanticModel}
+              filePath={filePath}
             />
           </Box>
         );
@@ -266,7 +271,21 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
       {renderConditionFields()}
     </Box>
   );
-}));
+}), (prev, next) => {
+  // Optimization: ConditionCard receives a new `semanticModel` on every edit in the file,
+  // causing it to re-render even if the condition itself hasn't changed.
+  // We use a custom comparator to ignore `semanticModel` changes (and `filePath`).
+  // VariableAutocomplete handles finding the latest model via useEditorStore + filePath.
+
+  if (prev.index !== next.index) return false;
+  if (prev.totalConditions !== next.totalConditions) return false;
+
+  // Use JSON.stringify for deep comparison of condition content.
+  // Condition objects are JSON-serializable (from worker).
+  // JSON.stringify ignores functions (like getTypeName), which is what we want
+  // because getTypeName is re-created on every render of parent.
+  return JSON.stringify(prev.condition) === JSON.stringify(next.condition);
+});
 
 ConditionCard.displayName = 'ConditionCard';
 
