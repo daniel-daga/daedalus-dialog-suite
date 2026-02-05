@@ -60,7 +60,7 @@ type OptionType = {
 
 const filter = createFilterOptions<OptionType>();
 
-const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
+const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   value,
   onChange,
   label,
@@ -84,88 +84,72 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
 
   const options = useMemo(() => {
     const opts: OptionType[] = [];
-    const filters = typeFilter ? (Array.isArray(typeFilter) ? typeFilter : [typeFilter]) : null;
+    const seenNames = new Set<string>();
+    
+    const filters = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.map(f => f.toLowerCase()) : [typeFilter.toLowerCase()]) : null;
 
     // Helper to check type
     const isTypeMatch = (type: string) => {
       if (!filters) return true;
-      return filters.includes(type);
+      return filters.includes(type.toLowerCase());
     };
 
-    // Add constants
-    const constants = { ...mergedSemanticModel.constants, ...semanticModel?.constants };
-    if (constants) {
-      Object.values(constants).forEach((c: GlobalConstant) => {
-        if (isTypeMatch(c.type)) {
-          // Avoid duplicates if merging
-          if (opts.some(o => o.name === c.name)) return;
-
-          opts.push({
-            name: c.name,
-            type: c.type,
-            source: 'constant',
-            filePath: c.filePath,
-            value: c.value
-          });
+    // Helper to add options from a Record/Object
+    const addFromRecord = (record: Record<string, any> | undefined, source: 'variable' | 'constant' | 'instance') => {
+      if (!record) return;
+      
+      for (const name in record) {
+        const item = record[name];
+        const lowerName = name.toLowerCase();
+        
+        if (!seenNames.has(lowerName)) {
+          // For instances, check parent class type
+          const itemType = source === 'instance' ? (item.parent || 'instance') : item.type;
+          
+          if (isTypeMatch(itemType)) {
+            opts.push({
+              name: item.name || name,
+              type: itemType,
+              source,
+              filePath: item.filePath,
+              value: item.value
+            });
+            seenNames.add(lowerName);
+          }
         }
-      });
-    }
+      }
+    };
+
+    // Add constants (highest priority for same names)
+    addFromRecord(semanticModel?.constants, 'constant');
+    addFromRecord(mergedSemanticModel.constants, 'constant');
 
     // Add variables
-    const variables = { ...mergedSemanticModel.variables, ...semanticModel?.variables };
-    if (variables) {
-      Object.values(variables).forEach((v: GlobalVariable) => {
-        if (isTypeMatch(v.type)) {
-          if (opts.some(o => o.name === v.name)) return;
-
-          opts.push({
-            name: v.name,
-            type: v.type,
-            source: 'variable',
-            filePath: v.filePath
-          });
-        }
-      });
-    }
+    addFromRecord(semanticModel?.variables, 'variable');
+    addFromRecord(mergedSemanticModel.variables, 'variable');
 
     // Add instances
     if (showInstances) {
-      const instances = { ...mergedSemanticModel.instances, ...semanticModel?.instances };
-      if (instances) {
-        Object.values(instances).forEach((i: unknown) => {
-            const instance = i as InstanceDefinition;
-            // Instances usually have a class (parent), e.g., C_NPC, C_ITEM.
-            // If typeFilter is provided, we might want to match against the class name.
-            if (isTypeMatch(instance.parent || 'instance') || !filters) {
-                if (opts.some(o => o.name === instance.name)) return;
-
-                opts.push({
-                    name: instance.name,
-                    type: instance.parent || 'instance',
-                    source: 'instance',
-                    filePath: instance.filePath
-                });
-            }
-        });
-      }
+      addFromRecord(semanticModel?.instances, 'instance');
+      addFromRecord(mergedSemanticModel.instances, 'instance');
     }
 
     // Add dialogs
     if (showDialogs && dialogIndex) {
-      dialogIndex.forEach((dialogs) => {
-        dialogs.forEach((d) => {
-          if (isTypeMatch('C_INFO') || !filters) {
-            if (opts.some(o => o.name === d.dialogName)) return;
-
+      for (const dialogs of dialogIndex.values()) {
+        for (const d of dialogs) {
+          const lowerName = d.dialogName.toLowerCase();
+          if (!seenNames.has(lowerName) && (isTypeMatch('C_INFO') || !filters)) {
             opts.push({
               name: d.dialogName,
               type: 'C_INFO',
               source: 'dialog',
               filePath: d.filePath
             });
+            seenNames.add(lowerName);
           }
-        });
-      });
+        }
+      }
     }
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
@@ -174,17 +158,19 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
   // Check if current value exists in options (to enable navigation)
   const canNavigate = useMemo(() => {
     if (!value) return false;
-    return options.some(o => o.name === value);
+    const lowerValue = value.toLowerCase();
+    return options.some(o => o.name.toLowerCase() === lowerValue);
   }, [value, options]);
 
   const handleNavigate = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (value) {
-      const option = options.find(o => o.name === value);
+      const lowerValue = value.toLowerCase();
+      const option = options.find(o => o.name.toLowerCase() === lowerValue);
       if (option?.source === 'dialog') {
-        navigateToDialog(value);
-      } else {
-        navigateToSymbol(value);
+        navigateToDialog(option.name);
+      } else if (option) {
+        navigateToSymbol(option.name);
       }
     }
   };
@@ -288,6 +274,6 @@ const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
       disableClearable={!allowFreeInput}
     />
   );
-};
+});
 
 export default VariableAutocomplete;

@@ -172,7 +172,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               value={localCondition.variableName || ''}
               onChange={(value) => handleUpdate({ ...localCondition, variableName: value })}
               onFlush={flushUpdate}
-              typeFilter="int"
+              typeFilter={['int', 'string', 'float']}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: 1 }}

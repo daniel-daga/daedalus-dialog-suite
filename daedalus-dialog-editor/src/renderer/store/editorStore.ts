@@ -71,7 +71,9 @@ interface EditorStore {
   activeFile: string | null;
 
   // UI state
+  selectedNPC: string | null;
   selectedDialog: string | null;
+  selectedFunctionName: string | null;
   selectedAction: number | null;
 
   // Validation dialog state
@@ -97,7 +99,9 @@ interface EditorStore {
   saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<SaveFileResult>;
   clearPendingValidation: () => void;
   generateCode: (filePath: string) => Promise<string>;
+  setSelectedNPC: (npcName: string | null) => void;
   setSelectedDialog: (dialogName: string | null) => void;
+  setSelectedFunctionName: (functionName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
@@ -108,7 +112,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   project: null,
   openFiles: new Map(),
   activeFile: null,
+  selectedNPC: null,
   selectedDialog: null,
+  selectedFunctionName: null,
   selectedAction: null,
   pendingValidation: null,
   codeSettings: {
@@ -361,8 +367,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     return window.editorAPI.generateCode(fileState.semanticModel, state.codeSettings);
   },
 
+  setSelectedNPC: (npcName: string | null) => {
+    set({ selectedNPC: npcName });
+  },
+
   setSelectedDialog: (dialogName: string | null) => {
     set({ selectedDialog: dialogName });
+  },
+
+  setSelectedFunctionName: (functionName: string | null) => {
+    set({ selectedFunctionName: functionName });
   },
 
   setSelectedAction: (actionIndex: number | null) => {

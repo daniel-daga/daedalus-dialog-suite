@@ -16,7 +16,16 @@ interface ThreeColumnLayoutProps {
 }
 
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
-  const { openFiles, updateModel } = useEditorStore();
+  const { 
+    openFiles, 
+    updateModel,
+    selectedNPC,
+    selectedDialog,
+    selectedFunctionName,
+    setSelectedNPC,
+    setSelectedDialog,
+    setSelectedFunctionName
+  } = useEditorStore();
   const {
     projectPath,
     npcList: projectNpcs,
@@ -31,9 +40,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { navigateToDialog } = useNavigation();
   const fileState = filePath ? openFiles.get(filePath) : null;
 
-  const [selectedNPC, setSelectedNPC] = useState<string | null>(null);
-  const [selectedDialog, setSelectedDialog] = useState<string | null>(null);
-  const [selectedFunctionName, setSelectedFunctionName] = useState<string | null>(null); // Can be dialog info function or choice function
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
   const [isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
@@ -271,6 +277,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   const handleSelectNPC = async (npc: string) => {
     setSelectedDialog(null);
+    setSelectedFunctionName(null);
 
     // In project mode, load semantic models for this NPC's dialogs
     if (isProjectMode) {
@@ -332,7 +339,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         });
       });
     });
-  }, []);
+  }, [setSelectedDialog, setSelectedFunctionName]);
 
   const handleToggleDialogExpand = useCallback((dialogName: string) => {
     setExpandedDialogs((prev) => {

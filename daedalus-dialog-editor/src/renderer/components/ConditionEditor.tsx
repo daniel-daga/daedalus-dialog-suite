@@ -11,7 +11,20 @@ interface ConditionEditorProps {
   dialogName: string;
 }
 
-const ConditionEditor: React.FC<ConditionEditorProps> = ({
+import React, { useState, useCallback, useRef, useMemo } from 'react';
+import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
+import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon } from '@mui/icons-material';
+import ConditionCard from './ConditionCard';
+
+interface ConditionEditorProps {
+  conditionFunction: any;
+  onUpdateFunction: (funcOrUpdater: any | ((func: any) => any)) => void;
+  semanticModel?: any;
+  filePath: string;
+  dialogName: string;
+}
+
+const ConditionEditor = React.memo<ConditionEditorProps>(({
   conditionFunction,
   onUpdateFunction,
   semanticModel,
@@ -46,10 +59,14 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   };
 
   // Hydrate conditions with getTypeName for UI (store doesn't have these functions)
-  const localFunction = conditionFunction ? {
-    ...conditionFunction,
-    conditions: (conditionFunction.conditions || []).map(hydrateCondition)
-  } : null;
+  // Use useMemo to avoid recalculating on every render if conditionFunction hasn't changed
+  const localFunction = useMemo(() => {
+    if (!conditionFunction) return null;
+    return {
+      ...conditionFunction,
+      conditions: (conditionFunction.conditions || []).map(hydrateCondition)
+    };
+  }, [conditionFunction]);
 
   const updateCondition = useCallback((index: number, updated: any) => {
     onUpdateFunction((currentFunc: any) => {
@@ -270,6 +287,6 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
       )}
     </Paper>
   );
-};
+});
 
 export default ConditionEditor;
