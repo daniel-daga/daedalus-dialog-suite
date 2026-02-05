@@ -43,31 +43,31 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
     Object.values(semanticModel.functions || {}).forEach(func => {
         func.actions?.forEach(action => {
             if ('topic' in action && action.topic && action.topic.toLowerCase() === lowerQuestName) {
-                const context = funcToDialog.get(func.name.toLowerCase()) || { };
+                const context = funcToDialog.get(func.name.toLowerCase());
                 const type = getActionType(action);
 
                 if (type === 'createTopic') {
                      refs.push({
                         type: 'create',
                         functionName: func.name,
-                        dialogName: context.dialogName,
-                        npcName: context.npcName,
+                        dialogName: context?.dialogName,
+                        npcName: context?.npcName,
                         details: `Created${(action as any).topicType ? ` in ${(action as any).topicType}` : ''}`
                      });
                 } else if (type === 'logSetTopicStatus') {
                      refs.push({
                         type: 'status',
                         functionName: func.name,
-                        dialogName: context.dialogName,
-                        npcName: context.npcName,
+                        dialogName: context?.dialogName,
+                        npcName: context?.npcName,
                         details: `Set status to ${(action as any).status}`
                      });
                 } else if (type === 'logEntry') {
                      refs.push({
                         type: 'entry',
                         functionName: func.name,
-                        dialogName: context.dialogName,
-                        npcName: context.npcName,
+                        dialogName: context?.dialogName,
+                        npcName: context?.npcName,
                         details: `Entry: "${(action as any).text}"`
                      });
                 }
@@ -78,12 +78,12 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
         func.conditions?.forEach(cond => {
              // Basic check for variable condition structure as serialized
              if ('variableName' in cond && cond.variableName && (cond as any).variableName.toLowerCase() === lowerMisVarName) {
-                 const context = funcToDialog.get(func.name.toLowerCase()) || { };
+                 const context = funcToDialog.get(func.name.toLowerCase());
                  refs.push({
                     type: 'status',
                     functionName: func.name,
-                    dialogName: context.dialogName,
-                    npcName: context.npcName,
+                    dialogName: context?.dialogName,
+                    npcName: context?.npcName,
                     details: `Condition: ${(cond as any).negated ? '!' : ''}${misVarName}`
                  });
              }

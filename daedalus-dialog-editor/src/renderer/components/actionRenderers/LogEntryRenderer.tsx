@@ -22,6 +22,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={handleKeyDown}
         sx={{ minWidth: 180 }}
         typeFilter="string"
+        namePrefix="TOPIC_"
         semanticModel={semanticModel}
       />
       <ActionTextField

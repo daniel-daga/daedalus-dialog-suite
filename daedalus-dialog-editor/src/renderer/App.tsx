@@ -20,7 +20,7 @@ import { RecentProject } from './types/global';
 
 const App: React.FC = () => {
   const { openFile, activeFile } = useEditorStore();
-  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, questFiles, parsedFiles } = useProjectStore();
+  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles } = useProjectStore();
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   const [isIngestedFilesOpen, setIsIngestedFilesOpen] = useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);

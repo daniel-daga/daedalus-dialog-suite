@@ -143,6 +143,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               showInstances
               showDialogs
               typeFilter="C_INFO"
+              namePrefix="DIA_"
               sx={{ flex: '1 1 60%', minWidth: 150 }}
               semanticModel={semanticModel}
             />
@@ -173,6 +174,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               onChange={(value) => handleUpdate({ ...localCondition, variableName: value })}
               onFlush={flushUpdate}
               typeFilter={['int', 'string', 'float']}
+              namePrefix="MIS_"
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: 1 }}

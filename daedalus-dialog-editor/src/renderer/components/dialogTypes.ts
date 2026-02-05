@@ -17,7 +17,7 @@ export interface ActionCardProps {
   updateAction: (index: number, action: DialogAction) => void;
   deleteAction: (index: number) => void;
   focusAction: (index: number, scrollIntoView?: boolean) => void;
-  addDialogLineAfter: (index: number) => void;
+  addDialogLineAfter: (index: number, toggleSpeaker?: boolean) => void;
   deleteActionAndFocusPrev: (index: number) => void;
   addActionAfter: (index: number, actionType: ActionTypeId) => void;
   semanticModel?: SemanticModel;

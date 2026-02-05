@@ -24,6 +24,7 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 180 }}
         typeFilter="string"
+        namePrefix="TOPIC_"
         semanticModel={semanticModel}
       />
       <VariableAutocomplete
@@ -34,6 +35,7 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         typeFilter="int"
+        namePrefix="LOG_"
         semanticModel={semanticModel}
       />
       <ActionDeleteButton onClick={handleDelete} />

@@ -380,17 +380,21 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
                 }))}
                 size="small"
               />
-              <TextField
+              <VariableAutocomplete
                 fullWidth
                 label="Description"
                 value={dialog.properties?.description || ''}
-                onChange={(e) => handleDialogPropertyChange((d) => ({
+                onChange={(value) => handleDialogPropertyChange((d) => ({
                   ...d,
-                  properties: { ...d.properties, description: e.target.value }
+                  properties: { ...d.properties, description: value }
                 }))}
-                size="small"
-                multiline
-                rows={2}
+                typeFilter="string"
+                namePrefix="DIALOG_"
+                textFieldProps={{
+                  multiline: true,
+                  rows: 2
+                }}
+                semanticModel={semanticModel}
               />
             </Stack>
           )}

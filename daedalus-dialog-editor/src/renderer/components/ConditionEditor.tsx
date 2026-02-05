@@ -1,16 +1,3 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
-import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon } from '@mui/icons-material';
-import ConditionCard from './ConditionCard';
-
-interface ConditionEditorProps {
-  conditionFunction: any;
-  onUpdateFunction: (funcOrUpdater: any | ((func: any) => any)) => void;
-  semanticModel?: any;
-  filePath: string;
-  dialogName: string;
-}
-
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
 import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon } from '@mui/icons-material';
@@ -20,7 +7,7 @@ interface ConditionEditorProps {
   conditionFunction: any;
   onUpdateFunction: (funcOrUpdater: any | ((func: any) => any)) => void;
   semanticModel?: any;
-  filePath: string;
+  filePath: string | null;
   dialogName: string;
 }
 

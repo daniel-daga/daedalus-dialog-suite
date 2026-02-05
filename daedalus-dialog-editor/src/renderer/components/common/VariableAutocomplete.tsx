@@ -24,6 +24,8 @@ export interface VariableAutocompleteProps {
   placeholder?: string;
   /** Filter by variable/constant type (e.g. 'int', 'string') */
   typeFilter?: string | string[];
+  /** Filter by name prefix (e.g. 'TOPIC_') */
+  namePrefix?: string | string[];
   /** Whether to include instances (e.g. NPCs, items) */
   showInstances?: boolean;
   /** Whether to include dialogs from the project index */
@@ -66,6 +68,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   label,
   placeholder,
   typeFilter,
+  namePrefix,
   showInstances = false,
   showDialogs = false,
   allowFreeInput = true,
@@ -87,11 +90,19 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     const seenNames = new Set<string>();
     
     const filters = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.map(f => f.toLowerCase()) : [typeFilter.toLowerCase()]) : null;
+    const prefixes = namePrefix ? (Array.isArray(namePrefix) ? namePrefix.map(p => p.toLowerCase()) : [namePrefix.toLowerCase()]) : null;
 
     // Helper to check type
     const isTypeMatch = (type: string) => {
       if (!filters) return true;
       return filters.includes(type.toLowerCase());
+    };
+
+    // Helper to check name prefix
+    const isNameMatch = (name: string) => {
+      if (!prefixes) return true;
+      const lowerName = name.toLowerCase();
+      return prefixes.some(p => lowerName.startsWith(p));
     };
 
     // Helper to add options from a Record/Object
@@ -106,7 +117,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
           // For instances, check parent class type
           const itemType = source === 'instance' ? (item.parent || 'instance') : item.type;
           
-          if (isTypeMatch(itemType)) {
+          if (isTypeMatch(itemType) && isNameMatch(name)) {
             opts.push({
               name: item.name || name,
               type: itemType,

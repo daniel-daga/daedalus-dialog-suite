@@ -24,6 +24,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 200 }}
+        namePrefix="MIS_"
         semanticModel={semanticModel}
       />
       <TextField
@@ -55,6 +56,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         }}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
+        namePrefix={['LOG_', 'TRUE', 'FALSE']}
         semanticModel={semanticModel}
       />
       <ActionDeleteButton onClick={handleDelete} />
