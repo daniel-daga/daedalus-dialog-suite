@@ -1,18 +1,43 @@
-import React, { useState } from 'react';
-import { Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip, IconButton } from '@mui/material';
-import { FolderOpen as FolderOpenIcon, Folder as FolderIcon, Save as SaveIcon, ListAlt as ListAltIcon } from '@mui/icons-material';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip, IconButton,
+  List, ListItem, ListItemButton, ListItemIcon, ListItemText, Paper, Divider, CircularProgress
+} from '@mui/material';
+import { 
+  FolderOpen as FolderOpenIcon, 
+  Folder as FolderIcon, 
+  Save as SaveIcon, 
+  ListAlt as ListAltIcon,
+  History as HistoryIcon
+} from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
 import MainLayout from './components/MainLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
+import { RecentProject } from './types/global';
 
 const App: React.FC = () => {
   const { openFile, activeFile } = useEditorStore();
-  const { openProject, projectPath, projectName } = useProjectStore();
+  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, questFiles, parsedFiles } = useProjectStore();
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   const [isIngestedFilesOpen, setIsIngestedFilesOpen] = useState(false);
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+
+  const ingestionProgress = useMemo(() => {
+    const total = allDialogFiles.length;
+    if (total === 0) return 0;
+    return (parsedFiles.size / total) * 100;
+  }, [allDialogFiles.length, parsedFiles.size]);
+
+  useEffect(() => {
+    const fetchRecent = async () => {
+      const recent = await window.editorAPI.getRecentProjects();
+      setRecentProjects(recent);
+    };
+    fetchRecent();
+  }, [projectPath]);
 
   const formatLastSaved = (date: Date | null): string => {
     if (!date) return '';
@@ -72,14 +97,43 @@ const App: React.FC = () => {
               sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
             />
           )}
-           <Tooltip title="Ingested Files">
-            <IconButton
-              color="inherit"
-              onClick={() => setIsIngestedFilesOpen(true)}
-              sx={{ mr: 1 }}
-            >
-              <ListAltIcon />
-            </IconButton>
+           <Tooltip title={isIngesting ? `Ingesting files: ${Math.round(ingestionProgress)}%` : "Ingested Files"}>
+            <Box sx={{ position: 'relative', display: 'inline-flex', mr: 1, alignItems: 'center', justifyContent: 'center' }}>
+              {isIngesting && (
+                <>
+                  <CircularProgress
+                    variant="determinate"
+                    value={100}
+                    size={42}
+                    thickness={4}
+                    sx={{
+                      color: 'rgba(255, 255, 255, 0.1)',
+                      position: 'absolute',
+                      zIndex: 0,
+                    }}
+                  />
+                  <CircularProgress
+                    variant="determinate"
+                    value={ingestionProgress}
+                    size={42}
+                    thickness={4}
+                    sx={{
+                      color: 'white',
+                      position: 'absolute',
+                      zIndex: 0,
+                      transition: 'stroke-dashoffset 0.3s ease-in-out',
+                    }}
+                  />
+                </>
+              )}
+              <IconButton
+                color="inherit"
+                onClick={() => setIsIngestedFilesOpen(true)}
+                sx={{ zIndex: 1 }}
+              >
+                <ListAltIcon />
+              </IconButton>
+            </Box>
           </Tooltip>
           <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
             Open Project
@@ -136,6 +190,33 @@ const App: React.FC = () => {
                     Open Single File
                   </Button>
                 </Stack>
+
+                {recentProjects.length > 0 && (
+                  <Paper sx={{ width: '100%', mt: 2 }}>
+                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
+                      <HistoryIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                      <Typography variant="subtitle1">Recent Projects</Typography>
+                    </Box>
+                    <Divider />
+                    <List sx={{ pt: 0, pb: 0 }}>
+                      {recentProjects.map((project) => (
+                        <ListItem key={project.path} disablePadding>
+                          <ListItemButton onClick={() => openProject(project.path)}>
+                            <ListItemIcon>
+                              <FolderIcon />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary={project.name} 
+                              secondary={project.path} 
+                              primaryTypographyProps={{ variant: 'body2', fontWeight: 'medium' }}
+                              secondaryTypographyProps={{ variant: 'caption', noWrap: true }}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      ))}
+                    </List>
+                  </Paper>
+                )}
 
                 <Typography variant="caption" color="text.secondary">
                   Have fun modding!

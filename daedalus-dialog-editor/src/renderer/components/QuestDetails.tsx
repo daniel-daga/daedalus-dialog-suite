@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
-import { Box, Typography, Paper, Chip, Stack, List, ListItem, ListItemText, Divider } from '@mui/material';
+import { Box, Typography, Paper, Chip, Stack, List, ListItem, ListItemText, Divider, IconButton, Tooltip } from '@mui/material';
+import { OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import { getActionType } from './actionTypes';
+import { useNavigation } from '../hooks/useNavigation';
 
 interface QuestDetailsProps {
   semanticModel: SemanticModel;
@@ -17,19 +19,14 @@ interface QuestReference {
 }
 
 const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName }) => {
-  if (!questName) {
-    return (
-      <Box sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Typography color="text.secondary">Select a quest to view details</Typography>
-      </Box>
-    );
-  }
-
-  const questConstant = semanticModel.constants?.[questName];
-  const misVarName = questName.replace('TOPIC_', 'MIS_');
-  const misVariable = semanticModel.variables?.[misVarName];
+  const { navigateToDialog, navigateToSymbol } = useNavigation();
 
   const references = useMemo(() => {
+    if (!questName) return [];
+    const lowerQuestName = questName.toLowerCase();
+    const misVarName = questName.replace('TOPIC_', 'MIS_');
+    const lowerMisVarName = misVarName.toLowerCase();
+    
     const refs: QuestReference[] = [];
 
     // Map functions to dialogs for better context
@@ -37,16 +34,16 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
     Object.values(semanticModel.dialogs || {}).forEach(dialog => {
         const info = dialog.properties.information;
         if (typeof info === 'string') {
-            funcToDialog.set(info, { dialogName: dialog.name, npcName: dialog.properties.npc });
+            funcToDialog.set(info.toLowerCase(), { dialogName: dialog.name, npcName: dialog.properties.npc });
         } else if (info && typeof info === 'object' && info.name) {
-             funcToDialog.set(info.name, { dialogName: dialog.name, npcName: dialog.properties.npc });
+             funcToDialog.set(info.name.toLowerCase(), { dialogName: dialog.name, npcName: dialog.properties.npc });
         }
     });
 
     Object.values(semanticModel.functions || {}).forEach(func => {
         func.actions?.forEach(action => {
-            if ('topic' in action && action.topic === questName) {
-                const context = funcToDialog.get(func.name) || { };
+            if ('topic' in action && action.topic && action.topic.toLowerCase() === lowerQuestName) {
+                const context = funcToDialog.get(func.name.toLowerCase()) || { };
                 const type = getActionType(action);
 
                 if (type === 'createTopic') {
@@ -80,8 +77,8 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
         // Check conditions for MIS_ var
         func.conditions?.forEach(cond => {
              // Basic check for variable condition structure as serialized
-             if ('variableName' in cond && (cond as any).variableName === misVarName) {
-                 const context = funcToDialog.get(func.name) || { };
+             if ('variableName' in cond && cond.variableName && (cond as any).variableName.toLowerCase() === lowerMisVarName) {
+                 const context = funcToDialog.get(func.name.toLowerCase()) || { };
                  refs.push({
                     type: 'status',
                     functionName: func.name,
@@ -94,7 +91,19 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
     });
 
     return refs;
-  }, [semanticModel, questName, misVarName]);
+  }, [semanticModel, questName]);
+
+  if (!questName) {
+    return (
+      <Box sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <Typography color="text.secondary">Select a quest to view details</Typography>
+      </Box>
+    );
+  }
+
+  const questConstant = semanticModel.constants?.[questName];
+  const misVarName = questName.replace('TOPIC_', 'MIS_');
+  const misVariable = semanticModel.variables?.[misVarName];
 
   return (
     <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
@@ -103,9 +112,20 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
       </Typography>
 
       <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
-        <Chip label={questName} variant="outlined" />
+        <Chip 
+          label={questName} 
+          variant="outlined" 
+          onDelete={() => navigateToSymbol(questName)}
+          deleteIcon={<Tooltip title="Follow reference"><OpenInNewIcon /></Tooltip>}
+        />
         {misVariable ? (
-            <Chip label={`Var: ${misVarName}`} color="success" variant="outlined" />
+            <Chip 
+              label={`Var: ${misVarName}`} 
+              color="success" 
+              variant="outlined" 
+              onDelete={() => navigateToSymbol(misVarName)}
+              deleteIcon={<Tooltip title="Follow reference"><OpenInNewIcon /></Tooltip>}
+            />
         ) : (
             <Chip label={`Missing Var: ${misVarName}`} color="warning" variant="outlined" />
         )}
@@ -116,7 +136,26 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
          <List>
             {references.map((ref, i) => (
                 <React.Fragment key={i}>
-                    <ListItem alignItems="flex-start">
+                    <ListItem 
+                      alignItems="flex-start"
+                      secondaryAction={
+                        <Tooltip title="Go to Dialog/Function" arrow>
+                          <IconButton 
+                            edge="end" 
+                            aria-label="go to reference"
+                            onClick={() => {
+                              if (ref.dialogName) {
+                                navigateToDialog(ref.dialogName);
+                              } else {
+                                navigateToSymbol(ref.functionName);
+                              }
+                            }}
+                          >
+                            <OpenInNewIcon />
+                          </IconButton>
+                        </Tooltip>
+                      }
+                    >
                         <ListItemText
                             primary={ref.details}
                             secondary={

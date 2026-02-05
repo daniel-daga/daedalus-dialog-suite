@@ -6,6 +6,7 @@ import { CodeGeneratorService } from './services/CodeGeneratorService';
 import { ValidationService } from './services/ValidationService';
 import ProjectService from './services/ProjectService';
 import { PathValidationService, PathValidationError } from './services/PathValidationService';
+import { SettingsService } from './services/SettingsService';
 
 let mainWindow: BrowserWindow | null = null;
 const fileService = new FileService();
@@ -13,6 +14,7 @@ const parserService = new ParserService();
 const codeGeneratorService = new CodeGeneratorService();
 const validationService = new ValidationService(parserService, codeGeneratorService);
 const projectService = new ProjectService();
+const settingsService = new SettingsService();
 // Path validator starts empty - paths are added when user opens files/projects via dialogs
 const pathValidator = new PathValidationService([]);
 
@@ -39,7 +41,17 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Initialize path validator with recent projects to allow opening them
+  try {
+    const recentProjects = await settingsService.getRecentProjects();
+    recentProjects.forEach(project => {
+      pathValidator.addAllowedPath(project.path);
+    });
+  } catch (error) {
+    console.error('Failed to initialize path validator with recent projects:', error);
+  }
+
   setupIpcHandlers();
   createWindow();
 
@@ -248,6 +260,36 @@ function setupIpcHandlers() {
       }
       console.error('[IPC] project:parseDialogFile error:', error);
       throw new Error(`Failed to parse dialog file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('project:addAllowedPath', async (_event, folderPath: string) => {
+    try {
+      pathValidator.addAllowedPath(folderPath);
+    } catch (error) {
+      console.error('[IPC] project:addAllowedPath error:', error);
+      throw new Error(`Failed to add allowed path: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  // Settings handlers
+  ipcMain.handle('settings:getRecentProjects', async () => {
+    try {
+      return settingsService.getRecentProjects();
+    } catch (error) {
+      console.error('[IPC] settings:getRecentProjects error:', error);
+      throw new Error(`Failed to get recent projects: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('settings:addRecentProject', async (_event, projectPath: string, projectName: string) => {
+    try {
+      await settingsService.addRecentProject(projectPath, projectName);
+      // When adding a recent project, also add it to allowed paths for safety
+      pathValidator.addAllowedPath(projectPath);
+    } catch (error) {
+      console.error('[IPC] settings:addRecentProject error:', error);
+      throw new Error(`Failed to add recent project: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 }

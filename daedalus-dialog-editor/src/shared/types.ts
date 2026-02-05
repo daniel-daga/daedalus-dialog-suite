@@ -19,6 +19,12 @@ export interface ProjectIndex {
   questFiles: string[];
 }
 
+export interface RecentProject {
+  path: string;
+  name: string;
+  lastOpened: number;
+}
+
 // ============================================================================
 // Code Generation Settings
 // ============================================================================

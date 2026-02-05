@@ -21,6 +21,7 @@ export const useNavigation = () => {
     setSelectedNPC,
     setSelectedDialog, 
     setSelectedFunctionName,
+    setActiveView,
     openFile, 
     openFiles,
     activeFile
@@ -58,13 +59,12 @@ export const useNavigation = () => {
         const dialogMetadata = dialogIndex.get(foundNpc) || [];
         const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
         
-        const models = await Promise.all(
+        await Promise.all(
           uniqueFilePaths.map(filePath => getSemanticModel(filePath))
         );
         
         loadAndMergeNpcModels(foundNpc);
         // Find the merged model or the specific model for the dialog
-        // We can use the merged model from store after loadAndMergeNpcModels
         semanticModel = useProjectStore.getState().mergedSemanticModel;
       } else if (foundFilePath) {
         // In single file mode, if it's a different file, we might want to open it
@@ -89,22 +89,33 @@ export const useNavigation = () => {
         }
       }
 
+      // 5. Switch to dialog view
+      setActiveView('dialog');
+
       return true;
     }
     
     return false;
-  }, [dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, isProjectMode, activeFile, openFile, setSelectedNPC, setSelectedDialog, setSelectedFunctionName]);
+  }, [dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, isProjectMode, activeFile, openFile, setSelectedNPC, setSelectedDialog, setSelectedFunctionName, setActiveView]);
 
   const navigateToSymbol = useCallback(async (symbolName: string) => {
-    // 1. Try to navigate as a dialog
+    const lowerSymbolName = symbolName.toLowerCase();
+
+    // 1. Try to navigate as a quest/topic (switch to quest view)
+    if (symbolName.toUpperCase().startsWith('TOPIC_')) {
+      setActiveView('quest');
+      // QuestEditor should react to this if we had a selectedQuest in store,
+      // but QuestEditor currently uses local state for selectedQuest.
+      // For now, we just switch view.
+    }
+
+    // 2. Try to navigate as a dialog
     if (await navigateToDialog(symbolName)) return true;
 
-    // 2. Try to find as a variable or constant in the current merged model
+    // 3. Try to find as a variable or constant in the current merged model
     const semanticModel = isProjectMode ? mergedSemanticModel : (activeFile ? openFiles.get(activeFile)?.semanticModel : null);
     
     if (semanticModel) {
-      const lowerSymbolName = symbolName.toLowerCase();
-      
       // Case-insensitive lookup in objects
       const findCaseInsensitive = (obj: Record<string, any> | undefined) => {
         if (!obj) return null;
@@ -120,14 +131,15 @@ export const useNavigation = () => {
       
       if (symbol && symbol.filePath) {
         await openFile(symbol.filePath);
-        // TODO: Navigation to specific line/position could be added here
-        // would require store support to set a "pending scroll" target
+        // If it's a variable/constant, maybe switch to variable view?
+        // But variable view shows ALL variables, not necessarily selecting this one.
+        // Opening the file is a good start.
         return true;
       }
     }
 
     return false;
-  }, [navigateToDialog, isProjectMode, mergedSemanticModel, activeFile, openFiles, openFile]);
+  }, [navigateToDialog, isProjectMode, mergedSemanticModel, activeFile, openFiles, openFile, setActiveView]);
 
   return {
     navigateToDialog,

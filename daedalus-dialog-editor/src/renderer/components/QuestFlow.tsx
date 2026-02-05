@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -11,6 +11,7 @@ import 'reactflow/dist/style.css';
 import { Box, Typography, Chip, Paper } from '@mui/material';
 import type { SemanticModel } from '../types/global';
 import { getActionType } from './actionTypes';
+import { useNavigation } from '../hooks/useNavigation';
 
 interface QuestFlowProps {
   semanticModel: SemanticModel;
@@ -46,6 +47,31 @@ const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): stri
 // but using standard nodes with custom styles is easier for now.
 
 const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
+  const { navigateToDialog, navigateToSymbol } = useNavigation();
+
+  // Helper to find dialog name for a function
+  const findDialogForFunction = useCallback((funcName: string) => {
+    for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
+        const info = d.properties.information;
+        if ((typeof info === 'string' && info.toLowerCase() === funcName.toLowerCase()) ||
+            (typeof info === 'object' && info.name.toLowerCase() === funcName.toLowerCase())) {
+            return dName;
+        }
+    }
+    return null;
+  }, [semanticModel.dialogs]);
+
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    if (node.type === 'group') return;
+    
+    const dialogName = findDialogForFunction(node.id);
+    if (dialogName) {
+      navigateToDialog(dialogName);
+    } else {
+      navigateToSymbol(node.id);
+    }
+  }, [findDialogForFunction, navigateToDialog, navigateToSymbol]);
+
   const { nodes, edges } = useMemo(() => {
     if (!questName || !semanticModel) return { nodes: [], edges: [] };
 
@@ -352,6 +378,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        onNodeClick={onNodeClick}
         fitView
       >
         <Background />

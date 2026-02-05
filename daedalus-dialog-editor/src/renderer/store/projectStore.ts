@@ -129,6 +129,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ isLoading: true, loadError: null });
 
     try {
+      // Ensure the path is allowed in the backend (especially for recent projects)
+      await window.editorAPI.addAllowedPath(folderPath);
+
       // Build project index via IPC
       const rawIndex = await window.editorAPI.buildProjectIndex(folderPath);
 
@@ -151,6 +154,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       // Extract project name from path
       const pathParts = folderPath.split(/[\\/]/);
       const projectName = pathParts[pathParts.length - 1];
+
+      // Add to recent projects
+      await window.editorAPI.addRecentProject(folderPath, projectName);
 
       set({
         projectPath: folderPath,

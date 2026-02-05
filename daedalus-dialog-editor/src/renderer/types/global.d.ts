@@ -40,7 +40,8 @@ export type {
   ValidationWarning,
   ValidationOptions,
   ValidationResult,
-  SaveResult
+  SaveResult,
+  RecentProject
 } from '../../shared/types';
 
 // Import types needed for EditorAPI definition
@@ -50,7 +51,8 @@ import type {
   ProjectIndex,
   ValidationResult,
   ValidationOptions,
-  SaveResult
+  SaveResult,
+  RecentProject
 } from '../../shared/types';
 
 // ============================================================================
@@ -83,6 +85,11 @@ export interface EditorAPI {
   openProjectFolderDialog: () => Promise<string | null>;
   buildProjectIndex: (folderPath: string) => Promise<ProjectIndex>;
   parseDialogFile: (filePath: string) => Promise<SemanticModel>;
+  addAllowedPath: (folderPath: string) => Promise<void>;
+
+  // Settings API
+  getRecentProjects: () => Promise<RecentProject[]>;
+  addRecentProject: (projectPath: string, projectName: string) => Promise<void>;
 }
 
 declare global {

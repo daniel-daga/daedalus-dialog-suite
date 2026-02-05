@@ -14,9 +14,10 @@ import {
   IconButton,
   Tooltip
 } from '@mui/material';
-import { Search as SearchIcon, Add as AddIcon } from '@mui/icons-material';
+import { Search as SearchIcon, Add as AddIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
+import { useNavigation } from '../hooks/useNavigation';
 
 interface QuestListProps {
   semanticModel: SemanticModel;
@@ -25,6 +26,7 @@ interface QuestListProps {
 }
 
 const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onSelectQuest }) => {
+  const { navigateToSymbol } = useNavigation();
   const [filter, setFilter] = useState('');
   const [viewMode, setViewMode] = useState<'all' | 'used'>('all');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -109,7 +111,24 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
       <Divider />
       <List sx={{ flexGrow: 1, overflow: 'auto' }}>
         {filteredQuests.map((quest) => (
-          <ListItem key={quest.name} disablePadding>
+          <ListItem 
+            key={quest.name} 
+            disablePadding
+            secondaryAction={
+              <Tooltip title="Follow reference" arrow>
+                <IconButton 
+                  edge="end" 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigateToSymbol(quest.name);
+                  }}
+                >
+                  <OpenInNewIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            }
+          >
             <ListItemButton
               selected={selectedQuest === quest.name}
               onClick={() => onSelectQuest(quest.name)}

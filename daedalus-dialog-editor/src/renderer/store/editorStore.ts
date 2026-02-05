@@ -70,6 +70,9 @@ interface EditorStore {
   // Current active file
   activeFile: string | null;
 
+  // View state
+  activeView: 'dialog' | 'quest' | 'variable';
+
   // UI state
   selectedNPC: string | null;
   selectedDialog: string | null;
@@ -103,6 +106,7 @@ interface EditorStore {
   setSelectedDialog: (dialogName: string | null) => void;
   setSelectedFunctionName: (functionName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
+  setActiveView: (view: 'dialog' | 'quest' | 'variable') => void;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   setAutoSaveInterval: (interval: number) => void;
@@ -112,6 +116,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   project: null,
   openFiles: new Map(),
   activeFile: null,
+  activeView: 'dialog',
   selectedNPC: null,
   selectedDialog: null,
   selectedFunctionName: null,
@@ -381,6 +386,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   setSelectedAction: (actionIndex: number | null) => {
     set({ selectedAction: actionIndex });
+  },
+
+  setActiveView: (view: 'dialog' | 'quest' | 'variable') => {
+    set({ activeView: view });
   },
 
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => {

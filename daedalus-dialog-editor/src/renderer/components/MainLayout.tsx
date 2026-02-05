@@ -13,8 +13,7 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
-  const [view, setView] = useState<'dialog' | 'quest' | 'variable'>('dialog');
-  const { openFiles } = useEditorStore();
+  const { openFiles, activeView: view, setActiveView: setView } = useEditorStore();
   const { projectPath, mergedSemanticModel, loadQuestData } = useProjectStore();
 
   const fileState = filePath ? openFiles.get(filePath) : null;
