@@ -39,6 +39,8 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
 
   // Memoize the set of used topics to enable "Used" filtering
   const usedTopics = useMemo(() => {
+    if (viewMode !== 'used') return new Set<string>();
+
     const used = new Set<string>();
 
     // Check all functions for Log_* calls
@@ -54,7 +56,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
     // The parser puts actions on DialogFunction, which are linked from Dialog.
 
     return used;
-  }, [semanticModel.functions]);
+  }, [semanticModel.functions, viewMode]);
 
   const filteredQuests = useMemo(() => {
     return quests.filter(q => {
