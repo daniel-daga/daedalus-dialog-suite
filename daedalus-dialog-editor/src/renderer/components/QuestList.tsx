@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Box,
-  List,
   ListItem,
   ListItemButton,
   ListItemText,
@@ -15,6 +14,8 @@ import {
   Tooltip
 } from '@mui/material';
 import { Search as SearchIcon, Add as AddIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
+import { FixedSizeList, ListChildComponentProps } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
 import type { SemanticModel } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
@@ -24,6 +25,45 @@ interface QuestListProps {
   selectedQuest: string | null;
   onSelectQuest: (questName: string) => void;
 }
+
+const Row = ({ index, style, data }: ListChildComponentProps) => {
+  const { quests, selectedQuest, onSelectQuest, navigateToSymbol } = data;
+  const quest = quests[index];
+
+  return (
+    <ListItem
+      style={style}
+      key={quest.name}
+      disablePadding
+      component="div"
+      secondaryAction={
+        <Tooltip title="Follow reference" arrow>
+          <IconButton
+            edge="end"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigateToSymbol(quest.name);
+            }}
+          >
+            <OpenInNewIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      }
+    >
+      <ListItemButton
+        selected={selectedQuest === quest.name}
+        onClick={() => onSelectQuest(quest.name)}
+        style={{ height: '100%' }}
+      >
+        <ListItemText
+          primary={String(quest.value).replace(/^"|"$/g, '')} // Strip quotes for display
+          secondary={quest.name}
+        />
+      </ListItemButton>
+    </ListItem>
+  );
+};
 
 const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onSelectQuest }) => {
   const { navigateToSymbol } = useNavigation();
@@ -38,7 +78,12 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
   }, [semanticModel.constants]);
 
   // Memoize the set of used topics to enable "Used" filtering
+  // Optimization: Only calculate when needed to avoid expensive iteration
   const usedTopics = useMemo(() => {
+    if (viewMode !== 'used') {
+      return new Set<string>();
+    }
+
     const used = new Set<string>();
 
     // Check all functions for Log_* calls
@@ -50,11 +95,8 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
       });
     });
 
-    // Also check dialog information functions (if any actions are directly on dialogs, though actions are usually on functions)
-    // The parser puts actions on DialogFunction, which are linked from Dialog.
-
     return used;
-  }, [semanticModel.functions]);
+  }, [semanticModel.functions, viewMode]);
 
   const filteredQuests = useMemo(() => {
     return quests.filter(q => {
@@ -70,6 +112,13 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
       return true;
     });
   }, [quests, filter, viewMode, usedTopics]);
+
+  const itemData = useMemo(() => ({
+    quests: filteredQuests,
+    selectedQuest,
+    onSelectQuest,
+    navigateToSymbol
+  }), [filteredQuests, selectedQuest, onSelectQuest, navigateToSymbol]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', borderRight: 1, borderColor: 'divider' }}>
@@ -109,43 +158,29 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
         </ToggleButtonGroup>
       </Box>
       <Divider />
-      <List sx={{ flexGrow: 1, overflow: 'auto' }}>
-        {filteredQuests.map((quest) => (
-          <ListItem 
-            key={quest.name} 
-            disablePadding
-            secondaryAction={
-              <Tooltip title="Follow reference" arrow>
-                <IconButton 
-                  edge="end" 
-                  size="small" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigateToSymbol(quest.name);
-                  }}
-                >
-                  <OpenInNewIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            }
-          >
-            <ListItemButton
-              selected={selectedQuest === quest.name}
-              onClick={() => onSelectQuest(quest.name)}
-            >
-              <ListItemText
-                primary={String(quest.value).replace(/^"|"$/g, '')} // Strip quotes for display
-                secondary={quest.name}
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
-        {filteredQuests.length === 0 && (
-          <ListItem>
-            <ListItemText secondary="No quests found" />
-          </ListItem>
+      <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+        {filteredQuests.length > 0 ? (
+          <AutoSizer>
+            {({ height, width }) => (
+              <FixedSizeList
+                height={height}
+                width={width}
+                itemSize={72} // Height for ListItem with secondary text
+                itemCount={filteredQuests.length}
+                itemData={itemData}
+              >
+                {Row}
+              </FixedSizeList>
+            )}
+          </AutoSizer>
+        ) : (
+          <Box sx={{ p: 2, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              No quests found
+            </Typography>
+          </Box>
         )}
-      </List>
+      </Box>
       <CreateQuestDialog open={isCreateDialogOpen} onClose={() => setIsCreateDialogOpen(false)} />
     </Box>
   );
