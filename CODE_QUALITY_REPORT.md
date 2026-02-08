@@ -36,7 +36,7 @@ The `daedalus-dialog-editor` and `daedalus-parser` project demonstrates a solid 
 ## 4. Recommendations
 
 ### Priority: High (Immediate Value)
-1.  **Refactor State Management:** Adopt `immer` in `editorStore.ts` to simplify state updates and ensure immutability without boilerplate.
+1.  **Refactor State Management:** [Done] Adopt `immer` in `editorStore.ts` to simplify state updates and ensure immutability without boilerplate.
 2.  **Fix Type Safety:** [Done] Introduce a `type` or `kind` discriminator field to all `DialogAction` and `DialogCondition` classes. Remove `any` casts in `questGraphUtils.tsx` by using proper type guards.
 
 ### Priority: Medium (Sustainability)
