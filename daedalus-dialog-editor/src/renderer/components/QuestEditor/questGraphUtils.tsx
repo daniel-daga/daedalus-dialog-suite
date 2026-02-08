@@ -1,8 +1,7 @@
 import React from 'react';
 import { Node, Edge, MarkerType } from 'reactflow';
 import { Typography } from '@mui/material';
-import type { SemanticModel } from '../../types/global';
-import { getActionType } from '../actionTypes';
+import type { SemanticModel, DialogAction, DialogCondition } from '../../types/global';
 
 // Constants
 const CHOICE_EDGE_COLOR = '#ff9800';
@@ -92,14 +91,12 @@ const identifyQuestNodes = (
         let description = '';
 
         // Check actions
-        func.actions?.forEach(action => {
-            const actionType = getActionType(action);
-
+        func.actions?.forEach((action: DialogAction) => {
             // Track generic variable assignments
-            if (actionType === 'setVariableAction') {
-                const varName = (action as any).variableName;
-                const op = (action as any).operator;
-                const val = String((action as any).value);
+            if (action.type === 'SetVariableAction') {
+                const varName = action.variableName;
+                const op = action.operator;
+                const val = String(action.value);
                 // We only support direct assignment for now as "Production"
                 if (op === '=') {
                     addProducer(varName, val, func.name);
@@ -109,12 +106,12 @@ const identifyQuestNodes = (
             if ('topic' in action && action.topic === questName) {
                 isRelevant = true;
 
-                if (actionType === 'createTopic') {
+                if (action.type === 'CreateTopic') {
                     type = 'start';
                     description = 'Start Quest';
                     addProducer(misVarName, '1', func.name);
-                } else if (actionType === 'logSetTopicStatus') {
-                    const status = String((action as any).status);
+                } else if (action.type === 'LogSetTopicStatus') {
+                    const status = String(action.status);
                     if (status.includes('SUCCESS') || status === '2') {
                         type = 'success';
                         description = 'Finish (Success)';
@@ -134,7 +131,7 @@ const identifyQuestNodes = (
                         // Here we assume status might be a value we check later
                         addProducer(misVarName, status, func.name);
                     }
-                } else if (actionType === 'logEntry') {
+                } else if (action.type === 'LogEntry') {
                     if (type === 'check') type = 'update';
                     if (!description) description = 'Log Entry';
                 }
@@ -142,8 +139,8 @@ const identifyQuestNodes = (
         });
 
         // Check conditions
-        func.conditions?.forEach(cond => {
-            if ('variableName' in cond && (cond as any).variableName === misVarName) {
+        func.conditions?.forEach((cond: DialogCondition) => {
+            if (cond.type === 'VariableCondition' && cond.variableName === misVarName) {
                 isRelevant = true;
             }
         });
@@ -197,9 +194,9 @@ const buildQuestEdges = (
         if (!func) return;
 
         // C. Dialog Choices (Explicit Flow)
-        func.actions?.forEach(action => {
-            if (getActionType(action) === 'choice') {
-                const targetFunc = (action as any).targetFunction;
+        func.actions?.forEach((action: DialogAction) => {
+            if (action.type === 'Choice') {
+                const targetFunc = action.targetFunction;
                 if (nodeDataMap.has(targetFunc)) {
                     const targetData = nodeDataMap.get(targetFunc)!;
 
@@ -221,7 +218,7 @@ const buildQuestEdges = (
                         target: targetFunc,
                         sourceHandle,
                         targetHandle,
-                        label: (action as any).text, // Choice text
+                        label: action.text, // Choice text
                         type: 'smoothstep',
                         markerEnd: { type: MarkerType.ArrowClosed },
                         style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' }, // Orange dashed line
@@ -233,10 +230,10 @@ const buildQuestEdges = (
             }
         });
 
-        func.conditions?.forEach(cond => {
+        func.conditions?.forEach((cond: DialogCondition) => {
             // A. Npc_KnowsInfo
-            if ('dialogRef' in cond) {
-                const producerDialogName = (cond as any).dialogRef;
+            if (cond.type === 'NpcKnowsInfoCondition') {
+                const producerDialogName = cond.dialogRef;
                 const producerDialog = semanticModel.dialogs[producerDialogName];
                 if (producerDialog) {
                     let producerFunc = null;
@@ -264,10 +261,10 @@ const buildQuestEdges = (
             }
 
             // B. Variable Dependency (Generalized)
-            if ('variableName' in cond) {
-                const varName = (cond as any).variableName;
-                const op = (cond as any).operator;
-                const val = String((cond as any).value);
+            if (cond.type === 'VariableCondition') {
+                const varName = cond.variableName;
+                const op = cond.operator;
+                const val = String(cond.value);
                 let checkVal = val;
 
                 // Normalization for LOG_* constants if it matches misVarName
@@ -486,13 +483,12 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
 
     // Scan functions for actions
     Object.values(semanticModel.functions || {}).forEach(func => {
-        func.actions?.forEach(action => {
+        func.actions?.forEach((action: DialogAction) => {
             if ('topic' in action && action.topic === questName) {
-                const actionType = getActionType(action);
-                if (actionType === 'createTopic') {
+                if (action.type === 'CreateTopic') {
                     hasStart = true;
-                } else if (actionType === 'logSetTopicStatus') {
-                    const status = String((action as any).status);
+                } else if (action.type === 'LogSetTopicStatus') {
+                    const status = String(action.status);
                     if (status.includes('SUCCESS') || status === '2') {
                         hasSuccess = true;
                     } else if (status.includes('FAILED') || status === '3') {
