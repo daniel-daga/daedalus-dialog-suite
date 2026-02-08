@@ -541,6 +541,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               onNavigateToFunction={onNavigateToFunction}
               onRenameFunction={handleRenameFunction}
               dialogContextName={dialogName}
+              contextId={currentFunction.name}
             />
           )}
         </Paper>
