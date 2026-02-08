@@ -71,9 +71,13 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
 
   // Initialize Graph from Semantic Model using the utility function
   useEffect(() => {
-    const { nodes: newNodes, edges: newEdges } = buildQuestGraph(semanticModel, questName);
-    setNodes(newNodes);
-    setEdges(newEdges);
+    const handler = setTimeout(() => {
+      const { nodes: newNodes, edges: newEdges } = buildQuestGraph(semanticModel, questName);
+      setNodes(newNodes);
+      setEdges(newEdges);
+    }, 300);
+
+    return () => clearTimeout(handler);
   }, [semanticModel, questName, setNodes, setEdges]);
 
   if (!questName) {

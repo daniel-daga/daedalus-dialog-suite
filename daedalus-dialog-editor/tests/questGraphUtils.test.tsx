@@ -33,26 +33,26 @@ describe('questGraphUtils', () => {
             {
                 name: 'DIA_A_Info',
                 conditions: [
-                    { variableName: misVarName, operator: '==', value: 1 } // Consumes 1
+                    { type: 'VariableCondition', variableName: misVarName, operator: '==', value: 1 } // Consumes 1
                 ],
                 actions: [
-                    { topic: questName, status: 'LOG_SUCCESS' } // Produces 2 (SUCCESS)
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' } // Produces 2 (SUCCESS)
                 ]
             },
             {
                 name: 'DIA_B_Info',
                 conditions: [
-                    { variableName: misVarName, operator: '==', value: 2 } // Consumes 2
+                    { type: 'VariableCondition', variableName: misVarName, operator: '==', value: 2 } // Consumes 2
                 ],
                 actions: [
-                    { topic: questName, status: 'LOG_RUNNING' } // Produces 1 (RUNNING) - Cycle!
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' } // Produces 1 (RUNNING) - Cycle!
                 ]
             },
             // Starter to inject initial state 1
             {
                 name: 'DIA_Start_Info',
                 actions: [
-                    { topic: questName, topicType: 'LOG_MISSION' } // Produces 1 (implicit start)
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' } // Produces 1 (implicit start)
                 ]
             }
         ];
@@ -92,16 +92,16 @@ describe('questGraphUtils', () => {
              {
                  name: 'DIA_Start_Info',
                  actions: [
-                     { topic: questName, topicType: 'LOG_MISSION' } // Produces 1
+                     { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' } // Produces 1
                  ]
              },
              {
                  name: 'DIA_End_Info',
                  conditions: [
-                     { variableName: misVarName, operator: '==', value: 1 } // Consumes 1
+                     { type: 'VariableCondition', variableName: misVarName, operator: '==', value: 1 } // Consumes 1
                  ],
                  actions: [
-                     { topic: questName, status: 'LOG_SUCCESS' } // Produces 2
+                     { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' } // Produces 2
                  ]
              }
          ];
@@ -127,14 +127,14 @@ describe('questGraphUtils', () => {
             {
                 name: funcA,
                 actions: [
-                    { topic: questName, topicType: 'LOG_MISSION' },
-                    { dialogRef: 'self', text: 'Go to B', targetFunction: funcB }
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' },
+                    { type: 'Choice', dialogRef: 'self', text: 'Go to B', targetFunction: funcB }
                 ]
             },
             {
                 name: funcB,
                 actions: [
-                    { topic: questName, status: 'LOG_RUNNING' }
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' }
                 ]
             }
         ];
@@ -163,8 +163,8 @@ describe('questGraphUtils', () => {
             {
                 name: funcA,
                 actions: [
-                    { topic: questName, topicType: 'LOG_MISSION' },
-                    { dialogRef: 'self', text: 'Go to C', targetFunction: funcC }
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' },
+                    { type: 'Choice', dialogRef: 'self', text: 'Go to C', targetFunction: funcC }
                 ]
             },
             {
