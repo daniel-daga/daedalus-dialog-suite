@@ -1,22 +1,37 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect } from 'react';
 import ReactFlow, {
   Background,
   Controls,
   Node,
   Edge,
   MarkerType,
-  Position,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  Connection,
+  NodeTypes,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Box, Typography, Chip, Paper } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import type { SemanticModel } from '../types/global';
 import { getActionType } from './actionTypes';
 import { useNavigation } from '../hooks/useNavigation';
+
+import DialogNode from './QuestEditor/Nodes/DialogNode';
+import QuestStateNode from './QuestEditor/Nodes/QuestStateNode';
+import ConditionNode from './QuestEditor/Nodes/ConditionNode';
 
 interface QuestFlowProps {
   semanticModel: SemanticModel;
   questName: string | null;
 }
+
+// Define node types outside component to prevent re-creation
+const nodeTypes: NodeTypes = {
+  dialog: DialogNode,
+  questState: QuestStateNode,
+  condition: ConditionNode,
+};
 
 // Helper to extract NPC from dialog or function
 const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): string | null => {
@@ -43,11 +58,12 @@ const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): stri
   return null;
 };
 
-// Custom Node Component could be defined here if we want richer UI,
-// but using standard nodes with custom styles is easier for now.
-
 const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
   const { navigateToDialog, navigateToSymbol } = useNavigation();
+
+  // State for interactive graph
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   // Helper to find dialog name for a function
   const findDialogForFunction = useCallback((funcName: string) => {
@@ -72,11 +88,22 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
     }
   }, [findDialogForFunction, navigateToDialog, navigateToSymbol]);
 
-  const { nodes, edges } = useMemo(() => {
-    if (!questName || !semanticModel) return { nodes: [], edges: [] };
+  const onConnect = useCallback((params: Connection) => {
+    // In the future: This should also update the semantic model (e.g., adding Npc_KnowsInfo)
+    console.log('Connect:', params);
+    setEdges((eds) => addEdge({ ...params, type: 'smoothstep', style: { stroke: '#fff', strokeWidth: 2 } }, eds));
+  }, [setEdges]);
 
-    const nodes: Node[] = [];
-    const edges: Edge[] = [];
+  // Initialize Graph from Semantic Model
+  useEffect(() => {
+    if (!questName || !semanticModel) {
+        setNodes([]);
+        setEdges([]);
+        return;
+    }
+
+    const newNodes: Node[] = [];
+    const newEdges: Edge[] = [];
     const misVarName = questName.replace('TOPIC_', 'MIS_');
 
     // 1. Identify relevant functions/dialogs and classify them
@@ -106,17 +133,16 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
           if (actionType === 'createTopic') {
               type = 'start';
               description = 'Start Quest';
-              // Implicitly sets LOG_RUNNING (1)
               if (!producersByValue.has('1')) producersByValue.set('1', new Set());
               producersByValue.get('1')?.add(func.name);
           } else if (actionType === 'logSetTopicStatus') {
              const status = String((action as any).status);
-             if (status.includes('SUCCESS') || status === '2') { // LOG_SUCCESS = 2
+             if (status.includes('SUCCESS') || status === '2') {
                 type = 'success';
                 description = 'Finish (Success)';
                 if (!producersByValue.has('2')) producersByValue.set('2', new Set());
                 producersByValue.get('2')?.add(func.name);
-             } else if (status.includes('FAILED') || status === '3') { // LOG_FAILED = 3
+             } else if (status.includes('FAILED') || status === '3') {
                 type = 'failed';
                 description = 'Finish (Failed)';
                 if (!producersByValue.has('3')) producersByValue.set('3', new Set());
@@ -131,13 +157,13 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
                 description = `Set Status: ${status}`;
              }
           } else if (actionType === 'logEntry') {
-             if (type === 'check') type = 'update'; // Only upgrade if not already start/end
+             if (type === 'check') type = 'update';
              if (!description) description = 'Log Entry';
           }
         }
       });
 
-      // Check conditions (read-only access to quest state)
+      // Check conditions
       func.conditions?.forEach(cond => {
         if ('variableName' in cond && (cond as any).variableName === misVarName) {
           isRelevant = true;
@@ -146,9 +172,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
 
       if (isRelevant) {
         const npc = getNpcForFunction(func.name, semanticModel) || 'Global/Other';
-        // Try to find readable name (Dialog name instead of function name)
         let displayName = func.name;
-        // Search dialogs for this function
+
         for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
             const info = d.properties.information;
             if ((typeof info === 'string' && info === func.name) ||
@@ -168,11 +193,11 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
       }
     });
 
-    // 2. Build Dependencies (Edges)
-    const adjacency = new Map<string, string[]>(); // Producer -> Consumers
+    // 2. Build Dependencies
+    const adjacency = new Map<string, string[]>();
     const incomingCount = new Map<string, number>();
 
-    nodeDataMap.forEach((data, funcName) => {
+    nodeDataMap.forEach((_, funcName) => {
         if (!adjacency.has(funcName)) adjacency.set(funcName, []);
         if (!incomingCount.has(funcName)) incomingCount.set(funcName, 0);
     });
@@ -182,10 +207,9 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         if (!func) return;
 
         func.conditions?.forEach(cond => {
-            // A. Npc_KnowsInfo Dependency
+            // A. Npc_KnowsInfo
             if ('dialogRef' in cond) {
                 const producerDialogName = (cond as any).dialogRef;
-                // Resolve Dialog Name to Function Name
                 const producerDialog = semanticModel.dialogs[producerDialogName];
                 if (producerDialog) {
                     let producerFunc = null;
@@ -194,31 +218,28 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
                     else if (info && typeof info === 'object') producerFunc = info.name;
 
                     if (producerFunc && nodeDataMap.has(producerFunc)) {
-                         // Add Edge
-                         edges.push({
+                         newEdges.push({
                              id: `knows-${producerFunc}-${consumerId}`,
                              source: producerFunc,
                              target: consumerId,
+                             sourceHandle: 'out-finished',
+                             targetHandle: 'in-condition',
                              label: 'Knows Info',
                              type: 'smoothstep',
                              markerEnd: { type: MarkerType.ArrowClosed },
-                             style: { stroke: '#b1b1b7' },
+                             style: { stroke: '#b1b1b7', strokeWidth: 2 },
                              labelStyle: { fill: '#b1b1b7', fontSize: 10 }
                          });
-
-                         // Update Graph Logic
                          adjacency.get(producerFunc)?.push(consumerId);
                          incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
                     }
                 }
             }
 
-            // B. Variable Dependency (MIS_Val == X)
+            // B. Variable Dependency
             if ('variableName' in cond && (cond as any).variableName === misVarName) {
                 const op = (cond as any).operator;
                 const val = String((cond as any).value);
-
-                // Map common constants to values
                 let checkVal = val;
                 if (val === 'LOG_RUNNING') checkVal = '1';
                 if (val === 'LOG_SUCCESS') checkVal = '2';
@@ -228,18 +249,19 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
                     const producers = producersByValue.get(checkVal) || new Set();
                     producers.forEach(producerId => {
                         if (producerId !== consumerId && nodeDataMap.has(producerId)) {
-                             edges.push({
+                             newEdges.push({
                                  id: `state-${producerId}-${consumerId}`,
                                  source: producerId,
                                  target: consumerId,
+                                 sourceHandle: 'out-state',
+                                 targetHandle: 'in-trigger', // Logic: Producer Sets State -> Consumer Checks State
                                  label: val,
                                  type: 'smoothstep',
                                  animated: true,
                                  markerEnd: { type: MarkerType.ArrowClosed },
-                                 style: { stroke: '#2196f3' },
+                                 style: { stroke: '#2196f3', strokeWidth: 2 },
                                  labelStyle: { fill: '#2196f3', fontSize: 10 }
                              });
-
                              adjacency.get(producerId)?.push(consumerId);
                              incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
                         }
@@ -249,17 +271,14 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         });
     });
 
-    // 3. Swimlane Layout
+    // 3. Layout (Simplified Swimlane)
     const npcs = Array.from(new Set(Array.from(nodeDataMap.values()).map(d => d.npc))).sort();
-    const LANE_HEIGHT = 250;
-    const NODE_WIDTH = 200;
-    const LEVEL_WIDTH = 300;
+    const LANE_HEIGHT = 300;
+    const LEVEL_WIDTH = 350;
 
-    // Calculate topological levels
     const levels = new Map<string, number>();
     const queue: string[] = [];
 
-    // Initialize roots
     nodeDataMap.forEach((_, id) => {
         if ((incomingCount.get(id) || 0) === 0) {
             levels.set(id, 0);
@@ -267,15 +286,12 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         }
     });
 
-    // BFS for levels
     while (queue.length > 0) {
         const u = queue.shift()!;
         const currentLevel = levels.get(u)!;
         const neighbors = adjacency.get(u) || [];
-
         neighbors.forEach(v => {
             const existingLevel = levels.get(v);
-            // Push to next level if deeper path found
             if (existingLevel === undefined || existingLevel < currentLevel + 1) {
                 levels.set(v, currentLevel + 1);
                 queue.push(v);
@@ -283,8 +299,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         });
     }
 
-    // Resolve overlapping nodes in same lane/level
-    const laneOccupancy = new Map<string, Map<number, number>>(); // NPC -> Level -> Count
+    const laneOccupancy = new Map<string, Map<number, number>>();
     npcs.forEach(npc => laneOccupancy.set(npc, new Map()));
 
     nodeDataMap.forEach((data, id) => {
@@ -296,74 +311,57 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         const x = level * LEVEL_WIDTH + 50;
         const npcIndex = npcs.indexOf(data.npc);
         const yBase = npcIndex * LANE_HEIGHT;
-        const yOffset = count * 60; // Offset for collisions
+        const yOffset = count * 100;
 
         const y = yBase + 50 + yOffset;
 
-        // Color coding
-        let bg = '#fff';
-        let border = '#777';
-        if (data.type === 'start') { bg = '#e3f2fd'; border = '#2196f3'; }
-        if (data.type === 'success') { bg = '#e8f5e9'; border = '#4caf50'; }
-        if (data.type === 'failed') { bg = '#ffebee'; border = '#f44336'; }
-        if (data.type === 'update') { bg = '#fff3e0'; border = '#ff9800'; }
+        // Determine node type
+        let nodeType = 'dialog';
+        if (data.type === 'start' || data.type === 'success' || data.type === 'failed' || data.description?.includes('Status')) {
+             nodeType = 'questState';
+        }
 
-        nodes.push({
+        newNodes.push({
             id,
             position: { x, y },
-            type: 'default',
+            type: nodeType,
             data: {
-                label: (
-                    <Box>
-                        <Typography variant="caption" display="block" color="textSecondary" sx={{ fontSize: 10 }}>
-                            {data.npc}
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                            {data.label}
-                        </Typography>
-                        {data.description && (
-                            <Typography variant="caption" display="block" sx={{ fontStyle: 'italic', fontSize: 10 }}>
-                                {data.description}
-                            </Typography>
-                        )}
-                    </Box>
-                )
+                label: data.label,
+                npc: data.npc,
+                description: data.description,
+                type: data.type,
+                status: data.description, // rough mapping
+                variableName: misVarName
             },
-            style: {
-                background: bg,
-                borderColor: border,
-                borderWidth: 2,
-                width: NODE_WIDTH,
-                padding: 10,
-                borderRadius: 8
-            }
         });
     });
 
-    // Add Swimlane Visuals (Group Nodes)
+    // Swimlanes
     npcs.forEach((npc, index) => {
         const maxLevel = Math.max(...Array.from(levels.values()), 0);
-
-        nodes.unshift({
+        newNodes.unshift({
             id: `swimlane-${npc}`,
             type: 'group',
             position: { x: 0, y: index * LANE_HEIGHT },
             style: {
-                width: (maxLevel + 1) * LEVEL_WIDTH + 100,
+                width: (maxLevel + 1) * LEVEL_WIDTH + 200,
                 height: LANE_HEIGHT - 20,
-                backgroundColor: 'rgba(240, 240, 240, 0.3)',
-                border: '1px dashed #ccc',
+                backgroundColor: 'rgba(255, 255, 255, 0.02)', // Very subtle light
+                border: '1px dashed #444',
                 zIndex: -1,
                 padding: 10,
+                color: '#666'
             },
-            data: { label: <Typography variant="subtitle2" color="textSecondary">{npc}</Typography> },
+            data: { label: <Typography variant="subtitle2" sx={{ opacity: 0.5 }}>{npc}</Typography> },
             selectable: false,
             draggable: false,
         });
     });
 
-    return { nodes, edges };
-  }, [semanticModel, questName]);
+    setNodes(newNodes);
+    setEdges(newEdges);
+
+  }, [semanticModel, questName, setNodes, setEdges]); // Runs when model/quest changes
 
   if (!questName) {
       return (
@@ -374,14 +372,18 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
   }
 
   return (
-    <Box sx={{ height: '100%', width: '100%', bgcolor: '#fafafa' }}>
+    <Box sx={{ height: '100%', width: '100%', bgcolor: '#1e1e1e' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
         onNodeClick={onNodeClick}
+        nodeTypes={nodeTypes}
         fitView
       >
-        <Background />
+        <Background color="#333" gap={20} />
         <Controls />
       </ReactFlow>
     </Box>
