@@ -29,8 +29,8 @@ The `daedalus-dialog-editor` and `daedalus-parser` project demonstrates a solid 
 ## 3. Performance
 
 ### Issues
-*   **Frequent Graph Rebuilds:** `QuestFlow.tsx` triggers `buildQuestGraph` in a `useEffect` whenever `semanticModel` changes. Since the model updates on every keystroke/save, this is a significant performance bottleneck for large graphs.
-*   **Main Thread Blocking:** As noted in `CODE_REVIEW.md`, parsing happens synchronously on the main thread.
+*   **Frequent Graph Rebuilds:** [Fixed] `QuestFlow.tsx` triggers `buildQuestGraph` in a `useEffect` whenever `semanticModel` changes. Since the model updates on every keystroke/save, this is a significant performance bottleneck for large graphs.
+*   **Main Thread Blocking:** [Fixed] As noted in `CODE_REVIEW.md`, parsing happens synchronously on the main thread.
 *   **State Granularity:** The `editorStore` triggers updates for the entire `openFiles` map even for small changes, potentially causing unnecessary re-renders in components listening to specific file states.
 
 ## 4. Recommendations
@@ -45,7 +45,7 @@ The `daedalus-dialog-editor` and `daedalus-parser` project demonstrates a solid 
 3.  **Split Visitor Logic:** [Done] Refactor `SemanticModelBuilderVisitor` into smaller, focused visitors (e.g., `DeclarationVisitor`, `ReferenceLinkingVisitor`).
 
 ### Priority: Low (Long-term)
-1.  **Worker Threads:** Move parsing logic to a Worker Thread to unblock the main process.
+1.  **Worker Threads:** [Done] Move parsing logic to a Worker Thread to unblock the main process.
 2.  **Standardize Layout:** [Done] Consider using a library like `dagre` or `elkjs` for graph layout instead of the custom implementation in `questGraphUtils.tsx`.
 
 ## Conclusion

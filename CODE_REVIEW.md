@@ -17,15 +17,14 @@ The project maintains a clean separation of concerns:
 
 ## 2. Performance
 
-**Status: Moderate (with room for improvement)**
+**Status: Improved (Worker Threads Implemented)**
 
-*   **Main Thread Parsing:** `ParserService.parseSource` runs synchronously on the Electron Main Process.
-    *   *Impact:* Parsing large files blocks the main thread, which freezes the entire application (including window management and IPC).
-    *   *Recommendation:* Offload parsing to a Worker Thread or a separate child process.
+*   **Main Thread Parsing:** [Fixed] `ParserService.parseSource` now offloads parsing to a Worker Thread (`parser.worker.ts`).
+    *   *Impact:* Parsing large files no longer blocks the main thread.
 *   **Re-parsing:** The current implementation re-parses the entire file on every change (or save/validate action).
     *   *Optimization:* Tree-sitter supports incremental parsing. Storing the previous tree and applying edits could significantly improve responsiveness for large files.
 *   **Project Indexing:** `ProjectService` uses Regex for lightweight indexing, which is much faster than full parsing. This is a good optimization for scanning the whole project.
-    *   *Detail:* Parallel I/O (`fs.readFile`) with serialized parsing logic ensures the event loop isn't completely starved, though `setImmediate` is used to yield.
+    *   *Detail:* Indexing is now parallelized using `MetadataWorkerPool`, distributing the workload across available CPU cores to prevent main thread blocking.
 
 ## 3. Security
 
@@ -52,4 +51,4 @@ The project maintains a clean separation of concerns:
 
 ## Summary
 
-The codebase is well-structured and secure. The primary area for future improvement is the performance of the parsing logic in the editor, specifically moving it off the main thread. The security architecture regarding file access is commendable.
+The codebase is well-structured and secure. Performance has been significantly improved by offloading parsing logic to worker threads, preventing main thread blocking. The security architecture regarding file access is commendable.
