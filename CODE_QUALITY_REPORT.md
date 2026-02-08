@@ -41,7 +41,7 @@ The `daedalus-dialog-editor` and `daedalus-parser` project demonstrates a solid 
 
 ### Priority: Medium (Sustainability)
 1.  **Optimize Graph Rendering:** [Done] Memoize the result of `buildQuestGraph` or debounce the `semanticModel` updates passed to `QuestFlow`.
-2.  **Decouple Serialization:** Use a library like `zod` or `class-transformer` for serialization/deserialization to remove manual boilerplate in `semantic-model.ts`.
+2.  **Decouple Serialization:** [Done] Use a library like `zod` or `class-transformer` for serialization/deserialization to remove manual boilerplate in `semantic-model.ts`.
 3.  **Split Visitor Logic:** [Done] Refactor `SemanticModelBuilderVisitor` into smaller, focused visitors (e.g., `DeclarationVisitor`, `ReferenceLinkingVisitor`).
 
 ### Priority: Low (Long-term)

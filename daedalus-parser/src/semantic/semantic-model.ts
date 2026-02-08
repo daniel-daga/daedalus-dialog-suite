@@ -1,3 +1,6 @@
+import 'reflect-metadata';
+import { Type, plainToInstance } from 'class-transformer';
+
 // Semantic model classes and types for Daedalus dialog parsing
 
 // Type definitions for tree-sitter nodes
@@ -64,14 +67,6 @@ export class GlobalConstant {
     this.type = type;
     this.value = value;
   }
-
-  static fromJSON(json: any): GlobalConstant {
-    const obj = new GlobalConstant(json.name, json.type, json.value);
-    obj.filePath = json.filePath;
-    obj.position = json.position;
-    obj.range = json.range;
-    return obj;
-  }
 }
 
 export class GlobalVariable {
@@ -93,42 +88,10 @@ export class GlobalVariable {
     this.name = name;
     this.type = type;
   }
-
-  static fromJSON(json: any): GlobalVariable {
-    const obj = new GlobalVariable(json.name, json.type);
-    obj.filePath = json.filePath;
-    obj.position = json.position;
-    obj.range = json.range;
-    return obj;
-  }
 }
 
 export interface DialogProperties {
   [key: string]: string | number | boolean | DialogFunction;
-}
-
-export class DialogFunction {
-  public name: string;
-  public returnType: string;
-  public calls: string[];
-  public actions: DialogAction[];
-  public conditions: DialogCondition[];
-
-  constructor(name: string, returnType: string) {
-    this.name = name;
-    this.returnType = returnType;
-    this.calls = [];
-    this.actions = [];
-    this.conditions = [];
-  }
-
-  static fromJSON(json: any): DialogFunction {
-    const func = new DialogFunction(json.name, json.returnType);
-    func.calls = json.calls || [];
-    func.actions = (json.actions || []).map((action: any) => deserializeAction(action));
-    func.conditions = (json.conditions || []).map((condition: any) => deserializeCondition(condition));
-    return func;
-  }
 }
 
 // ===================================================================
@@ -176,10 +139,6 @@ export class DialogLine implements CodeGeneratable {
   getTypeName(): string {
     return 'DialogLine';
   }
-
-  static fromJSON(json: any): DialogLine {
-    return new DialogLine(json.speaker, json.text, json.id);
-  }
 }
 
 export class CreateTopic implements CodeGeneratable {
@@ -206,10 +165,6 @@ export class CreateTopic implements CodeGeneratable {
   getTypeName(): string {
     return 'CreateTopic';
   }
-
-  static fromJSON(json: any): CreateTopic {
-    return new CreateTopic(json.topic, json.topicType);
-  }
 }
 
 export class LogEntry implements CodeGeneratable {
@@ -232,10 +187,6 @@ export class LogEntry implements CodeGeneratable {
 
   getTypeName(): string {
     return 'LogEntry';
-  }
-
-  static fromJSON(json: any): LogEntry {
-    return new LogEntry(json.topic, json.text);
   }
 }
 
@@ -260,10 +211,6 @@ export class LogSetTopicStatus implements CodeGeneratable {
   getTypeName(): string {
     return 'LogSetTopicStatus';
   }
-
-  static fromJSON(json: any): LogSetTopicStatus {
-    return new LogSetTopicStatus(json.topic, json.status);
-  }
 }
 
 export class Action implements CodeGeneratable {
@@ -285,10 +232,6 @@ export class Action implements CodeGeneratable {
 
   getTypeName(): string {
     return 'Action';
-  }
-
-  static fromJSON(json: any): Action {
-    return new Action(json.action);
   }
 }
 
@@ -315,10 +258,6 @@ export class Choice implements CodeGeneratable {
   getTypeName(): string {
     return 'Choice';
   }
-
-  static fromJSON(json: any): Choice {
-    return new Choice(json.dialogRef, json.text, json.targetFunction);
-  }
 }
 
 export class CreateInventoryItems implements CodeGeneratable {
@@ -343,10 +282,6 @@ export class CreateInventoryItems implements CodeGeneratable {
 
   getTypeName(): string {
     return 'CreateInventoryItems';
-  }
-
-  static fromJSON(json: any): CreateInventoryItems {
-    return new CreateInventoryItems(json.target, json.item, json.quantity);
   }
 }
 
@@ -375,10 +310,6 @@ export class GiveInventoryItems implements CodeGeneratable {
   getTypeName(): string {
     return 'GiveInventoryItems';
   }
-
-  static fromJSON(json: any): GiveInventoryItems {
-    return new GiveInventoryItems(json.giver, json.receiver, json.item, json.quantity);
-  }
 }
 
 export class AttackAction implements CodeGeneratable {
@@ -406,10 +337,6 @@ export class AttackAction implements CodeGeneratable {
   getTypeName(): string {
     return 'AttackAction';
   }
-
-  static fromJSON(json: any): AttackAction {
-    return new AttackAction(json.attacker, json.target, json.attackReason, json.damage);
-  }
 }
 
 export class SetAttitudeAction implements CodeGeneratable {
@@ -432,10 +359,6 @@ export class SetAttitudeAction implements CodeGeneratable {
 
   getTypeName(): string {
     return 'SetAttitudeAction';
-  }
-
-  static fromJSON(json: any): SetAttitudeAction {
-    return new SetAttitudeAction(json.target, json.attitude);
   }
 }
 
@@ -460,10 +383,6 @@ export class ExchangeRoutineAction implements CodeGeneratable {
   getTypeName(): string {
     return 'ExchangeRoutineAction';
   }
-
-  static fromJSON(json: any): ExchangeRoutineAction {
-    return new ExchangeRoutineAction(json.target, json.routine);
-  }
 }
 
 export class ChapterTransitionAction implements CodeGeneratable {
@@ -486,10 +405,6 @@ export class ChapterTransitionAction implements CodeGeneratable {
 
   getTypeName(): string {
     return 'ChapterTransitionAction';
-  }
-
-  static fromJSON(json: any): ChapterTransitionAction {
-    return new ChapterTransitionAction(json.chapter, json.world);
   }
 }
 
@@ -516,10 +431,6 @@ export class SetVariableAction implements CodeGeneratable {
   getTypeName(): string {
     return 'SetVariableAction';
   }
-
-  static fromJSON(json: any): SetVariableAction {
-    return new SetVariableAction(json.variableName, json.operator, json.value);
-  }
 }
 
 export class StopProcessInfosAction implements CodeGeneratable {
@@ -540,10 +451,6 @@ export class StopProcessInfosAction implements CodeGeneratable {
 
   getTypeName(): string {
     return 'StopProcessInfosAction';
-  }
-
-  static fromJSON(json: any): StopProcessInfosAction {
-    return new StopProcessInfosAction(json.target);
   }
 }
 
@@ -568,69 +475,63 @@ export class PlayAniAction implements CodeGeneratable {
   getTypeName(): string {
     return 'PlayAniAction';
   }
-
-  static fromJSON(json: any): PlayAniAction {
-    return new PlayAniAction(json.target, json.animationName);
-  }
 }
 
 export type DialogAction = DialogLine | CreateTopic | LogEntry | LogSetTopicStatus | Action | Choice | CreateInventoryItems | GiveInventoryItems | AttackAction | SetAttitudeAction | ExchangeRoutineAction | ChapterTransitionAction | SetVariableAction | StopProcessInfosAction | PlayAniAction;
 
+const ACTION_DISCRIMINATOR = {
+  property: 'type',
+  subTypes: [
+    { value: DialogLine, name: 'DialogLine' },
+    { value: CreateTopic, name: 'CreateTopic' },
+    { value: LogEntry, name: 'LogEntry' },
+    { value: LogSetTopicStatus, name: 'LogSetTopicStatus' },
+    { value: Action, name: 'Action' },
+    { value: Choice, name: 'Choice' },
+    { value: CreateInventoryItems, name: 'CreateInventoryItems' },
+    { value: GiveInventoryItems, name: 'GiveInventoryItems' },
+    { value: AttackAction, name: 'AttackAction' },
+    { value: SetAttitudeAction, name: 'SetAttitudeAction' },
+    { value: ExchangeRoutineAction, name: 'ExchangeRoutineAction' },
+    { value: ChapterTransitionAction, name: 'ChapterTransitionAction' },
+    { value: SetVariableAction, name: 'SetVariableAction' },
+    { value: StopProcessInfosAction, name: 'StopProcessInfosAction' },
+    { value: PlayAniAction, name: 'PlayAniAction' },
+  ],
+};
+
+// Helper to ensure action has a type (legacy support)
+function ensureActionType(json: any): void {
+  if (!json.type) {
+    if ('speaker' in json && 'text' in json && 'id' in json) json.type = 'DialogLine';
+    else if ('topic' in json && 'topicType' in json) json.type = 'CreateTopic';
+    else if ('topic' in json && 'text' in json) json.type = 'LogEntry';
+    else if ('topic' in json && 'status' in json) json.type = 'LogSetTopicStatus';
+    else if ('dialogRef' in json && 'targetFunction' in json) json.type = 'Choice';
+    else if ('target' in json && 'item' in json && 'quantity' in json && !('giver' in json)) json.type = 'CreateInventoryItems';
+    else if ('giver' in json && 'receiver' in json) json.type = 'GiveInventoryItems';
+    else if ('attacker' in json && 'attackReason' in json) json.type = 'AttackAction';
+    else if ('attitude' in json) json.type = 'SetAttitudeAction';
+    else if ('routine' in json) json.type = 'ExchangeRoutineAction';
+    else if ('chapter' in json && 'world' in json) json.type = 'ChapterTransitionAction';
+    else if ('variableName' in json && 'operator' in json && 'value' in json) json.type = 'SetVariableAction';
+    else if ('target' in json && 'animationName' in json) json.type = 'PlayAniAction';
+    else if ('target' in json && Object.keys(json).length === 1) json.type = 'StopProcessInfosAction';
+    else if ('action' in json) json.type = 'Action';
+  }
+}
+
 // Helper to deserialize any action
 export function deserializeAction(json: any): DialogAction | any {
+  ensureActionType(json);
+
   if (json.type) {
-    switch (json.type) {
-      case 'DialogLine': return DialogLine.fromJSON(json);
-      case 'CreateTopic': return CreateTopic.fromJSON(json);
-      case 'LogEntry': return LogEntry.fromJSON(json);
-      case 'LogSetTopicStatus': return LogSetTopicStatus.fromJSON(json);
-      case 'Action': return Action.fromJSON(json);
-      case 'Choice': return Choice.fromJSON(json);
-      case 'CreateInventoryItems': return CreateInventoryItems.fromJSON(json);
-      case 'GiveInventoryItems': return GiveInventoryItems.fromJSON(json);
-      case 'AttackAction': return AttackAction.fromJSON(json);
-      case 'SetAttitudeAction': return SetAttitudeAction.fromJSON(json);
-      case 'ExchangeRoutineAction': return ExchangeRoutineAction.fromJSON(json);
-      case 'ChapterTransitionAction': return ChapterTransitionAction.fromJSON(json);
-      case 'SetVariableAction': return SetVariableAction.fromJSON(json);
-      case 'StopProcessInfosAction': return StopProcessInfosAction.fromJSON(json);
-      case 'PlayAniAction': return PlayAniAction.fromJSON(json);
+    const subType = ACTION_DISCRIMINATOR.subTypes.find(s => s.name === json.type);
+    if (subType) {
+      return plainToInstance(subType.value, json);
     }
   }
 
-  if ('speaker' in json && 'text' in json && 'id' in json) {
-    return DialogLine.fromJSON(json);
-  } else if ('topic' in json && 'topicType' in json) {
-    return CreateTopic.fromJSON(json);
-  } else if ('topic' in json && 'text' in json) {
-    return LogEntry.fromJSON(json);
-  } else if ('topic' in json && 'status' in json) {
-    return LogSetTopicStatus.fromJSON(json);
-  } else if ('dialogRef' in json && 'targetFunction' in json) {
-    return Choice.fromJSON(json);
-  } else if ('target' in json && 'item' in json && 'quantity' in json && !('giver' in json)) {
-    return CreateInventoryItems.fromJSON(json);
-  } else if ('giver' in json && 'receiver' in json) {
-    return GiveInventoryItems.fromJSON(json);
-  } else if ('attacker' in json && 'attackReason' in json) {
-    return AttackAction.fromJSON(json);
-  } else if ('attitude' in json) {
-    return SetAttitudeAction.fromJSON(json);
-  } else if ('routine' in json) {
-    return ExchangeRoutineAction.fromJSON(json);
-  } else if ('chapter' in json && 'world' in json) {
-    return ChapterTransitionAction.fromJSON(json);
-  } else if ('variableName' in json && 'operator' in json && 'value' in json) {
-    return SetVariableAction.fromJSON(json);
-  } else if ('target' in json && 'animationName' in json) {
-    return PlayAniAction.fromJSON(json);
-  } else if ('target' in json && Object.keys(json).length === 1) {
-    // Only target is present (plus maybe prototype stuff?) - best guess for StopProcessInfos
-    // But be careful not to match other things.
-    return StopProcessInfosAction.fromJSON(json);
-  } else if ('action' in json) {
-    return Action.fromJSON(json);
-  }
   return json;
 }
 
@@ -662,10 +563,6 @@ export class NpcKnowsInfoCondition implements CodeGeneratable {
   getTypeName(): string {
     return 'NpcKnowsInfoCondition';
   }
-
-  static fromJSON(json: any): NpcKnowsInfoCondition {
-    return new NpcKnowsInfoCondition(json.npc, json.dialogRef);
-  }
 }
 
 /**
@@ -689,10 +586,6 @@ export class Condition implements CodeGeneratable {
 
   getTypeName(): string {
     return 'Condition';
-  }
-
-  static fromJSON(json: any): Condition {
-    return new Condition(json.condition);
   }
 }
 
@@ -735,34 +628,71 @@ export class VariableCondition implements CodeGeneratable {
   getTypeName(): string {
     return 'VariableCondition';
   }
-
-  static fromJSON(json: any): VariableCondition {
-    return new VariableCondition(json.variableName, json.negated || false, json.operator, json.value);
-  }
 }
 
 export type DialogCondition = NpcKnowsInfoCondition | Condition | VariableCondition;
 
+const CONDITION_DISCRIMINATOR = {
+  property: 'type',
+  subTypes: [
+    { value: NpcKnowsInfoCondition, name: 'NpcKnowsInfoCondition' },
+    { value: Condition, name: 'Condition' },
+    { value: VariableCondition, name: 'VariableCondition' },
+  ],
+};
+
+// Helper to ensure condition has a type (legacy support)
+function ensureConditionType(json: any): void {
+  if (!json.type) {
+    if ('npc' in json && 'dialogRef' in json) json.type = 'NpcKnowsInfoCondition';
+    else if ('variableName' in json) json.type = 'VariableCondition';
+    else if ('condition' in json) json.type = 'Condition';
+  }
+}
+
 // Helper to deserialize any condition
 export function deserializeCondition(json: any): DialogCondition {
+  ensureConditionType(json);
+
   if (json.type) {
-    switch (json.type) {
-      case 'NpcKnowsInfoCondition': return NpcKnowsInfoCondition.fromJSON(json);
-      case 'Condition': return Condition.fromJSON(json);
-      case 'VariableCondition': return VariableCondition.fromJSON(json);
+    const subType = CONDITION_DISCRIMINATOR.subTypes.find(s => s.name === json.type);
+    if (subType) {
+      return plainToInstance(subType.value, json);
     }
   }
 
-  if ('npc' in json && 'dialogRef' in json) {
-    return NpcKnowsInfoCondition.fromJSON(json);
-  } else if ('variableName' in json) {
-    return VariableCondition.fromJSON(json);
-  } else if ('condition' in json) {
-    return Condition.fromJSON(json);
-  }
   // Fallback
   return new Condition('');
 }
+
+// ===================================================================
+// DIALOG FUNCTION CLASS
+// ===================================================================
+
+export class DialogFunction {
+  public name: string;
+  public returnType: string;
+  public calls: string[];
+
+  @Type(() => Object, {
+    discriminator: ACTION_DISCRIMINATOR,
+  })
+  public actions: DialogAction[];
+
+  @Type(() => Object, {
+    discriminator: CONDITION_DISCRIMINATOR,
+  })
+  public conditions: DialogCondition[];
+
+  constructor(name: string, returnType: string) {
+    this.name = name;
+    this.returnType = returnType;
+    this.calls = [];
+    this.actions = [];
+    this.conditions = [];
+  }
+}
+
 
 // ===================================================================
 // DIALOG CLASS
@@ -849,7 +779,17 @@ export function deserializeSemanticModel(json: any): SemanticModel {
 
   // 1. Reconstruct functions first
   for (const funcName in json.functions) {
-    model.functions[funcName] = DialogFunction.fromJSON(json.functions[funcName]);
+    const funcJson = json.functions[funcName];
+
+    // Ensure types are present in actions and conditions for class-transformer
+    if (funcJson.actions) {
+        funcJson.actions.forEach((a: any) => ensureActionType(a));
+    }
+    if (funcJson.conditions) {
+        funcJson.conditions.forEach((c: any) => ensureConditionType(c));
+    }
+
+    model.functions[funcName] = plainToInstance(DialogFunction, funcJson);
   }
 
   // 2. Reconstruct dialogs and link to functions
@@ -860,14 +800,14 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   // 3. Reconstruct constants
   if (json.constants) {
     for (const key in json.constants) {
-      model.constants![key] = GlobalConstant.fromJSON(json.constants[key]);
+      model.constants![key] = plainToInstance(GlobalConstant, json.constants[key]);
     }
   }
 
   // 4. Reconstruct variables
   if (json.variables) {
     for (const key in json.variables) {
-      model.variables![key] = GlobalVariable.fromJSON(json.variables[key]);
+      model.variables![key] = plainToInstance(GlobalVariable, json.variables[key]);
     }
   }
 
