@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Type, plainToInstance } from 'class-transformer';
+import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
 
 // Semantic model classes and types for Daedalus dialog parsing
 
@@ -528,7 +528,7 @@ export function deserializeAction(json: any): DialogAction | any {
   if (json.type) {
     const subType = ACTION_DISCRIMINATOR.subTypes.find(s => s.name === json.type);
     if (subType) {
-      return plainToInstance(subType.value, json);
+      return plainToInstance(subType.value as ClassConstructor<any>, json);
     }
   }
 
@@ -657,7 +657,7 @@ export function deserializeCondition(json: any): DialogCondition {
   if (json.type) {
     const subType = CONDITION_DISCRIMINATOR.subTypes.find(s => s.name === json.type);
     if (subType) {
-      return plainToInstance(subType.value, json);
+      return plainToInstance(subType.value as ClassConstructor<any>, json);
     }
   }
 
@@ -789,7 +789,7 @@ export function deserializeSemanticModel(json: any): SemanticModel {
         funcJson.conditions.forEach((c: any) => ensureConditionType(c));
     }
 
-    model.functions[funcName] = plainToInstance(DialogFunction, funcJson);
+    model.functions[funcName] = plainToInstance(DialogFunction as ClassConstructor<any>, funcJson);
   }
 
   // 2. Reconstruct dialogs and link to functions
@@ -800,14 +800,14 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   // 3. Reconstruct constants
   if (json.constants) {
     for (const key in json.constants) {
-      model.constants![key] = plainToInstance(GlobalConstant, json.constants[key]);
+      model.constants![key] = plainToInstance(GlobalConstant as ClassConstructor<any>, json.constants[key]);
     }
   }
 
   // 4. Reconstruct variables
   if (json.variables) {
     for (const key in json.variables) {
-      model.variables![key] = plainToInstance(GlobalVariable, json.variables[key]);
+      model.variables![key] = plainToInstance(GlobalVariable as ClassConstructor<any>, json.variables[key]);
     }
   }
 

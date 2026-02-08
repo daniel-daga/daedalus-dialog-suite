@@ -1,3 +1,10 @@
 packages:
-  - 'daedalus-dialog-editor'
-  - 'daedalus-parser'
+  - daedalus-dialog-editor
+  - daedalus-parser
+
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - tree-sitter
+  - tree-sitter-cli
+  - unrs-resolver

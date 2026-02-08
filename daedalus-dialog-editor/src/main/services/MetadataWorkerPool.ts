@@ -28,8 +28,8 @@ export class MetadataWorkerPool {
     // because __dirname points to src/...
     // We need to point to the compiled worker in dist
     if (!fs.existsSync(workerPath)) {
-      // From src/main/services -> ../../../ -> root -> dist/main/main/workers/metadata.worker.js
-      const distPath = path.join(__dirname, '../../../dist/main/main/workers/metadata.worker.js');
+      // From src/main/services -> ../../../ -> root -> dist/main/workers/metadata.worker.js
+      const distPath = path.join(__dirname, '../../../dist/main/workers/metadata.worker.js');
       if (fs.existsSync(distPath)) {
         workerPath = distPath;
       }
