@@ -1,4 +1,5 @@
 import React from 'react';
+import dagre from 'dagre';
 import { Node, Edge, MarkerType } from 'reactflow';
 import { Typography } from '@mui/material';
 import type { SemanticModel, DialogAction, DialogCondition } from '../../types/global';
@@ -307,147 +308,102 @@ const buildQuestEdges = (
 };
 
 /**
- * 3. Layout (Simplified Swimlane)
+ * 3. Layout (Using Dagre)
  */
-const calculateSwimlaneLayout = (
+const calculateDagreLayout = (
     nodeDataMap: Map<string, NodeData>,
     adjacency: Map<string, string[]>,
-    incomingCount: Map<string, number>,
     misVarName: string
 ) => {
+    const g = new dagre.graphlib.Graph({ compound: true });
+    g.setGraph({ rankdir: 'LR', align: 'UL', ranksep: 100, nodesep: 50 });
+    g.setDefaultEdgeLabel(() => ({}));
+
+    // Group by NPC for clusters
+    const npcNodes = new Map<string, string[]>();
+
+    nodeDataMap.forEach((data, id) => {
+        if (!npcNodes.has(data.npc)) {
+            npcNodes.set(data.npc, []);
+        }
+        npcNodes.get(data.npc)!.push(id);
+    });
+
+    // Add NPC clusters
+    npcNodes.forEach((_, npc) => {
+        const clusterId = `swimlane-${npc}`;
+        g.setNode(clusterId, { label: npc, clusterLabelPos: 'top' });
+    });
+
+    // Add nodes
+    nodeDataMap.forEach((data, id) => {
+        const width = 250;
+        const height = 100; // Approximate height for the node
+        const clusterId = `swimlane-${data.npc}`;
+
+        g.setNode(id, { width, height });
+        g.setParent(id, clusterId);
+    });
+
+    // Add edges
+    adjacency.forEach((targets, source) => {
+        targets.forEach(target => {
+            g.setEdge(source, target);
+        });
+    });
+
+    dagre.layout(g);
+
     const nodes: Node[] = [];
-    const npcs = Array.from(new Set(Array.from(nodeDataMap.values()).map(d => d.npc))).sort();
-    const LEVEL_WIDTH = 350;
 
-    const levels = new Map<string, number>();
-    const queue: string[] = [];
+    // Convert Dagre nodes to ReactFlow nodes
+    g.nodes().forEach((v) => {
+        const node = g.node(v);
+        // node: { x, y, width, height, ... } (x, y are center)
 
-    nodeDataMap.forEach((_, id) => {
-        if ((incomingCount.get(id) || 0) === 0) {
-            levels.set(id, 0);
-            queue.push(id);
-        }
-    });
-
-    // Cycle detection / limit
-    const maxLevel = nodeDataMap.size;
-
-    while (queue.length > 0) {
-        const u = queue.shift()!;
-        const currentLevel = levels.get(u)!;
-
-        // Prevent infinite processing if level exceeds possible max path (indicating cycle or very long chain)
-        if (currentLevel > maxLevel) continue;
-
-        const neighbors = adjacency.get(u) || [];
-        neighbors.forEach(v => {
-            const existingLevel = levels.get(v);
-            if (existingLevel === undefined || existingLevel < currentLevel + 1) {
-                // Fix: Check if next level would exceed max possible level to prevent infinite loop
-                if (currentLevel + 1 <= maxLevel) {
-                    levels.set(v, currentLevel + 1);
-                    queue.push(v);
+        // Check if it's a cluster
+        if (v.startsWith('swimlane-')) {
+            nodes.push({
+                id: v,
+                type: 'group',
+                position: { x: node.x - node.width / 2, y: node.y - node.height / 2 },
+                style: {
+                    width: node.width,
+                    height: node.height,
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px dashed #444',
+                    zIndex: -1,
+                    padding: 10,
+                    color: '#666'
+                },
+                data: { label: <Typography variant="subtitle2" sx={{ opacity: 0.5 }}>{v.replace('swimlane-', '')}</Typography> },
+                selectable: false,
+                draggable: false,
+            });
+        } else {
+            const data = nodeDataMap.get(v);
+            if (data) {
+                // Determine node type
+                let nodeType = 'dialog';
+                if (isStateNode(data.type, data.description)) {
+                    nodeType = 'questState';
                 }
+
+                nodes.push({
+                    id: v,
+                    position: { x: node.x - node.width / 2, y: node.y - node.height / 2 },
+                    type: nodeType,
+                    data: {
+                        label: data.label,
+                        npc: data.npc,
+                        description: data.description,
+                        type: data.type,
+                        status: data.description, // rough mapping
+                        variableName: misVarName
+                    },
+                });
             }
-        });
-    }
-
-    // PASS 1: Calculate counts per (npc, level)
-    const laneOccupancy = new Map<string, Map<number, number>>();
-    npcs.forEach(npc => laneOccupancy.set(npc, new Map()));
-
-    nodeDataMap.forEach((data, id) => {
-        const level = levels.get(id) || 0;
-        const npcMap = laneOccupancy.get(data.npc)!;
-        const count = npcMap.get(level) || 0;
-        npcMap.set(level, count + 1);
-    });
-
-    // PASS 2: Calculate Lane Heights and Y Offsets
-    const NPC_LANE_HEIGHT = new Map<string, number>();
-    const NPC_Y_START = new Map<string, number>();
-    let currentY = 0;
-    const NODE_VERTICAL_SPACING = 250;
-    const MIN_LANE_HEIGHT = 300;
-    const LANE_PADDING = 50;
-
-    npcs.forEach(npc => {
-        NPC_Y_START.set(npc, currentY);
-
-        const npcMap = laneOccupancy.get(npc)!;
-        let maxNodesInCol = 0;
-        if (npcMap.size > 0) {
-            maxNodesInCol = Math.max(...Array.from(npcMap.values()));
         }
-
-        const requiredHeight = Math.max(
-            (maxNodesInCol * NODE_VERTICAL_SPACING) + LANE_PADDING,
-            MIN_LANE_HEIGHT
-        );
-        NPC_LANE_HEIGHT.set(npc, requiredHeight);
-        currentY += requiredHeight;
-    });
-
-    // PASS 3: Create Nodes
-    const currentCounts = new Map<string, Map<number, number>>();
-    npcs.forEach(npc => currentCounts.set(npc, new Map()));
-
-    nodeDataMap.forEach((data, id) => {
-        const level = levels.get(id) || 0;
-        const npcMap = currentCounts.get(data.npc)!;
-        const count = npcMap.get(level) || 0;
-        npcMap.set(level, count + 1);
-
-        const x = level * LEVEL_WIDTH + 50;
-        const yBase = NPC_Y_START.get(data.npc)!;
-        const yOffset = count * NODE_VERTICAL_SPACING;
-
-        const y = yBase + 50 + yOffset;
-
-        // Determine node type
-        let nodeType = 'dialog';
-        if (isStateNode(data.type, data.description)) {
-            nodeType = 'questState';
-        }
-
-        nodes.push({
-            id,
-            position: { x, y },
-            type: nodeType,
-            data: {
-                label: data.label,
-                npc: data.npc,
-                description: data.description,
-                type: data.type,
-                status: data.description, // rough mapping
-                variableName: misVarName
-            },
-        });
-    });
-
-    // Swimlanes
-    npcs.forEach((npc) => {
-        const maxLevelVal = Math.max(...Array.from(levels.values()), 0);
-        const y = NPC_Y_START.get(npc)!;
-        const height = NPC_LANE_HEIGHT.get(npc)!;
-
-        nodes.unshift({
-            id: `swimlane-${npc}`,
-            type: 'group',
-            position: { x: 0, y },
-            style: {
-                width: (maxLevelVal + 1) * LEVEL_WIDTH + 200,
-                height: height - 20,
-                backgroundColor: 'rgba(255, 255, 255, 0.02)', // Very subtle light
-                border: '1px dashed #444',
-                zIndex: -1,
-                padding: 10,
-                color: '#666'
-            },
-            data: { label: <Typography variant="subtitle2" sx={{ opacity: 0.5 }}>{npc}</Typography> },
-            selectable: false,
-            draggable: false,
-        });
     });
 
     return nodes;
@@ -464,10 +420,10 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
     const { nodeDataMap, producersByVariableAndValue } = identifyQuestNodes(semanticModel, questName, misVarName);
 
     // 2. Build Dependencies
-    const { edges, adjacency, incomingCount } = buildQuestEdges(semanticModel, nodeDataMap, producersByVariableAndValue, misVarName);
+    const { edges, adjacency } = buildQuestEdges(semanticModel, nodeDataMap, producersByVariableAndValue, misVarName);
 
-    // 3. Layout (Simplified Swimlane)
-    const nodes = calculateSwimlaneLayout(nodeDataMap, adjacency, incomingCount, misVarName);
+    // 3. Layout (Using Dagre)
+    const nodes = calculateDagreLayout(nodeDataMap, adjacency, misVarName);
 
     return { nodes, edges };
 };

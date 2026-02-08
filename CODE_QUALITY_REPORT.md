@@ -46,7 +46,7 @@ The `daedalus-dialog-editor` and `daedalus-parser` project demonstrates a solid 
 
 ### Priority: Low (Long-term)
 1.  **Worker Threads:** Move parsing logic to a Worker Thread to unblock the main process.
-2.  **Standardize Layout:** Consider using a library like `dagre` or `elkjs` for graph layout instead of the custom implementation in `questGraphUtils.tsx`.
+2.  **Standardize Layout:** [Done] Consider using a library like `dagre` or `elkjs` for graph layout instead of the custom implementation in `questGraphUtils.tsx`.
 
 ## Conclusion
 

@@ -32,17 +32,17 @@ describe('questGraphUtils - Variable Dependencies', () => {
             {
                 name: 'DIA_Setter_Info',
                 actions: [
-                    { topic: questName, topicType: 'LOG_MISSION' }, // Relevant to quest
-                    { variableName: helperVar, operator: '=', value: 1 } // Sets generic var
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }, // Relevant to quest
+                    { type: 'SetVariableAction', variableName: helperVar, operator: '=', value: 1 } // Sets generic var
                 ]
             },
             {
                 name: 'DIA_Checker_Info',
                 conditions: [
-                    { variableName: helperVar, operator: '==', value: 1 } // Checks generic var
+                    { type: 'VariableCondition', variableName: helperVar, operator: '==', value: 1 } // Checks generic var
                 ],
                 actions: [
-                    { topic: questName, status: 'LOG_RUNNING' } // Relevant to quest
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' } // Relevant to quest
                 ]
             }
         ];
