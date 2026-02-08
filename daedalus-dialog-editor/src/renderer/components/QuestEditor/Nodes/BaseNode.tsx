@@ -3,7 +3,7 @@ import { Box, Typography, Paper } from '@mui/material';
 import { Handle, Position } from 'reactflow';
 
 export interface BaseNodeProps {
-  label: string;
+  label: string | React.ReactNode;
   headerColor?: string;
   icon?: React.ReactNode;
   children?: React.ReactNode;
@@ -45,7 +45,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         }}
       >
         {icon && <Box component="span" sx={{ display: 'flex', opacity: 0.8 }}>{icon}</Box>}
-        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#fff' }}>
+        <Typography variant="subtitle2" component="div" sx={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#fff' }}>
           {label}
         </Typography>
       </Box>

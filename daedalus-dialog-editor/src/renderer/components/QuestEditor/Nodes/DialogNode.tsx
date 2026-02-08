@@ -3,19 +3,20 @@ import { Handle, Position, NodeProps } from 'reactflow';
 import { Box, Typography } from '@mui/material';
 import { ChatBubbleOutline } from '@mui/icons-material';
 import BaseNode from './BaseNode';
+import ReferenceLink from '../../common/ReferenceLink';
 
 const DialogNode: React.FC<NodeProps> = ({ data, selected }) => {
   return (
     <BaseNode
-      label={data.label || 'Dialog'}
+      label={<ReferenceLink symbolName={data.label || ''} sx={{ color: '#fff' }}>{data.label || 'Dialog'}</ReferenceLink>}
       headerColor="#3f51b5" // Blue
       icon={<ChatBubbleOutline fontSize="small" />}
       selected={selected}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <Typography variant="caption" sx={{ color: '#aaa', fontSize: 10 }}>
+        <ReferenceLink symbolName={data.npc || ''} variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
           {data.npc || 'Unknown NPC'}
-        </Typography>
+        </ReferenceLink>
 
         <Box sx={{ bgcolor: '#1a1a1a', p: 1, borderRadius: 1, maxHeight: 60, overflow: 'hidden' }}>
           <Typography variant="body2" sx={{ fontSize: 11, fontStyle: 'italic', color: '#ccc' }}>
