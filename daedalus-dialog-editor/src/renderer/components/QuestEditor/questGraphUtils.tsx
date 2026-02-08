@@ -7,60 +7,69 @@ import { getActionType } from '../actionTypes';
 // Constants
 const CHOICE_EDGE_COLOR = '#ff9800';
 
+interface NodeData {
+    id: string;
+    type: 'start' | 'update' | 'success' | 'failed' | 'check';
+    label: string;
+    npc: string;
+    description?: string;
+}
+
+export interface QuestGraphData {
+    nodes: Node[];
+    edges: Edge[];
+}
+
+export interface QuestAnalysis {
+    status: 'implemented' | 'wip' | 'broken' | 'not_started';
+    misVariableExists: boolean;
+    misVariableName: string;
+    hasStart: boolean;
+    hasSuccess: boolean;
+    hasFailed: boolean;
+    description: string;
+    filePaths: { topic: string | null; variable: string | null };
+}
+
 // Helper to check if a node should be visualized as a Quest State node
 const isStateNode = (type: string, description?: string): boolean => {
     return type === 'start' || type === 'success' || type === 'failed' ||
-           description?.includes('Status') || description === 'Set Running';
+        description?.includes('Status') || description === 'Set Running';
 };
 
 // Helper to extract NPC from dialog or function
 export const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): string | null => {
-  // Check if it's a dialog info function or condition
-  for (const dialog of Object.values(semanticModel.dialogs || {})) {
-    // Check information
-    const info = dialog.properties.information;
-    if (typeof info === 'string' && info.toLowerCase() === funcName.toLowerCase()) {
-      return (dialog.properties.npc as string) || 'Unknown';
-    }
-    if (info && typeof info === 'object' && info.name.toLowerCase() === funcName.toLowerCase()) {
-      return (dialog.properties.npc as string) || 'Unknown';
-    }
+    // Check if it's a dialog info function or condition
+    for (const dialog of Object.values(semanticModel.dialogs || {})) {
+        // Check information
+        const info = dialog.properties.information;
+        if (typeof info === 'string' && info.toLowerCase() === funcName.toLowerCase()) {
+            return (dialog.properties.npc as string) || 'Unknown';
+        }
+        if (info && typeof info === 'object' && info.name.toLowerCase() === funcName.toLowerCase()) {
+            return (dialog.properties.npc as string) || 'Unknown';
+        }
 
-    // Check condition
-    const cond = dialog.properties.condition;
-    if (typeof cond === 'string' && cond.toLowerCase() === funcName.toLowerCase()) {
-      return (dialog.properties.npc as string) || 'Unknown';
+        // Check condition
+        const cond = dialog.properties.condition;
+        if (typeof cond === 'string' && cond.toLowerCase() === funcName.toLowerCase()) {
+            return (dialog.properties.npc as string) || 'Unknown';
+        }
+        if (cond && typeof cond === 'object' && cond.name.toLowerCase() === funcName.toLowerCase()) {
+            return (dialog.properties.npc as string) || 'Unknown';
+        }
     }
-    if (cond && typeof cond === 'object' && cond.name.toLowerCase() === funcName.toLowerCase()) {
-      return (dialog.properties.npc as string) || 'Unknown';
-    }
-  }
-  return null;
+    return null;
 };
 
-export interface QuestGraphData {
-  nodes: Node[];
-  edges: Edge[];
-}
-
-export const buildQuestGraph = (semanticModel: SemanticModel, questName: string | null): QuestGraphData => {
-    if (!questName || !semanticModel) {
-        return { nodes: [], edges: [] };
-    }
-
-    const newNodes: Node[] = [];
-    const newEdges: Edge[] = [];
-    const misVarName = questName.replace('TOPIC_', 'MIS_');
-
-    // 1. Identify relevant functions/dialogs and classify them
-    interface NodeData {
-      id: string;
-      type: 'start' | 'update' | 'success' | 'failed' | 'check';
-      label: string;
-      npc: string;
-      description?: string;
-    }
-
+/**
+ * 1. Identify relevant functions/dialogs and classify them
+ */
+const identifyQuestNodes = (
+    semanticModel: SemanticModel,
+    questName: string,
+    misVarName: string
+) => {
     const nodeDataMap = new Map<string, NodeData>();
     // Track producers of specific variable values
     // Map<VariableName, Map<Value, Set<FunctionID>>>
@@ -78,91 +87,103 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
     };
 
     Object.values(semanticModel.functions || {}).forEach(func => {
-      let isRelevant = false;
-      let type: NodeData['type'] = 'check';
-      let description = '';
+        let isRelevant = false;
+        let type: NodeData['type'] = 'check';
+        let description = '';
 
-      // Check actions
-      func.actions?.forEach(action => {
-        const actionType = getActionType(action);
+        // Check actions
+        func.actions?.forEach(action => {
+            const actionType = getActionType(action);
 
-        // Track generic variable assignments
-        if (actionType === 'setVariableAction') {
-             const varName = (action as any).variableName;
-             const op = (action as any).operator;
-             const val = String((action as any).value);
-             // We only support direct assignment for now as "Production"
-             if (op === '=') {
-                 addProducer(varName, val, func.name);
-             }
-        }
-
-        if ('topic' in action && action.topic === questName) {
-          isRelevant = true;
-
-          if (actionType === 'createTopic') {
-              type = 'start';
-              description = 'Start Quest';
-              addProducer(misVarName, '1', func.name);
-          } else if (actionType === 'logSetTopicStatus') {
-             const status = String((action as any).status);
-             if (status.includes('SUCCESS') || status === '2') {
-                type = 'success';
-                description = 'Finish (Success)';
-                addProducer(misVarName, '2', func.name);
-             } else if (status.includes('FAILED') || status === '3') {
-                type = 'failed';
-                description = 'Finish (Failed)';
-                addProducer(misVarName, '3', func.name);
-             } else if (status.includes('RUNNING') || status === '1') {
-                type = 'update';
-                description = 'Set Running';
-                addProducer(misVarName, '1', func.name);
-             } else {
-                type = 'update';
-                description = `Set Status: ${status}`;
-                // Try to add as generic status producer if possible, though status is usually a constant
-                // Here we assume status might be a value we check later
-                addProducer(misVarName, status, func.name);
-             }
-          } else if (actionType === 'logEntry') {
-             if (type === 'check') type = 'update';
-             if (!description) description = 'Log Entry';
-          }
-        }
-      });
-
-      // Check conditions
-      func.conditions?.forEach(cond => {
-        if ('variableName' in cond && (cond as any).variableName === misVarName) {
-          isRelevant = true;
-        }
-      });
-
-      if (isRelevant) {
-        const npc = getNpcForFunction(func.name, semanticModel) || 'Global/Other';
-        let displayName = func.name;
-
-        for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
-            const info = d.properties.information;
-            if ((typeof info === 'string' && info === func.name) ||
-                (typeof info === 'object' && info.name === func.name)) {
-                displayName = dName;
-                break;
+            // Track generic variable assignments
+            if (actionType === 'setVariableAction') {
+                const varName = (action as any).variableName;
+                const op = (action as any).operator;
+                const val = String((action as any).value);
+                // We only support direct assignment for now as "Production"
+                if (op === '=') {
+                    addProducer(varName, val, func.name);
+                }
             }
-        }
 
-        nodeDataMap.set(func.name, {
-            id: func.name,
-            type,
-            label: displayName,
-            npc,
-            description
+            if ('topic' in action && action.topic === questName) {
+                isRelevant = true;
+
+                if (actionType === 'createTopic') {
+                    type = 'start';
+                    description = 'Start Quest';
+                    addProducer(misVarName, '1', func.name);
+                } else if (actionType === 'logSetTopicStatus') {
+                    const status = String((action as any).status);
+                    if (status.includes('SUCCESS') || status === '2') {
+                        type = 'success';
+                        description = 'Finish (Success)';
+                        addProducer(misVarName, '2', func.name);
+                    } else if (status.includes('FAILED') || status === '3') {
+                        type = 'failed';
+                        description = 'Finish (Failed)';
+                        addProducer(misVarName, '3', func.name);
+                    } else if (status.includes('RUNNING') || status === '1') {
+                        type = 'update';
+                        description = 'Set Running';
+                        addProducer(misVarName, '1', func.name);
+                    } else {
+                        type = 'update';
+                        description = `Set Status: ${status}`;
+                        // Try to add as generic status producer if possible, though status is usually a constant
+                        // Here we assume status might be a value we check later
+                        addProducer(misVarName, status, func.name);
+                    }
+                } else if (actionType === 'logEntry') {
+                    if (type === 'check') type = 'update';
+                    if (!description) description = 'Log Entry';
+                }
+            }
         });
-      }
+
+        // Check conditions
+        func.conditions?.forEach(cond => {
+            if ('variableName' in cond && (cond as any).variableName === misVarName) {
+                isRelevant = true;
+            }
+        });
+
+        if (isRelevant) {
+            const npc = getNpcForFunction(func.name, semanticModel) || 'Global/Other';
+            let displayName = func.name;
+
+            for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
+                const info = d.properties.information;
+                if ((typeof info === 'string' && info === func.name) ||
+                    (typeof info === 'object' && info.name === func.name)) {
+                    displayName = dName;
+                    break;
+                }
+            }
+
+            nodeDataMap.set(func.name, {
+                id: func.name,
+                type,
+                label: displayName,
+                npc,
+                description
+            });
+        }
     });
 
-    // 2. Build Dependencies
+    return { nodeDataMap, producersByVariableAndValue };
+};
+
+/**
+ * 2. Build Dependencies
+ */
+const buildQuestEdges = (
+    semanticModel: SemanticModel,
+    nodeDataMap: Map<string, NodeData>,
+    producersByVariableAndValue: Map<string, Map<string, Set<string>>>,
+    misVarName: string
+) => {
+    const edges: Edge[] = [];
     const adjacency = new Map<string, string[]>();
     const incomingCount = new Map<string, number>();
 
@@ -185,29 +206,29 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
                     // Determine Source Handle based on Consumer Type
                     let sourceHandle = 'out-finished';
                     if (isStateNode(consumerData.type, consumerData.description)) {
-                         sourceHandle = 'out-state';
+                        sourceHandle = 'out-state';
                     }
 
                     // Determine Target Handle based on Target Type
                     let targetHandle = 'in-condition';
                     if (isStateNode(targetData.type, targetData.description)) {
-                         targetHandle = 'in-trigger';
+                        targetHandle = 'in-trigger';
                     }
 
-                     newEdges.push({
-                         id: `choice-${consumerId}-${targetFunc}`,
-                         source: consumerId,
-                         target: targetFunc,
-                         sourceHandle,
-                         targetHandle,
-                         label: (action as any).text, // Choice text
-                         type: 'smoothstep',
-                         markerEnd: { type: MarkerType.ArrowClosed },
-                         style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' }, // Orange dashed line
-                         labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 }
-                     });
-                     adjacency.get(consumerId)?.push(targetFunc);
-                     incomingCount.set(targetFunc, (incomingCount.get(targetFunc) || 0) + 1);
+                    edges.push({
+                        id: `choice-${consumerId}-${targetFunc}`,
+                        source: consumerId,
+                        target: targetFunc,
+                        sourceHandle,
+                        targetHandle,
+                        label: (action as any).text, // Choice text
+                        type: 'smoothstep',
+                        markerEnd: { type: MarkerType.ArrowClosed },
+                        style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' }, // Orange dashed line
+                        labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 }
+                    });
+                    adjacency.get(consumerId)?.push(targetFunc);
+                    incomingCount.set(targetFunc, (incomingCount.get(targetFunc) || 0) + 1);
                 }
             }
         });
@@ -224,20 +245,20 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
                     else if (info && typeof info === 'object') producerFunc = info.name;
 
                     if (producerFunc && nodeDataMap.has(producerFunc)) {
-                         newEdges.push({
-                             id: `knows-${producerFunc}-${consumerId}`,
-                             source: producerFunc,
-                             target: consumerId,
-                             sourceHandle: 'out-finished',
-                             targetHandle: 'in-condition',
-                             label: 'Knows Info',
-                             type: 'smoothstep',
-                             markerEnd: { type: MarkerType.ArrowClosed },
-                             style: { stroke: '#b1b1b7', strokeWidth: 2 },
-                             labelStyle: { fill: '#b1b1b7', fontSize: 10 }
-                         });
-                         adjacency.get(producerFunc)?.push(consumerId);
-                         incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+                        edges.push({
+                            id: `knows-${producerFunc}-${consumerId}`,
+                            source: producerFunc,
+                            target: consumerId,
+                            sourceHandle: 'out-finished',
+                            targetHandle: 'in-condition',
+                            label: 'Knows Info',
+                            type: 'smoothstep',
+                            markerEnd: { type: MarkerType.ArrowClosed },
+                            style: { stroke: '#b1b1b7', strokeWidth: 2 },
+                            labelStyle: { fill: '#b1b1b7', fontSize: 10 }
+                        });
+                        adjacency.get(producerFunc)?.push(consumerId);
+                        incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
                     }
                 }
             }
@@ -251,9 +272,9 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
 
                 // Normalization for LOG_* constants if it matches misVarName
                 if (varName === misVarName) {
-                     if (val === 'LOG_RUNNING') checkVal = '1';
-                     if (val === 'LOG_SUCCESS') checkVal = '2';
-                     if (val === 'LOG_FAILED') checkVal = '3';
+                    if (val === 'LOG_RUNNING') checkVal = '1';
+                    if (val === 'LOG_SUCCESS') checkVal = '2';
+                    if (val === 'LOG_FAILED') checkVal = '3';
                 }
 
                 if (op === '==' && checkVal) {
@@ -262,21 +283,21 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
                         const producers = valueMap.get(checkVal) || new Set();
                         producers.forEach(producerId => {
                             if (producerId !== consumerId && nodeDataMap.has(producerId)) {
-                                 newEdges.push({
-                                     id: `var-${varName}-${producerId}-${consumerId}`,
-                                     source: producerId,
-                                     target: consumerId,
-                                     sourceHandle: 'out-state',
-                                     targetHandle: 'in-trigger',
-                                     label: varName === misVarName ? val : varName, // Show variable name for generic deps
-                                     type: 'smoothstep',
-                                     animated: true,
-                                     markerEnd: { type: MarkerType.ArrowClosed },
-                                     style: { stroke: '#2196f3', strokeWidth: 2 },
-                                     labelStyle: { fill: '#2196f3', fontSize: 10 }
-                                 });
-                                 adjacency.get(producerId)?.push(consumerId);
-                                 incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+                                edges.push({
+                                    id: `var-${varName}-${producerId}-${consumerId}`,
+                                    source: producerId,
+                                    target: consumerId,
+                                    sourceHandle: 'out-state',
+                                    targetHandle: 'in-trigger',
+                                    label: varName === misVarName ? val : varName, // Show variable name for generic deps
+                                    type: 'smoothstep',
+                                    animated: true,
+                                    markerEnd: { type: MarkerType.ArrowClosed },
+                                    style: { stroke: '#2196f3', strokeWidth: 2 },
+                                    labelStyle: { fill: '#2196f3', fontSize: 10 }
+                                });
+                                adjacency.get(producerId)?.push(consumerId);
+                                incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
                             }
                         });
                     }
@@ -285,7 +306,19 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
         });
     });
 
-    // 3. Layout (Simplified Swimlane)
+    return { edges, adjacency, incomingCount };
+};
+
+/**
+ * 3. Layout (Simplified Swimlane)
+ */
+const calculateSwimlaneLayout = (
+    nodeDataMap: Map<string, NodeData>,
+    adjacency: Map<string, string[]>,
+    incomingCount: Map<string, number>,
+    misVarName: string
+) => {
+    const nodes: Node[] = [];
     const npcs = Array.from(new Set(Array.from(nodeDataMap.values()).map(d => d.npc))).sort();
     const LEVEL_WIDTH = 350;
 
@@ -347,7 +380,7 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
         const npcMap = laneOccupancy.get(npc)!;
         let maxNodesInCol = 0;
         if (npcMap.size > 0) {
-             maxNodesInCol = Math.max(...Array.from(npcMap.values()));
+            maxNodesInCol = Math.max(...Array.from(npcMap.values()));
         }
 
         const requiredHeight = Math.max(
@@ -377,10 +410,10 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
         // Determine node type
         let nodeType = 'dialog';
         if (isStateNode(data.type, data.description)) {
-             nodeType = 'questState';
+            nodeType = 'questState';
         }
 
-        newNodes.push({
+        nodes.push({
             id,
             position: { x, y },
             type: nodeType,
@@ -401,7 +434,7 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
         const y = NPC_Y_START.get(npc)!;
         const height = NPC_LANE_HEIGHT.get(npc)!;
 
-        newNodes.unshift({
+        nodes.unshift({
             id: `swimlane-${npc}`,
             type: 'group',
             position: { x: 0, y },
@@ -420,19 +453,27 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
         });
     });
 
-    return { nodes: newNodes, edges: newEdges };
+    return nodes;
 };
 
-export interface QuestAnalysis {
-  status: 'implemented' | 'wip' | 'broken' | 'not_started';
-  misVariableExists: boolean;
-  misVariableName: string;
-  hasStart: boolean;
-  hasSuccess: boolean;
-  hasFailed: boolean;
-  description: string;
-  filePaths: { topic: string | null; variable: string | null };
-}
+export const buildQuestGraph = (semanticModel: SemanticModel, questName: string | null): QuestGraphData => {
+    if (!questName || !semanticModel) {
+        return { nodes: [], edges: [] };
+    }
+
+    const misVarName = questName.replace('TOPIC_', 'MIS_');
+
+    // 1. Identify relevant functions/dialogs and classify them
+    const { nodeDataMap, producersByVariableAndValue } = identifyQuestNodes(semanticModel, questName, misVarName);
+
+    // 2. Build Dependencies
+    const { edges, adjacency, incomingCount } = buildQuestEdges(semanticModel, nodeDataMap, producersByVariableAndValue, misVarName);
+
+    // 3. Layout (Simplified Swimlane)
+    const nodes = calculateSwimlaneLayout(nodeDataMap, adjacency, incomingCount, misVarName);
+
+    return { nodes, edges };
+};
 
 export const analyzeQuest = (semanticModel: SemanticModel, questName: string): QuestAnalysis => {
     const misVarName = questName.replace('TOPIC_', 'MIS_');
