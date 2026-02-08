@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { enableMapSet } from 'immer';
 import { generateActionId } from '../components/actionFactory';
 import type {
   SemanticModel,
@@ -9,6 +11,9 @@ import type {
   CodeGenerationSettings,
   ValidationResult
 } from '../types/global';
+
+// Enable Map/Set support in Immer
+enableMapSet();
 
 /**
  * Ensure all actions in the model have unique IDs
@@ -115,7 +120,7 @@ interface EditorStore {
   setAutoSaveInterval: (interval: number) => void;
 }
 
-export const useEditorStore = create<EditorStore>((set, get) => ({
+export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   project: null,
   openFiles: new Map(),
   activeFile: null,
@@ -154,12 +159,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         };
 
         set((state) => {
-          const newOpenFiles = new Map(state.openFiles);
-          newOpenFiles.set(filePath, fileState);
-          return {
-            openFiles: newOpenFiles,
-            activeFile: filePath,
-          };
+          state.openFiles.set(filePath, fileState);
+          state.activeFile = filePath;
         });
         return;
       }
@@ -178,12 +179,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       };
 
       set((state) => {
-        const newOpenFiles = new Map(state.openFiles);
-        newOpenFiles.set(filePath, fileState);
-        return {
-          openFiles: newOpenFiles,
-          activeFile: filePath,
-        };
+        state.openFiles.set(filePath, fileState);
+        state.activeFile = filePath;
       });
     } catch (error) {
       console.error('Failed to open file:', error);
@@ -193,12 +190,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   closeFile: (filePath: string) => {
     set((state) => {
-      const newOpenFiles = new Map(state.openFiles);
-      newOpenFiles.delete(filePath);
-      return {
-        openFiles: newOpenFiles,
-        activeFile: state.activeFile === filePath ? null : state.activeFile,
-      };
+      state.openFiles.delete(filePath);
+      if (state.activeFile === filePath) {
+        state.activeFile = null;
+      }
     });
   },
 
@@ -206,17 +201,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (fileState) {
-        const updatedFileState: FileState = {
-          ...fileState,
-          semanticModel: model,
-          isDirty: true,
-          workingCode: undefined, // Invalidate source cache
-        };
-        const newOpenFiles = new Map(state.openFiles);
-        newOpenFiles.set(filePath, updatedFileState);
-        return { openFiles: newOpenFiles };
+        fileState.semanticModel = model;
+        fileState.isDirty = true;
+        fileState.workingCode = undefined; // Invalidate source cache
       }
-      return state;
     });
   },
 
@@ -224,24 +212,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
-        return state;
+        return;
       }
-      const updatedModel: SemanticModel = {
-        ...fileState.semanticModel,
-        dialogs: {
-          ...fileState.semanticModel.dialogs,
-          [dialogName]: dialog
-        }
-      };
-      const updatedFileState: FileState = {
-        ...fileState,
-        semanticModel: updatedModel,
-        isDirty: true,
-        workingCode: undefined, // Invalidate source cache
-      };
-      const newOpenFiles = new Map(state.openFiles);
-      newOpenFiles.set(filePath, updatedFileState);
-      return { openFiles: newOpenFiles };
+      fileState.semanticModel.dialogs[dialogName] = dialog;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined; // Invalidate source cache
     });
   },
 
@@ -249,24 +224,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
-        return state;
+        return;
       }
-      const updatedModel: SemanticModel = {
-        ...fileState.semanticModel,
-        functions: {
-          ...fileState.semanticModel.functions,
-          [functionName]: func
-        }
-      };
-      const updatedFileState: FileState = {
-        ...fileState,
-        semanticModel: updatedModel,
-        isDirty: true,
-        workingCode: undefined, // Invalidate source cache
-      };
-      const newOpenFiles = new Map(state.openFiles);
-      newOpenFiles.set(filePath, updatedFileState);
-      return { openFiles: newOpenFiles };
+      fileState.semanticModel.functions[functionName] = func;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined; // Invalidate source cache
     });
   },
 
@@ -286,15 +248,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       const currentFileState = state.openFiles.get(filePath);
       if (currentFileState) {
-        const updatedFileState: FileState = {
-          ...currentFileState,
-          lastValidationResult: validationResult,
-        };
-        const newOpenFiles = new Map(state.openFiles);
-        newOpenFiles.set(filePath, updatedFileState);
-        return { openFiles: newOpenFiles };
+        currentFileState.lastValidationResult = validationResult;
       }
-      return state;
     });
 
     return validationResult;
@@ -318,22 +273,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
       // If validation failed and we didn't force save
       if (!result.success && result.validationResult) {
-        // Store pending validation for UI to display
-        set({ pendingValidation: { filePath, validationResult: result.validationResult } });
-
-        // Update file state with validation result
+        // Store pending validation for UI to display and update file state
         set((state) => {
-          const currentFileState = state.openFiles.get(filePath);
-          if (currentFileState) {
-            const updatedFileState: FileState = {
-              ...currentFileState,
-              lastValidationResult: result.validationResult,
-            };
-            const newOpenFiles = new Map(state.openFiles);
-            newOpenFiles.set(filePath, updatedFileState);
-            return { openFiles: newOpenFiles };
-          }
-          return state;
+            state.pendingValidation = { filePath, validationResult: result.validationResult! };
+            const currentFileState = state.openFiles.get(filePath);
+            if (currentFileState) {
+                currentFileState.lastValidationResult = result.validationResult;
+            }
         });
 
         return { success: false, validationResult: result.validationResult };
@@ -343,17 +289,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set((state) => {
         const currentFileState = state.openFiles.get(filePath);
         if (currentFileState) {
-          const updatedFileState: FileState = {
-            ...currentFileState,
-            isDirty: false,
-            lastSaved: new Date(),
-            lastValidationResult: result.validationResult,
-          };
-          const newOpenFiles = new Map(state.openFiles);
-          newOpenFiles.set(filePath, updatedFileState);
-          return { openFiles: newOpenFiles, pendingValidation: null };
+            currentFileState.isDirty = false;
+            currentFileState.lastSaved = new Date();
+            currentFileState.lastValidationResult = result.validationResult;
         }
-        return state;
+        state.pendingValidation = null;
       });
 
       return { success: true, validationResult: result.validationResult };
@@ -364,7 +304,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   clearPendingValidation: () => {
-    set({ pendingValidation: null });
+    set((state) => {
+        state.pendingValidation = null;
+    });
   },
 
   generateCode: async (filePath: string) => {
@@ -382,15 +324,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (fileState) {
-        const updatedFileState: FileState = {
-          ...fileState,
-          workingCode: code,
-        };
-        const newOpenFiles = new Map(state.openFiles);
-        newOpenFiles.set(filePath, updatedFileState);
-        return { openFiles: newOpenFiles };
+        fileState.workingCode = code;
       }
-      return state;
     });
   },
 
@@ -415,22 +350,15 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set((state) => {
         const currentFileState = state.openFiles.get(filePath);
         if (currentFileState) {
-          const updatedFileState: FileState = {
-            ...currentFileState,
-            semanticModel: processedModel,
-            isDirty: false,
-            lastSaved: new Date(),
-            originalCode: code,
-            workingCode: undefined, // Clear working code as it matches disk
-            hasErrors: model.hasErrors || false,
-            errors: model.errors || [],
-            lastValidationResult: undefined // Clear old validation result
-          };
-          const newOpenFiles = new Map(state.openFiles);
-          newOpenFiles.set(filePath, updatedFileState);
-          return { openFiles: newOpenFiles };
+            currentFileState.semanticModel = processedModel;
+            currentFileState.isDirty = false;
+            currentFileState.lastSaved = new Date();
+            currentFileState.originalCode = code;
+            currentFileState.workingCode = undefined; // Clear working code as it matches disk
+            currentFileState.hasErrors = model.hasErrors || false;
+            currentFileState.errors = model.errors || [];
+            currentFileState.lastValidationResult = undefined; // Clear old validation result
         }
-        return state;
       });
     } catch (error) {
       console.error('Failed to save source:', error);
@@ -439,36 +367,36 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setSelectedNPC: (npcName: string | null) => {
-    set({ selectedNPC: npcName });
+    set((state) => { state.selectedNPC = npcName; });
   },
 
   setSelectedDialog: (dialogName: string | null) => {
-    set({ selectedDialog: dialogName });
+    set((state) => { state.selectedDialog = dialogName; });
   },
 
   setSelectedFunctionName: (functionName: string | null) => {
-    set({ selectedFunctionName: functionName });
+    set((state) => { state.selectedFunctionName = functionName; });
   },
 
   setSelectedAction: (actionIndex: number | null) => {
-    set({ selectedAction: actionIndex });
+    set((state) => { state.selectedAction = actionIndex; });
   },
 
   setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'source') => {
-    set({ activeView: view });
+    set((state) => { state.activeView = view; });
   },
 
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => {
-    set((state) => ({
-      codeSettings: { ...state.codeSettings, ...settings },
-    }));
+    set((state) => {
+      state.codeSettings = { ...state.codeSettings, ...settings };
+    });
   },
 
   setAutoSaveEnabled: (enabled: boolean) => {
-    set({ autoSaveEnabled: enabled });
+    set((state) => { state.autoSaveEnabled = enabled; });
   },
 
   setAutoSaveInterval: (interval: number) => {
-    set({ autoSaveInterval: interval });
+    set((state) => { state.autoSaveInterval = interval; });
   },
-}));
+})));
