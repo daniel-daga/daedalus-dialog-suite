@@ -153,6 +153,7 @@ export interface CodeGeneratable {
 }
 
 export class DialogLine implements CodeGeneratable {
+  public readonly type = 'DialogLine';
   public speaker: string;
   public text: string;
   public id: string;
@@ -182,6 +183,7 @@ export class DialogLine implements CodeGeneratable {
 }
 
 export class CreateTopic implements CodeGeneratable {
+  public readonly type = 'CreateTopic';
   public topic: string;
   public topicType: string | null;
 
@@ -211,6 +213,7 @@ export class CreateTopic implements CodeGeneratable {
 }
 
 export class LogEntry implements CodeGeneratable {
+  public readonly type = 'LogEntry';
   public topic: string;
   public text: string;
 
@@ -237,6 +240,7 @@ export class LogEntry implements CodeGeneratable {
 }
 
 export class LogSetTopicStatus implements CodeGeneratable {
+  public readonly type = 'LogSetTopicStatus';
   public topic: string;
   public status: string;
 
@@ -263,6 +267,7 @@ export class LogSetTopicStatus implements CodeGeneratable {
 }
 
 export class Action implements CodeGeneratable {
+  public readonly type = 'Action';
   public action: string;
 
   constructor(action: string) {
@@ -288,6 +293,7 @@ export class Action implements CodeGeneratable {
 }
 
 export class Choice implements CodeGeneratable {
+  public readonly type = 'Choice';
   public dialogRef: string;
   public text: string;
   public targetFunction: string;
@@ -316,6 +322,7 @@ export class Choice implements CodeGeneratable {
 }
 
 export class CreateInventoryItems implements CodeGeneratable {
+  public readonly type = 'CreateInventoryItems';
   public target: string;
   public item: string;
   public quantity: number;
@@ -344,6 +351,7 @@ export class CreateInventoryItems implements CodeGeneratable {
 }
 
 export class GiveInventoryItems implements CodeGeneratable {
+  public readonly type = 'GiveInventoryItems';
   public giver: string;
   public receiver: string;
   public item: string;
@@ -374,6 +382,7 @@ export class GiveInventoryItems implements CodeGeneratable {
 }
 
 export class AttackAction implements CodeGeneratable {
+  public readonly type = 'AttackAction';
   public attacker: string;
   public target: string;
   public attackReason: string;
@@ -404,6 +413,7 @@ export class AttackAction implements CodeGeneratable {
 }
 
 export class SetAttitudeAction implements CodeGeneratable {
+  public readonly type = 'SetAttitudeAction';
   public target: string;
   public attitude: string;
 
@@ -430,6 +440,7 @@ export class SetAttitudeAction implements CodeGeneratable {
 }
 
 export class ExchangeRoutineAction implements CodeGeneratable {
+  public readonly type = 'ExchangeRoutineAction';
   public target: string;
   public routine: string;
 
@@ -456,6 +467,7 @@ export class ExchangeRoutineAction implements CodeGeneratable {
 }
 
 export class ChapterTransitionAction implements CodeGeneratable {
+  public readonly type = 'ChapterTransitionAction';
   public chapter: number;
   public world: string;
 
@@ -482,6 +494,7 @@ export class ChapterTransitionAction implements CodeGeneratable {
 }
 
 export class SetVariableAction implements CodeGeneratable {
+  public readonly type = 'SetVariableAction';
   public variableName: string;
   public operator: string;
   public value: string | number | boolean;
@@ -510,6 +523,7 @@ export class SetVariableAction implements CodeGeneratable {
 }
 
 export class StopProcessInfosAction implements CodeGeneratable {
+  public readonly type = 'StopProcessInfosAction';
   public target: string;
 
   constructor(target: string = 'self') {
@@ -534,6 +548,7 @@ export class StopProcessInfosAction implements CodeGeneratable {
 }
 
 export class PlayAniAction implements CodeGeneratable {
+  public readonly type = 'PlayAniAction';
   public target: string;
   public animationName: string;
 
@@ -563,6 +578,26 @@ export type DialogAction = DialogLine | CreateTopic | LogEntry | LogSetTopicStat
 
 // Helper to deserialize any action
 export function deserializeAction(json: any): DialogAction | any {
+  if (json.type) {
+    switch (json.type) {
+      case 'DialogLine': return DialogLine.fromJSON(json);
+      case 'CreateTopic': return CreateTopic.fromJSON(json);
+      case 'LogEntry': return LogEntry.fromJSON(json);
+      case 'LogSetTopicStatus': return LogSetTopicStatus.fromJSON(json);
+      case 'Action': return Action.fromJSON(json);
+      case 'Choice': return Choice.fromJSON(json);
+      case 'CreateInventoryItems': return CreateInventoryItems.fromJSON(json);
+      case 'GiveInventoryItems': return GiveInventoryItems.fromJSON(json);
+      case 'AttackAction': return AttackAction.fromJSON(json);
+      case 'SetAttitudeAction': return SetAttitudeAction.fromJSON(json);
+      case 'ExchangeRoutineAction': return ExchangeRoutineAction.fromJSON(json);
+      case 'ChapterTransitionAction': return ChapterTransitionAction.fromJSON(json);
+      case 'SetVariableAction': return SetVariableAction.fromJSON(json);
+      case 'StopProcessInfosAction': return StopProcessInfosAction.fromJSON(json);
+      case 'PlayAniAction': return PlayAniAction.fromJSON(json);
+    }
+  }
+
   if ('speaker' in json && 'text' in json && 'id' in json) {
     return DialogLine.fromJSON(json);
   } else if ('topic' in json && 'topicType' in json) {
@@ -607,6 +642,7 @@ export function deserializeAction(json: any): DialogAction | any {
  * Represents a condition that checks if the player knows a specific dialog
  */
 export class NpcKnowsInfoCondition implements CodeGeneratable {
+  public readonly type = 'NpcKnowsInfoCondition';
   public npc: string;
   public dialogRef: string;
 
@@ -636,6 +672,7 @@ export class NpcKnowsInfoCondition implements CodeGeneratable {
  * Generic condition for any other condition expression
  */
 export class Condition implements CodeGeneratable {
+  public readonly type = 'Condition';
   public condition: string;
 
   constructor(condition: string) {
@@ -664,6 +701,7 @@ export class Condition implements CodeGeneratable {
  * or negated variable (e.g., !EntscheidungBuddlerMapTaken)
  */
 export class VariableCondition implements CodeGeneratable {
+  public readonly type = 'VariableCondition';
   public variableName: string;
   public negated: boolean;
   public operator?: string;
@@ -707,6 +745,14 @@ export type DialogCondition = NpcKnowsInfoCondition | Condition | VariableCondit
 
 // Helper to deserialize any condition
 export function deserializeCondition(json: any): DialogCondition {
+  if (json.type) {
+    switch (json.type) {
+      case 'NpcKnowsInfoCondition': return NpcKnowsInfoCondition.fromJSON(json);
+      case 'Condition': return Condition.fromJSON(json);
+      case 'VariableCondition': return VariableCondition.fromJSON(json);
+    }
+  }
+
   if ('npc' in json && 'dialogRef' in json) {
     return NpcKnowsInfoCondition.fromJSON(json);
   } else if ('variableName' in json) {
