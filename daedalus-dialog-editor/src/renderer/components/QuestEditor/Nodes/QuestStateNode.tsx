@@ -3,6 +3,7 @@ import { Handle, Position, NodeProps } from 'reactflow';
 import { Box, Typography } from '@mui/material';
 import { CheckCircleOutline, ErrorOutline, PlaylistPlay } from '@mui/icons-material';
 import BaseNode from './BaseNode';
+import ReferenceLink from '../../common/ReferenceLink';
 
 const QuestStateNode: React.FC<NodeProps> = ({ data, selected }) => {
   let icon = <PlaylistPlay fontSize="small" />;
@@ -21,15 +22,15 @@ const QuestStateNode: React.FC<NodeProps> = ({ data, selected }) => {
 
   return (
     <BaseNode
-      label={data.label || 'Quest State'}
+      label={<ReferenceLink symbolName={data.label || ''} sx={{ color: '#fff' }}>{data.label || 'Quest State'}</ReferenceLink>}
       headerColor={color}
       icon={icon}
       selected={selected}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <Typography variant="caption" sx={{ color: '#aaa', fontSize: 10 }}>
+        <ReferenceLink symbolName={data.variableName || ''} variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
           {data.variableName || 'MIS_Unknown'}
-        </Typography>
+        </ReferenceLink>
 
         <Box sx={{ bgcolor: '#1a1a1a', p: 1, borderRadius: 1 }}>
           <Typography variant="body2" sx={{ fontSize: 11, color: '#ccc', fontWeight: 'bold' }}>

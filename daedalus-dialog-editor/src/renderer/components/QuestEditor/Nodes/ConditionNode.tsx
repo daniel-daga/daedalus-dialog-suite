@@ -3,19 +3,21 @@ import { Handle, Position, NodeProps } from 'reactflow';
 import { Box, Typography } from '@mui/material';
 import { HelpOutline } from '@mui/icons-material';
 import BaseNode from './BaseNode';
+import ReferenceLink from '../../common/ReferenceLink';
+import ExpressionText from '../../common/ExpressionText';
 
 const ConditionNode: React.FC<NodeProps> = ({ data, selected }) => {
   return (
     <BaseNode
-      label={data.label || 'Condition'}
+      label={<ReferenceLink symbolName={data.label || ''} sx={{ color: '#fff' }}>{data.label || 'Condition'}</ReferenceLink>}
       headerColor="#ffc107" // Amber
       icon={<HelpOutline fontSize="small" />}
       selected={selected}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         <Box sx={{ bgcolor: '#1a1a1a', p: 1, borderRadius: 1 }}>
-          <Typography variant="body2" sx={{ fontSize: 11, fontFamily: 'monospace', color: '#81d4fa' }}>
-            {data.expression || 'TRUE'}
+          <Typography variant="body2" component="div" sx={{ fontSize: 11, fontFamily: 'monospace', color: '#81d4fa' }}>
+            <ExpressionText expression={data.expression || 'TRUE'} />
           </Typography>
         </Box>
 
