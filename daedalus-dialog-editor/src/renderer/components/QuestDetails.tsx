@@ -115,7 +115,7 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
         <Chip 
           label={questName} 
           variant="outlined" 
-          onDelete={() => navigateToSymbol(questName)}
+          onDelete={() => navigateToSymbol(questName, { preferSource: true })}
           deleteIcon={<Tooltip title="Follow reference"><OpenInNewIcon /></Tooltip>}
         />
         {misVariable ? (
@@ -123,7 +123,7 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
               label={`Var: ${misVarName}`} 
               color="success" 
               variant="outlined" 
-              onDelete={() => navigateToSymbol(misVarName)}
+              onDelete={() => navigateToSymbol(misVarName, { preferSource: true })}
               deleteIcon={<Tooltip title="Follow reference"><OpenInNewIcon /></Tooltip>}
             />
         ) : (
@@ -147,7 +147,7 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
                               if (ref.dialogName) {
                                 navigateToDialog(ref.dialogName);
                               } else {
-                                navigateToSymbol(ref.functionName);
+                                navigateToSymbol(ref.functionName, { preferSource: true });
                               }
                             }}
                           >

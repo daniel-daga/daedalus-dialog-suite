@@ -98,21 +98,22 @@ export const useNavigation = () => {
     return false;
   }, [dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, isProjectMode, activeFile, openFile, setSelectedNPC, setSelectedDialog, setSelectedFunctionName, setActiveView]);
 
-  const navigateToSymbol = useCallback(async (symbolName: string) => {
+  const navigateToSymbol = useCallback(async (symbolName: string, options?: { preferSource?: boolean }) => {
     const lowerSymbolName = symbolName.toLowerCase();
 
     // 1. Try to navigate as a quest/topic (switch to quest view)
-    if (symbolName.toUpperCase().startsWith('TOPIC_')) {
+    if (!options?.preferSource && symbolName.toUpperCase().startsWith('TOPIC_')) {
       setActiveView('quest');
       // QuestEditor should react to this if we had a selectedQuest in store,
       // but QuestEditor currently uses local state for selectedQuest.
       // For now, we just switch view.
+      return true;
     }
 
     // 2. Try to navigate as a dialog
     if (await navigateToDialog(symbolName)) return true;
 
-    // 3. Try to find as a variable or constant in the current merged model
+    // 3. Try to find as a variable, constant, or function in the current merged model
     const semanticModel = isProjectMode ? mergedSemanticModel : (activeFile ? openFiles.get(activeFile)?.semanticModel : null);
     
     if (semanticModel) {
@@ -126,20 +127,25 @@ export const useNavigation = () => {
       const constant = findCaseInsensitive(semanticModel.constants);
       const variable = findCaseInsensitive(semanticModel.variables);
       const instance = findCaseInsensitive(semanticModel.instances);
+      const func = findCaseInsensitive(semanticModel.functions);
       
-      const symbol = constant || variable || instance;
+      const symbol = constant || variable || instance || func;
       
       if (symbol && symbol.filePath) {
         await openFile(symbol.filePath);
-        // If it's a variable/constant, maybe switch to variable view?
-        // But variable view shows ALL variables, not necessarily selecting this one.
-        // Opening the file is a good start.
+        setActiveView('dialog');
+
+        // If it's a function, try to select it
+        if (func && func.name) {
+          setSelectedFunctionName(func.name);
+        }
+
         return true;
       }
     }
 
     return false;
-  }, [navigateToDialog, isProjectMode, mergedSemanticModel, activeFile, openFiles, openFile, setActiveView]);
+  }, [navigateToDialog, isProjectMode, mergedSemanticModel, activeFile, openFiles, openFile, setActiveView, setSelectedFunctionName]);
 
   return {
     navigateToDialog,
