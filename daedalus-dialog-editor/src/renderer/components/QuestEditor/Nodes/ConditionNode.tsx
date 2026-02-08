@@ -1,0 +1,40 @@
+import React, { memo } from 'react';
+import { Handle, Position, NodeProps } from 'reactflow';
+import { Box, Typography } from '@mui/material';
+import { HelpOutline } from '@mui/icons-material';
+import BaseNode from './BaseNode';
+
+const ConditionNode: React.FC<NodeProps> = ({ data, selected }) => {
+  return (
+    <BaseNode
+      label={data.label || 'Condition'}
+      headerColor="#ffc107" // Amber
+      icon={<HelpOutline fontSize="small" />}
+      selected={selected}
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ bgcolor: '#1a1a1a', p: 1, borderRadius: 1 }}>
+          <Typography variant="body2" sx={{ fontSize: 11, fontFamily: 'monospace', color: '#81d4fa' }}>
+            {data.expression || 'TRUE'}
+          </Typography>
+        </Box>
+
+        {/* Handles */}
+        <Box sx={{ position: 'relative', mt: 1, height: 20 }}>
+          {/* Output: Boolean */}
+          <Box sx={{ position: 'absolute', right: -20, top: 5, display: 'flex', alignItems: 'center', flexDirection: 'row-reverse' }}>
+            <Handle
+              type="source"
+              position={Position.Right}
+              id="out-bool"
+              style={{ background: '#ffeb3b', width: 10, height: 10 }}
+            />
+            <Typography variant="caption" sx={{ mr: 1, fontSize: 9, color: '#aaa' }}>Result</Typography>
+          </Box>
+        </Box>
+      </Box>
+    </BaseNode>
+  );
+};
+
+export default memo(ConditionNode);
