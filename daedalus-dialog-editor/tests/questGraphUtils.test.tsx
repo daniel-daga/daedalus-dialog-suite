@@ -117,4 +117,74 @@ describe('questGraphUtils', () => {
          expect(nodes).toHaveLength(4); // 2 nodes + 2 swimlanes
          expect(edges).toHaveLength(1); // Start -> End
     });
+
+    it('should create edges for choices between existing nodes', () => {
+        const questName = 'TOPIC_CHOICE';
+        const funcA = 'DIA_Start';
+        const funcB = 'DIA_Next';
+
+        const functions = [
+            {
+                name: funcA,
+                actions: [
+                    { topic: questName, topicType: 'LOG_MISSION' },
+                    { dialogRef: 'self', text: 'Go to B', targetFunction: funcB }
+                ]
+            },
+            {
+                name: funcB,
+                actions: [
+                    { topic: questName, status: 'LOG_RUNNING' }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: funcA, properties: { information: funcA, npc: 'NPC_A' } },
+            { name: funcB, properties: { information: funcB, npc: 'NPC_A' } }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { nodes, edges } = buildQuestGraph(model, questName);
+
+        const choiceEdge = edges.find(e => e.source === funcA && e.target === funcB);
+        expect(choiceEdge).toBeDefined();
+        expect(choiceEdge?.label).toBe('Go to B');
+        expect(choiceEdge?.sourceHandle).toBe('out-state'); // Start Node
+        expect(choiceEdge?.targetHandle).toBe('in-trigger'); // Set Running Node (now QuestState)
+    });
+
+    it('should NOT create edges for choices to non-existent/irrelevant nodes', () => {
+        const questName = 'TOPIC_IRRELEVANT';
+        const funcA = 'DIA_Start';
+        const funcC = 'DIA_Irrelevant';
+
+        const functions = [
+            {
+                name: funcA,
+                actions: [
+                    { topic: questName, topicType: 'LOG_MISSION' },
+                    { dialogRef: 'self', text: 'Go to C', targetFunction: funcC }
+                ]
+            },
+            {
+                name: funcC,
+                actions: [] // Irrelevant
+            }
+        ];
+
+        const dialogs = [
+            { name: funcA, properties: { information: funcA, npc: 'NPC_A' } },
+            { name: funcC, properties: { information: funcC, npc: 'NPC_A' } }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { nodes, edges } = buildQuestGraph(model, questName);
+
+        const nodeC = nodes.find(n => n.id === funcC);
+        expect(nodeC).toBeUndefined();
+
+        const edge = edges.find(e => e.source === funcA && e.target === funcC);
+        expect(edge).toBeUndefined();
+    });
 });

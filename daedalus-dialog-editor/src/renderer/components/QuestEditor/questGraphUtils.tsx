@@ -4,6 +4,15 @@ import { Typography } from '@mui/material';
 import type { SemanticModel } from '../../types/global';
 import { getActionType } from '../actionTypes';
 
+// Constants
+const CHOICE_EDGE_COLOR = '#ff9800';
+
+// Helper to check if a node should be visualized as a Quest State node
+const isStateNode = (type: string, description?: string): boolean => {
+    return type === 'start' || type === 'success' || type === 'failed' ||
+           description?.includes('Status') || description === 'Set Running';
+};
+
 // Helper to extract NPC from dialog or function
 export const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): string | null => {
   // Check if it's a dialog info function or condition
@@ -142,6 +151,43 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
     nodeDataMap.forEach((consumerData, consumerId) => {
         const func = semanticModel.functions[consumerId];
         if (!func) return;
+
+        // C. Dialog Choices (Explicit Flow)
+        func.actions?.forEach(action => {
+            if (getActionType(action) === 'choice') {
+                const targetFunc = (action as any).targetFunction;
+                if (nodeDataMap.has(targetFunc)) {
+                    const targetData = nodeDataMap.get(targetFunc)!;
+
+                    // Determine Source Handle based on Consumer Type
+                    let sourceHandle = 'out-finished';
+                    if (isStateNode(consumerData.type, consumerData.description)) {
+                         sourceHandle = 'out-state';
+                    }
+
+                    // Determine Target Handle based on Target Type
+                    let targetHandle = 'in-condition';
+                    if (isStateNode(targetData.type, targetData.description)) {
+                         targetHandle = 'in-trigger';
+                    }
+
+                     newEdges.push({
+                         id: `choice-${consumerId}-${targetFunc}`,
+                         source: consumerId,
+                         target: targetFunc,
+                         sourceHandle,
+                         targetHandle,
+                         label: (action as any).text, // Choice text
+                         type: 'smoothstep',
+                         markerEnd: { type: MarkerType.ArrowClosed },
+                         style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' }, // Orange dashed line
+                         labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 }
+                     });
+                     adjacency.get(consumerId)?.push(targetFunc);
+                     incomingCount.set(targetFunc, (incomingCount.get(targetFunc) || 0) + 1);
+                }
+            }
+        });
 
         func.conditions?.forEach(cond => {
             // A. Npc_KnowsInfo
@@ -299,7 +345,7 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
 
         // Determine node type
         let nodeType = 'dialog';
-        if (data.type === 'start' || data.type === 'success' || data.type === 'failed' || data.description?.includes('Status')) {
+        if (isStateNode(data.type, data.description)) {
              nodeType = 'questState';
         }
 
