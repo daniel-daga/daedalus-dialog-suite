@@ -1,0 +1,142 @@
+import {
+  TreeSitterNode,
+  TreeCursor,
+  Dialog,
+  DialogFunction,
+  SemanticModel,
+  GlobalConstant,
+  GlobalVariable
+} from '../semantic-model';
+
+export class DeclarationVisitor {
+  private semanticModel: SemanticModel;
+  private functionNameMap: Map<string, string>;
+
+  constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
+    this.semanticModel = semanticModel;
+    this.functionNameMap = functionNameMap;
+  }
+
+  /**
+   * First pass: Create all skeleton objects to ensure they exist before linking
+   */
+  visit(node: TreeSitterNode): void {
+    const cursor = node.walk();
+    this.createObjectsRecursively(cursor);
+  }
+
+  private createObjectsRecursively(cursor: TreeCursor): void {
+    const node = cursor.currentNode;
+
+    // Optimization: Handle root node specifically to skip non-declaration children
+    if (node.type === 'program' || node.type === 'source_file') {
+      if (cursor.gotoFirstChild()) {
+        do {
+          const child = cursor.currentNode;
+          // Only recurse into declarations we care about
+          if (child.type === 'function_declaration' ||
+              child.type === 'instance_declaration' ||
+              child.type === 'variable_declaration') {
+            this.createObjectsRecursively(cursor);
+          }
+        } while (cursor.gotoNextSibling());
+        cursor.gotoParent();
+      }
+      return;
+    }
+
+    if (node.type === 'function_declaration') {
+      const nameNode = node.childForFieldName('name');
+      const typeNode = node.childForFieldName('return_type');
+      if (nameNode && typeNode) {
+        const func = new DialogFunction(nameNode.text, typeNode.text);
+        this.semanticModel.functions[func.name] = func;
+        this.functionNameMap.set(func.name.toLowerCase(), func.name);
+      }
+      return; // Optimization: Don't recurse into function bodies during object creation
+    } else if (node.type === 'instance_declaration') {
+      const nameNode = node.childForFieldName('name');
+      const parentNode = node.childForFieldName('parent');
+      if (nameNode) {
+        const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
+        this.semanticModel.dialogs[dialog.name] = dialog;
+      }
+      return; // Optimization: Don't recurse into instance bodies during object creation
+    } else if (node.type === 'variable_declaration') {
+      this.createGlobalSymbol(node);
+      return;
+    }
+
+    // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
+    // so we don't need to recurse.
+  }
+
+  /**
+   * Create GlobalConstant or GlobalVariable from variable declaration node
+   */
+  private createGlobalSymbol(node: TreeSitterNode): void {
+    const keywordNode = node.childForFieldName('keyword');
+    const typeNode = node.childForFieldName('type');
+    const nameNode = node.childForFieldName('name');
+    const valueNode = node.childForFieldName('value');
+
+    if (!keywordNode || !typeNode || !nameNode) {
+      return;
+    }
+
+    const keyword = keywordNode.text.toLowerCase();
+    const type = typeNode.text;
+    const name = nameNode.text;
+
+    if (keyword === 'const') {
+      let value: string | number | boolean = 0;
+      if (valueNode) {
+        if (valueNode.type === 'string') {
+          value = valueNode.text;
+        } else if (valueNode.type === 'number') {
+          value = Number(valueNode.text);
+        } else if (valueNode.type === 'boolean') {
+          value = (valueNode.text.toLowerCase() === 'true');
+        } else {
+          // Identifier or expression
+          value = valueNode.text;
+        }
+      }
+
+      const constant = new GlobalConstant(name, type, value);
+      constant.position = {
+        startLine: node.startPosition.row + 1,
+        startColumn: node.startPosition.column + 1,
+        endLine: node.endPosition.row + 1,
+        endColumn: node.endPosition.column + 1
+      };
+      constant.range = {
+        startIndex: node.startIndex,
+        endIndex: node.endIndex
+      };
+
+      if (!this.semanticModel.constants) {
+        this.semanticModel.constants = {};
+      }
+      this.semanticModel.constants[name] = constant;
+
+    } else if (keyword === 'var') {
+      const variable = new GlobalVariable(name, type);
+      variable.position = {
+        startLine: node.startPosition.row + 1,
+        startColumn: node.startPosition.column + 1,
+        endLine: node.endPosition.row + 1,
+        endColumn: node.endPosition.column + 1
+      };
+      variable.range = {
+        startIndex: node.startIndex,
+        endIndex: node.endIndex
+      };
+
+      if (!this.semanticModel.variables) {
+        this.semanticModel.variables = {};
+      }
+      this.semanticModel.variables[name] = variable;
+    }
+  }
+}
