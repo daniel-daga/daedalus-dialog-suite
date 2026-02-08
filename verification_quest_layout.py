@@ -1,145 +1,109 @@
-from playwright.sync_api import Page, expect, sync_playwright
+from playwright.sync_api import sync_playwright
 import time
 
-def test_quest_layout(page: Page):
-    # Mock window.editorAPI
-    page.add_init_script("""
-        window.editorAPI = {
-            parseSource: async () => ({ dialogs: {}, functions: {} }),
-            validateModel: async () => ({ errors: [], warnings: [] }),
-            generateCode: async () => "",
-            saveFile: async () => ({ success: true }),
-            readFile: async () => "",
-            writeFile: async () => ({ success: true }),
-            openFileDialog: async () => null,
-            saveFileDialog: async () => null,
-            openProjectFolderDialog: async () => "/fake/path",
-            buildProjectIndex: async () => ({
-                dialogsByNpc: {
-                    "NPC_TEST": [
-                        { dialogName: "DIA_TEST_HELLO", npc: "NPC_TEST", filePath: "/fake/file.d" },
-                        { dialogName: "DIA_TEST_QUEST_START", npc: "NPC_TEST", filePath: "/fake/file.d" },
-                        { dialogName: "DIA_TEST_QUEST_STEP1", npc: "NPC_TEST", filePath: "/fake/file.d" },
-                        { dialogName: "DIA_TEST_QUEST_STEP2", npc: "NPC_TEST", filePath: "/fake/file.d" },
-                        { dialogName: "DIA_TEST_QUEST_STEP3", npc: "NPC_TEST", filePath: "/fake/file.d" },
-                        { dialogName: "DIA_TEST_QUEST_END", npc: "NPC_TEST", filePath: "/fake/file.d" }
-                    ]
-                },
-                questFiles: ["/fake/file.d"],
-                npcs: ["NPC_TEST"],
-                allFiles: ["/fake/file.d"],
-                quests: {
-                    "TOPIC_TEST": { name: "TOPIC_TEST", description: "Test Quest", section: "Quests" }
-                }
-            }),
-            parseDialogFile: async (path) => ({
-                constants: {
-                    "TOPIC_TEST": { name: "TOPIC_TEST", type: "string", value: '"Test Quest"', source: { file: "test.d" } }
-                },
-                functions: {
-                    "DIA_TEST_QUEST_START_INFO": {
-                        name: "DIA_TEST_QUEST_START_INFO",
-                        actions: [
-                            { type: "call", funcName: "Log_CreateTopic", topic: "TOPIC_TEST" },
-                            { type: "call", funcName: "Log_SetTopicStatus", topic: "TOPIC_TEST", status: "LOG_RUNNING" }
-                        ],
-                        conditions: []
-                    },
-                    "DIA_TEST_QUEST_STEP1_INFO": {
-                        name: "DIA_TEST_QUEST_STEP1_INFO",
-                        actions: [],
-                        conditions: [
-                            { variableName: "MIS_TEST", operator: "==", value: "LOG_RUNNING" }
-                        ]
-                    },
-                    "DIA_TEST_QUEST_STEP2_INFO": {
-                        name: "DIA_TEST_QUEST_STEP2_INFO",
-                        actions: [],
-                        conditions: [
-                            { variableName: "MIS_TEST", operator: "==", value: "LOG_RUNNING" }
-                        ]
-                    },
-                    "DIA_TEST_QUEST_STEP3_INFO": {
-                        name: "DIA_TEST_QUEST_STEP3_INFO",
-                        actions: [],
-                        conditions: [
-                            { variableName: "MIS_TEST", operator: "==", value: "LOG_RUNNING" }
-                        ]
-                    },
-                    "DIA_TEST_QUEST_END_INFO": {
-                        name: "DIA_TEST_QUEST_END_INFO",
-                        actions: [
-                            { type: "call", funcName: "Log_SetTopicStatus", topic: "TOPIC_TEST", status: "LOG_SUCCESS" }
-                        ],
-                        conditions: [
-                            { variableName: "MIS_TEST", operator: "==", value: "LOG_RUNNING" }
-                        ]
-                    }
-                },
-                dialogs: {
-                    "DIA_TEST_QUEST_START": { properties: { npc: "NPC_TEST", information: "DIA_TEST_QUEST_START_INFO" } },
-                    "DIA_TEST_QUEST_STEP1": { properties: { npc: "NPC_TEST", information: "DIA_TEST_QUEST_STEP1_INFO" } },
-                    "DIA_TEST_QUEST_STEP2": { properties: { npc: "NPC_TEST", information: "DIA_TEST_QUEST_STEP2_INFO" } },
-                    "DIA_TEST_QUEST_STEP3": { properties: { npc: "NPC_TEST", information: "DIA_TEST_QUEST_STEP3_INFO" } },
-                    "DIA_TEST_QUEST_END": { properties: { npc: "NPC_TEST", information: "DIA_TEST_QUEST_END_INFO" } }
-                }
-            }),
-            addAllowedPath: async () => {},
-            getRecentProjects: async () => [],
-            addRecentProject: async () => {}
-        };
-    """)
-
-    print("Navigating to app...")
-    page.goto("http://localhost:3000")
-
-    # Wait for the Open Project button
-    print("Clicking Open Project...")
-    try:
-        # Try to find the button by text if role fails (sometimes roles are tricky with MUI)
-        page.get_by_role("button", name="Open Project").first.click(timeout=5000)
-    except:
-        print("Could not find 'Open Project' button. Dumping page content.")
-        print(page.content())
-        raise
-
-    # Wait for project to load
-    page.wait_for_timeout(2000)
-
-    # Click 'Quest Editor' tab/view
-    print("Clicking Quest Editor tab...")
-    page.get_by_label("Quest Editor").click()
-
-    # Select the quest 'TOPIC_TEST'
-    print("Selecting TOPIC_TEST...")
-    page.get_by_text("TOPIC_TEST").click()
-
-    # Switch to "Flow" view
-    print("Switching to Flow view...")
-    try:
-        page.get_by_label("Flow View").click()
-    except Exception as e:
-        print(f"Could not find Flow View button: {e}")
-        # Try finding by icon or role if label fails
-        page.get_by_role("button", name="Flow View").click()
-
-    # Wait for rendering
-    page.wait_for_timeout(2000)
-
-    # Take screenshot
-    print("Taking screenshot...")
-    page.screenshot(path="verification_quest_layout.png")
-    print("Done.")
-
-if __name__ == "__main__":
+def run():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1280, "height": 1024})
-        page = context.new_page()
+        page = browser.new_page()
+
+        # Navigate to the app
+        print("Navigating to app...")
+        page.goto("http://localhost:5173")
+
+        # Wait for the app to load (Welcome screen)
+        page.wait_for_load_state("networkidle")
+        print("App loaded.")
+
+        # Inject mock overrides
+        print("Injecting mocks...")
+        page.evaluate("""
+            window.editorAPI.openFileDialog = async () => 'sample.d';
+            window.editorAPI.readFile = async (path) => {
+                if (path === 'sample.d') {
+                    return `// Sample Dialog File
+INSTANCE DIA_Example_Hello(C_INFO)
+{
+    npc = PC_Hero;
+    nr = 1;
+    condition = DIA_Example_Hello_Condition;
+    information = DIA_Example_Hello_Info;
+    important = FALSE;
+};
+
+FUNC INT DIA_Example_Hello_Condition()
+{
+    if (Npc_KnowsInfo(other, DIA_Example_Hello)) {
+        return TRUE;
+    }
+};
+
+FUNC VOID DIA_Example_Hello_Info()
+{
+    AI_Output(self, other, "DIA_Example_Hello_15_00"); //Hello there!
+    Log_CreateTopic(TOPIC_MyQuest, LOG_MISSION);
+    Log_SetTopicStatus(TOPIC_MyQuest, LOG_RUNNING);
+};
+`;
+                }
+                return '';
+            };
+        """)
+
+        # Click "Open Single File"
+        print("Clicking 'Open Single File'...")
+        page.get_by_role("button", name="Open Single File").click()
+
+        # Wait for MainLayout to appear (sidebar)
+        print("Waiting for editor to load...")
+        page.get_by_label("Quest Editor").wait_for()
+
+        # Switch to Quest Editor
+        print("Switching to Quest Editor...")
+        page.get_by_label("Quest Editor").click()
+
+        print("Selecting quest...")
+        # Check if "TOPIC_MyQuest" is visible
         try:
-            test_quest_layout(page)
-        except Exception as e:
-            print(f"Error: {e}")
-            page.screenshot(path="error_screenshot.png")
-        finally:
-            browser.close()
+             page.get_by_text("TOPIC_MyQuest").wait_for(timeout=10000)
+             page.get_by_text("TOPIC_MyQuest").click()
+        except:
+             print("TOPIC_MyQuest not found. Taking debug screenshot.")
+             page.screenshot(path="debug_quest_list.png")
+             raise
+
+        # Wait for QuestFlow to render
+        print("Waiting for graph nodes...")
+        # The node should be labeled "DIA_Example_Hello"
+        try:
+            page.get_by_text("DIA_Example_Hello").first.wait_for(timeout=10000)
+        except:
+            print("DIA_Example_Hello not found. Checking if view mode is 'details'...")
+            # If in details view, "DIA_Example_Hello" might be in a list or table?
+            # Default view is Details. Details shows QuestDetails.
+            # QuestDetails might show "Status: RUNNING".
+            pass
+
+        # Switch to Flow view
+        print("Switching to Flow view...")
+        page.get_by_label("Flow View").click()
+
+        # Now verify MiniMap
+        print("Verifying MiniMap...")
+        minimap = page.locator(".react-flow__minimap")
+        minimap.wait_for(timeout=5000)
+
+        if minimap.is_visible():
+            print("MiniMap is visible!")
+        else:
+            print("MiniMap is NOT visible!")
+            exit(1)
+
+        # Take screenshot
+        print("Taking screenshot...")
+        page.screenshot(path="/home/jules/verification/verification_quest_layout.png")
+        print("Done.")
+
+        browser.close()
+
+if __name__ == "__main__":
+    run()
