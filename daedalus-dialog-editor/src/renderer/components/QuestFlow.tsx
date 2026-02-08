@@ -273,7 +273,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
 
     // 3. Layout (Simplified Swimlane)
     const npcs = Array.from(new Set(Array.from(nodeDataMap.values()).map(d => d.npc))).sort();
-    const LANE_HEIGHT = 300;
     const LEVEL_WIDTH = 350;
 
     const levels = new Map<string, number>();
@@ -299,6 +298,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         });
     }
 
+    // PASS 1: Calculate counts per (npc, level)
     const laneOccupancy = new Map<string, Map<number, number>>();
     npcs.forEach(npc => laneOccupancy.set(npc, new Map()));
 
@@ -307,11 +307,46 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
         const npcMap = laneOccupancy.get(data.npc)!;
         const count = npcMap.get(level) || 0;
         npcMap.set(level, count + 1);
+    });
+
+    // PASS 2: Calculate Lane Heights and Y Offsets
+    const NPC_LANE_HEIGHT = new Map<string, number>();
+    const NPC_Y_START = new Map<string, number>();
+    let currentY = 0;
+    const NODE_VERTICAL_SPACING = 250;
+    const MIN_LANE_HEIGHT = 300;
+    const LANE_PADDING = 50;
+
+    npcs.forEach(npc => {
+        NPC_Y_START.set(npc, currentY);
+
+        const npcMap = laneOccupancy.get(npc)!;
+        let maxNodesInCol = 0;
+        if (npcMap.size > 0) {
+             maxNodesInCol = Math.max(...Array.from(npcMap.values()));
+        }
+
+        const requiredHeight = Math.max(
+            (maxNodesInCol * NODE_VERTICAL_SPACING) + LANE_PADDING,
+            MIN_LANE_HEIGHT
+        );
+        NPC_LANE_HEIGHT.set(npc, requiredHeight);
+        currentY += requiredHeight;
+    });
+
+    // PASS 3: Create Nodes
+    const currentCounts = new Map<string, Map<number, number>>();
+    npcs.forEach(npc => currentCounts.set(npc, new Map()));
+
+    nodeDataMap.forEach((data, id) => {
+        const level = levels.get(id) || 0;
+        const npcMap = currentCounts.get(data.npc)!;
+        const count = npcMap.get(level) || 0;
+        npcMap.set(level, count + 1);
 
         const x = level * LEVEL_WIDTH + 50;
-        const npcIndex = npcs.indexOf(data.npc);
-        const yBase = npcIndex * LANE_HEIGHT;
-        const yOffset = count * 100;
+        const yBase = NPC_Y_START.get(data.npc)!;
+        const yOffset = count * NODE_VERTICAL_SPACING;
 
         const y = yBase + 50 + yOffset;
 
@@ -337,15 +372,18 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
     });
 
     // Swimlanes
-    npcs.forEach((npc, index) => {
+    npcs.forEach((npc) => {
         const maxLevel = Math.max(...Array.from(levels.values()), 0);
+        const y = NPC_Y_START.get(npc)!;
+        const height = NPC_LANE_HEIGHT.get(npc)!;
+
         newNodes.unshift({
             id: `swimlane-${npc}`,
             type: 'group',
-            position: { x: 0, y: index * LANE_HEIGHT },
+            position: { x: 0, y },
             style: {
                 width: (maxLevel + 1) * LEVEL_WIDTH + 200,
-                height: LANE_HEIGHT - 20,
+                height: height - 20,
                 backgroundColor: 'rgba(255, 255, 255, 0.02)', // Very subtle light
                 border: '1px dashed #444',
                 zIndex: -1,
