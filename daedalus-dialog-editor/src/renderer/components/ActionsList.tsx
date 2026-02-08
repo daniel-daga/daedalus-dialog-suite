@@ -16,6 +16,7 @@ interface ActionsListProps {
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName: string;
+  contextId?: string; // Unique ID to reset progressive rendering (e.g. function name)
 }
 
 // Progressive rendering threshold - render all if less than this
@@ -40,7 +41,8 @@ const ActionsList = React.memo<ActionsListProps>(({
   semanticModel,
   onNavigateToFunction,
   onRenameFunction,
-  dialogContextName
+  dialogContextName,
+  contextId
 }) => {
   // Progressive rendering for large lists
   const [renderedCount, setRenderedCount] = useState(() =>
@@ -48,14 +50,20 @@ const ActionsList = React.memo<ActionsListProps>(({
   );
 
   useEffect(() => {
-    // Reset rendered count when actions change
-    setRenderedCount(
-      actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : INITIAL_BATCH_SIZE
-    );
-  }, [actions.length]);
+    // Reset rendered count when context ID changes (e.g. switched function)
+    // If contextId is not provided, we don't reset automatically on actions change
+    // to avoid resetting during editing.
+    if (contextId) {
+      setRenderedCount(
+        actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : INITIAL_BATCH_SIZE
+      );
+    }
+  }, [contextId]); // Only depend on contextId
 
   useEffect(() => {
     // Progressively render remaining items
+    // This effect ensures that if actions are added, or if initial render was partial,
+    // we eventually show everything.
     if (renderedCount < actions.length) {
       const timer = setTimeout(() => {
         setRenderedCount(prev => Math.min(prev + 10, actions.length));
@@ -104,6 +112,7 @@ const ActionsList = React.memo<ActionsListProps>(({
   if (prevProps.actions.length !== nextProps.actions.length) return false;
   if (prevProps.npcName !== nextProps.npcName) return false;
   if (prevProps.dialogContextName !== nextProps.dialogContextName) return false;
+  if (prevProps.contextId !== nextProps.contextId) return false; // Check contextId
 
   // Quick check - if the arrays have the same actions in the same order
   // We rely on action IDs for identity, and ActionCard memo for deep comparison

@@ -1,13 +1,15 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, memo } from 'react';
 import {
   Paper,
   Box,
   Typography,
   TextField,
-  InputAdornment
+  InputAdornment,
+  IconButton
 } from '@mui/material';
 import {
-  FilterList as FilterListIcon
+  FilterList as FilterListIcon,
+  Clear as ClearIcon
 } from '@mui/icons-material';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
@@ -16,6 +18,70 @@ import { useSearchStore } from '../store/searchStore';
 import DialogTreeItem from './DialogTreeItem';
 import ChoiceTreeItem from './ChoiceTreeItem';
 import { flattenDialogs } from './dialogTreeUtils';
+import type { SemanticModel } from '../types/global';
+
+// Interface for item data passed to the virtualized list
+interface ItemData {
+  flatItems: any[];
+  semanticModel: SemanticModel;
+  selectedDialog: string | null;
+  selectedFunctionName: string | null;
+  onSelectDialog: (dialogName: string, functionName: string | null) => void;
+  onToggleDialogExpand: (dialogName: string) => void;
+  onToggleChoiceExpand: (choiceKey: string) => void;
+}
+
+// Row component defined outside to prevent recreation
+// Wrapped in memo to prevent unnecessary re-renders if itemData hasn't changed relevantly
+const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => {
+  const {
+    flatItems,
+    semanticModel,
+    selectedDialog,
+    selectedFunctionName,
+    onSelectDialog,
+    onToggleDialogExpand,
+    onToggleChoiceExpand
+  } = data;
+
+  const item = flatItems[index];
+
+  if (item.type === 'dialog') {
+    const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information as any;
+    const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+
+    return (
+      <DialogTreeItem
+        dialogName={item.dialogName}
+        semanticModel={semanticModel}
+        isSelected={selectedDialog === item.dialogName && selectedFunctionName === infoFuncName}
+        isExpanded={item.isExpanded}
+        onSelectDialog={onSelectDialog}
+        onToggleDialogExpand={onToggleDialogExpand}
+        hasChildren={item.hasChildren}
+        style={style}
+      />
+    );
+  } else {
+    return (
+      <ChoiceTreeItem
+        choice={item.choice}
+        depth={item.depth}
+        index={item.index}
+        choiceKey={item.id}
+        isExpanded={item.isExpanded}
+        hasChildren={item.hasChildren}
+        selectedFunctionName={selectedFunctionName}
+        dialogName={item.dialogName}
+        onSelectDialog={onSelectDialog}
+        onToggleChoiceExpand={onToggleChoiceExpand}
+        style={style}
+      />
+    );
+  }
+});
+
+Row.displayName = 'DialogTreeRow';
 
 const DialogTree: React.FC<DialogTreeProps> = ({
   selectedNPC,
@@ -64,44 +130,24 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     );
   }, [selectedNPC, filteredDialogs, semanticModel, expandedDialogs, expandedChoices, buildFunctionTree]);
 
-  // Row renderer for FixedSizeList
-  const Row = useCallback(({ index, style }: ListChildComponentProps) => {
-    const item = flatItems[index];
-
-    if (item.type === 'dialog') {
-      const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information as any;
-      const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-
-      return (
-        <DialogTreeItem
-          dialogName={item.dialogName}
-          semanticModel={semanticModel}
-          isSelected={selectedDialog === item.dialogName && selectedFunctionName === infoFuncName}
-          isExpanded={item.isExpanded}
-          onSelectDialog={onSelectDialog}
-          onToggleDialogExpand={onToggleDialogExpand}
-          hasChildren={item.hasChildren}
-          style={style}
-        />
-      );
-    } else {
-      return (
-        <ChoiceTreeItem
-          choice={item.choice}
-          depth={item.depth}
-          index={item.index}
-          choiceKey={item.id}
-          isExpanded={item.isExpanded}
-          hasChildren={item.hasChildren}
-          selectedFunctionName={selectedFunctionName}
-          dialogName={item.dialogName}
-          onSelectDialog={onSelectDialog}
-          onToggleChoiceExpand={onToggleChoiceExpand}
-          style={style}
-        />
-      );
-    }
-  }, [flatItems, semanticModel, selectedDialog, selectedFunctionName, onSelectDialog, onToggleDialogExpand, onToggleChoiceExpand]);
+  // Memoize item data to pass to the list
+  const itemData = useMemo(() => ({
+    flatItems,
+    semanticModel,
+    selectedDialog,
+    selectedFunctionName,
+    onSelectDialog,
+    onToggleDialogExpand,
+    onToggleChoiceExpand
+  }), [
+    flatItems,
+    semanticModel,
+    selectedDialog,
+    selectedFunctionName,
+    onSelectDialog,
+    onToggleDialogExpand,
+    onToggleChoiceExpand
+  ]);
 
   return (
     <Paper sx={{ width: 350, overflow: 'hidden', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }} elevation={1}>
@@ -126,7 +172,18 @@ const DialogTree: React.FC<DialogTreeProps> = ({
                 <InputAdornment position="start">
                   <FilterListIcon fontSize="small" color="action" />
                 </InputAdornment>
-              )
+              ),
+              endAdornment: dialogFilter ? (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    onClick={() => setDialogFilter('')}
+                    aria-label="Clear filter"
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null
             }}
           />
         </Box>
@@ -141,6 +198,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
                   height={height}
                   itemCount={flatItems.length}
                   itemSize={60}
+                  itemData={itemData}
                   width={width}
                   overscanCount={5}
                 >
