@@ -16,6 +16,7 @@ import { Box, Typography } from '@mui/material';
 import type { SemanticModel } from '../types/global';
 import { useNavigation } from '../hooks/useNavigation';
 import { buildQuestGraph } from './QuestEditor/questGraphUtils';
+import { findDialogNameForFunction } from './QuestEditor/questAnalysis';
 
 import DialogNode from './QuestEditor/Nodes/DialogNode';
 import QuestStateNode from './QuestEditor/Nodes/QuestStateNode';
@@ -40,28 +41,16 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Helper to find dialog name for a function
-  const findDialogForFunction = useCallback((funcName: string) => {
-    for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
-        const info = d.properties.information;
-        if ((typeof info === 'string' && info.toLowerCase() === funcName.toLowerCase()) ||
-            (typeof info === 'object' && info.name.toLowerCase() === funcName.toLowerCase())) {
-            return dName;
-        }
-    }
-    return null;
-  }, [semanticModel.dialogs]);
-
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     if (node.type === 'group') return;
     
-    const dialogName = findDialogForFunction(node.id);
+    const dialogName = findDialogNameForFunction(semanticModel, node.id);
     if (dialogName) {
       navigateToDialog(dialogName);
     } else {
       navigateToSymbol(node.id);
     }
-  }, [findDialogForFunction, navigateToDialog, navigateToSymbol]);
+  }, [semanticModel, navigateToDialog, navigateToSymbol]);
 
   const onConnect = useCallback((params: Connection) => {
     // In the future: This should also update the semantic model (e.g., adding Npc_KnowsInfo)

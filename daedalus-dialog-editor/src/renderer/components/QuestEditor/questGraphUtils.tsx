@@ -20,17 +20,6 @@ export interface QuestGraphData {
     edges: Edge[];
 }
 
-export interface QuestAnalysis {
-    status: 'implemented' | 'wip' | 'broken' | 'not_started';
-    misVariableExists: boolean;
-    misVariableName: string;
-    hasStart: boolean;
-    hasSuccess: boolean;
-    hasFailed: boolean;
-    description: string;
-    filePaths: { topic: string | null; variable: string | null };
-}
-
 // Helper to check if a node should be visualized as a Quest State node
 const isStateNode = (type: string, description?: string): boolean => {
     return type === 'start' || type === 'success' || type === 'failed' ||
@@ -426,55 +415,4 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
     const nodes = calculateDagreLayout(nodeDataMap, adjacency, misVarName);
 
     return { nodes, edges };
-};
-
-export const analyzeQuest = (semanticModel: SemanticModel, questName: string): QuestAnalysis => {
-    const misVarName = questName.replace('TOPIC_', 'MIS_');
-    const topicConstant = semanticModel.constants?.[questName];
-    const misVariable = semanticModel.variables?.[misVarName];
-
-    let hasStart = false;
-    let hasSuccess = false;
-    let hasFailed = false;
-
-    // Scan functions for actions
-    Object.values(semanticModel.functions || {}).forEach(func => {
-        func.actions?.forEach((action: DialogAction) => {
-            if ('topic' in action && action.topic === questName) {
-                if (action.type === 'CreateTopic') {
-                    hasStart = true;
-                } else if (action.type === 'LogSetTopicStatus') {
-                    const status = String(action.status);
-                    if (status.includes('SUCCESS') || status === '2') {
-                        hasSuccess = true;
-                    } else if (status.includes('FAILED') || status === '3') {
-                        hasFailed = true;
-                    }
-                }
-            }
-        });
-    });
-
-    let status: QuestAnalysis['status'] = 'not_started';
-    if (!misVariable) {
-        status = 'broken';
-    } else if (hasSuccess || hasFailed) {
-        status = 'implemented';
-    } else if (hasStart) {
-        status = 'wip';
-    }
-
-    return {
-        status,
-        misVariableExists: !!misVariable,
-        misVariableName: misVarName,
-        hasStart,
-        hasSuccess,
-        hasFailed,
-        description: topicConstant ? String(topicConstant.value).replace(/^"|"$/g, '') : '',
-        filePaths: {
-            topic: topicConstant?.filePath || null,
-            variable: misVariable?.filePath || null
-        }
-    };
 };

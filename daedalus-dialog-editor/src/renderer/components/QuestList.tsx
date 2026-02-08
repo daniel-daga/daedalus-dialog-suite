@@ -32,7 +32,7 @@ import {
 import type { SemanticModel } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest } from './QuestEditor/questGraphUtils';
+import { analyzeQuest, getUsedQuestTopics } from './QuestEditor/questAnalysis';
 
 interface QuestListProps {
   semanticModel: SemanticModel;
@@ -66,19 +66,8 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
 
   // Memoize the set of used topics to enable "Used" filtering
   const usedTopics = useMemo(() => {
-    const used = new Set<string>();
-
-    // Check all functions for Log_* calls
-    Object.values(semanticModel.functions || {}).forEach(func => {
-      func.actions?.forEach(action => {
-        if ('topic' in action && action.topic) {
-           used.add(action.topic);
-        }
-      });
-    });
-
-    return used;
-  }, [semanticModel.functions]);
+    return getUsedQuestTopics(semanticModel);
+  }, [semanticModel]);
 
   const filteredQuests = useMemo(() => {
     return quests.filter(q => {
