@@ -34,6 +34,8 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
+        multiline
+        rows={2}
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>

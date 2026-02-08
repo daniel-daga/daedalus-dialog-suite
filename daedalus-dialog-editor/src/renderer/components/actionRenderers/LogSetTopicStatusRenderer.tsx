@@ -1,4 +1,5 @@
 import React from 'react';
+import { TextField, MenuItem, Box, Chip } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
@@ -12,6 +13,17 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'LOG_RUNNING': return 'info';
+      case 'LOG_SUCCESS': return 'success';
+      case 'LOG_FAILED': return 'error';
+      case 'LOG_OBSOLETE': return 'default';
+      default: return 'default';
+    }
+  };
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
@@ -27,17 +39,30 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
         namePrefix="TOPIC_"
         semanticModel={semanticModel}
       />
-      <VariableAutocomplete
+      <TextField
+        select
         fullWidth
         label="Status"
-        value={action.status || ''}
-        onChange={(value) => handleUpdate({ ...action, status: value })}
-        onFlush={flushUpdate}
+        value={action.status || 'LOG_RUNNING'}
+        onChange={(e) => handleUpdate({ ...action, status: e.target.value })}
+        onBlur={flushUpdate}
         onKeyDown={handleKeyDown}
-        typeFilter="int"
-        namePrefix="LOG_"
-        semanticModel={semanticModel}
-      />
+        size="small"
+      >
+        {['LOG_RUNNING', 'LOG_SUCCESS', 'LOG_FAILED', 'LOG_OBSOLETE'].map((status) => (
+          <MenuItem key={status} value={status}>
+             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Chip
+                label={status}
+                size="small"
+                color={getStatusColor(status) as any}
+                variant="outlined"
+                sx={{ height: 20, fontSize: '0.7rem', cursor: 'pointer' }}
+              />
+            </Box>
+          </MenuItem>
+        ))}
+      </TextField>
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>
   );

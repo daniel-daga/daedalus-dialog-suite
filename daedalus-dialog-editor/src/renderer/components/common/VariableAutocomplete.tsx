@@ -60,7 +60,9 @@ type OptionType = {
   value?: string | number | boolean;
 };
 
-const filter = createFilterOptions<OptionType>();
+const filter = createFilterOptions<OptionType>({
+  stringify: (option) => `${option.name} ${option.type} ${option.value !== undefined ? option.value : ''}`
+});
 
 const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   value,
