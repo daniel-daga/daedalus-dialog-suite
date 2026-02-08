@@ -42,6 +42,7 @@ interface FileState {
   isDirty: boolean;
   lastSaved: Date;
   originalCode?: string;
+  workingCode?: string; // Current code in source editor (may differ from semanticModel or originalCode)
   hasErrors?: boolean;
   errors?: ParseError[];
   lastValidationResult?: ValidationResult;
@@ -71,7 +72,7 @@ interface EditorStore {
   activeFile: string | null;
 
   // View state
-  activeView: 'dialog' | 'quest' | 'variable';
+  activeView: 'dialog' | 'quest' | 'variable' | 'source';
 
   // UI state
   selectedNPC: string | null;
@@ -102,11 +103,13 @@ interface EditorStore {
   saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<SaveFileResult>;
   clearPendingValidation: () => void;
   generateCode: (filePath: string) => Promise<string>;
+  setWorkingCode: (filePath: string, code: string | undefined) => void;
+  saveSource: (filePath: string, code: string) => Promise<void>;
   setSelectedNPC: (npcName: string | null) => void;
   setSelectedDialog: (dialogName: string | null) => void;
   setSelectedFunctionName: (functionName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
-  setActiveView: (view: 'dialog' | 'quest' | 'variable') => void;
+  setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'source') => void;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   setAutoSaveInterval: (interval: number) => void;
@@ -207,6 +210,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           ...fileState,
           semanticModel: model,
           isDirty: true,
+          workingCode: undefined, // Invalidate source cache
         };
         const newOpenFiles = new Map(state.openFiles);
         newOpenFiles.set(filePath, updatedFileState);
@@ -233,6 +237,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...fileState,
         semanticModel: updatedModel,
         isDirty: true,
+        workingCode: undefined, // Invalidate source cache
       };
       const newOpenFiles = new Map(state.openFiles);
       newOpenFiles.set(filePath, updatedFileState);
@@ -257,6 +262,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...fileState,
         semanticModel: updatedModel,
         isDirty: true,
+        workingCode: undefined, // Invalidate source cache
       };
       const newOpenFiles = new Map(state.openFiles);
       newOpenFiles.set(filePath, updatedFileState);
@@ -372,6 +378,66 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     return window.editorAPI.generateCode(fileState.semanticModel, state.codeSettings);
   },
 
+  setWorkingCode: (filePath: string, code: string | undefined) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (fileState) {
+        const updatedFileState: FileState = {
+          ...fileState,
+          workingCode: code,
+        };
+        const newOpenFiles = new Map(state.openFiles);
+        newOpenFiles.set(filePath, updatedFileState);
+        return { openFiles: newOpenFiles };
+      }
+      return state;
+    });
+  },
+
+  saveSource: async (filePath: string, code: string) => {
+    const state = get();
+    const fileState = state.openFiles.get(filePath);
+    if (!fileState) {
+      throw new Error('File not open');
+    }
+
+    try {
+      // 1. Write file
+      await window.editorAPI.writeFile(filePath, code);
+
+      // 2. Parse and update model
+      const model = await window.editorAPI.parseSource(code);
+
+      // 3. Ensure action IDs if valid
+      const processedModel = model.hasErrors ? model : ensureActionIds(model);
+
+      // 4. Update state
+      set((state) => {
+        const currentFileState = state.openFiles.get(filePath);
+        if (currentFileState) {
+          const updatedFileState: FileState = {
+            ...currentFileState,
+            semanticModel: processedModel,
+            isDirty: false,
+            lastSaved: new Date(),
+            originalCode: code,
+            workingCode: undefined, // Clear working code as it matches disk
+            hasErrors: model.hasErrors || false,
+            errors: model.errors || [],
+            lastValidationResult: undefined // Clear old validation result
+          };
+          const newOpenFiles = new Map(state.openFiles);
+          newOpenFiles.set(filePath, updatedFileState);
+          return { openFiles: newOpenFiles };
+        }
+        return state;
+      });
+    } catch (error) {
+      console.error('Failed to save source:', error);
+      throw error;
+    }
+  },
+
   setSelectedNPC: (npcName: string | null) => {
     set({ selectedNPC: npcName });
   },
@@ -388,7 +454,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ selectedAction: actionIndex });
   },
 
-  setActiveView: (view: 'dialog' | 'quest' | 'variable') => {
+  setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'source') => {
     set({ activeView: view });
   },
 

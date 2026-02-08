@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Box, ToggleButton, ToggleButtonGroup, Paper, Tooltip } from '@mui/material';
-import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
+import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, Code as CodeIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
+import SourceCodeEditor from './SourceCodeEditor';
 import QuestEditor from './QuestEditor';
 import VariableManager from './VariableManager';
 import { useEditorStore } from '../store/editorStore';
@@ -52,6 +53,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                     <VariableIcon />
                 </ToggleButton>
             </Tooltip>
+            <Tooltip title="Source Code" placement="right">
+                <ToggleButton value="source" aria-label="Source Code">
+                    <CodeIcon />
+                </ToggleButton>
+            </Tooltip>
          </ToggleButtonGroup>
       </Paper>
 
@@ -60,6 +66,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
          {/* We use Box with display toggle to preserve state of ThreeColumnLayout when switching views */}
          <Box sx={{ display: view === 'dialog' ? 'block' : 'none', height: '100%' }}>
              <ThreeColumnLayout filePath={filePath} />
+         </Box>
+
+         {/* Source Code Editor (preserved in DOM for undo history) */}
+         <Box sx={{ display: view === 'source' ? 'block' : 'none', height: '100%' }}>
+             {filePath && <SourceCodeEditor filePath={filePath} />}
          </Box>
 
          {view === 'quest' && (
