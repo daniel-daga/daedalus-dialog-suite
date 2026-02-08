@@ -121,7 +121,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
                   size="small" 
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigateToSymbol(quest.name);
+                    navigateToSymbol(quest.name, { preferSource: true });
                   }}
                 >
                   <OpenInNewIcon fontSize="small" />
