@@ -63,7 +63,19 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
 
     const nodeDataMap = new Map<string, NodeData>();
     // Track producers of specific variable values
-    const producersByValue = new Map<string, Set<string>>();
+    // Map<VariableName, Map<Value, Set<FunctionID>>>
+    const producersByVariableAndValue = new Map<string, Map<string, Set<string>>>();
+
+    const addProducer = (variable: string, value: string, funcName: string) => {
+        if (!producersByVariableAndValue.has(variable)) {
+            producersByVariableAndValue.set(variable, new Map());
+        }
+        const valueMap = producersByVariableAndValue.get(variable)!;
+        if (!valueMap.has(value)) {
+            valueMap.set(value, new Set());
+        }
+        valueMap.get(value)!.add(funcName);
+    };
 
     Object.values(semanticModel.functions || {}).forEach(func => {
       let isRelevant = false;
@@ -72,35 +84,46 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
 
       // Check actions
       func.actions?.forEach(action => {
+        const actionType = getActionType(action);
+
+        // Track generic variable assignments
+        if (actionType === 'setVariableAction') {
+             const varName = (action as any).variableName;
+             const op = (action as any).operator;
+             const val = String((action as any).value);
+             // We only support direct assignment for now as "Production"
+             if (op === '=') {
+                 addProducer(varName, val, func.name);
+             }
+        }
+
         if ('topic' in action && action.topic === questName) {
           isRelevant = true;
-          const actionType = getActionType(action);
 
           if (actionType === 'createTopic') {
               type = 'start';
               description = 'Start Quest';
-              if (!producersByValue.has('1')) producersByValue.set('1', new Set());
-              producersByValue.get('1')?.add(func.name);
+              addProducer(misVarName, '1', func.name);
           } else if (actionType === 'logSetTopicStatus') {
              const status = String((action as any).status);
              if (status.includes('SUCCESS') || status === '2') {
                 type = 'success';
                 description = 'Finish (Success)';
-                if (!producersByValue.has('2')) producersByValue.set('2', new Set());
-                producersByValue.get('2')?.add(func.name);
+                addProducer(misVarName, '2', func.name);
              } else if (status.includes('FAILED') || status === '3') {
                 type = 'failed';
                 description = 'Finish (Failed)';
-                if (!producersByValue.has('3')) producersByValue.set('3', new Set());
-                producersByValue.get('3')?.add(func.name);
+                addProducer(misVarName, '3', func.name);
              } else if (status.includes('RUNNING') || status === '1') {
                 type = 'update';
                 description = 'Set Running';
-                if (!producersByValue.has('1')) producersByValue.set('1', new Set());
-                producersByValue.get('1')?.add(func.name);
+                addProducer(misVarName, '1', func.name);
              } else {
                 type = 'update';
                 description = `Set Status: ${status}`;
+                // Try to add as generic status producer if possible, though status is usually a constant
+                // Here we assume status might be a value we check later
+                addProducer(misVarName, status, func.name);
              }
           } else if (actionType === 'logEntry') {
              if (type === 'check') type = 'update';
@@ -219,36 +242,44 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
                 }
             }
 
-            // B. Variable Dependency
-            if ('variableName' in cond && (cond as any).variableName === misVarName) {
+            // B. Variable Dependency (Generalized)
+            if ('variableName' in cond) {
+                const varName = (cond as any).variableName;
                 const op = (cond as any).operator;
                 const val = String((cond as any).value);
                 let checkVal = val;
-                if (val === 'LOG_RUNNING') checkVal = '1';
-                if (val === 'LOG_SUCCESS') checkVal = '2';
-                if (val === 'LOG_FAILED') checkVal = '3';
+
+                // Normalization for LOG_* constants if it matches misVarName
+                if (varName === misVarName) {
+                     if (val === 'LOG_RUNNING') checkVal = '1';
+                     if (val === 'LOG_SUCCESS') checkVal = '2';
+                     if (val === 'LOG_FAILED') checkVal = '3';
+                }
 
                 if (op === '==' && checkVal) {
-                    const producers = producersByValue.get(checkVal) || new Set();
-                    producers.forEach(producerId => {
-                        if (producerId !== consumerId && nodeDataMap.has(producerId)) {
-                             newEdges.push({
-                                 id: `state-${producerId}-${consumerId}`,
-                                 source: producerId,
-                                 target: consumerId,
-                                 sourceHandle: 'out-state',
-                                 targetHandle: 'in-trigger', // Logic: Producer Sets State -> Consumer Checks State
-                                 label: val,
-                                 type: 'smoothstep',
-                                 animated: true,
-                                 markerEnd: { type: MarkerType.ArrowClosed },
-                                 style: { stroke: '#2196f3', strokeWidth: 2 },
-                                 labelStyle: { fill: '#2196f3', fontSize: 10 }
-                             });
-                             adjacency.get(producerId)?.push(consumerId);
-                             incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
-                        }
-                    });
+                    const valueMap = producersByVariableAndValue.get(varName);
+                    if (valueMap) {
+                        const producers = valueMap.get(checkVal) || new Set();
+                        producers.forEach(producerId => {
+                            if (producerId !== consumerId && nodeDataMap.has(producerId)) {
+                                 newEdges.push({
+                                     id: `var-${varName}-${producerId}-${consumerId}`,
+                                     source: producerId,
+                                     target: consumerId,
+                                     sourceHandle: 'out-state',
+                                     targetHandle: 'in-trigger',
+                                     label: varName === misVarName ? val : varName, // Show variable name for generic deps
+                                     type: 'smoothstep',
+                                     animated: true,
+                                     markerEnd: { type: MarkerType.ArrowClosed },
+                                     style: { stroke: '#2196f3', strokeWidth: 2 },
+                                     labelStyle: { fill: '#2196f3', fontSize: 10 }
+                                 });
+                                 adjacency.get(producerId)?.push(consumerId);
+                                 incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+                            }
+                        });
+                    }
                 }
             }
         });
