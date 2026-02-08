@@ -96,6 +96,9 @@ interface ProjectActions {
   // Add a new global variable or constant
   addVariable: (name: string, type: string, value: string | number | boolean | undefined, filePath: string, isConstant: boolean) => Promise<void>;
 
+  // Update a global constant value
+  updateGlobalConstant: (name: string, value: string, filePath: string) => Promise<void>;
+
   // Delete a global variable or constant
   deleteVariable: (filePath: string, range: { startIndex: number, endIndex: number }) => Promise<void>;
 
@@ -572,6 +575,53 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     } catch (error) {
        set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to add variable' });
+       throw error;
+    }
+  },
+
+  updateGlobalConstant: async (name: string, value: string, filePath: string) => {
+    const { getSemanticModel, mergeSemanticModels } = get();
+
+    try {
+      set({ isLoading: true });
+
+      // Read current content
+      const content = await window.editorAPI.readFile(filePath);
+
+      // Find the constant definition using regex
+      // Matches: const <type> <name> = <value>;
+      const regex = new RegExp(`(const\\s+\\w+\\s+${name}\\s*=\\s*)([^;]+)(;)`);
+
+      const match = content.match(regex);
+      if (!match) {
+          throw new Error(`Could not find constant definition for ${name} in ${filePath}`);
+      }
+
+      // Check type from existing constant to decide on quotes
+      const constant = get().mergedSemanticModel.constants?.[name];
+      const isString = constant?.type?.toLowerCase() === 'string';
+      const newValue = isString ? `"${value}"` : value;
+
+      const newContent = content.replace(regex, `$1${newValue}$3`);
+
+      await window.editorAPI.writeFile(filePath, newContent);
+
+      // Clear cache for modified file
+      const { parsedFiles } = get();
+      const newCache = new Map(parsedFiles);
+      newCache.delete(filePath);
+      set({ parsedFiles: newCache });
+
+      // Re-parse the modified file
+      const updatedModel = await get().getSemanticModel(filePath);
+
+      // Merge into current model
+      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+
+      set({ isLoading: false });
+
+    } catch (error) {
+       set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to update constant' });
        throw error;
     }
   },

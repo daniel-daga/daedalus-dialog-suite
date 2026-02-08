@@ -422,3 +422,66 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
 
     return { nodes: newNodes, edges: newEdges };
 };
+
+export interface QuestAnalysis {
+  status: 'implemented' | 'wip' | 'broken' | 'not_started';
+  misVariableExists: boolean;
+  misVariableName: string;
+  hasStart: boolean;
+  hasSuccess: boolean;
+  hasFailed: boolean;
+  description: string;
+  filePaths: { topic: string | null; variable: string | null };
+}
+
+export const analyzeQuest = (semanticModel: SemanticModel, questName: string): QuestAnalysis => {
+    const misVarName = questName.replace('TOPIC_', 'MIS_');
+    const topicConstant = semanticModel.constants?.[questName];
+    const misVariable = semanticModel.variables?.[misVarName];
+
+    let hasStart = false;
+    let hasSuccess = false;
+    let hasFailed = false;
+
+    // Scan functions for actions
+    Object.values(semanticModel.functions || {}).forEach(func => {
+        func.actions?.forEach(action => {
+            if ('topic' in action && action.topic === questName) {
+                const actionType = getActionType(action);
+                if (actionType === 'createTopic') {
+                    hasStart = true;
+                } else if (actionType === 'logSetTopicStatus') {
+                    const status = String((action as any).status);
+                    if (status.includes('SUCCESS') || status === '2') {
+                        hasSuccess = true;
+                    } else if (status.includes('FAILED') || status === '3') {
+                        hasFailed = true;
+                    }
+                }
+            }
+        });
+    });
+
+    let status: QuestAnalysis['status'] = 'not_started';
+    if (!misVariable) {
+        status = 'broken';
+    } else if (hasSuccess || hasFailed) {
+        status = 'implemented';
+    } else if (hasStart) {
+        status = 'wip';
+    }
+
+    return {
+        status,
+        misVariableExists: !!misVariable,
+        misVariableName: misVarName,
+        hasStart,
+        hasSuccess,
+        hasFailed,
+        description: topicConstant ? String(topicConstant.value).replace(/^"|"$/g, '') : '',
+        filePaths: {
+            topic: topicConstant?.filePath || null,
+            variable: misVariable?.filePath || null
+        }
+    };
+};
