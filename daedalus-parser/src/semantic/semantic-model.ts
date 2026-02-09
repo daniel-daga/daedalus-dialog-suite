@@ -118,22 +118,25 @@ export interface CodeGeneratable {
 export class DialogLine implements CodeGeneratable {
   public readonly type = 'DialogLine';
   public speaker: string;
+  public listener: string = 'other';
   public text: string;
   public id: string;
 
-  constructor(speaker: string, text: string, id: string) {
+  constructor(speaker: string, text: string, id: string, listener: string = 'other') {
     this.speaker = speaker;
     this.text = text;
     this.id = id;
+    this.listener = listener || 'other';
   }
 
   generateCode(options: CodeGenOptions): string {
     const comment = options.includeComments ? ` //${this.text}` : '';
-    return `AI_Output(${this.speaker}, other, "${this.id}");${comment}`;
+    const listener = this.listener || 'other';
+    return `AI_Output(${this.speaker}, ${listener}, "${this.id}");${comment}`;
   }
 
   toDisplayString(): string {
-    return `[DialogLine: ${this.speaker} -> "${this.text}"]`;
+    return `[DialogLine: ${this.speaker} -> ${this.listener}: "${this.text}"]`;
   }
 
   getTypeName(): string {

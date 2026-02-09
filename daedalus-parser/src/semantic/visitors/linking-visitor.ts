@@ -4,7 +4,8 @@ import {
   Dialog,
   DialogFunction,
   SemanticModel,
-  SetVariableAction
+  SetVariableAction,
+  Action
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
@@ -58,6 +59,7 @@ export class LinkingVisitor {
   private analyzeNodeRecursively(cursor: TreeCursor): void {
     const type = cursor.nodeType;
     let node: TreeSitterNode | null = null;
+    let skipChildren = false;
 
     // Set the current context when entering an instance or function
     if (type === 'instance_declaration') {
@@ -74,18 +76,29 @@ export class LinkingVisitor {
       }
     }
 
+    const isConditionFunc = this.currentFunction && this.conditionFunctions.has(this.currentFunction.name);
+
+    // Preserve unsupported statements in non-condition functions to avoid flattening control flow
+    if (this.currentFunction && !isConditionFunc) {
+      if (type === 'if_statement' || type === 'return_statement') {
+        if (!node) node = cursor.currentNode;
+        this.preserveUnsupportedStatement(node);
+        skipChildren = true;
+      }
+    }
+
     // Process nodes based on the current context
-    if (type === 'assignment_statement') {
+    if (!skipChildren && type === 'assignment_statement') {
         if (!node) node = cursor.currentNode;
         if (this.currentInstance) {
             this.processAssignment(node);
         } else if (this.currentFunction) {
             this.processFunctionAssignment(node);
         }
-    } else if (type === 'call_expression' && this.currentFunction) {
+    } else if (!skipChildren && type === 'call_expression' && this.currentFunction) {
         if (!node) node = cursor.currentNode;
         this.processFunctionCall(node);
-    } else if (this.currentFunction && this.conditionFunctions.has(this.currentFunction.name)) {
+    } else if (!skipChildren && this.currentFunction && this.conditionFunctions.has(this.currentFunction.name)) {
         // Process condition-specific node types
         if (type === 'binary_expression') {
             if (!node) node = cursor.currentNode;
@@ -123,7 +136,7 @@ export class LinkingVisitor {
     }
 
     // Recurse to children
-    if (cursor.gotoFirstChild()) {
+    if (!skipChildren && cursor.gotoFirstChild()) {
       do {
         this.analyzeNodeRecursively(cursor);
       } while (cursor.gotoNextSibling());
@@ -273,6 +286,21 @@ export class LinkingVisitor {
     const condition = ConditionParsers.parseSemanticCondition(node, functionName);
     if (condition) {
       this.currentFunction.conditions.push(condition);
+    }
+  }
+
+  /**
+   * Preserve unsupported statements as raw actions (existing arbitrary text field)
+   */
+  private preserveUnsupportedStatement(node: TreeSitterNode): void {
+    if (!this.currentFunction) return;
+
+    const action = new Action(node.text.trim());
+    this.currentFunction.actions.push(action);
+
+    const dialog = this.findDialogForFunction(this.currentFunction.name);
+    if (dialog) {
+      dialog.actions.push(action);
     }
   }
 

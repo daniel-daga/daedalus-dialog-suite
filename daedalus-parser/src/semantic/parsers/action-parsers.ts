@@ -87,13 +87,14 @@ export class ActionParsers {
     if (args.length < 3) return null;
 
     const speaker = args[0];
+    const listener = args[1];
     const dialogId = args[2]; // This is typically a dialog ID
 
     // Look for comment after this AI_Output call to use as readable text
     const comment = ActionParsers.findCommentAfterStatement(node);
     const text = comment || dialogId; // Use comment as text if available, fallback to dialogId
 
-    return new DialogLine(speaker, text, dialogId);
+    return new DialogLine(speaker, text, dialogId, listener);
   }
 
   /**
