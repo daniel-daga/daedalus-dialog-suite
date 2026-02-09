@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import { OpenInNew as OpenInNewIcon, Add as AddIcon } from '@mui/icons-material';
 import { useProjectStore } from '../../store/projectStore';
@@ -64,8 +64,13 @@ type OptionType = {
   isCreationSuggestion?: boolean;
 };
 
+const MAX_RESULTS = 200;
+const LARGE_LIST_THRESHOLD = 2000;
+const MIN_CHARS_FOR_LARGE_LIST = 2;
+
 const filter = createFilterOptions<OptionType>({
-  stringify: (option) => `${option.name} ${option.type} ${option.value !== undefined ? option.value : ''}`
+  stringify: (option) => `${option.name} ${option.type} ${option.value !== undefined ? option.value : ''}`,
+  limit: MAX_RESULTS
 });
 
 const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
@@ -93,6 +98,11 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   const { navigateToSymbol, navigateToDialog } = useNavigation();
   const [creationDialogOpen, setCreationDialogOpen] = useState(false);
   const [pendingCreationName, setPendingCreationName] = useState('');
+  const [inputValue, setInputValue] = useState(value);
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
 
   const options = useMemo(() => {
     const opts: OptionType[] = [];
@@ -216,8 +226,9 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
             onChange('');
           }
         }}
-        inputValue={value}
+        inputValue={inputValue}
         onInputChange={(_event, newInputValue) => {
+          setInputValue(newInputValue);
           onChange(newInputValue);
         }}
         options={options}
@@ -230,8 +241,23 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
           return option.name;
         }}
         filterOptions={(options, params) => {
-          const filtered = filter(options, params);
           const { inputValue } = params;
+          const isLargeList = options.length > LARGE_LIST_THRESHOLD;
+          const isTooShort = inputValue.length < MIN_CHARS_FOR_LARGE_LIST;
+          if (isLargeList && isTooShort) {
+            const minimal: OptionType[] = [];
+            if (allowCreation && inputValue !== '') {
+              minimal.push({
+                name: `Add "${inputValue}"`,
+                type: 'new',
+                source: 'new',
+                isCreationSuggestion: true
+              });
+            }
+            return minimal;
+          }
+
+          const filtered = filter(options, params);
           
           // Suggest creation if enabled and not found
           if (allowCreation && inputValue !== '') {
@@ -251,6 +277,11 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
         freeSolo={allowFreeInput}
         selectOnFocus
         handleHomeEndKeys
+        noOptionsText={
+          options.length > LARGE_LIST_THRESHOLD && inputValue.length < MIN_CHARS_FOR_LARGE_LIST
+            ? `Type at least ${MIN_CHARS_FOR_LARGE_LIST} characters to search`
+            : 'No options'
+        }
         renderOption={(props, option) => {
             // Extract key to avoid passing it to li
             const { key, ...otherProps } = props as any;

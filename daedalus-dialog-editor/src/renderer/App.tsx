@@ -21,13 +21,12 @@ import { RecentProject } from './types/global';
 
 const App: React.FC = () => {
   const { openFile, activeFile, openFiles } = useEditorStore();
-  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles } = useProjectStore();
+  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore();
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   
   const activeFileState = activeFile ? openFiles.get(activeFile) : null;
   const autoSaveError = activeFileState?.autoSaveError;
 
-  const [isIngestedFilesOpen, setIsIngestedFilesOpen] = useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
 
   const ingestionProgress = useMemo(() => {
@@ -155,7 +154,7 @@ const App: React.FC = () => {
               )}
               <IconButton
                 color="inherit"
-                onClick={() => setIsIngestedFilesOpen(true)}
+                onClick={() => setIngestedFilesOpen(true)}
                 sx={{ zIndex: 1 }}
               >
                 <ListAltIcon />
@@ -173,7 +172,7 @@ const App: React.FC = () => {
 
       <IngestedFilesDialog 
         open={isIngestedFilesOpen} 
-        onClose={() => setIsIngestedFilesOpen(false)} 
+        onClose={() => setIngestedFilesOpen(false)} 
       />
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>

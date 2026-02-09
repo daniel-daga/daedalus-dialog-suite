@@ -62,6 +62,9 @@ interface ProjectState {
   // Background ingestion
   isIngesting: boolean;
   abortIngestion: (() => void) | null;
+
+  // UI state
+  isIngestedFilesOpen: boolean;
 }
 
 interface ProjectActions {
@@ -115,6 +118,9 @@ interface ProjectActions {
 
   // Update a cached semantic model for a file
   updateFileModel: (filePath: string, model: SemanticModel) => void;
+
+  // UI actions
+  setIngestedFilesOpen: (open: boolean) => void;
 }
 
 type ProjectStore = ProjectState & ProjectActions;
@@ -134,6 +140,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   loadError: null,
   isIngesting: false,
   abortIngestion: null,
+  isIngestedFilesOpen: false,
 
   // Actions
   openProject: async (folderPath: string) => {
@@ -735,5 +742,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
     
     set({ parsedFiles: newCache });
+  },
+
+  setIngestedFilesOpen: (open: boolean) => {
+    set({ isIngestedFilesOpen: open });
   }
 }));

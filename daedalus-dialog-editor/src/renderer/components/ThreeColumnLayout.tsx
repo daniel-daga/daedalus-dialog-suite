@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect, useDeferredValue } from 'react';
-import { Box, Typography, Alert } from '@mui/material';
+import { Box, Typography, Alert, Button } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSearchStore, SearchResult } from '../store/searchStore';
@@ -37,7 +37,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     getSelectedNpcDialogs,
     getSemanticModel,
     mergedSemanticModel,
-    loadAndMergeNpcModels
+    loadAndMergeNpcModels,
+    setIngestedFilesOpen
   } = useProjectStore();
   const { navigateToDialog } = useNavigation();
   const fileState = filePath ? openFiles.get(filePath) : null;
@@ -70,6 +71,19 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Determine early return conditions (but don't return yet - hooks must be called first)
   const showLoading = !isProjectMode && !fileState;
   const showSyntaxErrors = fileState?.hasErrors && !fileState?.autoSaveError;
+
+  // Log parse errors for the selected NPC to the console (for easy debugging)
+  useEffect(() => {
+    if (!isProjectMode) return;
+    if (!selectedNPC) return;
+    if (!semanticModel.hasErrors) return;
+
+    const errors = semanticModel.errors || [];
+    console.error(
+      `[Dialog Parse Errors] NPC=${selectedNPC} count=${errors.length}`,
+      errors
+    );
+  }, [isProjectMode, selectedNPC, semanticModel.hasErrors, semanticModel.errors]);
 
   // Keyboard shortcut handler for Ctrl+F
   useEffect(() => {
@@ -457,9 +471,27 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
             <Typography variant="body2" gutterBottom>
               Failed to parse dialog file(s) for {selectedNPC}
             </Typography>
-            <Typography variant="caption" component="div">
-              {semanticModel.errors?.length || 0} error(s) found. Check console for details.
+            <Typography variant="caption" component="div" sx={{ mb: 0.5 }}>
+              {semanticModel.errors?.length || 0} error(s) found. Open the file list (top bar list icon) for full details.
             </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setIngestedFilesOpen(true)}
+              sx={{ mb: 0.5 }}
+            >
+              View details
+            </Button>
+            {(semanticModel.errors || []).slice(0, 3).map((err, index) => (
+              <Typography key={index} variant="caption" display="block" sx={{ whiteSpace: 'pre-wrap' }}>
+                - {err.message}
+              </Typography>
+            ))}
+            {(semanticModel.errors?.length || 0) > 3 && (
+              <Typography variant="caption" display="block" sx={{ fontStyle: 'italic' }}>
+                ...and {(semanticModel.errors?.length || 0) - 3} more
+              </Typography>
+            )}
           </Alert>
         )}
         <DialogTree
