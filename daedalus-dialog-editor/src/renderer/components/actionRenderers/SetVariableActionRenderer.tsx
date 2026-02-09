@@ -24,7 +24,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 200 }}
-        namePrefix="MIS_"
+        typeFilter={['int', 'string', 'float']}
         semanticModel={semanticModel}
       />
       <TextField
