@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Box,
-  List,
   ListItem,
   ListItemButton,
   ListItemText,
@@ -29,6 +28,8 @@ import {
   HourglassEmpty as HourglassEmptyIcon,
   FilterList as FilterListIcon
 } from '@mui/icons-material';
+import AutoSizer from 'react-virtualized-auto-sizer';
+import { FixedSizeList as VirtualList, ListChildComponentProps } from 'react-window';
 import type { SemanticModel } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
@@ -39,6 +40,80 @@ interface QuestListProps {
   selectedQuest: string | null;
   onSelectQuest: (questName: string) => void;
 }
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'implemented': return <CheckIcon color="success" fontSize="small" />;
+    case 'wip': return <BuildIcon color="info" fontSize="small" />;
+    case 'broken': return <ReportIcon color="error" fontSize="small" />;
+    case 'not_started': return <HourglassEmptyIcon color="disabled" fontSize="small" />;
+    default: return <HourglassEmptyIcon color="disabled" fontSize="small" />;
+  }
+};
+
+const getStatusTooltip = (status: string) => {
+  switch (status) {
+    case 'implemented': return 'Implemented (Start & End)';
+    case 'wip': return 'In Progress (Start but no End)';
+    case 'broken': return 'Broken (Missing Variable)';
+    case 'not_started': return 'Not Started (No actions)';
+    default: return '';
+  }
+};
+
+interface RowData {
+  filteredQuests: any[];
+  questAnalysisMap: Map<string, ReturnType<typeof analyzeQuest>>;
+  selectedQuest: string | null;
+  onSelectQuest: (questName: string) => void;
+  navigateToSymbol: (symbol: string, options?: { preferSource?: boolean }) => void;
+}
+
+const Row = ({ index, style, data }: ListChildComponentProps<RowData>) => {
+  const quest = data.filteredQuests[index];
+  const analysis = data.questAnalysisMap.get(quest.name);
+  const status = analysis?.status || 'not_started';
+
+  return (
+    <ListItem
+      style={style}
+      key={quest.name}
+      disablePadding
+      secondaryAction={
+        <Tooltip title="Follow reference" arrow>
+          <IconButton
+            edge="end"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              data.navigateToSymbol(quest.name, { preferSource: true });
+            }}
+          >
+            <OpenInNewIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      }
+    >
+      <ListItemButton
+        selected={data.selectedQuest === quest.name}
+        onClick={() => data.onSelectQuest(quest.name)}
+        sx={{ pr: 6 }}
+      >
+        <ListItemIcon sx={{ minWidth: 30 }}>
+          <Tooltip title={getStatusTooltip(status)}>
+            {getStatusIcon(status)}
+          </Tooltip>
+        </ListItemIcon>
+        <ListItemText
+          primary={String(quest.value).replace(/^"|"$/g, '')} // Strip quotes for display
+          secondary={quest.name}
+          primaryTypographyProps={{ noWrap: true }}
+          secondaryTypographyProps={{ noWrap: true, fontSize: '0.75rem' }}
+        />
+      </ListItemButton>
+    </ListItem>
+  );
+};
 
 const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onSelectQuest }) => {
   const { navigateToSymbol } = useNavigation();
@@ -93,25 +168,6 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
     });
   }, [quests, filter, viewMode, statusFilter, usedTopics, questAnalysisMap]);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'implemented': return <CheckIcon color="success" fontSize="small" />;
-      case 'wip': return <BuildIcon color="info" fontSize="small" />;
-      case 'broken': return <ReportIcon color="error" fontSize="small" />;
-      case 'not_started': return <HourglassEmptyIcon color="disabled" fontSize="small" />;
-      default: return <HourglassEmptyIcon color="disabled" fontSize="small" />;
-    }
-  };
-
-  const getStatusTooltip = (status: string) => {
-      switch (status) {
-        case 'implemented': return 'Implemented (Start & End)';
-        case 'wip': return 'In Progress (Start but no End)';
-        case 'broken': return 'Broken (Missing Variable)';
-        case 'not_started': return 'Not Started (No actions)';
-        default: return '';
-      }
-  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', borderRight: 1, borderColor: 'divider' }}>
@@ -174,56 +230,35 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
         </Box>
       </Box>
       <Divider />
-      <List sx={{ flexGrow: 1, overflow: 'auto' }}>
-        {filteredQuests.map((quest) => {
-          const analysis = questAnalysisMap.get(quest.name);
-          const status = analysis?.status || 'not_started';
-
-          return (
-            <ListItem
-              key={quest.name}
-              disablePadding
-              secondaryAction={
-                <Tooltip title="Follow reference" arrow>
-                  <IconButton
-                    edge="end"
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigateToSymbol(quest.name, { preferSource: true });
-                    }}
-                  >
-                    <OpenInNewIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              }
-            >
-              <ListItemButton
-                selected={selectedQuest === quest.name}
-                onClick={() => onSelectQuest(quest.name)}
-                sx={{ pr: 6 }}
+      {filteredQuests.length === 0 ? (
+        <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            No quests found
+          </Typography>
+        </Box>
+      ) : (
+        <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+          <AutoSizer>
+            {({ height, width }: { height: number; width: number }) => (
+              <VirtualList
+                height={height}
+                width={width}
+                itemCount={filteredQuests.length}
+                itemSize={50}
+                itemData={{
+                  filteredQuests,
+                  questAnalysisMap,
+                  selectedQuest,
+                  onSelectQuest,
+                  navigateToSymbol
+                }}
               >
-                <ListItemIcon sx={{ minWidth: 30 }}>
-                    <Tooltip title={getStatusTooltip(status)}>
-                        {getStatusIcon(status)}
-                    </Tooltip>
-                </ListItemIcon>
-                <ListItemText
-                  primary={String(quest.value).replace(/^"|"$/g, '')} // Strip quotes for display
-                  secondary={quest.name}
-                  primaryTypographyProps={{ noWrap: true }}
-                  secondaryTypographyProps={{ noWrap: true, fontSize: '0.75rem' }}
-                />
-              </ListItemButton>
-            </ListItem>
-          );
-        })}
-        {filteredQuests.length === 0 && (
-          <ListItem>
-            <ListItemText secondary="No quests found" sx={{ textAlign: 'center', fontStyle: 'italic', color: 'text.secondary' }} />
-          </ListItem>
-        )}
-      </List>
+                {Row}
+              </VirtualList>
+            )}
+          </AutoSizer>
+        </Box>
+      )}
       <CreateQuestDialog open={isCreateDialogOpen} onClose={() => setIsCreateDialogOpen(false)} />
     </Box>
   );
