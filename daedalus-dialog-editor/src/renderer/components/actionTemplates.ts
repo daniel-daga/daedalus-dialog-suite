@@ -37,27 +37,32 @@ export const ACTION_TEMPLATES = {
   }),
 
   logEntry: (topic: string = 'TOPIC_NAME', text: string = ''): LogEntryAction => ({
+    type: 'LogEntry',
     topic,
     text
   }),
 
   createTopic: (topic: string = 'TOPIC_NAME', topicType: string = 'LOG_MISSION'): CreateTopicAction => ({
+    type: 'CreateTopic',
     topic,
     topicType
   }),
 
   logSetTopicStatus: (topic: string = 'TOPIC_NAME', status: string = 'LOG_SUCCESS'): LogSetTopicStatusAction => ({
+    type: 'LogSetTopicStatus',
     topic,
     status
   }),
 
   createInventoryItems: (target: string = 'hero', item: string = 'ItMi_Gold', quantity: number = 1): CreateInventoryItemsAction => ({
+    type: 'CreateInventoryItems',
     target,
     item,
     quantity
   }),
 
   giveInventoryItems: (giver: string = 'self', receiver: string = 'hero', item: string = 'ItMi_Gold', quantity: number = 1): GiveInventoryItemsAction => ({
+    type: 'GiveInventoryItems',
     giver,
     receiver,
     item,
@@ -65,6 +70,7 @@ export const ACTION_TEMPLATES = {
   }),
 
   attackAction: (attacker: string = 'self', target: string = 'hero', attackReason: string = 'ATTACK_REASON_KILL', damage: number = 0): AttackAction => ({
+    type: 'AttackAction',
     attacker,
     target,
     attackReason,
@@ -72,36 +78,43 @@ export const ACTION_TEMPLATES = {
   }),
 
   setAttitudeAction: (target: string = 'self', attitude: string = 'ATT_FRIENDLY'): SetAttitudeAction => ({
+    type: 'SetAttitudeAction',
     target,
     attitude
   }),
 
   chapterTransition: (chapter: number = 1, world: string = 'NEWWORLD_ZEN'): ChapterTransitionAction => ({
+    type: 'ChapterTransitionAction',
     chapter,
     world
   }),
 
   exchangeRoutine: (target: string = 'self', routine: string = 'START'): ExchangeRoutineAction => ({
+    type: 'ExchangeRoutineAction',
     target,
     routine
   }),
 
   setVariableAction: (variableName: string = 'MIS_Quest', operator: string = '=', value: string | number | boolean = 'LOG_RUNNING'): SetVariableAction => ({
+    type: 'SetVariableAction',
     variableName,
     operator,
     value
   }),
 
   stopProcessInfosAction: (target: string = 'self'): StopProcessInfosAction => ({
+    type: 'StopProcessInfosAction',
     target
   }),
 
   playAniAction: (target: string = 'self', animationName: string = 'T_SEARCH'): PlayAniAction => ({
+    type: 'PlayAniAction',
     target,
     animationName
   }),
 
   customAction: (action: string = 'AI_StopProcessInfos(self)'): CustomAction => ({
+    type: 'CustomAction',
     action
   })
 };

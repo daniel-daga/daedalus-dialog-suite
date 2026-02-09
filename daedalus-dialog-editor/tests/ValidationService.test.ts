@@ -76,7 +76,14 @@ describe('ValidationService', () => {
 
       expect(result.isValid).toBe(true);
       expect(result.errors).toHaveLength(0);
-      expect(mockGenerateCode).toHaveBeenCalledWith(validModel, defaultSettings);
+      // ValidationService now deserializes the model, so we check for structure rather than strict equality
+      expect(mockGenerateCode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dialogs: expect.anything(),
+          functions: expect.anything()
+        }), 
+        defaultSettings
+      );
       expect(mockParseSource).toHaveBeenCalled();
     });
 
@@ -492,6 +499,215 @@ describe('ValidationService', () => {
         e => e.type === 'missing_function' && e.message.includes('DIA_Test_Choice1')
       );
       expect(choiceMissingErrors).toHaveLength(0);
+    });
+  });
+
+  describe('Action Validation', () => {
+    test('should detect missing variable name in SetVariableAction', async () => {
+      const modelWithInvalidSetVar = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'SetVariableAction',
+                variableName: '',
+                operator: '=',
+                value: 'LOG_RUNNING'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(modelWithInvalidSetVar, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('Set Variable')
+        })
+      );
+    });
+
+    test('should detect whitespace-only variable name in SetVariableAction', async () => {
+      const model = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'SetVariableAction',
+                variableName: '   ',
+                operator: '=',
+                value: 'LOG_RUNNING'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('Set Variable')
+        })
+      );
+    });
+
+    test('should detect missing speaker in DialogLine', async () => {
+      const modelWithInvalidLine = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'DialogLine',
+                speaker: '',
+                text: 'Hello',
+                id: 'DIA_Test_01'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(modelWithInvalidLine, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('Dialog Line')
+        })
+      );
+    });
+
+    test('should detect missing topic in LogEntry', async () => {
+      const modelWithInvalidLog = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'LogEntry',
+                topic: '',
+                text: 'New entry'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(modelWithInvalidLog, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('LogEntry')
+        })
+      );
+    });
+
+    test('should pass when all actions are valid', async () => {
+      const model = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'SetVariableAction',
+                variableName: 'MIS_Quest',
+                operator: '=',
+                value: 'LOG_RUNNING'
+              },
+              {
+                type: 'DialogLine',
+                speaker: 'self',
+                text: 'Hello',
+                id: 'DIA_Test_01'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      const actionErrors = result.errors.filter(e => e.type === 'missing_required_property' && e.message.includes('action'));
+      expect(actionErrors).toHaveLength(0);
+    });
+
+    test('should validate legacy actions without explicit type property', async () => {
+      // Create a model with actions that don't have the 'type' property
+      // But have properties that allow inferring the type (legacy format)
+      const legacyModel = {
+        dialogs: {},
+        functions: {
+          'DIA_Legacy_Info': {
+            name: 'DIA_Legacy_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                // No type, but looks like SetVariableAction
+                variableName: '', // Invalid empty variable name
+                operator: '=',
+                value: 'LOG_RUNNING'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(legacyModel, defaultSettings);
+
+      // Should still detect the error because deserializeSemanticModel adds the type
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('Set Variable')
+        })
+      );
     });
   });
 

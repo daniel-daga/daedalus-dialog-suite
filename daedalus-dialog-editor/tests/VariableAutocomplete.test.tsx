@@ -20,7 +20,8 @@ jest.mock('../src/renderer/hooks/useNavigation', () => ({
 describe('VariableAutocomplete', () => {
   const mockVariables = {
     MIS_Quest1: { name: 'MIS_Quest1', type: 'int' },
-    OTHER_Var: { name: 'OTHER_Var', type: 'int' }
+    OTHER_Var: { name: 'OTHER_Var', type: 'INT' },
+    FLOAT_Var: { name: 'FLOAT_Var', type: 'float' }
   };
 
   beforeEach(() => {
@@ -82,5 +83,30 @@ describe('VariableAutocomplete', () => {
       expect(screen.getByText('MIS_Quest1')).toBeInTheDocument();
       expect(screen.getByText('OTHER_Var')).toBeInTheDocument();
     });
+  });
+
+  test('filters by typeFilter case-insensitively', async () => {
+    const onChange = jest.fn();
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={onChange}
+        typeFilter={['int']}
+        label="Test Autocomplete"
+      />
+    );
+
+    const input = screen.getByLabelText('Test Autocomplete');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    // Wait for options to appear
+    await waitFor(() => {
+      expect(screen.getByText('MIS_Quest1')).toBeInTheDocument();
+      expect(screen.getByText('OTHER_Var')).toBeInTheDocument();
+    });
+    
+    expect(screen.queryByText('FLOAT_Var')).not.toBeInTheDocument();
   });
 });

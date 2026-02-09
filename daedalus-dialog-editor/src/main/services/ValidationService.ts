@@ -1,5 +1,6 @@
 import type { ParserService } from './ParserService';
 import type { CodeGeneratorService } from './CodeGeneratorService';
+import { deserializeSemanticModel } from 'daedalus-parser/semantic-model';
 
 /**
  * Validation error types
@@ -93,9 +94,12 @@ export class ValidationService {
     const warnings: ValidationWarning[] = [];
     let generatedCode: string | undefined;
 
+    // Normalize the model to ensure all types are present
+    const semanticModel = deserializeSemanticModel(model);
+
     // Step 1: Generate code
     try {
-      generatedCode = this.codeGeneratorService.generateCode(model, settings);
+      generatedCode = this.codeGeneratorService.generateCode(semanticModel, settings);
     } catch (error) {
       errors.push({
         type: 'syntax_error',
@@ -111,23 +115,27 @@ export class ValidationService {
     }
 
     // Step 3: Duplicate dialog detection
-    const duplicateErrors = this.validateDuplicateDialogs(model, options.existingDialogs);
+    const duplicateErrors = this.validateDuplicateDialogs(semanticModel, options.existingDialogs);
     errors.push(...duplicateErrors);
 
     // Compute function names set once for multiple validations
-    const functionNames = new Set<string>(Object.keys(model.functions || {}));
+    const functionNames = new Set<string>(Object.keys(semanticModel.functions || {}));
 
     // Step 4: Missing function reference detection
-    const missingFuncErrors = this.validateFunctionReferences(model, functionNames);
+    const missingFuncErrors = this.validateFunctionReferences(semanticModel, functionNames);
     errors.push(...missingFuncErrors);
 
     // Step 5: Required property validation
-    const requiredPropErrors = this.validateRequiredProperties(model);
+    const requiredPropErrors = this.validateRequiredProperties(semanticModel);
     errors.push(...requiredPropErrors);
 
     // Step 6: Choice target validation
-    const choiceErrors = this.validateChoiceTargets(model, functionNames);
+    const choiceErrors = this.validateChoiceTargets(semanticModel, functionNames);
     errors.push(...choiceErrors);
+
+    // Step 7: Comprehensive action validation
+    const actionErrors = this.validateActions(semanticModel);
+    errors.push(...actionErrors);
 
     return {
       isValid: errors.length === 0,
@@ -146,12 +154,20 @@ export class ValidationService {
     try {
       const parseResult = await this.parserService.parseSource(code);
 
-      if (parseResult.hasErrors && parseResult.errors) {
-        for (const parseError of parseResult.errors) {
+      if (parseResult.hasErrors) {
+        if (parseResult.errors && parseResult.errors.length > 0) {
+          for (const parseError of parseResult.errors) {
+            errors.push({
+              type: 'syntax_error',
+              message: parseError.message || 'Syntax error in generated code',
+              position: parseError.position
+            });
+          }
+        } else {
+          // Fallback if errors array is empty but hasErrors is true
           errors.push({
             type: 'syntax_error',
-            message: parseError.message || 'Syntax error in generated code',
-            position: parseError.position
+            message: 'Syntax error detected in generated code (check parser logs)',
           });
         }
       }
@@ -292,6 +308,120 @@ export class ValidationService {
           }
         }
       }
+    }
+
+    return errors;
+  }
+
+  /**
+   * Comprehensive validation for all action types
+   */
+  private validateActions(model: any): ValidationError[] {
+    const errors: ValidationError[] = [];
+
+    for (const funcName in model.functions) {
+      const func = model.functions[funcName];
+      const actions = func.actions || [];
+
+      actions.forEach((action: any, index: number) => {
+        const actionType = action.type;
+        const location = `action ${index + 1} in function '${funcName}'`;
+
+        switch (actionType) {
+          case 'SetVariableAction':
+            if (!action.variableName || !action.variableName.trim()) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Set Variable ${location} is missing a variable name`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'DialogLine':
+            if (!action.speaker || !action.id) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Dialog Line ${location} is missing speaker or ID`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'Choice':
+            if (!action.dialogRef || !action.targetFunction) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Choice ${location} is missing dialog reference or target function`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'LogEntry':
+          case 'CreateTopic':
+          case 'LogSetTopicStatus':
+            if (!action.topic) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `${actionType} ${location} is missing a topic`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'CreateInventoryItems':
+            if (!action.target || !action.item) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Create Inventory Items ${location} is missing target or item`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'GiveInventoryItems':
+            if (!action.giver || !action.receiver || !action.item) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Give Inventory Items ${location} is missing giver, receiver, or item`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'AttackAction':
+            if (!action.attacker || !action.target || !action.attackReason) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Attack Action ${location} is missing attacker, target, or reason`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'SetAttitudeAction':
+            if (!action.target || !action.attitude) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Set Attitude ${location} is missing target or attitude`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'ExchangeRoutineAction':
+            if (!action.target || !action.routine) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Exchange Routine ${location} is missing target or routine`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'PlayAniAction':
+            if (!action.target || !action.animationName) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Play Animation ${location} is missing target or animation name`,
+                functionName: funcName
+              });
+            }
+            break;
+        }
+      });
     }
 
     return errors;

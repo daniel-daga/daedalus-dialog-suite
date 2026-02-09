@@ -102,8 +102,9 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     const prefixes = namePrefix ? (Array.isArray(namePrefix) ? namePrefix.map(p => p.toLowerCase()) : [namePrefix.toLowerCase()]) : null;
 
     // Helper to check type
-    const isTypeMatch = (type: string) => {
+    const isTypeMatch = (type: string | undefined) => {
       if (!filters) return true;
+      if (!type) return false;
       return filters.includes(type.toLowerCase());
     };
 

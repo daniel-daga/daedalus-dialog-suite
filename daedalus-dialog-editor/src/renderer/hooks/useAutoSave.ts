@@ -41,6 +41,7 @@ export function useAutoSave(): AutoSaveStatus {
     try {
       // Save all dirty files
       const successfulSaves: string[] = [];
+      const failedSaves = new Map<string, any>();
       const errors: unknown[] = [];
 
       await Promise.all(
@@ -48,12 +49,17 @@ export function useAutoSave(): AutoSaveStatus {
           const fileState = state.openFiles.get(filePath);
           if (fileState) {
             try {
-              await window.editorAPI.saveFile(
+              const result = await window.editorAPI.saveFile(
                 filePath,
                 fileState.semanticModel,
                 state.codeSettings
               );
-              successfulSaves.push(filePath);
+              
+              if (result.success) {
+                successfulSaves.push(filePath);
+              } else if (result.validationResult) {
+                failedSaves.set(filePath, result.validationResult);
+              }
             } catch (err) {
               errors.push(err);
             }
@@ -61,32 +67,54 @@ export function useAutoSave(): AutoSaveStatus {
         })
       );
 
-      if (successfulSaves.length > 0) {
-        // Batch update file state to mark as not dirty for all saved files
-        useEditorStore.setState((currentState) => {
-          const newOpenFiles = new Map(currentState.openFiles);
-          const now = new Date();
+      // Update store with results
+      useEditorStore.setState((currentState) => {
+        const newOpenFiles = new Map(currentState.openFiles);
+        const now = new Date();
 
-          successfulSaves.forEach((filePath) => {
-            const currentFileState = newOpenFiles.get(filePath);
-            if (currentFileState) {
-              newOpenFiles.set(filePath, {
-                ...currentFileState,
-                isDirty: false,
-                lastSaved: now,
-              });
-            }
-          });
-
-          return { openFiles: newOpenFiles };
+        // Mark successful saves as clean
+        successfulSaves.forEach((filePath) => {
+          const currentFileState = newOpenFiles.get(filePath);
+          if (currentFileState) {
+            newOpenFiles.set(filePath, {
+              ...currentFileState,
+              isDirty: false,
+              lastSaved: now,
+              hasErrors: false,
+              errors: [],
+              lastValidationResult: undefined,
+            });
+          }
         });
+
+        // Mark failed saves with their validation errors
+        failedSaves.forEach((validationResult, filePath) => {
+          const currentFileState = newOpenFiles.get(filePath);
+          if (currentFileState) {
+            newOpenFiles.set(filePath, {
+              ...currentFileState,
+              isDirty: true, // Keep it dirty so work is not lost
+              hasErrors: !validationResult.isValid,
+              autoSaveError: validationResult,
+              errors: validationResult.errors.filter((e: any) => e.type === 'syntax_error').map((e: any) => ({
+                message: e.message,
+                line: e.position?.row,
+                column: e.position?.column
+              })),
+            });
+          }
+        });
+
+        return { openFiles: newOpenFiles };
+      });
+
+      if (successfulSaves.length > 0) {
+        setLastAutoSaveTime(new Date());
       }
 
       if (errors.length > 0) {
         throw errors[0];
       }
-
-      setLastAutoSaveTime(new Date());
     } catch (error) {
       console.error('Auto-save failed:', error);
     } finally {

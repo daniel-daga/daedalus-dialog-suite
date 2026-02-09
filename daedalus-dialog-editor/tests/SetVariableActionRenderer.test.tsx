@@ -9,13 +9,14 @@ import { SetVariableAction } from '../src/renderer/components/actionTypes';
 jest.mock('../src/renderer/components/common/VariableAutocomplete', () => {
   return function MockVariableAutocomplete(props: any) {
     return (
-      <div data-testid={`autocomplete-${props.label}`}>
+      <div data-testid={`autocomplete-${props.label}`} className={props.textFieldProps?.error ? 'error' : ''}>
         <label>{props.label}</label>
         <input
             value={props.value}
             onChange={(e) => props.onChange(e.target.value)}
             onKeyDown={props.onKeyDown}
         />
+        {props.textFieldProps?.helperText && <span data-testid={`helper-${props.label}`}>{props.textFieldProps.helperText}</span>}
       </div>
     );
   };
@@ -69,5 +70,23 @@ describe('SetVariableActionRenderer', () => {
       ...mockAction,
       variableName: 'NewVar'
     });
+  });
+
+  test('shows error when variable name is empty', () => {
+    const emptyAction = { ...mockAction, variableName: '' };
+    render(<SetVariableActionRenderer {...mockProps} action={emptyAction} />);
+
+    const autocomplete = screen.getByTestId('autocomplete-Variable');
+    expect(autocomplete).toHaveClass('error');
+    expect(screen.getByTestId('helper-Variable')).toHaveTextContent('Variable name required');
+  });
+
+  test('shows error when variable name is whitespace', () => {
+    const whitespaceAction = { ...mockAction, variableName: '   ' };
+    render(<SetVariableActionRenderer {...mockProps} action={whitespaceAction} />);
+
+    const autocomplete = screen.getByTestId('autocomplete-Variable');
+    expect(autocomplete).toHaveClass('error');
+    expect(screen.getByTestId('helper-Variable')).toHaveTextContent('Variable name required');
   });
 });

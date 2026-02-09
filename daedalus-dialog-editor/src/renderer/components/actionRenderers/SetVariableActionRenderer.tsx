@@ -26,6 +26,10 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         sx={{ minWidth: 200 }}
         typeFilter={['int', 'string', 'float']}
         semanticModel={semanticModel}
+        textFieldProps={{
+          error: !action.variableName?.trim(),
+          helperText: !action.variableName?.trim() ? 'Variable name required' : undefined
+        }}
       />
       <TextField
         select

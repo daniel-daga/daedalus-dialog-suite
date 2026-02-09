@@ -232,3 +232,26 @@ test('SemanticCodeGenerator should handle empty semantic model', () => {
   // Empty model should produce empty or minimal output
   assert.ok(result.length === 0 || result.trim() === '');
 });
+
+// ===================================================================
+// VALIDATION AND ROBUSTNESS TESTS
+// ===================================================================
+
+test('SetVariableAction should generate code even with empty variable name (legacy behavior)', () => {
+  const generator = new SemanticCodeGenerator();
+  const { SetVariableAction } = require('../dist/semantic/semantic-model');
+  const action = new SetVariableAction('', '=', 'LOG_RUNNING');
+  const result = generator.generateAction(action);
+
+  // Reverted behavior: it generates exactly what it's given
+  assert.equal(result, ' = LOG_RUNNING;');
+});
+
+test('CreateInventoryItems should generate code even with missing item (legacy behavior)', () => {
+  const generator = new SemanticCodeGenerator();
+  const { CreateInventoryItems } = require('../dist/semantic/semantic-model');
+  const action = new CreateInventoryItems('self', '', 5);
+  const result = generator.generateAction(action);
+
+  assert.equal(result, 'CreateInvItems(self, , 5);');
+});

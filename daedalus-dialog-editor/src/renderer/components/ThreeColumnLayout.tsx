@@ -69,7 +69,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Determine early return conditions (but don't return yet - hooks must be called first)
   const showLoading = !isProjectMode && !fileState;
-  const showSyntaxErrors = fileState?.hasErrors;
+  const showSyntaxErrors = fileState?.hasErrors && !fileState?.autoSaveError;
 
   // Keyboard shortcut handler for Ctrl+F
   useEffect(() => {

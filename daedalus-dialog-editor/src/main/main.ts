@@ -119,6 +119,7 @@ function setupIpcHandlers() {
 
         // If validation failed and not forcing save, return validation result
         if (!validationResult.isValid && !options?.forceOnErrors) {
+          console.warn(`[IPC] generator:saveFile - Validation failed for ${filePath}, skipping save.`);
           return {
             success: false,
             validationResult
@@ -135,8 +136,29 @@ function setupIpcHandlers() {
         }
       }
 
-      // Fallback: generate code directly
+      // Fallback: generate code directly (only if validation skipped or didn't provide code)
       const code = codeGeneratorService.generateCode(model, settings);
+      
+      // Final sanity check for generated code - ALWAYS run this if we are falling back
+      const syntaxResult = await parserService.parseSource(code);
+      if (syntaxResult.hasErrors && !options?.forceOnErrors) {
+          return {
+              success: false,
+              validationResult: {
+                  isValid: false,
+                  errors: syntaxResult.errors?.map((e: any) => ({
+                      type: 'syntax_error' as const,
+                      message: e.message || 'Syntax error',
+                      position: e.position
+                  })) || [{
+                      type: 'syntax_error' as const,
+                      message: 'Syntax error detected (sanity check)',
+                  }],
+                  warnings: []
+              }
+          };
+      }
+
       return fileService.writeFile(filePath, code);
     } catch (error) {
       if (error instanceof PathValidationError) {

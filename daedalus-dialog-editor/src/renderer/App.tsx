@@ -8,7 +8,8 @@ import {
   Folder as FolderIcon, 
   Save as SaveIcon, 
   ListAlt as ListAltIcon,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Error as ErrorIcon
 } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
@@ -19,9 +20,13 @@ import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import { RecentProject } from './types/global';
 
 const App: React.FC = () => {
-  const { openFile, activeFile } = useEditorStore();
+  const { openFile, activeFile, openFiles } = useEditorStore();
   const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles } = useProjectStore();
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
+  
+  const activeFileState = activeFile ? openFiles.get(activeFile) : null;
+  const autoSaveError = activeFileState?.autoSaveError;
+
   const [isIngestedFilesOpen, setIsIngestedFilesOpen] = useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
 
@@ -72,6 +77,28 @@ const App: React.FC = () => {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             Dandelion
           </Typography>
+          {autoSaveError && (
+            <Tooltip title={
+              <Box>
+                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                  Validation errors prevented auto-save:
+                </Typography>
+                {autoSaveError.errors.map((err, i) => (
+                  <Typography key={i} variant="caption" sx={{ display: 'block' }}>
+                    • {err.message}
+                  </Typography>
+                ))}
+              </Box>
+            }>
+              <Chip
+                icon={<ErrorIcon sx={{ color: 'white !important' }} />}
+                label="Auto-save Paused"
+                size="small"
+                color="error"
+                sx={{ mr: 2, color: 'white' }}
+              />
+            </Tooltip>
+          )}
           {isAutoSaving && (
             <Chip
               icon={<SaveIcon />}

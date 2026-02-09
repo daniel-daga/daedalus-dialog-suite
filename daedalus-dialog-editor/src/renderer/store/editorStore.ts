@@ -52,6 +52,7 @@ interface FileState {
   hasErrors?: boolean;
   errors?: ParseError[];
   lastValidationResult?: ValidationResult;
+  autoSaveError?: ValidationResult;
 }
 
 interface EditorProject {
@@ -205,6 +206,8 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
         fileState.semanticModel = model;
         fileState.isDirty = true;
         fileState.workingCode = undefined; // Invalidate source cache
+        fileState.autoSaveError = undefined;
+        fileState.hasErrors = false;
         
         // Sync with project store
         useProjectStore.getState().updateFileModel(filePath, model);
@@ -221,6 +224,8 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.semanticModel.dialogs[dialogName] = dialog;
       fileState.isDirty = true;
       fileState.workingCode = undefined; // Invalidate source cache
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
       
       // Sync with project store
       useProjectStore.getState().updateFileModel(filePath, fileState.semanticModel);
@@ -236,6 +241,8 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.semanticModel.functions[functionName] = func;
       fileState.isDirty = true;
       fileState.workingCode = undefined; // Invalidate source cache
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
       
       // Sync with project store
       useProjectStore.getState().updateFileModel(filePath, fileState.semanticModel);
