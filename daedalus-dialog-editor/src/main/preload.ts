@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
 
   // Code Generator API
   generateCode: (model: any, settings: any) => ipcRenderer.invoke('generator:generateCode', model, settings),
+  generateDialogCode: (model: any, dialogName: string, settings: any) => ipcRenderer.invoke('generator:generateDialogCode', model, dialogName, settings),
   saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean }) =>
     ipcRenderer.invoke('generator:saveFile', filePath, model, settings, options),
 

@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import { Box, Paper, Typography, Stack, TextField, Button, IconButton, Tooltip, Chip, Menu, MenuItem, Snackbar, Alert, CircularProgress } from '@mui/material';
-import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
+import { Add as AddIcon, Save as SaveIcon, MoreVert as MoreVertIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ActionsList from './ActionsList';
 import ConditionEditor from './ConditionEditor';
 import ValidationErrorDialog from './ValidationErrorDialog';
+import DialogSourceViewDialog from './DialogSourceViewDialog';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from './dialogUtils';
 import { createAction } from './actionFactory';
 import type { ActionTypeId } from './actionTypes';
@@ -41,6 +42,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     open: boolean;
     validationResult: ValidationResult | null;
   }>({ open: false, validationResult: null });
+
+  const [sourceViewOpen, setSourceViewOpen] = useState(false);
 
   // Prefer local file state model (for latest edits) over passed semantic model (merged model)
   const semanticModel = fileState?.semanticModel || passedSemanticModel;
@@ -225,11 +228,18 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     }
 
     // Update function with new action using functional update to avoid stale closures
-    setFunction((prevFunc: any) => ({
-      ...prevFunc,
-      actions: [...(prevFunc.actions || []), newAction]
-    }));
-  }, [currentFunction, semanticModel, dialogName, filePath, updateFunction, setFunction, isProjectMode]);
+    setFunction((prevFunc: any) => {
+      const newActions = [...(prevFunc.actions || []), newAction];
+      
+      // Focus the new action after state update
+      setTimeout(() => focusAction(newActions.length - 1, true), 0);
+      
+      return {
+        ...prevFunc,
+        actions: newActions
+      };
+    });
+  }, [currentFunction, semanticModel, dialogName, filePath, updateFunction, setFunction, isProjectMode, focusAction]);
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
@@ -302,6 +312,13 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           {isDirty && <Chip label="Unsaved Changes" size="small" color="error" />}
         </Box>
         <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            onClick={() => setSourceViewOpen(true)}
+            startIcon={<CodeIcon />}
+          >
+            View Source
+          </Button>
           <Button
             variant="outlined"
             disabled={!isDirty || isResetting || isSaving}
@@ -559,6 +576,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         onSaveAnyway={handleSaveAnyway}
         onCancel={handleCancelValidation}
       />
+
+      {/* Source View Dialog */}
+      {semanticModel && (
+        <DialogSourceViewDialog
+          open={sourceViewOpen}
+          onClose={() => setSourceViewOpen(false)}
+          dialogName={dialogName}
+          semanticModel={semanticModel}
+        />
+      )}
 
       {/* Snackbar for user feedback */}
       <Snackbar

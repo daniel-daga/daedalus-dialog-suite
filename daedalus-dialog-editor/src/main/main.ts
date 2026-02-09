@@ -89,6 +89,15 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle('generator:generateDialogCode', async (_event, model: any, dialogName: string, settings: any) => {
+    try {
+      return codeGeneratorService.generateDialogCode(model, dialogName, settings);
+    } catch (error) {
+      console.error('[IPC] generator:generateDialogCode error:', error);
+      throw new Error(`Failed to generate dialog code: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
   // Validation handler - validates model without saving
   ipcMain.handle('validation:validate', async (_event, model: any, settings: any, options?: any) => {
     try {

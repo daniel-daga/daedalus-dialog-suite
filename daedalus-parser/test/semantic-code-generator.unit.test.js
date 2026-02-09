@@ -53,6 +53,33 @@ test('SemanticCodeGenerator should generate dialog instance', () => {
   assert.ok(result.includes('description'));
 });
 
+test('SemanticCodeGenerator should generate dialog with functions', () => {
+  const generator = new SemanticCodeGenerator({ sectionHeaders: false });
+  const { Dialog, DialogFunction, DialogLine } = require('../dist/semantic/semantic-visitor-index');
+
+  const dialog = new Dialog('DIA_Test_Hello', 'C_INFO');
+  dialog.properties.npc = 'TEST_NPC';
+  dialog.properties.information = 'DIA_Test_Hello_Info';
+
+  const func = new DialogFunction('DIA_Test_Hello_Info', 'void');
+  func.actions.push(new DialogLine('self', 'Hello', 'TEST_01'));
+
+  dialog.properties.information = func;
+
+  const model = {
+    dialogs: { 'DIA_Test_Hello': dialog },
+    functions: { 'DIA_Test_Hello_Info': func }
+  };
+
+  const result = generator.generateDialogWithFunctions('DIA_Test_Hello', model);
+
+  assert.ok(typeof result === 'string');
+  assert.ok(result.includes('instance DIA_Test_Hello(C_INFO)'));
+  assert.ok(result.includes('func void DIA_Test_Hello_Info()'));
+  assert.ok(result.includes('AI_Output'));
+  assert.ok(result.includes('Hello'));
+});
+
 // ===================================================================
 // FUNCTION GENERATION TESTS
 // ===================================================================

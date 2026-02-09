@@ -60,11 +60,22 @@ const ActionsList = React.memo<ActionsListProps>(({
     }
   }, [contextId]); // Only depend on contextId
 
+  // If actions length changed and it's small, update renderedCount immediately
+  // to ensure new items are rendered and can be focused.
+  useEffect(() => {
+    if (actions.length <= IMMEDIATE_RENDER_THRESHOLD && renderedCount < actions.length) {
+      setRenderedCount(actions.length);
+    }
+  }, [actions.length, renderedCount]);
+
   useEffect(() => {
     // Progressively render remaining items
     // This effect ensures that if actions are added, or if initial render was partial,
     // we eventually show everything.
     if (renderedCount < actions.length) {
+      // If we're below the threshold, we handle it in the effect above immediately
+      if (actions.length <= IMMEDIATE_RENDER_THRESHOLD) return;
+
       const timer = setTimeout(() => {
         setRenderedCount(prev => Math.min(prev + 10, actions.length));
       }, BATCH_DELAY_MS);
@@ -74,7 +85,7 @@ const ActionsList = React.memo<ActionsListProps>(({
 
   return (
     <Stack spacing={2}>
-      {actions.slice(0, renderedCount).map((action: any, idx: number) => (
+      {actions.slice(0, Math.max(renderedCount, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0)).map((action: any, idx: number) => (
         <ActionCard
           key={action.id || idx}
           ref={(el) => (actionRefs.current[idx] = el)}

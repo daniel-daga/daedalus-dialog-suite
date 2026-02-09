@@ -73,6 +73,7 @@ export interface EditorAPI {
 
   // Code Generator API - runs in main process
   generateCode: (model: SemanticModel, settings: CodeGenerationSettings) => Promise<string>;
+  generateDialogCode: (model: SemanticModel, dialogName: string, settings: CodeGenerationSettings) => Promise<string>;
   saveFile: (filePath: string, model: SemanticModel, settings: CodeGenerationSettings, options?: SaveOptions) => Promise<SaveResult>;
 
   // File I/O API

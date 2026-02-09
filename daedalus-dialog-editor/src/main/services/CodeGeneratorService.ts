@@ -25,4 +25,21 @@ export class CodeGeneratorService {
 
     return generator.generateSemanticModel(model);
   }
+
+  /**
+   * Generate Daedalus code for a specific dialog
+   */
+  generateDialogCode(plainModel: any, dialogName: string, settings: CodeGeneratorSettings): string {
+    // Reconstruct the model with proper class instances
+    const model = deserializeSemanticModel(plainModel);
+
+    const generator = new SemanticCodeGenerator({
+      indentChar: settings.indentChar,
+      includeComments: settings.includeComments,
+      sectionHeaders: settings.sectionHeaders,
+      uppercaseKeywords: settings.uppercaseKeywords
+    });
+
+    return generator.generateDialogWithFunctions(dialogName, model);
+  }
 }

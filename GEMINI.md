@@ -52,7 +52,8 @@ This repository contains tools for the Daedalus scripting language used in Gothi
 ### Core Mandates
 1.  **TDD (Test-Driven Development):** Write failing tests *before* implementing features or fixing bugs.
     *   Parser tests: `daedalus-parser/test/*.test.js`
-    *   Editor tests: `daedalus-dialog-editor/tests/*.test.tsx`
+    *   Editor Logic tests: `daedalus-dialog-editor/tests/*.test.ts(x)`
+    *   **UI Component tests:** Always create **Playwright** E2E tests for new UI features or bug fixes in `daedalus-dialog-editor/tests/e2e/*.spec.ts`.
 2.  **Semantic Model First:** When working on language features, manipulate the `SemanticModel`, not the AST directly.
 3.  **No Temporary Files:** Do not create temp test files. Add meaningful cases to the existing test suite (`test/` or `tests/`).
 

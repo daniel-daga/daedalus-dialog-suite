@@ -62,6 +62,19 @@ export class SemanticCodeGenerator {
   }
 
   /**
+   * Generate code for a specific dialog and its associated functions
+   */
+  generateDialogWithFunctions(dialogName: string, model: SemanticModel): string {
+    const dialog = model.dialogs[dialogName];
+    if (!dialog) {
+      throw new Error(`Dialog ${dialogName} not found in model`);
+    }
+
+    const processedFunctions = new Set<string>();
+    return this.generateDialogSection(dialog, model, processedFunctions);
+  }
+
+  /**
    * Generate a dialog section with its associated functions
    */
   private generateDialogSection(
