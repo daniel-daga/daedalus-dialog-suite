@@ -34,6 +34,8 @@ import type { GlobalConstant, GlobalVariable } from '../types/global';
 const VariableManager: React.FC = () => {
   const { mergedSemanticModel, addVariable, deleteVariable, allDialogFiles, questFiles, isLoading } = useProjectStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'constants' | 'variables'>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
 
   // Add Variable Dialog State
   const [openAdd, setOpenAdd] = useState(false);
@@ -45,26 +47,52 @@ const VariableManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const variables = useMemo(() => {
-    const vars: (GlobalConstant | GlobalVariable)[] = [];
+    const vars: ((GlobalConstant | GlobalVariable) & { isConstant: boolean })[] = [];
     if (mergedSemanticModel.constants) {
-      vars.push(...Object.values(mergedSemanticModel.constants));
+      vars.push(...Object.values(mergedSemanticModel.constants).map(c => ({ ...c, isConstant: true })));
     }
     if (mergedSemanticModel.variables) {
-      vars.push(...Object.values(mergedSemanticModel.variables));
+      vars.push(...Object.values(mergedSemanticModel.variables).map(v => ({ ...v, isConstant: false })));
     }
     // Sort by name
     return vars.sort((a, b) => a.name.localeCompare(b.name));
   }, [mergedSemanticModel]);
 
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    variables.forEach(v => {
+      if (v.type) types.add(v.type.toLowerCase());
+    });
+    return Array.from(types).sort();
+  }, [variables]);
+
   const filteredVariables = useMemo(() => {
-    if (!searchQuery) return variables;
-    const lowerQuery = searchQuery.toLowerCase();
-    return variables.filter(v =>
-      v.name.toLowerCase().includes(lowerQuery) ||
-      v.type.toLowerCase().includes(lowerQuery) ||
-      (v.filePath && v.filePath.toLowerCase().includes(lowerQuery))
-    );
-  }, [variables, searchQuery]);
+    let result = variables;
+
+    // Category filter
+    if (categoryFilter === 'constants') {
+      result = result.filter(v => v.isConstant);
+    } else if (categoryFilter === 'variables') {
+      result = result.filter(v => !v.isConstant);
+    }
+
+    // Type filter
+    if (typeFilter !== 'all') {
+      result = result.filter(v => v.type.toLowerCase() === typeFilter);
+    }
+
+    // Search query
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      result = result.filter(v =>
+        v.name.toLowerCase().includes(lowerQuery) ||
+        v.type.toLowerCase().includes(lowerQuery) ||
+        (v.filePath && v.filePath.toLowerCase().includes(lowerQuery))
+      );
+    }
+
+    return result;
+  }, [variables, searchQuery, categoryFilter, typeFilter]);
 
   const availableFiles = useMemo(() => {
       // Combine and unique
@@ -114,17 +142,36 @@ const VariableManager: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
         <Typography variant="h5">Variable Manager</Typography>
         <Box sx={{ flexGrow: 1 }} />
 
-        <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setOpenAdd(true)}
-        >
-            Add Variable
-        </Button>
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel>Category</InputLabel>
+          <Select
+            value={categoryFilter}
+            label="Category"
+            onChange={(e) => setCategoryFilter(e.target.value as any)}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="constants">Constants</MenuItem>
+            <MenuItem value="variables">Variables</MenuItem>
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel>Type</InputLabel>
+          <Select
+            value={typeFilter}
+            label="Type"
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <MenuItem value="all">All Types</MenuItem>
+            {availableTypes.map(t => (
+              <MenuItem key={t} value={t}>{t}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
         <TextField
           size="small"
@@ -141,8 +188,16 @@ const VariableManager: React.FC = () => {
           inputProps={{
             'aria-label': 'Search variables'
           }}
-          sx={{ width: 300 }}
+          sx={{ width: 200 }}
         />
+
+        <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setOpenAdd(true)}
+        >
+            Add Variable
+        </Button>
       </Box>
 
       <TableContainer component={Paper} variant="outlined" sx={{ flexGrow: 1 }}>
@@ -159,17 +214,22 @@ const VariableManager: React.FC = () => {
           <TableBody>
             {filteredVariables.map((v) => (
               <TableRow key={`${v.name}-${v.filePath}`} hover>
-                <TableCell sx={{ fontFamily: 'monospace' }}>{v.name}</TableCell>
+                <TableCell sx={{ fontFamily: 'monospace' }}>
+                  {v.name}
+                  {v.isConstant && (
+                    <Chip label="const" size="small" sx={{ ml: 1, height: 16, fontSize: '0.6rem' }} />
+                  )}
+                </TableCell>
                 <TableCell>
                   <Chip
                     label={v.type}
                     size="small"
-                    color={'value' in v ? 'primary' : 'default'}
+                    color={v.isConstant ? 'primary' : 'default'}
                     variant="outlined"
                   />
                 </TableCell>
                 <TableCell>
-                  {'value' in v ? String(v.value) : '-'}
+                  {v.isConstant ? String((v as GlobalConstant).value) : '-'}
                 </TableCell>
                 <TableCell>
                   <Tooltip title={v.filePath || ''}>

@@ -12,8 +12,15 @@ import {
   MenuItem,
   FormHelperText,
   Stack,
-  Alert
+  Alert,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  Typography,
+  Box,
+  Tooltip
 } from '@mui/material';
+import { InfoOutlined } from '@mui/icons-material';
 import { useProjectStore } from '../store/projectStore';
 
 interface CreateQuestDialogProps {
@@ -26,6 +33,7 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
 
   const [title, setTitle] = useState('');
   const [internalName, setInternalName] = useState('');
+  const [logicMethod, setLogicMethod] = useState<'implicit' | 'explicit'>('implicit');
   const [topicFile, setTopicFile] = useState('');
   const [variableFile, setVariableFile] = useState('');
   const [isInternalNameTouched, setIsInternalNameTouched] = useState(false);
@@ -83,8 +91,13 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
   }, [title, isInternalNameTouched]);
 
   const handleSubmit = async () => {
-    if (!title || !internalName || !topicFile || !variableFile) {
-        setError('All fields are required');
+    if (!title || !internalName || !topicFile) {
+        setError('Title, Internal Name and Topic File are required');
+        return;
+    }
+
+    if (logicMethod === 'explicit' && !variableFile) {
+        setError('Variable File is required for Explicit state tracking');
         return;
     }
 
@@ -93,13 +106,20 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
         setError(`TOPIC_${internalName} already exists`);
         return;
     }
-    if (mergedSemanticModel.variables?.[`MIS_${internalName}`]) {
+    if (logicMethod === 'explicit' && mergedSemanticModel.variables?.[`MIS_${internalName}`]) {
         setError(`MIS_${internalName} already exists`);
         return;
     }
 
     try {
-        await createQuest(title, internalName, topicFile, variableFile);
+        // If implicit, we just pass the topic file twice or handle it in store
+        // Actually the store's createQuest expects both. I should probably update the store too.
+        await createQuest(
+            title, 
+            internalName, 
+            topicFile, 
+            logicMethod === 'explicit' ? variableFile : ''
+        );
         onClose();
         // Reset form
         setTitle('');
@@ -112,9 +132,6 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
   };
 
   const formatPath = (path: string) => {
-      // Show only filename if possible, or relative path
-      // Since we don't have project root handy here (it's in store),
-      // we'll just show the last part for now or full path.
       const parts = path.split(/[/\\]/);
       return parts[parts.length - 1];
   };
@@ -143,9 +160,33 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
                     setInternalName(e.target.value);
                     setIsInternalNameTouched(true);
                 }}
-                helperText={`Will create: TOPIC_${internalName || '...'} and MIS_${internalName || '...'}`}
+                helperText={`Will create: TOPIC_${internalName || '...'}`}
                 fullWidth
             />
+
+            <Box>
+                <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                    State Tracking Method
+                    <Tooltip title="Method A (Implicit) uses Npc_KnowsInfo checks. Method B (Explicit) uses a dedicated MIS_ variable.">
+                        <InfoOutlined fontSize="inherit" color="action" />
+                    </Tooltip>
+                </Typography>
+                <RadioGroup
+                    value={logicMethod}
+                    onChange={(e) => setLogicMethod(e.target.value as 'implicit' | 'explicit')}
+                >
+                    <FormControlLabel 
+                        value="implicit" 
+                        control={<Radio size="small" />} 
+                        label={<Typography variant="body2"><b>Method A: Implicit</b> (No variable, use KnowsInfo)</Typography>} 
+                    />
+                    <FormControlLabel 
+                        value="explicit" 
+                        control={<Radio size="small" />} 
+                        label={<Typography variant="body2"><b>Method B: Explicit</b> (Create MIS_ variable)</Typography>} 
+                    />
+                </RadioGroup>
+            </Box>
 
             <FormControl fullWidth>
                 <InputLabel>Quest Definition File (TOPIC_)</InputLabel>
@@ -161,19 +202,21 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
                 <FormHelperText>{topicFile}</FormHelperText>
             </FormControl>
 
-            <FormControl fullWidth>
-                <InputLabel>Variable Definition File (MIS_)</InputLabel>
-                <Select
-                    value={variableFile}
-                    label="Variable Definition File (MIS_)"
-                    onChange={(e) => setVariableFile(e.target.value)}
-                >
-                    {fileSuggestions.variables.map(f => (
-                        <MenuItem key={f} value={f}>{formatPath(f)}</MenuItem>
-                    ))}
-                </Select>
-                <FormHelperText>{variableFile}</FormHelperText>
-            </FormControl>
+            {logicMethod === 'explicit' && (
+                <FormControl fullWidth>
+                    <InputLabel>Variable Definition File (MIS_)</InputLabel>
+                    <Select
+                        value={variableFile}
+                        label="Variable Definition File (MIS_)"
+                        onChange={(e) => setVariableFile(e.target.value)}
+                    >
+                        {fileSuggestions.variables.map(f => (
+                            <MenuItem key={f} value={f}>{formatPath(f)}</MenuItem>
+                        ))}
+                    </Select>
+                    <FormHelperText>{variableFile}</FormHelperText>
+                </FormControl>
+            )}
         </Stack>
       </DialogContent>
       <DialogActions>

@@ -78,14 +78,15 @@ describe('questAnalysis', () => {
             expect(result.hasSuccess).toBe(false);
         });
 
-        it('should detect broken quest (missing variable)', () => {
-            const questName = 'TOPIC_BROKEN';
+        it('should handle quest with no variable (Method A/Implicit)', () => {
+            const questName = 'TOPIC_NOVAR';
             // No variable definition
 
-            const model = createMockModel([], [], [{ name: questName, value: '"Broken"' }], []);
+            const model = createMockModel([], [], [{ name: questName, value: '"No Var"' }], []);
             const result = analyzeQuest(model, questName);
 
-            expect(result.status).toBe('broken');
+            expect(result.status).toBe('not_started');
+            expect(result.logicMethod).toBe('unknown');
             expect(result.misVariableExists).toBe(false);
         });
     });
@@ -125,7 +126,7 @@ describe('questAnalysis', () => {
 
             const checkRef = refs.find(r => r.functionName === 'DIA_Check_Info');
             expect(checkRef).toBeDefined();
-            expect(checkRef?.type).toBe('status');
+            expect(checkRef?.type).toBe('condition');
             expect(checkRef?.npcName).toBe('NPC_B');
         });
     });

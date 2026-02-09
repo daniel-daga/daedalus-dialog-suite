@@ -488,8 +488,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ isLoading: true });
 
       // 1. Prepare content to append
-      // Check if files are the same
-      if (topicFilePath === variableFilePath) {
+      // Check if we need to create a variable
+      const hasVariable = !!variableFilePath;
+
+      if (hasVariable && topicFilePath === variableFilePath) {
         const content = `\n// Quest: ${title}\nconst string TOPIC_${internalName} = "${title}";\nvar int MIS_${internalName};\n`;
 
         // Read current content to ensure we append correctly (newline check)
@@ -504,27 +506,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         if (!topicFileContent.endsWith('\n')) topicFileContent += '\n';
         await window.editorAPI.writeFile(topicFilePath, topicFileContent + constContent);
 
-        // Append variable
-        const varContent = `\nvar int MIS_${internalName};\n`;
-        let varFileContent = await window.editorAPI.readFile(variableFilePath);
-        if (!varFileContent.endsWith('\n')) varFileContent += '\n';
-        await window.editorAPI.writeFile(variableFilePath, varFileContent + varContent);
+        // Append variable if requested
+        if (hasVariable) {
+            const varContent = `\nvar int MIS_${internalName};\n`;
+            let varFileContent = await window.editorAPI.readFile(variableFilePath);
+            if (!varFileContent.endsWith('\n')) varFileContent += '\n';
+            await window.editorAPI.writeFile(variableFilePath, varFileContent + varContent);
+        }
       }
 
       // 2. Clear cache for modified files
       const { parsedFiles } = get();
       const newCache = new Map(parsedFiles);
       newCache.delete(topicFilePath);
-      newCache.delete(variableFilePath);
+      if (hasVariable) newCache.delete(variableFilePath);
       set({ parsedFiles: newCache });
 
       // 3. Re-load quest data (re-parse the modified files)
       const topicModel = await get().getSemanticModel(topicFilePath);
-      const variableModel = (topicFilePath === variableFilePath) ? topicModel : await get().getSemanticModel(variableFilePath);
+      const modelsToMerge = [get().mergedSemanticModel, topicModel];
+      
+      if (hasVariable && variableFilePath !== topicFilePath) {
+          const variableModel = await get().getSemanticModel(variableFilePath);
+          modelsToMerge.push(variableModel);
+      }
 
       // Merge into current model
-      // Note: This assumes adding new symbols doesn't conflict with existing ones in a way that requires full re-merge
-      get().mergeSemanticModels([get().mergedSemanticModel, topicModel, variableModel]);
+      get().mergeSemanticModels(modelsToMerge);
 
       set({ isLoading: false });
 

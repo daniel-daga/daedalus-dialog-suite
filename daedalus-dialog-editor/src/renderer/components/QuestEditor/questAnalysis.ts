@@ -2,7 +2,8 @@ import type { SemanticModel, DialogAction, DialogCondition } from '../../types/g
 import { getActionType } from '../actionTypes';
 
 export interface QuestAnalysis {
-    status: 'implemented' | 'wip' | 'broken' | 'not_started';
+    status: 'implemented' | 'wip' | 'not_started';
+    logicMethod: 'implicit' | 'explicit' | 'unknown';
     misVariableExists: boolean;
     misVariableName: string;
     hasStart: boolean;
@@ -13,7 +14,7 @@ export interface QuestAnalysis {
 }
 
 export interface QuestReference {
-    type: 'create' | 'status' | 'entry';
+    type: 'create' | 'status' | 'entry' | 'condition';
     dialogName?: string;
     functionName: string;
     npcName?: string;
@@ -28,6 +29,8 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
     let hasStart = false;
     let hasSuccess = false;
     let hasFailed = false;
+    let hasImplicitChecks = false;
+    let hasExplicitChecks = !!misVariable;
 
     // Scan functions for actions
     Object.values(semanticModel.functions || {}).forEach(func => {
@@ -45,12 +48,34 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
                 }
             }
         });
+
+        // Also check if this function is used as a condition for quest progress
+        func.conditions?.forEach((cond: DialogCondition) => {
+            if (cond.type === 'NpcKnowsInfoCondition') {
+                // If someone checks if we know a dialog that is part of this quest
+                // We'll need a better way to link dialogs to quests, 
+                // but for now we look at references in getQuestReferences
+            }
+            if (cond.type === 'VariableCondition' && cond.variableName === misVarName) {
+                hasExplicitChecks = true;
+            }
+        });
     });
 
+    // Determine logic method
+    let logicMethod: QuestAnalysis['logicMethod'] = 'unknown';
+    if (hasExplicitChecks) {
+        logicMethod = 'explicit';
+    } else {
+        // If we have references that are conditions but not variable conditions, it might be implicit
+        const refs = getQuestReferences(semanticModel, questName);
+        if (refs.some(r => r.type === 'condition' && !r.details.includes(misVarName))) {
+            logicMethod = 'implicit';
+        }
+    }
+
     let status: QuestAnalysis['status'] = 'not_started';
-    if (!misVariable) {
-        status = 'broken';
-    } else if (hasSuccess || hasFailed) {
+    if (hasSuccess || hasFailed) {
         status = 'implemented';
     } else if (hasStart) {
         status = 'wip';
@@ -58,6 +83,7 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
 
     return {
         status,
+        logicMethod,
         misVariableExists: !!misVariable,
         misVariableName: misVarName,
         hasStart,
@@ -130,7 +156,7 @@ export const getQuestReferences = (semanticModel: SemanticModel, questName: stri
              if ('variableName' in cond && cond.variableName && (cond as any).variableName.toLowerCase() === lowerMisVarName) {
                  const context = funcToDialog.get(func.name.toLowerCase());
                  refs.push({
-                    type: 'status',
+                    type: 'condition',
                     functionName: func.name,
                     dialogName: context?.dialogName,
                     npcName: context?.npcName,

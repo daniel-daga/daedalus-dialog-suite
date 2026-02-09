@@ -14,32 +14,38 @@ const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({ filePath }) => {
   const fileState = openFiles.get(filePath);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [editorValue, setEditorValue] = useState<string>('');
+  const [editorValue, setEditorValue] = useState<string>(() => {
+    if (!fileState) return '';
+    return (fileState.workingCode ?? fileState.originalCode) || '';
+  });
   const monacoRef = useRef<any>(null);
+  const isInternalChange = useRef(false);
 
-  // Determine initial content
+  // Determine initial content and handle external changes
   useEffect(() => {
     if (!fileState) return;
 
-    // If we have working code (unsaved source edits), use it
-    if (fileState.workingCode !== undefined) {
-      setEditorValue(fileState.workingCode);
-      return;
-    }
+    // If change is coming from the store (not our own typing)
+    if (!isInternalChange.current) {
+        if (fileState.workingCode !== undefined && fileState.workingCode !== editorValue) {
+            setEditorValue(fileState.workingCode);
+            return;
+        }
 
-    // If file has syntax errors, we MUST use originalCode (can't generate from invalid model)
-    if (fileState.hasErrors) {
-      setEditorValue(fileState.originalCode || '');
-      return;
+        if (!fileState.isDirty && fileState.originalCode !== editorValue) {
+            setEditorValue(fileState.originalCode || '');
+            return;
+        }
     }
 
     // If dirty (visual changes), generate code from model
-    if (fileState.isDirty) {
+    if (fileState.isDirty && fileState.workingCode === undefined) {
       setIsLoading(true);
       window.editorAPI.generateCode(fileState.semanticModel, codeSettings)
         .then((code) => {
-          setEditorValue(code);
-          // We don't set workingCode here yet, only on edit
+          if (!isInternalChange.current) {
+            setEditorValue(code);
+          }
         })
         .catch((err) => {
           console.error('Failed to generate code:', err);
@@ -48,20 +54,26 @@ const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({ filePath }) => {
         .finally(() => {
           setIsLoading(false);
         });
-      return;
     }
-
-    // Default: use original code (clean state)
-    setEditorValue(fileState.originalCode || '');
-
   }, [filePath, fileState?.isDirty, fileState?.hasErrors, fileState?.originalCode, fileState?.workingCode, codeSettings]);
+
+  // Update markers when errors change
+  useEffect(() => {
+    if (monacoRef.current && fileState?.errors) {
+        const editor = monacoRef.current;
+        const monaco = (window as any).monaco;
+        if (monaco && editor.getModel()) {
+            updateMarkers(monaco, editor.getModel(), fileState.errors);
+        }
+    }
+  }, [fileState?.errors]);
 
   // Handle editor mount
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     monacoRef.current = editor;
+    (window as any).monaco = monaco;
 
     // Add C-like syntax highlighting for Daedalus if not present
-    // Note: This is a basic approximation using C++
     const model = editor.getModel();
     if (model) {
       monaco.editor.setModelLanguage(model, 'cpp');
@@ -69,7 +81,7 @@ const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({ filePath }) => {
 
     // Update markers if there are existing errors
     if (fileState?.errors && fileState.errors.length > 0) {
-      updateMarkers(monaco, editor.getModel(), fileState.errors);
+      updateMarkers(monaco, model, fileState.errors);
     }
   };
 
@@ -77,32 +89,44 @@ const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({ filePath }) => {
   const updateMarkers = (monaco: any, model: any, errors: ParseError[]) => {
     if (!monaco || !model) return;
 
-    const markers = errors.map(err => ({
-      severity: monaco.MarkerSeverity.Error,
-      message: err.message,
-      startLineNumber: err.position ? err.position.row : 1,
-      startColumn: err.position ? err.position.column : 1,
-      endLineNumber: err.position ? err.position.row : 1,
-      endColumn: (err.position ? err.position.column : 1) + (err.text?.length || 1),
-    }));
+    const markers = errors.map(err => {
+      const row = err.position ? err.position.row + 1 : 1;
+      const col = err.position ? err.position.column + 1 : 1;
+      return {
+        severity: monaco.MarkerSeverity.Error,
+        message: err.message,
+        startLineNumber: row,
+        startColumn: col,
+        endLineNumber: row,
+        endColumn: col + (err.text?.length || 1),
+      };
+    });
 
     monaco.editor.setModelMarkers(model, 'daedalus', markers);
   };
 
+  // Debounced store update
+  const debouncedSetWorkingCode = useRef<any>(null);
+  
   // Handle content change
   const handleChange = useCallback((value: string | undefined) => {
     if (value === undefined) return;
 
     // Update local state
     setEditorValue(value);
+    
+    // Mark as internal change to prevent effect feedback loop
+    isInternalChange.current = true;
 
-    // Update store (debounced handled by store logic? No, we should debounce here or just set it)
-    // Setting workingCode on every keystroke might be heavy if it triggers store listeners.
-    // But for now, let's just set it.
-    setWorkingCode(filePath, value);
-
-    // Debounce validation/parsing could go here to update markers live
-    // For now, we rely on save to fully validate/parse, or we can add a debounced checker.
+    // Update store with debounce
+    if (debouncedSetWorkingCode.current) {
+        clearTimeout(debouncedSetWorkingCode.current);
+    }
+    
+    debouncedSetWorkingCode.current = setTimeout(() => {
+        setWorkingCode(filePath, value);
+        isInternalChange.current = false;
+    }, 500);
 
   }, [filePath, setWorkingCode]);
 

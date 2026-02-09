@@ -126,38 +126,58 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
           deleteIcon={<Tooltip title="Follow reference"><OpenInNewIcon /></Tooltip>}
         />
 
-        {analysis?.misVariableExists ? (
-            <Chip 
-              label={`Var: ${analysis.misVariableName}`}
-              color="success" 
-              variant="outlined" 
-              onDelete={() => navigateToSymbol(analysis.misVariableName, { preferSource: true })}
-              deleteIcon={<Tooltip title="Follow reference"><OpenInNewIcon /></Tooltip>}
-            />
-        ) : (
-            <Chip
-                label={`Missing Var: ${analysis?.misVariableName || 'MIS_...'}`}
-                color="warning"
-                variant="outlined"
-                onDelete={handleCreateVariable}
-                deleteIcon={<Tooltip title="Create Variable"><AddIcon /></Tooltip>}
-                disabled={isLoading}
-            />
-        )}
+        <Chip
+            label={analysis?.logicMethod === 'explicit' ? `Method B: Explicit (${analysis.misVariableName})` : 
+                   analysis?.logicMethod === 'implicit' ? 'Method A: Implicit (KnowsInfo/Items)' :
+                   'Logic: Unknown/Diary Only'}
+            color={analysis?.logicMethod === 'explicit' ? "primary" : 
+                   analysis?.logicMethod === 'implicit' ? "info" : "default"}
+            variant="outlined"
+            icon={<InfoIcon />}
+        />
 
         <Chip
             label={analysis?.status === 'implemented' ? 'Implemented' :
-                   analysis?.status === 'wip' ? 'Work In Progress' :
-                   analysis?.status === 'broken' ? 'Broken' : 'Not Started'}
+                   analysis?.status === 'wip' ? 'Work In Progress' : 'Not Started'}
             color={analysis?.status === 'implemented' ? 'success' :
-                   analysis?.status === 'wip' ? 'info' :
-                   analysis?.status === 'broken' ? 'error' : 'default'}
+                   analysis?.status === 'wip' ? 'info' : 'default'}
             icon={analysis?.status === 'implemented' ? <CheckCircleIcon /> :
-                  analysis?.status === 'wip' ? <InfoIcon /> :
-                  analysis?.status === 'broken' ? <WarningIcon /> : undefined}
+                  analysis?.status === 'wip' ? <InfoIcon /> : undefined}
             variant="filled"
         />
       </Stack>
+
+      {analysis?.logicMethod === 'unknown' && !analysis?.misVariableExists && (
+          <Paper sx={{ p: 2, mb: 3, bgcolor: 'rgba(255, 152, 0, 0.05)', border: '1px solid rgba(255, 152, 0, 0.2)' }}>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                  <WarningIcon color="warning" />
+                  <Typography variant="subtitle1" color="warning.main">State Tracking Advice</Typography>
+              </Box>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                  This quest only uses the Diary (Log_SetTopicStatus) which is write-only. 
+                  Choose a method to track quest state in scripts:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                  <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle2">Method A: Implicit</Typography>
+                      <Typography variant="caption">Use Npc_KnowsInfo or Npc_HasItems. Best for simple, linear quests.</Typography>
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle2">Method B: Explicit</Typography>
+                      <Typography variant="caption">Use a script variable (e.g. {analysis?.misVariableName}). Necessary for complex world-state changes.</Typography>
+                      <Button 
+                        size="small" 
+                        startIcon={<AddIcon />} 
+                        onClick={handleCreateVariable}
+                        disabled={isLoading}
+                        sx={{ mt: 1 }}
+                      >
+                          Create Variable
+                      </Button>
+                  </Box>
+              </Box>
+          </Paper>
+      )}
 
       <Paper sx={{ p: 2, mb: 3 }}>
          <Typography variant="h6" gutterBottom>Log Entries & Updates</Typography>

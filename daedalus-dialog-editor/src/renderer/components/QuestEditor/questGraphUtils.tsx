@@ -133,6 +133,11 @@ const identifyQuestNodes = (
             if (cond.type === 'VariableCondition' && cond.variableName === misVarName) {
                 isRelevant = true;
             }
+            if (cond.type === 'NpcKnowsInfoCondition') {
+                // If this function depends on a dialog that is already in our map, it's relevant
+                // But we don't know the full set yet. 
+                // We'll rely on the edge builder to find these connections.
+            }
         });
 
         if (isRelevant) {
@@ -157,6 +162,51 @@ const identifyQuestNodes = (
             });
         }
     });
+
+    // Final check: Add nodes that are referenced via Npc_KnowsInfo from existing relevant nodes
+    // to support Method A (Implicit flow)
+    let addedAny = true;
+    while (addedAny) {
+        addedAny = false;
+        Object.values(semanticModel.functions || {}).forEach(func => {
+            if (nodeDataMap.has(func.name)) return;
+
+            let isRelevantByKnows = false;
+            func.conditions?.forEach((cond: DialogCondition) => {
+                if (cond.type === 'NpcKnowsInfoCondition') {
+                    // Does this condition check for a dialog we already identified as relevant?
+                    for (const relevantNode of nodeDataMap.values()) {
+                        if (relevantNode.label === cond.dialogRef) {
+                            isRelevantByKnows = true;
+                            break;
+                        }
+                    }
+                }
+            });
+
+            if (isRelevantByKnows) {
+                const npc = getNpcForFunction(func.name, semanticModel) || 'Global/Other';
+                let displayName = func.name;
+                for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
+                    const info = d.properties.information;
+                    if ((typeof info === 'string' && info === func.name) ||
+                        (typeof info === 'object' && info.name === func.name)) {
+                        displayName = dName;
+                        break;
+                    }
+                }
+
+                nodeDataMap.set(func.name, {
+                    id: func.name,
+                    type: 'check',
+                    label: displayName,
+                    npc,
+                    description: ''
+                });
+                addedAny = true;
+            }
+        });
+    }
 
     return { nodeDataMap, producersByVariableAndValue };
 };
@@ -300,6 +350,7 @@ const buildQuestEdges = (
  * 3. Layout (Using Dagre)
  */
 const calculateDagreLayout = (
+    semanticModel: SemanticModel,
     nodeDataMap: Map<string, NodeData>,
     adjacency: Map<string, string[]>,
     misVarName: string
@@ -388,7 +439,7 @@ const calculateDagreLayout = (
                         description: data.description,
                         type: data.type,
                         status: data.description, // rough mapping
-                        variableName: misVarName
+                        variableName: semanticModel.variables?.[misVarName] ? misVarName : undefined
                     },
                 });
             }
@@ -412,7 +463,7 @@ export const buildQuestGraph = (semanticModel: SemanticModel, questName: string 
     const { edges, adjacency } = buildQuestEdges(semanticModel, nodeDataMap, producersByVariableAndValue, misVarName);
 
     // 3. Layout (Using Dagre)
-    const nodes = calculateDagreLayout(nodeDataMap, adjacency, misVarName);
+    const nodes = calculateDagreLayout(semanticModel, nodeDataMap, adjacency, misVarName);
 
     return { nodes, edges };
 };
