@@ -215,6 +215,7 @@ export class SemanticCodeGenerator {
     const indent = this.indent();
     const funcKeyword = this.keyword('func');
     const returnType = this.normalizeReturnType(func.returnType);
+    const returnTypeLower = func.returnType.toLowerCase();
     const lines: string[] = [];
 
     lines.push(`${funcKeyword} ${returnType} ${func.name}()`);
@@ -247,9 +248,9 @@ export class SemanticCodeGenerator {
       });
     } else {
       // Empty function - add a simple return or placeholder
-      if (returnType === 'int') {
+      if (returnTypeLower === 'int') {
         lines.push(`${indent}return TRUE;`);
-      } else if (returnType === 'void') {
+      } else if (returnTypeLower === 'void') {
         lines.push(`${indent}// T` + `ODO: Implement function body`);
       }
     }

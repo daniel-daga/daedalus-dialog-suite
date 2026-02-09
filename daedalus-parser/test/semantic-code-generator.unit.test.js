@@ -97,6 +97,17 @@ test('SemanticCodeGenerator should generate function declaration', () => {
   assert.ok(result.includes('};'));
 });
 
+test('SemanticCodeGenerator should generate default return for INT when uppercaseKeywords enabled', () => {
+  const generator = new SemanticCodeGenerator({ uppercaseKeywords: true });
+  const { DialogFunction } = require('../dist/semantic/semantic-visitor-index');
+
+  const func = new DialogFunction('DIA_Test_Exit_Condition', 'INT');
+  const result = generator.generateFunction(func);
+
+  assert.ok(result.includes('FUNC INT DIA_Test_Exit_Condition()'));
+  assert.ok(result.includes('return TRUE;'));
+});
+
 // ===================================================================
 // ACTION GENERATION TESTS
 // ===================================================================
