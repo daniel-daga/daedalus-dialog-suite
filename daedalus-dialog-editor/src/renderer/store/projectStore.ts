@@ -682,20 +682,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   loadAndMergeNpcModels: (npcId: string) => {
-    const { dialogIndex, parsedFiles } = get();
+    const { dialogIndex, parsedFiles, allDialogFiles } = get();
 
-    // Get dialog metadata for this NPC
+    // 1. Identify NPC-specific files
     const dialogMetadata = dialogIndex.get(npcId) || [];
+    const npcFilePaths = new Set(dialogMetadata.map(m => m.filePath));
 
-    // Extract unique file paths
-    const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
+    // 2. Identify "Global" files (non-dialog files)
+    // We consider any file that is NOT associated with ANY NPC in the index as a global file.
+    // (e.g. Constants.d, Story_Globals.d, LOG_Entries.d)
+    const allFilesWithDialogs = new Set<string>();
+    for (const metadataList of dialogIndex.values()) {
+        for (const meta of metadataList) {
+            allFilesWithDialogs.add(meta.filePath);
+        }
+    }
 
-    // Get semantic models from cache
-    const semanticModels = uniqueFilePaths
+    const globalFiles = allDialogFiles.filter(f => !allFilesWithDialogs.has(f));
+
+    // 3. Merge Global + NPC files
+    const filesToMerge = new Set([...globalFiles, ...npcFilePaths]);
+
+    // 4. Get models (only if parsed)
+    const semanticModels = Array.from(filesToMerge)
       .map(filePath => parsedFiles.get(filePath)?.semanticModel)
       .filter((model): model is SemanticModel => model !== undefined);
 
-    // Merge the models
+    // 5. Merge
     get().mergeSemanticModels(semanticModels);
   },
 

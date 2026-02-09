@@ -4,10 +4,13 @@ import '@testing-library/jest-dom';
 import SetVariableActionRenderer from '../src/renderer/components/actionRenderers/SetVariableActionRenderer';
 import { SetVariableAction } from '../src/renderer/components/actionTypes';
 
-// Mock VariableAutocomplete to simplify testing (it might be complex)
-// Using a simple input for testing
+// Create a mock function to capture props
+const mockVariableAutocomplete = jest.fn();
+
+// Mock VariableAutocomplete to simplify testing and capture props
 jest.mock('../src/renderer/components/common/VariableAutocomplete', () => {
   return function MockVariableAutocomplete(props: any) {
+    mockVariableAutocomplete(props);
     return (
       <div data-testid={`autocomplete-${props.label}`} className={props.textFieldProps?.error ? 'error' : ''}>
         <label>{props.label}</label>
@@ -42,6 +45,10 @@ describe('SetVariableActionRenderer', () => {
     semanticModel: {} as any
   };
 
+  beforeEach(() => {
+    mockVariableAutocomplete.mockClear();
+  });
+
   test('renders variable name, operator and value', () => {
     render(<SetVariableActionRenderer {...mockProps} />);
 
@@ -50,13 +57,10 @@ describe('SetVariableActionRenderer', () => {
     expect(screen.getByDisplayValue('MIS_Test')).toBeInTheDocument();
 
     // Check Operator (Select/TextField)
-    // MUI Select uses hidden input, but display value should be visible?
-    // TextField select renders an input with value.
-    // We can check by display value.
     expect(screen.getByDisplayValue('=')).toBeInTheDocument();
 
-    // Check Value (Autocomplete mock)
-    expect(screen.getByTestId('autocomplete-Value')).toBeInTheDocument();
+    // Check Value (TextField)
+    expect(screen.getByLabelText('Value')).toBeInTheDocument();
     expect(screen.getByDisplayValue('LOG_RUNNING')).toBeInTheDocument();
   });
 
@@ -88,5 +92,12 @@ describe('SetVariableActionRenderer', () => {
     const autocomplete = screen.getByTestId('autocomplete-Variable');
     expect(autocomplete).toHaveClass('error');
     expect(screen.getByTestId('helper-Variable')).toHaveTextContent('Variable name required');
+  });
+
+  test('Value field is a plain text input (no autocomplete)', () => {
+    render(<SetVariableActionRenderer {...mockProps} />);
+
+    expect(screen.queryByTestId('autocomplete-Value')).toBeNull();
+    expect(screen.getByLabelText('Value')).toBeInTheDocument();
   });
 });

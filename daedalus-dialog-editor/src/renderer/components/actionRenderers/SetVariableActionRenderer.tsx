@@ -48,20 +48,21 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         <MenuItem value="+=">+=</MenuItem>
         <MenuItem value="-=">-=</MenuItem>
       </TextField>
-      <VariableAutocomplete
+      <TextField
         fullWidth
         label="Value"
         value={String(action.value !== undefined ? action.value : '')}
-        onChange={(value) => {
-            // Try to preserve number type if it looks like a number
-            const num = Number(value);
-            const isNum = !isNaN(num) && value.trim() !== '';
-            handleUpdate({ ...action, value: isNum ? num : value });
+        onChange={(e) => {
+          const value = e.target.value;
+          // Try to preserve number type if it looks like a number
+          const num = Number(value);
+          const isNum = !isNaN(num) && value.trim() !== '';
+          handleUpdate({ ...action, value: isNum ? num : value });
         }}
-        onFlush={flushUpdate}
+        onBlur={flushUpdate}
         onKeyDown={handleKeyDown}
-        namePrefix={['LOG_', 'TRUE', 'FALSE']}
-        semanticModel={semanticModel}
+        size="small"
+        variant="outlined"
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>
