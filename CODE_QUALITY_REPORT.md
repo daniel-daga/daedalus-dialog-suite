@@ -14,7 +14,7 @@ The `daedalus-dialog-editor` and `daedalus-parser` project demonstrates a solid 
 ### Weaknesses
 *   **Coupling in Parser:** `SemanticModelBuilderVisitor` is responsible for parsing, linking, *and* analyzing logic. As the language support grows, this file will become unmaintainable.
 *   **Manual Serialization:** `semantic-model.ts` relies on repetitive `fromJSON` and `toJSON` methods. This boilerplate is error-prone and hard to maintain as the model evolves.
-*   **Tangled UI Logic:** `QuestGraph.tsx` and `QuestEditor.tsx` mix UI presentation with complex data transformation logic (`questGraphUtils.tsx`).
+*   **Tangled UI Logic:** [Fixed] `QuestGraph.tsx` and `QuestEditor.tsx` logic has been decoupled into `questAnalysis.ts`, separating UI from data transformation.
 
 ## 2. Code Quality & Style
 

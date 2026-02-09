@@ -26,22 +26,13 @@ import {
   Info as InfoIcon
 } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
-import { getActionType } from './actionTypes';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest } from './QuestEditor/questGraphUtils';
+import { analyzeQuest, getQuestReferences, QuestAnalysis, QuestReference } from './QuestEditor/questAnalysis';
 import { useProjectStore } from '../store/projectStore';
 
 interface QuestDetailsProps {
   semanticModel: SemanticModel;
   questName: string | null;
-}
-
-interface QuestReference {
-  type: 'create' | 'status' | 'entry';
-  dialogName?: string;
-  functionName: string;
-  npcName?: string;
-  details: string;
 }
 
 const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName }) => {
@@ -62,75 +53,7 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
   }, [semanticModel, questName]);
 
   const references = useMemo(() => {
-    if (!questName) return [];
-    const lowerQuestName = questName.toLowerCase();
-    const misVarName = questName.replace('TOPIC_', 'MIS_');
-    const lowerMisVarName = misVarName.toLowerCase();
-    
-    const refs: QuestReference[] = [];
-
-    // Map functions to dialogs for better context
-    const funcToDialog = new Map<string, { dialogName: string, npcName?: string }>();
-    Object.values(semanticModel.dialogs || {}).forEach(dialog => {
-        const info = dialog.properties.information;
-        if (typeof info === 'string') {
-            funcToDialog.set(info.toLowerCase(), { dialogName: dialog.name, npcName: dialog.properties.npc });
-        } else if (info && typeof info === 'object' && info.name) {
-             funcToDialog.set(info.name.toLowerCase(), { dialogName: dialog.name, npcName: dialog.properties.npc });
-        }
-    });
-
-    Object.values(semanticModel.functions || {}).forEach(func => {
-        func.actions?.forEach(action => {
-            if ('topic' in action && action.topic && action.topic.toLowerCase() === lowerQuestName) {
-                const context = funcToDialog.get(func.name.toLowerCase());
-                const type = getActionType(action);
-
-                if (type === 'createTopic') {
-                     refs.push({
-                        type: 'create',
-                        functionName: func.name,
-                        dialogName: context?.dialogName,
-                        npcName: context?.npcName,
-                        details: `Created${(action as any).topicType ? ` in ${(action as any).topicType}` : ''}`
-                     });
-                } else if (type === 'logSetTopicStatus') {
-                     refs.push({
-                        type: 'status',
-                        functionName: func.name,
-                        dialogName: context?.dialogName,
-                        npcName: context?.npcName,
-                        details: `Set status to ${(action as any).status}`
-                     });
-                } else if (type === 'logEntry') {
-                     refs.push({
-                        type: 'entry',
-                        functionName: func.name,
-                        dialogName: context?.dialogName,
-                        npcName: context?.npcName,
-                        details: `Entry: "${(action as any).text}"`
-                     });
-                }
-            }
-        });
-
-        // Check conditions for MIS_ var
-        func.conditions?.forEach(cond => {
-             // Basic check for variable condition structure as serialized
-             if ('variableName' in cond && cond.variableName && (cond as any).variableName.toLowerCase() === lowerMisVarName) {
-                 const context = funcToDialog.get(func.name.toLowerCase());
-                 refs.push({
-                    type: 'status',
-                    functionName: func.name,
-                    dialogName: context?.dialogName,
-                    npcName: context?.npcName,
-                    details: `Condition: ${(cond as any).negated ? '!' : ''}${misVarName}`
-                 });
-             }
-        });
-    });
-
-    return refs;
+    return questName ? getQuestReferences(semanticModel, questName) : [];
   }, [semanticModel, questName]);
 
   const handleCreateVariable = async () => {
