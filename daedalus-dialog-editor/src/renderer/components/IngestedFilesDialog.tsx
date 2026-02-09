@@ -30,22 +30,31 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
     isIngesting: state.isIngesting
   }));
 
+  if (!open || !allDialogFiles || !parsedFiles) {
+    return null;
+  }
+
   // Merge all known files with their parsed status
-  const fileList = allDialogFiles.map(filePath => {
-    const parsed = parsedFiles.get(filePath);
+  const fileList = (allDialogFiles || []).map(filePath => {
+    // Safely handle both Map and plain object
+    const parsed = (parsedFiles && typeof (parsedFiles as any).get === 'function')
+      ? (parsedFiles as any).get(filePath) 
+      : (parsedFiles as any)?.[filePath];
+      
     return {
       filePath,
       isParsed: !!parsed,
-      hasErrors: parsed?.semanticModel.hasErrors || false,
-      errors: parsed?.semanticModel.errors || [],
-      errorCount: parsed?.semanticModel.errors?.length || 0,
+      hasErrors: parsed?.semanticModel?.hasErrors || false,
+      errors: parsed?.semanticModel?.errors || [],
+      errorCount: parsed?.semanticModel?.errors?.length || 0,
       lastParsed: parsed?.lastParsed
     };
   });
 
   // Sort: Errors first, then Parsed, then Pending, then Alphabetical
   fileList.sort((a, b) => {
-    const getPriority = (f: typeof fileList[0]) => {
+    const getPriority = (f: any) => {
+      if (!f) return 3;
       if (f.hasErrors) return 0; // Highest priority
       if (f.isParsed) return 1;  // Second priority
       return 2;                  // Lowest priority (Pending)
@@ -58,7 +67,7 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
       return priorityA - priorityB;
     }
     
-    return a.filePath.localeCompare(b.filePath);
+    return (a?.filePath || '').localeCompare(b?.filePath || '');
   });
 
   const parsedCount = fileList.filter(f => f.isParsed).length;

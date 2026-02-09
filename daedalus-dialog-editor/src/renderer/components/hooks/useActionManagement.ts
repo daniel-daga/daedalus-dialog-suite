@@ -139,6 +139,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         ? (currentAction?.speaker === 'self' ? 'other' : 'self')
         : (currentAction?.speaker || 'self');
       const newAction = {
+        type: 'DialogLine',
         speaker: newSpeaker,
         text: '',
         id: generateActionId()

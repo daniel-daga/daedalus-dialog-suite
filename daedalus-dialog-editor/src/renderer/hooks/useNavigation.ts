@@ -64,6 +64,12 @@ export const useNavigation = () => {
         );
         
         loadAndMergeNpcModels(foundNpc);
+        
+        // In project mode, we also need to open the specific file to enable editing
+        if (foundFilePath && activeFile !== foundFilePath) {
+          await openFile(foundFilePath);
+        }
+
         // Find the merged model or the specific model for the dialog
         semanticModel = useProjectStore.getState().mergedSemanticModel;
       } else if (foundFilePath) {

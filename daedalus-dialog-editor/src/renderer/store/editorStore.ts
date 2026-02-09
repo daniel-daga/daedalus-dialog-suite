@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import { generateActionId } from '../components/actionFactory';
+import { useProjectStore } from './projectStore';
 import type {
   SemanticModel,
   Dialog,
@@ -204,6 +205,9 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
         fileState.semanticModel = model;
         fileState.isDirty = true;
         fileState.workingCode = undefined; // Invalidate source cache
+        
+        // Sync with project store
+        useProjectStore.getState().updateFileModel(filePath, model);
       }
     });
   },
@@ -217,6 +221,9 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.semanticModel.dialogs[dialogName] = dialog;
       fileState.isDirty = true;
       fileState.workingCode = undefined; // Invalidate source cache
+      
+      // Sync with project store
+      useProjectStore.getState().updateFileModel(filePath, fileState.semanticModel);
     });
   },
 
@@ -229,6 +236,9 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.semanticModel.functions[functionName] = func;
       fileState.isDirty = true;
       fileState.workingCode = undefined; // Invalidate source cache
+      
+      // Sync with project store
+      useProjectStore.getState().updateFileModel(filePath, fileState.semanticModel);
     });
   },
 

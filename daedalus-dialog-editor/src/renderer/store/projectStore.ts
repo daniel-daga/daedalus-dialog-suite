@@ -9,7 +9,12 @@
  */
 
 import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
+
+// Enable Map/Set support in Immer
+enableMapSet();
 
 export interface ParsedFileCache {
   filePath: string;
@@ -107,6 +112,9 @@ interface ProjectActions {
 
   // Clear cached semantic models (free memory)
   clearCache: () => void;
+
+  // Update a cached semantic model for a file
+  updateFileModel: (filePath: string, model: SemanticModel) => void;
 }
 
 type ProjectStore = ProjectState & ProjectActions;
@@ -699,5 +707,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   clearCache: () => {
     set({ parsedFiles: new Map() });
+  },
+
+  updateFileModel: (filePath: string, model: SemanticModel) => {
+    const { parsedFiles } = get();
+    
+    if (!(parsedFiles instanceof Map)) return;
+
+    const newCache = new Map(parsedFiles);
+    newCache.set(filePath, {
+      filePath,
+      semanticModel: model,
+      lastParsed: new Date()
+    });
+    
+    set({ parsedFiles: newCache });
   }
 }));

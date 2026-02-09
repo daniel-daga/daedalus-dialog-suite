@@ -18,6 +18,8 @@ interface ThreeColumnLayoutProps {
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { 
     openFiles, 
+    openFile,
+    activeFile,
     updateModel,
     selectedNPC,
     selectedDialog,
@@ -304,7 +306,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   };
 
-  const handleSelectDialog = useCallback((dialogName: string, functionName: string | null) => {
+  const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
     // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
     if (rafId1Ref.current !== null) {
       cancelAnimationFrame(rafId1Ref.current);
@@ -313,6 +315,16 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     if (rafId2Ref.current !== null) {
       cancelAnimationFrame(rafId2Ref.current);
       rafId2Ref.current = null;
+    }
+
+    // In project mode, ensure the file containing this dialog is opened in editorStore
+    // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
+    if (isProjectMode && selectedNPC) {
+      const npcDialogs = dialogIndex.get(selectedNPC);
+      const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
+      if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
+        await openFile(metadata.filePath);
+      }
     }
 
     // Show loading immediately to prevent flickering
@@ -339,7 +351,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         });
       });
     });
-  }, [setSelectedDialog, setSelectedFunctionName]);
+  }, [isProjectMode, selectedNPC, dialogIndex, activeFile, openFile, setSelectedDialog, setSelectedFunctionName]);
 
   const handleToggleDialogExpand = useCallback((dialogName: string) => {
     setExpandedDialogs((prev) => {

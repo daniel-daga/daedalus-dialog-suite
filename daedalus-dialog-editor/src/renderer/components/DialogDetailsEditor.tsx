@@ -42,8 +42,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     validationResult: ValidationResult | null;
   }>({ open: false, validationResult: null });
 
-  // Use passed semantic model in project mode, otherwise read from store
-  const semanticModel = passedSemanticModel || fileState?.semanticModel;
+  // Prefer local file state model (for latest edits) over passed semantic model (merged model)
+  const semanticModel = fileState?.semanticModel || passedSemanticModel;
 
   // Read directly from semantic model (either passed or from store)
   const dialog = semanticModel?.dialogs?.[dialogName];
@@ -59,7 +59,9 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   // Callback that updates function in store (for useActionManagement)
   // Supports both direct values and updater functions (like React setState)
   const setFunction = useCallback((updatedFunctionOrUpdater: any) => {
-    if (!currentFunctionName || !filePath) return;
+    if (!currentFunctionName || !filePath) {
+      return;
+    }
 
     // Check if it's an updater function (callback pattern)
     if (typeof updatedFunctionOrUpdater === 'function') {
@@ -67,7 +69,9 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       const latestFileState = useEditorStore.getState().openFiles.get(filePath);
       const currentFunc = latestFileState?.semanticModel?.functions?.[currentFunctionName];
 
-      if (!currentFunc) return;
+      if (!currentFunc) {
+        return;
+      }
 
       // Call the updater function with current value to get new value
       const updatedFunction = updatedFunctionOrUpdater(currentFunc);

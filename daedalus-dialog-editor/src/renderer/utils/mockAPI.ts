@@ -401,11 +401,37 @@ export const mockEditorAPI: EditorAPI = {
   },
 
   async buildProjectIndex(folderPath: string): Promise<any> {
-    console.log('[Mock API] Building project index for:', folderPath);
+    // Scan all files in the mock file system to build an index
+    const files = MockFileSystem.listFiles();
+    const npcs = new Set<string>();
+    const dialogsByNpc: Record<string, any[]> = {};
+
+    for (const filePath of files) {
+      const content = MockFileSystem.readFile(filePath);
+      const model = parseSource(content);
+      
+      for (const dialogName in model.dialogs) {
+        const dialog = model.dialogs[dialogName];
+        const npcName = dialog.properties?.npc || 'Unknown';
+        
+        npcs.add(npcName);
+        
+        if (!dialogsByNpc[npcName]) {
+          dialogsByNpc[npcName] = [];
+        }
+        
+        dialogsByNpc[npcName].push({
+          dialogName,
+          npc: npcName,
+          filePath
+        });
+      }
+    }
+
     return {
-      npcs: ['PC_Hero'],
-      dialogsByNpc: new Map([['PC_Hero', []]]),
-      allFiles: []
+      npcs: Array.from(npcs).sort(),
+      dialogsByNpc, // Return as object, projectStore handles conversion
+      allFiles: files
     };
   },
 
@@ -422,6 +448,21 @@ export const mockEditorAPI: EditorAPI = {
         errors: []
       };
     }
+  },
+
+  async addAllowedPath(folderPath: string): Promise<void> {
+    console.log('[Mock API] Adding allowed path:', folderPath);
+  },
+
+  async getRecentProjects(): Promise<any[]> {
+    const recent = localStorage.getItem('recent_projects');
+    return recent ? JSON.parse(recent) : [];
+  },
+
+  async addRecentProject(projectPath: string, projectName: string): Promise<void> {
+    const recent = await this.getRecentProjects();
+    const newRecent = [{ path: projectPath, name: projectName, lastOpened: Date.now() }, ...recent.filter(p => p.path !== projectPath)].slice(0, 10);
+    localStorage.setItem('recent_projects', JSON.stringify(newRecent));
   },
 };
 

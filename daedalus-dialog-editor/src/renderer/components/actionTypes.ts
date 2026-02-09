@@ -3,39 +3,46 @@
  */
 
 export interface DialogLineAction {
+  type: 'DialogLine';
   speaker: 'self' | 'other';
   text: string;
   id: string;
 }
 
 export interface ChoiceAction {
+  type: 'Choice';
   dialogRef: string;
   text: string;
   targetFunction: string;
 }
 
 export interface LogEntryAction {
+  type: 'LogEntry';
   topic: string;
   text: string;
 }
 
 export interface CreateTopicAction {
+  type: 'CreateTopic';
   topic: string;
   topicType: string;
 }
 
 export interface LogSetTopicStatusAction {
+  type: 'LogSetTopicStatus';
   topic: string;
   status: string;
 }
 
 export interface CreateInventoryItemsAction {
+  type: 'CreateInventoryItems';
   target: string;
   item: string;
   quantity: number;
 }
 
 export interface GiveInventoryItemsAction {
+  type: 'GiveInventoryItems';
   giver: string;
   receiver: string;
   item: string;
@@ -43,6 +50,7 @@ export interface GiveInventoryItemsAction {
 }
 
 export interface AttackAction {
+  type: 'AttackAction';
   attacker: string;
   target: string;
   attackReason: string;
@@ -50,37 +58,44 @@ export interface AttackAction {
 }
 
 export interface SetAttitudeAction {
+  type: 'SetAttitudeAction';
   target: string;
   attitude: string;
 }
 
 export interface ChapterTransitionAction {
+  type: 'ChapterTransitionAction';
   chapter: number;
   world: string;
 }
 
 export interface ExchangeRoutineAction {
+  type: 'ExchangeRoutineAction';
   target?: string;
   npc?: string;
   routine: string;
 }
 
 export interface SetVariableAction {
+  type: 'SetVariableAction';
   variableName: string;
   operator: string;
   value: string | number | boolean;
 }
 
 export interface StopProcessInfosAction {
+  type: 'StopProcessInfosAction';
   target: string;
 }
 
 export interface PlayAniAction {
+  type: 'PlayAniAction';
   target: string;
   animationName: string;
 }
 
 export interface CustomAction {
+  type: 'CustomAction';
   action: string;
 }
 

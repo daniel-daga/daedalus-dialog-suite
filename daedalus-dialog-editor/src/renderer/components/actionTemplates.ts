@@ -23,12 +23,14 @@ import type {
 
 export const ACTION_TEMPLATES = {
   dialogLine: (speaker: 'self' | 'other' = 'other', text: string = ''): DialogLineAction => ({
+    type: 'DialogLine',
     speaker,
     text,
     id: 'NEW_LINE_ID'
   }),
 
   choice: (dialogRef: string, text: string = '', targetFunction: string = ''): ChoiceAction => ({
+    type: 'Choice',
     dialogRef,
     text,
     targetFunction
