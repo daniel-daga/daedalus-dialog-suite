@@ -208,11 +208,13 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
         fileState.workingCode = undefined; // Invalidate source cache
         fileState.autoSaveError = undefined;
         fileState.hasErrors = false;
-        
-        // Sync with project store
-        useProjectStore.getState().updateFileModel(filePath, model);
       }
     });
+    // Sync with project store using the committed (non-draft) state
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
   },
 
   updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => {
@@ -226,10 +228,12 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.workingCode = undefined; // Invalidate source cache
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
-      
-      // Sync with project store
-      useProjectStore.getState().updateFileModel(filePath, fileState.semanticModel);
     });
+    // Sync with project store using the committed (non-draft) state
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
   },
 
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => {
@@ -243,10 +247,12 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.workingCode = undefined; // Invalidate source cache
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
-      
-      // Sync with project store
-      useProjectStore.getState().updateFileModel(filePath, fileState.semanticModel);
     });
+    // Sync with project store using the committed (non-draft) state
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
   },
 
   validateFile: async (filePath: string) => {

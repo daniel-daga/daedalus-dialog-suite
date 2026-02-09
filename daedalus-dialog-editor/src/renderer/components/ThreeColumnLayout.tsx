@@ -38,7 +38,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     getSemanticModel,
     mergedSemanticModel,
     loadAndMergeNpcModels,
-    setIngestedFilesOpen
+    setIngestedFilesOpen,
+    parsedFiles
   } = useProjectStore();
   const { navigateToDialog } = useNavigation();
   const fileState = filePath ? openFiles.get(filePath) : null;
@@ -72,18 +73,39 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const showLoading = !isProjectMode && !fileState;
   const showSyntaxErrors = fileState?.hasErrors && !fileState?.autoSaveError;
 
+  const npcDialogErrors = useMemo(() => {
+    if (!isProjectMode || !selectedNPC) return [];
+
+    const dialogMetadata = dialogIndex.get(selectedNPC) || [];
+    const npcFilePaths = Array.from(new Set(dialogMetadata.map(m => m.filePath)));
+
+    const errors: { filePath: string; message: string }[] = [];
+    npcFilePaths.forEach((filePath) => {
+      const parsed = parsedFiles.get(filePath);
+      const fileErrors = parsed?.semanticModel?.errors || [];
+      if (parsed?.semanticModel?.hasErrors) {
+        fileErrors.forEach((err) => {
+          errors.push({ filePath, message: err.message });
+        });
+      }
+    });
+
+    return errors;
+  }, [isProjectMode, selectedNPC, dialogIndex, parsedFiles]);
+
+  const hasNpcDialogErrors = npcDialogErrors.length > 0;
+
   // Log parse errors for the selected NPC to the console (for easy debugging)
   useEffect(() => {
     if (!isProjectMode) return;
     if (!selectedNPC) return;
-    if (!semanticModel.hasErrors) return;
+    if (!hasNpcDialogErrors) return;
 
-    const errors = semanticModel.errors || [];
     console.error(
-      `[Dialog Parse Errors] NPC=${selectedNPC} count=${errors.length}`,
-      errors
+      `[Dialog Parse Errors] NPC=${selectedNPC} count=${npcDialogErrors.length}`,
+      npcDialogErrors
     );
-  }, [isProjectMode, selectedNPC, semanticModel.hasErrors, semanticModel.errors]);
+  }, [isProjectMode, selectedNPC, hasNpcDialogErrors, npcDialogErrors]);
 
   // Keyboard shortcut handler for Ctrl+F
   useEffect(() => {
@@ -466,13 +488,13 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       {/* Column 2: Dialog Tree with Nested Choices */}
       <Box sx={{ display: 'flex', flexDirection: 'column', flex: '0 0 350px', overflow: 'hidden' }}>
         {/* Error Alert for Parsing Errors */}
-        {isProjectMode && semanticModel.hasErrors && (
+        {isProjectMode && hasNpcDialogErrors && (
           <Alert severity="error" sx={{ borderRadius: 0, flexShrink: 0 }}>
             <Typography variant="body2" gutterBottom>
               Failed to parse dialog file(s) for {selectedNPC}
             </Typography>
             <Typography variant="caption" component="div" sx={{ mb: 0.5 }}>
-              {semanticModel.errors?.length || 0} error(s) found. Open the file list (top bar list icon) for full details.
+              {npcDialogErrors.length} error(s) found. Open the file list (top bar list icon) for full details.
             </Typography>
             <Button
               size="small"
@@ -482,14 +504,14 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
             >
               View details
             </Button>
-            {(semanticModel.errors || []).slice(0, 3).map((err, index) => (
+            {npcDialogErrors.slice(0, 3).map((err, index) => (
               <Typography key={index} variant="caption" display="block" sx={{ whiteSpace: 'pre-wrap' }}>
                 - {err.message}
               </Typography>
             ))}
-            {(semanticModel.errors?.length || 0) > 3 && (
+            {npcDialogErrors.length > 3 && (
               <Typography variant="caption" display="block" sx={{ fontStyle: 'italic' }}>
-                ...and {(semanticModel.errors?.length || 0) - 3} more
+                ...and {npcDialogErrors.length - 3} more
               </Typography>
             )}
           </Alert>
