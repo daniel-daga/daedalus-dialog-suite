@@ -15,36 +15,24 @@ import {
   Tooltip,
   Button,
   IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  FormControlLabel,
-  Switch,
-  Alert,
 } from '@mui/material';
 import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useProjectStore } from '../store/projectStore';
 import type { GlobalConstant, GlobalVariable } from '../types/global';
+import VariableCreationDialog from './common/VariableCreationDialog';
 
 const VariableManager: React.FC = () => {
-  const { mergedSemanticModel, addVariable, deleteVariable, allDialogFiles, questFiles, isLoading } = useProjectStore();
+  const { mergedSemanticModel, deleteVariable, allDialogFiles, questFiles } = useProjectStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'constants' | 'variables'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
   // Add Variable Dialog State
   const [openAdd, setOpenAdd] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState('int');
-  const [newValue, setNewValue] = useState('');
-  const [targetFile, setTargetFile] = useState('');
-  const [isConstant, setIsConstant] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const variables = useMemo(() => {
     const vars: ((GlobalConstant | GlobalVariable) & { isConstant: boolean })[] = [];
@@ -93,37 +81,6 @@ const VariableManager: React.FC = () => {
 
     return result;
   }, [variables, searchQuery, categoryFilter, typeFilter]);
-
-  const availableFiles = useMemo(() => {
-      // Combine and unique
-      return Array.from(new Set([...questFiles, ...allDialogFiles])).sort();
-  }, [questFiles, allDialogFiles]);
-
-  const handleAddSubmit = async () => {
-      if (!newName || !targetFile) {
-          setError('Name and File are required');
-          return;
-      }
-
-      // Basic validation
-      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(newName)) {
-          setError('Invalid name format. Use only letters, numbers, and underscores.');
-          return;
-      }
-
-      try {
-          await addVariable(newName, newType, newValue, targetFile, isConstant);
-          setOpenAdd(false);
-          // Reset form
-          setNewName('');
-          setNewType('int');
-          setNewValue('');
-          setIsConstant(false);
-          setError(null);
-      } catch (e) {
-          setError(e instanceof Error ? e.message : 'Failed to add variable');
-      }
-  };
 
   const handleDelete = async (v: GlobalConstant | GlobalVariable) => {
       if (!v.filePath || !v.range) {
@@ -268,73 +225,10 @@ const VariableManager: React.FC = () => {
         </Table>
       </TableContainer>
 
-      {/* Add Dialog */}
-      <Dialog open={openAdd} onClose={() => setOpenAdd(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Add New Variable/Constant</DialogTitle>
-          <DialogContent>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                  {error && <Alert severity="error">{error}</Alert>}
-
-                  <TextField
-                      label="Name"
-                      value={newName}
-                      onChange={e => setNewName(e.target.value)}
-                      placeholder="e.g. MIS_MyQuest"
-                      fullWidth
-                  />
-
-                  <Box sx={{ display: 'flex', gap: 2 }}>
-                      <FormControl fullWidth>
-                          <InputLabel>Type</InputLabel>
-                          <Select
-                              value={newType}
-                              label="Type"
-                              onChange={e => setNewType(e.target.value)}
-                          >
-                              <MenuItem value="int">int</MenuItem>
-                              <MenuItem value="string">string</MenuItem>
-                              <MenuItem value="func">func</MenuItem>
-                          </Select>
-                      </FormControl>
-
-                      <FormControlLabel
-                          control={<Switch checked={isConstant} onChange={e => setIsConstant(e.target.checked)} />}
-                          label="Constant"
-                      />
-                  </Box>
-
-                  {isConstant && (
-                      <TextField
-                          label="Value"
-                          value={newValue}
-                          onChange={e => setNewValue(e.target.value)}
-                          fullWidth
-                      />
-                  )}
-
-                  <FormControl fullWidth>
-                      <InputLabel>Target File</InputLabel>
-                      <Select
-                          value={targetFile}
-                          label="Target File"
-                          onChange={e => setTargetFile(e.target.value)}
-                      >
-                          {availableFiles.map(f => (
-                              <MenuItem key={f} value={f}>
-                                  {f.split(/[\\/]/).pop()}
-                              </MenuItem>
-                          ))}
-                      </Select>
-                  </FormControl>
-              </Box>
-          </DialogContent>
-          <DialogActions>
-              <Button onClick={() => setOpenAdd(false)}>Cancel</Button>
-              <Button onClick={handleAddSubmit} variant="contained" disabled={isLoading}>
-                  {isLoading ? 'Adding...' : 'Add'}
-              </Button>
-          </DialogActions>
-      </Dialog>
+      <VariableCreationDialog 
+        open={openAdd} 
+        onClose={() => setOpenAdd(false)} 
+      />
     </Box>
   );
 };

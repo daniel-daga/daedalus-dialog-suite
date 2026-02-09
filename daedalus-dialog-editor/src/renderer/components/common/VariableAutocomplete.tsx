@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
-import { OpenInNew as OpenInNewIcon } from '@mui/icons-material';
+import { OpenInNew as OpenInNewIcon, Add as AddIcon } from '@mui/icons-material';
 import { useProjectStore } from '../../store/projectStore';
 import { GlobalConstant, GlobalVariable, SemanticModel } from '../../types/global';
 import { useNavigation } from '../../hooks/useNavigation';
+import VariableCreationDialog from './VariableCreationDialog';
 
 // Instance definition might not be strictly typed in global types yet
 interface InstanceDefinition {
@@ -32,6 +33,8 @@ export interface VariableAutocompleteProps {
   showDialogs?: boolean;
   /** Whether to allow values that are not in the list */
   allowFreeInput?: boolean;
+  /** Whether to allow creating a new variable if not found (default: true) */
+  allowCreation?: boolean;
   /** Custom styles */
   sx?: any;
   /** Whether to take full width */
@@ -55,9 +58,10 @@ export interface VariableAutocompleteProps {
 type OptionType = {
   name: string;
   type: string;
-  source: 'variable' | 'constant' | 'instance' | 'dialog';
+  source: 'variable' | 'constant' | 'instance' | 'dialog' | 'new';
   filePath?: string;
   value?: string | number | boolean;
+  isCreationSuggestion?: boolean;
 };
 
 const filter = createFilterOptions<OptionType>({
@@ -74,6 +78,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   showInstances = false,
   showDialogs = false,
   allowFreeInput = true,
+  allowCreation = true,
   sx,
   fullWidth = false,
   isMainField = false,
@@ -86,6 +91,8 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
 }) => {
   const { mergedSemanticModel, dialogIndex } = useProjectStore();
   const { navigateToSymbol, navigateToDialog } = useNavigation();
+  const [creationDialogOpen, setCreationDialogOpen] = useState(false);
+  const [pendingCreationName, setPendingCreationName] = useState('');
 
   const options = useMemo(() => {
     const opts: OptionType[] = [];
@@ -188,104 +195,136 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     }
   };
 
+  const handleCreateNew = (name: string) => {
+    setPendingCreationName(name);
+    setCreationDialogOpen(true);
+  };
+
   return (
-    <Autocomplete
-      value={value}
-      onChange={(_event, newValue) => {
-        if (typeof newValue === 'string') {
-          onChange(newValue);
-        } else if (newValue && newValue.name) {
-          onChange(newValue.name);
-        } else {
-          onChange('');
-        }
-      }}
-      inputValue={value}
-      onInputChange={(_event, newInputValue) => {
-        onChange(newInputValue);
-      }}
-      options={options}
-      getOptionLabel={(option) => {
-        // Value selected with enter, right from the input
-        if (typeof option === 'string') {
-          return option;
-        }
-        // Regular option
-        return option.name;
-      }}
-      filterOptions={(options, params) => {
-        const filtered = filter(options, params);
-        return filtered;
-      }}
-      freeSolo={allowFreeInput}
-      selectOnFocus
-      handleHomeEndKeys
-      renderOption={(props, option) => {
-          // Extract key to avoid passing it to li
-          const { key, ...otherProps } = props as any;
-          return (
-            <li key={key} {...otherProps}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                    {option.name}
-                  </Typography>
-                  <Chip
-                    label={option.type}
-                    size="small"
-                    variant="outlined"
-                    color={option.source === 'constant' ? 'primary' : option.source === 'instance' ? 'secondary' : 'default'}
-                    sx={{ height: 20, fontSize: '0.65rem' }}
-                  />
+    <>
+      <Autocomplete
+        value={value}
+        onChange={(_event, newValue) => {
+          if (typeof newValue === 'string') {
+            onChange(newValue);
+          } else if (newValue && newValue.isCreationSuggestion) {
+            handleCreateNew(newValue.name.replace('Add "', '').replace('"', ''));
+          } else if (newValue && newValue.name) {
+            onChange(newValue.name);
+          } else {
+            onChange('');
+          }
+        }}
+        inputValue={value}
+        onInputChange={(_event, newInputValue) => {
+          onChange(newInputValue);
+        }}
+        options={options}
+        getOptionLabel={(option) => {
+          // Value selected with enter, right from the input
+          if (typeof option === 'string') {
+            return option;
+          }
+          // Regular option
+          return option.name;
+        }}
+        filterOptions={(options, params) => {
+          const filtered = filter(options, params);
+          const { inputValue } = params;
+          
+          // Suggest creation if enabled and not found
+          if (allowCreation && inputValue !== '') {
+            const isExisting = options.some((option) => inputValue.toLowerCase() === option.name.toLowerCase());
+            if (!isExisting) {
+              filtered.push({
+                name: `Add "${inputValue}"`,
+                type: 'new',
+                source: 'new',
+                isCreationSuggestion: true
+              });
+            }
+          }
+          
+          return filtered;
+        }}
+        freeSolo={allowFreeInput}
+        selectOnFocus
+        handleHomeEndKeys
+        renderOption={(props, option) => {
+            // Extract key to avoid passing it to li
+            const { key, ...otherProps } = props as any;
+            return (
+              <li key={key} {...otherProps}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
+                      {option.isCreationSuggestion && <AddIcon sx={{ mr: 1, fontSize: 16 }} />}
+                      {option.name}
+                    </Typography>
+                    <Chip
+                      label={option.type}
+                      size="small"
+                      variant="outlined"
+                      color={option.source === 'constant' ? 'primary' : option.source === 'instance' ? 'secondary' : option.source === 'new' ? 'success' : 'default'}
+                      sx={{ height: 20, fontSize: '0.65rem' }}
+                    />
+                  </Box>
+                  {option.source === 'constant' && option.value !== undefined && (
+                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Value: {String(option.value)}
+                     </Typography>
+                  )}
                 </Box>
-                {option.source === 'constant' && option.value !== undefined && (
-                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                      Value: {String(option.value)}
-                   </Typography>
-                )}
-              </Box>
-            </li>
-          );
-      }}
-      fullWidth={fullWidth}
-      renderInput={(params) => (
-        <TextField
-          {...params}
-          {...textFieldProps}
-          label={label}
-          placeholder={placeholder}
-          size="small"
-          inputRef={isMainField ? mainFieldRef : undefined}
-          onBlur={onFlush}
-          onKeyDown={onKeyDown}
-          sx={sx}
-          InputProps={{
-            ...params.InputProps,
-            endAdornment: (
-              <React.Fragment>
-                {showNavigation && canNavigate && (
-                  <InputAdornment position="end" sx={{ mr: 1 }}>
-                    <Tooltip title="Follow reference" arrow>
-                      <IconButton
-                        size="small"
-                        onClick={handleNavigate}
-                        edge="end"
-                        onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking icon
-                      >
-                        <OpenInNewIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </InputAdornment>
-                )}
-                {params.InputProps.endAdornment}
-              </React.Fragment>
-            )
-          }}
-        />
-      )}
-      sx={sx}
-      disableClearable={!allowFreeInput}
-    />
+              </li>
+            );
+        }}
+        fullWidth={fullWidth}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            {...textFieldProps}
+            label={label}
+            placeholder={placeholder}
+            size="small"
+            inputRef={isMainField ? mainFieldRef : undefined}
+            onBlur={onFlush}
+            onKeyDown={onKeyDown}
+            sx={sx}
+            InputProps={{
+              ...params.InputProps,
+              endAdornment: (
+                <React.Fragment>
+                  {showNavigation && canNavigate && (
+                    <InputAdornment position="end" sx={{ mr: 1 }}>
+                      <Tooltip title="Follow reference" arrow>
+                        <IconButton
+                          size="small"
+                          onClick={handleNavigate}
+                          edge="end"
+                          onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking icon
+                        >
+                          <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </InputAdornment>
+                  )}
+                  {params.InputProps.endAdornment}
+                </React.Fragment>
+              )
+            }}
+          />
+        )}
+        sx={sx}
+        disableClearable={!allowFreeInput}
+      />
+
+      <VariableCreationDialog
+        open={creationDialogOpen}
+        onClose={() => setCreationDialogOpen(false)}
+        initialName={pendingCreationName}
+        isConstant={pendingCreationName.toUpperCase() === pendingCreationName && pendingCreationName.includes('_')}
+      />
+    </>
   );
 });
 
