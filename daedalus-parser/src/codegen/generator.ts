@@ -16,10 +16,8 @@ export interface CodeGeneratorOptions {
   includeComments?: boolean;
   sectionHeaders?: boolean;
   uppercaseKeywords?: boolean;
+  preserveSourceStyle?: boolean;
 }
-
-const PROPERTY_ORDER = ['npc', 'nr', 'condition', 'information', 'permanent', 'important', 'description'];
-const ORDERED_KEYS = new Set(PROPERTY_ORDER);
 
 export class SemanticCodeGenerator {
   private options: Required<CodeGeneratorOptions>;
@@ -31,6 +29,7 @@ export class SemanticCodeGenerator {
       includeComments: true,
       sectionHeaders: true,
       uppercaseKeywords: false,
+      preserveSourceStyle: true,
       ...options
     };
   }
@@ -74,7 +73,10 @@ export class SemanticCodeGenerator {
       if (declaration.type === 'dialog') {
         const dialog = model.dialogs[declaration.name];
         if (dialog && !emittedDialogs.has(dialog.name)) {
-          if (this.options.sectionHeaders && this.options.includeComments) {
+          const leading = this.renderLeadingComments(dialog.leadingComments);
+          if (leading) {
+            sections.push(leading);
+          } else if (this.options.sectionHeaders && this.options.includeComments) {
             sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
           }
           sections.push(this.generateDialog(dialog));
@@ -83,6 +85,10 @@ export class SemanticCodeGenerator {
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
         if (func && !emittedFunctions.has(func.name)) {
+          const leading = this.renderLeadingComments(func.leadingComments);
+          if (leading) {
+            sections.push(leading);
+          }
           sections.push(this.generateFunction(func));
           emittedFunctions.add(func.name);
         }
@@ -93,7 +99,10 @@ export class SemanticCodeGenerator {
     for (const dialogName in model.dialogs) {
       if (!emittedDialogs.has(dialogName)) {
         const dialog = model.dialogs[dialogName];
-        if (this.options.sectionHeaders && this.options.includeComments) {
+        const leading = this.renderLeadingComments(dialog.leadingComments);
+        if (leading) {
+          sections.push(leading);
+        } else if (this.options.sectionHeaders && this.options.includeComments) {
           sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
         }
         sections.push(this.generateDialog(dialog));
@@ -101,7 +110,12 @@ export class SemanticCodeGenerator {
     }
     for (const funcName in model.functions) {
       if (!emittedFunctions.has(funcName)) {
-        sections.push(this.generateFunction(model.functions[funcName]));
+        const func = model.functions[funcName];
+        const leading = this.renderLeadingComments(func.leadingComments);
+        if (leading) {
+          sections.push(leading);
+        }
+        sections.push(this.generateFunction(func));
       }
     }
 
@@ -187,26 +201,17 @@ export class SemanticCodeGenerator {
    */
   generateDialog(dialog: Dialog): string {
     const indent = this.indent();
-    const instanceKeyword = this.keyword('instance');
+    const instanceKeyword = this.resolveKeyword('instance', dialog.keyword);
+    const spaceBeforeParen = this.options.preserveSourceStyle && dialog.spaceBeforeParen ? ' ' : '';
     const lines: string[] = [];
 
-    lines.push(`${instanceKeyword} ${dialog.name}(C_INFO)`);
+    lines.push(`${instanceKeyword} ${dialog.name}${spaceBeforeParen}(C_INFO)`);
     lines.push('{');
 
-    // Output ordered properties first
-    for (const key of PROPERTY_ORDER) {
-      if (key in dialog.properties) {
-        const value = dialog.properties[key];
-        lines.push(`${indent}${key}${this.alignProperty(key)}= ${this.formatValue(value)};`);
-      }
-    }
-
-    // Output remaining properties (using Set for O(1) lookup)
+    // Preserve original property insertion order to minimize style churn.
     for (const key in dialog.properties) {
-      if (!ORDERED_KEYS.has(key)) {
-        const value = dialog.properties[key];
-        lines.push(`${indent}${key}${this.alignProperty(key)}= ${this.formatValue(value)};`);
-      }
+      const value = dialog.properties[key];
+      lines.push(`${indent}${key}${this.alignProperty(key)}= ${this.formatValue(value)};`);
     }
 
     lines.push('};');
@@ -260,12 +265,13 @@ export class SemanticCodeGenerator {
    */
   generateFunction(func: DialogFunction, preservedBody?: string): string {
     const indent = this.indent();
-    const funcKeyword = this.keyword('func');
-    const returnType = this.normalizeReturnType(func.returnType);
+    const funcKeyword = this.resolveKeyword('func', func.keyword);
+    const returnType = this.normalizeReturnType(func.returnType, func.returnType);
+    const spaceBeforeParen = this.options.preserveSourceStyle && func.spaceBeforeParen ? ' ' : '';
     const returnTypeLower = func.returnType.toLowerCase();
     const lines: string[] = [];
 
-    lines.push(`${funcKeyword} ${returnType} ${func.name}()`);
+    lines.push(`${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}()`);
     lines.push('{');
 
     // Use preserved body if provided
@@ -371,11 +377,27 @@ export class SemanticCodeGenerator {
     return this.options.uppercaseKeywords ? kw.toUpperCase() : kw;
   }
 
+  private resolveKeyword(defaultKeyword: string, sourceKeyword?: string): string {
+    if (this.options.preserveSourceStyle && sourceKeyword) {
+      return sourceKeyword;
+    }
+    return this.keyword(defaultKeyword);
+  }
+
   /**
    * Normalize return type case (int/INT -> int/INT based on options)
    */
-  private normalizeReturnType(type: string): string {
+  private normalizeReturnType(type: string, sourceReturnType?: string): string {
+    if (this.options.preserveSourceStyle && sourceReturnType) {
+      return sourceReturnType;
+    }
     const normalized = type.toLowerCase();
     return this.options.uppercaseKeywords ? normalized.toUpperCase() : normalized;
+  }
+
+  private renderLeadingComments(comments?: string[]): string | null {
+    if (!this.options.includeComments) return null;
+    if (!comments || comments.length === 0) return null;
+    return comments.join('\n');
   }
 }

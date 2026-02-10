@@ -11,10 +11,12 @@ import {
 export class DeclarationVisitor {
   private semanticModel: SemanticModel;
   private functionNameMap: Map<string, string>;
+  private pendingLeadingComments: string[];
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
     this.semanticModel = semanticModel;
     this.functionNameMap = functionNameMap;
+    this.pendingLeadingComments = [];
   }
 
   /**
@@ -33,11 +35,18 @@ export class DeclarationVisitor {
       if (cursor.gotoFirstChild()) {
         do {
           const child = cursor.currentNode;
+          if (child.type === 'comment') {
+            this.pendingLeadingComments.push(child.text);
+            continue;
+          }
           // Only recurse into declarations we care about
           if (child.type === 'function_declaration' ||
               child.type === 'instance_declaration' ||
               child.type === 'variable_declaration') {
             this.createObjectsRecursively(cursor);
+            this.pendingLeadingComments = [];
+          } else {
+            this.pendingLeadingComments = [];
           }
         } while (cursor.gotoNextSibling());
         cursor.gotoParent();
@@ -48,8 +57,15 @@ export class DeclarationVisitor {
     if (node.type === 'function_declaration') {
       const nameNode = node.childForFieldName('name');
       const typeNode = node.childForFieldName('return_type');
+      const keywordNode = node.childForFieldName('keyword');
       if (nameNode && typeNode) {
         const func = new DialogFunction(nameNode.text, typeNode.text);
+        const firstLine = node.text.split('\n')[0] || '';
+        if (keywordNode) {
+          func.keyword = keywordNode.text;
+        }
+        func.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
+        func.leadingComments = [...this.pendingLeadingComments];
         this.semanticModel.functions[func.name] = func;
         this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
         this.functionNameMap.set(func.name.toLowerCase(), func.name);
@@ -58,8 +74,15 @@ export class DeclarationVisitor {
     } else if (node.type === 'instance_declaration') {
       const nameNode = node.childForFieldName('name');
       const parentNode = node.childForFieldName('parent');
+      const keywordNode = node.childForFieldName('keyword');
       if (nameNode) {
         const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
+        const firstLine = node.text.split('\n')[0] || '';
+        if (keywordNode) {
+          dialog.keyword = keywordNode.text;
+        }
+        dialog.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
+        dialog.leadingComments = [...this.pendingLeadingComments];
         this.semanticModel.dialogs[dialog.name] = dialog;
         this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
       }

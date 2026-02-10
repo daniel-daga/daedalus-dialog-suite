@@ -20,7 +20,8 @@ export class CodeGeneratorService {
       indentChar: settings.indentChar,
       includeComments: settings.includeComments,
       sectionHeaders: settings.sectionHeaders,
-      uppercaseKeywords: settings.uppercaseKeywords
+      uppercaseKeywords: settings.uppercaseKeywords,
+      preserveSourceStyle: true
     });
 
     return generator.generateSemanticModel(model);
@@ -37,7 +38,8 @@ export class CodeGeneratorService {
       indentChar: settings.indentChar,
       includeComments: settings.includeComments,
       sectionHeaders: settings.sectionHeaders,
-      uppercaseKeywords: settings.uppercaseKeywords
+      uppercaseKeywords: settings.uppercaseKeywords,
+      preserveSourceStyle: true
     });
 
     return generator.generateDialogWithFunctions(dialogName, model);

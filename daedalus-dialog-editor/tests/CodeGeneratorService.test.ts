@@ -422,6 +422,45 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
       expect(result).toContain('hero.guild == GIL_NONE');
     });
   });
+
+  describe('Style preservation', () => {
+    test('should preserve original section comment text and instance declaration style', () => {
+      const plainModel = {
+        declarationOrder: [{ type: 'dialog', name: 'DIA_Hubert_WerBistDu' }],
+        dialogs: {
+          DIA_Hubert_WerBistDu: {
+            name: 'DIA_Hubert_WerBistDu',
+            parent: 'C_INFO',
+            keyword: 'Instance',
+            spaceBeforeParen: true,
+            leadingComments: [
+              '// ************************************************************',
+              '// \t\t\t\t\tWer bist du?',
+              '// ************************************************************'
+            ],
+            properties: {
+              npc: 'DJG_99013_Hubert',
+              nr: 1,
+              description: 'Wer bist du?'
+            }
+          }
+        },
+        functions: {}
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toContain('// \t\t\t\t\tWer bist du?');
+      expect(result).toContain('Instance DIA_Hubert_WerBistDu (C_INFO)');
+    });
+  });
 });
 
 /**

@@ -675,6 +675,9 @@ export function deserializeCondition(json: any): DialogCondition {
 export class DialogFunction {
   public name: string;
   public returnType: string;
+  public keyword?: string;
+  public spaceBeforeParen?: boolean;
+  public leadingComments?: string[];
   public calls: string[];
 
   @Type(() => Object, {
@@ -690,6 +693,7 @@ export class DialogFunction {
   constructor(name: string, returnType: string) {
     this.name = name;
     this.returnType = returnType;
+    this.leadingComments = [];
     this.calls = [];
     this.actions = [];
     this.conditions = [];
@@ -704,18 +708,31 @@ export class DialogFunction {
 export class Dialog {
   public name: string;
   public parent: string | null;
+  public keyword?: string;
+  public spaceBeforeParen?: boolean;
+  public leadingComments?: string[];
   public properties: DialogProperties;
   public actions: DialogAction[];
 
   constructor(name: string, parent: string | null) {
     this.name = name;
     this.parent = parent;
+    this.leadingComments = [];
     this.properties = {};
     this.actions = [];
   }
 
   static fromJSON(json: any, functionsMap: { [key: string]: DialogFunction }): Dialog {
     const dialog = new Dialog(json.name, json.parent);
+    if (typeof json.keyword === 'string') {
+      dialog.keyword = json.keyword;
+    }
+    if (typeof json.spaceBeforeParen === 'boolean') {
+      dialog.spaceBeforeParen = json.spaceBeforeParen;
+    }
+    if (Array.isArray(json.leadingComments)) {
+      dialog.leadingComments = json.leadingComments;
+    }
 
     // Reconstruct properties, linking to DialogFunction instances
     for (const key in json.properties) {

@@ -187,6 +187,49 @@ func void Helper_After()
   assert.ok(infoIdx < helperAfterIdx, 'Helper_After should stay after dialog functions');
 });
 
+test('SemanticCodeGenerator preserves source style metadata (comments, keyword casing, spacing, property order)', () => {
+  const sourceCode = `
+// ************************************************************
+// \t\t\t\t\tEXIT
+// ************************************************************
+Instance DIA_Style_Test (C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tdescription\t= "ENDE";
+\tpermanent\t= TRUE;
+};
+
+Func int DIA_Style_Test_Condition ()
+{
+\treturn TRUE;
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({
+    includeComments: true,
+    sectionHeaders: true,
+    uppercaseKeywords: true,
+    preserveSourceStyle: true
+  });
+
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(generatedCode.includes('// \t\t\t\t\tEXIT'), 'Should preserve original section title comment');
+  assert.ok(generatedCode.includes('Instance DIA_Style_Test (C_INFO)'), 'Should preserve instance keyword casing and spacing');
+  assert.ok(generatedCode.includes('Func int DIA_Style_Test_Condition ()'), 'Should preserve function keyword casing and spacing');
+
+  const descriptionIdx = generatedCode.indexOf('description');
+  const permanentIdx = generatedCode.indexOf('permanent');
+  assert.ok(descriptionIdx >= 0 && permanentIdx >= 0, 'Properties should exist');
+  assert.ok(descriptionIdx < permanentIdx, 'Should preserve original property order');
+});
+
 test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () => {
   const fs = require('fs');
   const path = require('path');
@@ -273,11 +316,11 @@ test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () 
 
   // Verify the generated code contains key structural elements from original
   // (Comments and exact whitespace may differ, but code structure should be present)
-  assert.ok(generatedCode.includes('instance DIA_Arog_EXIT'), 'Generated code should contain DIA_Arog_EXIT instance');
-  assert.ok(generatedCode.includes('instance TRIA_ArogAlchemist'), 'Generated code should contain TRIA_ArogAlchemist instance');
-  assert.ok(generatedCode.includes('instance DIA_Arog_Buddler'), 'Generated code should contain DIA_Arog_Buddler instance');
-  assert.ok(generatedCode.includes('func int DIA_Arog_EXIT_Condition'), 'Generated code should contain condition function');
-  assert.ok(generatedCode.includes('func void TRIA_ArogAlchemist_info'), 'Generated code should contain info function');
+  assert.ok(/instance\s+DIA_Arog_EXIT/i.test(generatedCode), 'Generated code should contain DIA_Arog_EXIT instance');
+  assert.ok(/instance\s+TRIA_ArogAlchemist/i.test(generatedCode), 'Generated code should contain TRIA_ArogAlchemist instance');
+  assert.ok(/instance\s+DIA_Arog_Buddler/i.test(generatedCode), 'Generated code should contain DIA_Arog_Buddler instance');
+  assert.ok(/func\s+int\s+DIA_Arog_EXIT_Condition/i.test(generatedCode), 'Generated code should contain condition function');
+  assert.ok(/func\s+void\s+TRIA_ArogAlchemist_info/i.test(generatedCode), 'Generated code should contain info function');
 
   // Helper to check with flexible whitespace
   const containsFlexible = (code, pattern) => {

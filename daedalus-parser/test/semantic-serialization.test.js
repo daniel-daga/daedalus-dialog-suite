@@ -76,6 +76,39 @@ test('deserializeSemanticModel should reconstruct full object graph', () => {
   assert.strictEqual(linkedInfo, infoFunc, 'Dialog property should reference the same function instance in the model');
 });
 
+test('deserializeSemanticModel should preserve dialog style metadata for generation', () => {
+  const plainJson = {
+    declarationOrder: [{ type: 'dialog', name: 'DIA_Test_Hello' }],
+    functions: {},
+    dialogs: {
+      'DIA_Test_Hello': {
+        name: 'DIA_Test_Hello',
+        parent: 'C_INFO',
+        keyword: 'Instance',
+        spaceBeforeParen: true,
+        leadingComments: [
+          '// ************************************************************',
+          '// \t\t\t\t\tWer bist du?',
+          '// ************************************************************'
+        ],
+        properties: {
+          npc: 'TEST_NPC',
+          nr: 1,
+          description: 'Hello'
+        },
+        actions: []
+      }
+    }
+  };
+
+  const model = deserializeSemanticModel(plainJson);
+  const dialog = model.dialogs['DIA_Test_Hello'];
+
+  assert.equal(dialog.keyword, 'Instance');
+  assert.equal(dialog.spaceBeforeParen, true);
+  assert.deepEqual(dialog.leadingComments, plainJson.dialogs.DIA_Test_Hello.leadingComments);
+});
+
 test('deserializeSemanticModel should handle various action types', () => {
   const plainJson = {
     functions: {
