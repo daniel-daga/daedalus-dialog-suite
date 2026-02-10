@@ -1,0 +1,37 @@
+name: Roundtrip Corpus
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  roundtrip-corpus:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run roundtrip corpus check
+      run: npm run test:roundtrip-corpus
+
+    - name: Upload roundtrip reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: roundtrip-corpus-reports
+        path: |
+          reports/dialog-roundtrip-corpus-summary.json
+          reports/dialog-roundtrip-corpus-summary.md
+          reports/dialog-roundtrip-corpus-details.json
+        if-no-files-found: warn
