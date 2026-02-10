@@ -211,7 +211,8 @@ export class SemanticCodeGenerator {
     // Preserve original property insertion order to minimize style churn.
     for (const key in dialog.properties) {
       const value = dialog.properties[key];
-      lines.push(`${indent}${key}${this.alignProperty(key)}= ${this.formatValue(value)};`);
+      const spacing = this.resolvePropertySpacing(dialog, key);
+      lines.push(`${indent}${key}${spacing.beforeEquals}=${spacing.afterEquals}${this.formatValue(value)};`);
     }
 
     lines.push('};');
@@ -226,6 +227,13 @@ export class SemanticCodeGenerator {
   private alignProperty(propertyName: string): string {
     // Align property assignments using single tab spacing (Gothic convention)
     return '\t';
+  }
+
+  private resolvePropertySpacing(dialog: Dialog, propertyName: string): { beforeEquals: string; afterEquals: string } {
+    if (this.options.preserveSourceStyle && dialog.propertyFormatting && dialog.propertyFormatting[propertyName]) {
+      return dialog.propertyFormatting[propertyName];
+    }
+    return { beforeEquals: this.alignProperty(propertyName), afterEquals: ' ' };
   }
 
   /**

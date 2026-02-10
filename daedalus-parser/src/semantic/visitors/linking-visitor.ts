@@ -97,6 +97,12 @@ export class LinkingVisitor {
           this.triggerConditionRawMode(node);
           skipChildren = true;
         }
+      } else if (type === 'return_statement') {
+        if (!node) node = cursor.currentNode;
+        if (this.isTopLevelStatement(node)) {
+          this.triggerConditionRawMode(node);
+          skipChildren = true;
+        }
       }
     }
 
@@ -187,6 +193,7 @@ export class LinkingVisitor {
     if (leftNode && rightNode && this.currentInstance) {
       const propertyName = leftNode.text;
       let value: string | number | boolean | DialogFunction;
+      this.capturePropertyFormatting(node, propertyName);
 
       switch (rightNode.type) {
         case 'number':
@@ -224,6 +231,23 @@ export class LinkingVisitor {
       }
       this.currentInstance.properties[propertyName] = value;
     }
+  }
+
+  private capturePropertyFormatting(node: TreeSitterNode, propertyName: string): void {
+    if (!this.currentInstance) return;
+    const escapedProperty = propertyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^\\s*${escapedProperty}(\\s*)=(\\s*)`);
+    const match = node.text.match(re);
+    if (!match) return;
+
+    if (!this.currentInstance.propertyFormatting) {
+      this.currentInstance.propertyFormatting = {};
+    }
+
+    this.currentInstance.propertyFormatting[propertyName] = {
+      beforeEquals: match[1] || '\t',
+      afterEquals: match[2] || ' '
+    };
   }
 
   /**

@@ -87,6 +87,33 @@ test('condition function with supported expressions parses conditions', () => {
   assert.equal(func.actions.length, 0, 'Should not preserve raw actions');
 });
 
+test('condition function with top-level return fallback preserves explicit false path', () => {
+  const source = `
+  instance DIA_Test(C_INFO)
+  {
+    condition = DIA_Test_Cond;
+  };
+
+  func int DIA_Test_Cond()
+  {
+    if (Npc_KnowsInfo(other, DIA_Test))
+    {
+      return TRUE;
+    };
+    return FALSE;
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Test_Cond;
+  assert.ok(func, 'Function should be parsed');
+  assert.equal(func.conditions.length, 0, 'Should preserve raw when explicit top-level return exists');
+  assert.ok(func.actions.length > 0, 'Should preserve raw actions');
+
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  assert.ok(generated.includes('return FALSE;'), 'Generated raw function should preserve explicit false return');
+});
+
 test('legacy if/else-if condition fallback does not introduce extra closing braces', () => {
   const source = `
   instance DIA_Hubert_TinteAmt(C_INFO)

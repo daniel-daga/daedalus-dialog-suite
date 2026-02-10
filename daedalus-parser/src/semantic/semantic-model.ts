@@ -94,6 +94,13 @@ export interface DialogProperties {
   [key: string]: string | number | boolean | DialogFunction;
 }
 
+export interface PropertyFormatting {
+  [key: string]: {
+    beforeEquals: string;
+    afterEquals: string;
+  };
+}
+
 // ===================================================================
 // DIALOG ACTION CLASSES
 // ===================================================================
@@ -103,6 +110,7 @@ export interface DialogProperties {
  */
 export interface CodeGenOptions {
   includeComments?: boolean;
+  preserveSourceStyle?: boolean;
 }
 
 /**
@@ -121,6 +129,7 @@ export class DialogLine implements CodeGeneratable {
   public listener: string = 'other';
   public text: string;
   public id: string;
+  public inlineComment?: boolean;
 
   constructor(speaker: string, text: string, id: string, listener: string = 'other') {
     this.speaker = speaker;
@@ -130,9 +139,10 @@ export class DialogLine implements CodeGeneratable {
   }
 
   generateCode(options: CodeGenOptions): string {
-    const comment = options.includeComments ? ` //${this.text}` : '';
+    const shouldEmitComment = options.includeComments && (this.inlineComment ?? this.text !== this.id);
+    const comment = shouldEmitComment ? ` //${this.text}` : '';
     const listener = this.listener || 'other';
-    return `AI_Output(${this.speaker}, ${listener}, "${this.id}");${comment}`;
+    return `AI_Output (${this.speaker}, ${listener}, "${this.id}");${comment}`;
   }
 
   toDisplayString(): string {
@@ -156,9 +166,9 @@ export class CreateTopic implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     if (this.topicType) {
-      return `Log_CreateTopic(${this.topic}, ${this.topicType});`;
+      return `Log_CreateTopic (${this.topic}, ${this.topicType});`;
     }
-    return `Log_CreateTopic(${this.topic});`;
+    return `Log_CreateTopic (${this.topic});`;
   }
 
   toDisplayString(): string {
@@ -181,7 +191,7 @@ export class LogEntry implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_LogEntry(${this.topic}, "${this.text}");`;
+    return `B_LogEntry (${this.topic}, "${this.text}");`;
   }
 
   toDisplayString(): string {
@@ -204,7 +214,7 @@ export class LogSetTopicStatus implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Log_SetTopicStatus(${this.topic}, ${this.status});`;
+    return `Log_SetTopicStatus (${this.topic}, ${this.status});`;
   }
 
   toDisplayString(): string {
@@ -226,6 +236,9 @@ export class Action implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const code = this.action.trim();
+    if (code.startsWith('//')) {
+      return code;
+    }
     return code.endsWith(';') ? code : `${code};`;
   }
 
@@ -251,7 +264,7 @@ export class Choice implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Info_AddChoice(${this.dialogRef}, "${this.text}", ${this.targetFunction});`;
+    return `Info_AddChoice (${this.dialogRef}, "${this.text}", ${this.targetFunction});`;
   }
 
   toDisplayString(): string {
@@ -276,7 +289,7 @@ export class CreateInventoryItems implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `CreateInvItems(${this.target}, ${this.item}, ${this.quantity});`;
+    return `CreateInvItems (${this.target}, ${this.item}, ${this.quantity});`;
   }
 
   toDisplayString(): string {
@@ -303,7 +316,7 @@ export class GiveInventoryItems implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_GiveInvItems(${this.giver}, ${this.receiver}, ${this.item}, ${this.quantity});`;
+    return `B_GiveInvItems (${this.giver}, ${this.receiver}, ${this.item}, ${this.quantity});`;
   }
 
   toDisplayString(): string {
@@ -330,7 +343,7 @@ export class AttackAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_Attack(${this.attacker}, ${this.target}, ${this.attackReason}, ${this.damage});`;
+    return `B_Attack (${this.attacker}, ${this.target}, ${this.attackReason}, ${this.damage});`;
   }
 
   toDisplayString(): string {
@@ -353,7 +366,7 @@ export class SetAttitudeAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_SetAttitude(${this.target}, ${this.attitude});`;
+    return `B_SetAttitude (${this.target}, ${this.attitude});`;
   }
 
   toDisplayString(): string {
@@ -376,7 +389,7 @@ export class ExchangeRoutineAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Npc_ExchangeRoutine(${this.target}, "${this.routine}");`;
+    return `Npc_ExchangeRoutine (${this.target}, "${this.routine}");`;
   }
 
   toDisplayString(): string {
@@ -399,7 +412,7 @@ export class ChapterTransitionAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_Kapitelwechsel(${this.chapter}, ${this.world});`;
+    return `B_Kapitelwechsel (${this.chapter}, ${this.world});`;
   }
 
   toDisplayString(): string {
@@ -445,7 +458,7 @@ export class StopProcessInfosAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `AI_StopProcessInfos(${this.target});`;
+    return `AI_StopProcessInfos (${this.target});`;
   }
 
   toDisplayString(): string {
@@ -468,7 +481,7 @@ export class PlayAniAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `AI_PlayAni(${this.target}, "${this.animationName}");`;
+    return `AI_PlayAni (${this.target}, "${this.animationName}");`;
   }
 
   toDisplayString(): string {
@@ -712,6 +725,7 @@ export class Dialog {
   public spaceBeforeParen?: boolean;
   public leadingComments?: string[];
   public properties: DialogProperties;
+  public propertyFormatting?: PropertyFormatting;
   public actions: DialogAction[];
 
   constructor(name: string, parent: string | null) {
@@ -719,6 +733,7 @@ export class Dialog {
     this.parent = parent;
     this.leadingComments = [];
     this.properties = {};
+    this.propertyFormatting = {};
     this.actions = [];
   }
 
@@ -732,6 +747,9 @@ export class Dialog {
     }
     if (Array.isArray(json.leadingComments)) {
       dialog.leadingComments = json.leadingComments;
+    }
+    if (json.propertyFormatting && typeof json.propertyFormatting === 'object') {
+      dialog.propertyFormatting = json.propertyFormatting;
     }
 
     // Reconstruct properties, linking to DialogFunction instances

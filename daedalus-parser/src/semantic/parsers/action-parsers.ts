@@ -92,9 +92,12 @@ export class ActionParsers {
 
     // Look for comment after this AI_Output call to use as readable text
     const comment = ActionParsers.findCommentAfterStatement(node);
-    const text = comment || dialogId; // Use comment as text if available, fallback to dialogId
+    const hasInlineComment = comment !== null;
+    const text = hasInlineComment ? comment : dialogId;
 
-    return new DialogLine(speaker, text, dialogId, listener);
+    const line = new DialogLine(speaker, text, dialogId, listener);
+    line.inlineComment = hasInlineComment;
+    return line;
   }
 
   /**
@@ -243,7 +246,8 @@ export class ActionParsers {
     // Limit search distance to prevent O(N^2) complexity in large blocks
     for (let distance = 0; nextSibling && distance < MAX_SEARCH_DISTANCE; distance++) {
       if (nextSibling.type === 'comment') {
-        return nextSibling.text.replace(/^\/\/\s*/, '').trim();
+        const raw = nextSibling.text;
+        return raw.startsWith('//') ? raw.slice(2) : raw;
       }
 
       // Stop if we hit another statement, declaration, or block end

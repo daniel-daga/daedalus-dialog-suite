@@ -264,5 +264,5 @@ test('CreateInventoryItems should generate code even with missing item (legacy b
   const action = new CreateInventoryItems('self', '', 5);
   const result = generator.generateAction(action);
 
-  assert.equal(result, 'CreateInvItems(self, , 5);');
+  assert.equal(result, 'CreateInvItems (self, , 5);');
 });

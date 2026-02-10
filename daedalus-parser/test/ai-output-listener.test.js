@@ -20,5 +20,21 @@ test('preserves AI_Output listener argument during parse and generation', () => 
 
   const generator = new SemanticCodeGenerator({ includeComments: false });
   const code = generator.generateFunction(func);
-  assert.ok(code.includes('AI_Output(other, self, "DIA_Test_01");'), 'Generated code should preserve listener');
+  assert.ok(code.includes('AI_Output (other, self, "DIA_Test_01");'), 'Generated code should preserve listener');
+});
+
+test('does not synthesize AI_Output comment when source has none', () => {
+  const source = `
+  func void DIA_Test_Info()
+  {
+    AI_Output(other, self, "DIA_Test_01");
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const generator = new SemanticCodeGenerator({ includeComments: true });
+  const code = generator.generateFunction(model.functions.DIA_Test_Info);
+
+  assert.ok(code.includes('AI_Output (other, self, "DIA_Test_01");'));
+  assert.ok(!code.includes('//DIA_Test_01'), 'Should not add synthetic inline comment');
 });
