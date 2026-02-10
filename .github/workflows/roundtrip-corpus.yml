@@ -34,4 +34,5 @@ jobs:
           reports/dialog-roundtrip-corpus-summary.json
           reports/dialog-roundtrip-corpus-summary.md
           reports/dialog-roundtrip-corpus-details.json
+          reports/dialog-roundtrip-corpus-byte-idempotence.json
         if-no-files-found: warn
