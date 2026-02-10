@@ -129,6 +129,64 @@ func void DIA_Szmyk_Hello_Info()
   assert.ok(!tree2.rootNode.hasError, 'Generated code should parse without errors');
 });
 
+test('SemanticCodeGenerator preserves top-level declaration order from source', () => {
+  const sourceCode = `
+func void Helper_Before()
+{
+	AI_Output(self, other, "H_01");
+};
+
+instance DIA_Order_Test(C_INFO)
+{
+	npc			= TEST_NPC;
+	nr			= 1;
+	condition	= DIA_Order_Test_Condition;
+	information	= DIA_Order_Test_Info;
+	description	= "Order";
+};
+
+func int DIA_Order_Test_Condition()
+{
+	return TRUE;
+};
+
+func void DIA_Order_Test_Info()
+{
+	AI_Output(self, other, "D_01");
+};
+
+func void Helper_After()
+{
+	AI_Output(self, other, "H_02");
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  const helperBeforeIdx = generatedCode.indexOf('func void Helper_Before()');
+  const instanceIdx = generatedCode.indexOf('instance DIA_Order_Test(C_INFO)');
+  const conditionIdx = generatedCode.indexOf('func int DIA_Order_Test_Condition()');
+  const infoIdx = generatedCode.indexOf('func void DIA_Order_Test_Info()');
+  const helperAfterIdx = generatedCode.indexOf('func void Helper_After()');
+
+  assert.ok(helperBeforeIdx >= 0, 'Helper_Before should exist');
+  assert.ok(instanceIdx >= 0, 'DIA_Order_Test instance should exist');
+  assert.ok(conditionIdx >= 0, 'condition function should exist');
+  assert.ok(infoIdx >= 0, 'info function should exist');
+  assert.ok(helperAfterIdx >= 0, 'Helper_After should exist');
+
+  assert.ok(helperBeforeIdx < instanceIdx, 'Helper_Before should stay before instance');
+  assert.ok(instanceIdx < conditionIdx, 'instance should stay before condition');
+  assert.ok(conditionIdx < infoIdx, 'condition should stay before info');
+  assert.ok(infoIdx < helperAfterIdx, 'Helper_After should stay after dialog functions');
+});
+
 test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () => {
   const fs = require('fs');
   const path = require('path');

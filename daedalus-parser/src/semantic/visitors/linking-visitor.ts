@@ -17,6 +17,8 @@ export class LinkingVisitor {
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
   private functionToDialog: Map<string, Dialog>;
+  private conditionRawMode: Set<string>;
+  private preservedStatementRanges: Map<string, Set<string>>;
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
     this.semanticModel = semanticModel;
@@ -25,6 +27,8 @@ export class LinkingVisitor {
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
     this.functionToDialog = new Map<string, Dialog>();
+    this.conditionRawMode = new Set<string>();
+    this.preservedStatementRanges = new Map<string, Set<string>>();
   }
 
   /**
@@ -77,6 +81,24 @@ export class LinkingVisitor {
     }
 
     const isConditionFunc = this.currentFunction && this.conditionFunctions.has(this.currentFunction.name);
+    const currentFunctionName = this.currentFunction?.name;
+
+    if (isConditionFunc && currentFunctionName) {
+      if (this.conditionRawMode.has(currentFunctionName)) {
+        if (this.isTopLevelStatement(cursor.currentNode)) {
+          this.preserveConditionStatement(cursor.currentNode);
+        }
+        // In raw mode, never parse nested condition nodes.
+        skipChildren = true;
+      } else if (type === 'if_statement') {
+        if (!node) node = cursor.currentNode;
+        const alternative = node.childForFieldName('alternative');
+        if (alternative) {
+          this.triggerConditionRawMode(node);
+          skipChildren = true;
+        }
+      }
+    }
 
     // Preserve unsupported statements in non-condition functions to avoid flattening control flow
     if (this.currentFunction && !isConditionFunc) {
@@ -232,7 +254,10 @@ export class LinkingVisitor {
           // Check if this is a condition function logic
           const isConditionFunc = this.conditionFunctions.has(this.currentFunction.name);
 
-          if (!isConditionFunc) {
+          if (isConditionFunc) {
+            this.triggerConditionRawMode(node);
+            return;
+          } else {
             this.currentFunction.actions.push(action);
 
             // Also add to dialog if linked
@@ -257,6 +282,17 @@ export class LinkingVisitor {
       const isConditionFunc = this.conditionFunctions.has(this.currentFunction.name);
 
       if (isConditionFunc) {
+        if (this.conditionRawMode.has(this.currentFunction.name)) {
+          return;
+        }
+
+        // In condition functions, calls are allowed only when part of an if-condition expression.
+        // Standalone calls imply side effects and must fall back to raw preservation.
+        if (!this.isCallInsideIfCondition(node)) {
+          this.triggerConditionRawMode(node);
+          return;
+        }
+
         // Parse semantic conditions and add to dialog
         this.processCondition(node, functionName);
       } else {
@@ -287,6 +323,72 @@ export class LinkingVisitor {
     if (condition) {
       this.currentFunction.conditions.push(condition);
     }
+  }
+
+  private isTopLevelStatement(node: TreeSitterNode): boolean {
+    if (!node.type.endsWith('_statement')) {
+      return false;
+    }
+    const parent = node.parent;
+    if (!parent || parent.type !== 'block') return false;
+    const grandParent = parent.parent;
+    return !!grandParent && grandParent.type === 'function_declaration';
+  }
+
+  private preserveConditionStatement(node: TreeSitterNode): void {
+    if (!this.currentFunction) return;
+    const topLevel = this.getTopLevelStatement(node) || node;
+    const rangeKey = `${topLevel.startIndex}:${topLevel.endIndex}`;
+    const funcName = this.currentFunction.name;
+    let ranges = this.preservedStatementRanges.get(funcName);
+    if (!ranges) {
+      ranges = new Set<string>();
+      this.preservedStatementRanges.set(funcName, ranges);
+    }
+    if (ranges.has(rangeKey)) return;
+    ranges.add(rangeKey);
+
+    const action = new Action(topLevel.text.trim());
+    this.currentFunction.actions.push(action);
+  }
+
+  private getTopLevelStatement(node: TreeSitterNode): TreeSitterNode | null {
+    let current: TreeSitterNode | null = node;
+    while (current && current.parent) {
+      if (this.isTopLevelStatement(current)) return current;
+      current = current.parent;
+    }
+    return null;
+  }
+
+  private triggerConditionRawMode(node: TreeSitterNode): void {
+    if (!this.currentFunction) return;
+    const funcName = this.currentFunction.name;
+    if (!this.conditionRawMode.has(funcName)) {
+      this.conditionRawMode.add(funcName);
+      this.currentFunction.conditions = [];
+    }
+    this.preserveConditionStatement(node);
+  }
+
+  private isCallInsideIfCondition(node: TreeSitterNode): boolean {
+    let current: TreeSitterNode | null = node;
+    while (current && current.parent) {
+      const parent = current.parent;
+      if (parent.type === 'if_statement') {
+        const cond = parent.childForFieldName('condition');
+        return !!cond && this.nodeIsWithin(node, cond);
+      }
+      if (parent.type === 'block' || parent.type === 'function_declaration') {
+        return false;
+      }
+      current = parent;
+    }
+    return false;
+  }
+
+  private nodeIsWithin(node: TreeSitterNode, container: TreeSitterNode): boolean {
+    return node.startIndex >= container.startIndex && node.endIndex <= container.endIndex;
   }
 
   /**

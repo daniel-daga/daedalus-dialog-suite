@@ -763,6 +763,7 @@ export interface SyntaxError {
 export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
+  declarationOrder?: Array<{ type: 'dialog' | 'function'; name: string }>;
   constants?: { [key: string]: GlobalConstant };
   variables?: { [key: string]: GlobalVariable };
   errors?: SyntaxError[];
@@ -774,6 +775,7 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   const model: SemanticModel = {
     dialogs: {},
     functions: {},
+    declarationOrder: json.declarationOrder || [],
     constants: {},
     variables: {},
     errors: json.errors,

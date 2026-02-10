@@ -16,6 +16,7 @@ export class SemanticModelBuilderVisitor {
     this.semanticModel = {
       dialogs: {},
       functions: {},
+      declarationOrder: [],
       constants: {},
       variables: {},
       hasErrors: false,

@@ -51,6 +51,7 @@ export class DeclarationVisitor {
       if (nameNode && typeNode) {
         const func = new DialogFunction(nameNode.text, typeNode.text);
         this.semanticModel.functions[func.name] = func;
+        this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
         this.functionNameMap.set(func.name.toLowerCase(), func.name);
       }
       return; // Optimization: Don't recurse into function bodies during object creation
@@ -60,6 +61,7 @@ export class DeclarationVisitor {
       if (nameNode) {
         const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
         this.semanticModel.dialogs[dialog.name] = dialog;
+        this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
       }
       return; // Optimization: Don't recurse into instance bodies during object creation
     } else if (node.type === 'variable_declaration') {

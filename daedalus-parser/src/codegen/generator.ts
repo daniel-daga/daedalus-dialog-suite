@@ -39,6 +39,10 @@ export class SemanticCodeGenerator {
    * Generate complete Daedalus source file from semantic model
    */
   generateSemanticModel(model: SemanticModel): string {
+    if (model.declarationOrder && model.declarationOrder.length > 0) {
+      return this.generateByDeclarationOrder(model);
+    }
+
     const sections: string[] = [];
 
     // Group dialogs and their associated functions together
@@ -55,6 +59,49 @@ export class SemanticCodeGenerator {
       if (!processedFunctions.has(funcName)) {
         const func = model.functions[funcName];
         sections.push(this.generateFunction(func));
+      }
+    }
+
+    return sections.join('\n');
+  }
+
+  private generateByDeclarationOrder(model: SemanticModel): string {
+    const sections: string[] = [];
+    const emittedDialogs = new Set<string>();
+    const emittedFunctions = new Set<string>();
+
+    for (const declaration of model.declarationOrder || []) {
+      if (declaration.type === 'dialog') {
+        const dialog = model.dialogs[declaration.name];
+        if (dialog && !emittedDialogs.has(dialog.name)) {
+          if (this.options.sectionHeaders && this.options.includeComments) {
+            sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
+          }
+          sections.push(this.generateDialog(dialog));
+          emittedDialogs.add(dialog.name);
+        }
+      } else if (declaration.type === 'function') {
+        const func = model.functions[declaration.name];
+        if (func && !emittedFunctions.has(func.name)) {
+          sections.push(this.generateFunction(func));
+          emittedFunctions.add(func.name);
+        }
+      }
+    }
+
+    // Keep legacy robustness for manually constructed models that might miss order entries.
+    for (const dialogName in model.dialogs) {
+      if (!emittedDialogs.has(dialogName)) {
+        const dialog = model.dialogs[dialogName];
+        if (this.options.sectionHeaders && this.options.includeComments) {
+          sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
+        }
+        sections.push(this.generateDialog(dialog));
+      }
+    }
+    for (const funcName in model.functions) {
+      if (!emittedFunctions.has(funcName)) {
+        sections.push(this.generateFunction(model.functions[funcName]));
       }
     }
 
