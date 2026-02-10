@@ -1,0 +1,14 @@
+
+> daedalus-dialog-editor@0.1.0 dev:browser
+> vite
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+  VITE v5.4.21  ready in 432 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+1:17:54 PM [vite] hmr update /components/MainLayout.tsx
+1:19:38 PM [vite] hmr update /components/QuestList.tsx
+1:20:40 PM [vite] hmr update /components/MainLayout.tsx
+1:21:10 PM [vite] hmr update /components/MainLayout.tsx
