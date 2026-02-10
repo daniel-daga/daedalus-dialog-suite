@@ -6,6 +6,7 @@
   "types": "index.d.ts",
   "scripts": {
     "test": "npm run build && npm run build:ts && node --test test/*.test.js",
+    "test:roundtrip-corpus": "node scripts/roundtrip-corpus.js",
     "build": "tree-sitter generate",
     "build:ts": "tsc --project tsconfig.build.json",
     "parse": "node bin/daedalus-parse.js",
