@@ -119,6 +119,29 @@ instance Test (Base) // inline comment
     assert.equal(result.hasErrors, false, 'Should parse comments without errors');
   });
 
+
+  test('should forward parse options when parsing files', () => {
+    const tmpFile = './test/tmp-forward-options.d';
+    const source = 'instance Test (Base) { name = "test"; };';
+
+    fs.writeFileSync(tmpFile, source, 'utf8');
+
+    let receivedOptions = null;
+    const originalParse = parser.parse.bind(parser);
+    parser.parse = (inputSource, options) => {
+      receivedOptions = options;
+      return originalParse(inputSource, options);
+    };
+
+    try {
+      parser.parseFile(tmpFile, { bufferSize: 8192 });
+      assert.equal(receivedOptions.bufferSize, 8192, 'parseFile should forward options to parse()');
+    } finally {
+      parser.parse = originalParse;
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
   test('should report performance metrics', () => {
     const source = 'instance Test (Base) { name = "test"; };';
     const result = parser.parse(source);

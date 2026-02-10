@@ -77,7 +77,7 @@ class DaedalusParser {
       sourceCode = iconv.decode(buffer, detectedEncoding);
     }
 
-    const result = this.parse(sourceCode, detectedEncoding, options);
+    const result = this.parse(sourceCode, options);
     result.filePath = filePath;
     result.encoding = detectedEncoding;
     result.encodingConfidence = confidence;
