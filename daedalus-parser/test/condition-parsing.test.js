@@ -385,3 +385,108 @@ func void DIA_Test_HasItems_Info()
   assert.ok(!generated.includes('&& Npc_HasItems(other, ItPl_Mana_Herb_Alchemist)\n'),
     'Should not inject bare Npc_HasItems call without comparison');
 });
+
+test('Should not parse nested call arguments as standalone conditions', () => {
+  const source = `
+instance DIA_Test_NestedCall(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_NestedCall_Condition;
+	information	= DIA_Test_NestedCall_Info;
+	description = "Test";
+};
+
+func int DIA_Test_NestedCall_Condition()
+{
+	if (Hlp_StrCmp(Npc_GetNearestWP(self), "WP_TEST")
+	&& Flag_Test)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_NestedCall_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_NestedCall'].properties.condition;
+  const codes = conditionFunc.conditions.map(c => c.generateCode({}));
+
+  assert.ok(codes.some(c => c.includes('Hlp_StrCmp')), 'Should keep top-level Hlp_StrCmp condition');
+  assert.ok(codes.some(c => c === 'Flag_Test'), 'Should keep boolean flag');
+  assert.ok(!codes.some(c => c.includes('Npc_GetNearestWP(self)') && !c.includes('Hlp_StrCmp')),
+    'Should not add nested Npc_GetNearestWP call as standalone condition');
+});
+
+test('Should not parse arithmetic leaf identifiers as standalone conditions', () => {
+  const source = `
+instance DIA_Test_Arithmetic(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Arithmetic_Condition;
+	information	= DIA_Test_Arithmetic_Info;
+	description = "Test";
+};
+
+func int DIA_Test_Arithmetic_Condition()
+{
+	if (other.attribute[ATR_DEXTERITY] >= (25 - Theftdiff))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Arithmetic_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_Arithmetic'].properties.condition;
+  const codes = conditionFunc.conditions.map(c => c.generateCode({}));
+
+  assert.equal(conditionFunc.conditions.length, 1, 'Should keep only comparison condition');
+  assert.ok(codes[0].includes('other.attribute[ATR_DEXTERITY] >= (25 - Theftdiff)'));
+  assert.ok(!codes.includes('Theftdiff'), 'Should not add Theftdiff as standalone variable condition');
+});
+
+test('Should not duplicate nested comparison conditions', () => {
+  const source = `
+instance DIA_Test_NestedComparison(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_NestedComparison_Condition;
+	information	= DIA_Test_NestedComparison_Info;
+	description = "Test";
+};
+
+func int DIA_Test_NestedComparison_Condition()
+{
+	if ((Npc_GetDistToWP(self,"WP_TEST") < 500) == FALSE
+	&& Npc_GetDistToWP(self,"WP_ALT") < 500)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_NestedComparison_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_NestedComparison'].properties.condition;
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateSemanticModel(model);
+  const reparsed = parseAndBuildModel(generated);
+  const reparsedCond = reparsed.dialogs['DIA_Test_NestedComparison'].properties.condition;
+
+  assert.strictEqual(reparsedCond.conditions.length, conditionFunc.conditions.length, 'Roundtrip should keep condition count stable');
+});

@@ -77,6 +77,10 @@ export class LinkingVisitor {
       const nameNode = node.childForFieldName('name');
       if (nameNode) {
         this.currentFunction = this.semanticModel.functions[nameNode.text];
+        const body = node.childForFieldName('body');
+        if (this.currentFunction && body) {
+          this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
+        }
       }
     }
 
@@ -133,7 +137,11 @@ export class LinkingVisitor {
             // Only process comparison binaries. Logical binaries (&&, ||) are containers.
             // binary_expression has children [left, operator, right]
             const operator = node.childCount >= 2 ? node.child(1).text : null;
-            if (operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
+            if (
+              operator &&
+              ['==', '!=', '<', '>', '<=', '>='].includes(operator) &&
+              !this.hasComparisonBinaryAncestor(node)
+            ) {
                 this.processCondition(node);
             }
         } else if (type === 'identifier' || type === 'unary_expression') {
@@ -143,6 +151,7 @@ export class LinkingVisitor {
 
             // If we are identifier, and parent is unary, we SKIP (let unary handle it).
             if (type === 'identifier' && parent.type === 'unary_expression') return;
+            if (this.hasNonLogicalBinaryAncestor(node)) return;
 
             // Determine if this node is in a "Condition Context"
             const allowedParents = ['if_statement', 'parenthesized_expression'];
@@ -227,9 +236,20 @@ export class LinkingVisitor {
           break;
         default:
           value = rightNode.text;
+          this.markPropertyExpression(propertyName);
           break;
       }
       this.currentInstance.properties[propertyName] = value;
+    }
+  }
+
+  private markPropertyExpression(propertyName: string): void {
+    if (!this.currentInstance) return;
+    if (!this.currentInstance.propertyExpressionKeys) {
+      this.currentInstance.propertyExpressionKeys = [];
+    }
+    if (!this.currentInstance.propertyExpressionKeys.includes(propertyName)) {
+      this.currentInstance.propertyExpressionKeys.push(propertyName);
     }
   }
 
@@ -321,6 +341,9 @@ export class LinkingVisitor {
         // Comparisons like Npc_HasItems(...) == 4 are parsed at binary_expression level.
         // If we also parse the nested call_expression, we duplicate the condition.
         if (this.isCallInsideComparisonBinary(node)) {
+          return;
+        }
+        if (this.isNestedCallArgument(node)) {
           return;
         }
 
@@ -428,6 +451,57 @@ export class LinkingVisitor {
       if (current.type === 'binary_expression') {
         const operator = current.childCount >= 2 ? current.child(1).text : null;
         if (operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
+          return true;
+        }
+      }
+      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
+        break;
+      }
+      current = current.parent;
+    }
+    return false;
+  }
+
+  private hasNonLogicalBinaryAncestor(node: TreeSitterNode): boolean {
+    let current: TreeSitterNode | null = node.parent;
+    while (current) {
+      if (current.type === 'binary_expression') {
+        const operator = current.childCount >= 2 ? current.child(1).text : null;
+        if (!operator || (operator !== '&&' && operator !== '||')) {
+          return true;
+        }
+      }
+      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
+        break;
+      }
+      current = current.parent;
+    }
+    return false;
+  }
+
+  private hasComparisonBinaryAncestor(node: TreeSitterNode): boolean {
+    let current: TreeSitterNode | null = node.parent;
+    while (current) {
+      if (current.type === 'binary_expression') {
+        const operator = current.childCount >= 2 ? current.child(1).text : null;
+        if (operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
+          return true;
+        }
+      }
+      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
+        break;
+      }
+      current = current.parent;
+    }
+    return false;
+  }
+
+  private isNestedCallArgument(node: TreeSitterNode): boolean {
+    let current: TreeSitterNode | null = node.parent;
+    while (current) {
+      if (current.type === 'call_expression') {
+        const args = current.childForFieldName('arguments');
+        if (args && this.nodeIsWithin(node, args)) {
           return true;
         }
       }

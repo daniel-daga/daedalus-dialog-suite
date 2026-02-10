@@ -256,6 +256,7 @@ export class Choice implements CodeGeneratable {
   public dialogRef: string;
   public text: string;
   public targetFunction: string;
+  public textIsExpression?: boolean;
 
   constructor(dialogRef: string, text: string, targetFunction: string) {
     this.dialogRef = dialogRef;
@@ -264,7 +265,11 @@ export class Choice implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Info_AddChoice (${this.dialogRef}, "${this.text}", ${this.targetFunction});`;
+    if (this.textIsExpression) {
+      return `Info_AddChoice (${this.dialogRef}, ${this.text}, ${this.targetFunction});`;
+    }
+    const escaped = this.text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `Info_AddChoice (${this.dialogRef}, "${escaped}", ${this.targetFunction});`;
   }
 
   toDisplayString(): string {
@@ -691,6 +696,7 @@ export class DialogFunction {
   public keyword?: string;
   public spaceBeforeParen?: boolean;
   public leadingComments?: string[];
+  public hasExplicitBodyContent?: boolean;
   public calls: string[];
 
   @Type(() => Object, {
@@ -726,6 +732,7 @@ export class Dialog {
   public leadingComments?: string[];
   public properties: DialogProperties;
   public propertyFormatting?: PropertyFormatting;
+  public propertyExpressionKeys?: string[];
   public actions: DialogAction[];
 
   constructor(name: string, parent: string | null) {
@@ -734,6 +741,7 @@ export class Dialog {
     this.leadingComments = [];
     this.properties = {};
     this.propertyFormatting = {};
+    this.propertyExpressionKeys = [];
     this.actions = [];
   }
 
@@ -750,6 +758,9 @@ export class Dialog {
     }
     if (json.propertyFormatting && typeof json.propertyFormatting === 'object') {
       dialog.propertyFormatting = json.propertyFormatting;
+    }
+    if (Array.isArray(json.propertyExpressionKeys)) {
+      dialog.propertyExpressionKeys = json.propertyExpressionKeys;
     }
 
     // Reconstruct properties, linking to DialogFunction instances

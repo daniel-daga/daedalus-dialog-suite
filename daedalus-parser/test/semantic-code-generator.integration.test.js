@@ -230,6 +230,84 @@ Func int DIA_Style_Test_Condition ()
   assert.ok(descriptionIdx < permanentIdx, 'Should preserve original property order');
 });
 
+test('SemanticCodeGenerator should preserve Info_AddChoice expression text arguments', () => {
+  const sourceCode = `
+instance DIA_Test_Choice(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_Choice_Condition;
+\tinformation\t= DIA_Test_Choice_Info;
+\tdescription\t= "Choice";
+};
+
+func int DIA_Test_Choice_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_Choice_Info()
+{
+\tInfo_AddChoice(DIA_Test_Choice, B_BuildLearnString("Schmieden lernen", 10), DIA_Test_Choice_Next);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('Info_AddChoice (DIA_Test_Choice, B_BuildLearnString("Schmieden lernen", 10), DIA_Test_Choice_Next);'),
+    'Generated code should keep expression argument unquoted'
+  );
+
+  const reparsed = parser.parse(generatedCode);
+  assert.ok(!reparsed.rootNode.hasError, 'Generated code should parse without syntax errors');
+});
+
+test('SemanticCodeGenerator should preserve expression-valued dialog properties', () => {
+  const sourceCode = `
+instance DIA_Test_PropertyExpr(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_PropertyExpr_Condition;
+\tinformation\t= DIA_Test_PropertyExpr_Info;
+\tdescription\t= B_BuildLearnString("Schmieden lernen", 10);
+};
+
+func int DIA_Test_PropertyExpr_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_PropertyExpr_Info()
+{
+\tAI_StopProcessInfos(self);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('description\t= B_BuildLearnString("Schmieden lernen", 10);'),
+    'Generated code should keep expression-valued property unquoted'
+  );
+
+  const reparsed = parser.parse(generatedCode);
+  assert.ok(!reparsed.rootNode.hasError, 'Generated code should parse without syntax errors');
+});
+
 test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () => {
   const fs = require('fs');
   const path = require('path');

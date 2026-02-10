@@ -108,6 +108,18 @@ test('SemanticCodeGenerator should generate default return for INT when uppercas
   assert.ok(result.includes('return TRUE;'));
 });
 
+test('SemanticCodeGenerator should preserve empty INT function body when source-style mode is enabled', () => {
+  const generator = new SemanticCodeGenerator({ preserveSourceStyle: true });
+  const { DialogFunction } = require('../dist/semantic/semantic-visitor-index');
+
+  const func = new DialogFunction('DIA_Test_Empty_Condition', 'int');
+  func.hasExplicitBodyContent = false;
+  const result = generator.generateFunction(func);
+
+  assert.ok(result.includes('func int DIA_Test_Empty_Condition()'));
+  assert.ok(!result.includes('return TRUE;'), 'Should not inject default return into explicitly empty source body');
+});
+
 // ===================================================================
 // ACTION GENERATION TESTS
 // ===================================================================

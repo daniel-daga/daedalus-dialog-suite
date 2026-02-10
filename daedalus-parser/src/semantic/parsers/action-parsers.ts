@@ -104,9 +104,27 @@ export class ActionParsers {
    * Parse Info_AddChoice function call
    */
   static parseInfoAddChoiceCall(node: TreeSitterNode): Choice | null {
-    return ActionParsers.parseActionWithArgs(node, 3, (args) =>
-      new Choice(args[0], args[1], args[2])
+    const argsNode = node.childForFieldName('arguments');
+    if (!argsNode) return null;
+
+    const args = argsNode.namedChildren || [];
+    if (args.length < 3) {
+      return ActionParsers.parseActionWithArgs(node, 3, (legacyArgs) =>
+        new Choice(legacyArgs[0], legacyArgs[1], legacyArgs[2])
+      );
+    }
+
+    const dialogRef = ActionParsers.normalizeArgumentText(args[0]);
+    const textNode = args[1];
+    const targetFunction = ActionParsers.normalizeArgumentText(args[2]);
+
+    const choice = new Choice(
+      dialogRef,
+      ActionParsers.normalizeArgumentText(textNode),
+      targetFunction
     );
+    choice.textIsExpression = textNode.type !== 'string';
+    return choice;
   }
 
   /**
@@ -228,6 +246,14 @@ export class ActionParsers {
       }
     }
     return args;
+  }
+
+  private static normalizeArgumentText(node: TreeSitterNode): string {
+    if (node.type === 'string') {
+      // Remove only outer quotes while preserving inner content.
+      return node.text.replace(/^"/, '').replace(/"$/, '');
+    }
+    return node.text.trim();
   }
 
   /**

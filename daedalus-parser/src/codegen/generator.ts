@@ -212,7 +212,7 @@ export class SemanticCodeGenerator {
     for (const key in dialog.properties) {
       const value = dialog.properties[key];
       const spacing = this.resolvePropertySpacing(dialog, key);
-      lines.push(`${indent}${key}${spacing.beforeEquals}=${spacing.afterEquals}${this.formatValue(value)};`);
+      lines.push(`${indent}${key}${spacing.beforeEquals}=${spacing.afterEquals}${this.formatDialogPropertyValue(dialog, key, value)};`);
     }
 
     lines.push('};');
@@ -259,6 +259,18 @@ export class SemanticCodeGenerator {
       return value;
     }
     return `"${value}"`;
+  }
+
+  private formatDialogPropertyValue(dialog: Dialog, key: string, value: string | number | boolean | DialogFunction): string {
+    if (
+      this.options.preserveSourceStyle &&
+      typeof value === 'string' &&
+      Array.isArray(dialog.propertyExpressionKeys) &&
+      dialog.propertyExpressionKeys.includes(key)
+    ) {
+      return value;
+    }
+    return this.formatValue(value);
   }
 
   /**
@@ -310,7 +322,9 @@ export class SemanticCodeGenerator {
     } else {
       // Empty function - add a simple return or placeholder
       if (returnTypeLower === 'int') {
-        lines.push(`${indent}return TRUE;`);
+        if (!this.options.preserveSourceStyle || func.hasExplicitBodyContent !== false) {
+          lines.push(`${indent}return TRUE;`);
+        }
       } else if (returnTypeLower === 'void') {
         lines.push(`${indent}// T` + `ODO: Implement function body`);
       }
