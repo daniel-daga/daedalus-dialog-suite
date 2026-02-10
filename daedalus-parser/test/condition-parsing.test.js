@@ -344,3 +344,44 @@ func void DIA_Test_Roundtrip_Info()
   assert.ok(conditionFunc2.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
   assert.strictEqual(conditionFunc2.conditions[2].negated, false, 'Third should not be negated');
 });
+
+test('Should not duplicate call conditions inside comparison expressions', () => {
+  const source = `
+instance DIA_Test_HasItems(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_HasItems_Condition;
+	information	= DIA_Test_HasItems_Info;
+	description = "Test";
+};
+
+func int DIA_Test_HasItems_Condition()
+{
+	if (Npc_HasItems(other, ItPl_Mana_Herb_Alchemist) == 4
+	&& Npc_HasItems(other, ItPl_Temp_Herb_Alchemist) == 2)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_HasItems_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_HasItems'].properties.condition;
+
+  // Expect only the two comparison conditions, not extra standalone call conditions.
+  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse exactly 2 comparison conditions');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generated = generator.generateSemanticModel(model);
+
+  assert.ok(generated.includes('Npc_HasItems(other, ItPl_Mana_Herb_Alchemist) == 4'));
+  assert.ok(generated.includes('&& Npc_HasItems(other, ItPl_Temp_Herb_Alchemist) == 2'));
+  assert.ok(!generated.includes('&& Npc_HasItems(other, ItPl_Mana_Herb_Alchemist)\n'),
+    'Should not inject bare Npc_HasItems call without comparison');
+});

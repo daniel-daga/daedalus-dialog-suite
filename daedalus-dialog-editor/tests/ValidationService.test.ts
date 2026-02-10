@@ -500,6 +500,91 @@ describe('ValidationService', () => {
       );
       expect(choiceMissingErrors).toHaveLength(0);
     });
+
+    test('should pass when choice target references dialog instance name with information function', async () => {
+      const model = {
+        dialogs: {
+          DIA_AlchemistWald_Sicherheit: {
+            name: 'DIA_AlchemistWald_Sicherheit',
+            parent: 'C_INFO',
+            properties: {
+              npc: 'SLD_99004_AlchemistWald',
+              information: 'DIA_AlchemistWald_Sicherheit_Info'
+            }
+          }
+        },
+        functions: {
+          DIA_AlchemistWald_WhyMap_Believe: {
+            name: 'DIA_AlchemistWald_WhyMap_Believe',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'Choice',
+                dialogRef: 'DIA_AlchemistWald_Sicherheit',
+                text: 'Was brauchst du?',
+                targetFunction: 'DIA_AlchemistWald_Sicherheit'
+              }
+            ],
+            conditions: [],
+            calls: []
+          },
+          DIA_AlchemistWald_Sicherheit_Info: {
+            name: 'DIA_AlchemistWald_Sicherheit_Info',
+            returnType: 'VOID',
+            actions: [],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      const choiceMissingErrors = result.errors.filter(
+        e => e.type === 'missing_function' && e.message.includes('DIA_AlchemistWald_Sicherheit')
+      );
+      expect(choiceMissingErrors).toHaveLength(0);
+    });
+
+    test('should pass when choice target function differs only by case', async () => {
+      const model = {
+        dialogs: {},
+        functions: {
+          DIA_AlchemistWald_WhyMap_FU: {
+            name: 'DIA_AlchemistWald_WhyMap_FU',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'Choice',
+                dialogRef: 'DIA_AlchemistWald_WhyMap',
+                text: 'Buddler?',
+                targetFunction: 'DIA_alchemistWald_WhyMap_Buddler'
+              }
+            ],
+            conditions: [],
+            calls: []
+          },
+          DIA_AlchemistWald_WhyMap_Buddler: {
+            name: 'DIA_AlchemistWald_WhyMap_Buddler',
+            returnType: 'VOID',
+            actions: [],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      const choiceMissingErrors = result.errors.filter(
+        e => e.type === 'missing_function' && e.message.includes('DIA_alchemistWald_WhyMap_Buddler')
+      );
+      expect(choiceMissingErrors).toHaveLength(0);
+    });
   });
 
   describe('Action Validation', () => {

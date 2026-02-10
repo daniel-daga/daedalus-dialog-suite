@@ -196,15 +196,16 @@ export class LinkingVisitor {
           value = (rightNode.text.toLowerCase() === 'true');
           break;
         case 'identifier':
-          // Track condition functions
-          if (propertyName === 'condition') {
-            this.conditionFunctions.add(rightNode.text);
-          }
-
           // Since all functions were created in Pass 1, this lookup will now succeed.
           // Handle case-insensitive lookup
           const originalName = this.functionNameMap.get(rightNode.text.toLowerCase());
           const functionName = originalName || rightNode.text;
+
+          // Track condition functions using canonical function name.
+          // This avoids mismatches when instance uses different casing.
+          if (propertyName === 'condition') {
+            this.conditionFunctions.add(functionName);
+          }
 
           if (this.semanticModel.functions[functionName]) {
             value = this.semanticModel.functions[functionName];
@@ -293,9 +294,19 @@ export class LinkingVisitor {
           return;
         }
 
+        // Comparisons like Npc_HasItems(...) == 4 are parsed at binary_expression level.
+        // If we also parse the nested call_expression, we duplicate the condition.
+        if (this.isCallInsideComparisonBinary(node)) {
+          return;
+        }
+
         // Parse semantic conditions and add to dialog
         this.processCondition(node, functionName);
       } else {
+        if (!this.isTopLevelCallStatement(node)) {
+          return;
+        }
+
         // Parse semantic actions and add to current function
         const action = ActionParsers.parseSemanticAction(node, functionName);
         if (action) {
@@ -387,8 +398,34 @@ export class LinkingVisitor {
     return false;
   }
 
+  private isCallInsideComparisonBinary(node: TreeSitterNode): boolean {
+    let current: TreeSitterNode | null = node.parent;
+    while (current) {
+      if (current.type === 'binary_expression') {
+        const operator = current.childCount >= 2 ? current.child(1).text : null;
+        if (operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
+          return true;
+        }
+      }
+      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
+        break;
+      }
+      current = current.parent;
+    }
+    return false;
+  }
+
   private nodeIsWithin(node: TreeSitterNode, container: TreeSitterNode): boolean {
     return node.startIndex >= container.startIndex && node.endIndex <= container.endIndex;
+  }
+
+  private isTopLevelCallStatement(node: TreeSitterNode): boolean {
+    const parent = node.parent;
+    if (!parent || parent.type !== 'expression_statement') {
+      return false;
+    }
+    const grandParent = parent.parent;
+    return !!grandParent && grandParent.type === 'block';
   }
 
   /**

@@ -33,3 +33,30 @@ instance Dia (C_Info) {
   assert.strictEqual(typeof infoFunc, 'object', 'Information property should be an object (linked function)');
   assert.strictEqual(infoFunc.name, 'MyFunc', 'Function name should match definition');
 });
+
+test('condition function matching should be case-insensitive', () => {
+  const sourceCode = `
+instance DIA_Test(C_Info)
+{
+    condition = dia_test_condition;
+};
+
+func int DIA_Test_Condition()
+{
+    if (Npc_KnowsInfo(other, DIA_Test))
+    {
+        return TRUE;
+    };
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const func = visitor.semanticModel.functions.DIA_Test_Condition;
+  assert.ok(func, 'Condition function should exist');
+  assert.ok(func.conditions.length > 0, 'Condition function should be parsed as conditions, not raw actions');
+  assert.strictEqual(func.actions.length, 0, 'Condition function should not be treated as non-condition due to case mismatch');
+});

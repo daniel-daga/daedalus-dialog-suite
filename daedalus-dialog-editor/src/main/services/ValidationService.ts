@@ -290,6 +290,8 @@ export class ValidationService {
    */
   private validateChoiceTargets(model: any, functionNames: Set<string>): ValidationError[] {
     const errors: ValidationError[] = [];
+    const functionNameMap = this.createCaseInsensitiveMap(Array.from(functionNames));
+    const dialogNameMap = this.createCaseInsensitiveMap(Object.keys(model.dialogs || {}));
 
     for (const funcName in model.functions) {
       const func = model.functions[funcName];
@@ -299,7 +301,7 @@ export class ValidationService {
         // Check if this is a choice action
         if ('dialogRef' in action && 'targetFunction' in action) {
           const targetFunc = action.targetFunction;
-          if (targetFunc && !functionNames.has(targetFunc)) {
+          if (targetFunc && !this.isResolvableChoiceTarget(targetFunc, model, functionNames, functionNameMap, dialogNameMap)) {
             errors.push({
               type: 'missing_function',
               message: `Choice in function '${funcName}' references missing target function '${targetFunc}'`,
@@ -311,6 +313,56 @@ export class ValidationService {
     }
 
     return errors;
+  }
+
+  private createCaseInsensitiveMap(names: string[]): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const name of names) {
+      map.set(name.toLowerCase(), name);
+    }
+    return map;
+  }
+
+  private resolveFunctionName(
+    target: string,
+    functionNames: Set<string>,
+    functionNameMap: Map<string, string>
+  ): string | null {
+    if (functionNames.has(target)) {
+      return target;
+    }
+
+    const caseInsensitive = functionNameMap.get(target.toLowerCase());
+    return caseInsensitive || null;
+  }
+
+  private isResolvableChoiceTarget(
+    target: string,
+    model: any,
+    functionNames: Set<string>,
+    functionNameMap: Map<string, string>,
+    dialogNameMap: Map<string, string>
+  ): boolean {
+    // 1) Direct function reference (case-insensitive)
+    if (this.resolveFunctionName(target, functionNames, functionNameMap)) {
+      return true;
+    }
+
+    // 2) Dialog instance reference (case-insensitive): resolve to dialog.information function
+    const dialogName = dialogNameMap.get(target.toLowerCase());
+    if (!dialogName) {
+      return false;
+    }
+
+    const dialog = model.dialogs?.[dialogName];
+    const infoRef = dialog?.properties?.information;
+    const infoFuncName = this.extractFunctionName(infoRef);
+
+    if (!infoFuncName) {
+      return false;
+    }
+
+    return this.resolveFunctionName(infoFuncName, functionNames, functionNameMap) !== null;
   }
 
   /**

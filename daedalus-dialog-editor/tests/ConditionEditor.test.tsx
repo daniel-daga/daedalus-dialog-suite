@@ -7,6 +7,8 @@
 
 import React from 'react';
 import { describe, test, expect, jest } from '@jest/globals';
+import { render, screen, fireEvent } from '@testing-library/react';
+import ConditionEditor from '../src/renderer/components/ConditionEditor';
 
 describe('ConditionEditor Auto-sync Behavior', () => {
   test('updates should propagate to parent immediately when condition changes', () => {
@@ -271,6 +273,41 @@ describe('ConditionEditor Auto-sync Behavior', () => {
     // Both should have no internal save logic
     // Both should rely on parent for persistence
     // Both should use the same update propagation pattern
+  });
+});
+
+describe('ConditionEditor Raw Condition Display', () => {
+  test('shows preserved raw condition statements when semantic conditions are empty', () => {
+    const conditionFunction = {
+      name: 'DIA_Hubert_TinteAmt_Condition',
+      conditions: [],
+      actions: [
+        {
+          type: 'Action',
+          action: 'if (Npc_KnowsInfo (other, DIA_Matthias_Tinte)) && (Kapitel == 1) { return TRUE; }'
+        },
+        {
+          type: 'Action',
+          action: 'else if (Kapitel == 2) { AI_Output (other, self, "DIA_Hubert_TinteAmt_02_01"); }'
+        }
+      ]
+    };
+
+    render(
+      <ConditionEditor
+        conditionFunction={conditionFunction}
+        onUpdateFunction={jest.fn()}
+        semanticModel={{ dialogs: {}, functions: {} }}
+        filePath={'test.d'}
+        dialogName={'DIA_Hubert_TinteAmt'}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Conditions'));
+
+    expect(screen.getByText(/Raw condition mode/i)).toBeInTheDocument();
+    expect(screen.getByText(/Npc_KnowsInfo/)).toBeInTheDocument();
+    expect(screen.getByText(/else if \(Kapitel == 2\)/)).toBeInTheDocument();
   });
 });
 

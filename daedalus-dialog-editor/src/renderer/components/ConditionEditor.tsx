@@ -51,9 +51,21 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
     if (!conditionFunction) return null;
     return {
       ...conditionFunction,
-      conditions: (conditionFunction.conditions || []).map(hydrateCondition)
+      conditions: (conditionFunction.conditions || []).map(hydrateCondition),
+      actions: conditionFunction.actions || []
     };
   }, [conditionFunction]);
+
+  const rawConditionActions = useMemo(() => {
+    if (!localFunction?.actions || localFunction.actions.length === 0) {
+      return [];
+    }
+
+    return localFunction.actions
+      .filter((action: any) => action && action.type === 'Action' && typeof action.action === 'string')
+      .map((action: any) => action.action.trim())
+      .filter((code: string) => code.length > 0);
+  }, [localFunction]);
 
   const updateCondition = useCallback((index: number, updated: any) => {
     onUpdateFunction((currentFunc: any) => {
@@ -179,7 +191,13 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
           )}
           {!conditionsExpanded && (
             <Chip
-              label={`${(localFunction.conditions || []).length} condition${(localFunction.conditions || []).length !== 1 ? 's' : ''}`}
+              label={
+                (localFunction.conditions || []).length > 0
+                  ? `${(localFunction.conditions || []).length} condition${(localFunction.conditions || []).length !== 1 ? 's' : ''}`
+                  : rawConditionActions.length > 0
+                    ? `${rawConditionActions.length} raw statement${rawConditionActions.length !== 1 ? 's' : ''}`
+                    : '0 conditions'
+              }
               size="small"
               color="default"
               sx={{ fontSize: '0.75rem' }}
@@ -196,12 +214,53 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
       {conditionsExpanded && (
         <>
           <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" color="text.secondary">
-              {(localFunction.conditions || []).length} condition(s) - ALL must be true
-            </Typography>
+            {(localFunction.conditions || []).length > 0 ? (
+              <Typography variant="caption" color="text.secondary">
+                {(localFunction.conditions || []).length} condition(s) - ALL must be true
+              </Typography>
+            ) : rawConditionActions.length > 0 ? (
+              <Typography variant="caption" color="warning.main">
+                Raw condition mode: unsupported condition structure is preserved verbatim
+              </Typography>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                0 condition(s) - dialog is always available
+              </Typography>
+            )}
           </Box>
 
           {!localFunction.conditions || localFunction.conditions.length === 0 ? (
+            rawConditionActions.length > 0 ? (
+              <Stack spacing={1.5}>
+                {rawConditionActions.map((code: string, idx: number) => (
+                  <Box
+                    key={`${idx}-${code.slice(0, 24)}`}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1,
+                      bgcolor: 'action.hover',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      fontFamily: 'monospace',
+                      fontSize: '0.8rem',
+                      whiteSpace: 'pre-wrap'
+                    }}
+                  >
+                    {code}
+                  </Box>
+                ))}
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+                  <Button
+                    startIcon={<AddIcon />}
+                    size="small"
+                    variant="outlined"
+                    onClick={(e) => setAddMenuAnchor(e.currentTarget)}
+                  >
+                    Add Condition
+                  </Button>
+                </Box>
+              </Stack>
+            ) : (
             <Box sx={{
               p: 3,
               border: '2px dashed',
@@ -218,10 +277,11 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
                 size="small"
                 variant="outlined"
                 onClick={(e) => setAddMenuAnchor(e.currentTarget)}
-              >
-                Add Condition
-              </Button>
-            </Box>
+                >
+                  Add Condition
+                </Button>
+              </Box>
+            )
           ) : (
             <>
               <Stack spacing={2}>
