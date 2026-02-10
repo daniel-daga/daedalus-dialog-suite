@@ -1,8 +1,14 @@
 import React, { forwardRef } from 'react';
-import { Box, Typography, Alert, Fade } from '@mui/material';
+import { Box, Typography, Alert, Fade, Tabs, Tab } from '@mui/material';
 import DialogDetailsEditor from './DialogDetailsEditor';
 import DialogLoadingSkeleton from './DialogLoadingSkeleton';
 import type { SemanticModel, Dialog, DialogFunction } from '../types/global';
+
+interface RecentDialogTab {
+  dialogName: string;
+  npcName: string;
+  functionName: string | null;
+}
 
 interface EditorPaneProps {
   selectedDialog: string | null;
@@ -14,6 +20,8 @@ interface EditorPaneProps {
   semanticModel: SemanticModel;
   isProjectMode: boolean;
   isLoadingDialog: boolean;
+  recentDialogs: RecentDialogTab[];
+  onSelectRecentDialog: (dialogName: string, functionName: string | null, npcName: string) => void;
   onNavigateToFunction: (functionName: string) => void;
 }
 
@@ -30,8 +38,41 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
   semanticModel,
   isProjectMode,
   isLoadingDialog,
+  recentDialogs,
+  onSelectRecentDialog,
   onNavigateToFunction
 }, ref) => {
+  const activeNpcName = dialogData?.properties?.npc || null;
+  const selectedTabIndex = selectedDialog
+    ? recentDialogs.findIndex((tab) => tab.dialogName === selectedDialog && tab.npcName === activeNpcName)
+    : -1;
+
+  const tabsHeader = recentDialogs.length > 0 && (
+    <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}>
+      <Tabs
+        value={selectedTabIndex >= 0 ? selectedTabIndex : false}
+        onChange={(_event, index: number) => {
+          const tab = recentDialogs[index];
+          if (tab) {
+            onSelectRecentDialog(tab.dialogName, tab.functionName, tab.npcName);
+          }
+        }}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, textTransform: 'none' } }}
+      >
+        {recentDialogs.map((tab) => (
+          <Tab
+            key={`${tab.npcName}:${tab.dialogName}`}
+            label={`${tab.npcName}: ${tab.dialogName}`}
+            title={`${tab.npcName}: ${tab.dialogName}`}
+          />
+        ))}
+      </Tabs>
+    </Box>
+  );
+
   // No dialog selected - show placeholder
   if (!selectedDialog || !dialogData) {
     return (
@@ -40,19 +81,20 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
         sx={{
           flex: '1 1 auto',
           overflow: 'auto',
-          p: 2,
+          p: 0,
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
-          alignItems: 'center',
-          justifyContent: 'center',
           height: '100%'
         }}
       >
-        <Typography variant="body1" color="text.secondary">
-          Select a dialog to edit
-        </Typography>
+        {tabsHeader}
+        <Box sx={{ p: 2, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Typography variant="body1" color="text.secondary">
+            Select a dialog to edit
+          </Typography>
+        </Box>
       </Box>
     );
   }
@@ -65,21 +107,22 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
         sx={{
           flex: '1 1 auto',
           overflow: 'auto',
-          p: 2,
+          p: 0,
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
-          alignItems: 'center',
-          justifyContent: 'center',
           height: '100%'
         }}
       >
-        <Alert severity="warning">
-          <Typography variant="body2">
-            This dialog does not have an information function defined.
-          </Typography>
-        </Alert>
+        {tabsHeader}
+        <Box sx={{ p: 2, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Alert severity="warning">
+            <Typography variant="body2">
+              This dialog does not have an information function defined.
+            </Typography>
+          </Alert>
+        </Box>
       </Box>
     );
   }
@@ -92,21 +135,22 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
         sx={{
           flex: '1 1 auto',
           overflow: 'auto',
-          p: 2,
+          p: 0,
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
-          alignItems: 'center',
-          justifyContent: 'center',
           height: '100%'
         }}
       >
-        <Alert severity="error">
-          <Typography variant="body2">
-            Function "{currentFunctionName}" not found in the file.
-          </Typography>
-        </Alert>
+        {tabsHeader}
+        <Box sx={{ p: 2, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Alert severity="error">
+            <Typography variant="body2">
+              Function "{currentFunctionName}" not found in the file.
+            </Typography>
+          </Alert>
+        </Box>
       </Box>
     );
   }
@@ -118,18 +162,20 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
       sx={{
         flex: '1 1 auto',
         overflow: 'auto',
-        p: 2,
+        p: 0,
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
         position: 'relative'
       }}
     >
+      {tabsHeader}
+
       {/* Show loading skeleton during transition */}
       <Fade in={isLoadingDialog} unmountOnExit timeout={{ enter: 100, exit: 200 }}>
         <Box sx={{
           position: 'absolute',
-          top: 0,
+          top: recentDialogs.length > 0 ? 40 : 0,
           left: 0,
           right: 0,
           bottom: 0,
@@ -143,7 +189,7 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
       </Fade>
 
       {/* Show actual content - hidden when loading */}
-      <Box sx={{ width: '100%', opacity: isLoadingDialog ? 0 : 1, transition: 'opacity 0.2s' }}>
+      <Box sx={{ width: '100%', p: 2, opacity: isLoadingDialog ? 0 : 1, transition: 'opacity 0.2s' }}>
         <DialogDetailsEditor
           dialogName={selectedDialog}
           filePath={filePath}

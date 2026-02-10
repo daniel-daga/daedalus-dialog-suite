@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect
 import { Box, Typography, Alert, Button } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
-import { useSearchStore, SearchResult } from '../store/searchStore';
+import { SearchResult } from '../store/searchStore';
 import { useNavigation } from '../hooks/useNavigation';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
@@ -15,12 +15,17 @@ interface ThreeColumnLayoutProps {
   filePath: string | null;
 }
 
+interface RecentDialogTab {
+  dialogName: string;
+  npcName: string;
+  functionName: string | null;
+}
+
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { 
     openFiles, 
     openFile,
     activeFile,
-    updateModel,
     selectedNPC,
     selectedDialog,
     selectedFunctionName,
@@ -33,8 +38,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     npcList: projectNpcs,
     dialogIndex,
     selectNpc,
-    selectedNpc: projectSelectedNpc,
-    getSelectedNpcDialogs,
     getSemanticModel,
     mergedSemanticModel,
     loadAndMergeNpcModels,
@@ -50,6 +53,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   void isPending;
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
   const [isSearchOpen, setIsSearchOpen] = useState(false); // Search panel visibility
+  const [recentDialogs, setRecentDialogs] = useState<RecentDialogTab[]>([]);
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   // Cache for buildFunctionTree to prevent exponential recomputation
@@ -61,6 +65,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Max cache size to prevent unbounded growth (Bug #4 fix)
   const MAX_CACHE_SIZE = 1000;
+  const MAX_RECENT_DIALOGS = 10;
 
   // Determine which mode we're in: project mode or single-file mode
   const isProjectMode = !!projectPath;
@@ -342,7 +347,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   };
 
-  const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
+  const finalizeDialogSelection = useCallback((dialogName: string, functionName: string | null) => {
     // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
     if (rafId1Ref.current !== null) {
       cancelAnimationFrame(rafId1Ref.current);
@@ -351,16 +356,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     if (rafId2Ref.current !== null) {
       cancelAnimationFrame(rafId2Ref.current);
       rafId2Ref.current = null;
-    }
-
-    // In project mode, ensure the file containing this dialog is opened in editorStore
-    // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
-    if (isProjectMode && selectedNPC) {
-      const npcDialogs = dialogIndex.get(selectedNPC);
-      const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
-      if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
-        await openFile(metadata.filePath);
-      }
     }
 
     // Show loading immediately to prevent flickering
@@ -387,7 +382,103 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         });
       });
     });
-  }, [isProjectMode, selectedNPC, dialogIndex, activeFile, openFile, setSelectedDialog, setSelectedFunctionName]);
+  }, [setSelectedDialog, setSelectedFunctionName]);
+
+  const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
+    // In project mode, ensure the file containing this dialog is opened in editorStore
+    // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
+    if (isProjectMode && selectedNPC) {
+      const npcDialogs = dialogIndex.get(selectedNPC);
+      const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
+      if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
+        await openFile(metadata.filePath);
+      }
+    }
+
+    finalizeDialogSelection(dialogName, functionName);
+  }, [isProjectMode, selectedNPC, dialogIndex, activeFile, openFile, finalizeDialogSelection]);
+
+  const addRecentDialog = useCallback((dialogName: string, npcName: string, functionName: string | null) => {
+    setRecentDialogs((prev) => {
+      const existingIndex = prev.findIndex((tab) => tab.dialogName === dialogName && tab.npcName === npcName);
+
+      // Keep tab order stable to avoid janky horizontal reflow when selecting.
+      // Only update metadata for existing tabs; append only when it's a newly opened dialog.
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = { ...next[existingIndex], functionName };
+        return next;
+      }
+
+      const next = [...prev, { dialogName, npcName, functionName }];
+      if (next.length > MAX_RECENT_DIALOGS) {
+        return next.slice(next.length - MAX_RECENT_DIALOGS);
+      }
+      return next;
+    });
+  }, [MAX_RECENT_DIALOGS]);
+
+  const handleSelectRecentDialog = useCallback(async (dialogName: string, functionName: string | null, npcName: string) => {
+    setIsLoadingDialog(true);
+
+    if (isProjectMode) {
+      const dialogMetadata = dialogIndex.get(npcName) || [];
+      const metadata = dialogMetadata.find((entry) => entry.dialogName === dialogName);
+
+      if (metadata) {
+        selectNpc(npcName);
+        setSelectedNPC(npcName);
+
+        const uniqueFilePaths = [...new Set(dialogMetadata.map((entry) => entry.filePath))];
+        await Promise.all(uniqueFilePaths.map((path) => getSemanticModel(path)));
+        loadAndMergeNpcModels(npcName);
+
+        if (activeFile !== metadata.filePath) {
+          await openFile(metadata.filePath);
+        }
+
+        finalizeDialogSelection(dialogName, functionName);
+        return;
+      }
+    }
+
+    try {
+      const navigated = await navigateToDialog(dialogName, functionName ?? undefined);
+      if (navigated) {
+        finalizeDialogSelection(dialogName, functionName);
+      } else {
+        setIsLoadingDialog(false);
+      }
+    } catch (error) {
+      console.error('Failed to switch recent dialog tab:', error);
+      setIsLoadingDialog(false);
+    }
+  }, [
+    isProjectMode,
+    dialogIndex,
+    selectNpc,
+    setSelectedNPC,
+    getSemanticModel,
+    loadAndMergeNpcModels,
+    activeFile,
+    openFile,
+    finalizeDialogSelection,
+    navigateToDialog
+  ]);
+
+  useEffect(() => {
+    if (!selectedDialog) return;
+
+    const dialog = semanticModel.dialogs?.[selectedDialog];
+    if (!dialog) return;
+
+    const npcName = dialog.properties?.npc || selectedNPC || 'Unknown NPC';
+    const infoFunction = dialog.properties?.information;
+    const infoFunctionName = typeof infoFunction === 'string' ? infoFunction : (infoFunction as { name?: string })?.name;
+    const functionName = selectedFunctionName || infoFunctionName || null;
+
+    addRecentDialog(selectedDialog, npcName, functionName);
+  }, [selectedDialog, selectedFunctionName, selectedNPC, semanticModel.dialogs, addRecentDialog]);
 
   const handleToggleDialogExpand = useCallback((dialogName: string) => {
     setExpandedDialogs((prev) => {
@@ -543,6 +634,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         semanticModel={semanticModel as SemanticModel}
         isProjectMode={isProjectMode}
         isLoadingDialog={isLoadingDialog}
+        recentDialogs={recentDialogs}
+        onSelectRecentDialog={handleSelectRecentDialog}
         onNavigateToFunction={handleNavigateToFunction}
       />
     </Box>
