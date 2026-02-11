@@ -53,13 +53,17 @@ export function useDialogEditorCommands({
   setSnackbar,
   setValidationDialog
 }: UseDialogEditorCommandsParams) {
+  const getFileState = useEditorStore((state) => state.getFileState);
+  const openFile = useEditorStore((state) => state.openFile);
+  const updateModel = useEditorStore((state) => state.updateModel);
+
   const setFunction = useCallback((updatedFunctionOrUpdater: FunctionUpdater) => {
     if (!currentFunctionName || !filePath) {
       return;
     }
 
     if (typeof updatedFunctionOrUpdater === 'function') {
-      const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+      const latestFileState = getFileState(filePath);
       const existingFunction = latestFileState?.semanticModel?.functions?.[currentFunctionName];
 
       if (!existingFunction) {
@@ -76,14 +80,14 @@ export function useDialogEditorCommands({
     }
 
     updateFunction(filePath, currentFunctionName, updatedFunctionOrUpdater);
-  }, [currentFunctionName, filePath, updateFunction]);
+  }, [currentFunctionName, filePath, getFileState, updateFunction]);
 
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
     if (!filePath) {
       return;
     }
 
-    const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+    const latestFileState = getFileState(filePath);
     const latestModel = latestFileState?.semanticModel;
 
     if (!latestModel) {
@@ -99,11 +103,11 @@ export function useDialogEditorCommands({
     delete updatedFunctions[oldName];
     updatedFunctions[newName] = { ...existingFunction, name: newName };
 
-    useEditorStore.getState().updateModel(filePath, {
+    updateModel(filePath, {
       ...latestModel,
       functions: updatedFunctions
     });
-  }, [filePath]);
+  }, [filePath, getFileState, updateModel]);
 
   const addActionToEnd = useCallback((actionType: ActionTypeId) => {
     if (!currentFunction || !filePath) {
@@ -116,7 +120,7 @@ export function useDialogEditorCommands({
     });
 
     if (actionType === 'choice') {
-      const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+      const latestFileState = getFileState(filePath);
       const modelForUniqueness = isProjectMode
         ? semanticModel
         : (latestFileState?.semanticModel || semanticModel);
@@ -142,14 +146,14 @@ export function useDialogEditorCommands({
         actions: newActions
       };
     });
-  }, [currentFunction, filePath, dialogName, isProjectMode, semanticModel, updateFunction, setFunction, focusAction]);
+  }, [currentFunction, filePath, dialogName, getFileState, isProjectMode, semanticModel, updateFunction, setFunction, focusAction]);
 
   const handleDialogPropertyChange = useCallback((updater: DialogUpdater) => {
     if (!filePath) {
       return;
     }
 
-    const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+    const latestFileState = getFileState(filePath);
     const existingDialog = latestFileState?.semanticModel?.dialogs?.[dialogName];
 
     if (!existingDialog) {
@@ -171,7 +175,7 @@ export function useDialogEditorCommands({
     };
 
     updateDialog(filePath, dialogName, normalizedDialog);
-  }, [dialogName, filePath, updateDialog]);
+  }, [dialogName, filePath, getFileState, updateDialog]);
 
   const handleConditionFunctionUpdate = useCallback((funcOrUpdater: FunctionUpdater) => {
     if (!filePath) {
@@ -179,7 +183,7 @@ export function useDialogEditorCommands({
     }
 
     if (typeof funcOrUpdater === 'function') {
-      const latestFileState = useEditorStore.getState().openFiles.get(filePath);
+      const latestFileState = getFileState(filePath);
       const latestModel = latestFileState?.semanticModel;
       const latestDialog = latestModel?.dialogs?.[dialogName];
 
@@ -206,7 +210,7 @@ export function useDialogEditorCommands({
     }
 
     updateFunction(filePath, funcOrUpdater.name, funcOrUpdater);
-  }, [dialogName, filePath, updateFunction]);
+  }, [dialogName, filePath, getFileState, updateFunction]);
 
   const handleSave = useCallback(async (forceOnErrors = false) => {
     if (!filePath) {
@@ -267,7 +271,7 @@ export function useDialogEditorCommands({
 
     setIsResetting(true);
     try {
-      await useEditorStore.getState().openFile(filePath);
+      await openFile(filePath);
       setSnackbar({
         open: true,
         message: 'File reset successfully!',
@@ -283,7 +287,7 @@ export function useDialogEditorCommands({
     } finally {
       setIsResetting(false);
     }
-  }, [filePath, setIsResetting, setSnackbar]);
+  }, [filePath, openFile, setIsResetting, setSnackbar]);
 
   return {
     setFunction,

@@ -18,6 +18,7 @@ import {
   StopProcessInfosAction,
   PlayAniAction
 } from '../semantic-model';
+import { parseArguments, normalizeArgumentText } from './argument-parsing';
 
 export class ActionParsers {
 
@@ -69,7 +70,7 @@ export class ActionParsers {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = ActionParsers.parseArguments(argsNode);
+    const args = parseArguments(argsNode);
     if (args.length < minArgs) return null;
 
     return factory(args);
@@ -83,7 +84,7 @@ export class ActionParsers {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = ActionParsers.parseArguments(argsNode);
+    const args = parseArguments(argsNode);
     if (args.length < 3) return null;
 
     const speaker = args[0];
@@ -114,13 +115,13 @@ export class ActionParsers {
       );
     }
 
-    const dialogRef = ActionParsers.normalizeArgumentText(args[0]);
+    const dialogRef = normalizeArgumentText(args[0]);
     const textNode = args[1];
-    const targetFunction = ActionParsers.normalizeArgumentText(args[2]);
+    const targetFunction = normalizeArgumentText(args[2]);
 
     const choice = new Choice(
       dialogRef,
-      ActionParsers.normalizeArgumentText(textNode),
+      normalizeArgumentText(textNode),
       targetFunction
     );
     choice.textIsExpression = textNode.type !== 'string';
@@ -232,28 +233,6 @@ export class ActionParsers {
   static parseGenericAction(node: TreeSitterNode): Action {
     const actionText = node.text.trim();
     return new Action(actionText);
-  }
-
-  /**
-   * Parse arguments from argument list node
-   */
-  static parseArguments(argsNode: TreeSitterNode): string[] {
-    const args: string[] = [];
-    for (let i = 0; i < argsNode.childCount; i++) {
-      const child = argsNode.child(i);
-      if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
-        args.push(ActionParsers.normalizeArgumentText(child));
-      }
-    }
-    return args;
-  }
-
-  private static normalizeArgumentText(node: TreeSitterNode): string {
-    if (node.type === 'string') {
-      // Remove only outer quotes while preserving inner content.
-      return node.text.replace(/^"/, '').replace(/"$/, '');
-    }
-    return node.text.trim();
   }
 
   /**

@@ -7,6 +7,7 @@ import {
   Condition,
   VariableCondition
 } from '../semantic-model';
+import { parseArguments, normalizeArgumentText } from './argument-parsing';
 
 export class ConditionParsers {
 
@@ -78,7 +79,7 @@ export class ConditionParsers {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = ConditionParsers.parseArguments(argsNode);
+    const args = parseArguments(argsNode);
     if (args.length < 2) return null;
 
     return new NpcKnowsInfoCondition(args[0], args[1]);
@@ -118,34 +119,12 @@ export class ConditionParsers {
     return new VariableCondition(operand.text.trim(), true);
   }
 
-  /**
-   * Parse arguments from argument list node
-   */
-  static parseArguments(argsNode: TreeSitterNode): string[] {
-    const args: string[] = [];
-    for (let i = 0; i < argsNode.childCount; i++) {
-      const child = argsNode.child(i);
-      if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
-        args.push(ConditionParsers.normalizeArgumentText(child));
-      }
-    }
-    return args;
-  }
-
-  private static normalizeArgumentText(node: TreeSitterNode): string {
-    if (node.type === 'string') {
-      // Remove only outer quotes while preserving escaped/internal quotes.
-      return node.text.replace(/^"/, '').replace(/"$/, '');
-    }
-    return node.text.trim();
-  }
-
   private static parseBinaryValue(node: TreeSitterNode): string | number | boolean {
     if (node.type === 'number') {
       return Number(node.text);
     }
     if (node.type === 'string') {
-      return ConditionParsers.normalizeArgumentText(node);
+      return normalizeArgumentText(node);
     }
     return node.text.trim();
   }

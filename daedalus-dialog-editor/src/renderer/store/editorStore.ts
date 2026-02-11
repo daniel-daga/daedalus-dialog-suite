@@ -101,6 +101,7 @@ interface EditorStore {
   autoSaveInterval: number;
 
   // Actions
+  getFileState: (filePath: string) => FileState | undefined;
   openFile: (filePath: string) => Promise<void>;
   closeFile: (filePath: string) => void;
   updateModel: (filePath: string, model: SemanticModel) => void;
@@ -140,6 +141,8 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   },
   autoSaveEnabled: true,
   autoSaveInterval: 2000,
+
+  getFileState: (filePath: string) => get().openFiles.get(filePath),
 
   openFile: async (filePath: string) => {
     try {

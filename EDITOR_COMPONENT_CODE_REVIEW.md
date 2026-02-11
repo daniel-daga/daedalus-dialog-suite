@@ -43,7 +43,7 @@ Split into focused hooks and child components, e.g.:
 
 ---
 
-### 2) Frequent direct store reads (`useEditorStore.getState()`) create hidden data flow and race complexity (High)
+### 2) Frequent direct store reads (`useEditorStore.getState()`) create hidden data flow and race complexity (High) [Completed]
 
 **Why this matters:**
 Calling `getState()` inside callbacks bypasses React’s explicit data flow and makes behavior dependent on implicit global state timing. It can reduce predictability and complicate tests because logic reads from two sources: hook-selected state and ad-hoc store snapshots.
