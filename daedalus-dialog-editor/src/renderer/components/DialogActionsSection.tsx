@@ -16,18 +16,18 @@ import {
 } from '@mui/icons-material';
 import ActionsList from './ActionsList';
 import type { ActionTypeId } from './actionTypes';
-import type { DialogFunction, SemanticModel } from '../types/global';
+import type { DialogAction, DialogFunction, SemanticModel } from '../types/global';
 
 interface DialogActionsSectionProps {
   dialogName: string;
   currentFunction: DialogFunction;
   npcName: string;
   actionRefs: React.MutableRefObject<(HTMLInputElement | null)[]>;
-  updateAction: (index: number, updatedAction: any) => void;
+  updateAction: (index: number, updatedAction: DialogAction) => void;
   deleteAction: (index: number) => void;
   deleteActionAndFocusPrev: (index: number) => void;
   addDialogLineAfter: (index: number, toggleSpeaker?: boolean) => void;
-  addActionAfter: (index: number, actionType: string) => void;
+  addActionAfter: (index: number, actionType: ActionTypeId) => void;
   focusAction: (index: number, scrollIntoView?: boolean) => void;
   semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;

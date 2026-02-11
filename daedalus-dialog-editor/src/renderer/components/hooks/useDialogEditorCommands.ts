@@ -3,6 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
 import { createAction } from '../actionFactory';
 import type { ActionTypeId } from '../actionTypes';
+import type { DialogUpdater, FunctionUpdater } from '../dialogTypes';
 import type {
   Dialog,
   DialogFunction,
@@ -13,9 +14,6 @@ import type {
   DialogEditorSnackbarState,
   DialogEditorValidationDialogState
 } from './useDialogEditorUIState';
-
-type FunctionUpdater = DialogFunction | ((prev: DialogFunction) => DialogFunction);
-type DialogUpdater = (dialog: Dialog) => Dialog;
 
 interface UseDialogEditorCommandsParams {
   dialogName: string;

@@ -3,11 +3,20 @@
  */
 
 import type {
+  Dialog,
   DialogAction,
+  DialogCondition,
+  DialogFunction,
   SemanticModel,
   FunctionTreeNode
 } from '../types/global';
 import type { ActionTypeId } from './actionTypes';
+
+export type FunctionUpdater = DialogFunction | ((prev: DialogFunction) => DialogFunction);
+export type DialogUpdater = (dialog: Dialog) => Dialog;
+export type ConditionEditorCondition = DialogCondition & {
+  getTypeName?: () => string;
+};
 
 export interface ActionCardProps {
   action: DialogAction;

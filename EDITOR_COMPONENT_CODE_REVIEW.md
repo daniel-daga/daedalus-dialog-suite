@@ -56,7 +56,7 @@ Centralize mutable editor operations in store actions (single API surface), and 
 
 ---
 
-### 3) Type safety erosion from pervasive `any` in critical mutation paths (High)
+### 3) Type safety erosion from pervasive `any` in critical mutation paths (High) [Completed]
 
 **Why this matters:**
 Using `any` in update pipelines weakens compile-time guarantees for core editor operations and increases breakage risk during refactors.

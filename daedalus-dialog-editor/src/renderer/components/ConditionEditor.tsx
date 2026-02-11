@@ -2,11 +2,13 @@ import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
 import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon } from '@mui/icons-material';
 import ConditionCard from './ConditionCard';
+import type { DialogCondition, DialogFunction, SemanticModel } from '../types/global';
+import type { ConditionEditorCondition, FunctionUpdater } from './dialogTypes';
 
 interface ConditionEditorProps {
-  conditionFunction: any;
-  onUpdateFunction: (funcOrUpdater: any | ((func: any) => any)) => void;
-  semanticModel?: any;
+  conditionFunction: DialogFunction;
+  onUpdateFunction: (funcOrUpdater: FunctionUpdater) => void;
+  semanticModel?: SemanticModel;
   filePath: string | null;
   dialogName: string;
 }
@@ -15,31 +17,35 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
   conditionFunction,
   onUpdateFunction,
   semanticModel,
-  filePath,
-  dialogName
+  filePath: _filePath,
+  dialogName: _dialogName
 }) => {
   const [conditionsExpanded, setConditionsExpanded] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
   const conditionRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const isNpcKnowsCondition = (condition: ConditionEditorCondition): condition is ConditionEditorCondition & { npc: string; dialogRef: string } =>
+    'npc' in condition && 'dialogRef' in condition;
+  const isVariableCondition = (condition: ConditionEditorCondition): condition is ConditionEditorCondition & { variableName: string } =>
+    'variableName' in condition;
 
   // Helper to strip non-serializable functions from conditions
-  const sanitizeCondition = (condition: any) => {
+  const sanitizeCondition = (condition: ConditionEditorCondition): DialogCondition => {
     const { getTypeName, ...rest } = condition;
-    return rest;
+    return rest as DialogCondition;
   };
 
   // Helper to add getTypeName to conditions for UI usage
-  const hydrateCondition = (condition: any) => {
+  const hydrateCondition = (condition: ConditionEditorCondition): ConditionEditorCondition => {
     // If already has getTypeName, return as-is
     if (typeof condition.getTypeName === 'function') {
       return condition;
     }
 
     // Add getTypeName based on condition properties
-    if (condition.npc !== undefined && condition.dialogRef !== undefined) {
+    if (isNpcKnowsCondition(condition)) {
       return { ...condition, getTypeName: () => 'NpcKnowsInfoCondition' };
     }
-    if (condition.variableName !== undefined) {
+    if (isVariableCondition(condition)) {
       return { ...condition, getTypeName: () => 'VariableCondition' };
     }
     return { ...condition, getTypeName: () => 'Condition' };
@@ -62,13 +68,14 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
     }
 
     return localFunction.actions
-      .filter((action: any) => action && action.type === 'Action' && typeof action.action === 'string')
-      .map((action: any) => action.action.trim())
+      .filter((action): action is { type: 'Action'; action: string } =>
+        action.type === 'Action' && typeof action.action === 'string')
+      .map((action) => action.action.trim())
       .filter((code: string) => code.length > 0);
   }, [localFunction]);
 
-  const updateCondition = useCallback((index: number, updated: any) => {
-    onUpdateFunction((currentFunc: any) => {
+  const updateCondition = useCallback((index: number, updated: ConditionEditorCondition) => {
+    onUpdateFunction((currentFunc) => {
       if (!currentFunc) return currentFunc;
       const newConditions = [...(currentFunc.conditions || [])];
       // Note: we assume index is valid. If array changed concurrently, this might be risky,
@@ -86,9 +93,9 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
   }, [onUpdateFunction]);
 
   const deleteCondition = useCallback((index: number) => {
-    onUpdateFunction((currentFunc: any) => {
+    onUpdateFunction((currentFunc) => {
       if (!currentFunc) return currentFunc;
-      const newConditions = (currentFunc.conditions || []).filter((_: any, i: number) => i !== index);
+      const newConditions = (currentFunc.conditions || []).filter((_, i: number) => i !== index);
       return {
         ...currentFunc,
         conditions: newConditions
@@ -103,10 +110,11 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
   }, []);
 
   const addCondition = useCallback((conditionType: 'npcKnowsInfo' | 'variable' | 'generic') => {
-    let newCondition: any;
+    let newCondition: ConditionEditorCondition;
     switch (conditionType) {
       case 'npcKnowsInfo':
         newCondition = {
+          type: 'NpcKnowsInfoCondition',
           npc: 'self',
           dialogRef: '',
           getTypeName: () => 'NpcKnowsInfoCondition'
@@ -114,6 +122,7 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
         break;
       case 'variable':
         newCondition = {
+          type: 'VariableCondition',
           variableName: '',
           negated: false,
           getTypeName: () => 'VariableCondition'
@@ -121,13 +130,14 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
         break;
       case 'generic':
         newCondition = {
+          type: 'Condition',
           condition: '',
           getTypeName: () => 'Condition'
         };
         break;
     }
 
-    onUpdateFunction((currentFunc: any) => {
+    onUpdateFunction((currentFunc) => {
       if (!currentFunc) return currentFunc;
       const newConditions = [...(currentFunc.conditions || []), sanitizeCondition(newCondition)];
       return {
@@ -143,19 +153,6 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
       conditionRefs.current[estimatedIndex]?.focus();
     }, 10);
   }, [localFunction, onUpdateFunction]);
-
-  const getConditionType = (condition: any): string => {
-    if (typeof condition.getTypeName === 'function') {
-      return condition.getTypeName();
-    }
-    if (condition.npc && condition.dialogRef !== undefined) {
-      return 'NpcKnowsInfoCondition';
-    }
-    if (condition.variableName !== undefined) {
-      return 'VariableCondition';
-    }
-    return 'Condition';
-  };
 
   if (!localFunction) {
     return (
@@ -285,7 +282,7 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
           ) : (
             <>
               <Stack spacing={2}>
-                {localFunction.conditions.map((condition: any, idx: number) => (
+                {localFunction.conditions.map((condition: ConditionEditorCondition, idx: number) => (
                   <ConditionCard
                     key={idx}
                     ref={(el) => (conditionRefs.current[idx] = el)}

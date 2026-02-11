@@ -18,7 +18,7 @@ import {
   StopProcessInfosAction,
   PlayAniAction
 } from '../semantic-model';
-import { parseArguments, normalizeArgumentText } from './argument-parsing';
+import { parseArguments } from './argument-parsing';
 
 export class ActionParsers {
 
@@ -108,23 +108,12 @@ export class ActionParsers {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = argsNode.namedChildren || [];
-    if (args.length < 3) {
-      return ActionParsers.parseActionWithArgs(node, 3, (legacyArgs) =>
-        new Choice(legacyArgs[0], legacyArgs[1], legacyArgs[2])
-      );
-    }
+    const args = parseArguments(argsNode);
+    if (args.length < 3) return null;
 
-    const dialogRef = normalizeArgumentText(args[0]);
-    const textNode = args[1];
-    const targetFunction = normalizeArgumentText(args[2]);
-
-    const choice = new Choice(
-      dialogRef,
-      normalizeArgumentText(textNode),
-      targetFunction
-    );
-    choice.textIsExpression = textNode.type !== 'string';
+    const choice = new Choice(args[0], args[1], args[2]);
+    const textNode = argsNode.namedChildren?.[1];
+    choice.textIsExpression = textNode ? textNode.type !== 'string' : false;
     return choice;
   }
 

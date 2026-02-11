@@ -2,23 +2,22 @@ import { useCallback } from 'react';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
 import { createAction, createActionAfterIndex, generateActionId } from '../actionFactory';
 import type { ActionTypeId } from '../actionTypes';
+import type { DialogAction, DialogFunction, DialogLineAction, SemanticModel } from '../../types/global';
+import type { FunctionUpdater } from '../dialogTypes';
 
 /**
  * Configuration for action management
  */
 export interface ActionManagementConfig {
-  /** Function to update the function state */
-  setFunction: React.Dispatch<React.SetStateAction<any>>;
+  setFunction: (funcOrUpdater: FunctionUpdater) => void;
   /** Function to focus a specific action by index */
   focusAction: (index: number, scrollIntoView?: boolean) => void;
   /** Semantic model for generating unique function names */
-  semanticModel?: any;
+  semanticModel?: SemanticModel;
   /** Callback to update the semantic model with a new function */
-  onUpdateSemanticModel?: (functionName: string, func: any) => void;
+  onUpdateSemanticModel?: (functionName: string, func: DialogFunction) => void;
   /** Context name for dialog/function (used for generating unique names) */
   contextName: string;
-  /** Optional function name key if managing multiple functions */
-  functionNameKey?: string;
 }
 
 /**
@@ -30,80 +29,39 @@ export function useActionManagement(config: ActionManagementConfig) {
     focusAction,
     semanticModel,
     onUpdateSemanticModel,
-    contextName,
-    functionNameKey
+    contextName
   } = config;
 
   /**
    * Update an action at a specific index
    */
-  const updateAction = useCallback((index: number, updatedAction: any) => {
-    setFunction((prev: any) => {
+  const updateAction = useCallback((index: number, updatedAction: DialogAction) => {
+    setFunction((prev) => {
       if (!prev) return prev;
-
-      // Handle multi-function case
-      if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-        const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-        if (!func) return prev;
-        const newActions = [...(func.actions || [])];
-        newActions[index] = updatedAction;
-        return {
-          ...prev,
-          [functionNameKey]: { ...func, actions: newActions }
-        };
-      }
-
-      // Handle single function case
       const newActions = [...(prev.actions || [])];
       newActions[index] = updatedAction;
       return { ...prev, actions: newActions };
     });
-  }, [setFunction, functionNameKey, semanticModel]);
+  }, [setFunction]);
 
   /**
    * Delete an action at a specific index
    */
   const deleteAction = useCallback((index: number) => {
-    setFunction((prev: any) => {
+    setFunction((prev) => {
       if (!prev) return prev;
-
-      // Handle multi-function case
-      if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-        const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-        if (!func) return prev;
-        const newActions = (func.actions || []).filter((_: any, i: number) => i !== index);
-        return {
-          ...prev,
-          [functionNameKey]: { ...func, actions: newActions }
-        };
-      }
-
-      // Handle single function case
-      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
+      const newActions = (prev.actions || []).filter((_, i) => i !== index);
       return { ...prev, actions: newActions };
     });
-  }, [setFunction, functionNameKey, semanticModel]);
+  }, [setFunction]);
 
   /**
    * Delete an action and focus the previous one
    */
   const deleteActionAndFocusPrev = useCallback((index: number) => {
-    setFunction((prev: any) => {
+    setFunction((prev) => {
       if (!prev) return prev;
-
-      // Handle multi-function case
-      if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-        const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-        if (!func) return prev;
-        const newActions = (func.actions || []).filter((_: any, i: number) => i !== index);
-        return {
-          ...prev,
-          [functionNameKey]: { ...func, actions: newActions }
-        };
-      }
-
-      // Handle single function case
-      const newActions = (prev.actions || []).filter((_: any, i: number) => i !== index);
+      const newActions = (prev.actions || []).filter((_, i) => i !== index);
       return { ...prev, actions: newActions };
     });
 
@@ -112,33 +70,22 @@ export function useActionManagement(config: ActionManagementConfig) {
     if (prevIdx >= 0) {
       setTimeout(() => focusAction(prevIdx), 0);
     }
-  }, [setFunction, focusAction, functionNameKey, semanticModel]);
+  }, [setFunction, focusAction]);
 
   /**
    * Add a dialog line after a specific index
    * By default toggles the speaker (self/other), unless toggleSpeaker is false
    */
   const addDialogLineAfter = useCallback((index: number, toggleSpeaker: boolean = true) => {
-    setFunction((prev: any) => {
+    setFunction((prev) => {
       if (!prev) return prev;
-
-      // Determine current actions array
-      let actions: any[];
-      if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-        const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-        if (!func) return prev;
-        actions = func.actions || [];
-      } else {
-        actions = prev.actions || [];
-      }
+      const actions = prev.actions || [];
 
       const currentAction = actions[index];
-      // Toggle speaker: if current is 'self', new is 'other', and vice versa
-      // Unless toggleSpeaker is false, then keep the same speaker
       const newSpeaker = toggleSpeaker
-        ? (currentAction?.speaker === 'self' ? 'other' : 'self')
-        : (currentAction?.speaker || 'self');
-      const newAction = {
+        ? (currentAction?.type === 'DialogLine' && currentAction.speaker === 'self' ? 'other' : 'self')
+        : (currentAction?.type === 'DialogLine' ? currentAction.speaker : 'self');
+      const newAction: DialogLineAction = {
         type: 'DialogLine',
         speaker: newSpeaker,
         text: '',
@@ -147,34 +94,21 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       const newActions = [...actions];
       newActions.splice(index + 1, 0, newAction);
-
-      // Handle multi-function case
-      if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-        const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-        return {
-          ...prev,
-          [functionNameKey]: { ...func, actions: newActions }
-        };
-      }
-
-      // Handle single function case
       return { ...prev, actions: newActions };
     });
 
     // Focus the new action after state update with smooth scroll
     setTimeout(() => focusAction(index + 1, true), 0);
-  }, [setFunction, focusAction, functionNameKey, semanticModel]);
+  }, [setFunction, focusAction]);
 
   /**
    * Add an action after a specific index
    * Handles choice creation with automatic target function generation
    */
-  const addActionAfter = useCallback((index: number, actionType: string) => {
+  const addActionAfter = useCallback((index: number, actionType: ActionTypeId) => {
     // Handle choice creation specially to generate target function
     if (actionType === 'choice' && semanticModel) {
-      // Use contextName or functionNameKey as the base for nested choice function names
-      const baseName = functionNameKey || contextName;
-      const newFunctionName = generateUniqueChoiceFunctionName(baseName, semanticModel);
+      const newFunctionName = generateUniqueChoiceFunctionName(contextName, semanticModel);
       const newFunction = createEmptyFunction(newFunctionName);
 
       // Add the new function to semantic model
@@ -183,25 +117,14 @@ export function useActionManagement(config: ActionManagementConfig) {
       }
 
       // Now add the choice action using factory
-      setFunction((prev: any) => {
+      setFunction((prev) => {
         if (!prev) return prev;
 
-        const newAction = createAction('choice', { dialogName: baseName });
-        newAction.targetFunction = newFunctionName;
-
-        // Handle multi-function case
-        if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-          const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-          if (!func) return prev;
-          const newActions = [...(func.actions || [])];
-          newActions.splice(index + 1, 0, newAction);
-          return {
-            ...prev,
-            [functionNameKey]: { ...func, actions: newActions }
-          };
+        const newAction = createAction('choice', { dialogName: contextName }) as DialogAction;
+        if ('targetFunction' in newAction) {
+          newAction.targetFunction = newFunctionName;
         }
 
-        // Handle single function case
         const newActions = [...(prev.actions || [])];
         newActions.splice(index + 1, 0, newAction);
         return { ...prev, actions: newActions };
@@ -212,45 +135,25 @@ export function useActionManagement(config: ActionManagementConfig) {
     }
 
     // Use factory for all other action types
-    setFunction((prev: any) => {
+    setFunction((prev) => {
       if (!prev) return prev;
-
-      // Determine current actions array
-      let actions: any[];
-      if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-        const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-        if (!func) return prev;
-        actions = func.actions || [];
-      } else {
-        actions = prev.actions || [];
-      }
+      const actions = prev.actions || [];
 
       const newAction = createActionAfterIndex(
-        actionType as ActionTypeId,
+        actionType,
         index,
         actions,
         contextName
-      );
+      ) as DialogAction;
 
       const newActions = [...actions];
       newActions.splice(index + 1, 0, newAction);
-
-      // Handle multi-function case
-      if (functionNameKey && typeof prev === 'object' && !Array.isArray(prev.actions)) {
-        const func = prev[functionNameKey] || semanticModel?.functions?.[functionNameKey];
-        return {
-          ...prev,
-          [functionNameKey]: { ...func, actions: newActions }
-        };
-      }
-
-      // Handle single function case
       return { ...prev, actions: newActions };
     });
 
     // Focus the new action after state update with smooth scroll
     setTimeout(() => focusAction(index + 1, true), 0);
-  }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, functionNameKey]);
+  }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName]);
 
   return {
     updateAction,

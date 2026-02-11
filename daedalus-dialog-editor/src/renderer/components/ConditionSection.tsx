@@ -1,8 +1,7 @@
 import React from 'react';
 import ConditionEditor from './ConditionEditor';
-import type { Dialog, DialogFunction, SemanticModel } from '../types/global';
-
-type FunctionUpdater = DialogFunction | ((prev: DialogFunction) => DialogFunction);
+import type { Dialog, SemanticModel } from '../types/global';
+import type { FunctionUpdater } from './dialogTypes';
 
 interface ConditionSectionProps {
   dialogName: string;

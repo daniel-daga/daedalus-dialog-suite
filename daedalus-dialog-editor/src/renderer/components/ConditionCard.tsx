@@ -2,13 +2,14 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Box, TextField, IconButton, Tooltip, Chip, Typography, Switch, FormControlLabel } from '@mui/material';
 import { Delete as DeleteIcon, Info as InfoIcon, Code as CodeIcon, Check as CheckIcon } from '@mui/icons-material';
 import VariableAutocomplete from './common/VariableAutocomplete';
-import type { SemanticModel } from '../../shared/types';
+import type { SemanticModel } from '../types/global';
+import type { ConditionEditorCondition } from './dialogTypes';
 
 interface ConditionCardProps {
-  condition: any;
+  condition: ConditionEditorCondition;
   index: number;
   totalConditions: number;
-  updateCondition: (index: number, updated: any) => void;
+  updateCondition: (index: number, updated: ConditionEditorCondition) => void;
   deleteCondition: (index: number) => void;
   focusCondition: (index: number) => void;
   semanticModel?: SemanticModel;
@@ -26,6 +27,17 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const [localCondition, setLocalCondition] = useState(condition);
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isNpcKnowsCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & { npc: string; dialogRef: string } =>
+    'npc' in current && 'dialogRef' in current;
+  const isVariableCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & {
+    variableName: string;
+    negated?: boolean;
+    operator?: string;
+    value?: string | number | boolean;
+  } =>
+    'variableName' in current;
+  const isExpressionCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & { condition: string } =>
+    'condition' in current;
 
   // Use refs to store latest values without triggering re-renders
   const localConditionRef = useRef(localCondition);
@@ -61,7 +73,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
     updateCondition(index, localCondition);
   }, [updateCondition, index, localCondition]);
 
-  const handleUpdate = useCallback((updated: any) => {
+  const handleUpdate = useCallback((updated: ConditionEditorCondition) => {
     setLocalCondition(updated);
     // Debounced update to parent
     if (updateTimerRef.current) {
@@ -80,10 +92,10 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
     if (typeof localCondition.getTypeName === 'function') {
       return localCondition.getTypeName();
     }
-    if (localCondition.npc && localCondition.dialogRef !== undefined) {
+    if (isNpcKnowsCondition(localCondition) && localCondition.npc) {
       return 'NpcKnowsInfoCondition';
     }
-    if (localCondition.variableName !== undefined) {
+    if (isVariableCondition(localCondition)) {
       return 'VariableCondition';
     }
     return 'Condition';
@@ -108,7 +120,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
       case 'NpcKnowsInfoCondition':
         return 'NPC Knows Dialog';
       case 'VariableCondition':
-        return localCondition.negated ? 'Variable is False' : 'Variable is True';
+        return isVariableCondition(localCondition) && localCondition.negated ? 'Variable is False' : 'Variable is True';
       case 'Condition':
       default:
         return 'Custom Condition';
@@ -118,12 +130,20 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   const renderConditionFields = () => {
     switch (conditionType) {
       case 'NpcKnowsInfoCondition':
+        if (!isNpcKnowsCondition(localCondition)) {
+          return null;
+        }
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
             <VariableAutocomplete
               label="NPC"
               value={localCondition.npc || ''}
-              onChange={(value) => handleUpdate({ ...localCondition, npc: value })}
+              onChange={(value) => handleUpdate({
+                type: 'NpcKnowsInfoCondition',
+                npc: value,
+                dialogRef: localCondition.dialogRef,
+                getTypeName: localCondition.getTypeName
+              })}
               onFlush={flushUpdate}
               showInstances
               typeFilter="C_NPC"
@@ -138,7 +158,12 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
             <VariableAutocomplete
               label="Dialog"
               value={localCondition.dialogRef || ''}
-              onChange={(value) => handleUpdate({ ...localCondition, dialogRef: value })}
+              onChange={(value) => handleUpdate({
+                type: 'NpcKnowsInfoCondition',
+                npc: localCondition.npc,
+                dialogRef: value,
+                getTypeName: localCondition.getTypeName
+              })}
               onFlush={flushUpdate}
               showInstances
               showDialogs
@@ -151,6 +176,9 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
         );
 
       case 'VariableCondition':
+        if (!isVariableCondition(localCondition)) {
+          return null;
+        }
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
             <FormControlLabel
@@ -158,7 +186,14 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 <Switch
                   checked={localCondition.negated || false}
                   onChange={(e) => {
-                    const updated = { ...localCondition, negated: e.target.checked };
+                    const updated: ConditionEditorCondition = {
+                      type: 'VariableCondition',
+                      variableName: localCondition.variableName,
+                      negated: e.target.checked,
+                      operator: localCondition.operator,
+                      value: localCondition.value,
+                      getTypeName: localCondition.getTypeName
+                    };
                     setLocalCondition(updated);
                     updateCondition(index, updated);
                   }}
@@ -171,7 +206,14 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
             <VariableAutocomplete
               label="Variable Name"
               value={localCondition.variableName || ''}
-              onChange={(value) => handleUpdate({ ...localCondition, variableName: value })}
+              onChange={(value) => handleUpdate({
+                type: 'VariableCondition',
+                variableName: value,
+                negated: localCondition.negated || false,
+                operator: localCondition.operator,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
               onFlush={flushUpdate}
               typeFilter={['int', 'string', 'float']}
               isMainField
@@ -185,12 +227,19 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
 
       case 'Condition':
       default:
+        if (!isExpressionCondition(localCondition)) {
+          return null;
+        }
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
             <TextField
               label="Condition Expression"
               value={localCondition.condition || ''}
-              onChange={(e) => handleUpdate({ ...localCondition, condition: e.target.value })}
+              onChange={(e) => handleUpdate({
+                type: 'Condition',
+                condition: e.target.value,
+                getTypeName: localCondition.getTypeName
+              })}
               onBlur={flushUpdate}
               size="small"
               inputRef={mainFieldRef}
