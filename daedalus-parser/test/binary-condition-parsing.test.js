@@ -88,6 +88,64 @@ func void DIA_Test_Number_Info() {};
   assert.strictEqual(condition.value, 10);
 });
 
+test('Should parse reversed binary expression with identifier on right', () => {
+  const source = `
+instance DIA_Test_Reversed(C_INFO)
+{
+	npc			= TestNpc;
+	condition	= DIA_Test_Reversed_Condition;
+	information	= DIA_Test_Reversed_Info;
+    description = "Test";
+};
+
+func int DIA_Test_Reversed_Condition()
+{
+	if (10 <= MyVar)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Reversed_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const condition = model.dialogs['DIA_Test_Reversed'].properties.condition.conditions[0];
+
+  assert.strictEqual(condition.variableName, 'MyVar');
+  assert.strictEqual(condition.operator, '>=');
+  assert.strictEqual(condition.value, 10);
+});
+
+test('Should parse reversed string comparison with identifier on right', () => {
+  const source = `
+instance DIA_Test_Reversed_String(C_INFO)
+{
+	npc			= TestNpc;
+	condition	= DIA_Test_Reversed_String_Condition;
+	information	= DIA_Test_Reversed_String_Info;
+    description = "Test";
+};
+
+func int DIA_Test_Reversed_String_Condition()
+{
+	if ("LOG_RUNNING" == MIS_MyQuest)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Reversed_String_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const condition = model.dialogs['DIA_Test_Reversed_String'].properties.condition.conditions[0];
+
+  assert.strictEqual(condition.variableName, 'MIS_MyQuest');
+  assert.strictEqual(condition.operator, '==');
+  assert.strictEqual(condition.value, 'LOG_RUNNING');
+});
+
 test('Should generate code for binary conditions', () => {
     const condition = new VariableCondition('MIS_Quest', false, '==', 'LOG_SUCCESS');
     const code = condition.generateCode({});

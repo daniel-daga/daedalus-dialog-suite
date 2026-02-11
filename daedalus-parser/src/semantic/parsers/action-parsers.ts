@@ -242,7 +242,7 @@ export class ActionParsers {
     for (let i = 0; i < argsNode.childCount; i++) {
       const child = argsNode.child(i);
       if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
-        args.push(child.text.replace(/"/g, '')); // Remove quotes from string literals
+        args.push(ActionParsers.normalizeArgumentText(child));
       }
     }
     return args;

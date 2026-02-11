@@ -308,6 +308,42 @@ func void DIA_Test_PropertyExpr_Info()
   assert.ok(!reparsed.rootNode.hasError, 'Generated code should parse without syntax errors');
 });
 
+test('SemanticCodeGenerator should preserve escaped internal quotes in string arguments', () => {
+  const sourceCode = `
+instance DIA_Test_EscapedQuotes(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_EscapedQuotes_Condition;
+\tinformation\t= DIA_Test_EscapedQuotes_Info;
+\tdescription\t= "Escaped";
+};
+
+func int DIA_Test_EscapedQuotes_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_EscapedQuotes_Info()
+{
+\tB_LogEntry(TOPIC_Test, "He said \\"hello\\"");
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('B_LogEntry (TOPIC_Test, "He said \\"hello\\"");'),
+    'Generated code should preserve escaped internal quotes'
+  );
+});
+
 test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () => {
   const fs = require('fs');
   const path = require('path');

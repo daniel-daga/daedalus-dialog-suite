@@ -51,19 +51,21 @@ export class ConditionParsers {
 
     if (!left || !operator || !right) return null;
 
-    // Support comparisons like (VAR == VALUE)
-    // We assume the variable is on the left, but it could be on the right.
-    // For now, let's assume left is identifier.
+    const op = operator.text;
+    if (!ConditionParsers.isComparisonOperator(op)) {
+      return null;
+    }
+
+    // Normalize comparisons so VariableCondition always stores an identifier as variableName.
     if (left.type === 'identifier') {
-      const variableName = left.text;
-      const op = operator.text;
-      const value = right.text;
+      const parsedValue = ConditionParsers.parseBinaryValue(right);
+      return new VariableCondition(left.text, false, op, parsedValue);
+    }
 
-      let parsedValue: string | number | boolean = value;
-      if (right.type === 'number') parsedValue = Number(value);
-      else if (right.type === 'string') parsedValue = value.replace(/"/g, '');
-
-      return new VariableCondition(variableName, false, op, parsedValue);
+    if (right.type === 'identifier') {
+      const parsedValue = ConditionParsers.parseBinaryValue(left);
+      const normalizedOperator = ConditionParsers.invertComparisonOperator(op);
+      return new VariableCondition(right.text, false, normalizedOperator, parsedValue);
     }
 
     return null;
@@ -124,9 +126,46 @@ export class ConditionParsers {
     for (let i = 0; i < argsNode.childCount; i++) {
       const child = argsNode.child(i);
       if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
-        args.push(child.text.replace(/"/g, '')); // Remove quotes from string literals
+        args.push(ConditionParsers.normalizeArgumentText(child));
       }
     }
     return args;
+  }
+
+  private static normalizeArgumentText(node: TreeSitterNode): string {
+    if (node.type === 'string') {
+      // Remove only outer quotes while preserving escaped/internal quotes.
+      return node.text.replace(/^"/, '').replace(/"$/, '');
+    }
+    return node.text.trim();
+  }
+
+  private static parseBinaryValue(node: TreeSitterNode): string | number | boolean {
+    if (node.type === 'number') {
+      return Number(node.text);
+    }
+    if (node.type === 'string') {
+      return ConditionParsers.normalizeArgumentText(node);
+    }
+    return node.text.trim();
+  }
+
+  private static isComparisonOperator(operator: string): boolean {
+    return ['==', '!=', '<', '>', '<=', '>='].includes(operator);
+  }
+
+  private static invertComparisonOperator(operator: string): string {
+    switch (operator) {
+      case '<':
+        return '>';
+      case '>':
+        return '<';
+      case '<=':
+        return '>=';
+      case '>=':
+        return '<=';
+      default:
+        return operator;
+    }
   }
 }

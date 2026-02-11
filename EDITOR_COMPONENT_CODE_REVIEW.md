@@ -15,7 +15,7 @@ The editor experience is feature-rich, but the main `DialogDetailsEditor` compon
 
 ## Findings
 
-### 1) `DialogDetailsEditor` is a “god component” with mixed responsibilities (High)
+### 1) `DialogDetailsEditor` is a "god component" with mixed responsibilities (High) [Completed]
 
 **Why this matters:**
 The component handles:
@@ -148,3 +148,4 @@ Move to named constants:
 4. Move save/reset/feedback logic into `useDialogEditorCommands` hook.
 5. Split `DialogDetailsEditor` into section components.
 6. Deduplicate `EditorPane` fallback shells and replace magic constants.
+

@@ -25,6 +25,7 @@ class DaedalusParser {
 
     const endTime = process.hrtime.bigint();
     const parseTimeMs = Number(endTime - startTime) / 1_000_000;
+    const safeParseTimeMs = Math.max(parseTimeMs, Number.EPSILON);
 
     const result = {
       tree,
@@ -32,7 +33,7 @@ class DaedalusParser {
       hasErrors: tree.rootNode.hasError,
       parseTime: parseTimeMs,
       sourceLength: sourceCode.length,
-      throughput: sourceCode.length / parseTimeMs * 1000 // bytes per second
+      throughput: sourceCode.length / safeParseTimeMs * 1000 // bytes per second
     };
 
     if (result.hasErrors) {
@@ -93,11 +94,10 @@ class DaedalusParser {
   extractComments(parseResult) {
     const comments = [];
     const { rootNode } = parseResult;
-    const sourceCode = parseResult.sourceCode || '';
 
     function findComments(node) {
       if (node.type === 'comment') {
-        const text = sourceCode.slice(node.startIndex, node.endIndex);
+        const text = node.text || '';
         comments.push({
           type: text.startsWith('//') ? 'line' : 'block',
           text,

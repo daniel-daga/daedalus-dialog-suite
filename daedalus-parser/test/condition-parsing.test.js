@@ -490,3 +490,41 @@ func void DIA_Test_NestedComparison_Info()
 
   assert.strictEqual(reparsedCond.conditions.length, conditionFunc.conditions.length, 'Roundtrip should keep condition count stable');
 });
+
+test('Should preserve escaped internal quotes in binary string conditions', () => {
+  const source = `
+instance DIA_Test_StringCondition(C_INFO)
+{
+\tnpc\t\t\t= TestNpc;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_StringCondition_Condition;
+\tinformation\t= DIA_Test_StringCondition_Info;
+\tdescription = "Test";
+};
+
+func int DIA_Test_StringCondition_Condition()
+{
+\tif (SomeVar == "He said \\"hello\\"")
+\t{
+\t\treturn TRUE;
+\t};
+};
+
+func void DIA_Test_StringCondition_Info()
+{
+\tAI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_StringCondition'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 1, 'Should parse one condition');
+  assert.ok(conditionFunc.conditions[0] instanceof VariableCondition, 'Condition should be VariableCondition');
+  assert.strictEqual(conditionFunc.conditions[0].variableName, 'SomeVar', 'Variable should match');
+  assert.strictEqual(conditionFunc.conditions[0].operator, '==', 'Operator should match');
+  assert.ok(
+    String(conditionFunc.conditions[0].value).includes('\\"hello\\"'),
+    'Condition value should preserve escaped internal quotes'
+  );
+});
