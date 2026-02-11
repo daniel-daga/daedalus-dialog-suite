@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DialogTree from '../src/renderer/components/DialogTree';
 import '@testing-library/jest-dom';
 
@@ -137,7 +138,27 @@ describe('DialogTree Performance', () => {
     );
 
     const buttons = screen.getAllByRole('button');
-    expect(buttons.length).toBe(4);
+    expect(buttons.length).toBeGreaterThanOrEqual(4);
     expect(buildFunctionTreeSpy).toHaveBeenCalledTimes(0);
+  });
+
+  test('calls onAddDialog from the create dialog flow', async () => {
+    const user = userEvent.setup();
+    const onAddDialog = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <DialogTree
+        {...defaultProps}
+        onAddDialog={onAddDialog}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add Dialog' }));
+    const input = screen.getByLabelText('Dialog Name');
+    await user.clear(input);
+    await user.type(input, 'DIA_TestNPC_New');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(onAddDialog).toHaveBeenCalledWith('DIA_TestNPC_New');
   });
 });

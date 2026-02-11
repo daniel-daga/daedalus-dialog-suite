@@ -56,6 +56,11 @@ class DaedalusParser {
     const fs = require('fs');
     const iconv = require('iconv-lite');
     const jschardet = require('jschardet');
+    const {
+      encoding: explicitEncoding,
+      detectEncoding = true,
+      ...parseOptions
+    } = options;
 
     // Read file as buffer first
     const buffer = fs.readFileSync(filePath);
@@ -64,11 +69,11 @@ class DaedalusParser {
     let detectedEncoding = null;
     let confidence = 100;
 
-    if (options.encoding) {
+    if (explicitEncoding) {
       // Use specified encoding
-      sourceCode = iconv.decode(buffer, options.encoding);
-      detectedEncoding = options.encoding;
-    } else {
+      sourceCode = iconv.decode(buffer, explicitEncoding);
+      detectedEncoding = explicitEncoding;
+    } else if (detectEncoding) {
       // Auto-detect encoding using jschardet
       const detection = jschardet.detect(buffer);
       detectedEncoding = detection.encoding || 'utf-8'; // Default to UTF-8 if detection fails
@@ -76,9 +81,13 @@ class DaedalusParser {
 
       // Decode with detected encoding using iconv-lite
       sourceCode = iconv.decode(buffer, detectedEncoding);
+    } else {
+      // Use UTF-8 fallback when detection is explicitly disabled.
+      detectedEncoding = 'utf-8';
+      sourceCode = iconv.decode(buffer, detectedEncoding);
     }
 
-    const result = this.parse(sourceCode, options);
+    const result = this.parse(sourceCode, parseOptions);
     result.filePath = filePath;
     result.encoding = detectedEncoding;
     result.encodingConfidence = confidence;

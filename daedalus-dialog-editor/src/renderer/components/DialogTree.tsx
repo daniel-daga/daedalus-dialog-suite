@@ -5,11 +5,18 @@ import {
   Typography,
   TextField,
   InputAdornment,
-  IconButton
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button
 } from '@mui/material';
 import {
   FilterList as FilterListIcon,
-  Clear as ClearIcon
+  Clear as ClearIcon,
+  Add as AddIcon
 } from '@mui/icons-material';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
@@ -94,9 +101,14 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   onSelectDialog,
   onToggleDialogExpand,
   onToggleChoiceExpand,
-  buildFunctionTree
+  buildFunctionTree,
+  onAddDialog
 }) => {
   const { dialogFilter, setDialogFilter, filterDialogs } = useSearchStore();
+  const [isCreateOpen, setIsCreateOpen] = React.useState(false);
+  const [newDialogName, setNewDialogName] = React.useState('');
+  const [isCreating, setIsCreating] = React.useState(false);
+  const [createError, setCreateError] = React.useState<string | null>(null);
 
   // Sort dialogs by priority (nr field)
   const sortedDialogs = useMemo(() => {
@@ -149,10 +161,49 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     onToggleChoiceExpand
   ]);
 
+  const handleOpenCreateDialog = () => {
+    const defaultName = selectedNPC ? `DIA_${selectedNPC}_Start` : '';
+    setNewDialogName(defaultName);
+    setCreateError(null);
+    setIsCreateOpen(true);
+  };
+
+  const handleCreateDialog = async () => {
+    const dialogName = newDialogName.trim();
+    if (!dialogName || !onAddDialog) {
+      return;
+    }
+
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      await onAddDialog(dialogName);
+      setIsCreateOpen(false);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Failed to create dialog.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <Paper sx={{ width: 350, overflow: 'hidden', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }} elevation={1}>
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
-        <Typography variant="h6">Dialogs</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">Dialogs</Typography>
+          <Tooltip title={selectedNPC ? 'Add Dialog' : 'Select an NPC first'}>
+            <span>
+              <IconButton
+                size="small"
+                aria-label="Add Dialog"
+                onClick={handleOpenCreateDialog}
+                disabled={!selectedNPC || !onAddDialog}
+              >
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
         {selectedNPC && (
           <Typography variant="caption" color="text.secondary">
             {selectedNPC} - {filteredDialogs.length} of {dialogsForNPC.length} shown
@@ -188,6 +239,43 @@ const DialogTree: React.FC<DialogTreeProps> = ({
           />
         </Box>
       )}
+
+      <Dialog open={isCreateOpen} onClose={() => !isCreating && setIsCreateOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Create Dialog</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            fullWidth
+            label="Dialog Name"
+            placeholder="DIA_MyNpc_NewDialog"
+            value={newDialogName}
+            onChange={(e) => setNewDialogName(e.target.value)}
+            disabled={isCreating}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void handleCreateDialog();
+              }
+            }}
+          />
+          {createError && (
+            <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+              {createError}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsCreateOpen(false)} disabled={isCreating}>Cancel</Button>
+          <Button
+            onClick={() => void handleCreateDialog()}
+            variant="contained"
+            disabled={!newDialogName.trim() || isCreating}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
         {selectedNPC ? (

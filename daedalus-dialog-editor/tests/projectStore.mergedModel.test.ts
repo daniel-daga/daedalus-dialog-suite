@@ -55,4 +55,39 @@ describe('ProjectStore - mergedSemanticModel', () => {
     expect(merged.variables).toHaveProperty('VAR_GLOBAL'); // Should have Global var
     expect(merged.variables).not.toHaveProperty('VAR_OTHER'); // Should NOT have other NPC var
   });
+
+  test('addDialogToIndex registers npc and dialog metadata', () => {
+    const store = useProjectStore.getState();
+
+    store.addDialogToIndex({
+      dialogName: 'DIA_NewNpc_Start',
+      npc: 'SLD_99999_NewNpc',
+      filePath: '/dialogs/new-npc.d'
+    });
+
+    const state = useProjectStore.getState();
+    expect(state.npcList).toContain('SLD_99999_NewNpc');
+    expect(state.dialogIndex.get('SLD_99999_NewNpc')).toEqual([
+      {
+        dialogName: 'DIA_NewNpc_Start',
+        npc: 'SLD_99999_NewNpc',
+        filePath: '/dialogs/new-npc.d'
+      }
+    ]);
+  });
+
+  test('addDialogToIndex does not duplicate existing dialog metadata', () => {
+    const store = useProjectStore.getState();
+    const metadata = {
+      dialogName: 'DIA_Same',
+      npc: 'SLD_99998_DupeNpc',
+      filePath: '/dialogs/dupe.d'
+    };
+
+    store.addDialogToIndex(metadata);
+    store.addDialogToIndex(metadata);
+
+    const entries = useProjectStore.getState().dialogIndex.get('SLD_99998_DupeNpc') || [];
+    expect(entries).toHaveLength(1);
+  });
 });

@@ -9,11 +9,17 @@ import {
   TextField,
   InputAdornment,
   IconButton,
-  Tooltip
+  Tooltip,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   FilterList as FilterListIcon,
-  Clear as ClearIcon
+  Clear as ClearIcon,
+  Add as AddIcon
 } from '@mui/icons-material';
 import { NPCListProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
@@ -41,8 +47,12 @@ const Row = ({ index, style, data }: ListChildComponentProps) => {
   );
 };
 
-const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC }) => {
+const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC, onAddNpc }) => {
   const { npcFilter, setNpcFilter, filterNpcs } = useSearchStore();
+  const [isCreateOpen, setIsCreateOpen] = React.useState(false);
+  const [newNpcName, setNewNpcName] = React.useState('');
+  const [isCreating, setIsCreating] = React.useState(false);
+  const [createError, setCreateError] = React.useState<string | null>(null);
 
   // Filter NPCs based on the current filter
   const filteredNpcs = useMemo(() => {
@@ -60,10 +70,46 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
     setNpcFilter('');
   };
 
+  const handleCreate = async () => {
+    const npcName = newNpcName.trim();
+    if (!npcName || !onAddNpc) {
+      return;
+    }
+
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      await onAddNpc(npcName);
+      setNewNpcName('');
+      setIsCreateOpen(false);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Failed to create NPC.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <Paper sx={{ width: 250, height: '100%', overflow: 'hidden', borderRadius: 0, flexShrink: 0, display: 'flex', flexDirection: 'column' }} elevation={1}>
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
-        <Typography variant="h6">NPCs</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">NPCs</Typography>
+          <Tooltip title="Add NPC">
+            <span>
+              <IconButton
+                size="small"
+                aria-label="Add NPC"
+                onClick={() => {
+                  setCreateError(null);
+                  setIsCreateOpen(true);
+                }}
+                disabled={!onAddNpc}
+              >
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
         <Typography variant="caption" color="text.secondary">
           {filteredNpcs.length} of {npcs.length} shown
         </Typography>
@@ -123,6 +169,43 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
           )
         )}
       </Box>
+
+      <Dialog open={isCreateOpen} onClose={() => !isCreating && setIsCreateOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Create NPC</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            fullWidth
+            label="NPC Name"
+            placeholder="SLD_99999_NewNPC"
+            value={newNpcName}
+            onChange={(e) => setNewNpcName(e.target.value)}
+            disabled={isCreating}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void handleCreate();
+              }
+            }}
+          />
+          {createError && (
+            <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+              {createError}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsCreateOpen(false)} disabled={isCreating}>Cancel</Button>
+          <Button
+            onClick={() => void handleCreate()}
+            variant="contained"
+            disabled={!newNpcName.trim() || isCreating}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 };

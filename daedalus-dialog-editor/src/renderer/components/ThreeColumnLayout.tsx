@@ -9,7 +9,8 @@ import DialogTree from './DialogTree';
 import EditorPane from './EditorPane';
 import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
 import SearchPanel from './SearchPanel';
-import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction } from '../types/global';
+import { generateActionId } from './actionFactory';
+import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction, Dialog, DialogFunction } from '../types/global';
 
 interface ThreeColumnLayoutProps {
   filePath: string | null;
@@ -21,10 +22,42 @@ interface RecentDialogTab {
   functionName: string | null;
 }
 
+function normalizeIdentifier(value: string, fallback: string): string {
+  const normalized = value
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  return /^[0-9]/.test(normalized) ? `N_${normalized}` : normalized;
+}
+
+function makeUniqueName(baseName: string, existing: Set<string>): string {
+  if (!existing.has(baseName)) {
+    return baseName;
+  }
+
+  let suffix = 1;
+  let candidate = `${baseName}_${suffix}`;
+  while (existing.has(candidate)) {
+    suffix += 1;
+    candidate = `${baseName}_${suffix}`;
+  }
+
+  return candidate;
+}
+
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { 
     openFiles, 
     openFile,
+    updateModel,
+    getFileState,
     activeFile,
     selectedNPC,
     selectedDialog,
@@ -41,6 +74,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     getSemanticModel,
     mergedSemanticModel,
     loadAndMergeNpcModels,
+    addDialogToIndex,
     setIngestedFilesOpen,
     parsedFiles
   } = useProjectStore();
@@ -384,6 +418,172 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     });
   }, [setSelectedDialog, setSelectedFunctionName]);
 
+  const resolveTargetFilePath = useCallback((npcName: string): string | null => {
+    const npcDialogMetadata = dialogIndex.get(npcName) || [];
+    if (npcDialogMetadata.length > 0) {
+      return npcDialogMetadata[0].filePath;
+    }
+
+    if (selectedNPC) {
+      const selectedNpcMetadata = dialogIndex.get(selectedNPC) || [];
+      if (selectedNpcMetadata.length > 0) {
+        return selectedNpcMetadata[0].filePath;
+      }
+    }
+
+    if (activeFile) {
+      return activeFile;
+    }
+
+    if (filePath) {
+      return filePath;
+    }
+
+    return null;
+  }, [dialogIndex, selectedNPC, activeFile, filePath]);
+
+  const createDialogForNpc = useCallback(async (rawNpcName: string, requestedDialogName?: string) => {
+    const npcName = normalizeIdentifier(rawNpcName, 'NEW_NPC');
+    const targetFilePath = resolveTargetFilePath(npcName);
+
+    if (!targetFilePath) {
+      throw new Error('No target file available. Open a dialog file first.');
+    }
+
+    if (!openFiles.has(targetFilePath)) {
+      await openFile(targetFilePath);
+    }
+
+    const latestModel = getFileState(targetFilePath)?.semanticModel;
+    if (!latestModel || latestModel.hasErrors) {
+      throw new Error('Target file contains syntax errors and cannot be edited.');
+    }
+
+    const uniquenessModel = (isProjectMode ? semanticModel : latestModel) as SemanticModel;
+
+    const npcToken = normalizeIdentifier(npcName, 'NEW_NPC');
+    const dialogBaseName = requestedDialogName?.trim()
+      ? normalizeIdentifier(requestedDialogName, `DIA_${npcToken}_Start`)
+      : `DIA_${npcToken}_Start`;
+    const prefixedDialogBase = dialogBaseName.startsWith('DIA_')
+      ? dialogBaseName
+      : `DIA_${dialogBaseName}`;
+
+    const existingDialogNames = new Set<string>([
+      ...Object.keys(uniquenessModel.dialogs || {}),
+      ...Object.keys(latestModel.dialogs || {})
+    ]);
+    const dialogName = makeUniqueName(prefixedDialogBase, existingDialogNames);
+
+    const existingFunctionNames = new Set<string>([
+      ...Object.keys(uniquenessModel.functions || {}),
+      ...Object.keys(latestModel.functions || {})
+    ]);
+    const infoFunctionName = makeUniqueName(`${dialogName}_Info`, existingFunctionNames);
+    existingFunctionNames.add(infoFunctionName);
+    const conditionFunctionName = makeUniqueName(`${dialogName}_Condition`, existingFunctionNames);
+
+    const nextNr = Object.values(latestModel.dialogs || {}).reduce((maxNr, dialog) => {
+      if (dialog?.properties?.npc !== npcName) {
+        return maxNr;
+      }
+      const nr = typeof dialog.properties?.nr === 'number' ? dialog.properties.nr : 0;
+      return Math.max(maxNr, nr);
+    }, 0) + 1;
+
+    const newDialog: Dialog = {
+      name: dialogName,
+      parent: 'C_INFO',
+      properties: {
+        npc: npcName,
+        nr: nextNr,
+        condition: conditionFunctionName,
+        information: infoFunctionName,
+        description: dialogName,
+        permanent: false,
+        important: false
+      }
+    };
+
+    const conditionFunction: DialogFunction = {
+      name: conditionFunctionName,
+      returnType: 'INT',
+      actions: [],
+      conditions: [],
+      calls: []
+    };
+
+    const informationFunction: DialogFunction = {
+      name: infoFunctionName,
+      returnType: 'VOID',
+      actions: [
+        {
+          type: 'DialogLine',
+          speaker: 'self',
+          text: '',
+          id: generateActionId()
+        }
+      ],
+      conditions: [],
+      calls: []
+    };
+
+    const updatedModel: SemanticModel = {
+      ...latestModel,
+      dialogs: {
+        ...(latestModel.dialogs || {}),
+        [dialogName]: newDialog
+      },
+      functions: {
+        ...(latestModel.functions || {}),
+        [conditionFunctionName]: conditionFunction,
+        [infoFunctionName]: informationFunction
+      },
+      hasErrors: false,
+      errors: latestModel.errors || []
+    };
+
+    updateModel(targetFilePath, updatedModel);
+
+    if (isProjectMode) {
+      addDialogToIndex({
+        dialogName,
+        npc: npcName,
+        filePath: targetFilePath
+      });
+      selectNpc(npcName);
+      loadAndMergeNpcModels(npcName);
+    }
+
+    setSelectedNPC(npcName);
+    setExpandedDialogs((prev) => new Set([...prev, dialogName]));
+    finalizeDialogSelection(dialogName, infoFunctionName);
+  }, [
+    resolveTargetFilePath,
+    openFiles,
+    openFile,
+    getFileState,
+    isProjectMode,
+    semanticModel,
+    updateModel,
+    addDialogToIndex,
+    selectNpc,
+    loadAndMergeNpcModels,
+    setSelectedNPC,
+    finalizeDialogSelection
+  ]);
+
+  const handleAddNpc = useCallback(async (npcName: string) => {
+    await createDialogForNpc(npcName);
+  }, [createDialogForNpc]);
+
+  const handleAddDialog = useCallback(async (dialogName: string) => {
+    if (!selectedNPC) {
+      throw new Error('Select an NPC first.');
+    }
+    await createDialogForNpc(selectedNPC, dialogName);
+  }, [selectedNPC, createDialogForNpc]);
+
   const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
     // In project mode, ensure the file containing this dialog is opened in editorStore
     // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
@@ -574,6 +774,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         npcMap={npcMap}
         selectedNPC={selectedNPC}
         onSelectNPC={handleSelectNPC}
+        onAddNpc={handleAddNpc}
       />
 
       {/* Column 2: Dialog Tree with Nested Choices */}
@@ -619,6 +820,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
           onToggleDialogExpand={handleToggleDialogExpand}
           onToggleChoiceExpand={handleToggleChoiceExpand}
           buildFunctionTree={buildFunctionTree}
+          onAddDialog={handleAddDialog}
         />
       </Box>
 

@@ -52,6 +52,13 @@ test('SemanticModelBuilderVisitor.checkForSyntaxErrors should detect ERROR nodes
   assert.ok(visitor.semanticModel.errors.length > 0, 'Should collect errors');
 });
 
+test('createDaedalusParser should return isolated parser instances', () => {
+  const parserA = createDaedalusParser();
+  const parserB = createDaedalusParser();
+
+  assert.notStrictEqual(parserA, parserB, 'Expected a fresh parser instance per call');
+});
+
 test('Error objects should have correct structure', () => {
   const invalidCode = `
     func void Test() {

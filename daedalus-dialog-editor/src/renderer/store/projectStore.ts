@@ -119,6 +119,9 @@ interface ProjectActions {
   // Update a cached semantic model for a file
   updateFileModel: (filePath: string, model: SemanticModel) => void;
 
+  // Register a newly created dialog in the project index
+  addDialogToIndex: (metadata: DialogMetadata) => void;
+
   // UI actions
   setIngestedFilesOpen: (open: boolean) => void;
 }
@@ -742,6 +745,32 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
     
     set({ parsedFiles: newCache });
+  },
+
+  addDialogToIndex: (metadata: DialogMetadata) => {
+    set((state) => {
+      const nextDialogIndex = new Map(state.dialogIndex);
+      const existing = nextDialogIndex.get(metadata.npc) || [];
+
+      const alreadyPresent = existing.some((entry) => entry.dialogName === metadata.dialogName);
+      if (!alreadyPresent) {
+        nextDialogIndex.set(metadata.npc, [...existing, metadata]);
+      }
+
+      const nextNpcList = state.npcList.includes(metadata.npc)
+        ? state.npcList
+        : [...state.npcList, metadata.npc].sort((a, b) => a.localeCompare(b));
+
+      const nextAllDialogFiles = state.allDialogFiles.includes(metadata.filePath)
+        ? state.allDialogFiles
+        : [...state.allDialogFiles, metadata.filePath];
+
+      return {
+        dialogIndex: nextDialogIndex,
+        npcList: nextNpcList,
+        allDialogFiles: nextAllDialogFiles
+      };
+    });
   },
 
   setIngestedFilesOpen: (open: boolean) => {

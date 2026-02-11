@@ -100,6 +100,16 @@ func void DIA_Petr_Hello_Info()
       const sourceText = result.rootNode.text;
       assert.ok(sourceText.includes('Dobrý den, jak se máš?'), 'Should contain Czech text');
     });
+
+    test('should allow disabling encoding detection', () => {
+      const result = parser.parseFile(windows1250File, {
+        detectEncoding: false
+      });
+
+      assert.equal(result.encoding, 'utf-8', 'Should use UTF-8 fallback when detection is disabled');
+      assert.equal(result.encodingConfidence, 100, 'Should use full confidence for explicit UTF-8 fallback');
+      assert.equal(result.hasErrors, false, 'Should still parse without syntax errors');
+    });
   });
 
   describe('UTF-8 Encoding', () => {
