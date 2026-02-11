@@ -32,7 +32,7 @@ import {
 import type { SemanticModel } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest, getUsedQuestTopics } from './QuestEditor/questAnalysis';
+import { analyzeQuest, getUsedQuestTopics, buildQuestUsageIndex } from './QuestEditor/questAnalysis';
 
 interface QuestListProps {
   semanticModel: SemanticModel;
@@ -53,21 +53,26 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
     return Object.values(constants).filter(c => c.name.startsWith('TOPIC_'));
   }, [semanticModel.constants]);
 
+  // Build quest usage index once to avoid O(N*M) complexity in analysis
+  const questIndex = useMemo(() => {
+    return buildQuestUsageIndex(semanticModel);
+  }, [semanticModel]);
+
   // Analyze all quests once when model changes
   const questAnalysisMap = useMemo(() => {
     const map = new Map<string, ReturnType<typeof analyzeQuest>>();
     // To avoid blocking UI on large projects, we could debounce this or use a worker
     // But for now, we assume it's fast enough or React scheduling handles it
     quests.forEach(q => {
-        map.set(q.name, analyzeQuest(semanticModel, q.name));
+        map.set(q.name, analyzeQuest(semanticModel, q.name, questIndex));
     });
     return map;
-  }, [quests, semanticModel]);
+  }, [quests, semanticModel, questIndex]);
 
   // Memoize the set of used topics to enable "Used" filtering
   const usedTopics = useMemo(() => {
-    return getUsedQuestTopics(semanticModel);
-  }, [semanticModel]);
+    return getUsedQuestTopics(semanticModel, questIndex);
+  }, [semanticModel, questIndex]);
 
   const filteredQuests = useMemo(() => {
     return quests.filter(q => {
