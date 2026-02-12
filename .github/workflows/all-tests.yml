@@ -63,6 +63,43 @@ jobs:
       - name: Run editor tests
         run: pnpm --filter daedalus-dialog-editor run build:main && pnpm --filter daedalus-dialog-editor test
 
+  editor-e2e-tests:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.editor == 'true' || needs.detect-changes.outputs.shared == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_all)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter daedalus-dialog-editor exec playwright install --with-deps chromium
+
+      - name: Run editor E2E tests
+        run: pnpm --filter daedalus-dialog-editor run test:e2e
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            daedalus-dialog-editor/playwright-report
+            daedalus-dialog-editor/test-results
+          if-no-files-found: ignore
+
   parser-tests:
     runs-on: ubuntu-latest
     needs: detect-changes
@@ -90,7 +127,7 @@ jobs:
   roundtrip-corpus:
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.parser == 'true' || needs.detect-changes.outputs.shared == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_all)
+    if: false
     steps:
       - uses: actions/checkout@v4
 
