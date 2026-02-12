@@ -96,6 +96,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Refs to track RAF IDs for cleanup (Bug #1 fix)
   const rafId1Ref = useRef<number | null>(null);
   const rafId2Ref = useRef<number | null>(null);
+  const dialogTransitionIdRef = useRef(0);
+  const loadingTimeoutRef = useRef<number | null>(null);
 
   // Max cache size to prevent unbounded growth (Bug #4 fix)
   const MAX_CACHE_SIZE = 1000;
@@ -172,6 +174,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       }
       if (rafId2Ref.current !== null) {
         cancelAnimationFrame(rafId2Ref.current);
+      }
+      if (loadingTimeoutRef.current !== null) {
+        clearTimeout(loadingTimeoutRef.current);
       }
     };
   }, []);
@@ -382,6 +387,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   };
 
   const finalizeDialogSelection = useCallback((dialogName: string, functionName: string | null) => {
+    const transitionId = dialogTransitionIdRef.current + 1;
+    dialogTransitionIdRef.current = transitionId;
+
     // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
     if (rafId1Ref.current !== null) {
       cancelAnimationFrame(rafId1Ref.current);
@@ -391,9 +399,16 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       cancelAnimationFrame(rafId2Ref.current);
       rafId2Ref.current = null;
     }
+    if (loadingTimeoutRef.current !== null) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
 
     // Show loading immediately to prevent flickering
     setIsLoadingDialog(true);
+
+    const loadingStartTime = performance.now();
+    const MIN_LOADING_MS = 180;
 
     // Use startTransition to keep UI responsive when switching to dialogs with many actions
     startTransition(() => {
@@ -409,7 +424,16 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
         // Wait one more frame to ensure rendering is complete
         rafId2Ref.current = requestAnimationFrame(() => {
-          setIsLoadingDialog(false);
+          const elapsed = performance.now() - loadingStartTime;
+          const remaining = Math.max(0, MIN_LOADING_MS - elapsed);
+
+          loadingTimeoutRef.current = window.setTimeout(() => {
+            if (dialogTransitionIdRef.current === transitionId) {
+              setIsLoadingDialog(false);
+            }
+            loadingTimeoutRef.current = null;
+          }, remaining);
+
           // Clear refs after execution
           rafId1Ref.current = null;
           rafId2Ref.current = null;

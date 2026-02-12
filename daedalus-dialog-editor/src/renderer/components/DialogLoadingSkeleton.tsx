@@ -7,7 +7,7 @@ import { Box, Paper, Skeleton, Stack } from '@mui/material';
  */
 const DialogLoadingSkeleton: React.FC = () => {
   return (
-    <Box>
+    <Box sx={{ minHeight: '100%' }}>
       {/* Header skeleton */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Skeleton variant="text" width={200} height={40} />
@@ -19,7 +19,7 @@ const DialogLoadingSkeleton: React.FC = () => {
       </Box>
 
       {/* Properties skeleton */}
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ p: 2, mb: 2, minHeight: 250 }}>
         <Skeleton variant="text" width={120} height={32} sx={{ mb: 2 }} />
         <Stack spacing={2}>
           <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
@@ -30,7 +30,7 @@ const DialogLoadingSkeleton: React.FC = () => {
       </Paper>
 
       {/* Actions skeleton */}
-      <Paper sx={{ p: 2 }}>
+      <Paper sx={{ p: 2, minHeight: 460 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Box>
             <Skeleton variant="text" width={150} height={32} />
@@ -45,7 +45,7 @@ const DialogLoadingSkeleton: React.FC = () => {
 
         {/* Action items skeleton */}
         <Stack spacing={2}>
-          {[1, 2, 3, 4, 5].map((i) => (
+          {[1, 2, 3, 4].map((i) => (
             <Box key={i} sx={{ pb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                 <Skeleton variant="circular" width={24} height={24} />
