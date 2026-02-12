@@ -107,6 +107,12 @@ interface EditorStore {
   updateModel: (filePath: string, model: SemanticModel) => void;
   updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => void;
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
+  renameFunction: (filePath: string, oldFunctionName: string, newFunctionName: string) => void;
+  updateDialogConditionFunction: (
+    filePath: string,
+    dialogName: string,
+    updater: (existingFunction: DialogFunction) => DialogFunction | null
+  ) => void;
   validateFile: (filePath: string) => Promise<ValidationResult>;
   saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<SaveFileResult>;
   clearPendingValidation: () => void;
@@ -252,6 +258,74 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.hasErrors = false;
     });
     // Sync with project store using the committed (non-draft) state
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
+  },
+
+  renameFunction: (filePath: string, oldFunctionName: string, newFunctionName: string) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+
+      const existingFunction = fileState.semanticModel.functions[oldFunctionName];
+      if (!existingFunction) {
+        return;
+      }
+
+      const updatedFunctions = { ...fileState.semanticModel.functions };
+      delete updatedFunctions[oldFunctionName];
+      updatedFunctions[newFunctionName] = { ...existingFunction, name: newFunctionName };
+
+      fileState.semanticModel.functions = updatedFunctions;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
+    });
+
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
+  },
+
+  updateDialogConditionFunction: (filePath: string, dialogName: string, updater: (existingFunction: DialogFunction) => DialogFunction | null) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+
+      const dialog = fileState.semanticModel.dialogs[dialogName];
+      const conditionFunctionName = typeof dialog?.properties?.condition === 'object'
+        ? dialog.properties.condition.name
+        : dialog?.properties?.condition;
+
+      if (!conditionFunctionName) {
+        return;
+      }
+
+      const existingFunction = fileState.semanticModel.functions[conditionFunctionName];
+      if (!existingFunction) {
+        return;
+      }
+
+      const updatedFunction = updater(existingFunction);
+      if (!updatedFunction) {
+        return;
+      }
+
+      fileState.semanticModel.functions[conditionFunctionName] = updatedFunction;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
+    });
+
     const committedModel = get().openFiles.get(filePath)?.semanticModel;
     if (committedModel) {
       useProjectStore.getState().updateFileModel(filePath, committedModel);

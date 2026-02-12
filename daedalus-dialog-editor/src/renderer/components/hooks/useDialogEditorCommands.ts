@@ -53,7 +53,8 @@ export function useDialogEditorCommands({
 }: UseDialogEditorCommandsParams) {
   const getFileState = useEditorStore((state) => state.getFileState);
   const openFile = useEditorStore((state) => state.openFile);
-  const updateModel = useEditorStore((state) => state.updateModel);
+  const renameFunction = useEditorStore((state) => state.renameFunction);
+  const updateDialogConditionFunction = useEditorStore((state) => state.updateDialogConditionFunction);
 
   const setFunction = useCallback((updatedFunctionOrUpdater: FunctionUpdater) => {
     if (!currentFunctionName || !filePath) {
@@ -85,27 +86,8 @@ export function useDialogEditorCommands({
       return;
     }
 
-    const latestFileState = getFileState(filePath);
-    const latestModel = latestFileState?.semanticModel;
-
-    if (!latestModel) {
-      return;
-    }
-
-    const existingFunction = latestModel.functions[oldName];
-    if (!existingFunction) {
-      return;
-    }
-
-    const updatedFunctions = { ...latestModel.functions };
-    delete updatedFunctions[oldName];
-    updatedFunctions[newName] = { ...existingFunction, name: newName };
-
-    updateModel(filePath, {
-      ...latestModel,
-      functions: updatedFunctions
-    });
-  }, [filePath, getFileState, updateModel]);
+    renameFunction(filePath, oldName, newName);
+  }, [filePath, renameFunction]);
 
   const addActionToEnd = useCallback((actionType: ActionTypeId) => {
     if (!currentFunction || !filePath) {
@@ -181,34 +163,12 @@ export function useDialogEditorCommands({
     }
 
     if (typeof funcOrUpdater === 'function') {
-      const latestFileState = getFileState(filePath);
-      const latestModel = latestFileState?.semanticModel;
-      const latestDialog = latestModel?.dialogs?.[dialogName];
-
-      const conditionFunctionName = typeof latestDialog?.properties?.condition === 'object'
-        ? latestDialog.properties.condition.name
-        : latestDialog?.properties?.condition;
-
-      if (!conditionFunctionName) {
-        return;
-      }
-
-      const existingFunction = latestModel?.functions?.[conditionFunctionName];
-      if (!existingFunction) {
-        return;
-      }
-
-      const updatedFunction = funcOrUpdater(existingFunction);
-      if (!updatedFunction) {
-        return;
-      }
-
-      updateFunction(filePath, conditionFunctionName, updatedFunction);
+      updateDialogConditionFunction(filePath, dialogName, funcOrUpdater);
       return;
     }
 
     updateFunction(filePath, funcOrUpdater.name, funcOrUpdater);
-  }, [dialogName, filePath, getFileState, updateFunction]);
+  }, [dialogName, filePath, updateDialogConditionFunction, updateFunction]);
 
   const handleSave = useCallback(async (forceOnErrors = false) => {
     if (!filePath) {
