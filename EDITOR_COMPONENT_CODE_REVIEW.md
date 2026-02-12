@@ -3,149 +3,76 @@
 Scope reviewed:
 - `daedalus-dialog-editor/src/renderer/components/EditorPane.tsx`
 - `daedalus-dialog-editor/src/renderer/components/DialogDetailsEditor.tsx`
+- `daedalus-dialog-editor/src/renderer/components/hooks/useDialogEditorCommands.ts`
+- `daedalus-dialog-editor/src/renderer/components/actionRenderers/index.tsx`
 
 Focus areas:
-- Maintenance burden
-- Anti-patterns
-- Long-term maintainability
+- Code smells
+- Maintainability
+- Duplication
 
 ## Executive summary
 
-The editor experience is feature-rich, but the main `DialogDetailsEditor` component has accumulated too many responsibilities and now acts as an orchestration, data-access, mutation, async state, and rendering layer in one file. This increases cognitive load and risk when making changes. There are also several maintainability anti-patterns (heavy `any` usage, duplicated update flows, ad-hoc store reads, and hardcoded action menus) that make the component difficult to reason about and test safely.
+The dialog editor architecture is in a **better state** than before: responsibility boundaries are now clearer (`DialogDetailsEditor` composes specialized hooks/sections rather than doing everything inline). The highest remaining maintainability risk is concentrated in small but central integration points (renderer registry typing, update command coupling to store internals, and repeated ad-hoc UI metadata).
 
 ## Findings
 
-### 1) `DialogDetailsEditor` is a "god component" with mixed responsibilities (High) [Completed]
+### 1) `EditorPane` had duplicated fallback shells and tab-height magic values (Low) ✅ Addressed
 
-**Why this matters:**
-The component handles:
-- store reads/writes,
-- async save/reset workflows,
-- snackbar and validation dialog UX state,
-- business logic for action creation,
-- function rename logic,
-- condition mutation logic,
-- and extensive UI composition.
+**Issue:** Early-return branches repeated near-identical container/layout wrappers and hardcoded tab height values.
 
-This tightly-coupled design makes every change risky and encourages regressions when evolving one concern.
+**Impact:** Style drift risk and extra maintenance cost for simple UX/layout changes.
 
-**Evidence:**
-- The file spans broad logic for state management, command handlers, and rendering in one component.
-- Multiple unrelated handlers are embedded directly (`handleSave`, `handleReset`, `handleRenameFunction`, `addActionToEnd`, condition update flow).
-
-**Recommendation:**
-Split into focused hooks and child components, e.g.:
-- `useDialogEditorCommands` (save/reset/rename/add-action)
-- `useDialogEditorUIState` (snackbar/dialog/menu state)
-- `DialogPropertiesSection`
-- `DialogActionsSection`
-- `ConditionSection`
+**Status:** Refactored to shared shell renderer and named constants.
 
 ---
 
-### 2) Frequent direct store reads (`useEditorStore.getState()`) create hidden data flow and race complexity (High) [Completed]
-
-**Why this matters:**
-Calling `getState()` inside callbacks bypasses React’s explicit data flow and makes behavior dependent on implicit global state timing. It can reduce predictability and complicate tests because logic reads from two sources: hook-selected state and ad-hoc store snapshots.
+### 2) Renderer registry still relies on `any` for key integration functions (Medium)
 
 **Evidence:**
-- Direct store snapshots are pulled repeatedly in update/save flows (e.g., `setFunction`, rename flow, property updates, condition updates, reset flow).
+- `getRendererForAction(action: any)`
+- `getActionTypeLabel(action: any)`
+
+**Why this matters:**
+These are central integration points used by action rendering. `any` weakens compiler guarantees and makes renderer breakages easier to miss during refactors.
 
 **Recommendation:**
-Centralize mutable editor operations in store actions (single API surface), and consume via stable selectors/hooks in the component. If fresh state is required for updater semantics, expose dedicated store actions that internally handle latest-state reads.
+Introduce a strict action union (or a shared `UnknownDialogAction`) and replace `any` signatures in the registry.
 
 ---
 
-### 3) Type safety erosion from pervasive `any` in critical mutation paths (High) [Completed]
-
-**Why this matters:**
-Using `any` in update pipelines weakens compile-time guarantees for core editor operations and increases breakage risk during refactors.
+### 3) Store-coupled command hook mixes command orchestration and state access strategy (Medium)
 
 **Evidence:**
-- `setFunction(updatedFunctionOrUpdater: any)`
-- `let newAction: any`
-- `onUpdateSemanticModel: (funcName: string, func: any)`
-- `handleDialogPropertyChange((updater: (d: any) => any) => ...)`
-- `onUpdateFunction={(funcOrUpdater: any) => ...}`
+`useDialogEditorCommands` accepts store actions but also reaches into store state (`getFileState`) and model-level mutation (`updateModel`) for specific flows.
+
+**Why this matters:**
+The hook is mostly clean, but blending command orchestration with state retrieval policy can make testing/state-timing behavior harder to reason about over time.
 
 **Recommendation:**
-Introduce shared typed aliases and enforce them across hooks/components:
-- `type FunctionUpdater = DialogFunction | ((prev: DialogFunction) => DialogFunction)`
-- strong action union types for `createAction` return values
-- typed `Dialog` updater signatures
+Expose explicit store commands for these complex mutations (`renameFunction`, `updateConditionFunction`, etc.) so the hook remains a pure command wiring layer.
 
 ---
 
-### 4) Duplicated/parallel mutation strategies increase drift risk (Medium)
-
-**Why this matters:**
-There are multiple mutation pathways for similar concerns (`updateFunction`, `updateDialog`, `updateModel`, inline updater lambdas, manual map reconstruction). Over time this causes inconsistent invariants and subtle bugs.
+### 4) Action insertion UX metadata is partially centralized (Low)
 
 **Evidence:**
-- rename uses full model reconstruction + `updateModel`
-- dialog property updates use normalization + `updateDialog`
-- action operations use `setFunction` + `updateFunction`
-- condition updates duplicate updater logic in an inline handler
-
-**Recommendation:**
-Create a single command layer for editor mutations with explicit invariants:
-- `renameFunction(filePath, oldName, newName)`
-- `updateDialogProperties(filePath, dialogName, patch)`
-- `appendAction(filePath, functionName, actionType, context)`
-
----
-
-### 5) Hardcoded action menu options are not configuration-driven (Medium)
+`DialogActionsSection` centralizes "extra" actions in `EXTRA_ACTION_ITEMS`, but primary actions (`Add Line`, `Add Choice`) remain inline.
 
 **Why this matters:**
-The UI duplicates a long list of `MenuItem` entries inline. This makes extension/error-prone edits likely and drifts from existing action factory/template abstractions.
-
-**Evidence:**
-- Repeated inline menu item definitions for each action type in `DialogDetailsEditor`.
+The split isn't severe, but a single source-of-truth for action menu/button metadata would further reduce UI drift and simplify extension.
 
 **Recommendation:**
-Define a typed `ACTION_MENU_ITEMS` configuration and render via `.map()`. Keep labels, action IDs, and optional grouping in one source of truth.
+Move primary and overflow actions into one typed configuration with optional `variant`/`priority` fields and render from that config.
 
----
+## Positive patterns worth preserving
 
-### 6) Repeated container layout patterns in `EditorPane` reduce maintainability (Low)
+- `DialogDetailsEditor` now delegates behavior to focused hooks (`useDialogEditorCommands`, `useActionManagement`, `useDialogEditorUIState`, `useFocusNavigation`).
+- Section-level composition (`DialogPropertiesSection`, `ConditionSection`, `DialogActionsSection`) keeps main editor JSX readable.
+- The action overflow menu already uses data-driven rendering via `EXTRA_ACTION_ITEMS`.
 
-**Why this matters:**
-`EditorPane` repeats near-identical wrappers for three early-return states (no selection, no function, missing function). Repetition increases surface area for style drift.
+## Suggested next refactors (incremental)
 
-**Evidence:**
-- Same outer `<Box>` layout block duplicated across multiple branches.
-
-**Recommendation:**
-Extract a small shared `EditorPaneStateShell` and a helper render function for state-specific content.
-
----
-
-### 7) UI behavior constants are embedded as magic values (Low)
-
-**Why this matters:**
-Tab/header heights and transition timings appear in multiple locations (`40`, `100`, `200`, etc.). Implicit coupling between tab height and overlay top offset is fragile.
-
-**Evidence:**
-- Tab min height and skeleton overlay `top` offset are coupled by convention.
-
-**Recommendation:**
-Move to named constants:
-- `const TABS_HEIGHT = 40`
-- `const LOADING_FADE = { enter: 100, exit: 200 }`
-
-## Positive patterns worth keeping
-
-- Good use of focused child components (`ConditionEditor`, `ActionsList`, `ValidationErrorDialog`) already provides boundaries to build on.
-- Save/reset flows provide user feedback and error handling.
-- `EditorPane` handles empty/error/loading scenarios clearly for users.
-
-## Suggested refactor order (incremental)
-
-1. Add strict types for updater signatures and remove `any` from mutation paths.
-2. Extract action-menu config to data-driven rendering.
-3. Introduce store-level command APIs for rename/property/action updates.
-4. Move save/reset/feedback logic into `useDialogEditorCommands` hook.
-5. Split `DialogDetailsEditor` into section components.
-6. Deduplicate `EditorPane` fallback shells and replace magic constants.
-
+1. Remove remaining `any` in action renderer registry APIs.
+2. Move rename/condition/property complex mutations behind explicit store command methods.
+3. Unify primary + extra action-add UI into one typed action command config.
