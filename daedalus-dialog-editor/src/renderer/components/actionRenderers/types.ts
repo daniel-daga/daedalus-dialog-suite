@@ -2,7 +2,7 @@
  * Shared types for action renderer components
  */
 import type { SemanticModel } from '../../../shared/types';
-import type { DialogAction } from '../types/global';
+import type { DialogAction } from '../../types/global';
 
 export interface BaseActionRendererProps {
   action: DialogAction;

@@ -22,6 +22,13 @@ import ExchangeRoutineRenderer from './ExchangeRoutineRenderer';
 import SetVariableActionRenderer from './SetVariableActionRenderer';
 import StopProcessInfosActionRenderer from './StopProcessInfosActionRenderer';
 import PlayAniActionRenderer from './PlayAniActionRenderer';
+import GivePlayerXPActionRenderer from './GivePlayerXPActionRenderer';
+import PickpocketActionRenderer from './PickpocketActionRenderer';
+import StartOtherRoutineActionRenderer from './StartOtherRoutineActionRenderer';
+import TeachActionRenderer from './TeachActionRenderer';
+import GiveTradeInventoryActionRenderer from './GiveTradeInventoryActionRenderer';
+import RemoveInventoryItemsActionRenderer from './RemoveInventoryItemsActionRenderer';
+import InsertNpcActionRenderer from './InsertNpcActionRenderer';
 import CustomActionRenderer from './CustomActionRenderer';
 import UnknownActionRenderer from './UnknownActionRenderer';
 
@@ -43,6 +50,13 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   setVariableAction: SetVariableActionRenderer,
   stopProcessInfosAction: StopProcessInfosActionRenderer,
   playAniAction: PlayAniActionRenderer,
+  givePlayerXPAction: GivePlayerXPActionRenderer,
+  pickpocketAction: PickpocketActionRenderer,
+  startOtherRoutineAction: StartOtherRoutineActionRenderer,
+  teachAction: TeachActionRenderer,
+  giveTradeInventoryAction: GiveTradeInventoryActionRenderer,
+  removeInventoryItemsAction: RemoveInventoryItemsActionRenderer,
+  insertNpcAction: InsertNpcActionRenderer,
   customAction: CustomActionRenderer
 };
 
@@ -72,6 +86,13 @@ export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
   setVariableAction: 'Set Variable',
   stopProcessInfosAction: 'End Dialog',
   playAniAction: 'Play Animation',
+  givePlayerXPAction: 'Give XP',
+  pickpocketAction: 'Pickpocket',
+  startOtherRoutineAction: 'Start Other Routine',
+  teachAction: 'Teach',
+  giveTradeInventoryAction: 'Give Trade Inventory',
+  removeInventoryItemsAction: 'Remove Inventory Items',
+  insertNpcAction: 'Insert NPC',
   customAction: 'Action'
 };
 

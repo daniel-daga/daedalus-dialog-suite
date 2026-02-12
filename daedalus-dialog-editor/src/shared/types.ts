@@ -132,6 +132,50 @@ export interface PlayAniAction {
   animationName: string;
 }
 
+export interface GivePlayerXPActionType {
+  type: 'GivePlayerXPAction';
+  xpAmount: string;
+}
+
+export interface PickpocketActionType {
+  type: 'PickpocketAction';
+  pickpocketMode: 'B_Beklauen' | 'C_Beklauen';
+  minChance?: string;
+  maxChance?: string;
+}
+
+export interface StartOtherRoutineActionType {
+  type: 'StartOtherRoutineAction';
+  routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine';
+  routineNpc: string;
+  routineName: string;
+}
+
+export interface TeachActionType {
+  type: 'TeachAction';
+  teachFunctionName: string;
+  teachArgs: string[];
+}
+
+export interface GiveTradeInventoryActionType {
+  type: 'GiveTradeInventoryAction';
+  tradeTarget: string;
+}
+
+export interface RemoveInventoryItemsActionType {
+  type: 'RemoveInventoryItemsAction';
+  removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
+  removeNpc: string;
+  removeItem: string;
+  removeQuantity: string;
+}
+
+export interface InsertNpcActionType {
+  type: 'InsertNpcAction';
+  npcInstance: string;
+  spawnPoint: string;
+}
+
 export interface Action {
   type: 'Action';
   action: string;
@@ -160,6 +204,13 @@ export type DialogAction =
   | SetVariableAction
   | StopProcessInfosAction
   | PlayAniAction
+  | GivePlayerXPActionType
+  | PickpocketActionType
+  | StartOtherRoutineActionType
+  | TeachActionType
+  | GiveTradeInventoryActionType
+  | RemoveInventoryItemsActionType
+  | InsertNpcActionType
   | Action
   | CustomAction;
 

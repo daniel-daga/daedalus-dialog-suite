@@ -18,6 +18,13 @@ import type {
   SetVariableAction,
   StopProcessInfosAction,
   PlayAniAction,
+  GivePlayerXPAction,
+  PickpocketAction,
+  StartOtherRoutineAction,
+  TeachAction,
+  GiveTradeInventoryAction,
+  RemoveInventoryItemsAction,
+  InsertNpcAction,
   CustomAction
 } from './actionTypes';
 
@@ -111,6 +118,63 @@ export const ACTION_TEMPLATES = {
     type: 'PlayAniAction',
     target,
     animationName
+  }),
+
+  givePlayerXPAction: (xpAmount: string = 'XP_Ambient'): GivePlayerXPAction => ({
+    type: 'GivePlayerXPAction',
+    xpAmount
+  }),
+
+  pickpocketAction: (
+    pickpocketMode: 'B_Beklauen' | 'C_Beklauen' = 'B_Beklauen',
+    minChance: string = '10',
+    maxChance: string = '90'
+  ): PickpocketAction => ({
+    type: 'PickpocketAction',
+    pickpocketMode,
+    minChance,
+    maxChance
+  }),
+
+  startOtherRoutineAction: (
+    routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine' = 'B_StartOtherRoutine',
+    routineNpc: string = 'self',
+    routineName: string = 'START'
+  ): StartOtherRoutineAction => ({
+    type: 'StartOtherRoutineAction',
+    routineFunctionName,
+    routineNpc,
+    routineName
+  }),
+
+  teachAction: (teachFunctionName: string = 'B_TeachPlayerTalentRunes', teachArgs: string[] = ['self', 'other', 'SPL_LIGHT']): TeachAction => ({
+    type: 'TeachAction',
+    teachFunctionName,
+    teachArgs
+  }),
+
+  giveTradeInventoryAction: (tradeTarget: string = 'self'): GiveTradeInventoryAction => ({
+    type: 'GiveTradeInventoryAction',
+    tradeTarget
+  }),
+
+  removeInventoryItemsAction: (
+    removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem' = 'Npc_RemoveInvItems',
+    removeNpc: string = 'self',
+    removeItem: string = 'ItMi_Gold',
+    removeQuantity: string = '1'
+  ): RemoveInventoryItemsAction => ({
+    type: 'RemoveInventoryItemsAction',
+    removeFunctionName,
+    removeNpc,
+    removeItem,
+    removeQuantity
+  }),
+
+  insertNpcAction: (npcInstance: string = 'NONE_100_XARDAS', spawnPoint: string = 'WP_START'): InsertNpcAction => ({
+    type: 'InsertNpcAction',
+    npcInstance,
+    spawnPoint
   }),
 
   customAction: (action: string = 'AI_StopProcessInfos(self)'): CustomAction => ({

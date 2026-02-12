@@ -94,6 +94,55 @@ export interface PlayAniAction {
   animationName: string;
 }
 
+export interface Action {
+  type: 'Action';
+  action: string;
+}
+
+export interface GivePlayerXPAction {
+  type: 'GivePlayerXPAction';
+  xpAmount: string;
+}
+
+export interface PickpocketAction {
+  type: 'PickpocketAction';
+  pickpocketMode: 'B_Beklauen' | 'C_Beklauen';
+  minChance?: string;
+  maxChance?: string;
+}
+
+export interface StartOtherRoutineAction {
+  type: 'StartOtherRoutineAction';
+  routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine';
+  routineNpc: string;
+  routineName: string;
+}
+
+export interface TeachAction {
+  type: 'TeachAction';
+  teachFunctionName: string;
+  teachArgs: string[];
+}
+
+export interface GiveTradeInventoryAction {
+  type: 'GiveTradeInventoryAction';
+  tradeTarget: string;
+}
+
+export interface RemoveInventoryItemsAction {
+  type: 'RemoveInventoryItemsAction';
+  removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
+  removeNpc: string;
+  removeItem: string;
+  removeQuantity: string;
+}
+
+export interface InsertNpcAction {
+  type: 'InsertNpcAction';
+  npcInstance: string;
+  spawnPoint: string;
+}
+
 export interface CustomAction {
   type: 'CustomAction';
   action: string;
@@ -117,6 +166,14 @@ export type ActionType =
   | SetVariableAction
   | StopProcessInfosAction
   | PlayAniAction
+  | GivePlayerXPAction
+  | PickpocketAction
+  | StartOtherRoutineAction
+  | TeachAction
+  | GiveTradeInventoryAction
+  | RemoveInventoryItemsAction
+  | InsertNpcAction
+  | Action
   | CustomAction;
 
 /**
@@ -137,6 +194,13 @@ export type ActionTypeId =
   | 'setVariableAction'
   | 'stopProcessInfosAction'
   | 'playAniAction'
+  | 'givePlayerXPAction'
+  | 'pickpocketAction'
+  | 'startOtherRoutineAction'
+  | 'teachAction'
+  | 'giveTradeInventoryAction'
+  | 'removeInventoryItemsAction'
+  | 'insertNpcAction'
   | 'customAction';
 
 export type UnknownDialogAction = Record<string, unknown>;
@@ -147,55 +211,78 @@ export type DetectableAction = ActionType | UnknownDialogAction;
  * Detect the action type from an action object
  */
 export function getActionType(action: DetectableAction): ActionTypeId {
-  if (action.speaker !== undefined && action.text !== undefined && action.id !== undefined) {
+  const a = action as any;
+
+  if (a.speaker !== undefined && a.text !== undefined && a.id !== undefined) {
     return 'dialogLine';
   }
-  if (action.dialogRef !== undefined && action.targetFunction !== undefined) {
+  if (a.dialogRef !== undefined && a.targetFunction !== undefined) {
     return 'choice';
   }
-  if (action.topic !== undefined && action.topicType !== undefined && !action.status) {
+  if (a.topic !== undefined && a.topicType !== undefined && !a.status) {
     return 'createTopic';
   }
-  if (action.topic !== undefined && action.text !== undefined && !action.topicType) {
+  if (a.topic !== undefined && a.text !== undefined && !a.topicType) {
     return 'logEntry';
   }
-  if (action.topic !== undefined && action.status !== undefined) {
+  if (a.topic !== undefined && a.status !== undefined) {
     return 'logSetTopicStatus';
   }
-  if (action.target !== undefined && action.item !== undefined && action.quantity !== undefined &&
-      action.giver === undefined && action.receiver === undefined) {
+  if (a.target !== undefined && a.item !== undefined && a.quantity !== undefined &&
+      a.giver === undefined && a.receiver === undefined) {
     return 'createInventoryItems';
   }
-  if (action.giver !== undefined && action.receiver !== undefined) {
+  if (a.giver !== undefined && a.receiver !== undefined) {
     return 'giveInventoryItems';
   }
-  if (action.attacker !== undefined && action.attackReason !== undefined) {
+  if (a.attacker !== undefined && a.attackReason !== undefined) {
     return 'attackAction';
   }
-  if (action.attitude !== undefined && action.routine === undefined) {
+  if (a.attitude !== undefined && a.routine === undefined) {
     return 'setAttitudeAction';
   }
-  if (action.chapter !== undefined && action.world !== undefined) {
+  if (a.chapter !== undefined && a.world !== undefined) {
     return 'chapterTransition';
   }
-  if ((action.npc !== undefined || action.target !== undefined) && action.routine !== undefined && action.attitude === undefined) {
+  if ((a.npc !== undefined || a.target !== undefined) && a.routine !== undefined && a.attitude === undefined) {
     return 'exchangeRoutine';
   }
-  if (action.variableName !== undefined && action.operator !== undefined && action.value !== undefined) {
+  if (a.variableName !== undefined && a.operator !== undefined && a.value !== undefined) {
     return 'setVariableAction';
   }
-  if (action.target !== undefined && action.animationName !== undefined) {
+  if (a.target !== undefined && a.animationName !== undefined) {
     return 'playAniAction';
   }
+  if (a.xpAmount !== undefined) {
+    return 'givePlayerXPAction';
+  }
+  if (a.pickpocketMode !== undefined) {
+    return 'pickpocketAction';
+  }
+  if (a.routineFunctionName !== undefined && a.routineNpc !== undefined) {
+    return 'startOtherRoutineAction';
+  }
+  if (a.teachFunctionName !== undefined && Array.isArray(a.teachArgs)) {
+    return 'teachAction';
+  }
+  if (a.tradeTarget !== undefined) {
+    return 'giveTradeInventoryAction';
+  }
+  if (a.removeFunctionName !== undefined && a.removeNpc !== undefined) {
+    return 'removeInventoryItemsAction';
+  }
+  if (a.npcInstance !== undefined && a.spawnPoint !== undefined) {
+    return 'insertNpcAction';
+  }
   // Loose check for StopProcessInfos - assuming it only has target
-  if (action.target !== undefined &&
-      action.item === undefined &&
-      action.attitude === undefined &&
-      action.routine === undefined &&
-      action.animationName === undefined) {
+  if (a.target !== undefined &&
+      a.item === undefined &&
+      a.attitude === undefined &&
+      a.routine === undefined &&
+      a.animationName === undefined) {
     return 'stopProcessInfosAction';
   }
-  if (action.action !== undefined) {
+  if (a.action !== undefined) {
     return 'customAction';
   }
 

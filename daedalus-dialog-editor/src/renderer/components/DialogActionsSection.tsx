@@ -53,6 +53,13 @@ const ADD_ACTION_ITEMS: AddActionItem[] = [
   { actionType: 'setAttitudeAction', label: 'Add Set Attitude', placement: 'menu' },
   { actionType: 'chapterTransition', label: 'Add Chapter Transition', placement: 'menu' },
   { actionType: 'exchangeRoutine', label: 'Add Exchange Routine', placement: 'menu' },
+  { actionType: 'givePlayerXPAction', label: 'Add Give XP', placement: 'menu' },
+  { actionType: 'pickpocketAction', label: 'Add Pickpocket', placement: 'menu' },
+  { actionType: 'startOtherRoutineAction', label: 'Add Start Other Routine', placement: 'menu' },
+  { actionType: 'teachAction', label: 'Add Teach', placement: 'menu' },
+  { actionType: 'giveTradeInventoryAction', label: 'Add Give Trade Inventory', placement: 'menu' },
+  { actionType: 'removeInventoryItemsAction', label: 'Add Remove Inventory Items', placement: 'menu' },
+  { actionType: 'insertNpcAction', label: 'Add Insert NPC', placement: 'menu' },
   { actionType: 'customAction', label: 'Add Custom Action', placement: 'menu' }
 ];
 

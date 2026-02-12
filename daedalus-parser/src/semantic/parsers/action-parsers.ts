@@ -16,7 +16,14 @@ import {
   ExchangeRoutineAction,
   ChapterTransitionAction,
   StopProcessInfosAction,
-  PlayAniAction
+  PlayAniAction,
+  GivePlayerXPAction,
+  PickpocketAction,
+  StartOtherRoutineAction,
+  TeachAction,
+  GiveTradeInventoryAction,
+  RemoveInventoryItemsAction,
+  InsertNpcAction
 } from '../semantic-model';
 import { parseArguments } from './argument-parsing';
 
@@ -26,6 +33,10 @@ export class ActionParsers {
    * Parse a semantic action based on function name
    */
   static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction | null {
+    if (functionName.startsWith('B_Teach')) {
+      return ActionParsers.parseTeachCall(node, functionName);
+    }
+
     switch (functionName) {
       case 'AI_Output':
         return ActionParsers.parseAIOutputCall(node);
@@ -53,6 +64,21 @@ export class ActionParsers {
         return ActionParsers.parseStopProcessInfosCall(node);
       case 'AI_PlayAni':
         return ActionParsers.parsePlayAniCall(node);
+      case 'B_GivePlayerXP':
+        return ActionParsers.parseGivePlayerXPCall(node);
+      case 'C_Beklauen':
+      case 'B_Beklauen':
+        return ActionParsers.parsePickpocketCall(node, functionName);
+      case 'B_StartOtherRoutine':
+      case 'B_StartotherRoutine':
+        return ActionParsers.parseStartOtherRoutineCall(node, functionName);
+      case 'B_GiveTradeInv':
+        return ActionParsers.parseGiveTradeInventoryCall(node);
+      case 'Npc_RemoveInvItems':
+      case 'Npc_RemoveInvItem':
+        return ActionParsers.parseRemoveInventoryItemsCall(node, functionName);
+      case 'Wld_InsertNpc':
+        return ActionParsers.parseInsertNpcCall(node);
       default:
         return ActionParsers.parseGenericAction(node);
     }
@@ -213,6 +239,76 @@ export class ActionParsers {
   static parsePlayAniCall(node: TreeSitterNode): PlayAniAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
       new PlayAniAction(args[0], args[1])
+    );
+  }
+
+  /**
+   * Parse B_GivePlayerXP function call
+   */
+  static parseGivePlayerXPCall(node: TreeSitterNode): GivePlayerXPAction | null {
+    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
+      new GivePlayerXPAction(args[0])
+    );
+  }
+
+  /**
+   * Parse B_Beklauen / C_Beklauen function calls
+   */
+  static parsePickpocketCall(node: TreeSitterNode, mode: string): PickpocketAction | null {
+    const argsNode = node.childForFieldName('arguments');
+    const args = argsNode ? parseArguments(argsNode) : [];
+    return new PickpocketAction(mode as 'B_Beklauen' | 'C_Beklauen', args[0], args[1]);
+  }
+
+  /**
+   * Parse B_StartOtherRoutine / B_StartotherRoutine function call
+   */
+  static parseStartOtherRoutineCall(node: TreeSitterNode, functionName: string): StartOtherRoutineAction | null {
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new StartOtherRoutineAction(functionName as 'B_StartOtherRoutine' | 'B_StartotherRoutine', args[0], args[1])
+    );
+  }
+
+  /**
+   * Parse B_Teach* function calls
+   */
+  static parseTeachCall(node: TreeSitterNode, functionName: string): TeachAction | null {
+    const argsNode = node.childForFieldName('arguments');
+    if (!argsNode) return null;
+
+    const args = parseArguments(argsNode);
+    return new TeachAction(functionName, args);
+  }
+
+  /**
+   * Parse B_GiveTradeInv function call
+   */
+  static parseGiveTradeInventoryCall(node: TreeSitterNode): GiveTradeInventoryAction | null {
+    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
+      new GiveTradeInventoryAction(args[0])
+    );
+  }
+
+  /**
+   * Parse Npc_RemoveInvItems / Npc_RemoveInvItem function call
+   */
+  static parseRemoveInventoryItemsCall(node: TreeSitterNode, functionName: string): RemoveInventoryItemsAction | null {
+    return ActionParsers.parseActionWithArgs(node, 3, (args) =>
+      new RemoveInventoryItemsAction(
+        functionName as 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
+        args[0],
+        args[1],
+        args[2]
+      )
+    );
+  }
+
+  /**
+   * Parse Wld_InsertNpc function call
+   */
+  static parseInsertNpcCall(node: TreeSitterNode): InsertNpcAction | null {
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new InsertNpcAction(args[0], args[1])
     );
   }
 

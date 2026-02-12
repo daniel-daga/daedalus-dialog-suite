@@ -91,6 +91,34 @@ export function createAction(
       action = ACTION_TEMPLATES.playAniAction();
       break;
 
+    case 'givePlayerXPAction':
+      action = ACTION_TEMPLATES.givePlayerXPAction();
+      break;
+
+    case 'pickpocketAction':
+      action = ACTION_TEMPLATES.pickpocketAction();
+      break;
+
+    case 'startOtherRoutineAction':
+      action = ACTION_TEMPLATES.startOtherRoutineAction();
+      break;
+
+    case 'teachAction':
+      action = ACTION_TEMPLATES.teachAction();
+      break;
+
+    case 'giveTradeInventoryAction':
+      action = ACTION_TEMPLATES.giveTradeInventoryAction();
+      break;
+
+    case 'removeInventoryItemsAction':
+      action = ACTION_TEMPLATES.removeInventoryItemsAction();
+      break;
+
+    case 'insertNpcAction':
+      action = ACTION_TEMPLATES.insertNpcAction();
+      break;
+
     case 'customAction':
       action = ACTION_TEMPLATES.customAction();
       break;

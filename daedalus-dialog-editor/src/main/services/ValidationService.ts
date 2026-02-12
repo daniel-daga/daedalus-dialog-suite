@@ -472,6 +472,76 @@ export class ValidationService {
               });
             }
             break;
+          case 'GivePlayerXPAction':
+            if (!action.xpAmount || !String(action.xpAmount).trim()) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Give XP ${location} is missing XP amount`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'PickpocketAction':
+            if (!action.pickpocketMode) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Pickpocket ${location} is missing mode`,
+                functionName: funcName
+              });
+            }
+            if (action.pickpocketMode === 'C_Beklauen' && (!action.minChance || !action.maxChance)) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Pickpocket ${location} requires min/max chance for C_Beklauen`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'StartOtherRoutineAction':
+            if (!action.routineFunctionName || !action.routineNpc || !action.routineName) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Start Other Routine ${location} is missing function, NPC, or routine name`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'TeachAction':
+            if (!action.teachFunctionName || !Array.isArray(action.teachArgs)) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Teach ${location} is missing teach function or argument list`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'GiveTradeInventoryAction':
+            if (!action.tradeTarget) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Give Trade Inventory ${location} is missing target`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'RemoveInventoryItemsAction':
+            if (!action.removeFunctionName || !action.removeNpc || !action.removeItem || !action.removeQuantity) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Remove Inventory Items ${location} is missing function, NPC, item, or quantity`,
+                functionName: funcName
+              });
+            }
+            break;
+          case 'InsertNpcAction':
+            if (!action.npcInstance || !action.spawnPoint) {
+              errors.push({
+                type: 'missing_required_property',
+                message: `Insert NPC ${location} is missing NPC instance or spawn point`,
+                functionName: funcName
+              });
+            }
+            break;
         }
       });
     }

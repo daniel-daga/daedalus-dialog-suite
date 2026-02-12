@@ -498,7 +498,216 @@ export class PlayAniAction implements CodeGeneratable {
   }
 }
 
-export type DialogAction = DialogLine | CreateTopic | LogEntry | LogSetTopicStatus | Action | Choice | CreateInventoryItems | GiveInventoryItems | AttackAction | SetAttitudeAction | ExchangeRoutineAction | ChapterTransitionAction | SetVariableAction | StopProcessInfosAction | PlayAniAction;
+export class GivePlayerXPAction implements CodeGeneratable {
+  public readonly type = 'GivePlayerXPAction';
+  public xpAmount: string;
+
+  constructor(xpAmount: string) {
+    this.xpAmount = xpAmount;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `B_GivePlayerXP (${this.xpAmount});`;
+  }
+
+  toDisplayString(): string {
+    return `[GivePlayerXP: ${this.xpAmount}]`;
+  }
+
+  getTypeName(): string {
+    return 'GivePlayerXPAction';
+  }
+}
+
+export class PickpocketAction implements CodeGeneratable {
+  public readonly type = 'PickpocketAction';
+  public pickpocketMode: 'B_Beklauen' | 'C_Beklauen';
+  public minChance?: string;
+  public maxChance?: string;
+
+  constructor(mode: 'B_Beklauen' | 'C_Beklauen', minChance?: string, maxChance?: string) {
+    this.pickpocketMode = mode;
+    if (minChance !== undefined) {
+      this.minChance = minChance;
+    }
+    if (maxChance !== undefined) {
+      this.maxChance = maxChance;
+    }
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    if (this.pickpocketMode === 'B_Beklauen') {
+      return 'B_Beklauen ();';
+    }
+
+    const min = this.minChance || '0';
+    const max = this.maxChance || min;
+    return `C_Beklauen (${min}, ${max});`;
+  }
+
+  toDisplayString(): string {
+    if (this.pickpocketMode === 'B_Beklauen') {
+      return '[Pickpocket: execute]';
+    }
+    return `[Pickpocket: check ${this.minChance || '0'}-${this.maxChance || this.minChance || '0'}]`;
+  }
+
+  getTypeName(): string {
+    return 'PickpocketAction';
+  }
+}
+
+export class StartOtherRoutineAction implements CodeGeneratable {
+  public readonly type = 'StartOtherRoutineAction';
+  public routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine';
+  public routineNpc: string;
+  public routineName: string;
+
+  constructor(
+    routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine',
+    routineNpc: string,
+    routineName: string
+  ) {
+    this.routineFunctionName = routineFunctionName;
+    this.routineNpc = routineNpc;
+    this.routineName = routineName;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `${this.routineFunctionName} (${this.routineNpc}, "${this.routineName}");`;
+  }
+
+  toDisplayString(): string {
+    return `[StartOtherRoutine: ${this.routineNpc} -> "${this.routineName}"]`;
+  }
+
+  getTypeName(): string {
+    return 'StartOtherRoutineAction';
+  }
+}
+
+export class TeachAction implements CodeGeneratable {
+  public readonly type = 'TeachAction';
+  public teachFunctionName: string;
+  public teachArgs: string[];
+
+  constructor(teachFunctionName: string, teachArgs: string[]) {
+    this.teachFunctionName = teachFunctionName;
+    this.teachArgs = teachArgs;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `${this.teachFunctionName} (${this.teachArgs.join(', ')});`;
+  }
+
+  toDisplayString(): string {
+    return `[Teach: ${this.teachFunctionName} (${this.teachArgs.join(', ')})]`;
+  }
+
+  getTypeName(): string {
+    return 'TeachAction';
+  }
+}
+
+export class GiveTradeInventoryAction implements CodeGeneratable {
+  public readonly type = 'GiveTradeInventoryAction';
+  public tradeTarget: string;
+
+  constructor(tradeTarget: string) {
+    this.tradeTarget = tradeTarget;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `B_GiveTradeInv (${this.tradeTarget});`;
+  }
+
+  toDisplayString(): string {
+    return `[GiveTradeInventory: ${this.tradeTarget}]`;
+  }
+
+  getTypeName(): string {
+    return 'GiveTradeInventoryAction';
+  }
+}
+
+export class RemoveInventoryItemsAction implements CodeGeneratable {
+  public readonly type = 'RemoveInventoryItemsAction';
+  public removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
+  public removeNpc: string;
+  public removeItem: string;
+  public removeQuantity: string;
+
+  constructor(
+    removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
+    removeNpc: string,
+    removeItem: string,
+    removeQuantity: string
+  ) {
+    this.removeFunctionName = removeFunctionName;
+    this.removeNpc = removeNpc;
+    this.removeItem = removeItem;
+    this.removeQuantity = removeQuantity;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `${this.removeFunctionName} (${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity});`;
+  }
+
+  toDisplayString(): string {
+    return `[RemoveInventoryItems: ${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity}]`;
+  }
+
+  getTypeName(): string {
+    return 'RemoveInventoryItemsAction';
+  }
+}
+
+export class InsertNpcAction implements CodeGeneratable {
+  public readonly type = 'InsertNpcAction';
+  public npcInstance: string;
+  public spawnPoint: string;
+
+  constructor(npcInstance: string, spawnPoint: string) {
+    this.npcInstance = npcInstance;
+    this.spawnPoint = spawnPoint;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `Wld_InsertNpc (${this.npcInstance}, "${this.spawnPoint}");`;
+  }
+
+  toDisplayString(): string {
+    return `[InsertNpc: ${this.npcInstance} @ "${this.spawnPoint}"]`;
+  }
+
+  getTypeName(): string {
+    return 'InsertNpcAction';
+  }
+}
+
+export type DialogAction =
+  | DialogLine
+  | CreateTopic
+  | LogEntry
+  | LogSetTopicStatus
+  | Action
+  | Choice
+  | CreateInventoryItems
+  | GiveInventoryItems
+  | AttackAction
+  | SetAttitudeAction
+  | ExchangeRoutineAction
+  | ChapterTransitionAction
+  | SetVariableAction
+  | StopProcessInfosAction
+  | PlayAniAction
+  | GivePlayerXPAction
+  | PickpocketAction
+  | StartOtherRoutineAction
+  | TeachAction
+  | GiveTradeInventoryAction
+  | RemoveInventoryItemsAction
+  | InsertNpcAction;
 
 const ACTION_DISCRIMINATOR = {
   property: 'type',
@@ -518,6 +727,13 @@ const ACTION_DISCRIMINATOR = {
     { value: SetVariableAction, name: 'SetVariableAction' },
     { value: StopProcessInfosAction, name: 'StopProcessInfosAction' },
     { value: PlayAniAction, name: 'PlayAniAction' },
+    { value: GivePlayerXPAction, name: 'GivePlayerXPAction' },
+    { value: PickpocketAction, name: 'PickpocketAction' },
+    { value: StartOtherRoutineAction, name: 'StartOtherRoutineAction' },
+    { value: TeachAction, name: 'TeachAction' },
+    { value: GiveTradeInventoryAction, name: 'GiveTradeInventoryAction' },
+    { value: RemoveInventoryItemsAction, name: 'RemoveInventoryItemsAction' },
+    { value: InsertNpcAction, name: 'InsertNpcAction' },
   ],
 };
 
@@ -538,6 +754,13 @@ function ensureActionType(json: any): void {
     else if ('variableName' in json && 'operator' in json && 'value' in json) json.type = 'SetVariableAction';
     else if ('target' in json && 'animationName' in json) json.type = 'PlayAniAction';
     else if ('target' in json && Object.keys(json).length === 1) json.type = 'StopProcessInfosAction';
+    else if ('xpAmount' in json) json.type = 'GivePlayerXPAction';
+    else if ('pickpocketMode' in json) json.type = 'PickpocketAction';
+    else if ('routineFunctionName' in json && 'routineNpc' in json && 'routineName' in json) json.type = 'StartOtherRoutineAction';
+    else if ('teachFunctionName' in json && 'teachArgs' in json) json.type = 'TeachAction';
+    else if ('tradeTarget' in json) json.type = 'GiveTradeInventoryAction';
+    else if ('removeFunctionName' in json && 'removeNpc' in json && 'removeItem' in json) json.type = 'RemoveInventoryItemsAction';
+    else if ('npcInstance' in json && 'spawnPoint' in json) json.type = 'InsertNpcAction';
     else if ('action' in json) json.type = 'Action';
   }
 }

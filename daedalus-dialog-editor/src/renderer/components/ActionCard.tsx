@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { Box, Tooltip, Typography, Menu, MenuItem } from '@mui/material';
-import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon } from '@mui/icons-material';
+import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon, Star as StarIcon, School as SchoolIcon, PersonAdd as PersonAddIcon, RemoveShoppingCart as RemoveShoppingCartIcon, Inventory2 as Inventory2Icon } from '@mui/icons-material';
 import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
 import { getActionType } from './actionTypes';
@@ -171,6 +171,13 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       case 'setVariableAction': return <EditIcon fontSize="small" />;
       case 'stopProcessInfosAction': return <StopIcon fontSize="small" />;
       case 'playAniAction': return <PlayArrowIcon fontSize="small" />;
+      case 'givePlayerXPAction': return <StarIcon fontSize="small" />;
+      case 'pickpocketAction': return <GavelIcon fontSize="small" />;
+      case 'startOtherRoutineAction': return <SwapHorizIcon fontSize="small" />;
+      case 'teachAction': return <SchoolIcon fontSize="small" />;
+      case 'giveTradeInventoryAction': return <Inventory2Icon fontSize="small" />;
+      case 'removeInventoryItemsAction': return <RemoveShoppingCartIcon fontSize="small" />;
+      case 'insertNpcAction': return <PersonAddIcon fontSize="small" />;
       case 'customAction': return <CodeIcon fontSize="small" />;
       default: return <CodeIcon fontSize="small" />;
     }
@@ -191,6 +198,13 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     { type: 'setVariableAction', label: 'Set Variable', icon: <EditIcon fontSize="small" /> },
     { type: 'stopProcessInfosAction', label: 'End Dialog', icon: <StopIcon fontSize="small" /> },
     { type: 'playAniAction', label: 'Play Animation', icon: <PlayArrowIcon fontSize="small" /> },
+    { type: 'givePlayerXPAction', label: 'Give XP', icon: <StarIcon fontSize="small" /> },
+    { type: 'pickpocketAction', label: 'Pickpocket', icon: <GavelIcon fontSize="small" /> },
+    { type: 'startOtherRoutineAction', label: 'Start Other Routine', icon: <SwapHorizIcon fontSize="small" /> },
+    { type: 'teachAction', label: 'Teach', icon: <SchoolIcon fontSize="small" /> },
+    { type: 'giveTradeInventoryAction', label: 'Give Trade Inventory', icon: <Inventory2Icon fontSize="small" /> },
+    { type: 'removeInventoryItemsAction', label: 'Remove Inventory Items', icon: <RemoveShoppingCartIcon fontSize="small" /> },
+    { type: 'insertNpcAction', label: 'Insert NPC', icon: <PersonAddIcon fontSize="small" /> },
     { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
   ], []);
 
