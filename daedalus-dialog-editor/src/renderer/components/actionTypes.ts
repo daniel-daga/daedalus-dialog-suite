@@ -139,10 +139,14 @@ export type ActionTypeId =
   | 'playAniAction'
   | 'customAction';
 
+export type UnknownDialogAction = Record<string, unknown>;
+
+export type DetectableAction = ActionType | UnknownDialogAction;
+
 /**
  * Detect the action type from an action object
  */
-export function getActionType(action: any): ActionTypeId {
+export function getActionType(action: DetectableAction): ActionTypeId {
   if (action.speaker !== undefined && action.text !== undefined && action.id !== undefined) {
     return 'dialogLine';
   }

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { getActionType } from '../actionTypes';
-import type { ActionTypeId } from '../actionTypes';
+import type { ActionTypeId, DetectableAction } from '../actionTypes';
 import type { BaseActionRendererProps } from './types';
 
 import DialogLineRenderer from './DialogLineRenderer';
@@ -49,7 +49,7 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
 /**
  * Get the appropriate renderer for an action
  */
-export function getRendererForAction(action: any): React.FC<BaseActionRendererProps> {
+export function getRendererForAction(action: DetectableAction): React.FC<BaseActionRendererProps> {
   const actionType = getActionType(action);
   return ACTION_RENDERERS[actionType] || UnknownActionRenderer;
 }
@@ -78,7 +78,7 @@ export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
 /**
  * Get the display label for an action
  */
-export function getActionTypeLabel(action: any): string {
+export function getActionTypeLabel(action: DetectableAction): string {
   const actionType = getActionType(action);
   return ACTION_TYPE_LABELS[actionType] || 'Unknown';
 }
