@@ -9,7 +9,10 @@ import {
   Save as SaveIcon, 
   ListAlt as ListAltIcon,
   History as HistoryIcon,
-  Error as ErrorIcon
+  Error as ErrorIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
+  AutoAwesome as AutoAwesomeIcon
 } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
@@ -18,6 +21,15 @@ import MainLayout from './components/MainLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import { RecentProject } from './types/global';
+import { ThemeMode } from './theme';
+import { useThemeMode } from './themeContext';
+
+
+const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }> = [
+  { value: 'dark', label: 'Dark', icon: <DarkModeIcon fontSize="small" /> },
+  { value: 'light', label: 'Light', icon: <LightModeIcon fontSize="small" /> },
+  { value: 'gothic', label: 'Gothic', icon: <AutoAwesomeIcon fontSize="small" /> },
+];
 
 const App: React.FC = () => {
   const { openFile, activeFile, openFiles } = useEditorStore();
@@ -28,6 +40,7 @@ const App: React.FC = () => {
   const autoSaveError = activeFileState?.autoSaveError;
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const { mode, setMode } = useThemeMode();
 
   const ingestionProgress = useMemo(() => {
     const total = allDialogFiles.length;
@@ -161,6 +174,26 @@ const App: React.FC = () => {
               </IconButton>
             </Box>
           </Tooltip>
+          <Stack direction="row" spacing={0.5} sx={{ mr: 2 }}>
+            {themeOptions.map((option) => (
+              <Tooltip key={option.value} title={`${option.label} theme`}>
+                <Chip
+                  onClick={() => setMode(option.value)}
+                  icon={option.icon}
+                  label={option.label}
+                  size="small"
+                  variant={mode === option.value ? 'filled' : 'outlined'}
+                  color={mode === option.value ? 'primary' : 'default'}
+                  sx={{
+                    cursor: 'pointer',
+                    color: mode === option.value ? 'primary.contrastText' : 'white',
+                    bgcolor: mode === option.value ? 'primary.main' : 'rgba(255,255,255,0.08)',
+                    '& .MuiChip-icon': { color: 'inherit' },
+                  }}
+                />
+              </Tooltip>
+            ))}
+          </Stack>
           <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
             Open Project
           </Button>
