@@ -61,7 +61,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run editor tests
-        run: pnpm --filter daedalus-dialog-editor test
+        run: pnpm --filter daedalus-dialog-editor run build:main && pnpm --filter daedalus-dialog-editor test
 
   parser-tests:
     runs-on: ubuntu-latest
