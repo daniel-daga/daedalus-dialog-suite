@@ -54,7 +54,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     updateAction(index, localAction);
   }, [updateAction, index, localAction]);
 
-  const handleUpdate = useCallback((updated: any) => {
+  const handleUpdate = useCallback((updated: typeof localAction) => {
     // Update local state immediately for responsive UI
     setLocalAction(updated);
 
@@ -110,6 +110,11 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     addActionAfter(index, actionType);
   }, [addActionAfter, index]);
 
+
+
+  const hasNonEmptyText = useCallback((value: typeof localAction): boolean => {
+    return 'text' in value && typeof value.text === 'string' && value.text.trim() !== '';
+  }, []);
   // Determine action type for conditional logic
   const actionType = getActionType(localAction);
   const isDialogLine = actionType === 'dialogLine';
@@ -134,21 +139,21 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       flushUpdate();
       setMenuAnchor(actionBoxRef.current);
       setSelectedMenuIndex(0);
-    } else if (e.key === 'Enter' && e.shiftKey && isDialogLine && (localAction as any).text && (localAction as any).text.trim() !== '') {
+    } else if (e.key === 'Enter' && e.shiftKey && isDialogLine && hasNonEmptyText(localAction)) {
       // Shift+Enter creates a new dialog line WITHOUT toggling speaker
       e.preventDefault();
       flushUpdate();
       handleAddNewAfter(false);
-    } else if (e.key === 'Enter' && isDialogLine && (localAction as any).text && (localAction as any).text.trim() !== '') {
+    } else if (e.key === 'Enter' && isDialogLine && hasNonEmptyText(localAction)) {
       // Enter creates a new dialog line WITH toggling speaker (default behavior)
       e.preventDefault();
       flushUpdate();
       handleAddNewAfter(true);
-    } else if (e.key === 'Backspace' && isDialogLine && (!(localAction as any).text || (localAction as any).text.trim() === '')) {
+    } else if (e.key === 'Backspace' && isDialogLine && !hasNonEmptyText(localAction)) {
       e.preventDefault();
       handleDeleteAndFocusPrev();
     }
-  }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev]);
+  }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText]);
 
   const getActionIcon = () => {
     switch (actionType) {
