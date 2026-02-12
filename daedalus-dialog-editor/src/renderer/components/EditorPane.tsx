@@ -25,10 +25,31 @@ interface EditorPaneProps {
   onNavigateToFunction: (functionName: string) => void;
 }
 
+const TABS_HEIGHT = 40;
+
+const editorPaneContainerStyles = {
+  flex: '1 1 auto',
+  overflow: 'auto',
+  p: 0,
+  minWidth: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  position: 'relative',
+  height: '100%'
+} as const;
+
+const editorPaneContentStyles = {
+  p: 2,
+  flex: 1,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center'
+} as const;
+
 /**
  * The right-most pane that displays the dialog editor or placeholder content
  */
-const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
+const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({ 
   selectedDialog,
   dialogData,
   currentFunctionName,
@@ -60,7 +81,7 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
         variant="scrollable"
         scrollButtons="auto"
         allowScrollButtonsMobile
-        sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, textTransform: 'none' } }}
+        sx={{ minHeight: TABS_HEIGHT, '& .MuiTab-root': { minHeight: TABS_HEIGHT, textTransform: 'none' } }}
       >
         {recentDialogs.map((tab) => (
           <Tab
@@ -73,85 +94,41 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
     </Box>
   );
 
+  const renderStateShell = (content: React.ReactNode) => (
+    <Box ref={ref} sx={editorPaneContainerStyles}>
+      {tabsHeader}
+      <Box sx={editorPaneContentStyles}>{content}</Box>
+    </Box>
+  );
+
   // No dialog selected - show placeholder
   if (!selectedDialog || !dialogData) {
-    return (
-      <Box
-        ref={ref}
-        sx={{
-          flex: '1 1 auto',
-          overflow: 'auto',
-          p: 0,
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          height: '100%'
-        }}
-      >
-        {tabsHeader}
-        <Box sx={{ p: 2, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography variant="body1" color="text.secondary">
-            Select a dialog to edit
-          </Typography>
-        </Box>
-      </Box>
+    return renderStateShell(
+      <Typography variant="body1" color="text.secondary">
+        Select a dialog to edit
+      </Typography>
     );
   }
 
   // No information function defined
   if (!currentFunctionName) {
-    return (
-      <Box
-        ref={ref}
-        sx={{
-          flex: '1 1 auto',
-          overflow: 'auto',
-          p: 0,
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          height: '100%'
-        }}
-      >
-        {tabsHeader}
-        <Box sx={{ p: 2, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Alert severity="warning">
-            <Typography variant="body2">
-              This dialog does not have an information function defined.
-            </Typography>
-          </Alert>
-        </Box>
-      </Box>
+    return renderStateShell(
+      <Alert severity="warning">
+        <Typography variant="body2">
+          This dialog does not have an information function defined.
+        </Typography>
+      </Alert>
     );
   }
 
   // Function not found
   if (!currentFunctionData) {
-    return (
-      <Box
-        ref={ref}
-        sx={{
-          flex: '1 1 auto',
-          overflow: 'auto',
-          p: 0,
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          height: '100%'
-        }}
-      >
-        {tabsHeader}
-        <Box sx={{ p: 2, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Alert severity="error">
-            <Typography variant="body2">
-              Function "{currentFunctionName}" not found in the file.
-            </Typography>
-          </Alert>
-        </Box>
-      </Box>
+    return renderStateShell(
+      <Alert severity="error">
+        <Typography variant="body2">
+          Function "{currentFunctionName}" not found in the file.
+        </Typography>
+      </Alert>
     );
   }
 
