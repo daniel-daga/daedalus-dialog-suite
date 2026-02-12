@@ -21,12 +21,10 @@ interface UseDialogEditorCommandsParams {
   currentFunctionName: string | null;
   currentFunction: DialogFunction | null;
   semanticModel?: SemanticModel;
-  isProjectMode: boolean;
   saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<{
     success: boolean;
     validationResult?: ValidationResult;
   }>;
-  updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => void;
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
   focusAction: (index: number, scrollIntoView?: boolean) => void;
   setIsSaving: (value: boolean) => void;
@@ -41,9 +39,7 @@ export function useDialogEditorCommands({
   currentFunctionName,
   currentFunction,
   semanticModel,
-  isProjectMode,
   saveFile,
-  updateDialog,
   updateFunction,
   focusAction,
   setIsSaving,
@@ -51,9 +47,10 @@ export function useDialogEditorCommands({
   setSnackbar,
   setValidationDialog
 }: UseDialogEditorCommandsParams) {
-  const getFileState = useEditorStore((state) => state.getFileState);
   const openFile = useEditorStore((state) => state.openFile);
   const renameFunction = useEditorStore((state) => state.renameFunction);
+  const updateDialogWithUpdater = useEditorStore((state) => state.updateDialogWithUpdater);
+  const updateFunctionWithUpdater = useEditorStore((state) => state.updateFunctionWithUpdater);
   const updateDialogConditionFunction = useEditorStore((state) => state.updateDialogConditionFunction);
 
   const setFunction = useCallback((updatedFunctionOrUpdater: FunctionUpdater) => {
@@ -62,24 +59,12 @@ export function useDialogEditorCommands({
     }
 
     if (typeof updatedFunctionOrUpdater === 'function') {
-      const latestFileState = getFileState(filePath);
-      const existingFunction = latestFileState?.semanticModel?.functions?.[currentFunctionName];
-
-      if (!existingFunction) {
-        return;
-      }
-
-      const updatedFunction = updatedFunctionOrUpdater(existingFunction);
-      if (!updatedFunction) {
-        return;
-      }
-
-      updateFunction(filePath, currentFunctionName, updatedFunction);
+      updateFunctionWithUpdater(filePath, currentFunctionName, updatedFunctionOrUpdater);
       return;
     }
 
     updateFunction(filePath, currentFunctionName, updatedFunctionOrUpdater);
-  }, [currentFunctionName, filePath, getFileState, updateFunction]);
+  }, [currentFunctionName, filePath, updateFunction, updateFunctionWithUpdater]);
 
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
     if (!filePath) {
@@ -100,10 +85,7 @@ export function useDialogEditorCommands({
     });
 
     if (actionType === 'choice') {
-      const latestFileState = getFileState(filePath);
-      const modelForUniqueness = isProjectMode
-        ? semanticModel
-        : (latestFileState?.semanticModel || semanticModel);
+      const modelForUniqueness = semanticModel;
 
       if (!modelForUniqueness) {
         return;
@@ -126,36 +108,31 @@ export function useDialogEditorCommands({
         actions: newActions
       };
     });
-  }, [currentFunction, filePath, dialogName, getFileState, isProjectMode, semanticModel, updateFunction, setFunction, focusAction]);
+  }, [currentFunction, filePath, dialogName, semanticModel, updateFunction, setFunction, focusAction]);
 
   const handleDialogPropertyChange = useCallback((updater: DialogUpdater) => {
     if (!filePath) {
       return;
     }
 
-    const latestFileState = getFileState(filePath);
-    const existingDialog = latestFileState?.semanticModel?.dialogs?.[dialogName];
+    updateDialogWithUpdater(filePath, dialogName, (existingDialog) => {
+      const updatedDialog = updater(existingDialog);
+      const normalizedDialog: Dialog = {
+        ...updatedDialog,
+        properties: {
+          ...updatedDialog.properties,
+          information: typeof updatedDialog.properties?.information === 'object'
+            ? updatedDialog.properties.information.name
+            : updatedDialog.properties?.information,
+          condition: typeof updatedDialog.properties?.condition === 'object'
+            ? updatedDialog.properties.condition.name
+            : updatedDialog.properties?.condition
+        }
+      };
 
-    if (!existingDialog) {
-      return;
-    }
-
-    const updatedDialog = updater(existingDialog);
-    const normalizedDialog: Dialog = {
-      ...updatedDialog,
-      properties: {
-        ...updatedDialog.properties,
-        information: typeof updatedDialog.properties?.information === 'object'
-          ? updatedDialog.properties.information.name
-          : updatedDialog.properties?.information,
-        condition: typeof updatedDialog.properties?.condition === 'object'
-          ? updatedDialog.properties.condition.name
-          : updatedDialog.properties?.condition
-      }
-    };
-
-    updateDialog(filePath, dialogName, normalizedDialog);
-  }, [dialogName, filePath, getFileState, updateDialog]);
+      return normalizedDialog;
+    });
+  }, [dialogName, filePath, updateDialogWithUpdater]);
 
   const handleConditionFunctionUpdate = useCallback((funcOrUpdater: FunctionUpdater) => {
     if (!filePath) {

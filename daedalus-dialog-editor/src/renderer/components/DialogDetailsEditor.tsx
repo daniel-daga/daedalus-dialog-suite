@@ -28,10 +28,9 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   filePath,
   functionName,
   onNavigateToFunction,
-  semanticModel: passedSemanticModel,
-  isProjectMode = false
+  semanticModel: passedSemanticModel
 }) => {
-  const { openFiles, saveFile, updateDialog, updateFunction } = useEditorStore();
+  const { openFiles, saveFile, updateFunction } = useEditorStore();
   const fileState = filePath ? openFiles.get(filePath) : null;
   const semanticModel = fileState?.semanticModel || passedSemanticModel;
 
@@ -62,9 +61,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     currentFunctionName,
     currentFunction,
     semanticModel,
-    isProjectMode,
     saveFile,
-    updateDialog,
     updateFunction,
     focusAction,
     setIsSaving: uiState.setIsSaving,

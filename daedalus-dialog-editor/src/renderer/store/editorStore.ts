@@ -106,7 +106,17 @@ interface EditorStore {
   closeFile: (filePath: string) => void;
   updateModel: (filePath: string, model: SemanticModel) => void;
   updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => void;
+  updateDialogWithUpdater: (
+    filePath: string,
+    dialogName: string,
+    updater: (existingDialog: Dialog) => Dialog | null
+  ) => void;
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
+  updateFunctionWithUpdater: (
+    filePath: string,
+    functionName: string,
+    updater: (existingFunction: DialogFunction) => DialogFunction | null
+  ) => void;
   renameFunction: (filePath: string, oldFunctionName: string, newFunctionName: string) => void;
   updateDialogConditionFunction: (
     filePath: string,
@@ -245,6 +255,36 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     }
   },
 
+  updateDialogWithUpdater: (filePath: string, dialogName: string, updater: (existingDialog: Dialog) => Dialog | null) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+
+      const existingDialog = fileState.semanticModel.dialogs[dialogName];
+      if (!existingDialog) {
+        return;
+      }
+
+      const updatedDialog = updater(existingDialog);
+      if (!updatedDialog) {
+        return;
+      }
+
+      fileState.semanticModel.dialogs[dialogName] = updatedDialog;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
+    });
+
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
+  },
+
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
@@ -258,6 +298,36 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.hasErrors = false;
     });
     // Sync with project store using the committed (non-draft) state
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
+  },
+
+  updateFunctionWithUpdater: (filePath: string, functionName: string, updater: (existingFunction: DialogFunction) => DialogFunction | null) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+
+      const existingFunction = fileState.semanticModel.functions[functionName];
+      if (!existingFunction) {
+        return;
+      }
+
+      const updatedFunction = updater(existingFunction);
+      if (!updatedFunction) {
+        return;
+      }
+
+      fileState.semanticModel.functions[functionName] = updatedFunction;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
+    });
+
     const committedModel = get().openFiles.get(filePath)?.semanticModel;
     if (committedModel) {
       useProjectStore.getState().updateFileModel(filePath, committedModel);
