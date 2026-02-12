@@ -5,7 +5,6 @@ import { createAction } from '../actionFactory';
 import type { ActionTypeId } from '../actionTypes';
 import type { DialogUpdater, FunctionUpdater } from '../dialogTypes';
 import type {
-  Dialog,
   DialogFunction,
   SemanticModel,
   ValidationResult
@@ -49,9 +48,10 @@ export function useDialogEditorCommands({
 }: UseDialogEditorCommandsParams) {
   const openFile = useEditorStore((state) => state.openFile);
   const renameFunction = useEditorStore((state) => state.renameFunction);
-  const updateDialogWithUpdater = useEditorStore((state) => state.updateDialogWithUpdater);
+  const updateDialogWithNormalizedProperties = useEditorStore((state) => state.updateDialogWithNormalizedProperties);
   const updateFunctionWithUpdater = useEditorStore((state) => state.updateFunctionWithUpdater);
   const updateDialogConditionFunction = useEditorStore((state) => state.updateDialogConditionFunction);
+  const replaceDialogConditionFunction = useEditorStore((state) => state.replaceDialogConditionFunction);
 
   const setFunction = useCallback((updatedFunctionOrUpdater: FunctionUpdater) => {
     if (!currentFunctionName || !filePath) {
@@ -115,24 +115,8 @@ export function useDialogEditorCommands({
       return;
     }
 
-    updateDialogWithUpdater(filePath, dialogName, (existingDialog) => {
-      const updatedDialog = updater(existingDialog);
-      const normalizedDialog: Dialog = {
-        ...updatedDialog,
-        properties: {
-          ...updatedDialog.properties,
-          information: typeof updatedDialog.properties?.information === 'object'
-            ? updatedDialog.properties.information.name
-            : updatedDialog.properties?.information,
-          condition: typeof updatedDialog.properties?.condition === 'object'
-            ? updatedDialog.properties.condition.name
-            : updatedDialog.properties?.condition
-        }
-      };
-
-      return normalizedDialog;
-    });
-  }, [dialogName, filePath, updateDialogWithUpdater]);
+    updateDialogWithNormalizedProperties(filePath, dialogName, updater);
+  }, [dialogName, filePath, updateDialogWithNormalizedProperties]);
 
   const handleConditionFunctionUpdate = useCallback((funcOrUpdater: FunctionUpdater) => {
     if (!filePath) {
@@ -144,8 +128,8 @@ export function useDialogEditorCommands({
       return;
     }
 
-    updateFunction(filePath, funcOrUpdater.name, funcOrUpdater);
-  }, [dialogName, filePath, updateDialogConditionFunction, updateFunction]);
+    replaceDialogConditionFunction(filePath, dialogName, funcOrUpdater);
+  }, [dialogName, filePath, replaceDialogConditionFunction, updateDialogConditionFunction]);
 
   const handleSave = useCallback(async (forceOnErrors = false) => {
     if (!filePath) {

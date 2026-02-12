@@ -111,6 +111,11 @@ interface EditorStore {
     dialogName: string,
     updater: (existingDialog: Dialog) => Dialog | null
   ) => void;
+  updateDialogWithNormalizedProperties: (
+    filePath: string,
+    dialogName: string,
+    updater: (existingDialog: Dialog) => Dialog | null
+  ) => void;
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
   updateFunctionWithUpdater: (
     filePath: string,
@@ -122,6 +127,11 @@ interface EditorStore {
     filePath: string,
     dialogName: string,
     updater: (existingFunction: DialogFunction) => DialogFunction | null
+  ) => void;
+  replaceDialogConditionFunction: (
+    filePath: string,
+    dialogName: string,
+    updatedFunction: DialogFunction
   ) => void;
   validateFile: (filePath: string) => Promise<ValidationResult>;
   saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<SaveFileResult>;
@@ -285,6 +295,28 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     }
   },
 
+  updateDialogWithNormalizedProperties: (filePath: string, dialogName: string, updater: (existingDialog: Dialog) => Dialog | null) => {
+    get().updateDialogWithUpdater(filePath, dialogName, (existingDialog) => {
+      const updatedDialog = updater(existingDialog);
+      if (!updatedDialog) {
+        return null;
+      }
+
+      return {
+        ...updatedDialog,
+        properties: {
+          ...updatedDialog.properties,
+          information: typeof updatedDialog.properties?.information === 'object'
+            ? updatedDialog.properties.information.name
+            : updatedDialog.properties?.information,
+          condition: typeof updatedDialog.properties?.condition === 'object'
+            ? updatedDialog.properties.condition.name
+            : updatedDialog.properties?.condition
+        }
+      };
+    });
+  },
+
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
@@ -400,6 +432,10 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     if (committedModel) {
       useProjectStore.getState().updateFileModel(filePath, committedModel);
     }
+  },
+
+  replaceDialogConditionFunction: (filePath: string, dialogName: string, updatedFunction: DialogFunction) => {
+    get().updateDialogConditionFunction(filePath, dialogName, () => updatedFunction);
   },
 
   validateFile: async (filePath: string) => {
