@@ -94,8 +94,8 @@ test.describe('File Opening and Dialog Selection', () => {
     await expect(page.getByRole('button', { name: /Add Line/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Add Choice/i })).toBeVisible();
 
-    // Verify Save button is present
-    await expect(page.getByRole('button', { name: /Save/i })).toBeVisible();
+    // Auto-save is enabled, so there is no explicit Save button in the editor toolbar
+    await expect(page.getByRole('button', { name: /Save/i })).toHaveCount(0);
   });
 
   test('should display dialog actions', async ({ page }) => {
