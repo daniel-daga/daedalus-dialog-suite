@@ -14,19 +14,22 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm'
+        cache: 'pnpm'
+
+    - name: Enable Corepack
+      run: corepack enable
 
     - name: Install dependencies
-      run: npm ci
+      run: pnpm install --frozen-lockfile
 
     - name: Build Parser
-      run: npm run build -w daedalus-parser
+      run: pnpm --filter daedalus-parser run build
 
     - name: Build Editor
-      run: npm run build -w daedalus-dialog-editor
+      run: pnpm --filter daedalus-dialog-editor run build
 
     - name: Package Editor
-      run: npm run package -w daedalus-dialog-editor
+      run: pnpm --filter daedalus-dialog-editor run package
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
