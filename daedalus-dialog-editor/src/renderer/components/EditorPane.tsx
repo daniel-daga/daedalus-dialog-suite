@@ -1,5 +1,5 @@
 import React, { forwardRef } from 'react';
-import { Box, Typography, Alert, Fade, Tabs, Tab } from '@mui/material';
+import { Box, Typography, Alert, Tabs, Tab } from '@mui/material';
 import DialogDetailsEditor from './DialogDetailsEditor';
 import DialogLoadingSkeleton from './DialogLoadingSkeleton';
 import type { SemanticModel, Dialog, DialogFunction } from '../types/global';
@@ -171,33 +171,19 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
     >
       {tabsHeader}
 
-      {/* Show loading skeleton during transition */}
-      <Fade in={isLoadingDialog} unmountOnExit timeout={{ enter: 100, exit: 200 }}>
-        <Box sx={{
-          position: 'absolute',
-          top: recentDialogs.length > 0 ? 40 : 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          p: 2,
-          bgcolor: 'background.default',
-          zIndex: 10,
-          overflow: 'hidden'
-        }}>
+      <Box sx={{ width: '100%', p: 2, minHeight: 0, flex: 1 }}>
+        {isLoadingDialog ? (
           <DialogLoadingSkeleton />
-        </Box>
-      </Fade>
-
-      {/* Show actual content - hidden when loading */}
-      <Box sx={{ width: '100%', p: 2, opacity: isLoadingDialog ? 0 : 1, transition: 'opacity 0.2s' }}>
-        <DialogDetailsEditor
-          dialogName={selectedDialog}
-          filePath={filePath}
-          functionName={selectedFunctionName || undefined}
-          onNavigateToFunction={onNavigateToFunction}
-          semanticModel={semanticModel}
-          isProjectMode={isProjectMode}
-        />
+        ) : (
+          <DialogDetailsEditor
+            dialogName={selectedDialog}
+            filePath={filePath}
+            functionName={selectedFunctionName || undefined}
+            onNavigateToFunction={onNavigateToFunction}
+            semanticModel={semanticModel}
+            isProjectMode={isProjectMode}
+          />
+        )}
       </Box>
     </Box>
   );
