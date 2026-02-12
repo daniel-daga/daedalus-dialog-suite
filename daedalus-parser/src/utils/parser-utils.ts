@@ -2,19 +2,16 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import DaedalusParser from '../core/parser';
 import { SemanticModelBuilderVisitor } from '../semantic/semantic-visitor';
 import { SemanticModel } from '../semantic/semantic-model';
 
 /**
  * Create and configure a Daedalus parser instance
- * @returns Configured tree-sitter parser ready for Daedalus source
+ * @returns Configured parser wrapper ready for Daedalus source
  */
-export function createDaedalusParser(): any {
-  const Parser = require('tree-sitter');
-  const Daedalus = require('../../bindings/node');
-  const parser = new Parser();
-  parser.setLanguage(Daedalus);
-  return parser;
+export function createDaedalusParser(): DaedalusParser {
+  return DaedalusParser.create();
 }
 
 /**
@@ -23,8 +20,7 @@ export function createDaedalusParser(): any {
  * @returns Parse tree
  */
 export function parseDaedalusSource(sourceCode: string): any {
-  const parser = createDaedalusParser();
-  return parser.parse(sourceCode, undefined, { bufferSize: sourceCode.length + 1 });
+  return createDaedalusParser().parse(sourceCode).tree;
 }
 
 /**
@@ -33,8 +29,8 @@ export function parseDaedalusSource(sourceCode: string): any {
  * @returns Semantic model with error information if syntax errors exist
  */
 export function parseSemanticModel(sourceCode: string): SemanticModel {
-  const parser = createDaedalusParser();
-  const tree = parser.parse(sourceCode, undefined, { bufferSize: sourceCode.length + 1 });
+  const parseResult = createDaedalusParser().parse(sourceCode);
+  const tree = parseResult.tree;
 
   const visitor = new SemanticModelBuilderVisitor();
 

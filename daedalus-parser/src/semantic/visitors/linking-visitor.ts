@@ -5,13 +5,17 @@ import {
   DialogFunction,
   SemanticModel,
   SetVariableAction,
-  Action
+  Action,
+  DialogAction
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
+import { getBinaryOperator, isComparisonOperator, isLogicalOperator } from '../parsers/ast-constants';
+import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 
 export class LinkingVisitor {
-  private semanticModel: SemanticModel;
+  private dialogs: SemanticModel['dialogs'];
+  private functions: SemanticModel['functions'];
   private functionNameMap: Map<string, string>;
   private currentInstance: Dialog | null;
   private currentFunction: DialogFunction | null;
@@ -21,14 +25,15 @@ export class LinkingVisitor {
   private preservedStatementRanges: Map<string, Set<string>>;
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
-    this.semanticModel = semanticModel;
+    this.dialogs = semanticModel.dialogs;
+    this.functions = semanticModel.functions;
     this.functionNameMap = functionNameMap;
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
     this.functionToDialog = new Map<string, Dialog>();
     this.conditionRawMode = new Set<string>();
-    this.preservedStatementRanges = new Map<string, Set<string>>();
+    this.preservedStatementRanges = new Map<string, Set<string>>;
   }
 
   /**
@@ -38,12 +43,10 @@ export class LinkingVisitor {
     const cursor = node.walk();
     const currentNode = cursor.currentNode;
 
-    // Optimization: Handle root node specifically to skip non-declaration children
     if (currentNode.type === 'program' || currentNode.type === 'source_file') {
       if (cursor.gotoFirstChild()) {
         do {
           const child = cursor.currentNode;
-          // Only recurse into declarations we care about
           if (child.type === 'function_declaration' || child.type === 'instance_declaration') {
             this.analyzeNodeRecursively(cursor);
           }
@@ -53,126 +56,22 @@ export class LinkingVisitor {
       return;
     }
 
-    // Fallback for non-root nodes (e.g. tests)
     this.analyzeNodeRecursively(cursor);
   }
 
-  /**
-   * Internal method for analyzing nodes recursively
-   */
   private analyzeNodeRecursively(cursor: TreeCursor): void {
     const type = cursor.nodeType;
-    let node: TreeSitterNode | null = null;
-    let skipChildren = false;
+    const node = cursor.currentNode;
 
-    // Set the current context when entering an instance or function
-    if (type === 'instance_declaration') {
-      node = cursor.currentNode;
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        this.currentInstance = this.semanticModel.dialogs[nameNode.text];
-      }
-    } else if (type === 'function_declaration') {
-      node = cursor.currentNode;
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        this.currentFunction = this.semanticModel.functions[nameNode.text];
-        const body = node.childForFieldName('body');
-        if (this.currentFunction && body) {
-          this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
-        }
-      }
+    this.enterDeclarationContext(type, node);
+
+    const skipChildren = this.shouldSkipChildren(type, node);
+
+    if (!skipChildren) {
+      this.handleStatementNode(type, node);
+      this.handleConditionNode(type, node);
     }
 
-    const isConditionFunc = this.currentFunction && this.conditionFunctions.has(this.currentFunction.name);
-    const currentFunctionName = this.currentFunction?.name;
-
-    if (isConditionFunc && currentFunctionName) {
-      if (this.conditionRawMode.has(currentFunctionName)) {
-        if (this.isTopLevelStatement(cursor.currentNode)) {
-          this.preserveConditionStatement(cursor.currentNode);
-        }
-        // In raw mode, never parse nested condition nodes.
-        skipChildren = true;
-      } else if (type === 'if_statement') {
-        if (!node) node = cursor.currentNode;
-        const alternative = node.childForFieldName('alternative');
-        if (alternative) {
-          this.triggerConditionRawMode(node);
-          skipChildren = true;
-        }
-      } else if (type === 'return_statement') {
-        if (!node) node = cursor.currentNode;
-        if (this.isTopLevelStatement(node)) {
-          this.triggerConditionRawMode(node);
-          skipChildren = true;
-        }
-      }
-    }
-
-    // Preserve unsupported statements in non-condition functions to avoid flattening control flow
-    if (this.currentFunction && !isConditionFunc) {
-      if (type === 'if_statement' || type === 'return_statement') {
-        if (!node) node = cursor.currentNode;
-        this.preserveUnsupportedStatement(node);
-        skipChildren = true;
-      }
-    }
-
-    // Process nodes based on the current context
-    if (!skipChildren && type === 'assignment_statement') {
-        if (!node) node = cursor.currentNode;
-        if (this.currentInstance) {
-            this.processAssignment(node);
-        } else if (this.currentFunction) {
-            this.processFunctionAssignment(node);
-        }
-    } else if (!skipChildren && type === 'call_expression' && this.currentFunction) {
-        if (!node) node = cursor.currentNode;
-        this.processFunctionCall(node);
-    } else if (!skipChildren && this.currentFunction && this.conditionFunctions.has(this.currentFunction.name)) {
-        // Process condition-specific node types
-        if (type === 'binary_expression') {
-            if (!node) node = cursor.currentNode;
-            // Only process comparison binaries. Logical binaries (&&, ||) are containers.
-            // binary_expression has children [left, operator, right]
-            const operator = node.childCount >= 2 ? node.child(1).text : null;
-            if (
-              operator &&
-              ['==', '!=', '<', '>', '<=', '>='].includes(operator) &&
-              !this.hasComparisonBinaryAncestor(node)
-            ) {
-                this.processCondition(node);
-            }
-        } else if (type === 'identifier' || type === 'unary_expression') {
-            if (!node) node = cursor.currentNode;
-            const parent = node.parent;
-            if (!parent) return;
-
-            // If we are identifier, and parent is unary, we SKIP (let unary handle it).
-            if (type === 'identifier' && parent.type === 'unary_expression') return;
-            if (this.hasNonLogicalBinaryAncestor(node)) return;
-
-            // Determine if this node is in a "Condition Context"
-            const allowedParents = ['if_statement', 'parenthesized_expression'];
-            let isAllowed = allowedParents.includes(parent.type);
-
-            if (parent.type === 'binary_expression') {
-                 // Check if logical (&&, ||)
-                 const operator = parent.childCount >= 2 ? parent.child(1).text : null;
-                 const isComparison = operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator);
-                 if (!isComparison) {
-                     isAllowed = true;
-                 }
-            }
-
-            if (isAllowed) {
-                this.processCondition(node);
-            }
-        }
-    }
-
-    // Recurse to children
     if (!skipChildren && cursor.gotoFirstChild()) {
       do {
         this.analyzeNodeRecursively(cursor);
@@ -180,17 +79,126 @@ export class LinkingVisitor {
       cursor.gotoParent();
     }
 
-    // Unset the context after visiting all children
+    this.leaveDeclarationContext(type);
+  }
+
+  private enterDeclarationContext(type: string, node: TreeSitterNode): void {
+    if (type === 'instance_declaration') {
+      const nameNode = node.childForFieldName('name');
+      if (nameNode) {
+        this.currentInstance = this.dialogs[nameNode.text];
+      }
+      return;
+    }
+
+    if (type === 'function_declaration') {
+      const nameNode = node.childForFieldName('name');
+      if (!nameNode) return;
+      this.currentFunction = this.functions[nameNode.text];
+      const body = node.childForFieldName('body');
+      if (this.currentFunction && body) {
+        this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
+      }
+    }
+  }
+
+  private leaveDeclarationContext(type: string): void {
     if (type === 'instance_declaration') {
       this.currentInstance = null;
-    } else if (type === 'function_declaration') {
+      return;
+    }
+
+    if (type === 'function_declaration') {
       this.currentFunction = null;
     }
   }
 
-  // ===================================================================
-  // PROCESSING METHODS
-  // ===================================================================
+  private shouldSkipChildren(type: string, node: TreeSitterNode): boolean {
+    const isConditionFunc = this.isCurrentConditionFunction();
+    const currentFunctionName = this.currentFunction?.name;
+
+    if (isConditionFunc && currentFunctionName) {
+      if (this.conditionRawMode.has(currentFunctionName)) {
+        if (this.isTopLevelStatement(node)) {
+          this.preserveConditionStatement(node);
+        }
+        return true;
+      }
+
+      if (type === 'if_statement') {
+        const alternative = node.childForFieldName('alternative');
+        if (alternative) {
+          this.triggerConditionRawMode(node);
+          return true;
+        }
+      }
+
+      if (type === 'return_statement' && this.isTopLevelStatement(node)) {
+        this.triggerConditionRawMode(node);
+        return true;
+      }
+    }
+
+    if (this.currentFunction && !isConditionFunc && (type === 'if_statement' || type === 'return_statement')) {
+      this.preserveUnsupportedStatement(node);
+      return true;
+    }
+
+    return false;
+  }
+
+  private handleStatementNode(type: string, node: TreeSitterNode): void {
+    if (type === 'assignment_statement') {
+      if (this.currentInstance) {
+        this.processAssignment(node);
+      } else if (this.currentFunction) {
+        this.processFunctionAssignment(node);
+      }
+      return;
+    }
+
+    if (type === 'call_expression' && this.currentFunction) {
+      this.processFunctionCall(node);
+    }
+  }
+
+  private handleConditionNode(type: string, node: TreeSitterNode): void {
+    if (!this.isCurrentConditionFunction() || !this.currentFunction) {
+      return;
+    }
+
+    if (type === 'binary_expression') {
+      const operator = getBinaryOperator(node);
+      if (isComparisonOperator(operator) && !this.hasComparisonBinaryAncestor(node)) {
+        this.processCondition(node);
+      }
+      return;
+    }
+
+    if (type !== 'identifier' && type !== 'unary_expression') {
+      return;
+    }
+
+    const parent = node.parent;
+    if (!parent) return;
+
+    if (type === 'identifier' && parent.type === 'unary_expression') return;
+    if (this.hasNonLogicalBinaryAncestor(node)) return;
+
+    const allowedParents = ['if_statement', 'parenthesized_expression'];
+    let isAllowed = allowedParents.includes(parent.type);
+
+    if (parent.type === 'binary_expression') {
+      const operator = getBinaryOperator(parent);
+      if (!isComparisonOperator(operator)) {
+        isAllowed = true;
+      }
+    }
+
+    if (isAllowed) {
+      this.processCondition(node);
+    }
+  }
 
   /**
    * Process assignment statements in instance declarations
@@ -204,41 +212,29 @@ export class LinkingVisitor {
       let value: string | number | boolean | DialogFunction;
       this.capturePropertyFormatting(node, propertyName);
 
-      switch (rightNode.type) {
-        case 'number':
-          value = Number(rightNode.text);
-          break;
-        case 'boolean':
-          value = (rightNode.text.toLowerCase() === 'true');
-          break;
-        case 'identifier':
-          // Since all functions were created in Pass 1, this lookup will now succeed.
-          // Handle case-insensitive lookup
-          const originalName = this.functionNameMap.get(rightNode.text.toLowerCase());
-          const functionName = originalName || rightNode.text;
+      if (rightNode.type === 'identifier') {
+        const originalName = this.functionNameMap.get(rightNode.text.toLowerCase());
+        const functionName = originalName || rightNode.text;
 
-          // Track condition functions using canonical function name.
-          // This avoids mismatches when instance uses different casing.
-          if (propertyName === 'condition') {
-            this.conditionFunctions.add(functionName);
+        if (propertyName === 'condition') {
+          this.conditionFunctions.add(functionName);
+        }
+
+        if (this.functions[functionName]) {
+          value = this.functions[functionName];
+          if (propertyName === 'information') {
+            this.functionToDialog.set(functionName, this.currentInstance);
           }
-
-          if (this.semanticModel.functions[functionName]) {
-            value = this.semanticModel.functions[functionName];
-
-            // Optimize lookup: Map information function to dialog
-            if (propertyName === 'information') {
-              this.functionToDialog.set(functionName, this.currentInstance);
-            }
-          } else {
-            value = rightNode.text;
-          }
-          break;
-        default:
+        } else {
           value = rightNode.text;
+        }
+      } else {
+        value = parseLiteralOrIdentifier(rightNode);
+        if (!['number', 'boolean', 'string'].includes(rightNode.type)) {
           this.markPropertyExpression(propertyName);
-          break;
+        }
       }
+
       this.currentInstance.properties[propertyName] = value;
     }
   }
@@ -274,44 +270,26 @@ export class LinkingVisitor {
    * Process assignment statements in function bodies (variable updates)
    */
   private processFunctionAssignment(node: TreeSitterNode): void {
-      if (!this.currentFunction) return;
+    if (!this.currentFunction) return;
 
-      const leftNode = node.childForFieldName('left');
-      const rightNode = node.childForFieldName('right');
-      const operatorNode = node.childForFieldName('operator');
+    const leftNode = node.childForFieldName('left');
+    const rightNode = node.childForFieldName('right');
+    const operatorNode = node.childForFieldName('operator');
 
-      if (leftNode && rightNode) {
-          const variableName = leftNode.text;
-          const operator = operatorNode ? operatorNode.text : '=';
+    if (leftNode && rightNode) {
+      const variableName = leftNode.text;
+      const operator = operatorNode ? operatorNode.text : '=';
+      const value = parseLiteralOrIdentifier(rightNode);
 
-          let value: string | number | boolean;
-          if (rightNode.type === 'number') {
-              value = Number(rightNode.text);
-          } else if (rightNode.type === 'boolean') {
-              value = (rightNode.text.toLowerCase() === 'true');
-          } else {
-              // For identifier or strings, keep the text
-              value = rightNode.text;
-          }
+      const action = new SetVariableAction(variableName, operator, value);
 
-          const action = new SetVariableAction(variableName, operator, value);
-
-          // Check if this is a condition function logic
-          const isConditionFunc = this.conditionFunctions.has(this.currentFunction.name);
-
-          if (isConditionFunc) {
-            this.triggerConditionRawMode(node);
-            return;
-          } else {
-            this.currentFunction.actions.push(action);
-
-            // Also add to dialog if linked
-            const dialog = this.findDialogForFunction(this.currentFunction.name);
-            if (dialog) {
-              dialog.actions.push(action);
-            }
-          }
+      if (this.isCurrentConditionFunction()) {
+        this.triggerConditionRawMode(node);
+        return;
       }
+
+      this.recordActionForCurrentFunction(action);
+    }
   }
 
   /**
@@ -319,55 +297,48 @@ export class LinkingVisitor {
    */
   private processFunctionCall(node: TreeSitterNode): void {
     const funcToCallNode = node.childForFieldName('function');
-    if (funcToCallNode && this.currentFunction) {
-      const functionName = funcToCallNode.text;
-      this.currentFunction.calls.push(functionName);
+    if (!funcToCallNode || !this.currentFunction) {
+      return;
+    }
 
-      // Check if current function is a condition function
-      const isConditionFunc = this.conditionFunctions.has(this.currentFunction.name);
+    const functionName = funcToCallNode.text;
+    this.currentFunction.calls.push(functionName);
 
-      if (isConditionFunc) {
-        if (this.conditionRawMode.has(this.currentFunction.name)) {
-          return;
-        }
-
-        // In condition functions, calls are allowed only when part of an if-condition expression.
-        // Standalone calls imply side effects and must fall back to raw preservation.
-        if (!this.isCallInsideIfCondition(node)) {
-          this.triggerConditionRawMode(node);
-          return;
-        }
-
-        // Comparisons like Npc_HasItems(...) == 4 are parsed at binary_expression level.
-        // If we also parse the nested call_expression, we duplicate the condition.
-        if (this.isCallInsideComparisonBinary(node)) {
-          return;
-        }
-        if (this.isNestedCallArgument(node)) {
-          return;
-        }
-
-        // Parse semantic conditions and add to dialog
-        this.processCondition(node, functionName);
-      } else {
-        if (!this.isTopLevelCallStatement(node)) {
-          return;
-        }
-
-        // Parse semantic actions and add to current function
-        const action = ActionParsers.parseSemanticAction(node, functionName);
-        if (action) {
-          this.currentFunction.actions.push(action);
-        }
-
-        // Also add to dialog if this function is a dialog information function
-        const dialog = this.findDialogForFunction(this.currentFunction.name);
-        if (dialog) {
-          if (action) {
-            dialog.actions.push(action);
-          }
-        }
+    if (this.isCurrentConditionFunction()) {
+      if (this.conditionRawMode.has(this.currentFunction.name)) {
+        return;
       }
+
+      if (!this.isCallInsideIfCondition(node)) {
+        this.triggerConditionRawMode(node);
+        return;
+      }
+
+      if (this.isCallInsideComparisonBinary(node) || this.isNestedCallArgument(node)) {
+        return;
+      }
+
+      this.processCondition(node, functionName);
+      return;
+    }
+
+    if (!this.isTopLevelCallStatement(node)) {
+      return;
+    }
+
+    const action = ActionParsers.parseSemanticAction(node, functionName);
+    if (action) {
+      this.recordActionForCurrentFunction(action);
+    }
+  }
+
+  private recordActionForCurrentFunction(action: DialogAction): void {
+    if (!this.currentFunction) return;
+    this.currentFunction.actions.push(action);
+
+    const dialog = this.findDialogForFunction(this.currentFunction.name);
+    if (dialog) {
+      dialog.actions.push(action);
     }
   }
 
@@ -381,6 +352,10 @@ export class LinkingVisitor {
     if (condition) {
       this.currentFunction.conditions.push(condition);
     }
+  }
+
+  private isCurrentConditionFunction(): boolean {
+    return !!this.currentFunction && this.conditionFunctions.has(this.currentFunction.name);
   }
 
   private isTopLevelStatement(node: TreeSitterNode): boolean {
@@ -449,8 +424,8 @@ export class LinkingVisitor {
     let current: TreeSitterNode | null = node.parent;
     while (current) {
       if (current.type === 'binary_expression') {
-        const operator = current.childCount >= 2 ? current.child(1).text : null;
-        if (operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
+        const operator = getBinaryOperator(current);
+        if (isComparisonOperator(operator)) {
           return true;
         }
       }
@@ -466,8 +441,8 @@ export class LinkingVisitor {
     let current: TreeSitterNode | null = node.parent;
     while (current) {
       if (current.type === 'binary_expression') {
-        const operator = current.childCount >= 2 ? current.child(1).text : null;
-        if (!operator || (operator !== '&&' && operator !== '||')) {
+        const operator = getBinaryOperator(current);
+        if (!isLogicalOperator(operator)) {
           return true;
         }
       }
@@ -483,8 +458,8 @@ export class LinkingVisitor {
     let current: TreeSitterNode | null = node.parent;
     while (current) {
       if (current.type === 'binary_expression') {
-        const operator = current.childCount >= 2 ? current.child(1).text : null;
-        if (operator && ['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
+        const operator = getBinaryOperator(current);
+        if (isComparisonOperator(operator)) {
           return true;
         }
       }
@@ -530,20 +505,9 @@ export class LinkingVisitor {
    * Preserve unsupported statements as raw actions (existing arbitrary text field)
    */
   private preserveUnsupportedStatement(node: TreeSitterNode): void {
-    if (!this.currentFunction) return;
-
     const action = new Action(node.text.trim());
-    this.currentFunction.actions.push(action);
-
-    const dialog = this.findDialogForFunction(this.currentFunction.name);
-    if (dialog) {
-      dialog.actions.push(action);
-    }
+    this.recordActionForCurrentFunction(action);
   }
-
-  // ===================================================================
-  // UTILITY METHODS
-  // ===================================================================
 
   /**
    * Find which dialog uses a function as its information function

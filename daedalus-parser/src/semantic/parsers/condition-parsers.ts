@@ -8,6 +8,7 @@ import {
   VariableCondition
 } from '../semantic-model';
 import { parseArguments, normalizeArgumentText } from './argument-parsing';
+import { getBinaryOperator, isComparisonOperator } from './ast-constants';
 
 export class ConditionParsers {
 
@@ -47,13 +48,12 @@ export class ConditionParsers {
     if (node.childCount < 3) return null;
 
     const left = node.child(0);
-    const operator = node.child(1);
     const right = node.child(2);
 
-    if (!left || !operator || !right) return null;
+    if (!left || !right) return null;
 
-    const op = operator.text;
-    if (!ConditionParsers.isComparisonOperator(op)) {
+    const op = getBinaryOperator(node);
+    if (!isComparisonOperator(op)) {
       return null;
     }
 
@@ -127,10 +127,6 @@ export class ConditionParsers {
       return normalizeArgumentText(node);
     }
     return node.text.trim();
-  }
-
-  private static isComparisonOperator(operator: string): boolean {
-    return ['==', '!=', '<', '>', '<=', '>='].includes(operator);
   }
 
   private static invertComparisonOperator(operator: string): string {
