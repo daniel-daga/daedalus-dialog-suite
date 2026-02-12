@@ -35,18 +35,29 @@ interface DialogActionsSectionProps {
   onAddActionToEnd: (actionType: ActionTypeId) => void;
 }
 
-const EXTRA_ACTION_ITEMS: Array<{ actionType: ActionTypeId; label: string }> = [
-  { actionType: 'logEntry', label: 'Add Log Entry' },
-  { actionType: 'createTopic', label: 'Add Create Topic' },
-  { actionType: 'logSetTopicStatus', label: 'Add Log Set Status' },
-  { actionType: 'createInventoryItems', label: 'Add Create Inventory Items' },
-  { actionType: 'giveInventoryItems', label: 'Add Give Inventory Items' },
-  { actionType: 'attackAction', label: 'Add Attack Action' },
-  { actionType: 'setAttitudeAction', label: 'Add Set Attitude' },
-  { actionType: 'chapterTransition', label: 'Add Chapter Transition' },
-  { actionType: 'exchangeRoutine', label: 'Add Exchange Routine' },
-  { actionType: 'customAction', label: 'Add Custom Action' }
+type AddActionItem = {
+  actionType: ActionTypeId;
+  label: string;
+  placement: 'primary' | 'menu';
+};
+
+const ADD_ACTION_ITEMS: AddActionItem[] = [
+  { actionType: 'dialogLine', label: 'Add Line', placement: 'primary' },
+  { actionType: 'choice', label: 'Add Choice', placement: 'primary' },
+  { actionType: 'logEntry', label: 'Add Log Entry', placement: 'menu' },
+  { actionType: 'createTopic', label: 'Add Create Topic', placement: 'menu' },
+  { actionType: 'logSetTopicStatus', label: 'Add Log Set Status', placement: 'menu' },
+  { actionType: 'createInventoryItems', label: 'Add Create Inventory Items', placement: 'menu' },
+  { actionType: 'giveInventoryItems', label: 'Add Give Inventory Items', placement: 'menu' },
+  { actionType: 'attackAction', label: 'Add Attack Action', placement: 'menu' },
+  { actionType: 'setAttitudeAction', label: 'Add Set Attitude', placement: 'menu' },
+  { actionType: 'chapterTransition', label: 'Add Chapter Transition', placement: 'menu' },
+  { actionType: 'exchangeRoutine', label: 'Add Exchange Routine', placement: 'menu' },
+  { actionType: 'customAction', label: 'Add Custom Action', placement: 'menu' }
 ];
+
+const PRIMARY_ACTION_ITEMS = ADD_ACTION_ITEMS.filter((item) => item.placement === 'primary');
+const MENU_ACTION_ITEMS = ADD_ACTION_ITEMS.filter((item) => item.placement === 'menu');
 
 const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
   dialogName,
@@ -76,22 +87,17 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
           </Typography>
         </Box>
         <Stack direction="row" spacing={1}>
-          <Button
-            startIcon={<AddIcon />}
-            size="small"
-            variant="outlined"
-            onClick={() => onAddActionToEnd('dialogLine')}
-          >
-            Add Line
-          </Button>
-          <Button
-            startIcon={<AddIcon />}
-            size="small"
-            variant="outlined"
-            onClick={() => onAddActionToEnd('choice')}
-          >
-            Add Choice
-          </Button>
+          {PRIMARY_ACTION_ITEMS.map((item) => (
+            <Button
+              key={item.actionType}
+              startIcon={<AddIcon />}
+              size="small"
+              variant="outlined"
+              onClick={() => onAddActionToEnd(item.actionType)}
+            >
+              {item.label}
+            </Button>
+          ))}
           <Tooltip title="More actions">
             <IconButton
               size="small"
@@ -107,7 +113,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
             open={Boolean(addMenuAnchor)}
             onClose={() => setAddMenuAnchor(null)}
           >
-            {EXTRA_ACTION_ITEMS.map((item) => (
+            {MENU_ACTION_ITEMS.map((item) => (
               <MenuItem
                 key={item.actionType}
                 onClick={() => {
