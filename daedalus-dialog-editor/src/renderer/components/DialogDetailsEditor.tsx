@@ -4,13 +4,11 @@ import {
   Typography,
   Stack,
   Button,
-  Chip,
   Snackbar,
   Alert,
   CircularProgress
 } from '@mui/material';
 import {
-  Save as SaveIcon,
   Code as CodeIcon
 } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
@@ -55,7 +53,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     addActionToEnd,
     handleDialogPropertyChange,
     handleConditionFunctionUpdate,
-    handleSave,
     handleSaveAnyway,
     handleCancelValidation,
     handleReset
@@ -105,7 +102,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="h5">{dialogName}</Typography>
-          {isDirty && <Chip label="Unsaved Changes" size="small" color="error" />}
         </Box>
         <Stack direction="row" spacing={1}>
           <Button
@@ -122,15 +118,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             startIcon={uiState.isResetting ? <CircularProgress size={16} /> : undefined}
           >
             {uiState.isResetting ? 'Resetting...' : 'Reset'}
-          </Button>
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={uiState.isSaving ? <CircularProgress size={16} sx={{ color: 'white' }} /> : <SaveIcon />}
-            disabled={!isDirty || uiState.isSaving || uiState.isResetting}
-            onClick={() => handleSave()}
-          >
-            {uiState.isSaving ? 'Saving...' : 'Save'}
           </Button>
         </Stack>
       </Box>
