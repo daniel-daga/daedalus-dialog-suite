@@ -36,6 +36,7 @@
   "build": {
     "appId": "com.gothicmodding.daedalusdialog",
     "productName": "Daedalus Dialog Editor",
+    "electronVersion": "29.4.6",
     "files": [
       "dist/**/*",
       "package.json"
