@@ -181,6 +181,43 @@ export interface VariableCondition {
   value?: string | number | boolean;
 }
 
+export interface NpcHasItemsCondition {
+  type: 'NpcHasItemsCondition';
+  npc: string;
+  item: string;
+  operator?: string;
+  value?: string | number | boolean;
+}
+
+export interface NpcIsInStateCondition {
+  type: 'NpcIsInStateCondition';
+  npc: string;
+  state: string;
+  negated: boolean;
+}
+
+export interface NpcIsDeadCondition {
+  type: 'NpcIsDeadCondition';
+  npc: string;
+  negated: boolean;
+}
+
+export interface NpcGetDistToWpCondition {
+  type: 'NpcGetDistToWpCondition';
+  npc: string;
+  waypoint: string;
+  operator?: string;
+  value?: string | number | boolean;
+}
+
+export interface NpcGetTalentSkillCondition {
+  type: 'NpcGetTalentSkillCondition';
+  npc: string;
+  talent: string;
+  operator?: string;
+  value?: string | number | boolean;
+}
+
 export interface Condition {
   type: 'Condition';
   condition: string;
@@ -191,7 +228,16 @@ export interface GenericCondition {
   condition: string;
 }
 
-export type DialogCondition = NpcKnowsInfoCondition | VariableCondition | Condition | GenericCondition;
+export type DialogCondition =
+  | NpcKnowsInfoCondition
+  | VariableCondition
+  | NpcHasItemsCondition
+  | NpcIsInStateCondition
+  | NpcIsDeadCondition
+  | NpcGetDistToWpCondition
+  | NpcGetTalentSkillCondition
+  | Condition
+  | GenericCondition;
 
 // ============================================================================
 // Semantic Model Types - Functions and Dialogs

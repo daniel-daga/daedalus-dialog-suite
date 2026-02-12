@@ -134,6 +134,9 @@ export class LinkingVisitor {
       }
 
       if (type === 'return_statement' && this.isTopLevelStatement(node)) {
+        if (this.isTrivialTopLevelTrueReturn(node)) {
+          return true;
+        }
         this.triggerConditionRawMode(node);
         return true;
       }
@@ -309,6 +312,10 @@ export class LinkingVisitor {
         return;
       }
 
+      if (this.isNegatedCallHandledByUnaryCondition(node, functionName)) {
+        return;
+      }
+
       if (!this.isCallInsideIfCondition(node)) {
         this.triggerConditionRawMode(node);
         return;
@@ -404,6 +411,20 @@ export class LinkingVisitor {
     this.preserveConditionStatement(node);
   }
 
+  private isTrivialTopLevelTrueReturn(node: TreeSitterNode): boolean {
+    if (!this.currentFunction) {
+      return false;
+    }
+
+    // Only skip raw mode if this function is literally just a top-level truthy return.
+    if (this.currentFunction.conditions.length > 0 || this.currentFunction.actions.length > 0) {
+      return false;
+    }
+
+    const text = node.text.trim().replace(/\s+/g, ' ').toUpperCase();
+    return text === 'RETURN TRUE;' || text === 'RETURN 1;';
+  }
+
   private isCallInsideIfCondition(node: TreeSitterNode): boolean {
     let current: TreeSitterNode | null = node;
     while (current && current.parent) {
@@ -492,6 +513,20 @@ export class LinkingVisitor {
     }
     const grandParent = parent.parent;
     return !!grandParent && grandParent.type === 'block';
+  }
+
+  private isNegatedCallHandledByUnaryCondition(node: TreeSitterNode, functionName: string): boolean {
+    if (functionName !== 'Npc_IsDead' && functionName !== 'Npc_IsInState') {
+      return false;
+    }
+
+    const parent = node.parent;
+    if (!parent || parent.type !== 'unary_expression') {
+      return false;
+    }
+
+    const operator = parent.child(0);
+    return !!operator && operator.text === '!';
   }
 
   /**

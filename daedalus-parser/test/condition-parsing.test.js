@@ -6,6 +6,11 @@ const {
   SemanticModelBuilderVisitor,
   SemanticCodeGenerator,
   NpcKnowsInfoCondition,
+  NpcHasItemsCondition,
+  NpcIsInStateCondition,
+  NpcIsDeadCondition,
+  NpcGetDistToWpCondition,
+  NpcGetTalentSkillCondition,
   Condition,
   VariableCondition
 } = require('../dist/semantic/semantic-visitor-index');
@@ -527,4 +532,102 @@ func void DIA_Test_StringCondition_Info()
     String(conditionFunc.conditions[0].value).includes('\\"hello\\"'),
     'Condition value should preserve escaped internal quotes'
   );
+});
+
+test('Should parse supported function-call conditions into typed conditions', () => {
+  const source = `
+instance DIA_Test_TypedCalls(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_TypedCalls_Condition;
+	information	= DIA_Test_TypedCalls_Info;
+	description = "Test";
+};
+
+func int DIA_Test_TypedCalls_Condition()
+{
+	if (Npc_HasItems(other, ItMi_Gold) >= 50
+	&& Npc_IsInState(self, ZS_Talk)
+	&& !Npc_IsDead(Esteban)
+	&& Npc_GetDistToWP(self, "OW_CITY") < 1500
+	&& Npc_GetTalentSkill(other, NPC_TALENT_PICKPOCKET) >= 1)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_TypedCalls_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditions = model.dialogs['DIA_Test_TypedCalls'].properties.condition.conditions;
+
+  assert.ok(conditions.length >= 5, 'Should parse typed call conditions');
+  assert.ok(conditions.some(c => c instanceof NpcHasItemsCondition), 'Should include NpcHasItemsCondition');
+  assert.ok(conditions.some(c => c instanceof NpcIsInStateCondition), 'Should include NpcIsInStateCondition');
+  assert.ok(conditions.some(c => c instanceof NpcIsDeadCondition), 'Should include NpcIsDeadCondition');
+  assert.ok(conditions.some(c => c instanceof NpcGetDistToWpCondition), 'Should include NpcGetDistToWpCondition');
+  assert.ok(conditions.some(c => c instanceof NpcGetTalentSkillCondition), 'Should include NpcGetTalentSkillCondition');
+
+  const deadCond = conditions.find(c => c instanceof NpcIsDeadCondition);
+  assert.ok(deadCond, 'Should parse Npc_IsDead condition');
+  assert.strictEqual(deadCond.negated, true, 'Unary negation should be preserved');
+});
+
+test('Should normalize bool comparisons for Npc_IsDead and Npc_IsInState', () => {
+  const source = `
+instance DIA_Test_BoolComparisons(C_INFO)
+{
+	npc			= TestNpc;
+	condition	= DIA_Test_BoolComparisons_Condition;
+	information	= DIA_Test_BoolComparisons_Info;
+	description = "Test";
+};
+
+func int DIA_Test_BoolComparisons_Condition()
+{
+	if (Npc_IsDead(UndeadDragon) == FALSE
+	&& Npc_IsInState(self, ZS_Talk) != TRUE)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_BoolComparisons_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditions = model.dialogs['DIA_Test_BoolComparisons'].properties.condition.conditions;
+
+  assert.strictEqual(conditions.length, 2);
+  assert.ok(conditions[0] instanceof NpcIsDeadCondition);
+  assert.ok(conditions[1] instanceof NpcIsInStateCondition);
+  assert.strictEqual(conditions[0].negated, true, '== FALSE should normalize to negated');
+  assert.strictEqual(conditions[1].negated, true, '!= TRUE should normalize to negated');
+});
+
+test('Should not force raw mode for simple top-level return TRUE condition functions', () => {
+  const source = `
+instance DIA_Test_ReturnTrue(C_INFO)
+{
+	npc			= TestNpc;
+	condition	= DIA_Test_ReturnTrue_Condition;
+	information	= DIA_Test_ReturnTrue_Info;
+	description = "Test";
+};
+
+func int DIA_Test_ReturnTrue_Condition()
+{
+	return TRUE;
+};
+
+func void DIA_Test_ReturnTrue_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const fn = model.dialogs['DIA_Test_ReturnTrue'].properties.condition;
+
+  assert.strictEqual(fn.conditions.length, 0, 'Simple always-true condition has no structured predicates');
+  assert.strictEqual(fn.actions.length, 0, 'Simple always-true condition should not enter raw mode');
 });

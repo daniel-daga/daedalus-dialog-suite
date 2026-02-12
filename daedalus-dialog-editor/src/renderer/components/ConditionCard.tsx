@@ -38,6 +38,33 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
     'variableName' in current;
   const isExpressionCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & { condition: string } =>
     'condition' in current;
+  const isNpcHasItemsCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & {
+    npc: string;
+    item: string;
+    operator?: string;
+    value?: string | number | boolean;
+  } => current.type === 'NpcHasItemsCondition';
+  const isNpcIsInStateCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & {
+    npc: string;
+    state: string;
+    negated?: boolean;
+  } => current.type === 'NpcIsInStateCondition';
+  const isNpcIsDeadCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & {
+    npc: string;
+    negated?: boolean;
+  } => current.type === 'NpcIsDeadCondition';
+  const isNpcGetDistToWpCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & {
+    npc: string;
+    waypoint: string;
+    operator?: string;
+    value?: string | number | boolean;
+  } => current.type === 'NpcGetDistToWpCondition';
+  const isNpcGetTalentSkillCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & {
+    npc: string;
+    talent: string;
+    operator?: string;
+    value?: string | number | boolean;
+  } => current.type === 'NpcGetTalentSkillCondition';
 
   // Use refs to store latest values without triggering re-renders
   const localConditionRef = useRef(localCondition);
@@ -98,6 +125,21 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
     if (isVariableCondition(localCondition)) {
       return 'VariableCondition';
     }
+    if (isNpcHasItemsCondition(localCondition)) {
+      return 'NpcHasItemsCondition';
+    }
+    if (isNpcIsInStateCondition(localCondition)) {
+      return 'NpcIsInStateCondition';
+    }
+    if (isNpcIsDeadCondition(localCondition)) {
+      return 'NpcIsDeadCondition';
+    }
+    if (isNpcGetDistToWpCondition(localCondition)) {
+      return 'NpcGetDistToWpCondition';
+    }
+    if (isNpcGetTalentSkillCondition(localCondition)) {
+      return 'NpcGetTalentSkillCondition';
+    }
     return 'Condition';
   };
 
@@ -109,6 +151,16 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
         return <InfoIcon fontSize="small" />;
       case 'VariableCondition':
         return <CheckIcon fontSize="small" />;
+      case 'NpcHasItemsCondition':
+        return <InfoIcon fontSize="small" />;
+      case 'NpcIsInStateCondition':
+        return <InfoIcon fontSize="small" />;
+      case 'NpcIsDeadCondition':
+        return <InfoIcon fontSize="small" />;
+      case 'NpcGetDistToWpCondition':
+        return <InfoIcon fontSize="small" />;
+      case 'NpcGetTalentSkillCondition':
+        return <InfoIcon fontSize="small" />;
       case 'Condition':
       default:
         return <CodeIcon fontSize="small" />;
@@ -121,6 +173,16 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
         return 'NPC Knows Dialog';
       case 'VariableCondition':
         return isVariableCondition(localCondition) && localCondition.negated ? 'Variable is False' : 'Variable is True';
+      case 'NpcHasItemsCondition':
+        return 'NPC Has Items';
+      case 'NpcIsInStateCondition':
+        return isNpcIsInStateCondition(localCondition) && localCondition.negated ? 'NPC Not In State' : 'NPC Is In State';
+      case 'NpcIsDeadCondition':
+        return isNpcIsDeadCondition(localCondition) && localCondition.negated ? 'NPC Is Alive' : 'NPC Is Dead';
+      case 'NpcGetDistToWpCondition':
+        return 'Distance To Waypoint';
+      case 'NpcGetTalentSkillCondition':
+        return 'NPC Talent Skill';
       case 'Condition':
       default:
         return 'Custom Condition';
@@ -221,6 +283,334 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               sx={{ flex: 1 }}
               placeholder="e.g., MIS_QuestCompleted"
               semanticModel={semanticModel}
+            />
+          </Box>
+        );
+
+      case 'NpcHasItemsCondition':
+        if (!isNpcHasItemsCondition(localCondition)) {
+          return null;
+        }
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <VariableAutocomplete
+              label="NPC"
+              value={localCondition.npc || ''}
+              onChange={(value) => handleUpdate({
+                type: 'NpcHasItemsCondition',
+                npc: value,
+                item: localCondition.item,
+                operator: localCondition.operator,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onFlush={flushUpdate}
+              showInstances
+              typeFilter="C_NPC"
+              isMainField
+              mainFieldRef={mainFieldRef}
+              sx={{ flex: '1 1 30%', minWidth: 120 }}
+              semanticModel={semanticModel}
+            />
+            <VariableAutocomplete
+              label="Item"
+              value={localCondition.item || ''}
+              onChange={(value) => handleUpdate({
+                type: 'NpcHasItemsCondition',
+                npc: localCondition.npc,
+                item: value,
+                operator: localCondition.operator,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onFlush={flushUpdate}
+              showInstances
+              sx={{ flex: '1 1 35%', minWidth: 140 }}
+              semanticModel={semanticModel}
+            />
+            <TextField
+              label="Op"
+              value={localCondition.operator || ''}
+              onChange={(e) => handleUpdate({
+                type: 'NpcHasItemsCondition',
+                npc: localCondition.npc,
+                item: localCondition.item,
+                operator: e.target.value,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ width: 80 }}
+            />
+            <TextField
+              label="Value"
+              value={localCondition.value === undefined ? '' : String(localCondition.value)}
+              onChange={(e) => handleUpdate({
+                type: 'NpcHasItemsCondition',
+                npc: localCondition.npc,
+                item: localCondition.item,
+                operator: localCondition.operator,
+                value: e.target.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ width: 110 }}
+            />
+          </Box>
+        );
+
+      case 'NpcIsInStateCondition':
+        if (!isNpcIsInStateCondition(localCondition)) {
+          return null;
+        }
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={localCondition.negated || false}
+                  onChange={(e) => {
+                    const updated: ConditionEditorCondition = {
+                      type: 'NpcIsInStateCondition',
+                      npc: localCondition.npc,
+                      state: localCondition.state,
+                      negated: e.target.checked,
+                      getTypeName: localCondition.getTypeName
+                    };
+                    setLocalCondition(updated);
+                    updateCondition(index, updated);
+                  }}
+                  size="small"
+                />
+              }
+              label="NOT"
+              sx={{ mr: 1 }}
+            />
+            <VariableAutocomplete
+              label="NPC"
+              value={localCondition.npc || ''}
+              onChange={(value) => handleUpdate({
+                type: 'NpcIsInStateCondition',
+                npc: value,
+                state: localCondition.state,
+                negated: localCondition.negated || false,
+                getTypeName: localCondition.getTypeName
+              })}
+              onFlush={flushUpdate}
+              showInstances
+              typeFilter="C_NPC"
+              isMainField
+              mainFieldRef={mainFieldRef}
+              sx={{ flex: '1 1 35%', minWidth: 130 }}
+              semanticModel={semanticModel}
+            />
+            <TextField
+              label="State"
+              value={localCondition.state || ''}
+              onChange={(e) => handleUpdate({
+                type: 'NpcIsInStateCondition',
+                npc: localCondition.npc,
+                state: e.target.value,
+                negated: localCondition.negated || false,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ flex: '1 1 45%', minWidth: 150 }}
+            />
+          </Box>
+        );
+
+      case 'NpcIsDeadCondition':
+        if (!isNpcIsDeadCondition(localCondition)) {
+          return null;
+        }
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={localCondition.negated || false}
+                  onChange={(e) => {
+                    const updated: ConditionEditorCondition = {
+                      type: 'NpcIsDeadCondition',
+                      npc: localCondition.npc,
+                      negated: e.target.checked,
+                      getTypeName: localCondition.getTypeName
+                    };
+                    setLocalCondition(updated);
+                    updateCondition(index, updated);
+                  }}
+                  size="small"
+                />
+              }
+              label="NOT"
+              sx={{ mr: 1 }}
+            />
+            <VariableAutocomplete
+              label="NPC"
+              value={localCondition.npc || ''}
+              onChange={(value) => handleUpdate({
+                type: 'NpcIsDeadCondition',
+                npc: value,
+                negated: localCondition.negated || false,
+                getTypeName: localCondition.getTypeName
+              })}
+              onFlush={flushUpdate}
+              showInstances
+              typeFilter="C_NPC"
+              isMainField
+              mainFieldRef={mainFieldRef}
+              sx={{ flex: 1 }}
+              semanticModel={semanticModel}
+            />
+          </Box>
+        );
+
+      case 'NpcGetDistToWpCondition':
+        if (!isNpcGetDistToWpCondition(localCondition)) {
+          return null;
+        }
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <VariableAutocomplete
+              label="NPC"
+              value={localCondition.npc || ''}
+              onChange={(value) => handleUpdate({
+                type: 'NpcGetDistToWpCondition',
+                npc: value,
+                waypoint: localCondition.waypoint,
+                operator: localCondition.operator,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onFlush={flushUpdate}
+              showInstances
+              typeFilter="C_NPC"
+              isMainField
+              mainFieldRef={mainFieldRef}
+              sx={{ flex: '1 1 25%', minWidth: 120 }}
+              semanticModel={semanticModel}
+            />
+            <TextField
+              label="Waypoint"
+              value={localCondition.waypoint || ''}
+              onChange={(e) => handleUpdate({
+                type: 'NpcGetDistToWpCondition',
+                npc: localCondition.npc,
+                waypoint: e.target.value,
+                operator: localCondition.operator,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ flex: '1 1 35%', minWidth: 150 }}
+            />
+            <TextField
+              label="Op"
+              value={localCondition.operator || ''}
+              onChange={(e) => handleUpdate({
+                type: 'NpcGetDistToWpCondition',
+                npc: localCondition.npc,
+                waypoint: localCondition.waypoint,
+                operator: e.target.value,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ width: 80 }}
+            />
+            <TextField
+              label="Value"
+              value={localCondition.value === undefined ? '' : String(localCondition.value)}
+              onChange={(e) => handleUpdate({
+                type: 'NpcGetDistToWpCondition',
+                npc: localCondition.npc,
+                waypoint: localCondition.waypoint,
+                operator: localCondition.operator,
+                value: e.target.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ width: 110 }}
+            />
+          </Box>
+        );
+
+      case 'NpcGetTalentSkillCondition':
+        if (!isNpcGetTalentSkillCondition(localCondition)) {
+          return null;
+        }
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <VariableAutocomplete
+              label="NPC"
+              value={localCondition.npc || ''}
+              onChange={(value) => handleUpdate({
+                type: 'NpcGetTalentSkillCondition',
+                npc: value,
+                talent: localCondition.talent,
+                operator: localCondition.operator,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onFlush={flushUpdate}
+              showInstances
+              typeFilter="C_NPC"
+              isMainField
+              mainFieldRef={mainFieldRef}
+              sx={{ flex: '1 1 25%', minWidth: 120 }}
+              semanticModel={semanticModel}
+            />
+            <TextField
+              label="Talent"
+              value={localCondition.talent || ''}
+              onChange={(e) => handleUpdate({
+                type: 'NpcGetTalentSkillCondition',
+                npc: localCondition.npc,
+                talent: e.target.value,
+                operator: localCondition.operator,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ flex: '1 1 35%', minWidth: 150 }}
+            />
+            <TextField
+              label="Op"
+              value={localCondition.operator || ''}
+              onChange={(e) => handleUpdate({
+                type: 'NpcGetTalentSkillCondition',
+                npc: localCondition.npc,
+                talent: localCondition.talent,
+                operator: e.target.value,
+                value: localCondition.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ width: 80 }}
+            />
+            <TextField
+              label="Value"
+              value={localCondition.value === undefined ? '' : String(localCondition.value)}
+              onChange={(e) => handleUpdate({
+                type: 'NpcGetTalentSkillCondition',
+                npc: localCondition.npc,
+                talent: localCondition.talent,
+                operator: localCondition.operator,
+                value: e.target.value,
+                getTypeName: localCondition.getTypeName
+              })}
+              onBlur={flushUpdate}
+              size="small"
+              sx={{ width: 110 }}
             />
           </Box>
         );

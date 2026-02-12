@@ -587,6 +587,189 @@ export class NpcKnowsInfoCondition implements CodeGeneratable {
 }
 
 /**
+ * Represents an Npc_HasItems condition, optionally with a comparison.
+ */
+export class NpcHasItemsCondition implements CodeGeneratable {
+  public readonly type = 'NpcHasItemsCondition';
+  public npc: string;
+  public item: string;
+  public operator?: string;
+  public value?: string | number | boolean;
+
+  constructor(npc: string, item: string, operator?: string, value?: string | number | boolean) {
+    this.npc = npc;
+    this.item = item;
+    if (operator !== undefined) {
+      this.operator = operator;
+    }
+    if (value !== undefined) {
+      this.value = value;
+    }
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const call = `Npc_HasItems(${this.npc}, ${this.item})`;
+    if (this.operator && this.value !== undefined) {
+      return `${call} ${this.operator} ${this.value}`;
+    }
+    return call;
+  }
+
+  toDisplayString(): string {
+    if (this.operator && this.value !== undefined) {
+      return `[NpcHasItems: ${this.npc}, ${this.item} ${this.operator} ${this.value}]`;
+    }
+    return `[NpcHasItems: ${this.npc}, ${this.item}]`;
+  }
+
+  getTypeName(): string {
+    return 'NpcHasItemsCondition';
+  }
+}
+
+/**
+ * Represents an Npc_IsInState condition, optionally negated.
+ */
+export class NpcIsInStateCondition implements CodeGeneratable {
+  public readonly type = 'NpcIsInStateCondition';
+  public npc: string;
+  public state: string;
+  public negated: boolean;
+
+  constructor(npc: string, state: string, negated: boolean = false) {
+    this.npc = npc;
+    this.state = state;
+    this.negated = negated;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const call = `Npc_IsInState(${this.npc}, ${this.state})`;
+    return this.negated ? `!${call}` : call;
+  }
+
+  toDisplayString(): string {
+    return this.negated
+      ? `[Not NpcIsInState: ${this.npc}, ${this.state}]`
+      : `[NpcIsInState: ${this.npc}, ${this.state}]`;
+  }
+
+  getTypeName(): string {
+    return 'NpcIsInStateCondition';
+  }
+}
+
+/**
+ * Represents an Npc_IsDead condition, optionally negated.
+ */
+export class NpcIsDeadCondition implements CodeGeneratable {
+  public readonly type = 'NpcIsDeadCondition';
+  public npc: string;
+  public negated: boolean;
+
+  constructor(npc: string, negated: boolean = false) {
+    this.npc = npc;
+    this.negated = negated;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const call = `Npc_IsDead(${this.npc})`;
+    return this.negated ? `!${call}` : call;
+  }
+
+  toDisplayString(): string {
+    return this.negated
+      ? `[Not NpcIsDead: ${this.npc}]`
+      : `[NpcIsDead: ${this.npc}]`;
+  }
+
+  getTypeName(): string {
+    return 'NpcIsDeadCondition';
+  }
+}
+
+/**
+ * Represents an Npc_GetDistToWP comparison condition.
+ */
+export class NpcGetDistToWpCondition implements CodeGeneratable {
+  public readonly type = 'NpcGetDistToWpCondition';
+  public npc: string;
+  public waypoint: string;
+  public operator?: string;
+  public value?: string | number | boolean;
+
+  constructor(npc: string, waypoint: string, operator?: string, value?: string | number | boolean) {
+    this.npc = npc;
+    this.waypoint = waypoint;
+    if (operator !== undefined) {
+      this.operator = operator;
+    }
+    if (value !== undefined) {
+      this.value = value;
+    }
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const call = `Npc_GetDistToWP(${this.npc}, ${this.waypoint})`;
+    if (this.operator && this.value !== undefined) {
+      return `${call} ${this.operator} ${this.value}`;
+    }
+    return call;
+  }
+
+  toDisplayString(): string {
+    if (this.operator && this.value !== undefined) {
+      return `[NpcGetDistToWP: ${this.npc}, ${this.waypoint} ${this.operator} ${this.value}]`;
+    }
+    return `[NpcGetDistToWP: ${this.npc}, ${this.waypoint}]`;
+  }
+
+  getTypeName(): string {
+    return 'NpcGetDistToWpCondition';
+  }
+}
+
+/**
+ * Represents an Npc_GetTalentSkill condition, optionally with a comparison.
+ */
+export class NpcGetTalentSkillCondition implements CodeGeneratable {
+  public readonly type = 'NpcGetTalentSkillCondition';
+  public npc: string;
+  public talent: string;
+  public operator?: string;
+  public value?: string | number | boolean;
+
+  constructor(npc: string, talent: string, operator?: string, value?: string | number | boolean) {
+    this.npc = npc;
+    this.talent = talent;
+    if (operator !== undefined) {
+      this.operator = operator;
+    }
+    if (value !== undefined) {
+      this.value = value;
+    }
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const call = `Npc_GetTalentSkill(${this.npc}, ${this.talent})`;
+    if (this.operator && this.value !== undefined) {
+      return `${call} ${this.operator} ${this.value}`;
+    }
+    return call;
+  }
+
+  toDisplayString(): string {
+    if (this.operator && this.value !== undefined) {
+      return `[NpcGetTalentSkill: ${this.npc}, ${this.talent} ${this.operator} ${this.value}]`;
+    }
+    return `[NpcGetTalentSkill: ${this.npc}, ${this.talent}]`;
+  }
+
+  getTypeName(): string {
+    return 'NpcGetTalentSkillCondition';
+  }
+}
+
+/**
  * Generic condition for any other condition expression
  */
 export class Condition implements CodeGeneratable {
@@ -651,12 +834,25 @@ export class VariableCondition implements CodeGeneratable {
   }
 }
 
-export type DialogCondition = NpcKnowsInfoCondition | Condition | VariableCondition;
+export type DialogCondition =
+  | NpcKnowsInfoCondition
+  | NpcHasItemsCondition
+  | NpcIsInStateCondition
+  | NpcIsDeadCondition
+  | NpcGetDistToWpCondition
+  | NpcGetTalentSkillCondition
+  | Condition
+  | VariableCondition;
 
 const CONDITION_DISCRIMINATOR = {
   property: 'type',
   subTypes: [
     { value: NpcKnowsInfoCondition, name: 'NpcKnowsInfoCondition' },
+    { value: NpcHasItemsCondition, name: 'NpcHasItemsCondition' },
+    { value: NpcIsInStateCondition, name: 'NpcIsInStateCondition' },
+    { value: NpcIsDeadCondition, name: 'NpcIsDeadCondition' },
+    { value: NpcGetDistToWpCondition, name: 'NpcGetDistToWpCondition' },
+    { value: NpcGetTalentSkillCondition, name: 'NpcGetTalentSkillCondition' },
     { value: Condition, name: 'Condition' },
     { value: VariableCondition, name: 'VariableCondition' },
   ],
@@ -666,6 +862,11 @@ const CONDITION_DISCRIMINATOR = {
 function ensureConditionType(json: any): void {
   if (!json.type) {
     if ('npc' in json && 'dialogRef' in json) json.type = 'NpcKnowsInfoCondition';
+    else if ('npc' in json && 'item' in json) json.type = 'NpcHasItemsCondition';
+    else if ('npc' in json && 'state' in json) json.type = 'NpcIsInStateCondition';
+    else if ('npc' in json && !('dialogRef' in json) && !('item' in json) && !('state' in json) && !('waypoint' in json) && !('talent' in json)) json.type = 'NpcIsDeadCondition';
+    else if ('npc' in json && 'waypoint' in json) json.type = 'NpcGetDistToWpCondition';
+    else if ('npc' in json && 'talent' in json) json.type = 'NpcGetTalentSkillCondition';
     else if ('variableName' in json) json.type = 'VariableCondition';
     else if ('condition' in json) json.type = 'Condition';
   }

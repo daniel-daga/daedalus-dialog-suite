@@ -41,6 +41,10 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
       return condition;
     }
 
+    if (condition.type) {
+      return { ...condition, getTypeName: () => condition.type as string };
+    }
+
     // Add getTypeName based on condition properties
     if (isNpcKnowsCondition(condition)) {
       return { ...condition, getTypeName: () => 'NpcKnowsInfoCondition' };
@@ -109,7 +113,7 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
     }, 10);
   }, []);
 
-  const addCondition = useCallback((conditionType: 'npcKnowsInfo' | 'variable' | 'generic') => {
+  const addCondition = useCallback((conditionType: 'npcKnowsInfo' | 'variable' | 'npcHasItems' | 'npcIsInState' | 'npcIsDead' | 'npcGetDistToWp' | 'npcGetTalentSkill' | 'generic') => {
     let newCondition: ConditionEditorCondition;
     switch (conditionType) {
       case 'npcKnowsInfo':
@@ -126,6 +130,53 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
           variableName: '',
           negated: false,
           getTypeName: () => 'VariableCondition'
+        };
+        break;
+      case 'npcHasItems':
+        newCondition = {
+          type: 'NpcHasItemsCondition',
+          npc: 'other',
+          item: '',
+          operator: '>=',
+          value: 1,
+          getTypeName: () => 'NpcHasItemsCondition'
+        };
+        break;
+      case 'npcIsInState':
+        newCondition = {
+          type: 'NpcIsInStateCondition',
+          npc: 'self',
+          state: 'ZS_Talk',
+          negated: false,
+          getTypeName: () => 'NpcIsInStateCondition'
+        };
+        break;
+      case 'npcIsDead':
+        newCondition = {
+          type: 'NpcIsDeadCondition',
+          npc: '',
+          negated: false,
+          getTypeName: () => 'NpcIsDeadCondition'
+        };
+        break;
+      case 'npcGetDistToWp':
+        newCondition = {
+          type: 'NpcGetDistToWpCondition',
+          npc: 'self',
+          waypoint: '',
+          operator: '<=',
+          value: 500,
+          getTypeName: () => 'NpcGetDistToWpCondition'
+        };
+        break;
+      case 'npcGetTalentSkill':
+        newCondition = {
+          type: 'NpcGetTalentSkillCondition',
+          npc: 'other',
+          talent: 'NPC_TALENT_PICKPOCKET',
+          operator: '>=',
+          value: 1,
+          getTypeName: () => 'NpcGetTalentSkillCondition'
         };
         break;
       case 'generic':
@@ -321,6 +372,26 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
             <MenuItem onClick={() => { addCondition('variable'); setAddMenuAnchor(null); }}>
               <CheckIcon fontSize="small" sx={{ mr: 1 }} />
               Variable Check
+            </MenuItem>
+            <MenuItem onClick={() => { addCondition('npcHasItems'); setAddMenuAnchor(null); }}>
+              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
+              NPC Has Items
+            </MenuItem>
+            <MenuItem onClick={() => { addCondition('npcIsInState'); setAddMenuAnchor(null); }}>
+              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
+              NPC Is In State
+            </MenuItem>
+            <MenuItem onClick={() => { addCondition('npcIsDead'); setAddMenuAnchor(null); }}>
+              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
+              NPC Is Dead
+            </MenuItem>
+            <MenuItem onClick={() => { addCondition('npcGetDistToWp'); setAddMenuAnchor(null); }}>
+              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
+              Distance To WP
+            </MenuItem>
+            <MenuItem onClick={() => { addCondition('npcGetTalentSkill'); setAddMenuAnchor(null); }}>
+              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
+              Talent Skill
             </MenuItem>
             <MenuItem onClick={() => { addCondition('generic'); setAddMenuAnchor(null); }}>
               <CodeIcon fontSize="small" sx={{ mr: 1 }} />
