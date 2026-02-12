@@ -252,6 +252,17 @@ class DaedalusParser {
     }
   }
 
+
+  /**
+   * Canonical parse entrypoint for source strings
+   * @param {string} sourceCode - Daedalus source code to parse
+   * @param {Object} options - Parsing options
+   * @returns {Object} Parse result
+   */
+  static parseSource(sourceCode, options = {}) {
+    return DaedalusParser.create().parse(sourceCode, options);
+  }
+
   /**
    * Create a parser instance with error handling
    * @returns {DaedalusParser} Parser instance

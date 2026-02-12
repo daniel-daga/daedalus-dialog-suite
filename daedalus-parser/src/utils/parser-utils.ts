@@ -20,7 +20,7 @@ export function createDaedalusParser(): DaedalusParser {
  * @returns Parse tree
  */
 export function parseDaedalusSource(sourceCode: string): any {
-  return createDaedalusParser().parse(sourceCode).tree;
+  return DaedalusParser.parseSource(sourceCode).tree;
 }
 
 /**
@@ -29,7 +29,7 @@ export function parseDaedalusSource(sourceCode: string): any {
  * @returns Semantic model with error information if syntax errors exist
  */
 export function parseSemanticModel(sourceCode: string): SemanticModel {
-  const parseResult = createDaedalusParser().parse(sourceCode);
+  const parseResult = DaedalusParser.parseSource(sourceCode);
   const tree = parseResult.tree;
 
   const visitor = new SemanticModelBuilderVisitor();
