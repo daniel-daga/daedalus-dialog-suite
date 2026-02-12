@@ -28,11 +28,27 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
+    - name: Detect corpus directory
+      id: corpus
+      shell: bash
+      run: |
+        CORPUS_DIR="mdk/Content/Story/Dialoge"
+        if [ -d "$CORPUS_DIR" ]; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Skip notice
+      if: steps.corpus.outputs.found != 'true'
+      run: echo "::notice::Skipping roundtrip corpus check because mdk/Content/Story/Dialoge is not available in CI."
+
     - name: Run roundtrip corpus check
+      if: steps.corpus.outputs.found == 'true'
       run: pnpm run test:roundtrip-corpus
 
     - name: Upload roundtrip reports
-      if: always()
+      if: always() && steps.corpus.outputs.found == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: roundtrip-corpus-reports
