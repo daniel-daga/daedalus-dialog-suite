@@ -52,8 +52,12 @@ function makeUniqueName(baseName: string, existing: Set<string>): string {
   return candidate;
 }
 
+function normalizePath(pathValue: string): string {
+  return pathValue.replace(/\\/g, '/');
+}
+
 function getDirectoryName(pathValue: string): string {
-  const normalized = pathValue.replace(/\\/g, '/');
+  const normalized = normalizePath(pathValue);
   const lastSlash = normalized.lastIndexOf('/');
   return lastSlash >= 0 ? normalized.slice(0, lastSlash) : '';
 }
@@ -63,7 +67,7 @@ function joinPath(directory: string, fileName: string): string {
     return fileName;
   }
 
-  const normalized = directory.replace(/\\/g, '/').replace(/\/+$/g, '');
+  const normalized = normalizePath(directory).replace(/\/+$/g, '');
   return `${normalized}/${fileName}`;
 }
 
@@ -458,7 +462,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     });
   }, [setSelectedDialog, setSelectedFunctionName]);
 
-  const resolveTargetFilePath = useCallback(async (npcName: string): Promise<string | null> => {
+  const resolveTargetFilePath = useCallback((npcName: string): string | null => {
     const npcDialogMetadata = dialogIndex.get(npcName) || [];
     if (npcDialogMetadata.length > 0) {
       return npcDialogMetadata[0].filePath;
@@ -467,24 +471,15 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     if (isProjectMode) {
       const npcToken = normalizeIdentifier(npcName, 'NEW_NPC');
       const defaultFileName = `DIA_${npcToken}.d`;
+      const baseDirectory = projectPath
+        ? normalizePath(projectPath)
+        : getDirectoryName(activeFile || filePath || allDialogFiles[0] || '');
 
-      const fallbackPath = activeFile || filePath || allDialogFiles[0] || projectPath;
-      if (!fallbackPath) {
+      if (!baseDirectory) {
         return null;
       }
 
-      const targetDirectory = getDirectoryName(fallbackPath);
-      const preferredFilePath = joinPath(targetDirectory, defaultFileName);
-
-      if (!allDialogFiles.includes(preferredFilePath)) {
-        try {
-          await window.editorAPI.writeFile(preferredFilePath, '');
-        } catch (error) {
-          console.error('Failed to initialize NPC dialog file:', error);
-        }
-      }
-
-      return preferredFilePath;
+      return joinPath(baseDirectory, defaultFileName);
     }
 
     if (selectedNPC) {
@@ -503,14 +498,23 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
 
     return null;
-  }, [dialogIndex, isProjectMode, activeFile, filePath, allDialogFiles, projectPath, selectedNPC]);
+  }, [dialogIndex, isProjectMode, projectPath, activeFile, filePath, allDialogFiles, selectedNPC]);
 
   const createDialogForNpc = useCallback(async (rawNpcName: string, requestedDialogName?: string) => {
     const npcName = normalizeIdentifier(rawNpcName, 'NEW_NPC');
-    const targetFilePath = await resolveTargetFilePath(npcName);
+    const targetFilePath = resolveTargetFilePath(npcName);
 
     if (!targetFilePath) {
       throw new Error('No target file available. Open a dialog file first.');
+    }
+
+    const knownDialogPaths = new Set(allDialogFiles.map((path) => normalizePath(path)));
+    const normalizedTargetPath = normalizePath(targetFilePath);
+    if (isProjectMode && !knownDialogPaths.has(normalizedTargetPath)) {
+      const writeResult = await window.editorAPI.writeFile(targetFilePath, '');
+      if (!writeResult?.success) {
+        throw new Error(`Could not create NPC dialog file: ${targetFilePath}`);
+      }
     }
 
     if (!openFiles.has(targetFilePath)) {
@@ -626,6 +630,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     openFiles,
     openFile,
     getFileState,
+    allDialogFiles,
     isProjectMode,
     semanticModel,
     updateModel,
