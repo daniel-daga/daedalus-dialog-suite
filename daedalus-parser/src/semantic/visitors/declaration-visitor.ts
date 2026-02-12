@@ -7,6 +7,7 @@ import {
   GlobalConstant,
   GlobalVariable
 } from '../semantic-model';
+import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 
 export class DeclarationVisitor {
   private semanticModel: SemanticModel;
@@ -116,16 +117,7 @@ export class DeclarationVisitor {
     if (keyword === 'const') {
       let value: string | number | boolean = 0;
       if (valueNode) {
-        if (valueNode.type === 'string') {
-          value = valueNode.text;
-        } else if (valueNode.type === 'number') {
-          value = Number(valueNode.text);
-        } else if (valueNode.type === 'boolean') {
-          value = (valueNode.text.toLowerCase() === 'true');
-        } else {
-          // Identifier or expression
-          value = valueNode.text;
-        }
+        value = parseLiteralOrIdentifier(valueNode);
       }
 
       const constant = new GlobalConstant(name, type, value);
