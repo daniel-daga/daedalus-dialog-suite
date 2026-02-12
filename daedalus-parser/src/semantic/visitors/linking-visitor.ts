@@ -421,71 +421,64 @@ export class LinkingVisitor {
   }
 
   private isCallInsideComparisonBinary(node: TreeSitterNode): boolean {
-    let current: TreeSitterNode | null = node.parent;
-    while (current) {
-      if (current.type === 'binary_expression') {
-        const operator = getBinaryOperator(current);
-        if (isComparisonOperator(operator)) {
-          return true;
-        }
+    return this.hasAncestor(node, (ancestor) => {
+      if (ancestor.type !== 'binary_expression') {
+        return false;
       }
-      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
-        break;
-      }
-      current = current.parent;
-    }
-    return false;
+      const operator = getBinaryOperator(ancestor);
+      return isComparisonOperator(operator);
+    });
   }
 
   private hasNonLogicalBinaryAncestor(node: TreeSitterNode): boolean {
-    let current: TreeSitterNode | null = node.parent;
-    while (current) {
-      if (current.type === 'binary_expression') {
-        const operator = getBinaryOperator(current);
-        if (!isLogicalOperator(operator)) {
-          return true;
-        }
+    return this.hasAncestor(node, (ancestor) => {
+      if (ancestor.type !== 'binary_expression') {
+        return false;
       }
-      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
-        break;
-      }
-      current = current.parent;
-    }
-    return false;
+      const operator = getBinaryOperator(ancestor);
+      return !isLogicalOperator(operator);
+    });
   }
 
   private hasComparisonBinaryAncestor(node: TreeSitterNode): boolean {
-    let current: TreeSitterNode | null = node.parent;
-    while (current) {
-      if (current.type === 'binary_expression') {
-        const operator = getBinaryOperator(current);
-        if (isComparisonOperator(operator)) {
-          return true;
-        }
+    return this.hasAncestor(node, (ancestor) => {
+      if (ancestor.type !== 'binary_expression') {
+        return false;
       }
-      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
-        break;
-      }
-      current = current.parent;
-    }
-    return false;
+      const operator = getBinaryOperator(ancestor);
+      return isComparisonOperator(operator);
+    });
   }
 
   private isNestedCallArgument(node: TreeSitterNode): boolean {
+    return this.hasAncestor(node, (ancestor) => {
+      if (ancestor.type !== 'call_expression') {
+        return false;
+      }
+      const args = ancestor.childForFieldName('arguments');
+      return !!args && this.nodeIsWithin(node, args);
+    });
+  }
+
+  private hasAncestor(node: TreeSitterNode, predicate: (ancestor: TreeSitterNode) => boolean): boolean {
     let current: TreeSitterNode | null = node.parent;
     while (current) {
-      if (current.type === 'call_expression') {
-        const args = current.childForFieldName('arguments');
-        if (args && this.nodeIsWithin(node, args)) {
-          return true;
-        }
+      if (predicate(current)) {
+        return true;
       }
-      if (current.type === 'if_statement' || current.type === 'block' || current.type === 'function_declaration') {
+
+      if (this.isAncestorTraversalBoundary(current)) {
         break;
       }
+
       current = current.parent;
     }
+
     return false;
+  }
+
+  private isAncestorTraversalBoundary(node: TreeSitterNode): boolean {
+    return node.type === 'if_statement' || node.type === 'block' || node.type === 'function_declaration';
   }
 
   private nodeIsWithin(node: TreeSitterNode, container: TreeSitterNode): boolean {
