@@ -9,11 +9,14 @@ jest.mock('../src/renderer/store/projectStore', () => ({
   useProjectStore: jest.fn()
 }));
 
+const navigateToSymbol = jest.fn();
+const navigateToDialog = jest.fn();
+
 // Mock navigation
 jest.mock('../src/renderer/hooks/useNavigation', () => ({
   useNavigation: () => ({
-    navigateToSymbol: jest.fn(),
-    navigateToDialog: jest.fn()
+    navigateToSymbol,
+    navigateToDialog
   })
 }));
 
@@ -24,14 +27,30 @@ describe('VariableAutocomplete', () => {
     FLOAT_Var: { name: 'FLOAT_Var', type: 'float' }
   };
 
+  const mockConstants = {
+    DIA_Greeting: { name: 'DIA_Greeting', type: 'string', value: 'hello' }
+  };
+
+  const mockInstances = {
+    Diego: { name: 'Diego', parent: 'C_NPC' },
+    ItMi_Sword: { name: 'ItMi_Sword', parent: 'C_ITEM' }
+  };
+
   beforeEach(() => {
+    navigateToSymbol.mockClear();
+    navigateToDialog.mockClear();
     (useProjectStore as jest.Mock).mockReturnValue({
       mergedSemanticModel: {
         variables: mockVariables,
-        constants: {},
-        instances: {}
+        constants: mockConstants,
+        instances: mockInstances
       },
-      dialogIndex: new Map(),
+      dialogIndex: new Map([
+        ['DIEGO', [
+          { dialogName: 'DIA_Diego_Hello', filePath: 'DIEGO.d' },
+          { dialogName: 'INFO_Diego_Internal', filePath: 'DIEGO.d' }
+        ]]
+      ]),
       questFiles: [],
       allDialogFiles: [],
       isLoading: false,
@@ -108,5 +127,136 @@ describe('VariableAutocomplete', () => {
     });
     
     expect(screen.queryByText('FLOAT_Var')).not.toBeInTheDocument();
+  });
+
+  test('deduplicates names and prefers local semantic constants over merged/global', async () => {
+    const onChange = jest.fn();
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={onChange}
+        label="Test Autocomplete"
+        semanticModel={{
+          constants: {
+            DUP_NAME: { name: 'DUP_NAME', type: 'int', value: 111 }
+          },
+          variables: {
+            dup_name: { name: 'dup_name', type: 'string' }
+          },
+          instances: {},
+          functions: {},
+          dialogs: {},
+          hasErrors: false,
+          errors: []
+        } as any}
+      />
+    );
+
+    const input = screen.getByLabelText('Test Autocomplete');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'DUP' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(screen.getByText('DUP_NAME')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('dup_name')).not.toBeInTheDocument();
+    expect(screen.getByText('Value: 111')).toBeInTheDocument();
+  });
+
+  test('filters dialog options by prefix and tags them as C_INFO', async () => {
+    const onChange = jest.fn();
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={onChange}
+        showDialogs
+        typeFilter="C_INFO"
+        namePrefix="DIA_"
+        label="Dialog"
+      />
+    );
+
+    const input = screen.getByLabelText('Dialog');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'DIA_' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(screen.getByText('DIA_Diego_Hello')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('INFO_Diego_Internal')).not.toBeInTheDocument();
+    expect(screen.getByText('C_INFO')).toBeInTheDocument();
+  });
+
+  test('withholds normal suggestions for very large lists until 2 chars', async () => {
+    const bigVariables: Record<string, { name: string; type: string }> = {};
+    for (let i = 0; i < 2100; i += 1) {
+      const name = `VAR_${i}`;
+      bigVariables[name] = { name, type: 'int' };
+    }
+
+    (useProjectStore as jest.Mock).mockReturnValue({
+      mergedSemanticModel: {
+        variables: bigVariables,
+        constants: {},
+        instances: {}
+      },
+      dialogIndex: new Map(),
+      questFiles: [],
+      allDialogFiles: [],
+      isLoading: false,
+      addVariable: jest.fn()
+    });
+
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={jest.fn()}
+        label="Large"
+      />
+    );
+
+    const input = screen.getByLabelText('Large');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(screen.queryByText('VAR_1')).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(input, { target: { value: 'A' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Add "A"')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('VAR_1')).not.toBeInTheDocument();
+  });
+
+  test('shows follow-reference icon only when value matches an option', async () => {
+    const onChange = jest.fn();
+    const { rerender } = render(
+      <VariableAutocomplete
+        value="MIS_Quest1"
+        onChange={onChange}
+        label="Nav"
+      />
+    );
+
+    expect(await screen.findByTestId('OpenInNewIcon')).toBeInTheDocument();
+
+    rerender(
+      <VariableAutocomplete
+        value="DOES_NOT_EXIST"
+        onChange={onChange}
+        label="Nav"
+      />
+    );
+
+    expect(screen.queryByTestId('OpenInNewIcon')).not.toBeInTheDocument();
   });
 });

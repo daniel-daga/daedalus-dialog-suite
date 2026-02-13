@@ -170,7 +170,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
       for (const dialogs of dialogIndex.values()) {
         for (const d of dialogs) {
           const lowerName = d.dialogName.toLowerCase();
-          if (!seenNames.has(lowerName) && (isTypeMatch('C_INFO') || !filters)) {
+          if (!seenNames.has(lowerName) && isTypeMatch('C_INFO') && isNameMatch(d.dialogName)) {
             opts.push({
               name: d.dialogName,
               type: 'C_INFO',
@@ -184,7 +184,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     }
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel, semanticModel, typeFilter, showInstances, showDialogs, dialogIndex]);
+  }, [mergedSemanticModel, semanticModel, typeFilter, namePrefix, showInstances, showDialogs, dialogIndex]);
 
   // Check if current value exists in options (to enable navigation)
   const canNavigate = useMemo(() => {

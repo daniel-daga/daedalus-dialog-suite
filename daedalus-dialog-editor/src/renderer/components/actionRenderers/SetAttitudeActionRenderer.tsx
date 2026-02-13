@@ -2,6 +2,7 @@ import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -23,8 +24,7 @@ const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ width: 120 }}
-        showInstances
-        typeFilter="C_NPC"
+        {...AUTOCOMPLETE_POLICIES.actions.npc}
         semanticModel={semanticModel}
       />
       <VariableAutocomplete
@@ -34,7 +34,7 @@ const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
         onChange={(value) => handleUpdate({ ...action, attitude: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
-        typeFilter="int"
+        {...AUTOCOMPLETE_POLICIES.actions.intVariable}
         semanticModel={semanticModel}
       />
       <ActionDeleteButton onClick={handleDelete} />

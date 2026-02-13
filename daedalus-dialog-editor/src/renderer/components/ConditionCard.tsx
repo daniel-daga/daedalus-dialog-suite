@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Box, TextField, IconButton, Tooltip, Chip, Typography, Switch, FormControlLabel } from '@mui/material';
 import { Delete as DeleteIcon, Info as InfoIcon, Code as CodeIcon, Check as CheckIcon } from '@mui/icons-material';
 import VariableAutocomplete from './common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from './common/autocompletePolicies';
 import type { SemanticModel } from '../types/global';
 import type { ConditionEditorCondition } from './dialogTypes';
 
@@ -207,8 +208,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
-              typeFilter="C_NPC"
+              {...AUTOCOMPLETE_POLICIES.conditions.npc}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: '1 1 30%', minWidth: 120 }}
@@ -227,10 +227,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
-              showDialogs
-              typeFilter="C_INFO"
-              namePrefix="DIA_"
+              {...AUTOCOMPLETE_POLICIES.conditions.npcKnowsDialog}
               sx={{ flex: '1 1 60%', minWidth: 150 }}
               semanticModel={semanticModel}
             />
@@ -277,7 +274,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              typeFilter={['int', 'string', 'float']}
+              {...AUTOCOMPLETE_POLICIES.conditions.variableName}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: 1 }}
@@ -305,8 +302,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
-              typeFilter="C_NPC"
+              {...AUTOCOMPLETE_POLICIES.conditions.npc}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: '1 1 30%', minWidth: 120 }}
@@ -399,8 +395,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
-              typeFilter="C_NPC"
+              {...AUTOCOMPLETE_POLICIES.conditions.npc}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: '1 1 35%', minWidth: 130 }}
@@ -459,8 +454,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
-              typeFilter="C_NPC"
+              {...AUTOCOMPLETE_POLICIES.conditions.npc}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: 1 }}
@@ -487,8 +481,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
-              typeFilter="C_NPC"
+              {...AUTOCOMPLETE_POLICIES.conditions.npc}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: '1 1 25%', minWidth: 120 }}
@@ -560,8 +553,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
-              typeFilter="C_NPC"
+              {...AUTOCOMPLETE_POLICIES.conditions.npc}
               isMainField
               mainFieldRef={mainFieldRef}
               sx={{ flex: '1 1 25%', minWidth: 120 }}
@@ -711,3 +703,4 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
 ConditionCard.displayName = 'ConditionCard';
 
 export default ConditionCard;
+

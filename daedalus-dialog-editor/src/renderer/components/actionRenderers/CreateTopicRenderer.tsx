@@ -3,6 +3,7 @@ import { TextField, MenuItem } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -24,8 +25,7 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 180 }}
-        typeFilter="string"
-        namePrefix="TOPIC_"
+        {...AUTOCOMPLETE_POLICIES.actions.topic}
         semanticModel={semanticModel}
       />
       <TextField

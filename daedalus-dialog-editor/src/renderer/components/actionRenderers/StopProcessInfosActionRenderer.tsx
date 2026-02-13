@@ -3,6 +3,7 @@ import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { Typography } from '@mui/material';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -28,7 +29,7 @@ const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         semanticModel={semanticModel}
-        typeFilter="C_NPC"
+        {...AUTOCOMPLETE_POLICIES.actions.npcNoInstances}
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>

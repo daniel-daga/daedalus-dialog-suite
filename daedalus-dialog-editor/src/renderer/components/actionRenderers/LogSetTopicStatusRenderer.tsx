@@ -3,6 +3,7 @@ import { TextField, MenuItem, Box, Chip } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -35,8 +36,7 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 180 }}
-        typeFilter="string"
-        namePrefix="TOPIC_"
+        {...AUTOCOMPLETE_POLICIES.actions.topic}
         semanticModel={semanticModel}
       />
       <TextField

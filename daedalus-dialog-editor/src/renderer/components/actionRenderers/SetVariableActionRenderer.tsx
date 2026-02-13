@@ -3,6 +3,7 @@ import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import { TextField, MenuItem } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -24,7 +25,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 200 }}
-        typeFilter={['int', 'string', 'float']}
+        {...AUTOCOMPLETE_POLICIES.actions.setVariableName}
         semanticModel={semanticModel}
         textFieldProps={{
           error: !action.variableName?.trim(),

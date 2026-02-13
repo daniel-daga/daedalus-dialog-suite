@@ -14,6 +14,7 @@ import {
   ChevronRight as ChevronRightIcon
 } from '@mui/icons-material';
 import VariableAutocomplete from './common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from './common/autocompletePolicies';
 import type { Dialog, SemanticModel } from '../types/global';
 
 interface DialogPropertiesSectionProps {
@@ -84,8 +85,7 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
               ...existingDialog,
               properties: { ...existingDialog.properties, npc: value }
             }))}
-            showInstances
-            typeFilter="C_NPC"
+            {...AUTOCOMPLETE_POLICIES.dialogProperties.npc}
             semanticModel={semanticModel}
           />
           <TextField
@@ -107,8 +107,7 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
               ...existingDialog,
               properties: { ...existingDialog.properties, description: value }
             }))}
-            typeFilter="string"
-            namePrefix="DIALOG_"
+            {...AUTOCOMPLETE_POLICIES.dialogProperties.description}
             textFieldProps={{
               multiline: true,
               rows: 2

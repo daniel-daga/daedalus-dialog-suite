@@ -2,6 +2,8 @@
 
 This document maps where `VariableAutocomplete` is used and what conditions determine which suggestions appear.
 
+Implementation source of truth: `daedalus-dialog-editor/src/renderer/components/common/autocompletePolicies.ts`.
+
 ## Core suggestion logic (`VariableAutocomplete`)
 
 Suggestions are built from:
@@ -69,6 +71,10 @@ Autocomplete-enabled actions and field constraints:
 - `SetAttitudeActionRenderer`: NPC as `C_NPC`, attitude as `int`.
 - `SetVariableActionRenderer`: variable as `int|string|float`.
 - `StopProcessInfosActionRenderer`: NPC as `C_NPC` (without `showInstances`, so it resolves from symbol tables only).
+
+Intentional exception:
+
+- `PlayAniActionRenderer` also uses `C_NPC` without `showInstances` (symbol-table-only suggestions).
 
 ## Project mode dependency
 

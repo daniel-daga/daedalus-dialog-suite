@@ -2,6 +2,7 @@ import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -23,8 +24,7 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ width: 80 }}
-        showInstances
-        typeFilter="C_NPC"
+        {...AUTOCOMPLETE_POLICIES.actions.npc}
         semanticModel={semanticModel}
       />
       <VariableAutocomplete
@@ -34,8 +34,7 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}
-        showInstances
-        typeFilter="C_NPC"
+        {...AUTOCOMPLETE_POLICIES.actions.npc}
         semanticModel={semanticModel}
       />
       <VariableAutocomplete
@@ -45,8 +44,7 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ flex: 1 }}
-        showInstances
-        typeFilter="C_ITEM"
+        {...AUTOCOMPLETE_POLICIES.actions.item}
         semanticModel={semanticModel}
       />
       <ActionTextField

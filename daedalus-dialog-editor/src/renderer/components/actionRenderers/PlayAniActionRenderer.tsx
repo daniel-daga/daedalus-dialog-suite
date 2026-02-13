@@ -3,6 +3,7 @@ import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { TextField } from '@mui/material';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -25,7 +26,7 @@ const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 150 }}
         semanticModel={semanticModel}
-        typeFilter="C_NPC"
+        {...AUTOCOMPLETE_POLICIES.actions.npcNoInstances}
       />
       <TextField
         fullWidth

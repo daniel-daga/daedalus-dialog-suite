@@ -2,6 +2,7 @@ import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -21,8 +22,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ minWidth: 180 }}
-        typeFilter="string"
-        namePrefix="TOPIC_"
+        {...AUTOCOMPLETE_POLICIES.actions.topic}
         semanticModel={semanticModel}
       />
       <ActionTextField
