@@ -29,7 +29,9 @@ const TABS_HEIGHT = 40;
 
 const editorPaneContainerStyles = {
   flex: '1 1 auto',
-  overflow: 'auto',
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  scrollbarGutter: 'stable',
   p: 0,
   minWidth: 0,
   display: 'flex',
@@ -134,18 +136,7 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
 
   // Normal editing view
   return (
-    <Box
-      ref={ref}
-      sx={{
-        flex: '1 1 auto',
-        overflow: 'auto',
-        p: 0,
-        minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative'
-      }}
-    >
+    <Box ref={ref} sx={editorPaneContainerStyles}>
       {tabsHeader}
 
       <Box sx={{ width: '100%', p: 2, minHeight: 0, flex: 1 }}>

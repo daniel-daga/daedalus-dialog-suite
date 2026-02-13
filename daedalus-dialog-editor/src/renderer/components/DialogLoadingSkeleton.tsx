@@ -7,7 +7,7 @@ import { Box, Paper, Skeleton, Stack } from '@mui/material';
  */
 const DialogLoadingSkeleton: React.FC = () => {
   return (
-    <Box sx={{ minHeight: '100%' }}>
+    <Box sx={{ minHeight: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
       {/* Header skeleton */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Skeleton variant="text" width={200} height={40} />
@@ -19,7 +19,7 @@ const DialogLoadingSkeleton: React.FC = () => {
       </Box>
 
       {/* Properties skeleton */}
-      <Paper sx={{ p: 2, mb: 2, minHeight: 250 }}>
+      <Paper sx={{ p: 2, minHeight: 250 }}>
         <Skeleton variant="text" width={120} height={32} sx={{ mb: 2 }} />
         <Stack spacing={2}>
           <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
@@ -30,7 +30,7 @@ const DialogLoadingSkeleton: React.FC = () => {
       </Paper>
 
       {/* Actions skeleton */}
-      <Paper sx={{ p: 2, minHeight: 460 }}>
+      <Paper sx={{ p: 2, minHeight: 460, flex: 1 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Box>
             <Skeleton variant="text" width={150} height={32} />
