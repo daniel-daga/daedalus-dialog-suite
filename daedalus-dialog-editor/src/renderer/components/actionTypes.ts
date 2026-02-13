@@ -207,82 +207,86 @@ export type UnknownDialogAction = Record<string, unknown>;
 
 export type DetectableAction = ActionType | UnknownDialogAction;
 
+function hasProperty<T extends string>(value: Record<string, unknown>, key: T): value is Record<T, unknown> {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 /**
  * Detect the action type from an action object
  */
 export function getActionType(action: DetectableAction): ActionTypeId {
-  const a = action as any;
+  const a = action;
 
-  if (a.speaker !== undefined && a.text !== undefined && a.id !== undefined) {
+  if (hasProperty(a, 'speaker') && hasProperty(a, 'text') && hasProperty(a, 'id')) {
     return 'dialogLine';
   }
-  if (a.dialogRef !== undefined && a.targetFunction !== undefined) {
+  if (hasProperty(a, 'dialogRef') && hasProperty(a, 'targetFunction')) {
     return 'choice';
   }
-  if (a.topic !== undefined && a.topicType !== undefined && !a.status) {
+  if (hasProperty(a, 'topic') && hasProperty(a, 'topicType') && !hasProperty(a, 'status')) {
     return 'createTopic';
   }
-  if (a.topic !== undefined && a.text !== undefined && !a.topicType) {
+  if (hasProperty(a, 'topic') && hasProperty(a, 'text') && !hasProperty(a, 'topicType')) {
     return 'logEntry';
   }
-  if (a.topic !== undefined && a.status !== undefined) {
+  if (hasProperty(a, 'topic') && hasProperty(a, 'status')) {
     return 'logSetTopicStatus';
   }
-  if (a.target !== undefined && a.item !== undefined && a.quantity !== undefined &&
-      a.giver === undefined && a.receiver === undefined) {
+  if (hasProperty(a, 'target') && hasProperty(a, 'item') && hasProperty(a, 'quantity') &&
+      !hasProperty(a, 'giver') && !hasProperty(a, 'receiver')) {
     return 'createInventoryItems';
   }
-  if (a.giver !== undefined && a.receiver !== undefined) {
+  if (hasProperty(a, 'giver') && hasProperty(a, 'receiver')) {
     return 'giveInventoryItems';
   }
-  if (a.attacker !== undefined && a.attackReason !== undefined) {
+  if (hasProperty(a, 'attacker') && hasProperty(a, 'attackReason')) {
     return 'attackAction';
   }
-  if (a.attitude !== undefined && a.routine === undefined) {
+  if (hasProperty(a, 'attitude') && !hasProperty(a, 'routine')) {
     return 'setAttitudeAction';
   }
-  if (a.chapter !== undefined && a.world !== undefined) {
+  if (hasProperty(a, 'chapter') && hasProperty(a, 'world')) {
     return 'chapterTransition';
   }
-  if ((a.npc !== undefined || a.target !== undefined) && a.routine !== undefined && a.attitude === undefined) {
+  if ((hasProperty(a, 'npc') || hasProperty(a, 'target')) && hasProperty(a, 'routine') && !hasProperty(a, 'attitude')) {
     return 'exchangeRoutine';
   }
-  if (a.variableName !== undefined && a.operator !== undefined && a.value !== undefined) {
+  if (hasProperty(a, 'variableName') && hasProperty(a, 'operator') && hasProperty(a, 'value')) {
     return 'setVariableAction';
   }
-  if (a.target !== undefined && a.animationName !== undefined) {
+  if (hasProperty(a, 'target') && hasProperty(a, 'animationName')) {
     return 'playAniAction';
   }
-  if (a.xpAmount !== undefined) {
+  if (hasProperty(a, 'xpAmount')) {
     return 'givePlayerXPAction';
   }
-  if (a.pickpocketMode !== undefined) {
+  if (hasProperty(a, 'pickpocketMode')) {
     return 'pickpocketAction';
   }
-  if (a.routineFunctionName !== undefined && a.routineNpc !== undefined) {
+  if (hasProperty(a, 'routineFunctionName') && hasProperty(a, 'routineNpc')) {
     return 'startOtherRoutineAction';
   }
-  if (a.teachFunctionName !== undefined && Array.isArray(a.teachArgs)) {
+  if (hasProperty(a, 'teachFunctionName') && hasProperty(a, 'teachArgs') && Array.isArray(a.teachArgs)) {
     return 'teachAction';
   }
-  if (a.tradeTarget !== undefined) {
+  if (hasProperty(a, 'tradeTarget')) {
     return 'giveTradeInventoryAction';
   }
-  if (a.removeFunctionName !== undefined && a.removeNpc !== undefined) {
+  if (hasProperty(a, 'removeFunctionName') && hasProperty(a, 'removeNpc')) {
     return 'removeInventoryItemsAction';
   }
-  if (a.npcInstance !== undefined && a.spawnPoint !== undefined) {
+  if (hasProperty(a, 'npcInstance') && hasProperty(a, 'spawnPoint')) {
     return 'insertNpcAction';
   }
   // Loose check for StopProcessInfos - assuming it only has target
-  if (a.target !== undefined &&
-      a.item === undefined &&
-      a.attitude === undefined &&
-      a.routine === undefined &&
-      a.animationName === undefined) {
+  if (hasProperty(a, 'target') &&
+      !hasProperty(a, 'item') &&
+      !hasProperty(a, 'attitude') &&
+      !hasProperty(a, 'routine') &&
+      !hasProperty(a, 'animationName')) {
     return 'stopProcessInfosAction';
   }
-  if (a.action !== undefined) {
+  if (hasProperty(a, 'action')) {
     return 'customAction';
   }
 
