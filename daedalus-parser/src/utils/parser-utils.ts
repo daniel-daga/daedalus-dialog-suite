@@ -4,7 +4,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import DaedalusParser from '../core/parser';
 import { SemanticModelBuilderVisitor } from '../semantic/semantic-visitor';
-import { SemanticModel } from '../semantic/semantic-model';
+import { SemanticModel, TreeSitterNode } from '../semantic/semantic-model';
+
+interface ParsedTree {
+  rootNode: TreeSitterNode;
+}
 
 /**
  * Create and configure a Daedalus parser instance
@@ -19,7 +23,7 @@ export function createDaedalusParser(): DaedalusParser {
  * @param sourceCode - Daedalus source code to parse
  * @returns Parse tree
  */
-export function parseDaedalusSource(sourceCode: string): any {
+export function parseDaedalusSource(sourceCode: string): ParsedTree {
   return DaedalusParser.parseSource(sourceCode).tree;
 }
 
@@ -30,7 +34,7 @@ export function parseDaedalusSource(sourceCode: string): any {
  */
 export function parseSemanticModel(sourceCode: string): SemanticModel {
   const parseResult = DaedalusParser.parseSource(sourceCode);
-  const tree = parseResult.tree;
+  const tree = parseResult.tree as ParsedTree;
 
   const visitor = new SemanticModelBuilderVisitor();
 
