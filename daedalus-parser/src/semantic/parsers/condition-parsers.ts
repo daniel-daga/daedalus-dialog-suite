@@ -12,7 +12,8 @@ import {
   Condition,
   VariableCondition
 } from '../semantic-model';
-import { parseArguments, normalizeArgumentText } from './argument-parsing';
+import { parseArguments } from './argument-parsing';
+import { parseLiteralOrIdentifier } from './literal-parsing';
 import { getBinaryOperator, isComparisonOperator } from './ast-constants';
 
 export class ConditionParsers {
@@ -291,13 +292,10 @@ export class ConditionParsers {
   }
 
   private static parseBinaryValue(node: TreeSitterNode): string | number | boolean {
-    if (node.type === 'number') {
-      return Number(node.text);
-    }
-    if (node.type === 'string') {
-      return normalizeArgumentText(node);
-    }
-    return node.text.trim();
+    return parseLiteralOrIdentifier(node, {
+      normalizeStringLiterals: true,
+      trimNonLiterals: true
+    });
   }
 
   private static invertComparisonOperator(operator: string): string {
