@@ -10,7 +10,14 @@ import {
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
-import { getBinaryOperator, isComparisonOperator, isLogicalOperator } from '../parsers/ast-constants';
+import {
+  getBinaryOperator,
+  isComparisonOperator,
+  isLogicalOperator,
+  isConditionModeBlockingStatement,
+  isConditionAllowedParentType,
+  isAncestorTraversalBoundaryType
+} from '../parsers/ast-constants';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 
 export class LinkingVisitor {
@@ -142,7 +149,7 @@ export class LinkingVisitor {
       }
     }
 
-    if (this.currentFunction && !isConditionFunc && (type === 'if_statement' || type === 'return_statement')) {
+    if (this.currentFunction && !isConditionFunc && isConditionModeBlockingStatement(type)) {
       this.preserveUnsupportedStatement(node);
       return true;
     }
@@ -188,8 +195,7 @@ export class LinkingVisitor {
     if (type === 'identifier' && parent.type === 'unary_expression') return;
     if (this.hasNonLogicalBinaryAncestor(node)) return;
 
-    const allowedParents = ['if_statement', 'parenthesized_expression'];
-    let isAllowed = allowedParents.includes(parent.type);
+    let isAllowed = isConditionAllowedParentType(parent.type);
 
     if (parent.type === 'binary_expression') {
       const operator = getBinaryOperator(parent);
@@ -514,7 +520,7 @@ export class LinkingVisitor {
   }
 
   private isAncestorTraversalBoundary(node: TreeSitterNode): boolean {
-    return node.type === 'if_statement' || node.type === 'block' || node.type === 'function_declaration';
+    return isAncestorTraversalBoundaryType(node.type);
   }
 
   private nodeIsWithin(node: TreeSitterNode, container: TreeSitterNode): boolean {
