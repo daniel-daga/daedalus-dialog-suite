@@ -51,6 +51,7 @@ describe('VariableAutocomplete', () => {
           { dialogName: 'INFO_Diego_Internal', filePath: 'DIEGO.d' }
         ]]
       ]),
+      npcList: ['SLD_200_DIEGO'],
       questFiles: [],
       allDialogFiles: [],
       isLoading: false,
@@ -258,5 +259,40 @@ describe('VariableAutocomplete', () => {
     );
 
     expect(screen.queryByTestId('OpenInNewIcon')).not.toBeInTheDocument();
+  });
+
+  test('falls back to project npcList for C_NPC suggestions when instances are missing', async () => {
+    (useProjectStore as jest.Mock).mockReturnValue({
+      mergedSemanticModel: {
+        variables: {},
+        constants: {},
+        instances: {}
+      },
+      dialogIndex: new Map(),
+      npcList: ['SLD_200_DIEGO', 'PC_HERO'],
+      questFiles: [],
+      allDialogFiles: [],
+      isLoading: false,
+      addVariable: jest.fn()
+    });
+
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={jest.fn()}
+        showInstances
+        typeFilter="C_NPC"
+        label="NPC"
+      />
+    );
+
+    const input = screen.getByLabelText('NPC');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'SLD_' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(screen.getByText('SLD_200_DIEGO')).toBeInTheDocument();
+    });
   });
 });

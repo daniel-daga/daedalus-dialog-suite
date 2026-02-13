@@ -2,17 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import { OpenInNew as OpenInNewIcon, Add as AddIcon } from '@mui/icons-material';
 import { useProjectStore } from '../../store/projectStore';
-import { GlobalConstant, GlobalVariable, SemanticModel } from '../../types/global';
+import { SemanticModel } from '../../types/global';
 import { useNavigation } from '../../hooks/useNavigation';
 import VariableCreationDialog from './VariableCreationDialog';
-
-// Instance definition might not be strictly typed in global types yet
-interface InstanceDefinition {
-  name: string;
-  parent: string;
-  filePath?: string;
-  [key: string]: any;
-}
 
 export interface VariableAutocompleteProps {
   /** Current value */
@@ -94,7 +86,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   semanticModel,
   showNavigation = true
 }) => {
-  const { mergedSemanticModel, dialogIndex } = useProjectStore();
+  const { mergedSemanticModel, dialogIndex, npcList } = useProjectStore();
   const { navigateToSymbol, navigateToDialog } = useNavigation();
   const [creationDialogOpen, setCreationDialogOpen] = useState(false);
   const [pendingCreationName, setPendingCreationName] = useState('');
@@ -163,6 +155,19 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     if (showInstances) {
       addFromRecord(semanticModel?.instances, 'instance');
       addFromRecord(mergedSemanticModel.instances, 'instance');
+
+      // Fallback source: project index NPC list (when semantic instances are unavailable)
+      for (const npcName of npcList || []) {
+        const lowerName = npcName.toLowerCase();
+        if (!seenNames.has(lowerName) && isTypeMatch('C_NPC') && isNameMatch(npcName)) {
+          opts.push({
+            name: npcName,
+            type: 'C_NPC',
+            source: 'instance'
+          });
+          seenNames.add(lowerName);
+        }
+      }
     }
 
     // Add dialogs
@@ -184,7 +189,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     }
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel, semanticModel, typeFilter, namePrefix, showInstances, showDialogs, dialogIndex]);
+  }, [mergedSemanticModel, semanticModel, typeFilter, namePrefix, showInstances, showDialogs, dialogIndex, npcList]);
 
   // Check if current value exists in options (to enable navigation)
   const canNavigate = useMemo(() => {

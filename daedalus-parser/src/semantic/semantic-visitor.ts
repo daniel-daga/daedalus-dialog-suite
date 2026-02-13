@@ -19,6 +19,7 @@ export class SemanticModelBuilderVisitor {
       declarationOrder: [],
       constants: {},
       variables: {},
+      instances: {},
       hasErrors: false,
       errors: []
     };

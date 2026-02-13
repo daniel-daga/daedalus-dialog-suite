@@ -5,7 +5,8 @@ import {
   DialogFunction,
   SemanticModel,
   GlobalConstant,
-  GlobalVariable
+  GlobalVariable,
+  GlobalInstance
 } from '../semantic-model';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 
@@ -77,15 +78,37 @@ export class DeclarationVisitor {
       const parentNode = node.childForFieldName('parent');
       const keywordNode = node.childForFieldName('keyword');
       if (nameNode) {
-        const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
-        const firstLine = node.text.split('\n')[0] || '';
-        if (keywordNode) {
-          dialog.keyword = keywordNode.text;
+        const parentType = parentNode ? parentNode.text : '';
+        const isDialogInstance = parentType.toUpperCase() === 'C_INFO';
+
+        if (isDialogInstance) {
+          const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
+          const firstLine = node.text.split('\n')[0] || '';
+          if (keywordNode) {
+            dialog.keyword = keywordNode.text;
+          }
+          dialog.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
+          dialog.leadingComments = [...this.pendingLeadingComments];
+          this.semanticModel.dialogs[dialog.name] = dialog;
+          this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
+        } else {
+          const instance = new GlobalInstance(nameNode.text, parentType);
+          instance.position = {
+            startLine: node.startPosition.row + 1,
+            startColumn: node.startPosition.column + 1,
+            endLine: node.endPosition.row + 1,
+            endColumn: node.endPosition.column + 1
+          };
+          instance.range = {
+            startIndex: node.startIndex,
+            endIndex: node.endIndex
+          };
+
+          if (!this.semanticModel.instances) {
+            this.semanticModel.instances = {};
+          }
+          this.semanticModel.instances[instance.name] = instance;
         }
-        dialog.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
-        dialog.leadingComments = [...this.pendingLeadingComments];
-        this.semanticModel.dialogs[dialog.name] = dialog;
-        this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
       }
       return; // Optimization: Don't recurse into instance bodies during object creation
     } else if (node.type === 'variable_declaration') {

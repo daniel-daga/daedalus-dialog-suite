@@ -90,6 +90,27 @@ export class GlobalVariable {
   }
 }
 
+export class GlobalInstance {
+  public name: string;
+  public parent: string;
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string, parent: string) {
+    this.name = name;
+    this.parent = parent;
+  }
+}
+
 export interface DialogProperties {
   [key: string]: string | number | boolean | DialogFunction;
 }
@@ -1236,6 +1257,7 @@ export interface SemanticModel {
   declarationOrder?: Array<{ type: 'dialog' | 'function'; name: string }>;
   constants?: { [key: string]: GlobalConstant };
   variables?: { [key: string]: GlobalVariable };
+  instances?: { [key: string]: GlobalInstance };
   errors?: SyntaxError[];
   hasErrors?: boolean;
 }
@@ -1248,6 +1270,7 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     declarationOrder: json.declarationOrder || [],
     constants: {},
     variables: {},
+    instances: {},
     errors: json.errors,
     hasErrors: json.hasErrors
   };
@@ -1283,6 +1306,13 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   if (json.variables) {
     for (const key in json.variables) {
       model.variables![key] = plainToInstance(GlobalVariable as ClassConstructor<any>, json.variables[key]);
+    }
+  }
+
+  // 5. Reconstruct instances
+  if (json.instances) {
+    for (const key in json.instances) {
+      model.instances![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.instances[key]);
     }
   }
 

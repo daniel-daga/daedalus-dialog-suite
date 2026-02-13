@@ -44,6 +44,7 @@ export type {
   ParseError,
   GlobalConstant,
   GlobalVariable,
+  GlobalInstance,
   SemanticModel,
   FunctionTreeChild,
   FunctionTreeNode,

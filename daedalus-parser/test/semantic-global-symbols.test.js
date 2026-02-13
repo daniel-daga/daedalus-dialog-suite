@@ -69,3 +69,35 @@ test('should handle mixed global declarations', () => {
     assert.ok(model.variables['MIS_Test']);
     assert.ok(model.functions['TestFunc']);
 });
+
+test('should parse non-dialog instances into semantic model instances', () => {
+  const source = `
+    INSTANCE DIA_OldCamp_Test(C_INFO)
+    {
+      npc = SLD_200_DIEGO;
+    };
+
+    INSTANCE SLD_200_DIEGO(C_NPC)
+    {
+      guild = GIL_NONE;
+    };
+
+    INSTANCE ITMI_SWORD(C_ITEM)
+    {
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  // Dialog instances remain dialogs
+  assert.ok(model.dialogs['DIA_OldCamp_Test'], 'Should parse C_INFO as dialog');
+
+  // Non-C_INFO instances are available for autocomplete resolution
+  assert.ok(model.instances, 'Model should have instances map');
+  assert.ok(model.instances['SLD_200_DIEGO'], 'Should include NPC instance');
+  assert.equal(model.instances['SLD_200_DIEGO'].parent, 'C_NPC');
+  assert.ok(model.instances['ITMI_SWORD'], 'Should include item instance');
+  assert.equal(model.instances['ITMI_SWORD'].parent, 'C_ITEM');
+});

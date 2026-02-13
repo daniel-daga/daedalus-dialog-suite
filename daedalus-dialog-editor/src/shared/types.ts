@@ -359,12 +359,28 @@ export interface GlobalVariable {
   };
 }
 
+export interface GlobalInstance {
+  name: string;
+  parent: string;
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
 export interface SemanticModel {
   dialogs: Record<string, Dialog>;
   functions: Record<string, DialogFunction>;
   constants?: Record<string, GlobalConstant>;
   variables?: Record<string, GlobalVariable>;
-  instances?: Record<string, unknown>;
+  instances?: Record<string, GlobalInstance>;
   hasErrors: boolean;
   errors: ParseError[];
 }
