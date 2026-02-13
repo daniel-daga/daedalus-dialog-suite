@@ -227,6 +227,7 @@ export class LinkingVisitor {
           value = this.functions[functionName];
           if (propertyName === 'information') {
             this.functionToDialog.set(functionName, this.currentInstance);
+            this.syncDialogActionsForFunction(functionName, this.currentInstance);
           }
         } else {
           value = rightNode.text;
@@ -239,6 +240,20 @@ export class LinkingVisitor {
       }
 
       this.currentInstance.properties[propertyName] = value;
+    }
+  }
+
+
+  private syncDialogActionsForFunction(functionName: string, dialog: Dialog): void {
+    const infoFunction = this.functions[functionName];
+    if (!infoFunction?.actions?.length) {
+      return;
+    }
+
+    for (const action of infoFunction.actions) {
+      if (!dialog.actions.includes(action)) {
+        dialog.actions.push(action);
+      }
     }
   }
 
@@ -389,7 +404,7 @@ export class LinkingVisitor {
     ranges.add(rangeKey);
 
     const action = new Action(topLevel.text.trim());
-    this.currentFunction.actions.push(action);
+    this.recordActionForCurrentFunction(action);
   }
 
   private getTopLevelStatement(node: TreeSitterNode): TreeSitterNode | null {
@@ -542,6 +557,25 @@ export class LinkingVisitor {
    * Optimized to O(1) lookup using functionToDialog map
    */
   private findDialogForFunction(functionName: string): Dialog | null {
-    return this.functionToDialog.get(functionName) || null;
+    const mappedDialog = this.functionToDialog.get(functionName);
+    if (mappedDialog) {
+      return mappedDialog;
+    }
+
+    for (const dialog of Object.values(this.dialogs)) {
+      const information = dialog.properties?.information;
+      const informationName = typeof information === 'string'
+        ? information
+        : (information && typeof information === 'object' && 'name' in information
+          ? information.name
+          : null);
+
+      if (informationName === functionName) {
+        this.functionToDialog.set(functionName, dialog);
+        return dialog;
+      }
+    }
+
+    return null;
   }
 }
