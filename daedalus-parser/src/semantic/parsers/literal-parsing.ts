@@ -1,8 +1,19 @@
 import { TreeSitterNode } from '../semantic-model';
+import { normalizeArgumentText } from './argument-parsing';
 
 export type PrimitiveValue = string | number | boolean;
 
-export function parseLiteralOrIdentifier(node: TreeSitterNode): PrimitiveValue {
+type ParseLiteralOptions = {
+  normalizeStringLiterals?: boolean;
+  trimNonLiterals?: boolean;
+};
+
+export function parseLiteralOrIdentifier(
+  node: TreeSitterNode,
+  options: ParseLiteralOptions = {}
+): PrimitiveValue {
+  const { normalizeStringLiterals = false, trimNonLiterals = false } = options;
+
   if (node.type === 'number') {
     return Number(node.text);
   }
@@ -11,6 +22,9 @@ export function parseLiteralOrIdentifier(node: TreeSitterNode): PrimitiveValue {
     return node.text.toLowerCase() === 'true';
   }
 
-  return node.text;
-}
+  if (node.type === 'string') {
+    return normalizeStringLiterals ? normalizeArgumentText(node) : node.text;
+  }
 
+  return trimNonLiterals ? node.text.trim() : node.text;
+}
