@@ -51,6 +51,29 @@ describe('Autocomplete policy wiring', () => {
     expect(dialogProps.namePrefix).toBe('DIA_');
   });
 
+  test('ConditionCard NpcHasItemsCondition item field uses item instance policy', () => {
+    render(
+      <ConditionCard
+        condition={{
+          type: 'NpcHasItemsCondition',
+          npc: 'Diego',
+          item: 'ITFO_APPLE',
+          operator: '>=',
+          value: 1
+        } as any}
+        index={0}
+        totalConditions={1}
+        updateCondition={jest.fn()}
+        deleteCondition={jest.fn()}
+        focusCondition={jest.fn()}
+      />
+    );
+
+    const itemProps = capturedAutocompleteProps.find((p) => p.label === 'Item');
+    expect(itemProps.showInstances).toBe(true);
+    expect(itemProps.typeFilter).toBe('C_ITEM');
+  });
+
   test('DialogPropertiesSection uses expected NPC and description policies', () => {
     render(
       <DialogPropertiesSection

@@ -362,6 +362,7 @@ export interface GlobalVariable {
 export interface GlobalInstance {
   name: string;
   parent: string;
+  displayName?: string;
   filePath?: string;
   position?: {
     startLine: number;

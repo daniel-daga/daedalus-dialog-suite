@@ -93,6 +93,7 @@ export class GlobalVariable {
 export class GlobalInstance {
   public name: string;
   public parent: string;
+  public displayName?: string;
   public filePath?: string;
   public position?: {
     startLine: number;

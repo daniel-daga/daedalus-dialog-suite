@@ -51,6 +51,8 @@ type OptionType = {
   name: string;
   type: string;
   source: 'variable' | 'constant' | 'instance' | 'dialog' | 'new';
+  insertValue?: string;
+  aliasOf?: string;
   filePath?: string;
   value?: string | number | boolean;
   isCreationSuggestion?: boolean;
@@ -134,10 +136,39 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
               name: item.name || name,
               type: itemType,
               source,
+              insertValue: item.name || name,
               filePath: item.filePath,
               value: item.value
             });
             seenNames.add(lowerName);
+          }
+
+          // For item instances, support matching by display name while inserting instance id.
+          if (
+            source === 'instance' &&
+            typeof item.displayName === 'string' &&
+            item.displayName.trim() !== ''
+          ) {
+            const aliasName = item.displayName.trim();
+            const aliasLower = aliasName.toLowerCase();
+            const instanceName = item.name || name;
+            if (
+              aliasLower !== lowerName &&
+              !seenNames.has(aliasLower) &&
+              isTypeMatch(itemType) &&
+              isNameMatch(aliasName)
+            ) {
+              opts.push({
+                name: aliasName,
+                type: itemType,
+                source,
+                insertValue: instanceName,
+                aliasOf: instanceName,
+                filePath: item.filePath,
+                value: item.value
+              });
+              seenNames.add(aliasLower);
+            }
           }
         }
       }
@@ -226,7 +257,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
           } else if (newValue && newValue.isCreationSuggestion) {
             handleCreateNew(newValue.name.replace('Add "', '').replace('"', ''));
           } else if (newValue && newValue.name) {
-            onChange(newValue.name);
+            onChange(newValue.insertValue || newValue.name);
           } else {
             onChange('');
           }
@@ -309,6 +340,11 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
                   {option.source === 'constant' && option.value !== undefined && (
                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                         Value: {String(option.value)}
+                     </Typography>
+                  )}
+                  {option.aliasOf && (
+                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Instance: {option.aliasOf}
                      </Typography>
                   )}
                 </Box>

@@ -19,6 +19,10 @@ export const AUTOCOMPLETE_POLICIES = {
     } as AutocompletePolicy,
     variableName: {
       typeFilter: ['int', 'string', 'float']
+    } as AutocompletePolicy,
+    item: {
+      showInstances: true,
+      typeFilter: 'C_ITEM'
     } as AutocompletePolicy
   },
   dialogProperties: {

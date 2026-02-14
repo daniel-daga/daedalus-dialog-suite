@@ -79,11 +79,13 @@ test('should parse non-dialog instances into semantic model instances', () => {
 
     INSTANCE SLD_200_DIEGO(C_NPC)
     {
+      name = "Diego";
       guild = GIL_NONE;
     };
 
     INSTANCE ITMI_SWORD(C_ITEM)
     {
+      name = "Rusty Sword";
     };
   `;
 
@@ -98,6 +100,7 @@ test('should parse non-dialog instances into semantic model instances', () => {
   assert.ok(model.instances, 'Model should have instances map');
   assert.ok(model.instances['SLD_200_DIEGO'], 'Should include NPC instance');
   assert.equal(model.instances['SLD_200_DIEGO'].parent, 'C_NPC');
+  assert.equal(model.instances['SLD_200_DIEGO'].displayName, 'Diego');
   assert.ok(model.instances['ITMI_SWORD'], 'Should include item instance');
   assert.equal(model.instances['ITMI_SWORD'].parent, 'C_ITEM');
 
@@ -105,5 +108,6 @@ test('should parse non-dialog instances into semantic model instances', () => {
   assert.ok(model.items, 'Model should have items map');
   assert.ok(model.items['ITMI_SWORD'], 'Should include item instance in items map');
   assert.equal(model.items['ITMI_SWORD'].parent, 'C_ITEM');
+  assert.equal(model.items['ITMI_SWORD'].displayName, 'Rusty Sword');
   assert.equal(model.items['SLD_200_DIEGO'], undefined, 'Non-item instances should not be in items map');
 });

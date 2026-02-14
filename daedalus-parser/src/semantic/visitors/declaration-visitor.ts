@@ -109,7 +109,15 @@ export class DeclarationVisitor {
           }
           this.semanticModel.instances[instance.name] = instance;
 
-          if (parentType.toUpperCase() === 'C_ITEM') {
+          const upperParent = parentType.toUpperCase();
+          if (upperParent === 'C_ITEM' || upperParent === 'C_NPC') {
+            const displayName = this.extractInstanceDisplayName(node);
+            if (displayName !== undefined) {
+              instance.displayName = displayName;
+            }
+          }
+
+          if (upperParent === 'C_ITEM') {
             if (!this.semanticModel.items) {
               this.semanticModel.items = {};
             }
@@ -125,6 +133,31 @@ export class DeclarationVisitor {
 
     // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
     // so we don't need to recurse.
+  }
+
+  private extractInstanceDisplayName(instanceNode: TreeSitterNode): string | undefined {
+    const bodyNode = instanceNode.childForFieldName('body');
+    if (!bodyNode) {
+      return undefined;
+    }
+
+    for (const child of bodyNode.namedChildren) {
+      if (child.type !== 'assignment_statement') {
+        continue;
+      }
+      const leftNode = child.childForFieldName('left');
+      const rightNode = child.childForFieldName('right');
+      if (!leftNode || !rightNode) {
+        continue;
+      }
+      if (leftNode.text.toLowerCase() !== 'name' || rightNode.type !== 'string') {
+        continue;
+      }
+      const value = parseLiteralOrIdentifier(rightNode, { normalizeStringLiterals: true });
+      return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+    }
+
+    return undefined;
   }
 
   /**

@@ -32,8 +32,8 @@ describe('VariableAutocomplete', () => {
   };
 
   const mockInstances = {
-    Diego: { name: 'Diego', parent: 'C_NPC' },
-    ItMi_Sword: { name: 'ItMi_Sword', parent: 'C_ITEM' }
+    Diego: { name: 'Diego', parent: 'C_NPC', displayName: 'Diego the Guard' },
+    ItMi_Sword: { name: 'ItMi_Sword', parent: 'C_ITEM', displayName: 'Rusty Sword' }
   };
 
   beforeEach(() => {
@@ -293,6 +293,62 @@ describe('VariableAutocomplete', () => {
 
     await waitFor(() => {
       expect(screen.getByText('SLD_200_DIEGO')).toBeInTheDocument();
+    });
+  });
+
+  test('supports item display name aliases but inserts the instance id', async () => {
+    const onChange = jest.fn();
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={onChange}
+        showInstances
+        typeFilter="C_ITEM"
+        label="Item"
+      />
+    );
+
+    const input = screen.getByLabelText('Item');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'Rusty' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Rusty Sword')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Rusty Sword'));
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith('ItMi_Sword');
+    });
+  });
+
+  test('supports npc display name aliases but inserts the instance id', async () => {
+    const onChange = jest.fn();
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={onChange}
+        showInstances
+        typeFilter="C_NPC"
+        label="NPC"
+      />
+    );
+
+    const input = screen.getByLabelText('NPC');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'Guard' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Diego the Guard')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Diego the Guard'));
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith('Diego');
     });
   });
 });

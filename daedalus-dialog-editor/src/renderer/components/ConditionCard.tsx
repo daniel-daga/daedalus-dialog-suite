@@ -320,7 +320,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
                 getTypeName: localCondition.getTypeName
               })}
               onFlush={flushUpdate}
-              showInstances
+              {...AUTOCOMPLETE_POLICIES.conditions.item}
               sx={{ flex: '1 1 35%', minWidth: 140 }}
               semanticModel={semanticModel}
             />
