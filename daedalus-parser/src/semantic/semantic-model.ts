@@ -1258,6 +1258,7 @@ export interface SemanticModel {
   constants?: { [key: string]: GlobalConstant };
   variables?: { [key: string]: GlobalVariable };
   instances?: { [key: string]: GlobalInstance };
+  items?: { [key: string]: GlobalInstance };
   errors?: SyntaxError[];
   hasErrors?: boolean;
 }
@@ -1271,6 +1272,7 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     constants: {},
     variables: {},
     instances: {},
+    items: {},
     errors: json.errors,
     hasErrors: json.hasErrors
   };
@@ -1313,6 +1315,21 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   if (json.instances) {
     for (const key in json.instances) {
       model.instances![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.instances[key]);
+    }
+  }
+
+  // 6. Reconstruct items
+  if (json.items) {
+    for (const key in json.items) {
+      model.items![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.items[key]);
+    }
+  } else {
+    // Backward compatibility: derive items from instances if the serialized model predates `items`
+    for (const key in model.instances) {
+      const instance = model.instances[key];
+      if (instance.parent.toUpperCase() === 'C_ITEM') {
+        model.items![key] = instance;
+      }
     }
   }
 

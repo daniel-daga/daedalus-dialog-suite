@@ -108,6 +108,13 @@ export class DeclarationVisitor {
             this.semanticModel.instances = {};
           }
           this.semanticModel.instances[instance.name] = instance;
+
+          if (parentType.toUpperCase() === 'C_ITEM') {
+            if (!this.semanticModel.items) {
+              this.semanticModel.items = {};
+            }
+            this.semanticModel.items[instance.name] = instance;
+          }
         }
       }
       return; // Optimization: Don't recurse into instance bodies during object creation

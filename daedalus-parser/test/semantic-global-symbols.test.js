@@ -100,4 +100,10 @@ test('should parse non-dialog instances into semantic model instances', () => {
   assert.equal(model.instances['SLD_200_DIEGO'].parent, 'C_NPC');
   assert.ok(model.instances['ITMI_SWORD'], 'Should include item instance');
   assert.equal(model.instances['ITMI_SWORD'].parent, 'C_ITEM');
+
+
+  assert.ok(model.items, 'Model should have items map');
+  assert.ok(model.items['ITMI_SWORD'], 'Should include item instance in items map');
+  assert.equal(model.items['ITMI_SWORD'].parent, 'C_ITEM');
+  assert.equal(model.items['SLD_200_DIEGO'], undefined, 'Non-item instances should not be in items map');
 });
