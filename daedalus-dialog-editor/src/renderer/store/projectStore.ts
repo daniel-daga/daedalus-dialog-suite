@@ -30,6 +30,7 @@ function createEmptySemanticModel(): SemanticModel {
     constants: {},
     variables: {},
     instances: {},
+    items: {},
     hasErrors: false,
     errors: []
   };
@@ -403,6 +404,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       }
       if (model?.instances) {
         Object.assign(mergedModel.instances, model.instances);
+      }
+      if (model?.items) {
+        Object.assign(mergedModel.items, model.items);
       }
     });
 

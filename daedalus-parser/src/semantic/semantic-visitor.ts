@@ -20,6 +20,7 @@ export class SemanticModelBuilderVisitor {
       constants: {},
       variables: {},
       instances: {},
+      items: {},
       hasErrors: false,
       errors: []
     };
