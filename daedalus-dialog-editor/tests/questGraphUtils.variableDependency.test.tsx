@@ -69,4 +69,71 @@ describe('questGraphUtils - Variable Dependencies', () => {
             expect(depEdge.label).toBe(helperVar);
         }
     });
+
+    it('should include indirect producer nodes that satisfy relevant conditions', () => {
+        const questName = 'TOPIC_INDIRECT';
+
+        const functions = [
+            {
+                name: 'DIA_WorldFlagSetter_Info',
+                actions: [
+                    { type: 'SetVariableAction', variableName: 'WORLD_FLAG', operator: '=', value: 1 }
+                ]
+            },
+            {
+                name: 'DIA_QuestBranch_Info',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'WORLD_FLAG', operator: '==', value: 1 }
+                ],
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: 'DIA_WorldFlagSetter', properties: { information: 'DIA_WorldFlagSetter_Info', npc: 'NPC_World' } },
+            { name: 'DIA_QuestBranch', properties: { information: 'DIA_QuestBranch_Info', npc: 'NPC_Quest' } }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { nodes, edges } = buildQuestGraph(model, questName);
+
+        expect(nodes.find(n => n.id === 'DIA_QuestBranch_Info')).toBeDefined();
+        expect(nodes.find(n => n.id === 'DIA_WorldFlagSetter_Info')).toBeDefined();
+
+        const indirectEdge = edges.find(e => e.source === 'DIA_WorldFlagSetter_Info' && e.target === 'DIA_QuestBranch_Info');
+        expect(indirectEdge).toBeDefined();
+    });
+
+    it('should create external condition nodes for unresolved item pickup prerequisites', () => {
+        const questName = 'TOPIC_FETCH';
+
+        const functions = [
+            {
+                name: 'DIA_FetchCheck_Info',
+                conditions: [
+                    { type: 'NpcHasItemsCondition', npc: 'hero', item: 'ITMW_SWORD', operator: '>=', value: 1 }
+                ],
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: 'DIA_FetchCheck', properties: { information: 'DIA_FetchCheck_Info', npc: 'NPC_Blacksmith' } }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { nodes, edges } = buildQuestGraph(model, questName);
+
+        const externalConditionNode = nodes.find(n => String(n.id).startsWith('external-item-DIA_FetchCheck_Info-hero-ITMW_SWORD'));
+        expect(externalConditionNode).toBeDefined();
+        expect(externalConditionNode?.type).toBe('condition');
+
+        const externalEdge = edges.find(e => String(e.id).startsWith('external-item-edge-external-item-DIA_FetchCheck_Info-hero-ITMW_SWORD'));
+        expect(externalEdge).toBeDefined();
+        expect(externalEdge?.target).toBe('DIA_FetchCheck_Info');
+    });
 });

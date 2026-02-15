@@ -13,6 +13,8 @@ interface NodeData {
     label: string;
     npc: string;
     description?: string;
+    nodeKind?: 'function' | 'external-condition';
+    expression?: string;
 }
 
 export interface QuestGraphData {
@@ -73,6 +75,22 @@ const identifyQuestNodes = (
             valueMap.set(value, new Set());
         }
         valueMap.get(value)!.add(funcName);
+    };
+
+    const getDisplayDataForFunction = (funcName: string) => {
+        const npc = getNpcForFunction(funcName, semanticModel) || 'Global/Other';
+        let displayName = funcName;
+
+        for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
+            const info = d.properties.information;
+            if ((typeof info === 'string' && info === funcName) ||
+                (typeof info === 'object' && info.name === funcName)) {
+                displayName = dName;
+                break;
+            }
+        }
+
+        return { npc, displayName };
     };
 
     Object.values(semanticModel.functions || {}).forEach(func => {
@@ -141,24 +159,15 @@ const identifyQuestNodes = (
         });
 
         if (isRelevant) {
-            const npc = getNpcForFunction(func.name, semanticModel) || 'Global/Other';
-            let displayName = func.name;
-
-            for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
-                const info = d.properties.information;
-                if ((typeof info === 'string' && info === func.name) ||
-                    (typeof info === 'object' && info.name === func.name)) {
-                    displayName = dName;
-                    break;
-                }
-            }
+            const { npc, displayName } = getDisplayDataForFunction(func.name);
 
             nodeDataMap.set(func.name, {
                 id: func.name,
                 type,
                 label: displayName,
                 npc,
-                description
+                description,
+                nodeKind: 'function'
             });
         }
     });
@@ -185,26 +194,65 @@ const identifyQuestNodes = (
             });
 
             if (isRelevantByKnows) {
-                const npc = getNpcForFunction(func.name, semanticModel) || 'Global/Other';
-                let displayName = func.name;
-                for (const [dName, d] of Object.entries(semanticModel.dialogs || {})) {
-                    const info = d.properties.information;
-                    if ((typeof info === 'string' && info === func.name) ||
-                        (typeof info === 'object' && info.name === func.name)) {
-                        displayName = dName;
-                        break;
-                    }
-                }
+                const { npc, displayName } = getDisplayDataForFunction(func.name);
 
                 nodeDataMap.set(func.name, {
                     id: func.name,
                     type: 'check',
                     label: displayName,
                     npc,
-                    description: ''
+                    description: '',
+                    nodeKind: 'function'
                 });
                 addedAny = true;
             }
+        });
+    }
+
+    // Expand graph via indirect variable dependencies:
+    // if a relevant node checks a variable, include every function that can produce that value.
+    addedAny = true;
+    while (addedAny) {
+        addedAny = false;
+
+        nodeDataMap.forEach((_, consumerId) => {
+            const consumerFunc = semanticModel.functions?.[consumerId];
+            if (!consumerFunc) return;
+
+            consumerFunc.conditions?.forEach((cond: DialogCondition) => {
+                if (cond.type !== 'VariableCondition') return;
+                if (cond.operator !== '==') return;
+
+                const valueMap = producersByVariableAndValue.get(cond.variableName);
+                if (!valueMap) return;
+
+                let checkVal = String(cond.value);
+                if (cond.variableName === misVarName) {
+                    if (checkVal === 'LOG_RUNNING') checkVal = '1';
+                    if (checkVal === 'LOG_SUCCESS') checkVal = '2';
+                    if (checkVal === 'LOG_FAILED') checkVal = '3';
+                }
+
+                const producers = valueMap.get(checkVal);
+                if (!producers) return;
+
+                producers.forEach((producerId) => {
+                    if (nodeDataMap.has(producerId)) return;
+                    const producerFunc = semanticModel.functions?.[producerId];
+                    if (!producerFunc) return;
+
+                    const { npc, displayName } = getDisplayDataForFunction(producerId);
+                    nodeDataMap.set(producerId, {
+                        id: producerId,
+                        type: 'check',
+                        label: displayName,
+                        npc,
+                        description: 'Indirect prerequisite',
+                        nodeKind: 'function'
+                    });
+                    addedAny = true;
+                });
+            });
         });
     }
 
@@ -221,7 +269,13 @@ const buildQuestEdges = (
     misVarName: string
 ) => {
     const edges: Edge[] = [];
+    const unresolvedConditionNodes = new Map<string, NodeData>();
     const adjacency = new Map<string, string[]>();
+
+    const addAdjacency = (sourceId: string, targetId: string) => {
+        if (!adjacency.has(sourceId)) adjacency.set(sourceId, []);
+        adjacency.get(sourceId)!.push(targetId);
+    };
     const incomingCount = new Map<string, number>();
 
     nodeDataMap.forEach((_, funcName) => {
@@ -264,7 +318,7 @@ const buildQuestEdges = (
                         style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' }, // Orange dashed line
                         labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 }
                     });
-                    adjacency.get(consumerId)?.push(targetFunc);
+                    addAdjacency(consumerId, targetFunc);
                     incomingCount.set(targetFunc, (incomingCount.get(targetFunc) || 0) + 1);
                 }
             }
@@ -294,7 +348,34 @@ const buildQuestEdges = (
                             style: { stroke: '#b1b1b7', strokeWidth: 2 },
                             labelStyle: { fill: '#b1b1b7', fontSize: 10 }
                         });
-                        adjacency.get(producerFunc)?.push(consumerId);
+                        addAdjacency(producerFunc, consumerId);
+                        incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+                    } else {
+                        const externalId = `external-knows-${consumerId}-${producerDialogName}`;
+                        if (!unresolvedConditionNodes.has(externalId)) {
+                            unresolvedConditionNodes.set(externalId, {
+                                id: externalId,
+                                type: 'check',
+                                label: `Knows ${producerDialogName}`,
+                                npc: 'External/World',
+                                description: 'Implicit prerequisite',
+                                nodeKind: 'external-condition',
+                                expression: `Npc_KnowsInfo(..., ${producerDialogName})`
+                            });
+                        }
+                        edges.push({
+                            id: `knows-external-${externalId}-${consumerId}`,
+                            source: externalId,
+                            target: consumerId,
+                            sourceHandle: 'out-bool',
+                            targetHandle: 'in-condition',
+                            label: 'Unresolved knows-info',
+                            type: 'smoothstep',
+                            markerEnd: { type: MarkerType.ArrowClosed },
+                            style: { stroke: '#b1b1b7', strokeWidth: 2, strokeDasharray: '3,3' },
+                            labelStyle: { fill: '#b1b1b7', fontSize: 10 }
+                        });
+                        addAdjacency(externalId, consumerId);
                         incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
                     }
                 }
@@ -333,14 +414,81 @@ const buildQuestEdges = (
                                     style: { stroke: '#2196f3', strokeWidth: 2 },
                                     labelStyle: { fill: '#2196f3', fontSize: 10 }
                                 });
-                                adjacency.get(producerId)?.push(consumerId);
+                                addAdjacency(producerId, consumerId);
                                 incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
                             }
                         });
+
+                        if (producers.size === 0) {
+                            const externalId = `external-cond-${consumerId}-${varName}-${checkVal}`;
+                            if (!unresolvedConditionNodes.has(externalId)) {
+                                unresolvedConditionNodes.set(externalId, {
+                                    id: externalId,
+                                    type: 'check',
+                                    label: `${varName} ${op} ${val}`,
+                                    npc: 'External/World',
+                                    description: 'Unresolved condition source',
+                                    nodeKind: 'external-condition',
+                                    expression: `${varName} ${op} ${val}`
+                                });
+                            }
+                            edges.push({
+                                id: `external-var-${externalId}-${consumerId}`,
+                                source: externalId,
+                                target: consumerId,
+                                sourceHandle: 'out-bool',
+                                targetHandle: 'in-condition',
+                                label: 'Unresolved source',
+                                type: 'smoothstep',
+                                markerEnd: { type: MarkerType.ArrowClosed },
+                                style: { stroke: '#ffb74d', strokeWidth: 2, strokeDasharray: '3,3' },
+                                labelStyle: { fill: '#ffb74d', fontSize: 10 }
+                            });
+                            addAdjacency(externalId, consumerId);
+                            incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+                        }
                     }
                 }
             }
+
+            if (cond.type === 'NpcHasItemsCondition') {
+                const externalId = `external-item-${consumerId}-${cond.npc}-${cond.item}`;
+                if (!unresolvedConditionNodes.has(externalId)) {
+                    unresolvedConditionNodes.set(externalId, {
+                        id: externalId,
+                        type: 'check',
+                        label: `${cond.item}`,
+                        npc: 'External/World',
+                        description: 'Item possession prerequisite',
+                        nodeKind: 'external-condition',
+                        expression: `${cond.npc} has ${cond.item}`
+                    });
+                }
+
+                edges.push({
+                    id: `external-item-edge-${externalId}-${consumerId}`,
+                    source: externalId,
+                    target: consumerId,
+                    sourceHandle: 'out-bool',
+                    targetHandle: 'in-condition',
+                    label: 'Has item',
+                    type: 'smoothstep',
+                    markerEnd: { type: MarkerType.ArrowClosed },
+                    style: { stroke: '#ffb74d', strokeWidth: 2, strokeDasharray: '3,3' },
+                    labelStyle: { fill: '#ffb74d', fontSize: 10 }
+                });
+                addAdjacency(externalId, consumerId);
+                incomingCount.set(consumerId, (incomingCount.get(consumerId) || 0) + 1);
+            }
         });
+    });
+
+    unresolvedConditionNodes.forEach((nodeData, nodeId) => {
+        if (!nodeDataMap.has(nodeId)) {
+            nodeDataMap.set(nodeId, nodeData);
+        }
+        if (!adjacency.has(nodeId)) adjacency.set(nodeId, []);
+        if (!incomingCount.has(nodeId)) incomingCount.set(nodeId, 0);
     });
 
     return { edges, adjacency, incomingCount };
@@ -425,7 +573,9 @@ const calculateDagreLayout = (
             if (data) {
                 // Determine node type
                 let nodeType = 'dialog';
-                if (isStateNode(data.type, data.description)) {
+                if (data.nodeKind === 'external-condition') {
+                    nodeType = 'condition';
+                } else if (isStateNode(data.type, data.description)) {
                     nodeType = 'questState';
                 }
 
@@ -437,6 +587,7 @@ const calculateDagreLayout = (
                         label: data.label,
                         npc: data.npc,
                         description: data.description,
+                        expression: data.expression,
                         type: data.type,
                         status: data.description, // rough mapping
                         variableName: semanticModel.variables?.[misVarName] ? misVarName : undefined
