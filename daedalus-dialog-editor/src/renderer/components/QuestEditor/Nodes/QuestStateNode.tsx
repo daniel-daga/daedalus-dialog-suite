@@ -29,7 +29,7 @@ const QuestStateNode: React.FC<NodeProps> = ({ data, selected }) => {
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         {data.variableName ? (
-            <ReferenceLink symbolName={data.variableName} variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
+            <ReferenceLink symbolName={data.variableName} symbolType="variable" variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
                 {data.variableName}
             </ReferenceLink>
         ) : (

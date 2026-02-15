@@ -5,6 +5,8 @@ import { useEditorStore } from '../store/editorStore';
 export interface NavigationOptions {
   functionName?: string;
   variableName?: string;
+  preferSource?: boolean;
+  kind?: 'quest' | 'dialog' | 'npc' | 'variable' | 'constant' | 'instance' | 'function';
 }
 
 export const useNavigation = () => {
@@ -28,6 +30,12 @@ export const useNavigation = () => {
   } = useEditorStore();
 
   const isProjectMode = !!projectPath;
+
+  const findCaseInsensitiveKey = useCallback((values: string[], target: string): string | null => {
+    const lowerTarget = target.toLowerCase();
+    const match = values.find((value) => value.toLowerCase() === lowerTarget);
+    return match || null;
+  }, []);
 
   const navigateToDialog = useCallback(async (dialogName: string, functionName?: string) => {
     let foundNpc: string | null = null;
@@ -104,11 +112,13 @@ export const useNavigation = () => {
     return false;
   }, [dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, isProjectMode, activeFile, openFile, setSelectedNPC, setSelectedDialog, setSelectedFunctionName, setActiveView]);
 
-  const navigateToSymbol = useCallback(async (symbolName: string, options?: { preferSource?: boolean }) => {
+  const navigateToSymbol = useCallback(async (symbolName: string, options?: NavigationOptions) => {
     const lowerSymbolName = symbolName.toLowerCase();
+    const requestedKind = options?.kind;
+    const currentSemanticModel = isProjectMode ? mergedSemanticModel : (activeFile ? openFiles.get(activeFile)?.semanticModel : null);
 
     // 1. Try to navigate as a quest/topic (switch to quest view)
-    if (!options?.preferSource && symbolName.toUpperCase().startsWith('TOPIC_')) {
+    if ((requestedKind === 'quest' || (!requestedKind && symbolName.toUpperCase().startsWith('TOPIC_'))) && !options?.preferSource) {
       setActiveView('quest');
       // QuestEditor should react to this if we had a selectedQuest in store,
       // but QuestEditor currently uses local state for selectedQuest.
@@ -116,13 +126,43 @@ export const useNavigation = () => {
       return true;
     }
 
-    // 2. Try to navigate as a dialog
-    if (await navigateToDialog(symbolName)) return true;
+    const navigateToNpc = async () => {
+      const npcName = findCaseInsensitiveKey(Array.from(dialogIndex.keys()), symbolName);
+      if (!npcName) {
+        return false;
+      }
 
-    // 3. Try to find as a variable, constant, or function in the current merged model
-    const semanticModel = isProjectMode ? mergedSemanticModel : (activeFile ? openFiles.get(activeFile)?.semanticModel : null);
+      selectNpc(npcName);
+      setSelectedNPC(npcName);
+      setActiveView('dialog');
+
+      if (isProjectMode) {
+        const dialogMetadata = dialogIndex.get(npcName) || [];
+        const uniqueFilePaths = [...new Set(dialogMetadata.map((entry) => entry.filePath))];
+        await Promise.all(uniqueFilePaths.map((filePath) => getSemanticModel(filePath)));
+        loadAndMergeNpcModels(npcName);
+      }
+
+      const dialogs = dialogIndex.get(npcName) || [];
+      if (dialogs.length > 0) {
+        await navigateToDialog(dialogs[0].dialogName);
+      }
+
+      return true;
+    };
+
+    // 2. Explicit type navigation
+    if (requestedKind === 'dialog' && await navigateToDialog(symbolName)) return true;
+    if (requestedKind === 'npc' && await navigateToNpc()) return true;
+
+    // 3. Try to navigate as a dialog
+    if (!requestedKind && await navigateToDialog(symbolName)) return true;
+
+    // 4. Try to navigate as an NPC
+    if ((!requestedKind || requestedKind === 'npc') && await navigateToNpc()) return true;
     
-    if (semanticModel) {
+    // 5. Try to find as a variable, constant, function, or instance in the current model
+    if (currentSemanticModel) {
       // Case-insensitive lookup in objects
       const findCaseInsensitive = (obj: Record<string, any> | undefined) => {
         if (!obj) return null;
@@ -130,28 +170,49 @@ export const useNavigation = () => {
         return exactKey ? obj[exactKey] : null;
       };
 
-      const constant = findCaseInsensitive(semanticModel.constants);
-      const variable = findCaseInsensitive(semanticModel.variables);
-      const instance = findCaseInsensitive(semanticModel.instances);
-      const func = findCaseInsensitive(semanticModel.functions);
-      
-      const symbol = constant || variable || instance || func;
-      
-      if (symbol && symbol.filePath) {
-        await openFile(symbol.filePath);
-        setActiveView('dialog');
+      const constant = findCaseInsensitive(currentSemanticModel.constants);
+      const variable = findCaseInsensitive(currentSemanticModel.variables);
+      const instance = findCaseInsensitive(currentSemanticModel.instances);
+      const func = findCaseInsensitive(currentSemanticModel.functions);
 
-        // If it's a function, try to select it
-        if (func && func.name) {
+      if (
+        (requestedKind === 'variable' && !variable) ||
+        (requestedKind === 'constant' && !constant) ||
+        (requestedKind === 'function' && !func) ||
+        (requestedKind === 'instance' && !instance)
+      ) {
+        return false;
+      }
+
+      if (requestedKind === 'variable' || requestedKind === 'constant' || variable || constant) {
+        const symbol = requestedKind === 'constant' ? constant : (requestedKind === 'variable' ? variable : (variable || constant));
+        if (symbol?.filePath) {
+          await openFile(symbol.filePath);
+        }
+        setActiveView('variable');
+        return true;
+      }
+
+      if (func) {
+        if (func.filePath) {
+          await openFile(func.filePath);
+        }
+        setActiveView('dialog');
+        if (func.name) {
           setSelectedFunctionName(func.name);
         }
+        return true;
+      }
 
+      if (instance?.filePath) {
+        await openFile(instance.filePath);
+        setActiveView('dialog');
         return true;
       }
     }
 
     return false;
-  }, [navigateToDialog, isProjectMode, mergedSemanticModel, activeFile, openFiles, openFile, setActiveView, setSelectedFunctionName]);
+  }, [activeFile, dialogIndex, findCaseInsensitiveKey, getSemanticModel, isProjectMode, loadAndMergeNpcModels, mergedSemanticModel, navigateToDialog, openFile, openFiles, selectNpc, setActiveView, setSelectedFunctionName, setSelectedNPC]);
 
   return {
     navigateToDialog,

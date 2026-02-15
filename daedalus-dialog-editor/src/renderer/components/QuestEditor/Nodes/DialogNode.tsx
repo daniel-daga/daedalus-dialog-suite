@@ -14,7 +14,7 @@ const DialogNode: React.FC<NodeProps> = ({ data, selected }) => {
       selected={selected}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <ReferenceLink symbolName={data.npc || ''} variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
+        <ReferenceLink symbolName={data.npc || ''} symbolType="npc" variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
           {data.npc || 'Unknown NPC'}
         </ReferenceLink>
 

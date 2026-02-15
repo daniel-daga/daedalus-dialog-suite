@@ -4,11 +4,13 @@ import { useNavigation } from '../../hooks/useNavigation';
 
 interface ReferenceLinkProps extends TypographyProps {
   symbolName: string;
+  symbolType?: 'quest' | 'dialog' | 'npc' | 'variable' | 'constant' | 'instance' | 'function';
   children?: React.ReactNode;
 }
 
 const ReferenceLink: React.FC<ReferenceLinkProps> = ({
   symbolName,
+  symbolType,
   children,
   sx,
   ...props
@@ -21,8 +23,8 @@ const ReferenceLink: React.FC<ReferenceLinkProps> = ({
     if (!symbolName) return;
 
     // Try to navigate
-    await navigateToSymbol(symbolName);
-  }, [navigateToSymbol, symbolName]);
+    await navigateToSymbol(symbolName, { kind: symbolType });
+  }, [navigateToSymbol, symbolName, symbolType]);
 
   return (
     <Typography
