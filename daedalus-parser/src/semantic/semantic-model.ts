@@ -1260,6 +1260,8 @@ export interface SemanticModel {
   variables?: { [key: string]: GlobalVariable };
   instances?: { [key: string]: GlobalInstance };
   items?: { [key: string]: GlobalInstance };
+  npcs?: { [key: string]: GlobalInstance };
+  animations?: { [key: string]: GlobalInstance };
   errors?: SyntaxError[];
   hasErrors?: boolean;
 }
@@ -1274,6 +1276,8 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     variables: {},
     instances: {},
     items: {},
+    npcs: {},
+    animations: {},
     errors: json.errors,
     hasErrors: json.hasErrors
   };
@@ -1324,13 +1328,37 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     for (const key in json.items) {
       model.items![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.items[key]);
     }
-  } else {
-    // Backward compatibility: derive items from instances if the serialized model predates `items`
-    for (const key in model.instances) {
-      const instance = model.instances[key];
-      if (instance.parent.toUpperCase() === 'C_ITEM') {
-        model.items![key] = instance;
-      }
+  }
+
+  // 7. Reconstruct npcs
+  if (json.npcs) {
+    for (const key in json.npcs) {
+      model.npcs![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.npcs[key]);
+    }
+  }
+
+  // 8. Reconstruct animations
+  if (json.animations) {
+    for (const key in json.animations) {
+      model.animations![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.animations[key]);
+    }
+  }
+
+  // Backward compatibility: derive categorized maps from instances when missing
+  for (const key in model.instances) {
+    const instance = model.instances[key];
+    const parentType = instance.parent.toUpperCase();
+
+    if (!json.items && parentType === 'C_ITEM') {
+      model.items![key] = instance;
+    }
+
+    if (!json.npcs && parentType === 'C_NPC') {
+      model.npcs![key] = instance;
+    }
+
+    if (!json.animations && parentType === 'C_MDS') {
+      model.animations![key] = instance;
     }
   }
 
