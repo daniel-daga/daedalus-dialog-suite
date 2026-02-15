@@ -237,7 +237,8 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
       if (option?.source === 'dialog') {
         navigateToDialog(option.name);
       } else if (option) {
-        navigateToSymbol(option.name);
+        const symbolKind = option.source === 'new' ? undefined : option.source;
+        navigateToSymbol(option.name, symbolKind ? { kind: symbolKind } : undefined);
       }
     }
   };
