@@ -43,11 +43,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                     <ChatIcon />
                 </ToggleButton>
             </Tooltip>
-            {/* <Tooltip title="Quest Editor" placement="right">
+            <Tooltip title="Quest Editor" placement="right">
                 <ToggleButton value="quest" aria-label="Quest Editor">
                     <BookIcon />
                 </ToggleButton>
-            </Tooltip> */}
+            </Tooltip>
             <Tooltip title="Variable Manager" placement="right">
                 <ToggleButton value="variable" aria-label="Variable Manager">
                     <VariableIcon />
@@ -73,11 +73,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
              {filePath && <SourceCodeEditor filePath={filePath} />}
          </Box> */}
 
-         {/* {view === 'quest' && (
+         {view === 'quest' && (
              <Box sx={{ height: '100%' }}>
                  <QuestEditor semanticModel={semanticModel as SemanticModel} />
              </Box>
-         )} */}
+         )}
 
          {view === 'variable' && (
              <Box sx={{ height: '100%' }}>
