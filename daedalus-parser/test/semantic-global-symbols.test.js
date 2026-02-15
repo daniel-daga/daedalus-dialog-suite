@@ -87,6 +87,10 @@ test('should parse non-dialog instances into semantic model instances', () => {
     {
       name = "Rusty Sword";
     };
+
+    INSTANCE HUMANS_MDS(C_MDS)
+    {
+    };
   `;
 
   const model = parseSemanticModel(source);
@@ -110,4 +114,15 @@ test('should parse non-dialog instances into semantic model instances', () => {
   assert.equal(model.items['ITMI_SWORD'].parent, 'C_ITEM');
   assert.equal(model.items['ITMI_SWORD'].displayName, 'Rusty Sword');
   assert.equal(model.items['SLD_200_DIEGO'], undefined, 'Non-item instances should not be in items map');
+
+
+  assert.ok(model.npcs, 'Model should have npcs map');
+  assert.ok(model.npcs['SLD_200_DIEGO'], 'Should include npc instance in npcs map');
+  assert.equal(model.npcs['SLD_200_DIEGO'].parent, 'C_NPC');
+  assert.equal(model.npcs['ITMI_SWORD'], undefined, 'Non-npc instances should not be in npcs map');
+
+  assert.ok(model.animations, 'Model should have animations map');
+  assert.ok(model.animations['HUMANS_MDS'], 'Should include animation instance in animations map');
+  assert.equal(model.animations['HUMANS_MDS'].parent, 'C_MDS');
+  assert.equal(model.animations['SLD_200_DIEGO'], undefined, 'Non-animation instances should not be in animations map');
 });

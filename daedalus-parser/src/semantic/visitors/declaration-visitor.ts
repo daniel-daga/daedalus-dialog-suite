@@ -123,6 +123,20 @@ export class DeclarationVisitor {
             }
             this.semanticModel.items[instance.name] = instance;
           }
+
+          if (upperParent === 'C_NPC') {
+            if (!this.semanticModel.npcs) {
+              this.semanticModel.npcs = {};
+            }
+            this.semanticModel.npcs[instance.name] = instance;
+          }
+
+          if (upperParent === 'C_MDS') {
+            if (!this.semanticModel.animations) {
+              this.semanticModel.animations = {};
+            }
+            this.semanticModel.animations[instance.name] = instance;
+          }
         }
       }
       return; // Optimization: Don't recurse into instance bodies during object creation

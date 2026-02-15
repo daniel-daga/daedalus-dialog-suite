@@ -383,6 +383,8 @@ export interface SemanticModel {
   variables?: Record<string, GlobalVariable>;
   instances?: Record<string, GlobalInstance>;
   items?: Record<string, GlobalInstance>;
+  npcs?: Record<string, GlobalInstance>;
+  animations?: Record<string, GlobalInstance>;
   hasErrors: boolean;
   errors: ParseError[];
 }
