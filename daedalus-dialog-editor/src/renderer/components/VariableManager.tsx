@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -19,37 +19,67 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  TablePagination,
 } from '@mui/material';
 import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useProjectStore } from '../store/projectStore';
 import type { GlobalConstant, GlobalVariable } from '../types/global';
 import VariableCreationDialog from './common/VariableCreationDialog';
 
+type VariableEntry = {
+  variable: GlobalConstant | GlobalVariable;
+  isConstant: boolean;
+  lowerName: string;
+  lowerType: string;
+  lowerFilePath: string;
+  baseFileName: string;
+};
+
 const VariableManager: React.FC = () => {
   const { mergedSemanticModel, deleteVariable, allDialogFiles, questFiles } = useProjectStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'constants' | 'variables'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(100);
 
   // Add Variable Dialog State
   const [openAdd, setOpenAdd] = useState(false);
 
   const variables = useMemo(() => {
-    const vars: ((GlobalConstant | GlobalVariable) & { isConstant: boolean })[] = [];
+    const vars: VariableEntry[] = [];
     if (mergedSemanticModel.constants) {
-      vars.push(...Object.values(mergedSemanticModel.constants).map(c => ({ ...c, isConstant: true })));
+      vars.push(
+        ...Object.values(mergedSemanticModel.constants).map((c) => ({
+          variable: c,
+          isConstant: true,
+          lowerName: c.name.toLowerCase(),
+          lowerType: c.type.toLowerCase(),
+          lowerFilePath: (c.filePath || '').toLowerCase(),
+          baseFileName: c.filePath ? c.filePath.split(/[\\/]/).pop() || 'Unknown' : 'Unknown',
+        }))
+      );
     }
     if (mergedSemanticModel.variables) {
-      vars.push(...Object.values(mergedSemanticModel.variables).map(v => ({ ...v, isConstant: false })));
+      vars.push(
+        ...Object.values(mergedSemanticModel.variables).map((v) => ({
+          variable: v,
+          isConstant: false,
+          lowerName: v.name.toLowerCase(),
+          lowerType: v.type.toLowerCase(),
+          lowerFilePath: (v.filePath || '').toLowerCase(),
+          baseFileName: v.filePath ? v.filePath.split(/[\\/]/).pop() || 'Unknown' : 'Unknown',
+        }))
+      );
     }
     // Sort by name
-    return vars.sort((a, b) => a.name.localeCompare(b.name));
+    return vars.sort((a, b) => a.variable.name.localeCompare(b.variable.name));
   }, [mergedSemanticModel]);
 
   const availableTypes = useMemo(() => {
     const types = new Set<string>();
     variables.forEach(v => {
-      if (v.type) types.add(v.type.toLowerCase());
+      types.add(v.lowerType);
     });
     return Array.from(types).sort();
   }, [variables]);
@@ -66,21 +96,30 @@ const VariableManager: React.FC = () => {
 
     // Type filter
     if (typeFilter !== 'all') {
-      result = result.filter(v => v.type.toLowerCase() === typeFilter);
+      result = result.filter(v => v.lowerType === typeFilter);
     }
 
     // Search query
     if (searchQuery) {
       const lowerQuery = searchQuery.toLowerCase();
       result = result.filter(v =>
-        v.name.toLowerCase().includes(lowerQuery) ||
-        v.type.toLowerCase().includes(lowerQuery) ||
-        (v.filePath && v.filePath.toLowerCase().includes(lowerQuery))
+        v.lowerName.includes(lowerQuery) ||
+        v.lowerType.includes(lowerQuery) ||
+        v.lowerFilePath.includes(lowerQuery)
       );
     }
 
     return result;
   }, [variables, searchQuery, categoryFilter, typeFilter]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, categoryFilter, typeFilter]);
+
+  const paginatedVariables = useMemo(() => {
+    const start = page * rowsPerPage;
+    return filteredVariables.slice(start, start + rowsPerPage);
+  }, [filteredVariables, page, rowsPerPage]);
 
   const handleDelete = async (v: GlobalConstant | GlobalVariable) => {
       if (!v.filePath || !v.range) {
@@ -169,11 +208,13 @@ const VariableManager: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredVariables.map((v) => (
-              <TableRow key={`${v.name}-${v.filePath}`} hover>
+            {paginatedVariables.map((entry) => {
+              const v = entry.variable;
+              return (
+              <TableRow key={`${v.name}-${v.filePath}-${entry.isConstant ? 'const' : 'var'}`} hover>
                 <TableCell sx={{ fontFamily: 'monospace' }}>
                   {v.name}
-                  {v.isConstant && (
+                  {entry.isConstant && (
                     <Chip label="const" size="small" sx={{ ml: 1, height: 16, fontSize: '0.6rem' }} />
                   )}
                 </TableCell>
@@ -181,17 +222,17 @@ const VariableManager: React.FC = () => {
                   <Chip
                     label={v.type}
                     size="small"
-                    color={v.isConstant ? 'primary' : 'default'}
+                    color={entry.isConstant ? 'primary' : 'default'}
                     variant="outlined"
                   />
                 </TableCell>
                 <TableCell>
-                  {v.isConstant ? String((v as GlobalConstant).value) : '-'}
+                  {entry.isConstant ? String((v as GlobalConstant).value) : '-'}
                 </TableCell>
                 <TableCell>
                   <Tooltip title={v.filePath || ''}>
                     <Typography variant="caption" noWrap sx={{ maxWidth: 200, display: 'block' }}>
-                      {v.filePath ? v.filePath.split(/[\\/]/).pop() : 'Unknown'}
+                      {entry.baseFileName}
                     </Typography>
                   </Tooltip>
                 </TableCell>
@@ -211,7 +252,7 @@ const VariableManager: React.FC = () => {
                     </Tooltip>
                 </TableCell>
               </TableRow>
-            ))}
+            )})}
             {filteredVariables.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} align="center">
@@ -224,6 +265,18 @@ const VariableManager: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={filteredVariables.length}
+        page={page}
+        onPageChange={(_, nextPage) => setPage(nextPage)}
+        rowsPerPage={rowsPerPage}
+        onRowsPerPageChange={(event) => {
+          setRowsPerPage(parseInt(event.target.value, 10));
+          setPage(0);
+        }}
+        rowsPerPageOptions={[50, 100, 250]}
+      />
 
       <VariableCreationDialog 
         open={openAdd} 
