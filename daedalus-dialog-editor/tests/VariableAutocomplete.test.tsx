@@ -261,6 +261,22 @@ describe('VariableAutocomplete', () => {
     expect(screen.queryByTestId('OpenInNewIcon')).not.toBeInTheDocument();
   });
 
+
+
+  test('navigates with symbol kind to avoid expensive fallback resolution', async () => {
+    const onChange = jest.fn();
+    render(
+      <VariableAutocomplete
+        value="MIS_Quest1"
+        onChange={onChange}
+        label="Nav kind"
+      />
+    );
+
+    fireEvent.click(await screen.findByTestId('OpenInNewIcon'));
+
+    expect(navigateToSymbol).toHaveBeenCalledWith('MIS_Quest1', { kind: 'variable' });
+  });
   test('falls back to project npcList for C_NPC suggestions when instances are missing', async () => {
     (useProjectStore as jest.Mock).mockReturnValue({
       mergedSemanticModel: {
