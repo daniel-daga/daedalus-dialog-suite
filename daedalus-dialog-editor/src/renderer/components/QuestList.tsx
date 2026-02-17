@@ -16,8 +16,7 @@ import {
   ListItemIcon,
   Select,
   MenuItem,
-  FormControl,
-  InputLabel
+  FormControl
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -33,6 +32,11 @@ import type { SemanticModel } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
 import { analyzeQuest, getUsedQuestTopics } from './QuestEditor/questAnalysis';
+import {
+  DEFAULT_QUEST_TOPIC_FILTER_POLICY,
+  getCanonicalQuestKey,
+  isQuestTopicConstantByPolicy
+} from '../utils/questIdentity';
 
 interface QuestListProps {
   semanticModel: SemanticModel;
@@ -47,10 +51,10 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
   const [statusFilter, setStatusFilter] = useState<'all' | 'broken' | 'wip' | 'implemented' | 'not_started'>('all');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
-  // Memoize the list of all TOPIC_ constants
+  // Explicit policy: include mission topics and optional note topics (Topic_*).
   const quests = useMemo(() => {
     const constants = semanticModel.constants || {};
-    return Object.values(constants).filter(c => c.name.startsWith('TOPIC_'));
+    return Object.values(constants).filter(c => isQuestTopicConstantByPolicy(c.name, DEFAULT_QUEST_TOPIC_FILTER_POLICY));
   }, [semanticModel.constants]);
 
   // Analyze all quests once when model changes
@@ -68,6 +72,9 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
   const usedTopics = useMemo(() => {
     return getUsedQuestTopics(semanticModel);
   }, [semanticModel]);
+  const usedTopicKeys = useMemo(() => {
+    return new Set(Array.from(usedTopics).map(topic => getCanonicalQuestKey(topic)));
+  }, [usedTopics]);
 
   const filteredQuests = useMemo(() => {
     return quests.filter(q => {
@@ -80,7 +87,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
       if (!matchesSearch) return false;
 
       // View Mode Filter
-      if (viewMode === 'used' && !usedTopics.has(q.name)) {
+      if (viewMode === 'used' && !usedTopicKeys.has(getCanonicalQuestKey(q.name))) {
         return false;
       }
 
@@ -91,7 +98,7 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
 
       return true;
     });
-  }, [quests, filter, viewMode, statusFilter, usedTopics, questAnalysisMap]);
+  }, [quests, filter, viewMode, statusFilter, usedTopicKeys, questAnalysisMap]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {

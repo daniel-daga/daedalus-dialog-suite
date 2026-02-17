@@ -187,4 +187,37 @@ describe('questGraphUtils', () => {
         const edge = edges.find(e => e.source === funcA && e.target === funcC);
         expect(edge).toBeUndefined();
     });
+
+    it('should hide inferred edges when requested', () => {
+        const questName = 'TOPIC_FILTERS';
+        const functions = [
+            {
+                name: 'DIA_WorldSetter',
+                actions: [
+                    { type: 'SetVariableAction', variableName: 'WORLD_FLAG', operator: '=', value: 1 }
+                ]
+            },
+            {
+                name: 'DIA_QuestBranch',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'WORLD_FLAG', operator: '==', value: 1 }
+                ],
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: 'DIA_WorldSetterDialog', properties: { information: 'DIA_WorldSetter', npc: 'NPC_World' } },
+            { name: 'DIA_QuestBranchDialog', properties: { information: 'DIA_QuestBranch', npc: 'NPC_Quest' } }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const baseline = buildQuestGraph(model, questName);
+        const filtered = buildQuestGraph(model, questName, { hideInferredEdges: true });
+
+        expect(baseline.edges.length).toBeGreaterThan(0);
+        expect(filtered.edges.length).toBe(0);
+    });
 });

@@ -1,5 +1,11 @@
 import type { SemanticModel, DialogAction, DialogCondition } from '../../types/global';
 import { getActionType } from '../actionTypes';
+import {
+    getCanonicalQuestKey,
+    getQuestMisVariableName,
+    isCaseInsensitiveMatch,
+    normalizeQuestLifecycleState
+} from '../../utils/questIdentity';
 
 export interface QuestAnalysis {
     status: 'implemented' | 'wip' | 'not_started';
@@ -9,6 +15,9 @@ export interface QuestAnalysis {
     hasStart: boolean;
     hasSuccess: boolean;
     hasFailed: boolean;
+    hasObsolete: boolean;
+    lifecycleSource: 'none' | 'topic' | 'mis' | 'mixed';
+    hasLifecycleConflict: boolean;
     description: string;
     filePaths: { topic: string | null; variable: string | null };
 }
@@ -21,31 +30,81 @@ export interface QuestReference {
     details: string;
 }
 
+const findCaseInsensitiveSymbol = <T,>(symbols: Record<string, T> | undefined, name: string): T | undefined => {
+    if (!symbols) return undefined;
+    if (symbols[name]) return symbols[name];
+    const lowered = name.toLowerCase();
+    for (const [key, value] of Object.entries(symbols)) {
+        if (key.toLowerCase() === lowered) {
+            return value;
+        }
+    }
+    return undefined;
+};
+
 export const analyzeQuest = (semanticModel: SemanticModel, questName: string): QuestAnalysis => {
-    const misVarName = questName.replace('TOPIC_', 'MIS_');
-    const topicConstant = semanticModel.constants?.[questName];
-    const misVariable = semanticModel.variables?.[misVarName];
+    const misVarName = getQuestMisVariableName(questName);
+    const topicConstant = findCaseInsensitiveSymbol(semanticModel.constants, questName);
+    const misVariable = findCaseInsensitiveSymbol(semanticModel.variables, misVarName);
 
     let hasStart = false;
     let hasSuccess = false;
     let hasFailed = false;
-    let hasImplicitChecks = false;
+    let hasObsolete = false;
     let hasExplicitChecks = !!misVariable;
+    let hasTopicLifecycleSignal = false;
+    let hasMisLifecycleSignal = false;
+    const topicTerminalStates = new Set<'success' | 'failed' | 'obsolete'>();
+    const misTerminalStates = new Set<'success' | 'failed' | 'obsolete'>();
+
+    const applyLifecycleSignal = (rawValue: unknown, source: 'topic' | 'mis') => {
+        const state = normalizeQuestLifecycleState(rawValue);
+        if (source === 'topic') {
+            hasTopicLifecycleSignal = true;
+        } else {
+            hasMisLifecycleSignal = true;
+        }
+
+        if (state === 'unknown') {
+            hasStart = true;
+            return;
+        }
+
+        hasStart = true;
+        if (state === 'success') {
+            hasSuccess = true;
+            if (source === 'topic') topicTerminalStates.add('success');
+            else misTerminalStates.add('success');
+        } else if (state === 'failed') {
+            hasFailed = true;
+            if (source === 'topic') topicTerminalStates.add('failed');
+            else misTerminalStates.add('failed');
+        } else if (state === 'obsolete') {
+            hasObsolete = true;
+            hasFailed = true;
+            if (source === 'topic') topicTerminalStates.add('obsolete');
+            else misTerminalStates.add('obsolete');
+        }
+    };
 
     // Scan functions for actions
     Object.values(semanticModel.functions || {}).forEach(func => {
         func.actions?.forEach((action: DialogAction) => {
-            if ('topic' in action && action.topic === questName) {
+            if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
                 if (action.type === 'CreateTopic') {
                     hasStart = true;
                 } else if (action.type === 'LogSetTopicStatus') {
-                    const status = String(action.status);
-                    if (status.includes('SUCCESS') || status === '2') {
-                        hasSuccess = true;
-                    } else if (status.includes('FAILED') || status === '3') {
-                        hasFailed = true;
-                    }
+                    applyLifecycleSignal(action.status, 'topic');
                 }
+            }
+
+            if (
+                action.type === 'SetVariableAction' &&
+                action.operator === '=' &&
+                isCaseInsensitiveMatch(action.variableName, misVarName)
+            ) {
+                applyLifecycleSignal(action.value, 'mis');
+                hasExplicitChecks = true;
             }
         });
 
@@ -56,11 +115,25 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
                 // We'll need a better way to link dialogs to quests, 
                 // but for now we look at references in getQuestReferences
             }
-            if (cond.type === 'VariableCondition' && cond.variableName === misVarName) {
+            if (cond.type === 'VariableCondition' && isCaseInsensitiveMatch(cond.variableName, misVarName)) {
                 hasExplicitChecks = true;
             }
         });
     });
+
+    let lifecycleSource: QuestAnalysis['lifecycleSource'] = 'none';
+    if (hasTopicLifecycleSignal && hasMisLifecycleSignal) {
+        lifecycleSource = 'mixed';
+    } else if (hasMisLifecycleSignal) {
+        lifecycleSource = 'mis';
+    } else if (hasTopicLifecycleSignal) {
+        lifecycleSource = 'topic';
+    }
+
+    const hasLifecycleConflict =
+        topicTerminalStates.size > 0 &&
+        misTerminalStates.size > 0 &&
+        !Array.from(topicTerminalStates).some(state => misTerminalStates.has(state));
 
     // Determine logic method
     let logicMethod: QuestAnalysis['logicMethod'] = 'unknown';
@@ -75,7 +148,7 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
     }
 
     let status: QuestAnalysis['status'] = 'not_started';
-    if (hasSuccess || hasFailed) {
+    if (hasSuccess || hasFailed || hasObsolete) {
         status = 'implemented';
     } else if (hasStart) {
         status = 'wip';
@@ -89,6 +162,9 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
         hasStart,
         hasSuccess,
         hasFailed,
+        hasObsolete,
+        lifecycleSource,
+        hasLifecycleConflict,
         description: topicConstant ? String(topicConstant.value).replace(/^"|"$/g, '') : '',
         filePaths: {
             topic: topicConstant?.filePath || null,
@@ -99,9 +175,7 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
 
 export const getQuestReferences = (semanticModel: SemanticModel, questName: string): QuestReference[] => {
     if (!questName) return [];
-    const lowerQuestName = questName.toLowerCase();
-    const misVarName = questName.replace('TOPIC_', 'MIS_');
-    const lowerMisVarName = misVarName.toLowerCase();
+    const misVarName = getQuestMisVariableName(questName);
 
     const refs: QuestReference[] = [];
 
@@ -110,16 +184,16 @@ export const getQuestReferences = (semanticModel: SemanticModel, questName: stri
     Object.values(semanticModel.dialogs || {}).forEach(dialog => {
         const info = dialog.properties.information;
         if (typeof info === 'string') {
-            funcToDialog.set(info.toLowerCase(), { dialogName: dialog.name, npcName: dialog.properties.npc });
+            funcToDialog.set(getCanonicalQuestKey(info), { dialogName: dialog.name, npcName: dialog.properties.npc });
         } else if (info && typeof info === 'object' && info.name) {
-             funcToDialog.set(info.name.toLowerCase(), { dialogName: dialog.name, npcName: dialog.properties.npc });
+             funcToDialog.set(getCanonicalQuestKey(info.name), { dialogName: dialog.name, npcName: dialog.properties.npc });
         }
     });
 
     Object.values(semanticModel.functions || {}).forEach(func => {
         func.actions?.forEach(action => {
-            if ('topic' in action && action.topic && action.topic.toLowerCase() === lowerQuestName) {
-                const context = funcToDialog.get(func.name.toLowerCase());
+            if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
+                const context = funcToDialog.get(getCanonicalQuestKey(func.name));
                 const type = getActionType(action);
 
                 if (type === 'createTopic') {
@@ -153,8 +227,8 @@ export const getQuestReferences = (semanticModel: SemanticModel, questName: stri
         // Check conditions for MIS_ var
         func.conditions?.forEach(cond => {
              // Basic check for variable condition structure as serialized
-             if ('variableName' in cond && cond.variableName && (cond as any).variableName.toLowerCase() === lowerMisVarName) {
-                 const context = funcToDialog.get(func.name.toLowerCase());
+             if ('variableName' in cond && cond.variableName && isCaseInsensitiveMatch((cond as any).variableName, misVarName)) {
+                 const context = funcToDialog.get(getCanonicalQuestKey(func.name));
                  refs.push({
                     type: 'condition',
                     functionName: func.name,

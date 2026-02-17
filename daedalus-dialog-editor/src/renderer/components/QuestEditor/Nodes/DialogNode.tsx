@@ -22,6 +22,11 @@ const DialogNode: React.FC<NodeProps> = ({ data, selected }) => {
           <Typography variant="body2" sx={{ fontSize: 11, fontStyle: 'italic', color: '#ccc' }}>
             "{data.description || '...'}"
           </Typography>
+          {data.inferred && (
+            <Typography variant="caption" sx={{ color: '#ffb74d', fontSize: 10 }}>
+              inferred
+            </Typography>
+          )}
         </Box>
 
         {/* Handles */}

@@ -7,6 +7,7 @@ import QuestEditor from './QuestEditor';
 import VariableManager from './VariableManager';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
+import { isWritableQuestEditorEnabled } from '../config/features';
 import type { SemanticModel } from '../types/global';
 
 interface MainLayoutProps {
@@ -20,6 +21,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   const fileState = filePath ? openFiles.get(filePath) : null;
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
+  const writableQuestEditorEnabled = isWritableQuestEditorEnabled();
 
   useEffect(() => {
     if ((view === 'quest' || view === 'variable') && isProjectMode) {
@@ -75,7 +77,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
 
          {view === 'quest' && (
              <Box sx={{ height: '100%' }}>
-                 <QuestEditor semanticModel={semanticModel as SemanticModel} />
+                 <QuestEditor
+                   semanticModel={semanticModel as SemanticModel}
+                   writableEnabled={writableQuestEditorEnabled}
+                 />
              </Box>
          )}
 

@@ -45,6 +45,7 @@ export class ActionParsers {
       case 'Log_CreateTopic':
         return ActionParsers.parseCreateTopicCall(node);
       case 'B_LogEntry':
+      case 'Log_AddEntry':
         return ActionParsers.parseLogEntryCall(node);
       case 'Log_SetTopicStatus':
         return ActionParsers.parseLogSetTopicStatusCall(node);

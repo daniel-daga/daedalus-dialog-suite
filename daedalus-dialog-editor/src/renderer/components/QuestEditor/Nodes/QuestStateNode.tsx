@@ -10,11 +10,11 @@ const QuestStateNode: React.FC<NodeProps> = ({ data, selected }) => {
   let color = '#ff9800'; // Running (Orange)
   let text = 'Set Running';
 
-  if (data.status === 'SUCCESS' || data.type === 'success') {
+  if (data.status === 'SUCCESS' || data.type === 'success' || String(data.description || '').includes('LOG_SUCCESS')) {
     icon = <CheckCircleOutline fontSize="small" />;
     color = '#4caf50'; // Green
     text = 'Success';
-  } else if (data.status === 'FAILED' || data.type === 'failed') {
+  } else if (data.status === 'FAILED' || data.type === 'failed' || String(data.description || '').includes('LOG_FAILED')) {
     icon = <ErrorOutline fontSize="small" />;
     color = '#f44336'; // Red
     text = 'Failed';
@@ -45,7 +45,10 @@ const QuestStateNode: React.FC<NodeProps> = ({ data, selected }) => {
 
         <Box sx={{ bgcolor: '#1a1a1a', p: 1, borderRadius: 1 }}>
           <Typography variant="body2" sx={{ fontSize: 11, color: '#ccc', fontWeight: 'bold' }}>
-            {text}
+            {data.description || text}
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#888', fontSize: 10 }}>
+            {data.kind || 'state'}
           </Typography>
         </Box>
 

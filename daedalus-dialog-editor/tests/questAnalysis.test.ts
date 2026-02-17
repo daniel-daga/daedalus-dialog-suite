@@ -1,5 +1,6 @@
 import { analyzeQuest, getQuestReferences, getUsedQuestTopics, findDialogNameForFunction } from '../src/renderer/components/QuestEditor/questAnalysis';
 import type { SemanticModel } from '../src/renderer/types/global';
+import { isQuestTopicConstantByPolicy } from '../src/renderer/utils/questIdentity';
 
 // Mock Semantic Model Helper
 const createMockModel = (functions: any[], dialogs: any[], constants: any[] = [], variables: any[] = []): SemanticModel => {
@@ -53,6 +54,7 @@ describe('questAnalysis', () => {
             expect(result.misVariableExists).toBe(true);
             expect(result.hasStart).toBe(true);
             expect(result.hasSuccess).toBe(true);
+            expect(result.lifecycleSource).toBe('topic');
             expect(result.description).toBe('Test Quest');
         });
 
@@ -76,6 +78,7 @@ describe('questAnalysis', () => {
             expect(result.status).toBe('wip');
             expect(result.hasStart).toBe(true);
             expect(result.hasSuccess).toBe(false);
+            expect(result.lifecycleSource).toBe('none');
         });
 
         it('should handle quest with no variable (Method A/Implicit)', () => {
@@ -88,6 +91,124 @@ describe('questAnalysis', () => {
             expect(result.status).toBe('not_started');
             expect(result.logicMethod).toBe('unknown');
             expect(result.misVariableExists).toBe(false);
+        });
+
+        it('should match topic and MIS references case-insensitively', () => {
+            const questName = 'TOPIC_RescueBennet';
+            const constants = [{ name: questName, value: '"Bennet sitzt im Knast"', filePath: 'LOG_Constants_Hoshi.d' }];
+            const variables = [{ name: 'MIS_RescueBennet', type: 'int', filePath: 'Story_Globals.d' }];
+            const functions = [
+                {
+                    name: 'DIA_Bennet_Start',
+                    actions: [
+                        { type: 'CreateTopic', topic: 'TOPIC_RESCUEBENNET' },
+                        { type: 'LogSetTopicStatus', topic: 'TOPIC_RESCUEBENNET', status: 'LOG_RUNNING' }
+                    ],
+                    conditions: [
+                        { type: 'VariableCondition', variableName: 'MIS_RESCUEBENNET', operator: '==', value: 'LOG_RUNNING', negated: false }
+                    ]
+                }
+            ];
+
+            const model = createMockModel(functions, [], constants, variables);
+            const result = analyzeQuest(model, questName);
+
+            expect(result.hasStart).toBe(true);
+            expect(result.status).toBe('wip');
+            expect(result.logicMethod).toBe('explicit');
+            expect(result.misVariableExists).toBe(true);
+            expect(result.lifecycleSource).toBe('topic');
+            expect(result.filePaths.topic).toBe('LOG_Constants_Hoshi.d');
+            expect(result.filePaths.variable).toBe('Story_Globals.d');
+        });
+
+        it('should infer implemented status from MIS-only terminal assignment', () => {
+            const questName = 'TOPIC_MIS_ONLY';
+            const constants = [{ name: questName, value: '"MIS Only Quest"', filePath: 'LOG_Constants.d' }];
+            const variables = [{ name: 'MIS_MIS_ONLY', type: 'int', filePath: 'Story_Globals.d' }];
+            const functions = [
+                {
+                    name: 'DIA_MisOnly_End',
+                    actions: [
+                        { type: 'SetVariableAction', variableName: 'MIS_MIS_ONLY', operator: '=', value: 'LOG_OBSOLETE' }
+                    ]
+                }
+            ];
+
+            const model = createMockModel(functions, [], constants, variables);
+            const result = analyzeQuest(model, questName);
+
+            expect(result.status).toBe('implemented');
+            expect(result.hasFailed).toBe(true);
+            expect(result.hasObsolete).toBe(true);
+            expect(result.lifecycleSource).toBe('mis');
+        });
+
+        it('should infer implemented status from MIS-only success assignment', () => {
+            const questName = 'TOPIC_MIS_SUCCESS';
+            const constants = [{ name: questName, value: '"MIS Success Quest"' }];
+            const variables = [{ name: 'MIS_MIS_SUCCESS', type: 'int' }];
+            const functions = [
+                {
+                    name: 'DIA_MisSuccess_End',
+                    actions: [
+                        { type: 'SetVariableAction', variableName: 'MIS_MIS_SUCCESS', operator: '=', value: 'LOG_SUCCESS' }
+                    ]
+                }
+            ];
+
+            const model = createMockModel(functions, [], constants, variables);
+            const result = analyzeQuest(model, questName);
+
+            expect(result.status).toBe('implemented');
+            expect(result.hasSuccess).toBe(true);
+            expect(result.hasFailed).toBe(false);
+            expect(result.lifecycleSource).toBe('mis');
+        });
+
+        it('should infer implemented status from MIS-only failed assignment', () => {
+            const questName = 'TOPIC_MIS_FAILED';
+            const constants = [{ name: questName, value: '"MIS Failed Quest"' }];
+            const variables = [{ name: 'MIS_MIS_FAILED', type: 'int' }];
+            const functions = [
+                {
+                    name: 'DIA_MisFailed_End',
+                    actions: [
+                        { type: 'SetVariableAction', variableName: 'MIS_MIS_FAILED', operator: '=', value: 'LOG_FAILED' }
+                    ]
+                }
+            ];
+
+            const model = createMockModel(functions, [], constants, variables);
+            const result = analyzeQuest(model, questName);
+
+            expect(result.status).toBe('implemented');
+            expect(result.hasSuccess).toBe(false);
+            expect(result.hasFailed).toBe(true);
+            expect(result.hasObsolete).toBe(false);
+            expect(result.lifecycleSource).toBe('mis');
+        });
+
+        it('should flag lifecycle conflicts when topic and MIS terminal states disagree', () => {
+            const questName = 'TOPIC_CONFLICT';
+            const constants = [{ name: questName, value: '"Conflict Quest"' }];
+            const variables = [{ name: 'MIS_CONFLICT', type: 'int' }];
+            const functions = [
+                {
+                    name: 'DIA_Conflict',
+                    actions: [
+                        { type: 'LogSetTopicStatus', topic: 'TOPIC_CONFLICT', status: 'LOG_SUCCESS' },
+                        { type: 'SetVariableAction', variableName: 'MIS_CONFLICT', operator: '=', value: 'LOG_FAILED' }
+                    ]
+                }
+            ];
+
+            const model = createMockModel(functions, [], constants, variables);
+            const result = analyzeQuest(model, questName);
+
+            expect(result.status).toBe('implemented');
+            expect(result.lifecycleSource).toBe('mixed');
+            expect(result.hasLifecycleConflict).toBe(true);
         });
     });
 
@@ -169,6 +290,14 @@ describe('questAnalysis', () => {
             expect(findDialogNameForFunction(model, 'dia_a_info')).toBe('DIA_A'); // Case insensitive
             expect(findDialogNameForFunction(model, 'DIA_B_Info')).toBe('DIA_B');
             expect(findDialogNameForFunction(model, 'Unknown')).toBeNull();
+        });
+    });
+
+    describe('topic policy', () => {
+        it('should apply explicit Topic_* inclusion policy', () => {
+            expect(isQuestTopicConstantByPolicy('TOPIC_MAIN', 'missions_only')).toBe(true);
+            expect(isQuestTopicConstantByPolicy('Topic_NOTE', 'missions_only')).toBe(false);
+            expect(isQuestTopicConstantByPolicy('Topic_NOTE', 'missions_and_notes')).toBe(true);
         });
     });
 });

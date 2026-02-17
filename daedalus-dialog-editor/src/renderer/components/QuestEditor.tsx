@@ -5,14 +5,15 @@ import QuestList from './QuestList';
 import QuestDetails from './QuestDetails';
 import QuestFlow from './QuestFlow';
 import { useProjectStore } from '../store/projectStore';
+import { useEditorStore } from '../store/editorStore';
 import type { SemanticModel } from '../types/global';
 
 interface QuestEditorProps {
   semanticModel: SemanticModel;
+  writableEnabled?: boolean;
 }
 
-const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel }) => {
-  const [selectedQuest, setSelectedQuest] = useState<string | null>(null);
+const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnabled = true }) => {
   const [viewMode, setViewMode] = useState<'details' | 'flow'>('details');
 
   const { getQuestUsage, isIngesting, parsedFiles, projectPath } = useProjectStore(state => ({
@@ -20,6 +21,10 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel }) => {
       isIngesting: state.isIngesting,
       parsedFiles: state.parsedFiles,
       projectPath: state.projectPath
+  }));
+  const { selectedQuest, setSelectedQuest } = useEditorStore((state) => ({
+    selectedQuest: state.selectedQuest,
+    setSelectedQuest: state.setSelectedQuest
   }));
 
   const isProjectMode = !!projectPath;
@@ -83,6 +88,7 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel }) => {
                     <QuestFlow
                         semanticModel={activeModel}
                         questName={selectedQuest}
+                        writableEnabled={writableEnabled}
                     />
                 )}
             </Box>

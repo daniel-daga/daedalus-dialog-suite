@@ -22,6 +22,7 @@ export const useNavigation = () => {
   const { 
     setSelectedNPC,
     setSelectedDialog, 
+    setSelectedQuest,
     setSelectedFunctionName,
     setActiveView,
     openFile, 
@@ -119,10 +120,8 @@ export const useNavigation = () => {
 
     // 1. Try to navigate as a quest/topic (switch to quest view)
     if ((requestedKind === 'quest' || (!requestedKind && symbolName.toUpperCase().startsWith('TOPIC_'))) && !options?.preferSource) {
+      setSelectedQuest(symbolName);
       setActiveView('quest');
-      // QuestEditor should react to this if we had a selectedQuest in store,
-      // but QuestEditor currently uses local state for selectedQuest.
-      // For now, we just switch view.
       return true;
     }
 
@@ -212,7 +211,7 @@ export const useNavigation = () => {
     }
 
     return false;
-  }, [activeFile, dialogIndex, findCaseInsensitiveKey, getSemanticModel, isProjectMode, loadAndMergeNpcModels, mergedSemanticModel, navigateToDialog, openFile, openFiles, selectNpc, setActiveView, setSelectedFunctionName, setSelectedNPC]);
+  }, [activeFile, dialogIndex, findCaseInsensitiveKey, getSemanticModel, isProjectMode, loadAndMergeNpcModels, mergedSemanticModel, navigateToDialog, openFile, openFiles, selectNpc, setActiveView, setSelectedFunctionName, setSelectedNPC, setSelectedQuest]);
 
   return {
     navigateToDialog,

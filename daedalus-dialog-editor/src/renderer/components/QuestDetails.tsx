@@ -27,7 +27,7 @@ import {
 } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest, getQuestReferences, QuestAnalysis, QuestReference } from './QuestEditor/questAnalysis';
+import { analyzeQuest, getQuestReferences } from './QuestEditor/questAnalysis';
 import { useProjectStore } from '../store/projectStore';
 
 interface QuestDetailsProps {
@@ -145,6 +145,32 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
                   analysis?.status === 'wip' ? <InfoIcon /> : undefined}
             variant="filled"
         />
+
+        <Chip
+            label={
+              analysis?.lifecycleSource === 'mis' ? 'Lifecycle: MIS assignments' :
+              analysis?.lifecycleSource === 'topic' ? 'Lifecycle: Topic status' :
+              analysis?.lifecycleSource === 'mixed' ? 'Lifecycle: Mixed (MIS + Topic)' :
+              'Lifecycle: No status signals'
+            }
+            color={
+              analysis?.lifecycleSource === 'mis' ? 'primary' :
+              analysis?.lifecycleSource === 'topic' ? 'info' :
+              analysis?.lifecycleSource === 'mixed' ? 'secondary' :
+              'default'
+            }
+            variant="outlined"
+            icon={<InfoIcon />}
+        />
+
+        {analysis?.hasLifecycleConflict && (
+          <Chip
+            label="State Conflict: Topic vs MIS"
+            color="warning"
+            icon={<WarningIcon />}
+            variant="outlined"
+          />
+        )}
       </Stack>
 
       {analysis?.logicMethod === 'unknown' && !analysis?.misVariableExists && (

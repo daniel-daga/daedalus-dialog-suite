@@ -42,6 +42,13 @@ function ensureActionIds(model: SemanticModel): SemanticModel {
   return { ...model, functions: updatedFunctions };
 }
 
+function cloneSemanticModel(model: SemanticModel): SemanticModel {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(model);
+  }
+  return JSON.parse(JSON.stringify(model)) as SemanticModel;
+}
+
 interface FileState {
   filePath: string;
   semanticModel: SemanticModel;
@@ -54,6 +61,125 @@ interface FileState {
   lastValidationResult?: ValidationResult;
   autoSaveError?: ValidationResult;
 }
+
+interface QuestHistoryState {
+  past: QuestHistorySnapshot[];
+  future: QuestHistorySnapshot[];
+}
+
+interface QuestNodePosition {
+  x: number;
+  y: number;
+}
+
+type QuestNodePositionMap = Map<string, QuestNodePosition>;
+
+interface QuestHistorySnapshot {
+  model: SemanticModel;
+  nodePositions: Map<string, QuestNodePositionMap>;
+}
+
+interface QuestBatchHistoryState {
+  past: string[][];
+  future: string[][];
+}
+
+const normalizeBatchFilePaths = (filePaths: string[]): string[] => (
+  Array.from(new Set(filePaths.filter((filePath) => filePath.trim().length > 0)))
+);
+
+function cloneQuestNodePositionsForFile(
+  positions: Map<string, QuestNodePositionMap> | undefined
+): Map<string, QuestNodePositionMap> {
+  if (!positions) return new Map();
+  const cloned = new Map<string, QuestNodePositionMap>();
+  positions.forEach((nodeMap, questName) => {
+    const nextNodeMap: QuestNodePositionMap = new Map();
+    nodeMap.forEach((position, nodeId) => {
+      nextNodeMap.set(nodeId, { x: position.x, y: position.y });
+    });
+    cloned.set(questName, nextNodeMap);
+  });
+  return cloned;
+}
+
+function createQuestHistorySnapshot(
+  model: SemanticModel,
+  fileQuestPositions: Map<string, QuestNodePositionMap> | undefined
+): QuestHistorySnapshot {
+  return {
+    model: cloneSemanticModel(model),
+    nodePositions: cloneQuestNodePositionsForFile(fileQuestPositions)
+  };
+}
+
+const applyUndoForFile = (
+  openFiles: Map<string, FileState>,
+  questHistory: Map<string, QuestHistoryState>,
+  questNodePositions: Map<string, Map<string, QuestNodePositionMap>>,
+  filePath: string
+): boolean => {
+  const fileState = openFiles.get(filePath);
+  const history = questHistory.get(filePath);
+  if (!fileState || !history || history.past.length === 0) {
+    return false;
+  }
+
+  const previousSnapshot = history.past[history.past.length - 1];
+  const remainingPast = history.past.slice(0, history.past.length - 1);
+  const nextFuture = [
+    createQuestHistorySnapshot(fileState.semanticModel, questNodePositions.get(filePath)),
+    ...history.future
+  ];
+
+  questHistory.set(filePath, {
+    past: remainingPast,
+    future: nextFuture
+  });
+
+  fileState.semanticModel = cloneSemanticModel(previousSnapshot.model);
+  questNodePositions.set(filePath, cloneQuestNodePositionsForFile(previousSnapshot.nodePositions));
+  fileState.isDirty = true;
+  fileState.workingCode = undefined;
+  fileState.autoSaveError = undefined;
+  fileState.hasErrors = false;
+
+  return true;
+};
+
+const applyRedoForFile = (
+  openFiles: Map<string, FileState>,
+  questHistory: Map<string, QuestHistoryState>,
+  questNodePositions: Map<string, Map<string, QuestNodePositionMap>>,
+  filePath: string
+): boolean => {
+  const fileState = openFiles.get(filePath);
+  const history = questHistory.get(filePath);
+  if (!fileState || !history || history.future.length === 0) {
+    return false;
+  }
+
+  const nextSnapshot = history.future[0];
+  const remainingFuture = history.future.slice(1);
+  const nextPast = [
+    ...history.past,
+    createQuestHistorySnapshot(fileState.semanticModel, questNodePositions.get(filePath))
+  ];
+
+  questHistory.set(filePath, {
+    past: nextPast,
+    future: remainingFuture
+  });
+
+  fileState.semanticModel = cloneSemanticModel(nextSnapshot.model);
+  questNodePositions.set(filePath, cloneQuestNodePositionsForFile(nextSnapshot.nodePositions));
+  fileState.isDirty = true;
+  fileState.workingCode = undefined;
+  fileState.autoSaveError = undefined;
+  fileState.hasErrors = false;
+
+  return true;
+};
 
 interface EditorProject {
   id: string;
@@ -74,6 +200,9 @@ interface EditorStore {
 
   // Open files (keyed by path)
   openFiles: Map<string, FileState>;
+  questHistory: Map<string, QuestHistoryState>;
+  questBatchHistory: QuestBatchHistoryState;
+  questNodePositions: Map<string, Map<string, QuestNodePositionMap>>;
 
   // Current active file
   activeFile: string | null;
@@ -84,6 +213,7 @@ interface EditorStore {
   // UI state
   selectedNPC: string | null;
   selectedDialog: string | null;
+  selectedQuest: string | null;
   selectedFunctionName: string | null;
   selectedAction: number | null;
 
@@ -139,8 +269,33 @@ interface EditorStore {
   generateCode: (filePath: string) => Promise<string>;
   setWorkingCode: (filePath: string, code: string | undefined) => void;
   saveSource: (filePath: string, code: string) => Promise<void>;
+  applyQuestModelWithHistory: (filePath: string, model: SemanticModel) => void;
+  applyQuestModelsWithHistory: (updates: Array<{ filePath: string; model: SemanticModel }>) => void;
+  undoQuestModel: (filePath: string) => void;
+  redoQuestModel: (filePath: string) => void;
+  canUndoQuestModel: (filePath: string) => boolean;
+  canRedoQuestModel: (filePath: string) => boolean;
+  undoLastQuestBatch: () => void;
+  redoLastQuestBatch: () => void;
+  canUndoLastQuestBatch: () => boolean;
+  canRedoLastQuestBatch: () => boolean;
+  applyQuestNodePositionWithHistory: (
+    filePath: string,
+    questName: string,
+    nodeId: string,
+    position: QuestNodePosition
+  ) => void;
+  setQuestNodePosition: (
+    filePath: string,
+    questName: string,
+    nodeId: string,
+    position: QuestNodePosition
+  ) => void;
+  getQuestNodePositions: (filePath: string, questName: string) => QuestNodePositionMap;
+  clearQuestNodePositions: (filePath: string, questName?: string) => void;
   setSelectedNPC: (npcName: string | null) => void;
   setSelectedDialog: (dialogName: string | null) => void;
+  setSelectedQuest: (questName: string | null) => void;
   setSelectedFunctionName: (functionName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
   setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'source') => void;
@@ -152,10 +307,14 @@ interface EditorStore {
 export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   project: null,
   openFiles: new Map(),
+  questHistory: new Map(),
+  questBatchHistory: { past: [], future: [] },
+  questNodePositions: new Map(),
   activeFile: null,
   activeView: 'dialog',
   selectedNPC: null,
   selectedDialog: null,
+  selectedQuest: null,
   selectedFunctionName: null,
   selectedAction: null,
   pendingValidation: null,
@@ -189,8 +348,9 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
           errors: model.errors || [],
         };
 
-        set((state) => {
+      set((state) => {
           state.openFiles.set(filePath, fileState);
+          state.questHistory.set(filePath, { past: [], future: [] });
           state.activeFile = filePath;
         });
         return;
@@ -211,6 +371,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
 
       set((state) => {
         state.openFiles.set(filePath, fileState);
+        state.questHistory.set(filePath, { past: [], future: [] });
         state.activeFile = filePath;
       });
     } catch (error) {
@@ -222,6 +383,14 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   closeFile: (filePath: string) => {
     set((state) => {
       state.openFiles.delete(filePath);
+      state.questHistory.delete(filePath);
+      state.questNodePositions.delete(filePath);
+      state.questBatchHistory.past = state.questBatchHistory.past.filter(
+        (batch) => !batch.includes(filePath)
+      );
+      state.questBatchHistory.future = state.questBatchHistory.future.filter(
+        (batch) => !batch.includes(filePath)
+      );
       if (state.activeFile === filePath) {
         state.activeFile = null;
       }
@@ -565,11 +734,283 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
             currentFileState.errors = model.errors || [];
             currentFileState.lastValidationResult = undefined; // Clear old validation result
         }
+        state.questHistory.set(filePath, { past: [], future: [] });
+        state.questNodePositions.set(filePath, new Map());
+        state.questBatchHistory = { past: [], future: [] };
       });
     } catch (error) {
       console.error('Failed to save source:', error);
       throw error;
     }
+  },
+
+  applyQuestModelWithHistory: (filePath: string, model: SemanticModel) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+
+      const existingHistory = state.questHistory.get(filePath) || { past: [], future: [] };
+      const nextPast = [
+        ...existingHistory.past,
+        createQuestHistorySnapshot(fileState.semanticModel, state.questNodePositions.get(filePath))
+      ];
+
+      state.questHistory.set(filePath, {
+        past: nextPast,
+        future: []
+      });
+      state.questBatchHistory.past = [...state.questBatchHistory.past, [filePath]];
+      state.questBatchHistory.future = [];
+
+      fileState.semanticModel = model;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
+    });
+
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
+  },
+
+  applyQuestModelsWithHistory: (updates: Array<{ filePath: string; model: SemanticModel }>) => {
+    if (!updates.length) return;
+
+    const uniqueUpdates = new Map<string, SemanticModel>();
+    updates.forEach((entry) => {
+      uniqueUpdates.set(entry.filePath, entry.model);
+    });
+
+    set((state) => {
+      const batchFilePaths = normalizeBatchFilePaths(Array.from(uniqueUpdates.keys()));
+      uniqueUpdates.forEach((model, filePath) => {
+        const fileState = state.openFiles.get(filePath);
+        if (!fileState) {
+          return;
+        }
+
+        const existingHistory = state.questHistory.get(filePath) || { past: [], future: [] };
+        const nextPast = [
+          ...existingHistory.past,
+          createQuestHistorySnapshot(fileState.semanticModel, state.questNodePositions.get(filePath))
+        ];
+
+        state.questHistory.set(filePath, {
+          past: nextPast,
+          future: []
+        });
+
+        fileState.semanticModel = model;
+        fileState.isDirty = true;
+        fileState.workingCode = undefined;
+        fileState.autoSaveError = undefined;
+        fileState.hasErrors = false;
+      });
+      if (batchFilePaths.length > 0) {
+        state.questBatchHistory.past = [...state.questBatchHistory.past, batchFilePaths];
+        state.questBatchHistory.future = [];
+      }
+    });
+
+    uniqueUpdates.forEach((_, filePath) => {
+      const committedModel = get().openFiles.get(filePath)?.semanticModel;
+      if (committedModel) {
+        useProjectStore.getState().updateFileModel(filePath, committedModel);
+      }
+    });
+  },
+
+  undoQuestModel: (filePath: string) => {
+    let didUndo = false;
+    set((state) => {
+      didUndo = applyUndoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
+    });
+
+    if (!didUndo) return;
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
+  },
+
+  redoQuestModel: (filePath: string) => {
+    let didRedo = false;
+    set((state) => {
+      didRedo = applyRedoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
+    });
+
+    if (!didRedo) return;
+    const committedModel = get().openFiles.get(filePath)?.semanticModel;
+    if (committedModel) {
+      useProjectStore.getState().updateFileModel(filePath, committedModel);
+    }
+  },
+
+  canUndoQuestModel: (filePath: string) => {
+    const history = get().questHistory.get(filePath);
+    return !!history && history.past.length > 0;
+  },
+
+  canRedoQuestModel: (filePath: string) => {
+    const history = get().questHistory.get(filePath);
+    return !!history && history.future.length > 0;
+  },
+
+  undoLastQuestBatch: () => {
+    let undoneBatch: string[] = [];
+    set((state) => {
+      const latestBatch = state.questBatchHistory.past[state.questBatchHistory.past.length - 1];
+      if (!latestBatch || latestBatch.length === 0) {
+        return;
+      }
+
+      const normalizedBatch = normalizeBatchFilePaths(latestBatch);
+      const actuallyUndone: string[] = [];
+      normalizedBatch.forEach((filePath) => {
+        const didUndo = applyUndoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
+        if (didUndo) {
+          actuallyUndone.push(filePath);
+        }
+      });
+
+      if (actuallyUndone.length === 0) {
+        state.questBatchHistory.past = state.questBatchHistory.past.slice(0, state.questBatchHistory.past.length - 1);
+        return;
+      }
+
+      state.questBatchHistory.past = state.questBatchHistory.past.slice(0, state.questBatchHistory.past.length - 1);
+      state.questBatchHistory.future = [actuallyUndone, ...state.questBatchHistory.future];
+      undoneBatch = actuallyUndone;
+    });
+
+    undoneBatch.forEach((filePath) => {
+      const committedModel = get().openFiles.get(filePath)?.semanticModel;
+      if (committedModel) {
+        useProjectStore.getState().updateFileModel(filePath, committedModel);
+      }
+    });
+  },
+
+  redoLastQuestBatch: () => {
+    let redoneBatch: string[] = [];
+    set((state) => {
+      const latestBatch = state.questBatchHistory.future[0];
+      if (!latestBatch || latestBatch.length === 0) {
+        return;
+      }
+
+      const normalizedBatch = normalizeBatchFilePaths(latestBatch);
+      const actuallyRedone: string[] = [];
+      normalizedBatch.forEach((filePath) => {
+        const didRedo = applyRedoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
+        if (didRedo) {
+          actuallyRedone.push(filePath);
+        }
+      });
+
+      if (actuallyRedone.length === 0) {
+        state.questBatchHistory.future = state.questBatchHistory.future.slice(1);
+        return;
+      }
+
+      state.questBatchHistory.future = state.questBatchHistory.future.slice(1);
+      state.questBatchHistory.past = [...state.questBatchHistory.past, actuallyRedone];
+      redoneBatch = actuallyRedone;
+    });
+
+    redoneBatch.forEach((filePath) => {
+      const committedModel = get().openFiles.get(filePath)?.semanticModel;
+      if (committedModel) {
+        useProjectStore.getState().updateFileModel(filePath, committedModel);
+      }
+    });
+  },
+
+  canUndoLastQuestBatch: () => get().questBatchHistory.past.length > 0,
+
+  canRedoLastQuestBatch: () => get().questBatchHistory.future.length > 0,
+
+  applyQuestNodePositionWithHistory: (filePath: string, questName: string, nodeId: string, position: QuestNodePosition) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+
+      const existingHistory = state.questHistory.get(filePath) || { past: [], future: [] };
+      const nextPast = [
+        ...existingHistory.past,
+        createQuestHistorySnapshot(fileState.semanticModel, state.questNodePositions.get(filePath))
+      ];
+
+      state.questHistory.set(filePath, {
+        past: nextPast,
+        future: []
+      });
+      state.questBatchHistory.past = [...state.questBatchHistory.past, [filePath]];
+      state.questBatchHistory.future = [];
+
+      if (!state.questNodePositions.has(filePath)) {
+        state.questNodePositions.set(filePath, new Map());
+      }
+      const fileQuestPositions = state.questNodePositions.get(filePath)!;
+      if (!fileQuestPositions.has(questName)) {
+        fileQuestPositions.set(questName, new Map());
+      }
+      fileQuestPositions.get(questName)!.set(nodeId, {
+        x: position.x,
+        y: position.y
+      });
+
+      fileState.isDirty = true;
+    });
+  },
+
+  setQuestNodePosition: (filePath: string, questName: string, nodeId: string, position: QuestNodePosition) => {
+    set((state) => {
+      if (!state.openFiles.has(filePath)) {
+        return;
+      }
+
+      if (!state.questNodePositions.has(filePath)) {
+        state.questNodePositions.set(filePath, new Map());
+      }
+
+      const fileQuestPositions = state.questNodePositions.get(filePath)!;
+      if (!fileQuestPositions.has(questName)) {
+        fileQuestPositions.set(questName, new Map());
+      }
+
+      fileQuestPositions.get(questName)!.set(nodeId, {
+        x: position.x,
+        y: position.y
+      });
+    });
+  },
+
+  getQuestNodePositions: (filePath: string, questName: string) => {
+    const positions = get().questNodePositions.get(filePath)?.get(questName);
+    return positions ? new Map(positions) : new Map();
+  },
+
+  clearQuestNodePositions: (filePath: string, questName?: string) => {
+    set((state) => {
+      if (!questName) {
+        state.questNodePositions.delete(filePath);
+        return;
+      }
+
+      const fileQuestPositions = state.questNodePositions.get(filePath);
+      if (!fileQuestPositions) return;
+      fileQuestPositions.delete(questName);
+      if (fileQuestPositions.size === 0) {
+        state.questNodePositions.delete(filePath);
+      }
+    });
   },
 
   setSelectedNPC: (npcName: string | null) => {
@@ -578,6 +1019,10 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
 
   setSelectedDialog: (dialogName: string | null) => {
     set((state) => { state.selectedDialog = dialogName; });
+  },
+
+  setSelectedQuest: (questName: string | null) => {
+    set((state) => { state.selectedQuest = questName; });
   },
 
   setSelectedFunctionName: (functionName: string | null) => {

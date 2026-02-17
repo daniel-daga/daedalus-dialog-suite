@@ -66,7 +66,7 @@ describe('questGraphUtils - Variable Dependencies', () => {
         // I assert it *should* exist.
         expect(depEdge).toBeDefined();
         if (depEdge) {
-            expect(depEdge.label).toBe(helperVar);
+            expect(depEdge.label).toBe(`requires ${helperVar} == 1`);
         }
     });
 

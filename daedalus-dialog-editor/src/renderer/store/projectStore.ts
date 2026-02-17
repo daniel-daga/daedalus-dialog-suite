@@ -9,9 +9,13 @@
  */
 
 import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
+import {
+  getCanonicalQuestKey,
+  getQuestMisVariableName,
+  isCaseInsensitiveMatch
+} from '../utils/questIdentity';
 
 // Enable Map/Set support in Immer
 enableMapSet();
@@ -428,21 +432,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   getQuestUsage: (questName: string) => {
     const { parsedFiles } = get();
     const result = createEmptySemanticModel();
-    const misVarName = questName.replace('TOPIC_', 'MIS_');
-    const relevantFunctionNames = new Set<string>();
+    const misVarName = getQuestMisVariableName(questName);
+    const relevantFunctionKeys = new Set<string>();
 
     // Pass 1: Identify all relevant functions and add definitions
     for (const fileData of parsedFiles.values()) {
         const model = fileData.semanticModel;
 
         // Constants & Variables
-        if (model.constants && model.constants[questName]) {
+        const topicKey = Object.keys(model.constants || {}).find((key) => isCaseInsensitiveMatch(key, questName));
+        if (topicKey && model.constants) {
              result.constants = result.constants || {};
-             result.constants[questName] = model.constants[questName];
+             result.constants[topicKey] = model.constants[topicKey];
         }
-        if (model.variables && model.variables[misVarName]) {
+        const misKey = Object.keys(model.variables || {}).find((key) => isCaseInsensitiveMatch(key, misVarName));
+        if (misKey && model.variables) {
              result.variables = result.variables || {};
-             result.variables[misVarName] = model.variables[misVarName];
+             result.variables[misKey] = model.variables[misKey];
         }
 
         // Functions
@@ -453,8 +459,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
                  // Check Actions
                  if (func.actions) {
                      for (const action of func.actions) {
-                         // Check for TOPIC usage
-                         if ('topic' in action && action.topic === questName) {
+                         // Topic references
+                         if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
+                             isRelevant = true;
+                             break;
+                         }
+                         // Explicit MIS writers (writer-only quest handlers)
+                         if (action.type === 'SetVariableAction' && isCaseInsensitiveMatch(action.variableName, misVarName)) {
                              isRelevant = true;
                              break;
                          }
@@ -464,8 +475,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
                  // Check Conditions
                  if (!isRelevant && func.conditions) {
                      for (const cond of func.conditions) {
-                         // Check for MIS variable usage
-                         if ('variableName' in cond && cond.variableName === misVarName) {
+                         if ('variableName' in cond && isCaseInsensitiveMatch(cond.variableName, misVarName)) {
                              isRelevant = true;
                              break;
                          }
@@ -473,7 +483,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
                  }
 
                  if (isRelevant) {
-                     relevantFunctionNames.add(func.name);
+                     relevantFunctionKeys.add(getCanonicalQuestKey(func.name));
                      result.functions[func.name] = func;
                  }
              });
@@ -492,8 +502,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
                 const infoName = typeof info === 'string' ? info : (typeof info === 'object' ? info.name : null);
                 const condName = typeof cond === 'string' ? cond : (typeof cond === 'object' ? cond.name : null);
 
-                if ((infoName && relevantFunctionNames.has(infoName)) ||
-                    (condName && relevantFunctionNames.has(condName))) {
+                if ((infoName && relevantFunctionKeys.has(getCanonicalQuestKey(infoName))) ||
+                    (condName && relevantFunctionKeys.has(getCanonicalQuestKey(condName)))) {
                     result.dialogs[dialog.name] = dialog;
                 }
             });

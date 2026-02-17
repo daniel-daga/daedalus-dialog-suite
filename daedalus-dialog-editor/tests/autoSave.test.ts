@@ -12,6 +12,29 @@ import { renderHook, act } from '@testing-library/react';
 // Spy on the window.editorAPI.saveFile that is set up in tests/setup.ts
 const mockSaveFile = jest.spyOn(window.editorAPI, 'saveFile');
 
+const createQuestModel = (value: string) => ({
+  dialogs: {},
+  functions: {
+    DIA_Test_Info: {
+      name: 'DIA_Test_Info',
+      returnType: 'VOID',
+      actions: [{
+        type: 'SetVariableAction',
+        variableName: 'MIS_TEST',
+        operator: '=',
+        value
+      }],
+      conditions: [],
+      calls: []
+    }
+  },
+  constants: {},
+  variables: {},
+  instances: {},
+  hasErrors: false,
+  errors: []
+});
+
 describe('Auto-save configuration', () => {
   beforeEach(() => {
     useEditorStore.setState({
@@ -353,5 +376,115 @@ describe('useAutoSave hook', () => {
 
     expect(result.current).toHaveProperty('isAutoSaving');
     expect(result.current).toHaveProperty('lastAutoSaveTime');
+  });
+
+  test('auto-saves files dirtied by quest batch apply', async () => {
+    const filePath1 = 'quest-batch-1.d';
+    const filePath2 = 'quest-batch-2.d';
+
+    useEditorStore.setState({
+      openFiles: new Map([
+        [filePath1, {
+          filePath: filePath1,
+          semanticModel: createQuestModel('LOG_RUNNING'),
+          isDirty: false,
+          lastSaved: new Date(),
+          hasErrors: false
+        }],
+        [filePath2, {
+          filePath: filePath2,
+          semanticModel: createQuestModel('LOG_RUNNING'),
+          isDirty: false,
+          lastSaved: new Date(),
+          hasErrors: false
+        }]
+      ]),
+      questHistory: new Map(),
+      questBatchHistory: { past: [], future: [] },
+      activeFile: filePath1
+    });
+
+    renderHook(() => useAutoSave());
+
+    act(() => {
+      useEditorStore.getState().applyQuestModelsWithHistory([
+        { filePath: filePath1, model: createQuestModel('LOG_SUCCESS') },
+        { filePath: filePath2, model: createQuestModel('LOG_FAILED') }
+      ]);
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    expect(mockSaveFile).toHaveBeenCalledWith(
+      filePath1,
+      expect.objectContaining({
+        functions: expect.objectContaining({
+          DIA_Test_Info: expect.objectContaining({
+            actions: expect.arrayContaining([expect.objectContaining({ value: 'LOG_SUCCESS' })])
+          })
+        })
+      }),
+      expect.any(Object)
+    );
+    expect(mockSaveFile).toHaveBeenCalledWith(
+      filePath2,
+      expect.objectContaining({
+        functions: expect.objectContaining({
+          DIA_Test_Info: expect.objectContaining({
+            actions: expect.arrayContaining([expect.objectContaining({ value: 'LOG_FAILED' })])
+          })
+        })
+      }),
+      expect.any(Object)
+    );
+
+    const next = useEditorStore.getState();
+    expect(next.getFileState(filePath1)?.isDirty).toBe(false);
+    expect(next.getFileState(filePath2)?.isDirty).toBe(false);
+  });
+
+  test('auto-saves reverted model after undoing last quest batch', async () => {
+    const filePath = 'quest-undo.d';
+    useEditorStore.setState({
+      openFiles: new Map([
+        [filePath, {
+          filePath,
+          semanticModel: createQuestModel('LOG_RUNNING'),
+          isDirty: false,
+          lastSaved: new Date(),
+          hasErrors: false
+        }]
+      ]),
+      questHistory: new Map(),
+      questBatchHistory: { past: [], future: [] },
+      activeFile: filePath
+    });
+
+    renderHook(() => useAutoSave());
+
+    act(() => {
+      useEditorStore.getState().applyQuestModelsWithHistory([
+        { filePath, model: createQuestModel('LOG_SUCCESS') }
+      ]);
+      useEditorStore.getState().undoLastQuestBatch();
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    expect(mockSaveFile).toHaveBeenCalledWith(
+      filePath,
+      expect.objectContaining({
+        functions: expect.objectContaining({
+          DIA_Test_Info: expect.objectContaining({
+            actions: expect.arrayContaining([expect.objectContaining({ value: 'LOG_RUNNING' })])
+          })
+        })
+      }),
+      expect.any(Object)
+    );
   });
 });
