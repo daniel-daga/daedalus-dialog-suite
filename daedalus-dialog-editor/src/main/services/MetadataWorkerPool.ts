@@ -4,10 +4,16 @@ import * as os from 'os';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import type { DialogMetadata } from '../../shared/types';
+import { promises as fsPromises } from 'fs';
+import { extractDialogMetadata, TOPIC_REGEX, MIS_REGEX } from '../utils/metadataUtils';
 
 interface PendingTask {
   resolve: (value: { dialogs: DialogMetadata[]; isQuestFile: boolean }) => void;
   reject: (reason?: any) => void;
+}
+
+function isLikelyTestRuntime(): boolean {
+  return process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
 }
 
 export class MetadataWorkerPool {
@@ -16,6 +22,7 @@ export class MetadataWorkerPool {
   private idleWorkers: Worker[] = [];
   private taskQueue: { id: string; filePath: string }[] = [];
   private isTerminated = false;
+  private useInlineProcessing = false;
 
   constructor() {
     // Leave one core for the main thread/event loop
@@ -33,6 +40,17 @@ export class MetadataWorkerPool {
       if (fs.existsSync(distPath)) {
         workerPath = distPath;
       }
+    }
+
+    if (!fs.existsSync(workerPath)) {
+      if (isLikelyTestRuntime()) {
+        // In TS/Jest execution, worker JS may not exist yet.
+        // Fall back to in-process metadata extraction for test reliability.
+        this.useInlineProcessing = true;
+        return;
+      }
+
+      throw new Error(`Metadata worker entry was not found at ${workerPath}. Build the app/workers before runtime.`);
     }
 
     for (let i = 0; i < numWorkers; i++) {
@@ -87,6 +105,10 @@ export class MetadataWorkerPool {
         return Promise.reject(new Error('Pool terminated'));
     }
 
+    if (this.useInlineProcessing) {
+      return this.processFileInline(filePath);
+    }
+
     return new Promise((resolve, reject) => {
       const id = randomUUID();
       this.pendingRequests.set(id, { resolve, reject });
@@ -98,6 +120,18 @@ export class MetadataWorkerPool {
         this.taskQueue.push({ id, filePath });
       }
     });
+  }
+
+  private async processFileInline(filePath: string): Promise<{ dialogs: DialogMetadata[]; isQuestFile: boolean }> {
+    try {
+      const content = await fsPromises.readFile(filePath, 'utf-8');
+      const dialogs = extractDialogMetadata(content, filePath);
+      const isQuestFile = TOPIC_REGEX.test(content) || MIS_REGEX.test(content);
+      return { dialogs, isQuestFile };
+    } catch {
+      // Match worker-path behavior: tolerate per-file processing failures.
+      return { dialogs: [], isQuestFile: false };
+    }
   }
 
   public terminate() {
