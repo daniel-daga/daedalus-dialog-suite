@@ -39,6 +39,7 @@ export interface QuestGraphEdgeData {
   kind: QuestGraphEdgeKind;
   inferred?: boolean;
   expression?: string;
+  operator?: '==' | '!=' | '<' | '>' | '<=' | '>=';
   provenance?: QuestGraphProvenance;
 }
 

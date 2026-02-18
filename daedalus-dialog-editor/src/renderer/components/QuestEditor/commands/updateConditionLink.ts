@@ -5,12 +5,13 @@ import { cloneModel } from './shared';
 const isMatchingVariableCondition = (
   condition: DialogCondition,
   variableName: string,
-  value: string | number | boolean
+  value: string | number | boolean,
+  operator: '==' | '!=' = '=='
 ): boolean => {
   return (
     condition.type === 'VariableCondition' &&
     condition.variableName === variableName &&
-    condition.operator === '==' &&
+    condition.operator === operator &&
     String(condition.value) === String(value) &&
     !condition.negated
   );
@@ -43,7 +44,7 @@ export const executeUpdateConditionLinkCommand = (
 
   const conditions = targetFunction.conditions || [];
   const existingIndex = conditions.findIndex((condition) => {
-    return isMatchingVariableCondition(condition, command.oldVariableName, command.oldValue);
+    return isMatchingVariableCondition(condition, command.oldVariableName, command.oldValue, command.operator || '==');
   });
   if (existingIndex < 0) {
     return {
@@ -57,7 +58,7 @@ export const executeUpdateConditionLinkCommand = (
 
   const duplicateIndex = conditions.findIndex((condition, index) => {
     if (index === existingIndex) return false;
-    return isMatchingVariableCondition(condition, command.variableName, command.value);
+    return isMatchingVariableCondition(condition, command.variableName, command.value, command.operator || '==');
   });
   if (duplicateIndex >= 0) {
     return {
@@ -69,12 +70,23 @@ export const executeUpdateConditionLinkCommand = (
     };
   }
 
+  const operator = command.operator || '==';
+  if (operator !== '==' && operator !== '!=') {
+    return {
+      ok: false,
+      errors: [{
+        code: 'INVALID_OPERATOR',
+        message: 'Condition link update supports only == and != operators.'
+      }]
+    };
+  }
+
   const updatedModel = cloneModel(context.model);
   const updatedConditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
   updatedConditions[existingIndex] = {
     type: 'VariableCondition',
     variableName: command.variableName,
-    operator: '==',
+    operator,
     value: command.value,
     negated: false
   };

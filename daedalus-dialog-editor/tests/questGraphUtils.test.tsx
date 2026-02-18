@@ -220,4 +220,51 @@ describe('questGraphUtils', () => {
         expect(baseline.edges.length).toBeGreaterThan(0);
         expect(filtered.edges.length).toBe(0);
     });
+
+    it('creates requires edges for inequality conditions and marks range operators read-only', () => {
+        const questName = 'TOPIC_OPS';
+        const functions = [
+            {
+                name: 'DIA_Start_Info',
+                actions: [
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }
+                ]
+            },
+            {
+                name: 'DIA_NotFailed_Info',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'MIS_OPS', operator: '!=', value: 'LOG_FAILED' }
+                ],
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' }
+                ]
+            },
+            {
+                name: 'DIA_Range_Info',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'MIS_OPS', operator: '>=', value: 2 }
+                ],
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: 'DIA_Start', properties: { information: 'DIA_Start_Info', npc: 'NPC_Start' } },
+            { name: 'DIA_NotFailed', properties: { information: 'DIA_NotFailed_Info', npc: 'NPC_One' } },
+            { name: 'DIA_Range', properties: { information: 'DIA_Range_Info', npc: 'NPC_Two' } },
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { edges } = buildQuestGraph(model, questName);
+
+        const notFailedEdge = edges.find((edge) => edge.target === 'DIA_NotFailed_Info');
+        expect(notFailedEdge?.data?.expression).toBe('MIS_OPS != LOG_FAILED');
+        expect(notFailedEdge?.data?.operator).toBe('!=');
+
+        const rangeEdge = edges.find((edge) => edge.target === 'DIA_Range_Info');
+        expect(rangeEdge?.data?.expression).toBe('MIS_OPS >= 2');
+        expect(rangeEdge?.data?.operator).toBe('>=');
+    });
 });

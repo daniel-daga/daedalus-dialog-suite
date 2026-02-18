@@ -146,7 +146,7 @@ Task breakdown:
 - [x] Add regression tests for MIS-driven failure/obsolete path preservation.
 
 ### QEC-06 Graph Support for Non-Equality MIS Conditions
-Status: `pending`
+Status: `done`
 
 Goal:
 - Represent and safely edit/remove `!=` conditions, and show range comparisons as at least read-only explicit edges.
@@ -161,14 +161,14 @@ Acceptance:
 - Unsupported comparison forms are visibly read-only with explicit reason.
 
 Task breakdown:
-- [ ] Add `!=` dependency edge generation in quest graph utils.
-- [ ] Surface operator in edge metadata/labels.
-- [ ] Extend inspector for editable/removeable simple `!=` links.
-- [ ] Keep `<, >, <=, >=` read-only with explicit UX explanation.
-- [ ] Add graph/inspector regression coverage for mixed operators.
+- [x] Add `!=` dependency edge generation in quest graph utils.
+- [x] Surface operator in edge metadata/labels.
+- [x] Extend inspector for editable/removeable simple `!=` links.
+- [x] Keep `<, >, <=, >=` read-only with explicit UX explanation.
+- [x] Add graph/inspector regression coverage for mixed operators.
 
 ### QEC-07 Regression + Corpus Validation Harness
-Status: `pending`
+Status: `done`
 
 Goal:
 - Lock behavior with targeted tests and periodic corpus scans.
@@ -183,11 +183,11 @@ Acceptance:
 - Sample corpus run shows no regression in semantic idempotence and no new parser breakages.
 
 Task breakdown:
-- [ ] Add fixture-driven tests for case/canonicalization and MIS-only flows.
-- [ ] Add parser tests for `Log_AddEntry` and related action typing.
-- [ ] Add command/guardrail tests for MIS failure-path handling.
-- [ ] Establish a repeatable corpus sample command and result format.
-- [ ] Track before/after metrics in this document.
+- [x] Add fixture-driven tests for case/canonicalization and MIS-only flows.
+- [x] Add parser tests for `Log_AddEntry` and related action typing.
+- [x] Add command/guardrail tests for MIS failure-path handling.
+- [x] Establish a repeatable corpus sample command and result format.
+- [x] Track before/after metrics in this document.
 
 ## Execution Order
 1. `QEC-01` Parser parity (`Log_AddEntry`)
@@ -215,8 +215,27 @@ Status tracker:
 - `QEC-03`: `done`
 - `QEC-04`: `done`
 - `QEC-05`: `done`
-- `QEC-06`: `pending`
-- `QEC-07`: `pending`
+- `QEC-06`: `done`
+- `QEC-07`: `done`
+
+
+## Corpus Validation Snapshot
+- Command:
+  - `node daedalus-parser/scripts/roundtrip-corpus.js --root daedalus-parser/reference --max-files 20 --no-strict`
+- Result (`2026-02-18`):
+  - Scanned: `5`
+  - Drift: `2`
+  - Source syntax errors: `0`
+  - Generated syntax errors: `0`
+  - Semantic idempotence drift files: `2`
+  - Byte idempotence drift files: `2`
+  - Reports written to:
+    - `reports/dialog-roundtrip-corpus-summary.json`
+    - `reports/dialog-roundtrip-corpus-summary.md`
+    - `reports/dialog-roundtrip-corpus-details.json`
+    - `reports/dialog-roundtrip-corpus-byte-idempotence.json`
+- Notes:
+  - Environment corpus path `mdk/Content/Story/Dialoge` was not present in this workspace, so corpus command was run against `daedalus-parser/reference` as the repeatable local sample.
 
 ## Progress Log
 - `2026-02-17`: Completed `QEC-01`.
@@ -249,6 +268,33 @@ Status tracker:
     - `daedalus-dialog-editor/tests/questGuardrails.test.ts`
     - `daedalus-dialog-editor/tests/questGuardrails.regression.test.ts`
   - Verified with `npm test --workspace daedalus-dialog-editor -- questGuardrails.test.ts questGuardrails.regression.test.ts questAnalysis.test.ts projectStore.questUsage.test.ts`.
+
+
+- `2026-02-18`: Completed `QEC-06`.
+  - Added non-equality condition support and operator metadata in quest graph building:
+    - `daedalus-dialog-editor/src/renderer/components/QuestEditor/questGraphUtils.tsx`
+    - `daedalus-dialog-editor/src/renderer/types/questGraph.ts`
+  - Extended inspector and command handling for editable `!=` condition links and explicit read-only handling for range operators:
+    - `daedalus-dialog-editor/src/renderer/components/QuestEditor/Inspector/QuestInspectorPanel.tsx`
+    - `daedalus-dialog-editor/src/renderer/components/QuestFlow.tsx`
+    - `daedalus-dialog-editor/src/renderer/components/QuestEditor/commands/types.ts`
+    - `daedalus-dialog-editor/src/renderer/components/QuestEditor/commands/connectCondition.ts`
+    - `daedalus-dialog-editor/src/renderer/components/QuestEditor/commands/updateConditionLink.ts`
+    - `daedalus-dialog-editor/src/renderer/components/QuestEditor/commands/removeTransition.ts`
+  - Added coverage for graph/operator behavior and inspector editing paths:
+    - `daedalus-dialog-editor/tests/questGraphUtils.test.tsx`
+    - `daedalus-dialog-editor/tests/QuestInspectorPanel.test.tsx`
+    - `daedalus-dialog-editor/tests/questCommands.setMisState.test.ts`
+
+
+- `2026-02-18`: Completed `QEC-07`.
+  - Added non-equality graph/inspector/command regressions:
+    - `daedalus-dialog-editor/tests/questGraphUtils.test.tsx`
+    - `daedalus-dialog-editor/tests/QuestInspectorPanel.test.tsx`
+    - `daedalus-dialog-editor/tests/questCommands.setMisState.test.ts`
+  - Re-ran command/guardrail and lifecycle regression tests:
+    - `npm test --workspace daedalus-dialog-editor -- questGuardrails.test.ts questGuardrails.regression.test.ts questAnalysis.test.ts projectStore.questUsage.test.ts`
+  - Added repeatable local corpus validation command and snapshot metrics in this document.
 
 ## Validation Commands
 Run from repo root:

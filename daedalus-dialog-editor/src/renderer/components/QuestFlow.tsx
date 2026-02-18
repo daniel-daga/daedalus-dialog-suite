@@ -727,12 +727,14 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     targetFunctionName: string;
     variableName: string;
     value: string;
+    operator: '==' | '!=';
   }) => {
     await runQuestCommandWithPreview({
       type: 'removeConditionLink',
       targetFunctionName: payload.targetFunctionName,
       variableName: payload.variableName,
-      value: payload.value
+      value: payload.value,
+      operator: payload.operator
     }, 'Failed to remove condition link.');
   }, [runQuestCommandWithPreview]);
 
@@ -742,6 +744,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     oldValue: string;
     variableName: string;
     value: string;
+    operator: '==' | '!=';
   }) => {
     await runQuestCommandWithPreview({
       type: 'updateConditionLink',
@@ -749,7 +752,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       oldVariableName: payload.oldVariableName,
       oldValue: payload.oldValue,
       variableName: payload.variableName,
-      value: payload.value
+      value: payload.value,
+      operator: payload.operator
     }, 'Failed to update condition link.');
   }, [runQuestCommandWithPreview]);
 

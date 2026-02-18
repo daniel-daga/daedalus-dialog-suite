@@ -57,7 +57,8 @@ export const executeQuestGraphCommand = (
         sourceFunctionName: command.targetFunctionName,
         targetFunctionName: command.targetFunctionName,
         variableName: command.variableName,
-        value: command.value
+        value: command.value,
+        operator: command.operator
       });
     case 'updateConditionLink':
       return executeUpdateConditionLinkCommand(context, command);

@@ -5,12 +5,13 @@ import { cloneModel } from './shared';
 const isMatchingVariableCondition = (
   condition: DialogCondition,
   variableName: string,
-  value: string | number | boolean
+  value: string | number | boolean,
+  operator: '==' | '!=' = '=='
 ): boolean => {
   return (
     condition.type === 'VariableCondition' &&
     condition.variableName === variableName &&
-    condition.operator === '==' &&
+    condition.operator === operator &&
     String(condition.value) === String(value) &&
     !condition.negated
   );
@@ -46,14 +47,14 @@ export const executeRemoveTransitionCommand = (
 
     const conditions = targetFunction.conditions || [];
     const conditionIndex = conditions.findIndex((condition) => {
-      return isMatchingVariableCondition(condition, command.variableName!, command.value!);
+      return isMatchingVariableCondition(condition, command.variableName!, command.value!, (command.operator || '==') as '==' | '!=');
     });
     if (conditionIndex < 0) {
       return {
         ok: false,
         errors: [{
           code: 'CONDITION_NOT_FOUND',
-          message: `Condition "${command.variableName} == ${String(command.value)}" was not found on "${command.targetFunctionName}".`
+          message: `Condition "${command.variableName} ${(command.operator || '==')} ${String(command.value)}" was not found on "${command.targetFunctionName}".`
         }]
       };
     }

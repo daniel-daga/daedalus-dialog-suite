@@ -43,7 +43,7 @@ export interface ConnectConditionCommand {
   choiceText?: string;
   variableName?: string;
   value?: string | number | boolean;
-  operator?: '==';
+  operator?: '==' | '!=';
 }
 
 export interface AddKnowsInfoRequirementCommand {
@@ -67,6 +67,7 @@ export interface RemoveTransitionCommand {
   targetFunctionName: string;
   variableName?: string;
   value?: string | number | boolean;
+  operator?: '==' | '!=';
 }
 
 export interface RemoveConditionLinkCommand {
@@ -74,6 +75,7 @@ export interface RemoveConditionLinkCommand {
   targetFunctionName: string;
   variableName: string;
   value: string | number | boolean;
+  operator?: '==' | '!=';
 }
 
 export interface UpdateConditionLinkCommand {
@@ -83,6 +85,7 @@ export interface UpdateConditionLinkCommand {
   oldValue: string | number | boolean;
   variableName: string;
   value: string | number | boolean;
+  operator?: '==' | '!=';
 }
 
 export interface UpdateTransitionTextCommand {
