@@ -417,85 +417,176 @@ const buildQuestEdges = (
         }
       }
 
-      if (cond.type === 'VariableCondition' && cond.operator === '==') {
+      if (cond.type === 'VariableCondition') {
         const variableName = cond.variableName;
+        const operator = cond.operator;
         const rawValue = String(cond.value);
-        const normalizedValue =
-          variableName === misVarName ? normalizeQuestStateValue(rawValue) : rawValue;
+        const expression = `${variableName} ${operator} ${rawValue}`;
 
-        const valueMap = producersByVariableAndValue.get(variableName);
-        if (valueMap) {
-          const producers = valueMap.get(normalizedValue) || new Set<string>();
-          producers.forEach((producerId) => {
-            if (producerId === consumerId || !nodeDataMap.has(producerId)) return;
-            const producerNode = nodeDataMap.get(producerId)!;
+        if (operator === '==') {
+          const normalizedValue =
+            variableName === misVarName ? normalizeQuestStateValue(rawValue) : rawValue;
 
-            edges.push({
-              id: `var-${variableName}-${producerId}-${consumerId}`,
-              source: producerId,
-              target: consumerId,
-              sourceHandle: 'out-state',
-              targetHandle: 'in-trigger',
-              label: `requires ${variableName} == ${rawValue}`,
-              type: 'smoothstep',
-              animated: true,
-              markerEnd: { type: MarkerType.ArrowClosed },
-              style: { stroke: '#2196f3', strokeWidth: 2 },
-              labelStyle: { fill: '#2196f3', fontSize: 10 },
-              data: {
-                kind: 'requires',
-                inferred: producerNode.inferred,
-                expression: `${variableName} == ${rawValue}`,
-                provenance: {
-                  functionName: consumerId,
-                  dialogName: consumerData.provenance?.dialogName
+          const valueMap = producersByVariableAndValue.get(variableName);
+          if (valueMap) {
+            const producers = valueMap.get(normalizedValue) || new Set<string>();
+            producers.forEach((producerId) => {
+              if (producerId === consumerId || !nodeDataMap.has(producerId)) return;
+              const producerNode = nodeDataMap.get(producerId)!;
+
+              edges.push({
+                id: `var-${variableName}-${producerId}-${consumerId}`,
+                source: producerId,
+                target: consumerId,
+                sourceHandle: 'out-state',
+                targetHandle: 'in-trigger',
+                label: `requires ${expression}`,
+                type: 'smoothstep',
+                animated: true,
+                markerEnd: { type: MarkerType.ArrowClosed },
+                style: { stroke: '#2196f3', strokeWidth: 2 },
+                labelStyle: { fill: '#2196f3', fontSize: 10 },
+                data: {
+                  kind: 'requires',
+                  inferred: producerNode.inferred,
+                  expression,
+                  operator,
+                  provenance: {
+                    functionName: consumerId,
+                    dialogName: consumerData.provenance?.dialogName
+                  }
                 }
-              }
-            });
-            addAdjacency(producerId, consumerId);
-          });
-
-          if (producers.size === 0) {
-            const externalId = `external-cond-${consumerId}-${variableName}-${normalizedValue}`;
-            if (!unresolvedConditionNodes.has(externalId)) {
-              unresolvedConditionNodes.set(externalId, {
-                id: externalId,
-                type: 'check',
-                label: `${variableName} == ${rawValue}`,
-                npc: 'External/World',
-                description: 'Unresolved condition source',
-                nodeKind: 'external-condition',
-                expression: `${variableName} == ${rawValue}`,
-                kind: 'condition',
-                inferred: true,
-                touchesSelectedQuest: false
               });
-            }
-
-            edges.push({
-              id: `external-var-${externalId}-${consumerId}`,
-              source: externalId,
-              target: consumerId,
-              sourceHandle: 'out-bool',
-              targetHandle: 'in-condition',
-              label: `requires ${variableName} == ${rawValue}`,
-              type: 'smoothstep',
-              markerEnd: { type: MarkerType.ArrowClosed },
-              style: { stroke: '#ffb74d', strokeWidth: 2, strokeDasharray: '3,3' },
-              labelStyle: { fill: '#ffb74d', fontSize: 10 },
-              data: {
-                kind: 'requires',
-                inferred: true,
-                expression: `${variableName} == ${rawValue}`,
-                provenance: {
-                  functionName: consumerId,
-                  dialogName: consumerData.provenance?.dialogName
-                }
-              }
+              addAdjacency(producerId, consumerId);
             });
-            addAdjacency(externalId, consumerId);
+
+            if (producers.size === 0) {
+              const externalId = `external-cond-${consumerId}-${variableName}-${operator}-${normalizedValue}`;
+              if (!unresolvedConditionNodes.has(externalId)) {
+                unresolvedConditionNodes.set(externalId, {
+                  id: externalId,
+                  type: 'check',
+                  label: expression,
+                  npc: 'External/World',
+                  description: 'Unresolved condition source',
+                  nodeKind: 'external-condition',
+                  expression,
+                  kind: 'condition',
+                  inferred: true,
+                  touchesSelectedQuest: false
+                });
+              }
+
+              edges.push({
+                id: `external-var-${externalId}-${consumerId}`,
+                source: externalId,
+                target: consumerId,
+                sourceHandle: 'out-bool',
+                targetHandle: 'in-condition',
+                label: `requires ${expression}`,
+                type: 'smoothstep',
+                markerEnd: { type: MarkerType.ArrowClosed },
+                style: { stroke: '#ffb74d', strokeWidth: 2, strokeDasharray: '3,3' },
+                labelStyle: { fill: '#ffb74d', fontSize: 10 },
+                data: {
+                  kind: 'requires',
+                  inferred: true,
+                  expression,
+                  operator,
+                  provenance: {
+                    functionName: consumerId,
+                    dialogName: consumerData.provenance?.dialogName
+                  }
+                }
+              });
+              addAdjacency(externalId, consumerId);
+            }
           }
+          return;
         }
+
+        if (operator === '!=') {
+          const externalId = `external-cond-${consumerId}-${variableName}-${operator}-${rawValue}`;
+          if (!unresolvedConditionNodes.has(externalId)) {
+            unresolvedConditionNodes.set(externalId, {
+              id: externalId,
+              type: 'check',
+              label: expression,
+              npc: 'External/World',
+              description: 'Unresolved inequality condition source',
+              nodeKind: 'external-condition',
+              expression,
+              kind: 'condition',
+              inferred: true,
+              touchesSelectedQuest: false
+            });
+          }
+
+          edges.push({
+            id: `external-var-${externalId}-${consumerId}`,
+            source: externalId,
+            target: consumerId,
+            sourceHandle: 'out-bool',
+            targetHandle: 'in-condition',
+            label: `requires ${expression}`,
+            type: 'smoothstep',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#4db6ac', strokeWidth: 2, strokeDasharray: '3,3' },
+            labelStyle: { fill: '#4db6ac', fontSize: 10 },
+            data: {
+              kind: 'requires',
+              inferred: true,
+              expression,
+              operator,
+              provenance: {
+                functionName: consumerId,
+                dialogName: consumerData.provenance?.dialogName
+              }
+            }
+          });
+          addAdjacency(externalId, consumerId);
+          return;
+        }
+
+        const externalId = `external-cond-${consumerId}-${variableName}-${operator}-${rawValue}`;
+        if (!unresolvedConditionNodes.has(externalId)) {
+          unresolvedConditionNodes.set(externalId, {
+            id: externalId,
+            type: 'check',
+            label: expression,
+            npc: 'External/World',
+            description: `Read-only condition (${operator})`,
+            nodeKind: 'external-condition',
+            expression,
+            kind: 'condition',
+            inferred: true,
+            touchesSelectedQuest: false
+          });
+        }
+
+        edges.push({
+          id: `external-var-${externalId}-${consumerId}`,
+          source: externalId,
+          target: consumerId,
+          sourceHandle: 'out-bool',
+          targetHandle: 'in-condition',
+          label: `requires ${expression}`,
+          type: 'smoothstep',
+          markerEnd: { type: MarkerType.ArrowClosed },
+          style: { stroke: '#9575cd', strokeWidth: 2, strokeDasharray: '3,3' },
+          labelStyle: { fill: '#9575cd', fontSize: 10 },
+          data: {
+            kind: 'requires',
+            inferred: true,
+            expression,
+            operator,
+            provenance: {
+              functionName: consumerId,
+              dialogName: consumerData.provenance?.dialogName
+            }
+          }
+        });
+        addAdjacency(externalId, consumerId);
       }
 
       if (cond.type === 'NpcHasItemsCondition') {

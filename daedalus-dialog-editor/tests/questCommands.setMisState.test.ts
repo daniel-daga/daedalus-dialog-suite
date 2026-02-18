@@ -525,4 +525,65 @@ describe('quest commands', () => {
     if (result.ok) return;
     expect(result.errors[0].code).toBe('FUNCTION_NOT_FOUND');
   });
+
+  it('creates, updates, and removes inequality condition links', () => {
+    const model = createModel();
+
+    const createResult = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model },
+      {
+        type: 'connectCondition',
+        mode: 'requires',
+        sourceFunctionName: 'DIA_Test_Info',
+        targetFunctionName: 'DIA_Target_Info',
+        variableName: 'MIS_TEST',
+        operator: '!=',
+        value: 'LOG_FAILED'
+      }
+    );
+
+    expect(createResult.ok).toBe(true);
+    if (!createResult.ok) return;
+    expect(createResult.updatedModel.functions.DIA_Target_Info.conditions[0]).toMatchObject({
+      type: 'VariableCondition',
+      variableName: 'MIS_TEST',
+      operator: '!=',
+      value: 'LOG_FAILED'
+    });
+
+    const updateResult = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model: createResult.updatedModel },
+      {
+        type: 'updateConditionLink',
+        targetFunctionName: 'DIA_Target_Info',
+        oldVariableName: 'MIS_TEST',
+        oldValue: 'LOG_FAILED',
+        variableName: 'MIS_TEST',
+        value: 'LOG_SUCCESS',
+        operator: '!='
+      }
+    );
+
+    expect(updateResult.ok).toBe(true);
+    if (!updateResult.ok) return;
+    expect(updateResult.updatedModel.functions.DIA_Target_Info.conditions[0]).toMatchObject({
+      operator: '!=',
+      value: 'LOG_SUCCESS'
+    });
+
+    const removeResult = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model: updateResult.updatedModel },
+      {
+        type: 'removeConditionLink',
+        targetFunctionName: 'DIA_Target_Info',
+        variableName: 'MIS_TEST',
+        value: 'LOG_SUCCESS',
+        operator: '!='
+      }
+    );
+
+    expect(removeResult.ok).toBe(true);
+    if (!removeResult.ok) return;
+    expect(removeResult.updatedModel.functions.DIA_Target_Info.conditions).toHaveLength(0);
+  });
 });

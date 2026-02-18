@@ -45,7 +45,7 @@ describe('QuestInspectorPanel requires edge editing', () => {
     );
 
     expect(
-      screen.getByText('This condition link is read-only because it is not a simple `VARIABLE == VALUE` expression.')
+      screen.getByText('This condition link is read-only because it is not a simple `VARIABLE == VALUE` or `VARIABLE != VALUE` expression.')
     ).toBeInTheDocument();
     expect(screen.queryByLabelText('Variable')).not.toBeInTheDocument();
     expect(screen.queryByText('Remove Condition Link')).not.toBeInTheDocument();
@@ -70,7 +70,43 @@ describe('QuestInspectorPanel requires edge editing', () => {
       oldVariableName: 'MIS_TEST',
       oldValue: 'LOG_RUNNING',
       variableName: 'MIS_TEST',
-      value: 'LOG_SUCCESS'
+      value: 'LOG_SUCCESS',
+      operator: '=='
     });
+  });
+
+  it('allows editing simple variable inequality requires expressions', () => {
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedEdge={createRequiresEdge('MIS_TEST != LOG_FAILED')}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'LOG_SUCCESS' } });
+    fireEvent.click(screen.getByText('Preview Diff'));
+
+    expect(baseProps.onUpdateConditionLink).toHaveBeenCalledWith({
+      targetFunctionName: 'DIA_Target_Info',
+      oldVariableName: 'MIS_TEST',
+      oldValue: 'LOG_FAILED',
+      variableName: 'MIS_TEST',
+      value: 'LOG_SUCCESS',
+      operator: '!='
+    });
+  });
+
+  it('shows read-only message for range requires expressions', () => {
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedEdge={createRequiresEdge('MIS_TEST >= 2')}
+      />
+    );
+
+    expect(
+      screen.getByText('This condition link is read-only because it is not a simple `VARIABLE == VALUE` or `VARIABLE != VALUE` expression.')
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Operator')).not.toBeInTheDocument();
   });
 });

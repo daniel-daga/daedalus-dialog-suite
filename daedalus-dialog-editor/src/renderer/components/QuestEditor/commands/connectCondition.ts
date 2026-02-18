@@ -5,12 +5,13 @@ import { cloneModel } from './shared';
 const isMatchingVariableCondition = (
   condition: DialogCondition,
   variableName: string,
-  value: string | number | boolean
+  value: string | number | boolean,
+  operator: '==' | '!=' = '=='
 ): boolean => {
   return (
     condition.type === 'VariableCondition' &&
     condition.variableName === variableName &&
-    condition.operator === '==' &&
+    condition.operator === operator &&
     String(condition.value) === String(value) &&
     !condition.negated
   );
@@ -46,7 +47,7 @@ export const executeConnectConditionCommand = (
     }
 
     const existing = (targetFunction.conditions || []).some((condition) => {
-      return isMatchingVariableCondition(condition, command.variableName!, command.value!);
+      return isMatchingVariableCondition(condition, command.variableName!, command.value!, command.operator || '==');
     });
     if (existing) {
       return {
@@ -60,10 +61,21 @@ export const executeConnectConditionCommand = (
 
     const updatedModel = cloneModel(context.model);
     const conditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
+    const operator = command.operator || '==';
+    if (operator !== '==' && operator !== '!=') {
+      return {
+        ok: false,
+        errors: [{
+          code: 'INVALID_OPERATOR',
+          message: `Condition links currently support only == and != operators.`
+        }]
+      };
+    }
+
     conditions.push({
       type: 'VariableCondition',
       variableName: command.variableName,
-      operator: '==',
+      operator,
       value: command.value,
       negated: false
     });

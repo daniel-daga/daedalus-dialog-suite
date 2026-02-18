@@ -12,13 +12,19 @@ interface QuestInspectorPanelProps {
   onAddLogEntry: (payload: { functionName: string; topic: string; text: string }) => void;
   onRemoveTransition: (payload: { sourceFunctionName: string; targetFunctionName: string }) => void;
   onUpdateTransitionText: (payload: { sourceFunctionName: string; targetFunctionName: string; text: string }) => void;
-  onRemoveConditionLink: (payload: { targetFunctionName: string; variableName: string; value: string }) => void;
+  onRemoveConditionLink: (payload: {
+    targetFunctionName: string;
+    variableName: string;
+    value: string;
+    operator: '==' | '!=';
+  }) => void;
   onUpdateConditionLink: (payload: {
     targetFunctionName: string;
     oldVariableName: string;
     oldValue: string;
     variableName: string;
     value: string;
+    operator: '==' | '!=';
   }) => void;
   commandError: string | null;
   commandBusy: boolean;
@@ -43,6 +49,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   const [topicStatus, setTopicStatus] = useState('LOG_RUNNING');
   const [logEntryText, setLogEntryText] = useState('');
   const [edgeVariable, setEdgeVariable] = useState('');
+  const [edgeOperator, setEdgeOperator] = useState<'==' | '!='>('==');
   const [edgeValue, setEdgeValue] = useState('');
   const [originalEdgeVariable, setOriginalEdgeVariable] = useState('');
   const [originalEdgeValue, setOriginalEdgeValue] = useState('');
@@ -50,13 +57,14 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   const parsedRequiresCondition = useMemo(() => {
     if (!selectedEdge || selectedEdge.data?.kind !== 'requires') return null;
     const expression = String(selectedEdge.data.expression || '');
-    const match = expression.match(/^([A-Z0-9_]+)\s*==\s*(.+)$/i);
+    const match = expression.match(/^([A-Z0-9_]+)\s*(==|!=|<=|>=|<|>)\s*(.+)$/i);
     if (!match?.[1] || !match?.[2]) {
       return null;
     }
     return {
       variableName: match[1].trim(),
-      value: match[2].trim()
+      operator: match[2].trim(),
+      value: match[3].trim()
     };
   }, [selectedEdge]);
 
@@ -104,6 +112,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   useEffect(() => {
     if (!selectedEdge || selectedEdge.data?.kind !== 'requires') {
       setEdgeVariable('');
+      setEdgeOperator('==');
       setEdgeValue('');
       setOriginalEdgeVariable('');
       setOriginalEdgeValue('');
@@ -111,12 +120,14 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
     }
     if (!parsedRequiresCondition) {
       setEdgeVariable('');
+      setEdgeOperator('==');
       setEdgeValue('');
       setOriginalEdgeVariable('');
       setOriginalEdgeValue('');
       return;
     }
     setEdgeVariable(parsedRequiresCondition.variableName);
+    setEdgeOperator(parsedRequiresCondition.operator === '!=' ? '!=' : '==');
     setEdgeValue(parsedRequiresCondition.value);
     setOriginalEdgeVariable(parsedRequiresCondition.variableName);
     setOriginalEdgeValue(parsedRequiresCondition.value);
@@ -136,7 +147,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
     (selectedNode.data.expression.includes('&&') || selectedNode.data.expression.includes('||'))
   );
   const hasUnsupportedRequiresExpression = Boolean(
-    selectedEdge?.data?.kind === 'requires' && !parsedRequiresCondition
+    selectedEdge?.data?.kind === 'requires' && (!parsedRequiresCondition || !['==', '!='].includes(parsedRequiresCondition.operator))
   );
 
   const functionName = selectedNode?.data.provenance?.functionName;
@@ -342,7 +353,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
             )}
             {writableEnabled && hasUnsupportedRequiresExpression && (
               <Alert severity="info">
-                This condition link is read-only because it is not a simple `VARIABLE == VALUE` expression.
+                This condition link is read-only because it is not a simple `VARIABLE == VALUE` or `VARIABLE != VALUE` expression.
               </Alert>
             )}
             {writableEnabled && selectedEdge.data?.kind === 'requires' && (
@@ -353,6 +364,13 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   label="Variable"
                   value={edgeVariable}
                   onChange={(event) => setEdgeVariable(event.target.value)}
+                />
+                <TextField
+                  size="small"
+                  label="Operator"
+                  value={edgeOperator}
+                  onChange={(event) => setEdgeOperator(event.target.value === '!=' ? '!=' : '==')}
+                  helperText="Supports == and !="
                 />
                 <TextField
                   size="small"
@@ -369,7 +387,8 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                     oldVariableName: originalEdgeVariable || edgeVariable,
                     oldValue: originalEdgeValue || edgeValue,
                     variableName: edgeVariable.trim(),
-                    value: edgeValue.trim()
+                    value: edgeValue.trim(),
+                    operator: edgeOperator
                   })}
                 >
                   Preview Diff
@@ -382,7 +401,8 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   onClick={() => onRemoveConditionLink({
                     targetFunctionName: selectedEdge.target,
                     variableName: edgeVariable.trim(),
-                    value: edgeValue.trim()
+                    value: edgeValue.trim(),
+                    operator: edgeOperator
                   })}
                 >
                   Remove Condition Link
