@@ -691,8 +691,11 @@ const calculateDagreLayout = (
   edges: QuestGraphEdge[],
   misVarName: string
 ): QuestGraphNode[] => {
+  const NODE_WIDTH = 280;
+  const NODE_HEIGHT = 132;
+
   const g = new dagre.graphlib.Graph({ compound: true });
-  g.setGraph({ rankdir: 'LR', align: 'UL', ranksep: 100, nodesep: 50 });
+  g.setGraph({ rankdir: 'LR', align: 'UL', ranksep: 180, nodesep: 120, edgesep: 60, marginx: 40, marginy: 40 });
   g.setDefaultEdgeLabel(() => ({}));
 
   const npcNodes = new Map<string, string[]>();
@@ -710,10 +713,8 @@ const calculateDagreLayout = (
   });
 
   nodeDataMap.forEach((data, id) => {
-    const width = 250;
-    const height = 100;
     const clusterId = `swimlane-${data.npc}`;
-    g.setNode(id, { width, height });
+    g.setNode(id, { width: NODE_WIDTH, height: NODE_HEIGHT });
     g.setParent(id, clusterId);
   });
 
