@@ -40,6 +40,11 @@ export const AUTOCOMPLETE_POLICIES = {
       showInstances: true,
       typeFilter: 'C_NPC'
     } as AutocompletePolicy,
+    animation: {
+      showInstances: true,
+      typeFilter: 'C_MDS',
+      allowCreation: false
+    } as AutocompletePolicy,
     item: {
       showInstances: true,
       typeFilter: 'C_ITEM'

@@ -2,7 +2,6 @@ import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
-import { TextField } from '@mui/material';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -28,17 +27,17 @@ const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
         semanticModel={semanticModel}
         {...AUTOCOMPLETE_POLICIES.actions.npcNoInstances}
       />
-      <TextField
+      <VariableAutocomplete
         fullWidth
-        label="Animation Name"
+        label="Animation"
         value={action.animationName || ''}
-        onChange={(e) => handleUpdate({ ...action, animationName: e.target.value })}
-        onBlur={flushUpdate}
+        onChange={(value) => handleUpdate({ ...action, animationName: value })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
-        size="small"
-        variant="outlined"
         placeholder="e.g. T_SEARCH"
         sx={{ ml: 1 }}
+        semanticModel={semanticModel}
+        {...AUTOCOMPLETE_POLICIES.actions.animation}
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>

@@ -231,6 +231,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   // Prepare props for the renderer
   const rendererProps: BaseActionRendererProps = {
     action: localAction,
+    index,
+    totalActions,
     npcName,
     handleUpdate,
     handleDelete,

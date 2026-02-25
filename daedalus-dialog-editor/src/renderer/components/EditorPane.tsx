@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
-import { Box, Typography, Alert, Tabs, Tab } from '@mui/material';
+import { Box, Typography, Alert, Tabs, Tab, IconButton } from '@mui/material';
+import { Close as CloseIcon } from '@mui/icons-material';
 import DialogDetailsEditor from './DialogDetailsEditor';
 import DialogLoadingSkeleton from './DialogLoadingSkeleton';
 import type { SemanticModel, Dialog, DialogFunction } from '../types/global';
@@ -22,6 +23,7 @@ interface EditorPaneProps {
   isLoadingDialog: boolean;
   recentDialogs: RecentDialogTab[];
   onSelectRecentDialog: (dialogName: string, functionName: string | null, npcName: string) => void;
+  onCloseRecentDialog: (dialogName: string, npcName: string) => void;
   onNavigateToFunction: (functionName: string) => void;
 }
 
@@ -63,6 +65,7 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
   isLoadingDialog,
   recentDialogs,
   onSelectRecentDialog,
+  onCloseRecentDialog,
   onNavigateToFunction
 }, ref) => {
   const activeNpcName = dialogData?.properties?.npc || null;
@@ -88,7 +91,33 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
         {recentDialogs.map((tab) => (
           <Tab
             key={`${tab.npcName}:${tab.dialogName}`}
-            label={`${tab.npcName}: ${tab.dialogName}`}
+            label={(
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography
+                  component="span"
+                  variant="body2"
+                  sx={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {`${tab.npcName}: ${tab.dialogName}`}
+                </Typography>
+                <IconButton
+                  size="small"
+                  aria-label={`Close tab ${tab.npcName}: ${tab.dialogName}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCloseRecentDialog(tab.dialogName, tab.npcName);
+                  }}
+                  onMouseDown={(event) => {
+                    // Keep focus/selection behavior stable while closing tabs.
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  sx={{ p: 0.25 }}
+                >
+                  <CloseIcon fontSize="inherit" />
+                </IconButton>
+              </Box>
+            )}
             title={`${tab.npcName}: ${tab.dialogName}`}
           />
         ))}

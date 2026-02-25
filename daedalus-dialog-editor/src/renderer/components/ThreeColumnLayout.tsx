@@ -9,8 +9,8 @@ import DialogTree from './DialogTree';
 import EditorPane from './EditorPane';
 import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
 import SearchPanel from './SearchPanel';
-import { generateActionId } from './actionFactory';
-import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction, Dialog, DialogFunction } from '../types/global';
+import { createDialogLineId } from './actionFactory';
+import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction, Dialog, DialogFunction, GlobalInstance } from '../types/global';
 
 interface ThreeColumnLayoutProps {
   filePath: string | null;
@@ -71,6 +71,20 @@ function joinPath(directory: string, fileName: string): string {
   return `${normalized}/${fileName}`;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function createNpcInstanceTemplate(npcName: string): string {
+  return [
+    `INSTANCE ${npcName} (C_NPC)`,
+    '{',
+    `\tname = "${npcName}";`,
+    '};',
+    ''
+  ].join('\n');
+}
+
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { 
     openFiles, 
@@ -94,6 +108,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     mergedSemanticModel,
     loadAndMergeNpcModels,
     addDialogToIndex,
+    addProjectFile,
     setIngestedFilesOpen,
     parsedFiles,
     allDialogFiles
@@ -108,6 +123,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
   const [isSearchOpen, setIsSearchOpen] = useState(false); // Search panel visibility
   const [recentDialogs, setRecentDialogs] = useState<RecentDialogTab[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
 
   // Cache for buildFunctionTree to prevent exponential recomputation
@@ -376,33 +392,43 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Get the currently selected function (either dialog info or choice function)
   const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
   const currentFunctionData = currentFunctionName ? semanticModel.functions?.[currentFunctionName] : null;
+  const activeNpcName = selectedDialog
+    ? semanticModel.dialogs?.[selectedDialog]?.properties?.npc || selectedNPC || null
+    : null;
 
   const handleSelectNPC = async (npc: string) => {
+    setOperationError(null);
     setSelectedDialog(null);
     setSelectedFunctionName(null);
 
-    // In project mode, load semantic models for this NPC's dialogs
-    if (isProjectMode) {
-      selectNpc(npc);
+    try {
+      // In project mode, load semantic models for this NPC's dialogs
+      if (isProjectMode) {
+        selectNpc(npc);
 
-      // Get dialog metadata for this NPC
-      const dialogMetadata = dialogIndex.get(npc) || [];
+        // Get dialog metadata for this NPC
+        const dialogMetadata = dialogIndex.get(npc) || [];
 
-      // Extract unique file paths
-      const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
+        // Extract unique file paths
+        const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
 
-      // Load semantic models for all files (populates the parsedFiles cache)
-      await Promise.all(
-        uniqueFilePaths.map(filePath => getSemanticModel(filePath))
-      );
+        // Load semantic models for all files (populates the parsedFiles cache)
+        await Promise.all(
+          uniqueFilePaths.map(filePath => getSemanticModel(filePath))
+        );
 
-      // Load and merge models for this NPC using the store
-      loadAndMergeNpcModels(npc);
+        // Load and merge models for this NPC using the store
+        loadAndMergeNpcModels(npc);
 
-      setSelectedNPC(npc);
-    } else {
-      // Single-file mode: just set the selected NPC
-      setSelectedNPC(npc);
+        setSelectedNPC(npc);
+      } else {
+        // Single-file mode: just set the selected NPC
+        setSelectedNPC(npc);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setOperationError(`Failed to load NPC "${npc}": ${message}`);
+      throw error;
     }
   };
 
@@ -588,11 +614,70 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
           type: 'DialogLine',
           speaker: 'self',
           text: '',
-          id: generateActionId()
+          id: createDialogLineId({
+            dialogName,
+            speaker: 'self',
+            actions: []
+          })
         }
       ],
       conditions: [],
       calls: []
+    };
+
+    const existingInstances = latestModel.instances || {};
+    const existingNpcs = latestModel.npcs || {};
+    const hasNpcInstance = Boolean(
+      uniquenessModel.instances?.[npcName]
+      || uniquenessModel.npcs?.[npcName]
+      || existingInstances[npcName]
+      || existingNpcs[npcName]
+    );
+
+    let npcInstanceFilePath = targetFilePath;
+    if (!hasNpcInstance) {
+      const npcDirectory = getDirectoryName(targetFilePath) || (projectPath ? normalizePath(projectPath) : '');
+      if (npcDirectory) {
+        const npcFilePath = joinPath(npcDirectory, `NPC_${npcToken}.d`);
+        const instanceTemplate = createNpcInstanceTemplate(npcName);
+        const instanceRegex = new RegExp(`\\bINSTANCE\\s+${escapeRegExp(npcName)}\\s*\\(`, 'i');
+
+        let existingNpcContent: string | null = null;
+        try {
+          existingNpcContent = await window.editorAPI.readFile(npcFilePath);
+        } catch {
+          existingNpcContent = null;
+        }
+
+        if (existingNpcContent === null) {
+          const createNpcFileResult = await window.editorAPI.writeFile(npcFilePath, instanceTemplate);
+          if (!createNpcFileResult?.success) {
+            throw new Error(`Could not create NPC instance file: ${npcFilePath}`);
+          }
+        } else if (!instanceRegex.test(existingNpcContent)) {
+          const separator = existingNpcContent.endsWith('\n') ? '' : '\n';
+          const appendedContent = `${existingNpcContent}${separator}\n${instanceTemplate}`;
+          const appendNpcFileResult = await window.editorAPI.writeFile(npcFilePath, appendedContent);
+          if (!appendNpcFileResult?.success) {
+            throw new Error(`Could not update NPC instance file: ${npcFilePath}`);
+          }
+        }
+
+        npcInstanceFilePath = npcFilePath;
+        addProjectFile(npcFilePath);
+
+        try {
+          await getSemanticModel(npcFilePath);
+        } catch (error) {
+          console.warn(`Failed to parse NPC instance file ${npcFilePath}:`, error);
+        }
+      }
+    }
+
+    const npcInstance: GlobalInstance = {
+      name: npcName,
+      parent: 'C_NPC',
+      filePath: npcInstanceFilePath
     };
 
     const updatedModel: SemanticModel = {
@@ -606,6 +691,18 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         [conditionFunctionName]: conditionFunction,
         [infoFunctionName]: informationFunction
       },
+      instances: hasNpcInstance
+        ? existingInstances
+        : {
+            ...existingInstances,
+            [npcName]: npcInstance
+          },
+      npcs: hasNpcInstance
+        ? existingNpcs
+        : {
+            ...existingNpcs,
+            [npcName]: npcInstance
+          },
       hasErrors: false,
       errors: latestModel.errors || []
     };
@@ -635,6 +732,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     semanticModel,
     updateModel,
     addDialogToIndex,
+    addProjectFile,
+    projectPath,
+    getSemanticModel,
     selectNpc,
     loadAndMergeNpcModels,
     setSelectedNPC,
@@ -642,14 +742,28 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   ]);
 
   const handleAddNpc = useCallback(async (npcName: string) => {
-    await createDialogForNpc(npcName);
+    setOperationError(null);
+    try {
+      await createDialogForNpc(npcName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setOperationError(`Failed to create NPC "${npcName}": ${message}`);
+      throw error;
+    }
   }, [createDialogForNpc]);
 
   const handleAddDialog = useCallback(async (dialogName: string) => {
+    setOperationError(null);
     if (!selectedNPC) {
       throw new Error('Select an NPC first.');
     }
-    await createDialogForNpc(selectedNPC, dialogName);
+    try {
+      await createDialogForNpc(selectedNPC, dialogName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setOperationError(`Failed to add dialog "${dialogName}": ${message}`);
+      throw error;
+    }
   }, [selectedNPC, createDialogForNpc]);
 
   const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
@@ -687,6 +801,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   }, [MAX_RECENT_DIALOGS]);
 
   const handleSelectRecentDialog = useCallback(async (dialogName: string, functionName: string | null, npcName: string) => {
+    setOperationError(null);
     setIsLoadingDialog(true);
 
     if (isProjectMode) {
@@ -716,10 +831,13 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         finalizeDialogSelection(dialogName, functionName);
       } else {
         setIsLoadingDialog(false);
+        setOperationError(`Could not find dialog "${dialogName}" in the current context.`);
       }
     } catch (error) {
       console.error('Failed to switch recent dialog tab:', error);
       setIsLoadingDialog(false);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setOperationError(`Failed to switch dialog tab: ${message}`);
     }
   }, [
     isProjectMode,
@@ -733,6 +851,40 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     finalizeDialogSelection,
     navigateToDialog
   ]);
+
+  const handleCloseRecentDialog = useCallback((dialogName: string, npcName: string) => {
+    let nextTabToSelect: RecentDialogTab | null = null;
+    let shouldClearSelection = false;
+
+    setRecentDialogs((prev) => {
+      const tabIndex = prev.findIndex((tab) => tab.dialogName === dialogName && tab.npcName === npcName);
+      if (tabIndex < 0) {
+        return prev;
+      }
+
+      const nextTabs = prev.filter((_, index) => index !== tabIndex);
+      const closingSelectedTab = selectedDialog === dialogName && activeNpcName === npcName;
+
+      if (closingSelectedTab) {
+        if (nextTabs.length > 0) {
+          const fallbackIndex = Math.min(tabIndex, nextTabs.length - 1);
+          nextTabToSelect = nextTabs[fallbackIndex];
+        } else {
+          shouldClearSelection = true;
+        }
+      }
+
+      return nextTabs;
+    });
+
+    if (nextTabToSelect) {
+      void handleSelectRecentDialog(nextTabToSelect.dialogName, nextTabToSelect.functionName, nextTabToSelect.npcName);
+    } else if (shouldClearSelection) {
+      setSelectedDialog(null);
+      setSelectedFunctionName(null);
+      setIsLoadingDialog(false);
+    }
+  }, [selectedDialog, activeNpcName, handleSelectRecentDialog, setSelectedDialog, setSelectedFunctionName]);
 
   useEffect(() => {
     if (!selectedDialog) return;
@@ -827,6 +979,15 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   return (
     <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden', position: 'relative' }}>
+      {operationError && (
+        <Alert
+          severity="error"
+          onClose={() => setOperationError(null)}
+          sx={{ position: 'absolute', top: 8, left: 8, right: 8, zIndex: 20 }}
+        >
+          {operationError}
+        </Alert>
+      )}
       {/* Search Panel (positioned absolutely) */}
       <SearchPanel
         isOpen={isSearchOpen}
@@ -906,6 +1067,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         isLoadingDialog={isLoadingDialog}
         recentDialogs={recentDialogs}
         onSelectRecentDialog={handleSelectRecentDialog}
+        onCloseRecentDialog={handleCloseRecentDialog}
         onNavigateToFunction={handleNavigateToFunction}
       />
     </Box>

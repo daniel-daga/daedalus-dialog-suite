@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
-import { createAction, createActionAfterIndex, generateActionId } from '../actionFactory';
+import { createAction, createActionAfterIndex, createDialogLineId } from '../actionFactory';
 import type { ActionTypeId } from '../actionTypes';
 import type { DialogAction, DialogFunction, DialogLineAction, SemanticModel } from '../../types/global';
 import type { FunctionUpdater } from '../dialogTypes';
@@ -39,10 +39,51 @@ export function useActionManagement(config: ActionManagementConfig) {
     setFunction((prev) => {
       if (!prev) return prev;
       const newActions = [...(prev.actions || [])];
-      newActions[index] = updatedAction;
+      const previousAction = newActions[index];
+
+      if (updatedAction.type === 'DialogLine') {
+        const currentId = (updatedAction as DialogLineAction).id;
+        const speakerChanged = previousAction?.type === 'DialogLine' && previousAction.speaker !== updatedAction.speaker;
+        const needsGeneratedId = !currentId || currentId === 'NEW_LINE_ID';
+
+        if (speakerChanged || needsGeneratedId) {
+          const actionsWithoutCurrent = newActions.filter((_, actionIndex) => actionIndex !== index);
+          const generatedId = createDialogLineId({
+            dialogName: contextName,
+            speaker: updatedAction.speaker,
+            actions: actionsWithoutCurrent
+          });
+          let id = generatedId;
+
+          // Preserve sequence number when only the speaker changes.
+          if (speakerChanged && currentId) {
+            const generatedMatch = generatedId.match(/^(.*)_(\d+)_([0-9]+)$/);
+            const currentMatch = currentId.match(/^(?:.+)_(\d+)_([0-9]+)$/);
+
+            if (generatedMatch && currentMatch) {
+              const candidateWithSameIndex = `${generatedMatch[1]}_${generatedMatch[2]}_${currentMatch[2]}`;
+              const hasConflict = actionsWithoutCurrent.some((action) =>
+                action?.type === 'DialogLine' && action.id === candidateWithSameIndex
+              );
+              if (!hasConflict) {
+                id = candidateWithSameIndex;
+              }
+            }
+          }
+
+          newActions[index] = {
+            ...updatedAction,
+            id
+          };
+        } else {
+          newActions[index] = updatedAction;
+        }
+      } else {
+        newActions[index] = updatedAction;
+      }
       return { ...prev, actions: newActions };
     });
-  }, [setFunction]);
+  }, [setFunction, contextName]);
 
   /**
    * Delete an action at a specific index
@@ -89,7 +130,11 @@ export function useActionManagement(config: ActionManagementConfig) {
         type: 'DialogLine',
         speaker: newSpeaker,
         text: '',
-        id: generateActionId()
+        id: createDialogLineId({
+          dialogName: contextName,
+          speaker: newSpeaker,
+          actions
+        })
       };
 
       const newActions = [...actions];

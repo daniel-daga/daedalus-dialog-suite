@@ -35,6 +35,8 @@ function createEmptySemanticModel(): SemanticModel {
     variables: {},
     instances: {},
     items: {},
+    npcs: {},
+    animations: {},
     hasErrors: false,
     errors: []
   };
@@ -126,6 +128,9 @@ interface ProjectActions {
 
   // Register a newly created dialog in the project index
   addDialogToIndex: (metadata: DialogMetadata) => void;
+
+  // Register a newly created project file path
+  addProjectFile: (filePath: string) => void;
 
   // UI actions
   setIngestedFilesOpen: (open: boolean) => void;
@@ -411,6 +416,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       }
       if (model?.items) {
         Object.assign(mergedModel.items, model.items);
+      }
+      if (model?.npcs) {
+        Object.assign(mergedModel.npcs, model.npcs);
+      }
+      if (model?.animations) {
+        Object.assign(mergedModel.animations, model.animations);
       }
     });
 
@@ -783,6 +794,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         dialogIndex: nextDialogIndex,
         npcList: nextNpcList,
         allDialogFiles: nextAllDialogFiles
+      };
+    });
+  },
+
+  addProjectFile: (filePath: string) => {
+    set((state) => {
+      if (state.allDialogFiles.includes(filePath)) {
+        return state;
+      }
+
+      return {
+        allDialogFiles: [...state.allDialogFiles, filePath]
       };
     });
   },

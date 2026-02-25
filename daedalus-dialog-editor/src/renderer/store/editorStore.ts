@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
-import { generateActionId } from '../components/actionFactory';
+import { createDialogLineId } from '../components/actionFactory';
 import { useProjectStore } from './projectStore';
 import type {
   SemanticModel,
@@ -22,19 +22,55 @@ enableMapSet();
 function ensureActionIds(model: SemanticModel): SemanticModel {
   if (!model || !model.functions) return model;
 
+  const infoFunctionToDialogName = new Map<string, string>();
+  Object.entries(model.dialogs || {}).forEach(([dialogName, dialog]) => {
+    const infoRef = dialog?.properties?.information;
+    const infoFunctionName = typeof infoRef === 'string'
+      ? infoRef
+      : infoRef?.name;
+    if (infoFunctionName) {
+      infoFunctionToDialogName.set(infoFunctionName, dialogName);
+    }
+  });
+
   const updatedFunctions = { ...model.functions };
   Object.keys(updatedFunctions).forEach(funcName => {
     const func = updatedFunctions[funcName];
     if (func.actions && Array.isArray(func.actions)) {
+      const actions = [...func.actions];
+      let hasChanges = false;
+      const dialogName = infoFunctionToDialogName.get(funcName) || funcName;
+
+      for (let index = 0; index < actions.length; index += 1) {
+        const action = actions[index] as DialogAction & { speaker?: 'self' | 'other' };
+        if (action?.type !== 'DialogLine') {
+          continue;
+        }
+
+        if (action.id && action.id !== 'NEW_LINE_ID') {
+          continue;
+        }
+
+        const speaker: 'self' | 'other' = action.speaker === 'other' ? 'other' : 'self';
+        const actionsWithoutCurrent = actions.filter((_, actionIndex) => actionIndex !== index);
+        actions[index] = {
+          ...action,
+          id: createDialogLineId({
+            dialogName,
+            speaker,
+            actions: actionsWithoutCurrent
+          })
+        } as DialogAction;
+        hasChanges = true;
+      }
+
+      if (!hasChanges) {
+        return;
+      }
+
       updatedFunctions[funcName] = {
         ...func,
-        actions: func.actions.map((action: DialogAction) => {
-          // Check if action has id property (DialogLineAction)
-          if ('id' in action && (!action.id || action.id === 'NEW_LINE_ID')) {
-            return { ...action, id: generateActionId() };
-          }
-          return action;
-        })
+        actions
       };
     }
   });
@@ -302,6 +338,7 @@ interface EditorStore {
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   setAutoSaveInterval: (interval: number) => void;
+  resetEditorSession: () => void;
 }
 
 export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
@@ -1050,4 +1087,21 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   setAutoSaveInterval: (interval: number) => {
     set((state) => { state.autoSaveInterval = interval; });
   },
+
+  resetEditorSession: () => {
+    set((state) => {
+      state.openFiles.clear();
+      state.questHistory.clear();
+      state.questNodePositions.clear();
+      state.questBatchHistory = { past: [], future: [] };
+      state.activeFile = null;
+      state.activeView = 'dialog';
+      state.selectedNPC = null;
+      state.selectedDialog = null;
+      state.selectedQuest = null;
+      state.selectedFunctionName = null;
+      state.selectedAction = null;
+      state.pendingValidation = null;
+    });
+  }
 })));

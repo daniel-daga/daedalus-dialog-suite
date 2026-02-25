@@ -186,6 +186,10 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     if (showInstances) {
       addFromRecord(semanticModel?.instances, 'instance');
       addFromRecord(mergedSemanticModel.instances, 'instance');
+      addFromRecord(semanticModel?.npcs, 'instance');
+      addFromRecord(mergedSemanticModel.npcs, 'instance');
+      addFromRecord(semanticModel?.animations, 'instance');
+      addFromRecord(mergedSemanticModel.animations, 'instance');
 
       // Fallback source: project index NPC list (when semantic instances are unavailable)
       for (const npcName of npcList || []) {

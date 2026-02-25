@@ -1,0 +1,7 @@
+Animationen autocomplete
+Tab schließen
+Project wechseln
+Dialoge lines durchnummerieren
+NPC instanz anlegen
+"Neu laden"
+Fehlermeldungen

@@ -10,10 +10,27 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef
+  mainFieldRef,
+  index
 }) => {
+  const lineNumber = typeof index === 'number' ? index + 1 : null;
+
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      {lineNumber !== null && (
+        <Box
+          sx={{
+            minWidth: 32,
+            textAlign: 'right',
+            color: 'text.secondary',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: 500
+          }}
+          aria-label={`Dialog line ${lineNumber}`}
+        >
+          {lineNumber}.
+        </Box>
+      )}
       <FormControl size="small" sx={{ width: 150, flexShrink: 0 }}>
         <InputLabel>Speaker</InputLabel>
         <Select

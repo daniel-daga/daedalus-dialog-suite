@@ -6,6 +6,8 @@ import type { DialogAction } from '../../types/global';
 
 export interface BaseActionRendererProps {
   action: DialogAction;
+  index?: number;
+  totalActions?: number;
   npcName: string;
   handleUpdate: (updated: DialogAction) => void;
   handleDelete: () => void;

@@ -1,6 +1,8 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
+import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -8,11 +10,12 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef
+  mainFieldRef,
+  semanticModel
 }) => {
   return (
     <ActionFieldContainer>
-      <ActionTextField
+      <VariableAutocomplete
         label="NPC Instance"
         value={action.npcInstance || ''}
         onChange={(value) => handleUpdate({ ...action, npcInstance: value })}
@@ -21,6 +24,8 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 220 }}
+        semanticModel={semanticModel}
+        {...AUTOCOMPLETE_POLICIES.actions.npc}
       />
       <ActionTextField
         fullWidth
@@ -36,4 +41,3 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
 };
 
 export default InsertNpcActionRenderer;
-

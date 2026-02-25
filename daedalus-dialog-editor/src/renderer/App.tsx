@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
+import {
   Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip, IconButton,
-  List, ListItem, ListItemButton, ListItemIcon, ListItemText, Paper, Divider, CircularProgress
+  List, ListItem, ListItemButton, ListItemIcon, ListItemText, Paper, Divider, CircularProgress,
+  Snackbar, Alert
 } from '@mui/material';
-import { 
-  FolderOpen as FolderOpenIcon, 
-  Folder as FolderIcon, 
-  Save as SaveIcon, 
+import {
+  FolderOpen as FolderOpenIcon,
+  Folder as FolderIcon,
+  Save as SaveIcon,
   ListAlt as ListAltIcon,
   History as HistoryIcon,
   Error as ErrorIcon,
+  Refresh as RefreshIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   AutoAwesome as AutoAwesomeIcon
@@ -32,14 +34,15 @@ const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }
 ];
 
 const App: React.FC = () => {
-  const { openFile, activeFile, openFiles } = useEditorStore();
+  const { openFile, activeFile, openFiles, resetEditorSession } = useEditorStore();
   const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore();
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
-  
+
   const activeFileState = activeFile ? openFiles.get(activeFile) : null;
   const autoSaveError = activeFileState?.autoSaveError;
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [appError, setAppError] = useState<string | null>(null);
   const { mode, setMode } = useThemeMode();
 
   const ingestionProgress = useMemo(() => {
@@ -47,6 +50,11 @@ const App: React.FC = () => {
     if (total === 0) return 0;
     return (parsedFiles.size / total) * 100;
   }, [allDialogFiles.length, parsedFiles.size]);
+
+  const hasUnsavedChanges = useMemo(
+    () => Array.from(openFiles.values()).some((fileState) => fileState.isDirty),
+    [openFiles]
+  );
 
   useEffect(() => {
     const fetchRecent = async () => {
@@ -68,17 +76,70 @@ const App: React.FC = () => {
     return date.toLocaleTimeString();
   };
 
+  const confirmDiscardChanges = (context: string): boolean => {
+    if (!hasUnsavedChanges) {
+      return true;
+    }
+
+    return window.confirm(`You have unsaved changes. Continue and ${context}?`);
+  };
+
   const handleOpenFile = async () => {
-    const filePath = await window.editorAPI.openFileDialog();
-    if (filePath) {
-      await openFile(filePath);
+    try {
+      const filePath = await window.editorAPI.openFileDialog();
+      if (filePath) {
+        await openFile(filePath);
+      }
+    } catch (error) {
+      setAppError(`Failed to open file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const openProjectWithReset = async (nextProjectPath: string) => {
+    const isReloadingCurrentProject = !!projectPath && projectPath === nextProjectPath;
+    const context = isReloadingCurrentProject ? 'reload the project' : 'switch projects';
+
+    if (!confirmDiscardChanges(context)) {
+      return;
+    }
+
+    try {
+      resetEditorSession();
+      await openProject(nextProjectPath);
+    } catch (error) {
+      setAppError(`Failed to open project: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   const handleOpenProject = async () => {
-    const folderPath = await window.editorAPI.openProjectFolderDialog();
-    if (folderPath) {
-      await openProject(folderPath);
+    try {
+      const folderPath = await window.editorAPI.openProjectFolderDialog();
+      if (folderPath) {
+        await openProjectWithReset(folderPath);
+      }
+    } catch (error) {
+      setAppError(`Failed to choose project folder: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleReload = async () => {
+    if (projectPath) {
+      await openProjectWithReset(projectPath);
+      return;
+    }
+
+    if (!activeFile) {
+      return;
+    }
+
+    if (!confirmDiscardChanges('reload the file')) {
+      return;
+    }
+
+    try {
+      await openFile(activeFile);
+    } catch (error) {
+      setAppError(`Failed to reload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -97,7 +158,7 @@ const App: React.FC = () => {
                 </Typography>
                 {autoSaveError.errors.map((err, i) => (
                   <Typography key={i} variant="caption" sx={{ display: 'block' }}>
-                    • {err.message}
+                    - {err.message}
                   </Typography>
                 ))}
               </Box>
@@ -136,7 +197,7 @@ const App: React.FC = () => {
               sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
             />
           )}
-           <Tooltip title={isIngesting ? `Ingesting files: ${Math.round(ingestionProgress)}%` : "Ingested Files"}>
+           <Tooltip title={isIngesting ? `Ingesting files: ${Math.round(ingestionProgress)}%` : 'Ingested Files'}>
             <Box sx={{ position: 'relative', display: 'inline-flex', mr: 1, alignItems: 'center', justifyContent: 'center' }}>
               {isIngesting && (
                 <>
@@ -197,15 +258,24 @@ const App: React.FC = () => {
           <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
             Open Project
           </Button>
+          <Button
+            color="inherit"
+            onClick={() => void handleReload()}
+            disabled={!projectPath && !activeFile}
+            startIcon={<RefreshIcon />}
+            sx={{ mr: 1 }}
+          >
+            Neu laden
+          </Button>
           <Button color="inherit" onClick={handleOpenFile}>
             Open File
           </Button>
         </Toolbar>
       </AppBar>
 
-      <IngestedFilesDialog 
-        open={isIngestedFilesOpen} 
-        onClose={() => setIngestedFilesOpen(false)} 
+      <IngestedFilesDialog
+        open={isIngestedFilesOpen}
+        onClose={() => setIngestedFilesOpen(false)}
       />
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
@@ -260,13 +330,13 @@ const App: React.FC = () => {
                     <List sx={{ pt: 0, pb: 0 }}>
                       {recentProjects.map((project) => (
                         <ListItem key={project.path} disablePadding>
-                          <ListItemButton onClick={() => openProject(project.path)}>
+                          <ListItemButton onClick={() => void openProjectWithReset(project.path)}>
                             <ListItemIcon>
                               <FolderIcon />
                             </ListItemIcon>
-                            <ListItemText 
-                              primary={project.name} 
-                              secondary={project.path} 
+                            <ListItemText
+                              primary={project.name}
+                              secondary={project.path}
                               primaryTypographyProps={{ variant: 'body2', fontWeight: 'medium' }}
                               secondaryTypographyProps={{ variant: 'caption', noWrap: true }}
                             />
@@ -286,6 +356,16 @@ const App: React.FC = () => {
           )}
         </ErrorBoundary>
       </Box>
+      <Snackbar
+        open={!!appError}
+        autoHideDuration={5000}
+        onClose={() => setAppError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setAppError(null)} severity="error" sx={{ width: '100%' }}>
+          {appError}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
