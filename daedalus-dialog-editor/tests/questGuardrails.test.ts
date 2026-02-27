@@ -3,7 +3,7 @@ import {
   getQuestGuardrailDeltaWarnings,
   getNewQuestGuardrailWarnings,
   isQuestGuardrailWarningBlocking
-} from '../src/renderer/components/QuestEditor/questGuardrails';
+} from '../src/renderer/quest/domain/guardrails';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 const createModel = (functions: Record<string, any>): SemanticModel => ({

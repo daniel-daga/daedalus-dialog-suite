@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import QuestFlow from '../src/renderer/components/QuestFlow';
-import * as questCommands from '../src/renderer/components/QuestEditor/commands';
+import * as questCommands from '../src/renderer/quest/domain/commands';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 jest.mock('reactflow', () => {
@@ -92,7 +92,7 @@ jest.mock('reactflow', () => {
   };
 });
 
-jest.mock('../src/renderer/components/QuestEditor/questGraphUtils', () => ({
+jest.mock('../src/renderer/quest/domain/graph', () => ({
   buildQuestGraph: () => ({
     nodes: [
       {

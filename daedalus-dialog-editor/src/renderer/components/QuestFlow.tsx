@@ -30,15 +30,15 @@ import type { QuestGraphBuildOptions, QuestGraphEdge, QuestGraphNode } from '../
 import { useNavigation } from '../hooks/useNavigation';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
-import { buildQuestGraph } from './QuestEditor/questGraphUtils';
-import { findDialogNameForFunction } from './QuestEditor/questAnalysis';
 import {
   analyzeQuestGuardrails,
+  buildQuestGraph,
+  findDialogNameForFunction,
   getQuestGuardrailDeltaWarnings,
-  isQuestGuardrailWarningBlocking
-} from './QuestEditor/questGuardrails';
-import { executeQuestGraphCommand } from './QuestEditor/commands';
-import type { QuestGraphCommand } from './QuestEditor/commands';
+  isQuestGuardrailWarningBlocking,
+  type QuestGraphCommand
+} from '../quest/domain';
+import { QuestEditingService } from '../quest/application';
 import DialogNode from './QuestEditor/Nodes/DialogNode';
 import QuestStateNode from './QuestEditor/Nodes/QuestStateNode';
 import ConditionNode from './QuestEditor/Nodes/ConditionNode';
@@ -373,7 +373,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         return;
       }
 
-      const commandResult = executeQuestGraphCommand(
+      const commandResult = QuestEditingService.runCommand(
         {
           questName,
           model: fileState.semanticModel
@@ -434,7 +434,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         return;
       }
 
-      const sourceResult = executeQuestGraphCommand(
+      const sourceResult = QuestEditingService.runCommand(
         { questName, model: sourceState.semanticModel },
         {
           type: 'connectCondition',
@@ -454,7 +454,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       if (sourceFilePath !== targetFilePath) {
         const sourceDialogName = findDialogNameForFunction(semanticModel, sourceFunctionName);
         if (sourceDialogName) {
-          const targetResult = executeQuestGraphCommand(
+          const targetResult = QuestEditingService.runCommand(
             { questName, model: targetState.semanticModel },
             {
               type: 'addKnowsInfoRequirement',
@@ -508,7 +508,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         return;
       }
 
-      const sourceResult = executeQuestGraphCommand(
+      const sourceResult = QuestEditingService.runCommand(
         { questName, model: sourceState.semanticModel },
         {
           type: 'removeTransition',
@@ -527,7 +527,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       if (sourceFilePath !== targetFilePath) {
         const sourceDialogName = findDialogNameForFunction(semanticModel, sourceFunctionName);
         if (sourceDialogName) {
-          const targetResult = executeQuestGraphCommand(
+          const targetResult = QuestEditingService.runCommand(
             { questName, model: targetState.semanticModel },
             {
               type: 'removeKnowsInfoRequirement',
@@ -582,7 +582,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         return;
       }
 
-      const sourceResult = executeQuestGraphCommand(
+      const sourceResult = QuestEditingService.runCommand(
         { questName, model: sourceState.semanticModel },
         {
           type: 'updateTransitionText',
@@ -601,7 +601,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       if (sourceFilePath !== targetFilePath) {
         const sourceDialogName = findDialogNameForFunction(semanticModel, sourceFunctionName);
         if (sourceDialogName) {
-          const targetResult = executeQuestGraphCommand(
+          const targetResult = QuestEditingService.runCommand(
             { questName, model: targetState.semanticModel },
             {
               type: 'addKnowsInfoRequirement',

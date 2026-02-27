@@ -16,7 +16,7 @@ jest.mock('reactflow', () => {
   };
 });
 
-jest.mock('../src/renderer/components/QuestEditor/questGraphUtils', () => ({
+jest.mock('../src/renderer/quest/domain/graph', () => ({
   buildQuestGraph: () => ({ nodes: [], edges: [] })
 }));
 

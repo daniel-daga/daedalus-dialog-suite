@@ -1,4 +1,4 @@
-import { executeQuestGraphCommand } from '../src/renderer/components/QuestEditor/commands';
+import { executeQuestGraphCommand } from '../src/renderer/quest/domain/commands';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 const createModel = (): SemanticModel => ({
