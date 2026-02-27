@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daedalus Dialog Editor - Windows Download</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1220;
+        --card: #171a2b;
+        --text: #f4f6ff;
+        --muted: #a6adcc;
+        --primary: #6ea8fe;
+        --primary-hover: #8dbaff;
+        --border: #2d3350;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: radial-gradient(circle at top, #1a1f38, var(--bg) 55%);
+        color: var(--text);
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+      }
+
+      main {
+        width: min(680px, 100%);
+        background: color-mix(in hsl, var(--card) 90%, black);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 2rem;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+      }
+
+      h1 {
+        margin-top: 0;
+        font-size: clamp(1.5rem, 3vw, 2rem);
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .download {
+        margin: 1.5rem 0 1rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        background: var(--primary);
+        color: #09122e;
+        text-decoration: none;
+        font-weight: 700;
+        border-radius: 10px;
+        padding: 0.85rem 1.2rem;
+      }
+
+      .download:hover {
+        background: var(--primary-hover);
+      }
+
+      #status {
+        margin-top: 0.75rem;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+
+      code {
+        background: #0f1324;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.08rem 0.35rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Download the latest Windows build</h1>
+      <p>
+        This page always points to the newest published Windows installer from the
+        <strong>Daedalus Dialog Editor</strong> GitHub release tagged
+        <code>windows-latest</code>.
+      </p>
+      <a id="downloadLink" class="download" href="#" aria-disabled="true">Loading latest build…</a>
+      <div id="status">Checking GitHub releases…</div>
+    </main>
+
+    <script>
+      const statusEl = document.getElementById('status');
+      const linkEl = document.getElementById('downloadLink');
+
+      const [owner, repo] = window.location.pathname
+        .split('/')
+        .filter(Boolean)
+        .slice(0, 2);
+
+      async function loadLatestWindowsBuild() {
+        if (!owner || !repo) {
+          statusEl.textContent = 'Could not detect repository path from URL.';
+          linkEl.textContent = 'Download unavailable';
+          return;
+        }
+
+        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/tags/windows-latest`;
+        try {
+          const response = await fetch(apiUrl, {
+            headers: { Accept: 'application/vnd.github+json' }
+          });
+
+          if (!response.ok) {
+            throw new Error(`GitHub API returned ${response.status}`);
+          }
+
+          const release = await response.json();
+          const windowsAsset = release.assets.find((asset) => asset.name.toLowerCase().endsWith('.exe'));
+
+          if (!windowsAsset) {
+            throw new Error('No .exe asset found in windows-latest release.');
+          }
+
+          linkEl.href = windowsAsset.browser_download_url;
+          linkEl.textContent = `Download ${windowsAsset.name}`;
+          linkEl.removeAttribute('aria-disabled');
+          statusEl.textContent = `Published: ${new Date(release.published_at).toLocaleString()}`;
+        } catch (error) {
+          linkEl.textContent = 'Download unavailable';
+          statusEl.textContent = `Unable to fetch latest build: ${error.message}`;
+        }
+      }
+
+      loadLatestWindowsBuild();
+    </script>
+  </body>
+</html>

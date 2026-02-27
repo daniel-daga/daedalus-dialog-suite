@@ -3,6 +3,9 @@ name: Build Windows
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -35,8 +38,29 @@ jobs:
         npm_execpath: pnpm.cmd
       run: pnpm --filter daedalus-dialog-editor run package
 
+    - name: Normalize installer filename
+      shell: pwsh
+      run: |
+        $installer = Get-ChildItem -Path "daedalus-dialog-editor/dist" -Filter "*.exe" | Select-Object -First 1
+        if (-not $installer) {
+          throw "No .exe file found in daedalus-dialog-editor/dist"
+        }
+        Copy-Item $installer.FullName "daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe" -Force
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: daedalus-dialog-editor-windows
-        path: daedalus-dialog-editor/dist/*.exe
+        path: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
+
+    - name: Publish rolling release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: windows-latest
+        name: Latest Windows Build
+        body: |
+          Automated rolling Windows build from GitHub Actions.
+          Download `daedalus-dialog-editor-windows-latest.exe` from this release.
+        prerelease: true
+        files: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
+        make_latest: false
