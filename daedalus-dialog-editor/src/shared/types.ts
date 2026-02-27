@@ -297,6 +297,7 @@ export type DialogCondition =
 export interface DialogFunction {
   name: string;
   returnType: 'VOID' | 'INT' | 'STRING';
+  filePath?: string;
   actions: DialogAction[];
   conditions: DialogCondition[];
   calls: string[];

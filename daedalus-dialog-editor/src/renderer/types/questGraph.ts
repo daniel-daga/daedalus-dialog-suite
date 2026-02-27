@@ -14,6 +14,14 @@ export type QuestGraphEdgeKind =
   | 'transitions'
   | 'references';
 
+export type QuestGraphSourceKind =
+  | 'dialog'
+  | 'item'
+  | 'event'
+  | 'startup'
+  | 'script'
+  | 'external';
+
 export interface QuestGraphProvenance {
   filePath?: string;
   functionName?: string;
@@ -30,6 +38,10 @@ export interface QuestGraphNodeData {
   status?: string;
   variableName?: string;
   kind: QuestGraphNodeKind;
+  sourceKind?: QuestGraphSourceKind;
+  entrySurface?: boolean;
+  latentEntry?: boolean;
+  entryReason?: string;
   inferred?: boolean;
   touchesSelectedQuest?: boolean;
   provenance?: QuestGraphProvenance;
@@ -47,6 +59,7 @@ export interface QuestGraphBuildOptions {
   onlySelectedQuest?: boolean;
   hideInferredEdges?: boolean;
   showConditions?: boolean;
+  showEntrySurfacesOnly?: boolean;
 }
 
 export type QuestGraphNode = Node<QuestGraphNodeData>;

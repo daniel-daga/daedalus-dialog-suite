@@ -155,7 +155,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   const [graphOptions, setGraphOptions] = useState<QuestGraphBuildOptions>({
     onlySelectedQuest: true,
     hideInferredEdges: false,
-    showConditions: true
+    showConditions: true,
+    showEntrySurfacesOnly: false
   });
   const [connectMode, setConnectMode] = useState(false);
   const [connectKind, setConnectKind] = useState<'transition' | 'requires'>('transition');
@@ -171,6 +172,16 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   const selectedEdge = useMemo(
     () => edges.find((edge) => edge.id === selectedEdgeId) || null,
     [edges, selectedEdgeId]
+  );
+  const entrySurfaceNodes = useMemo(
+    () => nodes
+      .filter((node) => node.type !== 'group' && Boolean(node.data.entrySurface))
+      .sort((left, right) => String(left.data.label).localeCompare(String(right.data.label))),
+    [nodes]
+  );
+  const latentEntryCount = useMemo(
+    () => entrySurfaceNodes.filter((node) => Boolean(node.data.latentEntry)).length,
+    [entrySurfaceNodes]
   );
   const guardrailWarnings = useMemo(
     () => analyzeQuestGuardrails(semanticModel, questName),
@@ -223,6 +234,14 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     setSelectedNodeId(null);
     setCommandError(null);
   }, []);
+
+  const handleSelectEntrySurfaceNode = useCallback((nodeId: string) => {
+    const selected = nodes.find((node) => node.id === nodeId);
+    if (!selected || selected.type === 'group') return;
+    setSelectedNodeId(selected.id);
+    setSelectedEdgeId(null);
+    setCommandError(null);
+  }, [nodes]);
 
   const getOwnerFunctionFromCommand = (command: QuestGraphCommand): string | null => {
     switch (command.type) {
@@ -666,7 +685,12 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     await runTransitionConnectWithPreview(connection.source, connection.target, 'Continue');
   }, [connectMode, runQuestCommandWithPreview, nodes, connectKind, writableEnabled, runTransitionConnectWithPreview]);
 
-  const persistNodeMove = useCallback(async (nodeId: string, position: { x: number; y: number }, nodeType?: string) => {
+  const persistNodeMove = useCallback((
+    nodeId: string,
+    position: { x: number; y: number },
+    nodeType?: string,
+    ownerFilePath?: string
+  ) => {
     if (
       !writableEnabled ||
       !questName ||
@@ -677,15 +701,34 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       return;
     }
 
-    await runQuestCommandWithPreview({
-      type: 'moveNode',
-      nodeId,
-      position
-    }, 'Failed to persist node position.');
-  }, [questName, runQuestCommandWithPreview, writableEnabled]);
+    const resolvedOwnerFilePath = ownerFilePath || activeFile;
+    if (!resolvedOwnerFilePath) return;
 
-  const onNodeDragStop = useCallback(async (_: React.MouseEvent, node: Node) => {
-    await persistNodeMove(node.id, { x: node.position.x, y: node.position.y }, node.type);
+    const currentPosition = getQuestNodePositions(resolvedOwnerFilePath, questName).get(nodeId);
+    if (currentPosition && currentPosition.x === position.x && currentPosition.y === position.y) {
+      return;
+    }
+
+    applyQuestNodePositionWithHistory(resolvedOwnerFilePath, questName, nodeId, position);
+  }, [activeFile, applyQuestNodePositionWithHistory, getQuestNodePositions, questName, writableEnabled]);
+
+  const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
+    const ownerFilePath = (node as QuestGraphNode).data?.provenance?.filePath;
+    void persistNodeMove(node.id, { x: node.position.x, y: node.position.y }, node.type, ownerFilePath);
+  }, [persistNodeMove]);
+
+  const handlePaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const handleLiteGraphNodeMove = useCallback((
+    nodeId: string,
+    position: { x: number; y: number },
+    nodeType?: string,
+    ownerFilePath?: string
+  ) => {
+    void persistNodeMove(nodeId, position, nodeType, ownerFilePath);
   }, [persistNodeMove]);
 
   const handleSetMisState = useCallback(async (payload: { functionName: string; variableName: string; value: string }) => {
@@ -785,8 +828,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   }
 
   return (
-    <Box sx={{ height: '100%', width: '100%', display: 'flex' }}>
-      <Box sx={{ height: '100%', flexGrow: 1, display: 'flex', flexDirection: 'column', bgcolor: '#1e1e1e' }}>
+    <Box sx={{ height: '100%', width: '100%', display: 'flex', overflow: 'hidden' }}>
+      <Box sx={{ height: '100%', flexGrow: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', bgcolor: '#1e1e1e' }}>
         <Paper
           square
           elevation={0}
@@ -879,6 +922,25 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
               )}
               label="Show conditions"
             />
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  checked={!!graphOptions.showEntrySurfacesOnly}
+                  onChange={(event) => setGraphOptions((prev) => ({
+                    ...prev,
+                    showEntrySurfacesOnly: event.target.checked
+                  }))}
+                  size="small"
+                />
+              )}
+              label="Entry surfaces only"
+            />
+            {entrySurfaceNodes.length > 0 && (
+              <Typography variant="caption" sx={{ alignSelf: 'center', color: '#90caf9' }}>
+                Entry surfaces: {entrySurfaceNodes.length}
+                {latentEntryCount > 0 ? ` (${latentEntryCount} latent)` : ''}
+              </Typography>
+            )}
             {isProjectMode && (
               <Typography variant="caption" sx={{ alignSelf: 'center', color: '#999' }}>
                 Project mode: open a concrete source file to apply edits.
@@ -907,22 +969,17 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
           </Box>
         )}
 
-        <Box sx={{ flexGrow: 1 }}>
+        <Box sx={{ flexGrow: 1, minHeight: 0 }}>
           {useComfyNodeFramework ? (
             <QuestLiteGraphCanvas
               nodes={nodes}
               edges={edges}
+              selectedNodeId={selectedNodeId}
               onNodeClick={onNodeClick}
               onNodeDoubleClick={onNodeDoubleClick}
               onEdgeClick={onEdgeClick}
-              onNodeMove={(nodeId, position) => {
-                const movedNode = nodes.find((node) => node.id === nodeId);
-                void persistNodeMove(nodeId, position, movedNode?.type);
-              }}
-              onPaneClick={() => {
-                setSelectedNodeId(null);
-                setSelectedEdgeId(null);
-              }}
+              onNodeMove={handleLiteGraphNodeMove}
+              onPaneClick={handlePaneClick}
             />
           ) : (
             <ReactFlow
@@ -935,10 +992,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
               onNodeClick={onNodeClick}
               onNodeDoubleClick={onNodeDoubleClick}
               onEdgeClick={onEdgeClick}
-              onPaneClick={() => {
-                setSelectedNodeId(null);
-                setSelectedEdgeId(null);
-              }}
+              onPaneClick={handlePaneClick}
               nodeTypes={nodeTypes}
               fitView
             >
@@ -966,6 +1020,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         writableEnabled={writableEnabled}
         selectedNode={selectedNode}
         selectedEdge={selectedEdge}
+        entrySurfaceNodes={entrySurfaceNodes}
+        onSelectEntrySurfaceNode={handleSelectEntrySurfaceNode}
         onSetMisState={handleSetMisState}
         onAddTopicStatus={handleAddTopicStatus}
         onAddLogEntry={handleAddLogEntry}

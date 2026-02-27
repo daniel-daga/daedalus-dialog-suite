@@ -7,7 +7,8 @@ import type {
   QuestGraphEdge,
   QuestGraphNode,
   QuestGraphNodeKind,
-  QuestGraphProvenance
+  QuestGraphProvenance,
+  QuestGraphSourceKind
 } from '../../types/questGraph';
 
 const CHOICE_EDGE_COLOR = '#ff9800';
@@ -21,6 +22,10 @@ interface InternalNodeData {
   nodeKind: 'function' | 'external-condition';
   expression?: string;
   kind: QuestGraphNodeKind;
+  sourceKind: QuestGraphSourceKind;
+  entrySurface?: boolean;
+  latentEntry?: boolean;
+  entryReason?: string;
   inferred: boolean;
   touchesSelectedQuest: boolean;
   provenance?: QuestGraphProvenance;
@@ -57,19 +62,221 @@ const normalizeQuestStateValue = (value: string): string => {
   return value;
 };
 
+const toNodeToken = (value: string): string => {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!normalized) return 'expr';
+  return normalized.slice(0, 72);
+};
+
+const shortenExpression = (expression: string, maxLength = 56): string => {
+  if (expression.length <= maxLength) return expression;
+  return `${expression.slice(0, maxLength - 1)}...`;
+};
+
+const getConditionExpression = (cond: DialogCondition): string => {
+  if (cond.type === 'NpcKnowsInfoCondition') {
+    return `Npc_KnowsInfo(${cond.npc}, ${cond.dialogRef})`;
+  }
+  if (cond.type === 'VariableCondition') {
+    const operator = cond.operator || (cond.negated ? '!=' : '==');
+    return `${cond.variableName} ${operator} ${String(cond.value ?? '')}`.trim();
+  }
+  if (cond.type === 'NpcHasItemsCondition') {
+    return `${cond.npc} has ${cond.item}`;
+  }
+  if (cond.type === 'NpcIsInStateCondition') {
+    return `${cond.npc} ${cond.negated ? 'NOT in state' : 'in state'} ${cond.state}`;
+  }
+  if (cond.type === 'NpcIsDeadCondition') {
+    return `${cond.npc} ${cond.negated ? 'is alive' : 'is dead'}`;
+  }
+  if (cond.type === 'NpcGetDistToWpCondition') {
+    const operator = cond.operator || '<=';
+    return `Npc_GetDistToWP(${cond.npc}, ${cond.waypoint}) ${operator} ${String(cond.value ?? '')}`.trim();
+  }
+  if (cond.type === 'NpcGetTalentSkillCondition') {
+    const operator = cond.operator || '>=';
+    return `Npc_GetTalentSkill(${cond.npc}, ${cond.talent}) ${operator} ${String(cond.value ?? '')}`.trim();
+  }
+  if ('condition' in cond && typeof cond.condition === 'string') {
+    return cond.condition;
+  }
+  return cond.type || 'Condition';
+};
+
+const isTrivialConditionExpression = (expression: string): boolean => {
+  const compact = expression.trim().replace(/\s+/g, ' ').toUpperCase();
+  return (
+    compact === 'RETURN TRUE;' ||
+    compact === 'RETURN 1;' ||
+    compact === 'RETURN FALSE;' ||
+    compact === 'RETURN 0;' ||
+    compact === 'TRUE' ||
+    compact === '1' ||
+    compact === 'FALSE' ||
+    compact === '0'
+  );
+};
+
+const stripOuterParens = (value: string): string => {
+  let text = value.trim();
+  while (text.startsWith('(') && text.endsWith(')')) {
+    let depth = 0;
+    let balanced = true;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (ch === '(') depth += 1;
+      if (ch === ')') depth -= 1;
+      if (depth === 0 && i < text.length - 1) {
+        balanced = false;
+        break;
+      }
+      if (depth < 0) {
+        balanced = false;
+        break;
+      }
+    }
+    if (!balanced || depth !== 0) break;
+    text = text.slice(1, -1).trim();
+  }
+  return text;
+};
+
+const splitTopLevelBooleanExpression = (value: string): string[] => {
+  const parts: string[] = [];
+  let current = '';
+  let depth = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
+    const next = value[i + 1];
+    if (ch === '(') {
+      depth += 1;
+      current += ch;
+      continue;
+    }
+    if (ch === ')') {
+      depth = Math.max(0, depth - 1);
+      current += ch;
+      continue;
+    }
+    if (depth === 0 && ((ch === '&' && next === '&') || (ch === '|' && next === '|'))) {
+      const candidate = stripOuterParens(current);
+      if (candidate) parts.push(candidate);
+      current = '';
+      i += 1;
+      continue;
+    }
+    current += ch;
+  }
+
+  const tail = stripOuterParens(current);
+  if (tail) parts.push(tail);
+  return parts;
+};
+
+const extractRawConditionCandidates = (raw: string): string[] => {
+  const text = raw.trim();
+  if (!text) return [];
+
+  const ifCandidates: string[] = [];
+  const ifRegex = /\bif\s*\(([\s\S]*?)\)/gi;
+  let ifMatch: RegExpExecArray | null = null;
+  while ((ifMatch = ifRegex.exec(text)) !== null) {
+    const inside = (ifMatch[1] || '').trim();
+    if (!inside) continue;
+    splitTopLevelBooleanExpression(inside).forEach((part) => {
+      const normalized = stripOuterParens(part);
+      if (normalized) ifCandidates.push(normalized);
+    });
+  }
+  if (ifCandidates.length > 0) {
+    return ifCandidates;
+  }
+
+  const returnMatch = text.match(/^return\s+(.+?);?$/i);
+  if (returnMatch?.[1]) {
+    return splitTopLevelBooleanExpression(returnMatch[1].trim());
+  }
+
+  return splitTopLevelBooleanExpression(text);
+};
+
+const getRawConditionExpressionsForFunction = (
+  funcName: string,
+  semanticModel: SemanticModel
+): string[] => {
+  const context = getDialogContextForFunction(funcName, semanticModel);
+  const expressions: string[] = [];
+  const seen = new Set<string>();
+
+  const pushExpr = (value: string | undefined) => {
+    if (!value) return;
+    const candidates = extractRawConditionCandidates(value);
+    candidates.forEach((candidate) => {
+      const trimmed = candidate.trim();
+      if (!trimmed || isTrivialConditionExpression(trimmed)) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      expressions.push(trimmed);
+    });
+  };
+
+  const conditionFuncName = context.conditionFunctionName;
+  if (conditionFuncName) {
+    const conditionFunc = semanticModel.functions?.[conditionFuncName];
+    const initialCount = expressions.length;
+    conditionFunc?.actions?.forEach((action: DialogAction) => {
+      if ('action' in action && typeof action.action === 'string') {
+        pushExpr(action.action);
+      }
+    });
+    const hasParsedConditions = Boolean(conditionFunc?.conditions?.length);
+    if (!hasParsedConditions && expressions.length === initialCount) {
+      pushExpr(`${conditionFuncName}()`);
+    }
+  }
+
+  if (context.dialogName) {
+    const dialog = semanticModel.dialogs?.[context.dialogName];
+    const conditionProp = dialog?.properties?.condition;
+    if (typeof conditionProp === 'string') {
+      const normalizedCondRef = conditionFuncName?.toLowerCase();
+      if (!normalizedCondRef || normalizedCondRef !== conditionProp.toLowerCase()) {
+        pushExpr(conditionProp);
+      }
+    }
+  }
+
+  return expressions;
+};
+
+const getFunctionRefName = (candidate: unknown): string | undefined => {
+  if (typeof candidate === 'string') return candidate;
+  if (candidate && typeof candidate === 'object') {
+    const maybeName = (candidate as { name?: unknown }).name;
+    if (typeof maybeName === 'string') return maybeName;
+  }
+  return undefined;
+};
+
 const getDialogContextForFunction = (
   funcName: string,
   semanticModel: SemanticModel
-): { npc: string; dialogName?: string } => {
+): { npc: string; dialogName?: string; conditionFunctionName?: string } => {
   for (const [dialogName, dialog] of Object.entries(semanticModel.dialogs || {})) {
-    const info = dialog.properties.information;
+    const infoName = getFunctionRefName(dialog.properties.information);
     if (
-      (typeof info === 'string' && info.toLowerCase() === funcName.toLowerCase()) ||
-      (typeof info === 'object' && info?.name.toLowerCase() === funcName.toLowerCase())
+      typeof infoName === 'string' &&
+      infoName.toLowerCase() === funcName.toLowerCase()
     ) {
       return {
         npc: (dialog.properties.npc as string) || 'Unknown',
-        dialogName
+        dialogName,
+        conditionFunctionName: getFunctionRefName(dialog.properties.condition)
       };
     }
   }
@@ -77,8 +284,57 @@ const getDialogContextForFunction = (
   return { npc: 'Global/Other' };
 };
 
+const getEffectiveConditionsForFunction = (
+  funcName: string,
+  semanticModel: SemanticModel
+): DialogCondition[] => {
+  const func = semanticModel.functions?.[funcName];
+  if (!func) return [];
+
+  const mergedConditions: DialogCondition[] = [...(func.conditions || [])];
+  const context = getDialogContextForFunction(funcName, semanticModel);
+  if (!context.conditionFunctionName || context.conditionFunctionName === funcName) {
+    return mergedConditions;
+  }
+
+  const conditionFunc = semanticModel.functions?.[context.conditionFunctionName];
+  if (!conditionFunc?.conditions?.length) {
+    return mergedConditions;
+  }
+
+  mergedConditions.push(...conditionFunc.conditions);
+  return mergedConditions;
+};
+
 export const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): string | null => {
   return getDialogContextForFunction(funcName, semanticModel).npc || null;
+};
+
+const getFunctionFilePath = (func: unknown): string | undefined => {
+  const candidate = (func as { filePath?: unknown })?.filePath;
+  return typeof candidate === 'string' ? candidate : undefined;
+};
+
+const inferFunctionSourceKind = (
+  funcName: string,
+  hasDialogContext: boolean,
+  filePath?: string
+): QuestGraphSourceKind => {
+  if (hasDialogContext) return 'dialog';
+
+  const lowerPath = filePath?.toLowerCase();
+  if (lowerPath) {
+    if (lowerPath.includes('\\content\\items\\')) return 'item';
+    if (lowerPath.includes('\\content\\story\\events\\')) return 'event';
+    if (lowerPath.includes('\\startup.d') || lowerPath.includes('\\content\\story\\startup')) return 'startup';
+    if (lowerPath.includes('\\content\\story\\dialoge\\')) return 'dialog';
+    return 'script';
+  }
+
+  if (/^use_/i.test(funcName)) return 'item';
+  if (/^evt_/i.test(funcName) || /_trigger/i.test(funcName)) return 'event';
+  if (/startup/i.test(funcName)) return 'startup';
+  return 'script';
 };
 
 const identifyQuestNodes = (
@@ -101,11 +357,18 @@ const identifyQuestNodes = (
   };
 
   Object.values(semanticModel.functions || {}).forEach((func) => {
+    const context = getDialogContextForFunction(func.name, semanticModel);
+    const effectiveConditions = getEffectiveConditionsForFunction(func.name, semanticModel);
+    const rawConditionExpressions = getRawConditionExpressionsForFunction(func.name, semanticModel);
     let isRelevant = false;
     let type: InternalNodeData['type'] = 'check';
     let description = '';
     let kind: QuestGraphNodeKind = 'dialog';
     let touchesSelectedQuest = false;
+    let writesSelectedQuest = false;
+    let hasQuestPrecondition = false;
+    let hasNonQuestPrecondition = false;
+    const nonQuestConditionKinds = new Set<string>();
 
     func.actions?.forEach((action: DialogAction) => {
       if (action.type === 'SetVariableAction' && action.operator === '=') {
@@ -116,6 +379,7 @@ const identifyQuestNodes = (
       if ('topic' in action && action.topic === questName) {
         isRelevant = true;
         touchesSelectedQuest = true;
+        writesSelectedQuest = true;
 
         if (action.type === 'CreateTopic') {
           type = 'start';
@@ -156,6 +420,7 @@ const identifyQuestNodes = (
       if (action.type === 'SetVariableAction' && action.variableName === misVarName) {
         isRelevant = true;
         touchesSelectedQuest = true;
+        writesSelectedQuest = true;
         kind = 'misState';
         if (action.operator === '=') {
           description = `Set ${misVarName} = ${String(action.value)}`;
@@ -163,15 +428,48 @@ const identifyQuestNodes = (
       }
     });
 
-    func.conditions?.forEach((cond: DialogCondition) => {
+    effectiveConditions.forEach((cond: DialogCondition) => {
       if (cond.type === 'VariableCondition' && cond.variableName === misVarName) {
         isRelevant = true;
         touchesSelectedQuest = true;
+        hasQuestPrecondition = true;
+        return;
       }
+      hasNonQuestPrecondition = true;
+      nonQuestConditionKinds.add(cond.type || 'Condition');
     });
+    if (rawConditionExpressions.length > 0) {
+      hasNonQuestPrecondition = true;
+      nonQuestConditionKinds.add('Condition');
+    }
 
     if (isRelevant) {
-      const context = getDialogContextForFunction(func.name, semanticModel);
+      const sourceKind = inferFunctionSourceKind(
+        func.name,
+        Boolean(context.dialogName),
+        getFunctionFilePath(func)
+      );
+      const entrySurface = writesSelectedQuest && !hasQuestPrecondition;
+      const latentEntry = entrySurface && (sourceKind !== 'dialog' || hasNonQuestPrecondition);
+      let entryReason: string | undefined;
+      if (entrySurface) {
+        const reasonParts: string[] = [];
+        if (sourceKind !== 'dialog') {
+          reasonParts.push(`source=${sourceKind}`);
+        }
+        if (hasNonQuestPrecondition) {
+          const preconditionKinds = Array.from(nonQuestConditionKinds.values());
+          if (preconditionKinds.length > 0) {
+            reasonParts.push(`gated by ${preconditionKinds.join(', ')}`);
+          } else {
+            reasonParts.push('gated by non-quest condition(s)');
+          }
+        } else {
+          reasonParts.push('no selected-quest precondition');
+        }
+        entryReason = reasonParts.join('; ');
+      }
+
       nodeDataMap.set(func.name, {
         id: func.name,
         type,
@@ -180,9 +478,14 @@ const identifyQuestNodes = (
         description,
         nodeKind: 'function',
         kind,
+        sourceKind,
+        entrySurface,
+        latentEntry,
+        entryReason,
         inferred: false,
         touchesSelectedQuest,
         provenance: {
+          filePath: getFunctionFilePath(func),
           functionName: func.name,
           dialogName: context.dialogName
         }
@@ -218,9 +521,18 @@ const identifyQuestNodes = (
           description: 'Indirect prerequisite',
           nodeKind: 'function',
           kind: 'dialog',
+          sourceKind: inferFunctionSourceKind(
+            func.name,
+            Boolean(context.dialogName),
+            getFunctionFilePath(func)
+          ),
+          entrySurface: false,
+          latentEntry: false,
+          entryReason: undefined,
           inferred: true,
           touchesSelectedQuest: false,
           provenance: {
+            filePath: getFunctionFilePath(func),
             functionName: func.name,
             dialogName: context.dialogName
           }
@@ -266,9 +578,18 @@ const identifyQuestNodes = (
             description: 'Indirect prerequisite',
             nodeKind: 'function',
             kind: 'dialog',
+            sourceKind: inferFunctionSourceKind(
+              producerId,
+              Boolean(context.dialogName),
+              getFunctionFilePath(producerFunc)
+            ),
+            entrySurface: false,
+            latentEntry: false,
+            entryReason: undefined,
             inferred: true,
             touchesSelectedQuest: false,
             provenance: {
+              filePath: getFunctionFilePath(producerFunc),
               functionName: producerId,
               dialogName: context.dialogName
             }
@@ -304,6 +625,10 @@ const buildQuestEdges = (
   nodeDataMap.forEach((consumerData, consumerId) => {
     const func = semanticModel.functions[consumerId];
     if (!func) return;
+    const effectiveConditions = getEffectiveConditionsForFunction(consumerId, semanticModel);
+    const rawConditionExpressions = getRawConditionExpressionsForFunction(consumerId, semanticModel);
+    const seenConditionExpressions = new Set<string>();
+    let addedConditionEdge = false;
 
     func.actions?.forEach((action: DialogAction) => {
       if (action.type !== 'Choice') return;
@@ -341,295 +666,248 @@ const buildQuestEdges = (
       addAdjacency(consumerId, targetFunc);
     });
 
-    func.conditions?.forEach((cond: DialogCondition) => {
+    effectiveConditions.forEach((cond: DialogCondition, condIndex: number) => {
+      const expression = getConditionExpression(cond).trim();
+      if (expression) {
+        seenConditionExpressions.add(expression.toLowerCase());
+      }
+      const condToken = toNodeToken(expression || cond.type || `condition_${condIndex}`);
+      const conditionNodeId = `condition-${consumerId}-${condIndex}-${condToken}`;
+      const conditionLabel = cond.type
+        ? cond.type.replace(/Condition$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')
+        : 'Condition';
+
+      if (!unresolvedConditionNodes.has(conditionNodeId)) {
+        unresolvedConditionNodes.set(conditionNodeId, {
+          id: conditionNodeId,
+          type: 'check',
+          label: conditionLabel,
+          npc: 'External/World',
+          description: `${conditionLabel} prerequisite`,
+          nodeKind: 'external-condition',
+          expression,
+          kind: 'condition',
+          sourceKind: 'external',
+          entrySurface: false,
+          latentEntry: false,
+          entryReason: undefined,
+          inferred: false,
+          touchesSelectedQuest: false
+        });
+      }
+
+      edges.push({
+        id: `condition-edge-${conditionNodeId}-${consumerId}`,
+        source: conditionNodeId,
+        target: consumerId,
+        sourceHandle: 'out-bool',
+        targetHandle: 'in-condition',
+        label: `requires ${shortenExpression(expression || conditionLabel, 40)}`,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#ffb74d', strokeWidth: 2 },
+        labelStyle: { fill: '#ffb74d', fontSize: 10 },
+        data: {
+          kind: 'requires',
+          inferred: false,
+          expression,
+          operator: cond.type === 'VariableCondition'
+            ? (cond.operator as '==' | '!=' | '<' | '>' | '<=' | '>=' | undefined)
+            : undefined,
+          provenance: {
+            functionName: consumerId,
+            dialogName: consumerData.provenance?.dialogName
+          }
+        }
+      });
+      addedConditionEdge = true;
+      addAdjacency(conditionNodeId, consumerId);
+
       if (cond.type === 'NpcKnowsInfoCondition') {
         const producerDialogName = cond.dialogRef;
         const producerDialog = semanticModel.dialogs[producerDialogName];
+        let producerFunc: string | null = null;
         if (producerDialog) {
-          let producerFunc: string | null = null;
           const info = producerDialog.properties.information;
           if (typeof info === 'string') producerFunc = info;
           else if (typeof info === 'object' && info?.name) producerFunc = info.name;
-
-          if (producerFunc && nodeDataMap.has(producerFunc)) {
-            edges.push({
-              id: `knows-${producerFunc}-${consumerId}`,
-              source: producerFunc,
-              target: consumerId,
-              sourceHandle: 'out-finished',
-              targetHandle: 'in-condition',
-              label: `requires knows ${producerDialogName}`,
-              type: 'smoothstep',
-              markerEnd: { type: MarkerType.ArrowClosed },
-              style: { stroke: '#b1b1b7', strokeWidth: 2 },
-              labelStyle: { fill: '#b1b1b7', fontSize: 10 },
-              data: {
-                kind: 'requires',
-                inferred: nodeDataMap.get(producerFunc)?.inferred || false,
-                expression: `Npc_KnowsInfo(..., ${producerDialogName})`,
-                provenance: {
-                  functionName: consumerId,
-                  dialogName: consumerData.provenance?.dialogName
-                }
-              }
-            });
-            addAdjacency(producerFunc, consumerId);
-          } else {
-            const externalId = `external-knows-${consumerId}-${producerDialogName}`;
-            if (!unresolvedConditionNodes.has(externalId)) {
-              unresolvedConditionNodes.set(externalId, {
-                id: externalId,
-                type: 'check',
-                label: `Knows ${producerDialogName}`,
-                npc: 'External/World',
-                description: 'Implicit prerequisite',
-                nodeKind: 'external-condition',
-                expression: `Npc_KnowsInfo(..., ${producerDialogName})`,
-                kind: 'condition',
-                inferred: true,
-                touchesSelectedQuest: false
-              });
-            }
-
-            edges.push({
-              id: `knows-external-${externalId}-${consumerId}`,
-              source: externalId,
-              target: consumerId,
-              sourceHandle: 'out-bool',
-              targetHandle: 'in-condition',
-              label: `requires knows ${producerDialogName}`,
-              type: 'smoothstep',
-              markerEnd: { type: MarkerType.ArrowClosed },
-              style: { stroke: '#b1b1b7', strokeWidth: 2, strokeDasharray: '3,3' },
-              labelStyle: { fill: '#b1b1b7', fontSize: 10 },
-              data: {
-                kind: 'requires',
-                inferred: true,
-                expression: `Npc_KnowsInfo(..., ${producerDialogName})`,
-                provenance: {
-                  functionName: consumerId,
-                  dialogName: consumerData.provenance?.dialogName
-                }
-              }
-            });
-            addAdjacency(externalId, consumerId);
-          }
-        }
-      }
-
-      if (cond.type === 'VariableCondition') {
-        const variableName = cond.variableName;
-        const operator = cond.operator;
-        const rawValue = String(cond.value);
-        const expression = `${variableName} ${operator} ${rawValue}`;
-
-        if (operator === '==') {
-          const normalizedValue =
-            variableName === misVarName ? normalizeQuestStateValue(rawValue) : rawValue;
-
-          const valueMap = producersByVariableAndValue.get(variableName);
-          if (valueMap) {
-            const producers = valueMap.get(normalizedValue) || new Set<string>();
-            producers.forEach((producerId) => {
-              if (producerId === consumerId || !nodeDataMap.has(producerId)) return;
-              const producerNode = nodeDataMap.get(producerId)!;
-
-              edges.push({
-                id: `var-${variableName}-${producerId}-${consumerId}`,
-                source: producerId,
-                target: consumerId,
-                sourceHandle: 'out-state',
-                targetHandle: 'in-trigger',
-                label: `requires ${expression}`,
-                type: 'smoothstep',
-                animated: true,
-                markerEnd: { type: MarkerType.ArrowClosed },
-                style: { stroke: '#2196f3', strokeWidth: 2 },
-                labelStyle: { fill: '#2196f3', fontSize: 10 },
-                data: {
-                  kind: 'requires',
-                  inferred: producerNode.inferred,
-                  expression,
-                  operator,
-                  provenance: {
-                    functionName: consumerId,
-                    dialogName: consumerData.provenance?.dialogName
-                  }
-                }
-              });
-              addAdjacency(producerId, consumerId);
-            });
-
-            if (producers.size === 0) {
-              const externalId = `external-cond-${consumerId}-${variableName}-${operator}-${normalizedValue}`;
-              if (!unresolvedConditionNodes.has(externalId)) {
-                unresolvedConditionNodes.set(externalId, {
-                  id: externalId,
-                  type: 'check',
-                  label: expression,
-                  npc: 'External/World',
-                  description: 'Unresolved condition source',
-                  nodeKind: 'external-condition',
-                  expression,
-                  kind: 'condition',
-                  inferred: true,
-                  touchesSelectedQuest: false
-                });
-              }
-
-              edges.push({
-                id: `external-var-${externalId}-${consumerId}`,
-                source: externalId,
-                target: consumerId,
-                sourceHandle: 'out-bool',
-                targetHandle: 'in-condition',
-                label: `requires ${expression}`,
-                type: 'smoothstep',
-                markerEnd: { type: MarkerType.ArrowClosed },
-                style: { stroke: '#ffb74d', strokeWidth: 2, strokeDasharray: '3,3' },
-                labelStyle: { fill: '#ffb74d', fontSize: 10 },
-                data: {
-                  kind: 'requires',
-                  inferred: true,
-                  expression,
-                  operator,
-                  provenance: {
-                    functionName: consumerId,
-                    dialogName: consumerData.provenance?.dialogName
-                  }
-                }
-              });
-              addAdjacency(externalId, consumerId);
-            }
-          }
-          return;
         }
 
-        if (operator === '!=') {
-          const externalId = `external-cond-${consumerId}-${variableName}-${operator}-${rawValue}`;
-          if (!unresolvedConditionNodes.has(externalId)) {
-            unresolvedConditionNodes.set(externalId, {
-              id: externalId,
-              type: 'check',
-              label: expression,
-              npc: 'External/World',
-              description: 'Unresolved inequality condition source',
-              nodeKind: 'external-condition',
-              expression,
-              kind: 'condition',
-              inferred: true,
-              touchesSelectedQuest: false
-            });
-          }
-
+        if (producerFunc && nodeDataMap.has(producerFunc)) {
           edges.push({
-            id: `external-var-${externalId}-${consumerId}`,
-            source: externalId,
+            id: `knows-${producerFunc}-${consumerId}`,
+            source: producerFunc,
             target: consumerId,
-            sourceHandle: 'out-bool',
+            sourceHandle: 'out-finished',
             targetHandle: 'in-condition',
-            label: `requires ${expression}`,
+            label: `requires knows ${producerDialogName}`,
             type: 'smoothstep',
             markerEnd: { type: MarkerType.ArrowClosed },
-            style: { stroke: '#4db6ac', strokeWidth: 2, strokeDasharray: '3,3' },
-            labelStyle: { fill: '#4db6ac', fontSize: 10 },
+            style: { stroke: '#b1b1b7', strokeWidth: 2, strokeDasharray: '3,3' },
+            labelStyle: { fill: '#b1b1b7', fontSize: 10 },
             data: {
               kind: 'requires',
-              inferred: true,
-              expression,
-              operator,
+              inferred: nodeDataMap.get(producerFunc)?.inferred || false,
+              expression: `Npc_KnowsInfo(..., ${producerDialogName})`,
               provenance: {
                 functionName: consumerId,
                 dialogName: consumerData.provenance?.dialogName
               }
             }
           });
-          addAdjacency(externalId, consumerId);
-          return;
+          addAdjacency(producerFunc, consumerId);
         }
-
-        const externalId = `external-cond-${consumerId}-${variableName}-${operator}-${rawValue}`;
-        if (!unresolvedConditionNodes.has(externalId)) {
-          unresolvedConditionNodes.set(externalId, {
-            id: externalId,
-            type: 'check',
-            label: expression,
-            npc: 'External/World',
-            description: `Read-only condition (${operator})`,
-            nodeKind: 'external-condition',
-            expression,
-            kind: 'condition',
-            inferred: true,
-            touchesSelectedQuest: false
-          });
-        }
-
-        edges.push({
-          id: `external-var-${externalId}-${consumerId}`,
-          source: externalId,
-          target: consumerId,
-          sourceHandle: 'out-bool',
-          targetHandle: 'in-condition',
-          label: `requires ${expression}`,
-          type: 'smoothstep',
-          markerEnd: { type: MarkerType.ArrowClosed },
-          style: { stroke: '#9575cd', strokeWidth: 2, strokeDasharray: '3,3' },
-          labelStyle: { fill: '#9575cd', fontSize: 10 },
-          data: {
-            kind: 'requires',
-            inferred: true,
-            expression,
-            operator,
-            provenance: {
-              functionName: consumerId,
-              dialogName: consumerData.provenance?.dialogName
-            }
-          }
-        });
-        addAdjacency(externalId, consumerId);
+        return;
       }
 
-      if (cond.type === 'NpcHasItemsCondition') {
-        const externalId = `external-item-${consumerId}-${cond.npc}-${cond.item}`;
-        if (!unresolvedConditionNodes.has(externalId)) {
-          unresolvedConditionNodes.set(externalId, {
-            id: externalId,
-            type: 'check',
-            label: `${cond.item}`,
-            npc: 'External/World',
-            description: 'Item possession prerequisite',
-            nodeKind: 'external-condition',
-            expression: `${cond.npc} has ${cond.item}`,
-            kind: 'condition',
-            inferred: true,
-            touchesSelectedQuest: false
-          });
-        }
+      if (cond.type === 'VariableCondition') {
+        const variableName = cond.variableName;
+        const operator = cond.operator || (cond.negated ? '!=' : '==');
+        if (operator !== '==') return;
 
-        edges.push({
-          id: `external-item-edge-${externalId}-${consumerId}`,
-          source: externalId,
-          target: consumerId,
-          sourceHandle: 'out-bool',
-          targetHandle: 'in-condition',
-          label: `requires ${cond.item}`,
-          type: 'smoothstep',
-          markerEnd: { type: MarkerType.ArrowClosed },
-          style: { stroke: '#ffb74d', strokeWidth: 2, strokeDasharray: '3,3' },
-          labelStyle: { fill: '#ffb74d', fontSize: 10 },
-          data: {
-            kind: 'requires',
-            inferred: true,
-            expression: `${cond.npc} has ${cond.item}`,
-            provenance: {
-              functionName: consumerId,
-              dialogName: consumerData.provenance?.dialogName
+        const rawValue = String(cond.value);
+        const normalizedValue =
+          variableName === misVarName ? normalizeQuestStateValue(rawValue) : rawValue;
+        const valueMap = producersByVariableAndValue.get(variableName);
+        if (!valueMap) return;
+
+        const producers = valueMap.get(normalizedValue) || new Set<string>();
+        producers.forEach((producerId) => {
+          if (producerId === consumerId || !nodeDataMap.has(producerId)) return;
+          const producerNode = nodeDataMap.get(producerId)!;
+          edges.push({
+            id: `var-${variableName}-${producerId}-${consumerId}`,
+            source: producerId,
+            target: consumerId,
+            sourceHandle: 'out-state',
+            targetHandle: 'in-condition',
+            label: `supports ${variableName} == ${rawValue}`,
+            type: 'smoothstep',
+            animated: true,
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { stroke: '#2196f3', strokeWidth: 2, strokeDasharray: '3,3' },
+            labelStyle: { fill: '#2196f3', fontSize: 10 },
+            data: {
+              kind: 'requires',
+              inferred: producerNode.inferred,
+              expression: `${variableName} ${operator} ${rawValue}`,
+              operator: operator as '==' | '!=' | '<' | '>' | '<=' | '>=' | undefined,
+              provenance: {
+                functionName: consumerId,
+                dialogName: consumerData.provenance?.dialogName
+              }
             }
-          }
+          });
+          addAdjacency(producerId, consumerId);
         });
-        addAdjacency(externalId, consumerId);
       }
     });
+
+    rawConditionExpressions.forEach((expression, rawIndex) => {
+      const normalizedExpr = expression.trim();
+      if (!normalizedExpr) return;
+      const signature = normalizedExpr.toLowerCase();
+      if (seenConditionExpressions.has(signature)) return;
+      seenConditionExpressions.add(signature);
+
+      const condToken = toNodeToken(normalizedExpr);
+      const conditionNodeId = `condition-raw-${consumerId}-${rawIndex}-${condToken}`;
+      if (!unresolvedConditionNodes.has(conditionNodeId)) {
+        unresolvedConditionNodes.set(conditionNodeId, {
+          id: conditionNodeId,
+          type: 'check',
+          label: 'Condition',
+          npc: 'External/World',
+          description: 'Condition function prerequisite',
+          nodeKind: 'external-condition',
+          expression: normalizedExpr,
+          kind: 'condition',
+          sourceKind: 'external',
+          entrySurface: false,
+          latentEntry: false,
+          entryReason: undefined,
+          inferred: false,
+          touchesSelectedQuest: false
+        });
+      }
+
+      edges.push({
+        id: `condition-raw-edge-${conditionNodeId}-${consumerId}`,
+        source: conditionNodeId,
+        target: consumerId,
+        sourceHandle: 'out-bool',
+        targetHandle: 'in-condition',
+        label: `requires ${shortenExpression(normalizedExpr, 40)}`,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#ffa726', strokeWidth: 2 },
+        labelStyle: { fill: '#ffa726', fontSize: 10 },
+        data: {
+          kind: 'requires',
+          inferred: false,
+          expression: normalizedExpr,
+          provenance: {
+            functionName: consumerId,
+            dialogName: consumerData.provenance?.dialogName
+          }
+        }
+      });
+      addedConditionEdge = true;
+      addAdjacency(conditionNodeId, consumerId);
+    });
+
+    if (consumerData.entrySurface && !addedConditionEdge) {
+      const entryToken = toNodeToken(consumerData.entryReason || consumerData.sourceKind || 'world_trigger');
+      const externalId = `external-entry-${consumerId}-${entryToken}`;
+      if (!unresolvedConditionNodes.has(externalId)) {
+        const triggerLabel = consumerData.sourceKind === 'item'
+          ? 'Item Trigger'
+          : consumerData.sourceKind === 'event'
+            ? 'Event Trigger'
+            : consumerData.sourceKind === 'startup'
+              ? 'Startup Trigger'
+              : 'World Trigger';
+        unresolvedConditionNodes.set(externalId, {
+          id: externalId,
+          type: 'check',
+          label: triggerLabel,
+          npc: 'External/World',
+          description: consumerData.entryReason || 'Implicit entry trigger',
+          nodeKind: 'external-condition',
+          expression: consumerData.entryReason || triggerLabel,
+          kind: 'condition',
+          sourceKind: 'external',
+          entrySurface: false,
+          latentEntry: false,
+          entryReason: undefined,
+          inferred: true,
+          touchesSelectedQuest: false
+        });
+      }
+
+      edges.push({
+        id: `external-entry-edge-${externalId}-${consumerId}`,
+        source: externalId,
+        target: consumerId,
+        sourceHandle: 'out-bool',
+        targetHandle: 'in-condition',
+        label: 'entry trigger',
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#81c784', strokeWidth: 2, strokeDasharray: '3,3' },
+        labelStyle: { fill: '#81c784', fontSize: 10 },
+        data: {
+          kind: 'requires',
+          inferred: true,
+          expression: consumerData.entryReason || 'entry trigger',
+          provenance: {
+            functionName: consumerId,
+            dialogName: consumerData.provenance?.dialogName
+          }
+        }
+      });
+      addAdjacency(externalId, consumerId);
+    }
   });
 
   unresolvedConditionNodes.forEach((nodeData, nodeId) => {
@@ -650,7 +928,8 @@ const filterGraph = (
   const {
     onlySelectedQuest = false,
     hideInferredEdges = false,
-    showConditions = true
+    showConditions = true,
+    showEntrySurfacesOnly = false
   } = options || {};
 
   const selectedNodeDataMap = new Map(nodes);
@@ -677,6 +956,32 @@ const filterGraph = (
         selectedNodeDataMap.delete(id);
       }
     }
+    selectedEdges = selectedEdges.filter(
+      (edge) => selectedNodeDataMap.has(edge.source) && selectedNodeDataMap.has(edge.target)
+    );
+  }
+
+  if (showEntrySurfacesOnly) {
+    const keepNodeIds = new Set<string>();
+    for (const [nodeId, data] of selectedNodeDataMap.entries()) {
+      if (data.entrySurface) {
+        keepNodeIds.add(nodeId);
+      }
+    }
+
+    selectedEdges.forEach((edge) => {
+      if (keepNodeIds.has(edge.source) || keepNodeIds.has(edge.target)) {
+        keepNodeIds.add(edge.source);
+        keepNodeIds.add(edge.target);
+      }
+    });
+
+    for (const nodeId of Array.from(selectedNodeDataMap.keys())) {
+      if (!keepNodeIds.has(nodeId)) {
+        selectedNodeDataMap.delete(nodeId);
+      }
+    }
+
     selectedEdges = selectedEdges.filter(
       (edge) => selectedNodeDataMap.has(edge.source) && selectedNodeDataMap.has(edge.target)
     );
@@ -783,6 +1088,10 @@ const calculateDagreLayout = (
         status: data.description,
         variableName: semanticModel.variables?.[misVarName] ? misVarName : undefined,
         kind: data.kind,
+        sourceKind: data.sourceKind,
+        entrySurface: data.entrySurface,
+        latentEntry: data.latentEntry,
+        entryReason: data.entryReason,
         inferred: data.inferred,
         touchesSelectedQuest: data.touchesSelectedQuest,
         provenance: data.provenance

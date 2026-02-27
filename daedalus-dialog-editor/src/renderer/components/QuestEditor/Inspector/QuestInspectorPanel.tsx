@@ -7,6 +7,8 @@ interface QuestInspectorPanelProps {
   writableEnabled?: boolean;
   selectedNode: QuestGraphNode | null;
   selectedEdge: QuestGraphEdge | null;
+  entrySurfaceNodes: QuestGraphNode[];
+  onSelectEntrySurfaceNode: (nodeId: string) => void;
   onSetMisState: (payload: { functionName: string; variableName: string; value: string }) => void;
   onAddTopicStatus: (payload: { functionName: string; topic: string; status: string }) => void;
   onAddLogEntry: (payload: { functionName: string; topic: string; text: string }) => void;
@@ -35,6 +37,8 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   writableEnabled = true,
   selectedNode,
   selectedEdge,
+  entrySurfaceNodes,
+  onSelectEntrySurfaceNode,
   onSetMisState,
   onAddTopicStatus,
   onAddLogEntry,
@@ -54,6 +58,41 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   const [originalEdgeVariable, setOriginalEdgeVariable] = useState('');
   const [originalEdgeValue, setOriginalEdgeValue] = useState('');
   const [transitionText, setTransitionText] = useState('');
+  const sourceKindOrder = ['item', 'event', 'dialog', 'startup', 'script', 'external'] as const;
+  const groupedEntrySurfaces = useMemo(() => {
+    const grouped = new Map<string, QuestGraphNode[]>();
+    for (const node of entrySurfaceNodes) {
+      const sourceKey = node.data.sourceKind || 'unknown';
+      if (!grouped.has(sourceKey)) {
+        grouped.set(sourceKey, []);
+      }
+      grouped.get(sourceKey)!.push(node);
+    }
+
+    const orderedGroups: Array<{ source: string; nodes: QuestGraphNode[] }> = [];
+    for (const source of sourceKindOrder) {
+      const nodesForSource = grouped.get(source);
+      if (!nodesForSource?.length) continue;
+      orderedGroups.push({
+        source,
+        nodes: [...nodesForSource].sort((left, right) => String(left.data.label).localeCompare(String(right.data.label)))
+      });
+      grouped.delete(source);
+    }
+
+    for (const [source, nodesForSource] of grouped.entries()) {
+      orderedGroups.push({
+        source,
+        nodes: [...nodesForSource].sort((left, right) => String(left.data.label).localeCompare(String(right.data.label)))
+      });
+    }
+
+    return orderedGroups;
+  }, [entrySurfaceNodes]);
+  const latentEntryCount = useMemo(
+    () => entrySurfaceNodes.filter((node) => Boolean(node.data.latentEntry)).length,
+    [entrySurfaceNodes]
+  );
   const parsedRequiresCondition = useMemo(() => {
     if (!selectedEdge || selectedEdge.data?.kind !== 'requires') return null;
     const expression = String(selectedEdge.data.expression || '');
@@ -163,9 +202,57 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   );
 
   return (
-    <Paper square elevation={0} sx={{ width: 340, borderLeft: 1, borderColor: 'divider', overflow: 'auto' }}>
+    <Paper square elevation={0} sx={{ width: 340, height: '100%', borderLeft: 1, borderColor: 'divider', overflow: 'auto' }}>
       <Box sx={{ p: 2 }}>
         <Typography variant="h6" sx={{ mb: 1 }}>Inspector</Typography>
+        {entrySurfaceNodes.length > 0 && (
+          <Stack spacing={1.25} sx={{ mb: 2 }}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+              <Typography variant="subtitle2">
+                Entry Surfaces ({entrySurfaceNodes.length})
+              </Typography>
+              {latentEntryCount > 0 && (
+                <Chip size="small" color="warning" label={`Latent: ${latentEntryCount}`} />
+              )}
+            </Stack>
+            <Box sx={{ maxHeight: 220, overflow: 'auto', pr: 0.5 }}>
+              <Stack spacing={1}>
+                {groupedEntrySurfaces.map((group) => (
+                  <Stack key={group.source} spacing={0.5}>
+                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+                      {group.source} ({group.nodes.length})
+                    </Typography>
+                    {group.nodes.map((node) => (
+                      <Button
+                        key={node.id}
+                        size="small"
+                        variant={selectedNode?.id === node.id ? 'contained' : 'text'}
+                        onClick={() => onSelectEntrySurfaceNode(node.id)}
+                        sx={{
+                          justifyContent: 'space-between',
+                          textTransform: 'none',
+                          px: 1,
+                          minHeight: 28
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}
+                        >
+                          {node.data.label}
+                        </Typography>
+                        {node.data.latentEntry && (
+                          <Chip size="small" color="warning" label="latent" sx={{ height: 16, fontSize: 9 }} />
+                        )}
+                      </Button>
+                    ))}
+                  </Stack>
+                ))}
+              </Stack>
+            </Box>
+            <Divider />
+          </Stack>
+        )}
         {!selectedNode && !selectedEdge && (
           <Typography variant="body2" color="text.secondary">
             Select a node or edge to inspect details.
@@ -175,12 +262,28 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
         {selectedNode && (
           <Stack spacing={1.5}>
             <Chip size="small" variant="outlined" label={`Node: ${selectedNode.data.kind}`} />
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              {selectedNode.data.sourceKind && (
+                <Chip size="small" variant="outlined" label={`Source: ${selectedNode.data.sourceKind}`} />
+              )}
+              {selectedNode.data.entrySurface && (
+                <Chip size="small" color="success" label="Entry surface" />
+              )}
+              {selectedNode.data.latentEntry && (
+                <Chip size="small" color="warning" label="Latent entry" />
+              )}
+            </Stack>
             <Typography variant="subtitle2">{selectedNode.data.label}</Typography>
             <Typography variant="caption" color="text.secondary">
               NPC: {selectedNode.data.npc}
             </Typography>
             {selectedNode.data.description && (
               <Typography variant="body2">{selectedNode.data.description}</Typography>
+            )}
+            {selectedNode.data.entryReason && (
+              <Alert severity="info" sx={{ py: 0 }}>
+                {selectedNode.data.entryReason}
+              </Alert>
             )}
             {selectedNode.data.expression && (
               <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
@@ -195,6 +298,11 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
             {selectedNode.data.provenance?.functionName && (
               <Typography variant="caption" color="text.secondary">
                 Function: {selectedNode.data.provenance.functionName}
+              </Typography>
+            )}
+            {selectedNode.data.provenance?.filePath && (
+              <Typography variant="caption" color="text.secondary">
+                File: {selectedNode.data.provenance.filePath}
               </Typography>
             )}
 

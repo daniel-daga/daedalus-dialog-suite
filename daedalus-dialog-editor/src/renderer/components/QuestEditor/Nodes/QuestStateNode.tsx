@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Box, Typography, Tooltip } from '@mui/material';
+import { Box, Chip, Typography, Tooltip } from '@mui/material';
 import { CheckCircleOutline, ErrorOutline, PlaylistPlay, HelpOutline } from '@mui/icons-material';
 import BaseNode from './BaseNode';
 import ReferenceLink from '../../common/ReferenceLink';
@@ -28,6 +28,31 @@ const QuestStateNode: React.FC<NodeProps> = ({ data, selected }) => {
       selected={selected}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+          {data.sourceKind && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={String(data.sourceKind).toUpperCase()}
+              sx={{ height: 18, fontSize: 9, borderColor: '#666', color: '#bbb' }}
+            />
+          )}
+          {data.entrySurface && (
+            <Chip
+              size="small"
+              label="ENTRY"
+              sx={{ height: 18, fontSize: 9, bgcolor: '#1b5e20', color: '#e8f5e9' }}
+            />
+          )}
+          {data.latentEntry && (
+            <Chip
+              size="small"
+              label="LATENT"
+              sx={{ height: 18, fontSize: 9, bgcolor: '#e65100', color: '#fff3e0' }}
+            />
+          )}
+        </Box>
+
         {data.variableName ? (
             <ReferenceLink symbolName={data.variableName} symbolType="variable" variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
                 {data.variableName}

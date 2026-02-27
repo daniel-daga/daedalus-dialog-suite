@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Box, Typography } from '@mui/material';
+import { Box, Chip, Typography } from '@mui/material';
 import { ChatBubbleOutline } from '@mui/icons-material';
 import BaseNode from './BaseNode';
 import ReferenceLink from '../../common/ReferenceLink';
@@ -17,6 +17,30 @@ const DialogNode: React.FC<NodeProps> = ({ data, selected }) => {
         <ReferenceLink symbolName={data.npc || ''} symbolType="npc" variant="caption" sx={{ color: '#aaa', fontSize: 10, display: 'block' }}>
           {data.npc || 'Unknown NPC'}
         </ReferenceLink>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+          {data.sourceKind && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={String(data.sourceKind).toUpperCase()}
+              sx={{ height: 18, fontSize: 9, borderColor: '#666', color: '#bbb' }}
+            />
+          )}
+          {data.entrySurface && (
+            <Chip
+              size="small"
+              label="ENTRY"
+              sx={{ height: 18, fontSize: 9, bgcolor: '#1b5e20', color: '#e8f5e9' }}
+            />
+          )}
+          {data.latentEntry && (
+            <Chip
+              size="small"
+              label="LATENT"
+              sx={{ height: 18, fontSize: 9, bgcolor: '#e65100', color: '#fff3e0' }}
+            />
+          )}
+        </Box>
 
         <Box sx={{ bgcolor: '#1a1a1a', p: 1, borderRadius: 1, maxHeight: 60, overflow: 'hidden' }}>
           <Typography variant="body2" sx={{ fontSize: 11, fontStyle: 'italic', color: '#ccc' }}>
@@ -39,7 +63,7 @@ const DialogNode: React.FC<NodeProps> = ({ data, selected }) => {
               id="in-condition"
               style={{ background: '#4caf50', width: 10, height: 10 }}
             />
-            <Typography variant="caption" sx={{ ml: 1, fontSize: 9, color: '#aaa' }}>Available</Typography>
+            <Typography variant="caption" sx={{ ml: 1, fontSize: 9, color: '#aaa' }}>Conditions</Typography>
           </Box>
 
           {/* Output: Finished */}

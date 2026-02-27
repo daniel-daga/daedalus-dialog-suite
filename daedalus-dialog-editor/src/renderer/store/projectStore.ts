@@ -447,7 +447,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const relevantFunctionKeys = new Set<string>();
 
     // Pass 1: Identify all relevant functions and add definitions
-    for (const fileData of parsedFiles.values()) {
+    for (const [filePath, fileData] of parsedFiles.entries()) {
         const model = fileData.semanticModel;
 
         // Constants & Variables
@@ -495,7 +495,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
                  if (isRelevant) {
                      relevantFunctionKeys.add(getCanonicalQuestKey(func.name));
-                     result.functions[func.name] = func;
+                     result.functions[func.name] = {
+                       ...func,
+                       filePath: func.filePath || filePath
+                     };
                  }
              });
         }
