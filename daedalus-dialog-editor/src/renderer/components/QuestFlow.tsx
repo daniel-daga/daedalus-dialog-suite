@@ -44,6 +44,7 @@ import QuestStateNode from './QuestEditor/Nodes/QuestStateNode';
 import ConditionNode from './QuestEditor/Nodes/ConditionNode';
 import QuestInspectorPanel from './QuestEditor/Inspector/QuestInspectorPanel';
 import QuestDiffPreviewDialog from './QuestEditor/Inspector/QuestDiffPreviewDialog';
+import QuestLiteGraphCanvas from './QuestEditor/QuestLiteGraphCanvas';
 
 interface QuestFlowProps {
   semanticModel: SemanticModel;
@@ -160,6 +161,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   const [connectKind, setConnectKind] = useState<'transition' | 'requires'>('transition');
 
   const isProjectMode = !!projectPath;
+  const nodeFramework = (import.meta.env.VITE_QUEST_NODE_FRAMEWORK || 'litegraph').toLowerCase();
+  const useComfyNodeFramework = nodeFramework === 'litegraph';
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) || null,
@@ -663,26 +666,27 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     await runTransitionConnectWithPreview(connection.source, connection.target, 'Continue');
   }, [connectMode, runQuestCommandWithPreview, nodes, connectKind, writableEnabled, runTransitionConnectWithPreview]);
 
-  const onNodeDragStop = useCallback(async (_: React.MouseEvent, node: Node) => {
+  const persistNodeMove = useCallback(async (nodeId: string, position: { x: number; y: number }, nodeType?: string) => {
     if (
       !writableEnabled ||
       !questName ||
-      node.type === 'group' ||
-      node.id.startsWith('swimlane-') ||
-      node.id.startsWith('external-')
+      nodeType === 'group' ||
+      nodeId.startsWith('swimlane-') ||
+      nodeId.startsWith('external-')
     ) {
       return;
     }
 
     await runQuestCommandWithPreview({
       type: 'moveNode',
-      nodeId: node.id,
-      position: {
-        x: node.position.x,
-        y: node.position.y
-      }
+      nodeId,
+      position
     }, 'Failed to persist node position.');
   }, [questName, runQuestCommandWithPreview, writableEnabled]);
+
+  const onNodeDragStop = useCallback(async (_: React.MouseEvent, node: Node) => {
+    await persistNodeMove(node.id, { x: node.position.x, y: node.position.y }, node.type);
+  }, [persistNodeMove]);
 
   const handleSetMisState = useCallback(async (payload: { functionName: string; variableName: string; value: string }) => {
     await runQuestCommandWithPreview({
@@ -885,6 +889,11 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
                 Writable quest editor is disabled (read-only fallback).
               </Typography>
             )}
+            {useComfyNodeFramework && connectMode && (
+              <Typography variant="caption" sx={{ alignSelf: 'center', color: '#ffb74d' }}>
+                LiteGraph mode mirrors ComfyUI framework. Use inspector actions for edits; drag-connect is available in legacy React Flow mode.
+              </Typography>
+            )}
           </Stack>
         </Paper>
 
@@ -899,38 +908,56 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         )}
 
         <Box sx={{ flexGrow: 1 }}>
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeDragStop={onNodeDragStop}
-            onNodeClick={onNodeClick}
-            onNodeDoubleClick={onNodeDoubleClick}
-            onEdgeClick={onEdgeClick}
-            onPaneClick={() => {
-              setSelectedNodeId(null);
-              setSelectedEdgeId(null);
-            }}
-            nodeTypes={nodeTypes}
-            fitView
-          >
-            <Background color="#333" gap={20} />
-            <Controls />
-            <MiniMap
-              nodeStrokeColor={(node) => {
-                if (node.type === 'questState') return '#00ff00';
-                if (node.type === 'group') return '#eee';
-                if (node.type === 'condition') return '#ffc107';
-                return '#0041d0';
+          {useComfyNodeFramework ? (
+            <QuestLiteGraphCanvas
+              nodes={nodes}
+              edges={edges}
+              onNodeClick={onNodeClick}
+              onNodeDoubleClick={onNodeDoubleClick}
+              onEdgeClick={onEdgeClick}
+              onNodeMove={(nodeId, position) => {
+                const movedNode = nodes.find((node) => node.id === nodeId);
+                void persistNodeMove(nodeId, position, movedNode?.type);
               }}
-              nodeColor={(node) => (node.type === 'group' ? '#fff' : '#fff')}
-              nodeBorderRadius={2}
-              maskColor="rgba(0, 0, 0, 0.7)"
-              style={{ backgroundColor: '#222' }}
+              onPaneClick={() => {
+                setSelectedNodeId(null);
+                setSelectedEdgeId(null);
+              }}
             />
-          </ReactFlow>
+          ) : (
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeDragStop={onNodeDragStop}
+              onNodeClick={onNodeClick}
+              onNodeDoubleClick={onNodeDoubleClick}
+              onEdgeClick={onEdgeClick}
+              onPaneClick={() => {
+                setSelectedNodeId(null);
+                setSelectedEdgeId(null);
+              }}
+              nodeTypes={nodeTypes}
+              fitView
+            >
+              <Background color="#333" gap={20} />
+              <Controls />
+              <MiniMap
+                nodeStrokeColor={(node) => {
+                  if (node.type === 'questState') return '#00ff00';
+                  if (node.type === 'group') return '#eee';
+                  if (node.type === 'condition') return '#ffc107';
+                  return '#0041d0';
+                }}
+                nodeColor={(node) => (node.type === 'group' ? '#fff' : '#fff')}
+                nodeBorderRadius={2}
+                maskColor="rgba(0, 0, 0, 0.7)"
+                style={{ backgroundColor: '#222' }}
+              />
+            </ReactFlow>
+          )}
         </Box>
       </Box>
 
