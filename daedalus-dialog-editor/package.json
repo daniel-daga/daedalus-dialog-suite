@@ -51,7 +51,8 @@
     "win": {
       "target": "nsis"
     },
-    "publish": null
+    "publish": null,
+    "npmRebuild": false
   },
   "dependencies": {
     "@emotion/react": "^11.11.4",
