@@ -169,10 +169,45 @@
       const linkEl = document.getElementById('downloadLink');
       const repoPathEl = document.getElementById('repoPath');
 
-      const [owner, repo] = window.location.pathname
-        .split('/')
-        .filter(Boolean)
-        .slice(0, 2);
+      function detectRepoPath() {
+        const params = new URLSearchParams(window.location.search);
+        const ownerFromQuery = params.get('owner');
+        const repoFromQuery = params.get('repo');
+        const combinedFromQuery = params.get('repository') || params.get('repoPath');
+
+        if (ownerFromQuery && repoFromQuery) {
+          return { owner: ownerFromQuery, repo: repoFromQuery };
+        }
+
+        if (combinedFromQuery && combinedFromQuery.includes('/')) {
+          const [owner, repo] = combinedFromQuery.split('/').filter(Boolean).slice(0, 2);
+
+          if (owner && repo) {
+            return { owner, repo };
+          }
+        }
+
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        const host = window.location.hostname.toLowerCase();
+
+        if (host.endsWith('.github.io')) {
+          const owner = host.split('.')[0];
+          const repo = pathParts.find(Boolean);
+
+          if (owner && repo) {
+            return { owner, repo };
+          }
+        }
+
+        if (pathParts.length >= 2) {
+          const [owner, repo] = pathParts;
+          return { owner, repo };
+        }
+
+        return { owner: null, repo: null };
+      }
+
+      const { owner, repo } = detectRepoPath();
 
       async function loadLatestWindowsBuild() {
         if (!owner || !repo) {
