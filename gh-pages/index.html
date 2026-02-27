@@ -3,96 +3,171 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Daedalus Dialog Editor - Windows Download</title>
+    <title>Daedalus Dialog Editor | Latest Windows Build</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0f1220;
-        --card: #171a2b;
-        --text: #f4f6ff;
-        --muted: #a6adcc;
-        --primary: #6ea8fe;
-        --primary-hover: #8dbaff;
-        --border: #2d3350;
+        --bg: #0a0d18;
+        --surface: rgba(18, 24, 44, 0.86);
+        --surface-strong: #0f152c;
+        --text: #f3f6ff;
+        --muted: #b4bfdc;
+        --primary: #7aa9ff;
+        --primary-hover: #97bbff;
+        --border: #2b365b;
+        --ok: #8ee7b8;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       body {
         margin: 0;
         font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-        background: radial-gradient(circle at top, #1a1f38, var(--bg) 55%);
         color: var(--text);
         min-height: 100vh;
         display: grid;
         place-items: center;
-        padding: 1.5rem;
+        padding: 2rem 1rem;
+        background:
+          radial-gradient(circle at 10% -10%, rgba(122, 169, 255, 0.25), transparent 45%),
+          radial-gradient(circle at 100% 0%, rgba(150, 204, 255, 0.16), transparent 38%),
+          var(--bg);
       }
 
       main {
-        width: min(680px, 100%);
-        background: color-mix(in hsl, var(--card) 90%, black);
+        width: min(760px, 100%);
+        background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 2rem;
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+        border-radius: 20px;
+        padding: clamp(1.2rem, 3vw, 2rem);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(6px);
+      }
+
+      .eyebrow {
+        display: inline-block;
+        padding: 0.3rem 0.65rem;
+        background: rgba(122, 169, 255, 0.16);
+        color: #bcd2ff;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
       }
 
       h1 {
-        margin-top: 0;
-        font-size: clamp(1.5rem, 3vw, 2rem);
+        margin: 0.9rem 0 0.4rem;
+        font-size: clamp(1.6rem, 3.2vw, 2.2rem);
+        line-height: 1.2;
       }
 
       p {
+        margin: 0;
         color: var(--muted);
-        line-height: 1.5;
+        line-height: 1.55;
+      }
+
+      .download-wrap {
+        margin-top: 1.4rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
       }
 
       .download {
-        margin: 1.5rem 0 1rem;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 0.5rem;
+        gap: 0.55rem;
         background: var(--primary);
-        color: #09122e;
+        color: #081127;
         text-decoration: none;
-        font-weight: 700;
-        border-radius: 10px;
-        padding: 0.85rem 1.2rem;
+        font-weight: 800;
+        border-radius: 12px;
+        padding: 0.9rem 1.25rem;
+        transition: transform 120ms ease, background 120ms ease;
       }
 
       .download:hover {
         background: var(--primary-hover);
+        transform: translateY(-1px);
+      }
+
+      .download[aria-disabled='true'] {
+        opacity: 0.8;
+        pointer-events: none;
       }
 
       #status {
-        margin-top: 0.75rem;
-        font-size: 0.95rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0.56rem 0.8rem;
+        font-size: 0.9rem;
         color: var(--muted);
+        background: rgba(14, 19, 36, 0.6);
+      }
+
+      .dot {
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        background: var(--ok);
+        box-shadow: 0 0 0.6rem rgba(142, 231, 184, 0.8);
+      }
+
+      .meta {
+        margin-top: 1.1rem;
+        font-size: 0.92rem;
+        color: #96a6d3;
       }
 
       code {
-        background: #0f1324;
+        background: var(--surface-strong);
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: 7px;
         padding: 0.08rem 0.35rem;
+      }
+
+      ul {
+        margin: 1rem 0 0;
+        padding-left: 1.2rem;
+        color: var(--muted);
       }
     </style>
   </head>
   <body>
     <main>
+      <span class="eyebrow">Daedalus Dialog Editor</span>
       <h1>Download the latest Windows build</h1>
       <p>
-        This page always points to the newest published Windows installer from the
-        <strong>Daedalus Dialog Editor</strong> GitHub release tagged
+        This page automatically links to the newest installer published under the GitHub release tag
         <code>windows-latest</code>.
       </p>
-      <a id="downloadLink" class="download" href="#" aria-disabled="true">Loading latest build…</a>
-      <div id="status">Checking GitHub releases…</div>
+
+      <div class="download-wrap">
+        <a id="downloadLink" class="download" href="#" aria-disabled="true">⏳ Loading latest build…</a>
+        <div id="status">Checking GitHub releases…</div>
+      </div>
+
+      <ul>
+        <li>Always points to the newest Windows <code>.exe</code> asset.</li>
+        <li>No manual link updates required after release.</li>
+        <li>Works directly from your GitHub Pages site.</li>
+      </ul>
+
+      <p class="meta" id="repoPath"></p>
     </main>
 
     <script>
       const statusEl = document.getElementById('status');
       const linkEl = document.getElementById('downloadLink');
+      const repoPathEl = document.getElementById('repoPath');
 
       const [owner, repo] = window.location.pathname
         .split('/')
@@ -106,7 +181,10 @@
           return;
         }
 
+        repoPathEl.textContent = `Repository: ${owner}/${repo}`;
+
         const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/tags/windows-latest`;
+
         try {
           const response = await fetch(apiUrl, {
             headers: { Accept: 'application/vnd.github+json' }
@@ -124,9 +202,9 @@
           }
 
           linkEl.href = windowsAsset.browser_download_url;
-          linkEl.textContent = `Download ${windowsAsset.name}`;
+          linkEl.textContent = `⬇ Download ${windowsAsset.name}`;
           linkEl.removeAttribute('aria-disabled');
-          statusEl.textContent = `Published: ${new Date(release.published_at).toLocaleString()}`;
+          statusEl.innerHTML = `<span class="dot"></span> Published: ${new Date(release.published_at).toLocaleString()}`;
         } catch (error) {
           linkEl.textContent = 'Download unavailable';
           statusEl.textContent = `Unable to fetch latest build: ${error.message}`;
