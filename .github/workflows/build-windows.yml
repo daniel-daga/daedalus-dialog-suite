@@ -31,6 +31,8 @@ jobs:
       run: pnpm --filter daedalus-dialog-editor run build
 
     - name: Package Editor
+      env:
+        npm_execpath: pnpm
       run: pnpm --filter daedalus-dialog-editor run package
 
     - name: Upload Artifacts
