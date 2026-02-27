@@ -1,4 +1,4 @@
-import { buildQuestGraph } from '../src/renderer/components/QuestEditor/questGraphUtils';
+import { buildQuestGraph } from '../src/renderer/quest/domain/graph';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 // Mock Semantic Model Helper (Reused from questGraphUtils.test.tsx)

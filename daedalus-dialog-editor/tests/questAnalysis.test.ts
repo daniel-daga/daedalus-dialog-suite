@@ -1,4 +1,4 @@
-import { analyzeQuest, getQuestReferences, getUsedQuestTopics, findDialogNameForFunction } from '../src/renderer/components/QuestEditor/questAnalysis';
+import { analyzeQuest, getQuestReferences, getUsedQuestTopics, findDialogNameForFunction } from '../src/renderer/quest/domain/analysis';
 import type { SemanticModel } from '../src/renderer/types/global';
 import { isQuestTopicConstantByPolicy } from '../src/renderer/utils/questIdentity';
 

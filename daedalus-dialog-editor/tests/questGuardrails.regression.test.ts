@@ -1,4 +1,4 @@
-import { analyzeQuestGuardrails, getQuestGuardrailDeltaWarnings } from '../src/renderer/components/QuestEditor/questGuardrails';
+import { analyzeQuestGuardrails, getQuestGuardrailDeltaWarnings } from '../src/renderer/quest/domain/guardrails';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 const createBaseMdkLikeModel = (): SemanticModel => ({
