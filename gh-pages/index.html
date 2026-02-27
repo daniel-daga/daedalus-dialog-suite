@@ -7,15 +7,17 @@
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0a0d18;
-        --surface: rgba(18, 24, 44, 0.86);
-        --surface-strong: #0f152c;
-        --text: #f3f6ff;
-        --muted: #b4bfdc;
-        --primary: #7aa9ff;
-        --primary-hover: #97bbff;
-        --border: #2b365b;
-        --ok: #8ee7b8;
+        --bg: #000000;
+        --surface: #111111;
+        --surface-strong: #1e1e1e;
+        --text: #cccccc;
+        --muted: #9a9a9a;
+        --title: #cc9900;
+        --primary: #cc9900;
+        --primary-hover: #ff9900;
+        --border: #330000;
+        --border-soft: #1d0000;
+        --ok: #7fb36f;
       }
 
       * {
@@ -24,49 +26,86 @@
 
       body {
         margin: 0;
-        font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        font-family: Verdana, Arial, Helvetica, sans-serif;
         color: var(--text);
         min-height: 100vh;
-        display: grid;
-        place-items: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         padding: 2rem 1rem;
         background:
-          radial-gradient(circle at 10% -10%, rgba(122, 169, 255, 0.25), transparent 45%),
-          radial-gradient(circle at 100% 0%, rgba(150, 204, 255, 0.16), transparent 38%),
+          radial-gradient(circle at 12% 8%, rgba(51, 0, 0, 0.35), transparent 44%),
+          radial-gradient(circle at 88% 6%, rgba(204, 153, 0, 0.12), transparent 36%),
+          repeating-linear-gradient(
+            125deg,
+            rgba(255, 255, 255, 0.015) 0,
+            rgba(255, 255, 255, 0.015) 2px,
+            transparent 2px,
+            transparent 8px
+          ),
           var(--bg);
       }
 
       main {
-        width: min(760px, 100%);
+        width: min(860px, 100%);
         background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: 20px;
-        padding: clamp(1.2rem, 3vw, 2rem);
-        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+        border-radius: 0;
+        padding: clamp(1rem, 3vw, 1.35rem);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
         backdrop-filter: blur(6px);
+        position: relative;
+        background-image:
+          linear-gradient(to bottom, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0)),
+          repeating-linear-gradient(
+            0deg,
+            rgba(255, 255, 255, 0.012) 0,
+            rgba(255, 255, 255, 0.012) 1px,
+            transparent 1px,
+            transparent 3px
+          );
+      }
+
+      main::before {
+        content: "";
+        position: absolute;
+        inset: 6px;
+        border: 1px solid var(--border-soft);
+        border-radius: 0;
+        pointer-events: none;
       }
 
       .eyebrow {
         display: inline-block;
-        padding: 0.3rem 0.65rem;
-        background: rgba(122, 169, 255, 0.16);
-        color: #bcd2ff;
-        border-radius: 999px;
-        font-size: 0.82rem;
-        font-weight: 600;
-        letter-spacing: 0.02em;
+        padding: 0.2rem 0.45rem;
+        background: #1a1a1a;
+        color: var(--primary);
+        border: 1px solid var(--border);
+        border-radius: 2px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
       }
 
       h1 {
-        margin: 0.9rem 0 0.4rem;
-        font-size: clamp(1.6rem, 3.2vw, 2.2rem);
-        line-height: 1.2;
+        margin: 0.8rem 0 0.35rem;
+        color: var(--title);
+        font-size: clamp(1.45rem, 3.2vw, 1.95rem);
+        line-height: 1.3;
+        letter-spacing: 0;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        max-width: 65ch;
       }
 
       p {
         margin: 0;
         color: var(--muted);
-        line-height: 1.55;
+        line-height: 1.5;
+        font-size: 0.92rem;
       }
 
       .download-wrap {
@@ -82,17 +121,20 @@
         align-items: center;
         justify-content: center;
         gap: 0.55rem;
-        background: var(--primary);
-        color: #081127;
+        background: #1a1a1a;
+        color: var(--primary);
         text-decoration: none;
-        font-weight: 800;
-        border-radius: 12px;
-        padding: 0.9rem 1.25rem;
+        font-weight: 700;
+        font-size: 0.9rem;
+        border-radius: 2px;
+        border: 1px solid var(--border);
+        padding: 0.64rem 0.95rem;
         transition: transform 120ms ease, background 120ms ease;
       }
 
       .download:hover {
         background: var(--primary-hover);
+        color: #1a1200;
         transform: translateY(-1px);
       }
 
@@ -106,11 +148,11 @@
         align-items: center;
         gap: 0.5rem;
         border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 0.56rem 0.8rem;
-        font-size: 0.9rem;
+        border-radius: 2px;
+        padding: 0.5rem 0.72rem;
+        font-size: 0.82rem;
         color: var(--muted);
-        background: rgba(14, 19, 36, 0.6);
+        background: #121212;
       }
 
       .dot {
@@ -118,48 +160,103 @@
         height: 0.6rem;
         border-radius: 50%;
         background: var(--ok);
-        box-shadow: 0 0 0.6rem rgba(142, 231, 184, 0.8);
+        box-shadow: 0 0 0.6rem rgba(126, 165, 111, 0.75);
       }
 
       .meta {
         margin-top: 1.1rem;
-        font-size: 0.92rem;
-        color: #96a6d3;
+        font-size: 0.78rem;
+        color: #7f7f7f;
       }
 
       code {
         background: var(--surface-strong);
         border: 1px solid var(--border);
-        border-radius: 7px;
+        border-radius: 2px;
         padding: 0.08rem 0.35rem;
       }
 
       ul {
         margin: 1rem 0 0;
         padding-left: 1.2rem;
-        color: var(--muted);
+        color: #b5b5b5;
+        font-size: 0.9rem;
+      }
+
+      .panels {
+        margin-top: 1.2rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 0.9rem;
+      }
+
+      .panel {
+        background: #0b0b0b;
+        border: 1px solid var(--border-soft);
+        border-radius: 0;
+        padding: 0.9rem 1rem 1rem;
+      }
+
+      .panel h2 {
+        margin: 0 0 0.45rem;
+        color: var(--primary);
+        font-size: 0.84rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .panel ul {
+        margin-top: 0.4rem;
+      }
+
+      @media (max-width: 640px) {
+        body {
+          padding: 1rem 0.65rem;
+        }
+
+        .download-wrap {
+          align-items: stretch;
+        }
+
+        .download {
+          width: 100%;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <span class="eyebrow">Daedalus Dialog Editor</span>
-      <h1>Download the latest Windows build</h1>
-      <p>
-        This page automatically links to the newest installer published under the GitHub release tag
-        <code>windows-latest</code>.
+      <span class="eyebrow">For Gothic Modders</span>
+      <h1>Get the latest Daedalus Dialog Editor for Windows</h1>
+      <p class="subtitle">
+        Build NPC conversations, quest flow, and branching outcomes faster. This download always points to the newest
+        stable Windows installer, so you can install and start writing right away.
       </p>
 
       <div class="download-wrap">
-        <a id="downloadLink" class="download" href="#" aria-disabled="true">⏳ Loading latest build…</a>
-        <div id="status">Checking GitHub releases…</div>
+        <a id="downloadLink" class="download" href="#" aria-disabled="true">Loading latest build...</a>
+        <div id="status">Checking for newest Windows release...</div>
       </div>
 
-      <ul>
-        <li>Always points to the newest Windows <code>.exe</code> asset.</li>
-        <li>No manual link updates required after release.</li>
-        <li>Works directly from your GitHub Pages site.</li>
-      </ul>
+      <section class="panels">
+        <article class="panel">
+          <h2>What You Get</h2>
+          <ul>
+            <li>Visual editing for dialogs and conditions.</li>
+            <li>Faster iteration while keeping Daedalus output clean.</li>
+            <li>A single installer that stays up to date on this page.</li>
+          </ul>
+        </article>
+        <article class="panel">
+          <h2>Install In 3 Steps</h2>
+          <ul>
+            <li>Download the latest <code>.exe</code> build.</li>
+            <li>Run the installer and open your mod project.</li>
+            <li>Edit dialogs and export script-ready results.</li>
+          </ul>
+        </article>
+      </section>
 
       <p class="meta" id="repoPath"></p>
     </main>
@@ -211,8 +308,8 @@
 
       async function loadLatestWindowsBuild() {
         if (!owner || !repo) {
-          statusEl.textContent = 'Could not detect repository path from URL.';
-          linkEl.textContent = 'Download unavailable';
+          statusEl.textContent = 'Could not detect repository from this URL.';
+          linkEl.textContent = 'Build unavailable';
           return;
         }
 
@@ -237,12 +334,12 @@
           }
 
           linkEl.href = windowsAsset.browser_download_url;
-          linkEl.textContent = `⬇ Download ${windowsAsset.name}`;
+          linkEl.textContent = `Download ${windowsAsset.name}`;
           linkEl.removeAttribute('aria-disabled');
-          statusEl.innerHTML = `<span class="dot"></span> Published: ${new Date(release.published_at).toLocaleString()}`;
+          statusEl.innerHTML = `<span class="dot"></span> Updated: ${new Date(release.published_at).toLocaleString()}`;
         } catch (error) {
-          linkEl.textContent = 'Download unavailable';
-          statusEl.textContent = `Unable to fetch latest build: ${error.message}`;
+          linkEl.textContent = 'Build unavailable';
+          statusEl.textContent = `Could not fetch latest build: ${error.message}`;
         }
       }
 
