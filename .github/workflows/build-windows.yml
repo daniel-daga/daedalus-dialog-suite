@@ -32,7 +32,7 @@ jobs:
 
     - name: Package Editor
       env:
-        npm_execpath: pnpm
+        npm_execpath: pnpm.cmd
       run: pnpm --filter daedalus-dialog-editor run package
 
     - name: Upload Artifacts
