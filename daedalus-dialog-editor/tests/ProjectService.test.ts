@@ -175,12 +175,19 @@ FUNC void SomeFunction()
 
     it('should extract NPC correctly when nested braces exist', async () => {
       const content = `
+FUNC INT DIA_Nested_Condition()
+{
+    if (TRUE)
+    {
+        return TRUE;
+    };
+    return FALSE;
+};
+
 INSTANCE DIA_Nested (C_INFO)
 {
-    condition = function() {
-        if (TRUE) { return TRUE; };
-    };
     npc = SLD_Nested_NPC;
+    condition = DIA_Nested_Condition;
     description = "Nested test";
 };
       `;
@@ -302,6 +309,45 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       expect(index.questFiles).toContain(path.join(storyDir, 'Story_Globals.d'));
       expect(index.questFiles).toContain(path.join(storyDir, 'Mixed.d'));
       expect(index.questFiles).not.toContain(path.join(storyDir, 'Other.d'));
+    });
+
+    it('should ignore TOPIC_/MIS_ markers inside comments when detecting quest files', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      fs.writeFileSync(path.join(storyDir, 'CommentOnlyMarkers.d'), `
+        // const string TOPIC_FakeQuest = "Not real";
+        // var int MIS_FakeQuest;
+        FUNC VOID SomeUtility() { };
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.questFiles).not.toContain(path.join(storyDir, 'CommentOnlyMarkers.d'));
+    });
+
+    it('should ignore commented INSTANCE declarations when indexing dialogs', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_CommentedOut.d'), `
+        // INSTANCE DIA_Fake_Commented (C_INFO) { npc = SLD_FAKE; };
+        INSTANCE DIA_Real (C_INFO)
+        {
+          npc = SLD_REAL;
+        };
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      const fakeDialogs = index.dialogsByNpc.get('SLD_FAKE') || [];
+      const realDialogs = index.dialogsByNpc.get('SLD_REAL') || [];
+
+      expect(fakeDialogs).toHaveLength(0);
+      expect(realDialogs).toHaveLength(1);
+      expect(realDialogs[0].dialogName).toBe('DIA_Real');
     });
   });
 

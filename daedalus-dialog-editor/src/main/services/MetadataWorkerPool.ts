@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import type { DialogMetadata } from '../../shared/types';
 import { promises as fsPromises } from 'fs';
-import { extractDialogMetadata, TOPIC_REGEX, MIS_REGEX } from '../utils/metadataUtils';
+import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 
 interface PendingTask {
   resolve: (value: { dialogs: DialogMetadata[]; isQuestFile: boolean }) => void;
@@ -125,9 +125,7 @@ export class MetadataWorkerPool {
   private async processFileInline(filePath: string): Promise<{ dialogs: DialogMetadata[]; isQuestFile: boolean }> {
     try {
       const content = await fsPromises.readFile(filePath, 'utf-8');
-      const dialogs = extractDialogMetadata(content, filePath);
-      const isQuestFile = TOPIC_REGEX.test(content) || MIS_REGEX.test(content);
-      return { dialogs, isQuestFile };
+      return extractFileMetadataFromSource(content, filePath);
     } catch {
       // Match worker-path behavior: tolerate per-file processing failures.
       return { dialogs: [], isQuestFile: false };

@@ -3,7 +3,7 @@
  *
  * Provides functionality to:
  * - Scan directories recursively for .d files
- * - Extract lightweight metadata from dialog files without full parsing
+ * - Extract semantic metadata from dialog files
  * - Build project index with NPCs and their dialogs
  */
 
@@ -14,19 +14,8 @@ import type { DialogMetadata, ProjectIndex } from '../../shared/types';
 // Re-export types for consumers of this service
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
-import { extractDialogMetadata } from '../utils/metadataUtils';
+import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
-// Regex to match start of INSTANCE declarations
-// Matches: INSTANCE <name> (C_INFO) {
-const INSTANCE_START_REGEX = /INSTANCE\s+(\w+)\s*\(([^)]+)\)\s*\{/gi;
-
-// Regex to match npc property inside the body
-const NPC_REGEX = /npc\s*=\s*([^;}\s]+)/gi;
-
-// Regex to detect quest definitions
-const TOPIC_REGEX = /const\s+string\s+TOPIC_\w+/i;
-const MIS_REGEX = /var\s+int\s+MIS_\w+/i;
-const BRACE_REGEX = /[{}]/g;
 
 class ProjectService {
   /**
@@ -62,13 +51,10 @@ class ProjectService {
   }
 
   /**
-   * Extract dialog metadata from file content using regex (lightweight, no full parse)
-   *
-   * Looks for INSTANCE declarations with C_INFO parent and npc property:
-   * INSTANCE DIA_Name (C_INFO) { npc = SLD_12345_Name; ... };
+   * Extract dialog metadata from file content using semantic parser output.
    */
   extractDialogMetadata(content: string, filePath: string): DialogMetadata[] {
-    return extractDialogMetadata(content, filePath);
+    return extractFileMetadataFromSource(content, filePath).dialogs;
   }
 
   /**
