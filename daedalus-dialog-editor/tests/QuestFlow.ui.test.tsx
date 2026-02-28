@@ -1,20 +1,18 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import QuestFlow from '../src/renderer/components/QuestFlow';
 import type { SemanticModel } from '../src/renderer/types/global';
 
-jest.mock('reactflow', () => {
-  const ReactModule = require('react');
-  return {
-    __esModule: true,
-    default: ({ children }: { children: React.ReactNode }) => <div data-testid="reactflow">{children}</div>,
-    Background: () => null,
-    Controls: () => null,
-    MiniMap: () => null,
-    useNodesState: () => [[], jest.fn(), jest.fn()],
-    useEdgesState: () => [[], jest.fn(), jest.fn()]
-  };
-});
+jest.mock('reactflow', () => ({
+  __esModule: true,
+  useNodesState: () => [[], jest.fn(), jest.fn()],
+  useEdgesState: () => [[], jest.fn(), jest.fn()]
+}));
+
+jest.mock('../src/renderer/components/QuestEditor/QuestLiteGraphCanvas', () => ({
+  __esModule: true,
+  default: () => <div data-testid="quest-litegraph-canvas" />
+}));
 
 jest.mock('../src/renderer/quest/domain/graph', () => ({
   buildQuestGraph: () => ({ nodes: [], edges: [] })
@@ -93,10 +91,10 @@ describe('QuestFlow UI', () => {
     );
 
     expect(screen.getByText('Writable quest editor is disabled (read-only fallback).')).toBeInTheDocument();
-    expect(screen.getByLabelText('Connect mode')).toBeDisabled();
+    expect(screen.getByText('Using ComfyUI-style node editor defaults.')).toBeInTheDocument();
   });
 
-  it('shows connect type selector when connect mode is enabled', () => {
+  it('renders only the comfy-style node editor canvas', () => {
     render(
       <QuestFlow
         semanticModel={createModel()}
@@ -105,7 +103,8 @@ describe('QuestFlow UI', () => {
       />
     );
 
-    fireEvent.click(screen.getByLabelText('Connect mode'));
-    expect(screen.getAllByText('Connect As').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('quest-litegraph-canvas')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Connect mode')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connect As')).not.toBeInTheDocument();
   });
 });
