@@ -613,26 +613,30 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       targetFunctionName: payload.targetFunctionName,
       variableName: payload.variableName,
       value: payload.value,
-      operator: payload.operator
+      operator: payload.operator,
     }, 'Failed to remove condition link.');
   }, [runQuestCommandWithPreview]);
 
   const handleUpdateConditionLink = useCallback(async (payload: {
     targetFunctionName: string;
+    conditionIndex?: number;
     oldVariableName: string;
     oldValue: string;
     variableName: string;
     value: string;
     operator: '==' | '!=';
+    negated?: boolean;
   }) => {
     await runQuestCommandWithPreview({
       type: 'updateConditionLink',
       targetFunctionName: payload.targetFunctionName,
+      conditionIndex: payload.conditionIndex,
       oldVariableName: payload.oldVariableName,
       oldValue: payload.oldValue,
       variableName: payload.variableName,
       value: payload.value,
-      operator: payload.operator
+      operator: payload.operator,
+      negated: payload.negated
     }, 'Failed to update condition link.');
   }, [runQuestCommandWithPreview]);
 
@@ -738,6 +742,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
 
       <QuestInspectorPanel
         questName={questName}
+        semanticModel={semanticModel}
         writableEnabled={writableEnabled}
         selectedNode={selectedNode}
         selectedEdge={selectedEdge}

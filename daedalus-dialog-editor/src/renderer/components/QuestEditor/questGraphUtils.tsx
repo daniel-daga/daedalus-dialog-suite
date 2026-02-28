@@ -24,6 +24,8 @@ interface InternalNodeData {
   operator?: 'AND' | 'OR';
   negated?: boolean;
   kind: QuestGraphNodeKind;
+  condition?: DialogCondition;
+  conditionIndex?: number;
   sourceKind: QuestGraphSourceKind;
   entrySurface?: boolean;
   latentEntry?: boolean;
@@ -702,7 +704,9 @@ const buildQuestEdges = (
           latentEntry: false,
           entryReason: undefined,
           inferred: false,
-          touchesSelectedQuest: false
+          touchesSelectedQuest: false,
+          condition: cond,
+          conditionIndex: condIndex
         });
       }
 
@@ -838,7 +842,9 @@ const buildQuestEdges = (
           latentEntry: false,
           entryReason: undefined,
           inferred: false,
-          touchesSelectedQuest: false
+          touchesSelectedQuest: false,
+          condition: undefined,
+          conditionIndex: undefined
         });
       }
 
@@ -1194,6 +1200,8 @@ const calculateDagreLayout = (
         type: data.type,
         status: data.description,
         variableName: semanticModel.variables?.[misVarName] ? misVarName : undefined,
+        condition: data.condition,
+        conditionIndex: data.conditionIndex,
         kind: data.kind,
         sourceKind: data.sourceKind,
         entrySurface: data.entrySurface,

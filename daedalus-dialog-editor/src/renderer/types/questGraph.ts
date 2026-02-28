@@ -1,4 +1,5 @@
 import type { Edge, Node } from 'reactflow';
+import type { DialogCondition } from './global';
 
 export type QuestGraphNodeKind =
   | 'topic'
@@ -40,6 +41,8 @@ export interface QuestGraphNodeData {
   type?: string;
   status?: string;
   variableName?: string;
+  condition?: DialogCondition;
+  conditionIndex?: number;
   kind: QuestGraphNodeKind;
   sourceKind?: QuestGraphSourceKind;
   entrySurface?: boolean;

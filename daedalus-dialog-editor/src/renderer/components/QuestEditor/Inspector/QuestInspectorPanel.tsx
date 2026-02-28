@@ -1,9 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Chip, Divider, Paper, Stack, TextField, Typography } from '@mui/material';
+import VariableAutocomplete from '../../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../../common/autocompletePolicies';
+import type { DialogCondition } from '../../../types/global';
 import type { QuestGraphEdge, QuestGraphNode } from '../../../types/questGraph';
 
 interface QuestInspectorPanelProps {
   questName: string;
+  semanticModel?: import('../../../types/global').SemanticModel;
   writableEnabled?: boolean;
   selectedNode: QuestGraphNode | null;
   selectedEdge: QuestGraphEdge | null;
@@ -22,11 +26,13 @@ interface QuestInspectorPanelProps {
   }) => void;
   onUpdateConditionLink: (payload: {
     targetFunctionName: string;
+    conditionIndex?: number;
     oldVariableName: string;
     oldValue: string;
     variableName: string;
     value: string;
     operator: '==' | '!=';
+    negated?: boolean;
   }) => void;
   commandError: string | null;
   commandBusy: boolean;
@@ -34,11 +40,12 @@ interface QuestInspectorPanelProps {
 
 const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   questName,
+  semanticModel,
   writableEnabled = true,
   selectedNode,
   selectedEdge,
-  entrySurfaceNodes,
-  onSelectEntrySurfaceNode,
+  entrySurfaceNodes = [],
+  onSelectEntrySurfaceNode = () => undefined,
   onSetMisState,
   onAddTopicStatus,
   onAddLogEntry,
@@ -58,6 +65,12 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   const [originalEdgeVariable, setOriginalEdgeVariable] = useState('');
   const [originalEdgeValue, setOriginalEdgeValue] = useState('');
   const [transitionText, setTransitionText] = useState('');
+  const [conditionDraft, setConditionDraft] = useState<{
+    variableName: string;
+    value: string;
+    operator: '==' | '!=';
+    negated: boolean;
+  } | null>(null);
   const sourceKindOrder = ['item', 'event', 'dialog', 'startup', 'script', 'external'] as const;
   const groupedEntrySurfaces = useMemo(() => {
     const grouped = new Map<string, QuestGraphNode[]>();
@@ -93,6 +106,16 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
     () => entrySurfaceNodes.filter((node) => Boolean(node.data.latentEntry)).length,
     [entrySurfaceNodes]
   );
+  const isVariableCondition = (condition?: DialogCondition | null): condition is DialogCondition & {
+    type: 'VariableCondition';
+    variableName: string;
+    value?: string | number | boolean;
+    operator?: string;
+    negated?: boolean;
+  } => Boolean(condition && condition.type === 'VariableCondition' && 'variableName' in condition);
+
+  const isEditableConditionNode = Boolean(selectedNode?.data.kind === 'condition' && selectedNode?.data.provenance?.functionName);
+
   const parsedRequiresCondition = useMemo(() => {
     if (!selectedEdge || selectedEdge.data?.kind !== 'requires') return null;
     const expression = String(selectedEdge.data.expression || '');
@@ -149,6 +172,22 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   }, [selectedNode]);
 
   useEffect(() => {
+    if (!selectedNode || selectedNode.data.kind !== 'condition' || !isVariableCondition(selectedNode.data.condition)) {
+      setConditionDraft(null);
+      return;
+    }
+
+    const variableCondition = selectedNode.data.condition;
+    const operator = variableCondition.operator === '!=' ? '!=' : '==';
+    setConditionDraft({
+      variableName: variableCondition.variableName || '',
+      value: variableCondition.value === undefined ? '' : String(variableCondition.value),
+      operator,
+      negated: Boolean(variableCondition.negated)
+    });
+  }, [selectedNode]);
+
+  useEffect(() => {
     if (!selectedEdge || selectedEdge.data?.kind !== 'requires') {
       setEdgeVariable('');
       setEdgeOperator('==');
@@ -187,6 +226,9 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   );
   const hasUnsupportedRequiresExpression = Boolean(
     selectedEdge?.data?.kind === 'requires' && (!parsedRequiresCondition || !['==', '!='].includes(parsedRequiresCondition.operator))
+  );
+  const hasUnsupportedConditionNode = Boolean(
+    selectedNode?.data.kind === 'condition' && !isVariableCondition(selectedNode?.data.condition)
   );
 
   const functionName = selectedNode?.data.provenance?.functionName;
@@ -310,6 +352,88 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
               <Alert severity="info">
                 Complex condition expressions are currently read-only in the inspector.
               </Alert>
+            )}
+
+            {writableEnabled && isEditableConditionNode && hasUnsupportedConditionNode && (
+              <Alert severity="info">
+                This condition node is read-only because only VariableCondition fields are editable in the quest inspector.
+              </Alert>
+            )}
+
+            {writableEnabled && isEditableConditionNode && conditionDraft && isVariableCondition(selectedNode.data.condition) && (
+              <>
+                <Divider />
+                <Typography variant="subtitle2">Edit Condition (VariableCondition)</Typography>
+                <VariableAutocomplete
+                  label="Variable Name"
+                  value={conditionDraft.variableName}
+                  onChange={(value) => setConditionDraft((prev) => prev ? { ...prev, variableName: value } : prev)}
+                  onFlush={() => undefined}
+                  {...AUTOCOMPLETE_POLICIES.conditions.variableName}
+                  semanticModel={semanticModel}
+                  fullWidth
+                />
+                <TextField
+                  size="small"
+                  label="Operator"
+                  value={conditionDraft.operator}
+                  onChange={(event) => setConditionDraft((prev) => prev ? { ...prev, operator: event.target.value === '!=' ? '!=' : '==' } : prev)}
+                  helperText="Supports == and !="
+                />
+                <TextField
+                  size="small"
+                  label="Value"
+                  value={conditionDraft.value}
+                  onChange={(event) => setConditionDraft((prev) => prev ? { ...prev, value: event.target.value } : prev)}
+                />
+                <TextField
+                  size="small"
+                  label="Negated"
+                  value={conditionDraft.negated ? 'true' : 'false'}
+                  onChange={(event) => setConditionDraft((prev) => prev ? { ...prev, negated: event.target.value.toLowerCase() === 'true' } : prev)}
+                  helperText="Set true/false"
+                />
+                <Button
+                  variant="contained"
+                  size="small"
+                  disabled={commandBusy || !conditionDraft.variableName.trim() || selectedNode.data.conditionIndex === undefined || !selectedNode.data.provenance?.functionName}
+                  onClick={() => {
+                    const targetFunctionName = selectedNode.data.provenance?.functionName;
+                    if (!targetFunctionName || selectedNode.data.conditionIndex === undefined) return;
+                    onUpdateConditionLink({
+                      targetFunctionName,
+                      conditionIndex: selectedNode.data.conditionIndex,
+                      oldVariableName: selectedNode.data.condition.variableName,
+                      oldValue: String(selectedNode.data.condition.value ?? ''),
+                      variableName: conditionDraft.variableName.trim(),
+                      value: conditionDraft.value.trim(),
+                      operator: conditionDraft.operator,
+                      negated: conditionDraft.negated
+                    });
+                  }}
+                >
+                  Preview Diff
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  disabled={commandBusy || !conditionDraft.variableName.trim() || selectedNode.data.conditionIndex === undefined || !selectedNode.data.provenance?.functionName}
+                  onClick={() => {
+                    const targetFunctionName = selectedNode.data.provenance?.functionName;
+                    if (!targetFunctionName) return;
+                    onRemoveConditionLink({
+                      targetFunctionName,
+                      variableName: conditionDraft.variableName.trim(),
+                      value: conditionDraft.value.trim(),
+                      operator: conditionDraft.operator,
+                      negated: conditionDraft.negated
+                    });
+                  }}
+                >
+                  Remove Condition Link
+                </Button>
+              </>
             )}
 
             {!writableEnabled && (
