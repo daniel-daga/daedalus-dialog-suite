@@ -44,6 +44,7 @@ export interface ConnectConditionCommand {
   variableName?: string;
   value?: string | number | boolean;
   operator?: '==' | '!=';
+  negated?: boolean;
 }
 
 export interface AddKnowsInfoRequirementCommand {
@@ -81,11 +82,13 @@ export interface RemoveConditionLinkCommand {
 export interface UpdateConditionLinkCommand {
   type: 'updateConditionLink';
   targetFunctionName: string;
+  conditionIndex?: number;
   oldVariableName: string;
   oldValue: string | number | boolean;
   variableName: string;
   value: string | number | boolean;
   operator?: '==' | '!=';
+  negated?: boolean;
 }
 
 export interface UpdateTransitionTextCommand {

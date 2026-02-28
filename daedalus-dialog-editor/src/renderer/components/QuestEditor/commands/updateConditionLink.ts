@@ -6,14 +6,15 @@ const isMatchingVariableCondition = (
   condition: DialogCondition,
   variableName: string,
   value: string | number | boolean,
-  operator: '==' | '!=' = '=='
+  operator: '==' | '!=' = '==',
+  negated = false
 ): boolean => {
   return (
     condition.type === 'VariableCondition' &&
     condition.variableName === variableName &&
     condition.operator === operator &&
     String(condition.value) === String(value) &&
-    !condition.negated
+    Boolean(condition.negated) === negated
   );
 };
 
@@ -43,29 +44,28 @@ export const executeUpdateConditionLinkCommand = (
   }
 
   const conditions = targetFunction.conditions || [];
-  const existingIndex = conditions.findIndex((condition) => {
-    return isMatchingVariableCondition(condition, command.oldVariableName, command.oldValue, command.operator || '==');
-  });
-  if (existingIndex < 0) {
+  const existingIndex = typeof command.conditionIndex === 'number'
+    ? command.conditionIndex
+    : conditions.findIndex((condition) => {
+      return isMatchingVariableCondition(
+        condition,
+        command.oldVariableName,
+        command.oldValue,
+        command.operator || '==',
+        false
+      );
+    });
+
+  if (
+    existingIndex < 0 ||
+    existingIndex >= conditions.length ||
+    conditions[existingIndex]?.type !== 'VariableCondition'
+  ) {
     return {
       ok: false,
       errors: [{
         code: 'CONDITION_NOT_FOUND',
         message: `Condition "${command.oldVariableName} == ${String(command.oldValue)}" was not found on "${command.targetFunctionName}".`
-      }]
-    };
-  }
-
-  const duplicateIndex = conditions.findIndex((condition, index) => {
-    if (index === existingIndex) return false;
-    return isMatchingVariableCondition(condition, command.variableName, command.value, command.operator || '==');
-  });
-  if (duplicateIndex >= 0) {
-    return {
-      ok: false,
-      errors: [{
-        code: 'CONDITION_ALREADY_EXISTS',
-        message: `Condition "${command.variableName} == ${String(command.value)}" already exists on "${command.targetFunctionName}".`
       }]
     };
   }
@@ -81,6 +81,21 @@ export const executeUpdateConditionLinkCommand = (
     };
   }
 
+  const nextNegated = Boolean(command.negated);
+  const duplicateIndex = conditions.findIndex((condition, index) => {
+    if (index === existingIndex) return false;
+    return isMatchingVariableCondition(condition, command.variableName, command.value, operator, nextNegated);
+  });
+  if (duplicateIndex >= 0) {
+    return {
+      ok: false,
+      errors: [{
+        code: 'CONDITION_ALREADY_EXISTS',
+        message: `Condition "${command.variableName} ${operator} ${String(command.value)}" already exists on "${command.targetFunctionName}".`
+      }]
+    };
+  }
+
   const updatedModel = cloneModel(context.model);
   const updatedConditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
   updatedConditions[existingIndex] = {
@@ -88,7 +103,7 @@ export const executeUpdateConditionLinkCommand = (
     variableName: command.variableName,
     operator,
     value: command.value,
-    negated: false
+    negated: nextNegated
   };
   updatedModel.functions[command.targetFunctionName].conditions = updatedConditions;
 
