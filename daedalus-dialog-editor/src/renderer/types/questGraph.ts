@@ -6,7 +6,8 @@ export type QuestGraphNodeKind =
   | 'misState'
   | 'logEntry'
   | 'dialog'
-  | 'condition';
+  | 'condition'
+  | 'logical';
 
 export type QuestGraphEdgeKind =
   | 'writes'
@@ -34,6 +35,8 @@ export interface QuestGraphNodeData {
   npc: string;
   description?: string;
   expression?: string;
+  operator?: 'AND' | 'OR';
+  negated?: boolean;
   type?: string;
   status?: string;
   variableName?: string;

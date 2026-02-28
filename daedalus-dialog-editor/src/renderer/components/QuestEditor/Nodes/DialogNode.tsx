@@ -56,14 +56,23 @@ const DialogNode: React.FC<NodeProps> = ({ data, selected }) => {
         {/* Handles */}
         <Box sx={{ position: 'relative', mt: 1, height: 20 }}>
           {/* Input: Condition */}
-          <Box sx={{ position: 'absolute', left: -20, top: 5, display: 'flex', alignItems: 'center' }}>
+          <Box sx={{ position: 'absolute', left: -20, top: -2, display: 'flex', alignItems: 'center' }}>
             <Handle
               type="target"
               position={Position.Left}
               id="in-condition"
               style={{ background: '#4caf50', width: 10, height: 10 }}
             />
-            <Typography variant="caption" sx={{ ml: 1, fontSize: 9, color: '#aaa' }}>Conditions</Typography>
+            <Typography variant="caption" sx={{ ml: 1, fontSize: 9, color: '#aaa' }}>Condition A</Typography>
+          </Box>
+          <Box sx={{ position: 'absolute', left: -20, top: 12, display: 'flex', alignItems: 'center' }}>
+            <Handle
+              type="target"
+              position={Position.Left}
+              id="in-condition-b"
+              style={{ background: '#81c784', width: 10, height: 10 }}
+            />
+            <Typography variant="caption" sx={{ ml: 1, fontSize: 9, color: '#aaa' }}>Condition B</Typography>
           </Box>
 
           {/* Output: Finished */}

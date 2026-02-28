@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Box, Typography } from '@mui/material';
+import { Box, Chip, Typography } from '@mui/material';
 import { HelpOutline } from '@mui/icons-material';
 import BaseNode from './BaseNode';
 import ReferenceLink from '../../common/ReferenceLink';
@@ -15,6 +15,23 @@ const ConditionNode: React.FC<NodeProps> = ({ data, selected }) => {
       selected={selected}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+          {data.negated && (
+            <Chip
+              size="small"
+              label="NOT"
+              sx={{ height: 18, fontSize: 9, bgcolor: '#c62828', color: '#fff' }}
+            />
+          )}
+          {data.kind === 'logical' && data.operator && (
+            <Chip
+              size="small"
+              label={String(data.operator)}
+              sx={{ height: 18, fontSize: 9, bgcolor: '#6a1b9a', color: '#fff' }}
+            />
+          )}
+        </Box>
+
         <Box sx={{ bgcolor: '#1a1a1a', p: 1, borderRadius: 1 }}>
           <Typography variant="body2" component="div" sx={{ fontSize: 11, fontFamily: 'monospace', color: '#81d4fa' }}>
             <ExpressionText expression={data.expression || 'TRUE'} />
