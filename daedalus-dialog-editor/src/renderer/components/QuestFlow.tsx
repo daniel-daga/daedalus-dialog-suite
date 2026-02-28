@@ -1,26 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  Connection,
-  Node,
-  NodeTypes,
-  useNodesState,
-  useEdgesState
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+import { useNodesState, useEdgesState } from 'reactflow';
 import {
   Alert,
   Box,
   Button,
-  Checkbox,
-  FormControl,
-  FormControlLabel,
-  InputLabel,
-  MenuItem,
   Paper,
-  Select,
   Stack,
   Typography
 } from '@mui/material';
@@ -39,9 +23,6 @@ import {
   type QuestGraphCommand
 } from '../quest/domain';
 import { QuestEditingService } from '../quest/application';
-import DialogNode from './QuestEditor/Nodes/DialogNode';
-import QuestStateNode from './QuestEditor/Nodes/QuestStateNode';
-import ConditionNode from './QuestEditor/Nodes/ConditionNode';
 import QuestInspectorPanel from './QuestEditor/Inspector/QuestInspectorPanel';
 import QuestDiffPreviewDialog from './QuestEditor/Inspector/QuestDiffPreviewDialog';
 import QuestLiteGraphCanvas from './QuestEditor/QuestLiteGraphCanvas';
@@ -69,35 +50,6 @@ interface PendingDiffPreview {
     blocking?: boolean;
   }>;
 }
-
-const inferConditionValueFromNode = (node: QuestGraphNode | undefined): { variableName: string; value: string } | null => {
-  if (!node) return null;
-  const description = String(node.data.description || '');
-  const variableName = node.data.variableName;
-
-  const assignmentMatch = description.match(/Set\s+([A-Z0-9_]+)\s*=\s*(.+)$/i);
-  if (assignmentMatch?.[1] && assignmentMatch?.[2]) {
-    return {
-      variableName: assignmentMatch[1],
-      value: assignmentMatch[2].trim()
-    };
-  }
-
-  if (variableName) {
-    if (description.includes('LOG_RUNNING')) return { variableName, value: 'LOG_RUNNING' };
-    if (description.includes('LOG_SUCCESS')) return { variableName, value: 'LOG_SUCCESS' };
-    if (description.includes('LOG_FAILED')) return { variableName, value: 'LOG_FAILED' };
-    return { variableName, value: 'LOG_RUNNING' };
-  }
-
-  return null;
-};
-
-const nodeTypes: NodeTypes = {
-  dialog: DialogNode,
-  questState: QuestStateNode,
-  condition: ConditionNode
-};
 
 const formatDiffPreviewSource = (
   entries: Array<{ filePath: string; code: string }>,
@@ -145,26 +97,21 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     codeSettings: state.codeSettings
   }));
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<QuestGraphNode['data']>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<QuestGraphEdge['data']>([]);
+  const [nodes, setNodes] = useNodesState<QuestGraphNode['data']>([]);
+  const [edges, setEdges] = useEdgesState<QuestGraphEdge['data']>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
   const [pendingPreview, setPendingPreview] = useState<PendingDiffPreview | null>(null);
-  const [graphOptions, setGraphOptions] = useState<QuestGraphBuildOptions>({
+  const graphOptions = useMemo<QuestGraphBuildOptions>(() => ({
     onlySelectedQuest: true,
     hideInferredEdges: false,
     showConditions: true,
     showEntrySurfacesOnly: false
-  });
-  const [connectMode, setConnectMode] = useState(false);
-  const [connectKind, setConnectKind] = useState<'transition' | 'requires'>('transition');
+  }), []);
 
   const isProjectMode = !!projectPath;
-  const nodeFramework = (import.meta.env.VITE_QUEST_NODE_FRAMEWORK || 'litegraph').toLowerCase();
-  const useComfyNodeFramework = nodeFramework === 'litegraph';
-
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) || null,
     [nodes, selectedNodeId]
@@ -428,81 +375,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     }
   }, [questName, resolveFilePathForFunction, writableEnabled, refreshGraph, applyQuestNodePositionWithHistory, preparePendingPreview]);
 
-  const runTransitionConnectWithPreview = useCallback(async (
-    sourceFunctionName: string,
-    targetFunctionName: string,
-    choiceText: string
-  ) => {
-    if (!writableEnabled) {
-      setCommandError('Writable quest editor is disabled by feature flag.');
-      return;
-    }
-    if (!questName) {
-      setCommandError('No quest selected.');
-      return;
-    }
-
-    setCommandBusy(true);
-    setCommandError(null);
-    try {
-      const sourceFilePath = await resolveFilePathForFunction(sourceFunctionName);
-      const targetFilePath = await resolveFilePathForFunction(targetFunctionName);
-      if (!sourceFilePath || !targetFilePath) return;
-
-      const sourceState = useEditorStore.getState().getFileState(sourceFilePath);
-      const targetState = useEditorStore.getState().getFileState(targetFilePath);
-      if (!sourceState || !targetState) {
-        setCommandError('Unable to load source/target files for transition command.');
-        return;
-      }
-
-      const sourceResult = QuestEditingService.runCommand(
-        { questName, model: sourceState.semanticModel },
-        {
-          type: 'connectCondition',
-          mode: 'transition',
-          sourceFunctionName,
-          targetFunctionName,
-          choiceText
-        }
-      );
-      if (!sourceResult.ok) {
-        setCommandError(sourceResult.errors.map((error) => error.message).join(' '));
-        return;
-      }
-
-      const updates = new Map<string, SemanticModel>([[sourceFilePath, sourceResult.updatedModel]]);
-
-      if (sourceFilePath !== targetFilePath) {
-        const sourceDialogName = findDialogNameForFunction(semanticModel, sourceFunctionName);
-        if (sourceDialogName) {
-          const targetResult = QuestEditingService.runCommand(
-            { questName, model: targetState.semanticModel },
-            {
-              type: 'addKnowsInfoRequirement',
-              targetFunctionName,
-              dialogRef: sourceDialogName,
-              npc: 'self'
-            }
-          );
-          if (!targetResult.ok) {
-            setCommandError(targetResult.errors.map((error) => error.message).join(' '));
-            return;
-          }
-          updates.set(targetFilePath, targetResult.updatedModel);
-        }
-      }
-
-      await preparePendingPreview(
-        Array.from(updates.entries()).map(([filePath, updatedModel]) => ({ filePath, updatedModel }))
-      );
-    } catch (error) {
-      setCommandError(error instanceof Error ? error.message : 'Failed to connect transition.');
-    } finally {
-      setCommandBusy(false);
-    }
-  }, [writableEnabled, questName, resolveFilePathForFunction, preparePendingPreview, semanticModel]);
-
   const runTransitionRemoveWithPreview = useCallback(async (
     sourceFunctionName: string,
     targetFunctionName: string
@@ -650,41 +522,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     }
   }, [writableEnabled, questName, resolveFilePathForFunction, preparePendingPreview, semanticModel]);
 
-  const onConnect = useCallback(async (connection: Connection) => {
-    if (!connectMode) {
-      setCommandError('Enable Connect Mode to create transitions.');
-      return;
-    }
-    if (!writableEnabled) {
-      setCommandError('Writable quest editor is disabled by feature flag.');
-      return;
-    }
-    if (!connection.source || !connection.target) {
-      setCommandError('Invalid edge: missing source or target.');
-      return;
-    }
-    const sourceNode = nodes.find((node) => node.id === connection.source);
-    if (connectKind === 'requires') {
-      const condition = inferConditionValueFromNode(sourceNode);
-      if (!condition) {
-        setCommandError('Unable to infer variable condition from source node.');
-        return;
-      }
-
-      await runQuestCommandWithPreview({
-        type: 'connectCondition',
-        mode: 'requires',
-        sourceFunctionName: connection.source,
-        targetFunctionName: connection.target,
-        variableName: condition.variableName,
-        value: condition.value
-      }, 'Failed to connect condition link.');
-      return;
-    }
-
-    await runTransitionConnectWithPreview(connection.source, connection.target, 'Continue');
-  }, [connectMode, runQuestCommandWithPreview, nodes, connectKind, writableEnabled, runTransitionConnectWithPreview]);
-
   const persistNodeMove = useCallback((
     nodeId: string,
     position: { x: number; y: number },
@@ -711,11 +548,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
 
     applyQuestNodePositionWithHistory(resolvedOwnerFilePath, questName, nodeId, position);
   }, [activeFile, applyQuestNodePositionWithHistory, getQuestNodePositions, questName, writableEnabled]);
-
-  const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
-    const ownerFilePath = (node as QuestGraphNode).data?.provenance?.filePath;
-    void persistNodeMove(node.id, { x: node.position.x, y: node.position.y }, node.type, ownerFilePath);
-  }, [persistNodeMove]);
 
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
@@ -858,83 +690,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
             >
               Redo
             </Button>
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={connectMode}
-                  onChange={(event) => setConnectMode(event.target.checked)}
-                  size="small"
-                  disabled={!writableEnabled}
-                />
-              )}
-              label="Connect mode"
-            />
-            {connectMode && (
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel id="connect-kind-label">Connect As</InputLabel>
-                <Select
-                  labelId="connect-kind-label"
-                  label="Connect As"
-                  value={connectKind}
-                  onChange={(event) => setConnectKind(event.target.value as 'transition' | 'requires')}
-                >
-                  <MenuItem value="transition">Transition</MenuItem>
-                  <MenuItem value="requires">Condition Link</MenuItem>
-                </Select>
-              </FormControl>
-            )}
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={!!graphOptions.onlySelectedQuest}
-                  onChange={(event) => setGraphOptions((prev) => ({
-                    ...prev,
-                    onlySelectedQuest: event.target.checked
-                  }))}
-                  size="small"
-                />
-              )}
-              label="Only selected quest"
-            />
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={!!graphOptions.hideInferredEdges}
-                  onChange={(event) => setGraphOptions((prev) => ({
-                    ...prev,
-                    hideInferredEdges: event.target.checked
-                  }))}
-                  size="small"
-                />
-              )}
-              label="Hide inferred edges"
-            />
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={!!graphOptions.showConditions}
-                  onChange={(event) => setGraphOptions((prev) => ({
-                    ...prev,
-                    showConditions: event.target.checked
-                  }))}
-                  size="small"
-                />
-              )}
-              label="Show conditions"
-            />
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={!!graphOptions.showEntrySurfacesOnly}
-                  onChange={(event) => setGraphOptions((prev) => ({
-                    ...prev,
-                    showEntrySurfacesOnly: event.target.checked
-                  }))}
-                  size="small"
-                />
-              )}
-              label="Entry surfaces only"
-            />
             {entrySurfaceNodes.length > 0 && (
               <Typography variant="caption" sx={{ alignSelf: 'center', color: '#90caf9' }}>
                 Entry surfaces: {entrySurfaceNodes.length}
@@ -951,11 +706,9 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
                 Writable quest editor is disabled (read-only fallback).
               </Typography>
             )}
-            {useComfyNodeFramework && connectMode && (
-              <Typography variant="caption" sx={{ alignSelf: 'center', color: '#ffb74d' }}>
-                LiteGraph mode mirrors ComfyUI framework. Use inspector actions for edits; drag-connect is available in legacy React Flow mode.
-              </Typography>
-            )}
+            <Typography variant="caption" sx={{ alignSelf: 'center', color: '#999' }}>
+              Using ComfyUI-style node editor defaults.
+            </Typography>
           </Stack>
         </Paper>
 
@@ -970,48 +723,16 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         )}
 
         <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-          {useComfyNodeFramework ? (
-            <QuestLiteGraphCanvas
-              nodes={nodes}
-              edges={edges}
-              selectedNodeId={selectedNodeId}
-              onNodeClick={onNodeClick}
-              onNodeDoubleClick={onNodeDoubleClick}
-              onEdgeClick={onEdgeClick}
-              onNodeMove={handleLiteGraphNodeMove}
-              onPaneClick={handlePaneClick}
-            />
-          ) : (
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onNodeDragStop={onNodeDragStop}
-              onNodeClick={onNodeClick}
-              onNodeDoubleClick={onNodeDoubleClick}
-              onEdgeClick={onEdgeClick}
-              onPaneClick={handlePaneClick}
-              nodeTypes={nodeTypes}
-              fitView
-            >
-              <Background color="#333" gap={20} />
-              <Controls />
-              <MiniMap
-                nodeStrokeColor={(node) => {
-                  if (node.type === 'questState') return '#00ff00';
-                  if (node.type === 'group') return '#eee';
-                  if (node.type === 'condition') return '#ffc107';
-                  return '#0041d0';
-                }}
-                nodeColor={(node) => (node.type === 'group' ? '#fff' : '#fff')}
-                nodeBorderRadius={2}
-                maskColor="rgba(0, 0, 0, 0.7)"
-                style={{ backgroundColor: '#222' }}
-              />
-            </ReactFlow>
-          )}
+          <QuestLiteGraphCanvas
+            nodes={nodes}
+            edges={edges}
+            selectedNodeId={selectedNodeId}
+            onNodeClick={onNodeClick}
+            onNodeDoubleClick={onNodeDoubleClick}
+            onEdgeClick={onEdgeClick}
+            onNodeMove={handleLiteGraphNodeMove}
+            onPaneClick={handlePaneClick}
+          />
         </Box>
       </Box>
 
