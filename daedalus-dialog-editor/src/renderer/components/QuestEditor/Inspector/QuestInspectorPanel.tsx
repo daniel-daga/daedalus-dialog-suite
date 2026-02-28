@@ -115,6 +115,13 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   } => Boolean(condition && condition.type === 'VariableCondition' && 'variableName' in condition);
 
   const isEditableConditionNode = Boolean(selectedNode?.data.kind === 'condition' && selectedNode?.data.provenance?.functionName);
+  const selectedConditionTypeLabel = useMemo(() => {
+    const conditionType = selectedNode?.data.conditionType;
+    if (!conditionType) return null;
+    if (conditionType === 'ExternalTriggerCondition') return 'External Trigger';
+    if (conditionType === 'LogicalCondition') return 'Logical';
+    return conditionType.replace(/Condition$/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
+  }, [selectedNode?.data.conditionType]);
 
   const parsedRequiresCondition = useMemo(() => {
     if (!selectedEdge || selectedEdge.data?.kind !== 'requires') return null;
@@ -305,6 +312,9 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
           <Stack spacing={1.5}>
             <Chip size="small" variant="outlined" label={`Node: ${selectedNode.data.kind}`} />
             <Stack direction="row" spacing={1} flexWrap="wrap">
+              {selectedConditionTypeLabel && selectedNode.data.kind === 'condition' && (
+                <Chip size="small" variant="outlined" label={`Condition: ${selectedConditionTypeLabel}`} />
+              )}
               {selectedNode.data.sourceKind && (
                 <Chip size="small" variant="outlined" label={`Source: ${selectedNode.data.sourceKind}`} />
               )}

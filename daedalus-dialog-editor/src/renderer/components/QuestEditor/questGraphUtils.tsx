@@ -3,6 +3,7 @@ import { MarkerType } from 'reactflow';
 import type { DialogAction, DialogCondition, SemanticModel } from '../../types/global';
 import type {
   QuestGraphBuildOptions,
+  QuestGraphConditionType,
   QuestGraphData,
   QuestGraphEdge,
   QuestGraphNode,
@@ -24,6 +25,7 @@ interface InternalNodeData {
   operator?: 'AND' | 'OR';
   negated?: boolean;
   kind: QuestGraphNodeKind;
+  conditionType?: QuestGraphConditionType;
   condition?: DialogCondition;
   conditionIndex?: number;
   sourceKind: QuestGraphSourceKind;
@@ -87,182 +89,74 @@ const isNegatedCondition = (cond: DialogCondition): boolean => {
   return false;
 };
 
+const inferConditionType = (cond?: DialogCondition): QuestGraphConditionType | undefined => {
+  if (!cond) return undefined;
+
+  const explicitType = typeof cond.type === 'string' ? cond.type : undefined;
+  if (explicitType && explicitType !== 'GenericCondition') {
+    return explicitType as QuestGraphConditionType;
+  }
+  if ('variableName' in cond) return 'VariableCondition';
+  if ('npc' in cond && 'dialogRef' in cond) return 'NpcKnowsInfoCondition';
+  if ('npc' in cond && 'item' in cond) return 'NpcHasItemsCondition';
+  if ('npc' in cond && 'state' in cond) return 'NpcIsInStateCondition';
+  if ('npc' in cond && 'waypoint' in cond) return 'NpcGetDistToWpCondition';
+  if ('npc' in cond && 'talent' in cond) return 'NpcGetTalentSkillCondition';
+  if ('npc' in cond) return 'NpcIsDeadCondition';
+  if ('condition' in cond && typeof cond.condition === 'string') return 'Condition';
+  return 'Condition';
+};
+
+const getConditionLabel = (conditionType?: QuestGraphConditionType): string => {
+  if (!conditionType) return 'Condition';
+  if (conditionType === 'LogicalCondition') return 'Logical';
+  if (conditionType === 'ExternalTriggerCondition') return 'External Trigger';
+  return conditionType.replace(/Condition$/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
+};
+
+const getConditionNodeLabel = (
+  conditionType: QuestGraphConditionType | undefined,
+  expression: string
+): string => {
+  const baseLabel = getConditionLabel(conditionType);
+  if (conditionType === 'Condition' && expression) {
+    return shortenExpression(expression, 36);
+  }
+  return baseLabel;
+};
+
 const getConditionExpression = (cond: DialogCondition): string => {
-  if (cond.type === 'NpcKnowsInfoCondition') {
+  const conditionType = inferConditionType(cond);
+  if (conditionType === 'NpcKnowsInfoCondition' && 'npc' in cond && 'dialogRef' in cond) {
     return `Npc_KnowsInfo(${cond.npc}, ${cond.dialogRef})`;
   }
-  if (cond.type === 'VariableCondition') {
+  if (conditionType === 'VariableCondition' && 'variableName' in cond) {
     const operator = cond.operator || (cond.negated ? '!=' : '==');
     return `${cond.variableName} ${operator} ${String(cond.value ?? '')}`.trim();
   }
-  if (cond.type === 'NpcHasItemsCondition') {
+  if (conditionType === 'NpcHasItemsCondition' && 'npc' in cond && 'item' in cond) {
     return `${cond.npc} has ${cond.item}`;
   }
-  if (cond.type === 'NpcIsInStateCondition') {
-    return `${cond.npc} ${cond.negated ? 'NOT in state' : 'in state'} ${cond.state}`;
+  if (conditionType === 'NpcIsInStateCondition' && 'npc' in cond && 'state' in cond) {
+    const negated = Boolean((cond as { negated?: boolean }).negated);
+    return `${cond.npc} ${negated ? 'NOT in state' : 'in state'} ${cond.state}`;
   }
-  if (cond.type === 'NpcIsDeadCondition') {
-    return `${cond.npc} ${cond.negated ? 'is alive' : 'is dead'}`;
+  if (conditionType === 'NpcIsDeadCondition' && 'npc' in cond) {
+    const negated = Boolean((cond as { negated?: boolean }).negated);
+    return `${cond.npc} ${negated ? 'is alive' : 'is dead'}`;
   }
-  if (cond.type === 'NpcGetDistToWpCondition') {
+  if (conditionType === 'NpcGetDistToWpCondition' && 'npc' in cond && 'waypoint' in cond) {
     const operator = cond.operator || '<=';
     return `Npc_GetDistToWP(${cond.npc}, ${cond.waypoint}) ${operator} ${String(cond.value ?? '')}`.trim();
   }
-  if (cond.type === 'NpcGetTalentSkillCondition') {
+  if (conditionType === 'NpcGetTalentSkillCondition' && 'npc' in cond && 'talent' in cond) {
     const operator = cond.operator || '>=';
     return `Npc_GetTalentSkill(${cond.npc}, ${cond.talent}) ${operator} ${String(cond.value ?? '')}`.trim();
   }
   if ('condition' in cond && typeof cond.condition === 'string') {
     return cond.condition;
   }
-  return cond.type || 'Condition';
-};
-
-const isTrivialConditionExpression = (expression: string): boolean => {
-  const compact = expression.trim().replace(/\s+/g, ' ').toUpperCase();
-  return (
-    compact === 'RETURN TRUE;' ||
-    compact === 'RETURN 1;' ||
-    compact === 'RETURN FALSE;' ||
-    compact === 'RETURN 0;' ||
-    compact === 'TRUE' ||
-    compact === '1' ||
-    compact === 'FALSE' ||
-    compact === '0'
-  );
-};
-
-const stripOuterParens = (value: string): string => {
-  let text = value.trim();
-  while (text.startsWith('(') && text.endsWith(')')) {
-    let depth = 0;
-    let balanced = true;
-    for (let i = 0; i < text.length; i += 1) {
-      const ch = text[i];
-      if (ch === '(') depth += 1;
-      if (ch === ')') depth -= 1;
-      if (depth === 0 && i < text.length - 1) {
-        balanced = false;
-        break;
-      }
-      if (depth < 0) {
-        balanced = false;
-        break;
-      }
-    }
-    if (!balanced || depth !== 0) break;
-    text = text.slice(1, -1).trim();
-  }
-  return text;
-};
-
-const splitTopLevelBooleanExpression = (value: string): string[] => {
-  const parts: string[] = [];
-  let current = '';
-  let depth = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    const ch = value[i];
-    const next = value[i + 1];
-    if (ch === '(') {
-      depth += 1;
-      current += ch;
-      continue;
-    }
-    if (ch === ')') {
-      depth = Math.max(0, depth - 1);
-      current += ch;
-      continue;
-    }
-    if (depth === 0 && ((ch === '&' && next === '&') || (ch === '|' && next === '|'))) {
-      const candidate = stripOuterParens(current);
-      if (candidate) parts.push(candidate);
-      current = '';
-      i += 1;
-      continue;
-    }
-    current += ch;
-  }
-
-  const tail = stripOuterParens(current);
-  if (tail) parts.push(tail);
-  return parts;
-};
-
-const extractRawConditionCandidates = (raw: string): string[] => {
-  const text = raw.trim();
-  if (!text) return [];
-
-  const ifCandidates: string[] = [];
-  const ifRegex = /\bif\s*\(([\s\S]*?)\)/gi;
-  let ifMatch: RegExpExecArray | null = null;
-  while ((ifMatch = ifRegex.exec(text)) !== null) {
-    const inside = (ifMatch[1] || '').trim();
-    if (!inside) continue;
-    splitTopLevelBooleanExpression(inside).forEach((part) => {
-      const normalized = stripOuterParens(part);
-      if (normalized) ifCandidates.push(normalized);
-    });
-  }
-  if (ifCandidates.length > 0) {
-    return ifCandidates;
-  }
-
-  const returnMatch = text.match(/^return\s+(.+?);?$/i);
-  if (returnMatch?.[1]) {
-    return splitTopLevelBooleanExpression(returnMatch[1].trim());
-  }
-
-  return splitTopLevelBooleanExpression(text);
-};
-
-const getRawConditionExpressionsForFunction = (
-  funcName: string,
-  semanticModel: SemanticModel
-): string[] => {
-  const context = getDialogContextForFunction(funcName, semanticModel);
-  const expressions: string[] = [];
-  const seen = new Set<string>();
-
-  const pushExpr = (value: string | undefined) => {
-    if (!value) return;
-    const candidates = extractRawConditionCandidates(value);
-    candidates.forEach((candidate) => {
-      const trimmed = candidate.trim();
-      if (!trimmed || isTrivialConditionExpression(trimmed)) return;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      expressions.push(trimmed);
-    });
-  };
-
-  const conditionFuncName = context.conditionFunctionName;
-  if (conditionFuncName) {
-    const conditionFunc = semanticModel.functions?.[conditionFuncName];
-    const initialCount = expressions.length;
-    conditionFunc?.actions?.forEach((action: DialogAction) => {
-      if ('action' in action && typeof action.action === 'string') {
-        pushExpr(action.action);
-      }
-    });
-    const hasParsedConditions = Boolean(conditionFunc?.conditions?.length);
-    if (!hasParsedConditions && expressions.length === initialCount) {
-      pushExpr(`${conditionFuncName}()`);
-    }
-  }
-
-  if (context.dialogName) {
-    const dialog = semanticModel.dialogs?.[context.dialogName];
-    const conditionProp = dialog?.properties?.condition;
-    if (typeof conditionProp === 'string') {
-      const normalizedCondRef = conditionFuncName?.toLowerCase();
-      if (!normalizedCondRef || normalizedCondRef !== conditionProp.toLowerCase()) {
-        pushExpr(conditionProp);
-      }
-    }
-  }
-
-  return expressions;
+  return conditionType || 'Condition';
 };
 
 const getFunctionRefName = (candidate: unknown): string | undefined => {
@@ -370,7 +264,6 @@ const identifyQuestNodes = (
   Object.values(semanticModel.functions || {}).forEach((func) => {
     const context = getDialogContextForFunction(func.name, semanticModel);
     const effectiveConditions = getEffectiveConditionsForFunction(func.name, semanticModel);
-    const rawConditionExpressions = getRawConditionExpressionsForFunction(func.name, semanticModel);
     let isRelevant = false;
     let type: InternalNodeData['type'] = 'check';
     let description = '';
@@ -440,19 +333,16 @@ const identifyQuestNodes = (
     });
 
     effectiveConditions.forEach((cond: DialogCondition) => {
-      if (cond.type === 'VariableCondition' && cond.variableName === misVarName) {
+      const conditionType = inferConditionType(cond);
+      if (conditionType === 'VariableCondition' && 'variableName' in cond && cond.variableName === misVarName) {
         isRelevant = true;
         touchesSelectedQuest = true;
         hasQuestPrecondition = true;
         return;
       }
       hasNonQuestPrecondition = true;
-      nonQuestConditionKinds.add(cond.type || 'Condition');
+      nonQuestConditionKinds.add(conditionType || 'Condition');
     });
-    if (rawConditionExpressions.length > 0) {
-      hasNonQuestPrecondition = true;
-      nonQuestConditionKinds.add('Condition');
-    }
 
     if (isRelevant) {
       const sourceKind = inferFunctionSourceKind(
@@ -513,7 +403,7 @@ const identifyQuestNodes = (
       let isRelevantByKnows = false;
 
       func.conditions?.forEach((cond: DialogCondition) => {
-        if (cond.type !== 'NpcKnowsInfoCondition') return;
+        if (inferConditionType(cond) !== 'NpcKnowsInfoCondition' || !('dialogRef' in cond)) return;
         for (const relevantNode of nodeDataMap.values()) {
           if (relevantNode.label === cond.dialogRef) {
             isRelevantByKnows = true;
@@ -563,7 +453,7 @@ const identifyQuestNodes = (
       if (!consumerFunc) return;
 
       consumerFunc.conditions?.forEach((cond: DialogCondition) => {
-        if (cond.type !== 'VariableCondition' || cond.operator !== '==') return;
+        if (inferConditionType(cond) !== 'VariableCondition' || !('variableName' in cond) || cond.operator !== '==') return;
         const valueMap = producersByVariableAndValue.get(cond.variableName);
         if (!valueMap) return;
 
@@ -637,8 +527,6 @@ const buildQuestEdges = (
     const func = semanticModel.functions[consumerId];
     if (!func) return;
     const effectiveConditions = getEffectiveConditionsForFunction(consumerId, semanticModel);
-    const rawConditionExpressions = getRawConditionExpressionsForFunction(consumerId, semanticModel);
-    const seenConditionExpressions = new Set<string>();
     let addedConditionEdge = false;
 
     func.actions?.forEach((action: DialogAction) => {
@@ -678,15 +566,11 @@ const buildQuestEdges = (
     });
 
     effectiveConditions.forEach((cond: DialogCondition, condIndex: number) => {
+      const conditionType = inferConditionType(cond) || 'Condition';
       const expression = getConditionExpression(cond).trim();
-      if (expression) {
-        seenConditionExpressions.add(expression.toLowerCase());
-      }
-      const condToken = toNodeToken(expression || cond.type || `condition_${condIndex}`);
+      const condToken = toNodeToken(expression || conditionType || `condition_${condIndex}`);
       const conditionNodeId = `condition-${consumerId}-${condIndex}-${condToken}`;
-      const conditionLabel = cond.type
-        ? cond.type.replace(/Condition$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')
-        : 'Condition';
+      const conditionLabel = getConditionNodeLabel(conditionType, expression);
 
       if (!unresolvedConditionNodes.has(conditionNodeId)) {
         unresolvedConditionNodes.set(conditionNodeId, {
@@ -698,6 +582,7 @@ const buildQuestEdges = (
           nodeKind: 'external-condition',
           expression,
           kind: 'condition',
+          conditionType,
           negated: isNegatedCondition(cond),
           sourceKind: 'external',
           entrySurface: false,
@@ -725,8 +610,8 @@ const buildQuestEdges = (
           kind: 'requires',
           inferred: false,
           expression,
-          operator: cond.type === 'VariableCondition'
-            ? (cond.operator as '==' | '!=' | '<' | '>' | '<=' | '>=' | undefined)
+          operator: conditionType === 'VariableCondition'
+            ? ((cond as { operator?: '==' | '!=' | '<' | '>' | '<=' | '>=' }).operator)
             : undefined,
           provenance: {
             functionName: consumerId,
@@ -737,7 +622,7 @@ const buildQuestEdges = (
       addedConditionEdge = true;
       addAdjacency(conditionNodeId, consumerId);
 
-      if (cond.type === 'NpcKnowsInfoCondition') {
+      if (conditionType === 'NpcKnowsInfoCondition' && 'dialogRef' in cond) {
         const producerDialogName = cond.dialogRef;
         const producerDialog = semanticModel.dialogs[producerDialogName];
         let producerFunc: string | null = null;
@@ -774,7 +659,7 @@ const buildQuestEdges = (
         return;
       }
 
-      if (cond.type === 'VariableCondition') {
+      if (conditionType === 'VariableCondition' && 'variableName' in cond) {
         const variableName = cond.variableName;
         const operator = cond.operator || (cond.negated ? '!=' : '==');
         if (operator !== '==') return;
@@ -817,67 +702,10 @@ const buildQuestEdges = (
       }
     });
 
-    rawConditionExpressions.forEach((expression, rawIndex) => {
-      const normalizedExpr = expression.trim();
-      if (!normalizedExpr) return;
-      const signature = normalizedExpr.toLowerCase();
-      if (seenConditionExpressions.has(signature)) return;
-      seenConditionExpressions.add(signature);
-
-      const condToken = toNodeToken(normalizedExpr);
-      const conditionNodeId = `condition-raw-${consumerId}-${rawIndex}-${condToken}`;
-      if (!unresolvedConditionNodes.has(conditionNodeId)) {
-        unresolvedConditionNodes.set(conditionNodeId, {
-          id: conditionNodeId,
-          type: 'check',
-          label: 'Condition',
-          npc: 'External/World',
-          description: 'Condition function prerequisite',
-          nodeKind: 'external-condition',
-          expression: normalizedExpr,
-          kind: 'condition',
-          negated: false,
-          sourceKind: 'external',
-          entrySurface: false,
-          latentEntry: false,
-          entryReason: undefined,
-          inferred: false,
-          touchesSelectedQuest: false,
-          condition: undefined,
-          conditionIndex: undefined
-        });
-      }
-
-      edges.push({
-        id: `condition-raw-edge-${conditionNodeId}-${consumerId}`,
-        source: conditionNodeId,
-        target: consumerId,
-        sourceHandle: 'out-bool',
-        targetHandle: 'in-condition',
-        label: `requires ${shortenExpression(normalizedExpr, 40)}`,
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: '#ffa726', strokeWidth: 2 },
-        labelStyle: { fill: '#ffa726', fontSize: 10 },
-        data: {
-          kind: 'requires',
-          inferred: false,
-          expression: normalizedExpr,
-          provenance: {
-            functionName: consumerId,
-            dialogName: consumerData.provenance?.dialogName
-          }
-        }
-      });
-      addedConditionEdge = true;
-      addAdjacency(conditionNodeId, consumerId);
-    });
-
-
     const consumerConditionEdges = edges.filter((edge) =>
       edge.target === consumerId &&
       edge.data?.kind === 'requires' &&
-      (edge.source.startsWith(`condition-${consumerId}-`) || edge.source.startsWith(`condition-raw-${consumerId}-`))
+      edge.source.startsWith(`condition-${consumerId}-`)
     );
 
     if (consumerConditionEdges.length > 1) {
@@ -901,6 +729,7 @@ const buildQuestEdges = (
             expression: 'AND',
             operator: 'AND',
             kind: 'logical',
+            conditionType: 'LogicalCondition',
             negated: false,
             sourceKind: 'external',
             entrySurface: false,
@@ -984,6 +813,7 @@ const buildQuestEdges = (
           nodeKind: 'external-condition',
           expression: consumerData.entryReason || triggerLabel,
           kind: 'condition',
+          conditionType: 'ExternalTriggerCondition',
           negated: false,
           sourceKind: 'external',
           entrySurface: false,
@@ -1198,6 +1028,7 @@ const calculateDagreLayout = (
         operator: data.operator,
         negated: data.negated,
         type: data.type,
+        conditionType: data.conditionType,
         status: data.description,
         variableName: semanticModel.variables?.[misVarName] ? misVarName : undefined,
         condition: data.condition,

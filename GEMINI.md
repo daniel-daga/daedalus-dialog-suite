@@ -41,6 +41,7 @@ This repository contains tools for the Daedalus scripting language used in Gothi
 
 ### Build & Run
 *   **Dev (Main + Renderer):** `npm run dev`
+*   **Node Editor Playground (first step for node editor work):** `npm run dev:node-editor --workspace daedalus-dialog-editor`
 *   **Build:** `npm run build` (builds both main and renderer processes).
 *   **Test (Unit):** `npm run test` or `npm run test:watch`.
 *   **Test (E2E):** `npm run test:e2e`.
@@ -61,6 +62,7 @@ This repository contains tools for the Daedalus scripting language used in Gothi
 *   **Documentation:** Do not create extra markdown files. Code should be self-documenting.
 *   **Conventions:** Follow the patterns in `CLAUDE.md` files found in each package.
 *   **Verification:** Run `npm test` in the relevant workspace after every change.
+*   **Node editor verification loop:** keep `dev:node-editor` running and use Playwright MCP to smoke-test `/node-editor.html` during UI iteration.
 
 ### Root Commands
 *   **Build All:** `npm run build --workspaces`

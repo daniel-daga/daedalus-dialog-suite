@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
 import { LGraph, LGraphCanvas, LGraphNode } from 'litegraph.js';
-import type { QuestGraphEdge, QuestGraphNode } from '../../types/questGraph';
+import type { QuestGraphConditionType, QuestGraphEdge, QuestGraphNode } from '../../types/questGraph';
 
 interface QuestLiteGraphCanvasProps {
   nodes: QuestGraphNode[];
@@ -18,6 +18,38 @@ interface QuestLiteGraphCanvasProps {
   ) => void;
   onPaneClick: () => void;
 }
+
+const getConditionTypeLabel = (conditionType?: QuestGraphConditionType): string => {
+  if (!conditionType) return 'Condition';
+  if (conditionType === 'ExternalTriggerCondition') return 'External Trigger';
+  if (conditionType === 'LogicalCondition') return 'Logical';
+  return conditionType.replace(/Condition$/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
+};
+
+const getConditionNodeColor = (conditionType?: QuestGraphConditionType): string => {
+  switch (conditionType) {
+    case 'VariableCondition':
+      return '#1565c0';
+    case 'NpcKnowsInfoCondition':
+      return '#00695c';
+    case 'NpcHasItemsCondition':
+      return '#6d4c41';
+    case 'NpcIsInStateCondition':
+      return '#455a64';
+    case 'NpcIsDeadCondition':
+      return '#b71c1c';
+    case 'NpcGetDistToWpCondition':
+      return '#2e7d32';
+    case 'NpcGetTalentSkillCondition':
+      return '#4a148c';
+    case 'ExternalTriggerCondition':
+      return '#558b2f';
+    case 'Condition':
+      return '#455a64';
+    default:
+      return '#8a6d1f';
+  }
+};
 
 const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   nodes,
@@ -150,9 +182,14 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 
     nodes.forEach((node, index) => {
       if (node.type === 'group') return;
-      const runtimeNode = new LGraphNode(String(node.data?.label || node.id));
+      const label = String(node.data?.label || node.id);
+      const conditionTypeLabel = node.type === 'condition'
+        ? getConditionTypeLabel(node.data?.conditionType)
+        : null;
+      const showConditionTypeSuffix = Boolean(conditionTypeLabel && conditionTypeLabel !== 'Condition');
+      const runtimeNode = new LGraphNode(label);
       runtimeNode.id = index + 1;
-      runtimeNode.title = String(node.data?.label || node.id);
+      runtimeNode.title = showConditionTypeSuffix ? `${label} (${conditionTypeLabel})` : label;
       runtimeNode.pos = [node.position.x, node.position.y];
       runtimeNode.size = [220, 90];
       if (node.type === 'logical') {
@@ -168,7 +205,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
         runtimeNode.addOutput(node.type === 'condition' ? 'Result' : 'Out', '*');
       }
       runtimeNode.color = node.type === 'condition'
-        ? '#8a6d1f'
+        ? getConditionNodeColor(node.data?.conditionType)
         : node.type === 'logical'
           ? '#7b1fa2'
           : node.type === 'questState'

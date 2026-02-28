@@ -24,6 +24,18 @@ export type QuestGraphSourceKind =
   | 'script'
   | 'external';
 
+export type QuestGraphConditionType =
+  | 'VariableCondition'
+  | 'NpcKnowsInfoCondition'
+  | 'NpcHasItemsCondition'
+  | 'NpcIsInStateCondition'
+  | 'NpcIsDeadCondition'
+  | 'NpcGetDistToWpCondition'
+  | 'NpcGetTalentSkillCondition'
+  | 'Condition'
+  | 'LogicalCondition'
+  | 'ExternalTriggerCondition';
+
 export interface QuestGraphProvenance {
   filePath?: string;
   functionName?: string;
@@ -39,6 +51,7 @@ export interface QuestGraphNodeData {
   operator?: 'AND' | 'OR';
   negated?: boolean;
   type?: string;
+  conditionType?: QuestGraphConditionType;
   status?: string;
   variableName?: string;
   condition?: DialogCondition;

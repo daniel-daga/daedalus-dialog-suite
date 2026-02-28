@@ -304,8 +304,146 @@ describe('questGraphUtils', () => {
         const combinedEdge = edges.find((edge) => edge.target === 'DIA_Target_Info' && edge.data?.expression === 'AND');
         expect(combinedEdge).toBeDefined();
 
+        const variableConditionNode = nodes.find((node) => node.data.conditionType === 'VariableCondition');
+        expect(variableConditionNode).toBeDefined();
+
+        const deadConditionNode = nodes.find((node) => node.data.conditionType === 'NpcIsDeadCondition');
+        expect(deadConditionNode).toBeDefined();
+
         const negatedCondition = nodes.find((node) => node.data.kind === 'condition' && node.data.expression?.includes('is alive'));
         expect(negatedCondition?.data.negated).toBe(true);
+    });
+
+    it('uses semantic conditions from linked condition functions', () => {
+        const questName = 'TOPIC_Addon_BanditsTower';
+        const infoFunction = 'DIA_Addon_Henry_Owen_Info';
+        const conditionFunction = 'DIA_Addon_Henry_Owen_Condition';
+
+        const functions = [
+            {
+                name: infoFunction,
+                conditions: [],
+                actions: [
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }
+                ]
+            },
+            {
+                name: conditionFunction,
+                conditions: [
+                    {
+                        type: 'VariableCondition',
+                        variableName: 'MIS_Henry_FreeBDTTower',
+                        operator: '==',
+                        value: 'LOG_SUCCESS'
+                    },
+                    {
+                        type: 'VariableCondition',
+                        variableName: 'Henry_EnterCrewMember',
+                        operator: '==',
+                        value: 'TRUE'
+                    },
+                    {
+                        type: 'NpcIsDeadCondition',
+                        npc: 'Malcom',
+                        negated: true
+                    }
+                ],
+                actions: [
+                    {
+                        type: 'Action',
+                        action: `if (MIS_Henry_FreeBDTTower == LOG_SUCCESS)
+&& (Henry_EnterCrewMember == TRUE)
+&& (!Npc_IsDead (Malcom))
+{
+  return TRUE;
+};`
+                    }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            {
+                name: 'DIA_Addon_Henry_Owen',
+                properties: {
+                    information: infoFunction,
+                    condition: conditionFunction,
+                    npc: 'PIR_1354_Addon_Henry'
+                }
+            }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { nodes } = buildQuestGraph(model, questName);
+        const conditionNodes = nodes.filter((node) => node.id.startsWith(`condition-${infoFunction}-`));
+        const expressions = new Set(
+            conditionNodes
+                .map((node) => String(node.data.expression || '').replace(/\s+/g, ' ').trim())
+                .filter(Boolean)
+        );
+
+        expect(expressions.has('MIS_Henry_FreeBDTTower == LOG_SUCCESS')).toBe(true);
+        expect(expressions.has('Henry_EnterCrewMember == TRUE')).toBe(true);
+        expect(Array.from(expressions).some((expr) => expr.includes('Malcom') && expr.includes('alive'))).toBe(true);
+    });
+
+    it('does not parse raw condition action strings in quest graph builder', () => {
+        const questName = 'TOPIC_Addon_BanditsTower';
+        const infoFunction = 'DIA_Addon_Henry_Owen_Info';
+        const conditionFunction = 'DIA_Addon_Henry_Owen_Condition';
+
+        const functions = [
+            {
+                name: infoFunction,
+                conditions: [],
+                actions: [
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }
+                ]
+            },
+            {
+                name: conditionFunction,
+                conditions: [],
+                actions: [
+                    {
+                        type: 'Action',
+                        action: `if (MIS_Henry_FreeBDTTower == LOG_SUCCESS)
+&& (Henry_EnterCrewMember == TRUE)
+&& (!Npc_IsDead (Malcom))
+{
+  return TRUE;
+};`
+                    }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            {
+                name: 'DIA_Addon_Henry_Owen',
+                properties: {
+                    information: infoFunction,
+                    condition: conditionFunction,
+                    npc: 'PIR_1354_Addon_Henry'
+                }
+            }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { nodes, edges } = buildQuestGraph(model, questName);
+        const linkedConditionNodeIds = new Set(
+            edges
+                .filter((edge) => edge.target === infoFunction && edge.source.startsWith('condition-'))
+                .map((edge) => edge.source)
+        );
+        const linkedConditionNodes = nodes.filter((node) => linkedConditionNodeIds.has(node.id));
+        const parsedConditionNodes = linkedConditionNodes.filter((node) => node.data.conditionType === 'Condition');
+
+        expect(parsedConditionNodes.length).toBe(0);
+        expect(
+            linkedConditionNodes.some(
+                (node) => String(node.data.expression || '').includes('MIS_Henry_FreeBDTTower')
+            )
+        ).toBe(false);
     });
 
 });
