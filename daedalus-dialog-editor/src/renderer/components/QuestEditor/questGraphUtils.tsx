@@ -21,6 +21,8 @@ interface InternalNodeData {
   description?: string;
   nodeKind: 'function' | 'external-condition';
   expression?: string;
+  operator?: 'AND' | 'OR';
+  negated?: boolean;
   kind: QuestGraphNodeKind;
   sourceKind: QuestGraphSourceKind;
   entrySurface?: boolean;
@@ -74,6 +76,13 @@ const toNodeToken = (value: string): string => {
 const shortenExpression = (expression: string, maxLength = 56): string => {
   if (expression.length <= maxLength) return expression;
   return `${expression.slice(0, maxLength - 1)}...`;
+};
+
+const isNegatedCondition = (cond: DialogCondition): boolean => {
+  if ('negated' in cond) {
+    return Boolean((cond as { negated?: boolean }).negated);
+  }
+  return false;
 };
 
 const getConditionExpression = (cond: DialogCondition): string => {
@@ -687,6 +696,7 @@ const buildQuestEdges = (
           nodeKind: 'external-condition',
           expression,
           kind: 'condition',
+          negated: isNegatedCondition(cond),
           sourceKind: 'external',
           entrySurface: false,
           latentEntry: false,
@@ -822,6 +832,7 @@ const buildQuestEdges = (
           nodeKind: 'external-condition',
           expression: normalizedExpr,
           kind: 'condition',
+          negated: false,
           sourceKind: 'external',
           entrySurface: false,
           latentEntry: false,
@@ -856,6 +867,97 @@ const buildQuestEdges = (
       addAdjacency(conditionNodeId, consumerId);
     });
 
+
+    const consumerConditionEdges = edges.filter((edge) =>
+      edge.target === consumerId &&
+      edge.data?.kind === 'requires' &&
+      (edge.source.startsWith(`condition-${consumerId}-`) || edge.source.startsWith(`condition-raw-${consumerId}-`))
+    );
+
+    if (consumerConditionEdges.length > 1) {
+      const obsoleteEdgeIds = new Set(consumerConditionEdges.map((edge) => edge.id));
+      const keptEdges = edges.filter((edge) => !obsoleteEdgeIds.has(edge.id));
+      edges.length = 0;
+      edges.push(...keptEdges);
+
+      let combinedSourceId = consumerConditionEdges[0].source;
+      for (let idx = 1; idx < consumerConditionEdges.length; idx += 1) {
+        const nextSourceId = consumerConditionEdges[idx].source;
+        const logicalNodeId = `logical-${consumerId}-${idx - 1}`;
+        if (!unresolvedConditionNodes.has(logicalNodeId)) {
+          unresolvedConditionNodes.set(logicalNodeId, {
+            id: logicalNodeId,
+            type: 'check',
+            label: 'AND',
+            npc: 'External/World',
+            description: 'Logical AND composition',
+            nodeKind: 'external-condition',
+            expression: 'AND',
+            operator: 'AND',
+            kind: 'logical',
+            negated: false,
+            sourceKind: 'external',
+            entrySurface: false,
+            latentEntry: false,
+            entryReason: undefined,
+            inferred: false,
+            touchesSelectedQuest: false
+          });
+        }
+
+        edges.push({
+          id: `logical-left-${logicalNodeId}-${combinedSourceId}`,
+          source: combinedSourceId,
+          target: logicalNodeId,
+          sourceHandle: 'out-bool',
+          targetHandle: 'in-left',
+          type: 'smoothstep',
+          markerEnd: { type: MarkerType.ArrowClosed },
+          style: { stroke: '#ffb74d', strokeWidth: 2 },
+          data: { kind: 'requires', inferred: false }
+        });
+        addAdjacency(combinedSourceId, logicalNodeId);
+
+        edges.push({
+          id: `logical-right-${logicalNodeId}-${nextSourceId}`,
+          source: nextSourceId,
+          target: logicalNodeId,
+          sourceHandle: 'out-bool',
+          targetHandle: 'in-right',
+          type: 'smoothstep',
+          markerEnd: { type: MarkerType.ArrowClosed },
+          style: { stroke: '#ffb74d', strokeWidth: 2 },
+          data: { kind: 'requires', inferred: false }
+        });
+        addAdjacency(nextSourceId, logicalNodeId);
+
+        combinedSourceId = logicalNodeId;
+      }
+
+      edges.push({
+        id: `logical-out-${combinedSourceId}-${consumerId}`,
+        source: combinedSourceId,
+        target: consumerId,
+        sourceHandle: 'out-bool',
+        targetHandle: 'in-condition',
+        label: 'requires all conditions',
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#ffb74d', strokeWidth: 2 },
+        labelStyle: { fill: '#ffb74d', fontSize: 10 },
+        data: {
+          kind: 'requires',
+          inferred: false,
+          expression: 'AND',
+          provenance: {
+            functionName: consumerId,
+            dialogName: consumerData.provenance?.dialogName
+          }
+        }
+      });
+      addAdjacency(combinedSourceId, consumerId);
+    }
+
     if (consumerData.entrySurface && !addedConditionEdge) {
       const entryToken = toNodeToken(consumerData.entryReason || consumerData.sourceKind || 'world_trigger');
       const externalId = `external-entry-${consumerId}-${entryToken}`;
@@ -876,6 +978,7 @@ const buildQuestEdges = (
           nodeKind: 'external-condition',
           expression: consumerData.entryReason || triggerLabel,
           kind: 'condition',
+          negated: false,
           sourceKind: 'external',
           entrySurface: false,
           latentEntry: false,
@@ -941,7 +1044,7 @@ const filterGraph = (
 
   if (!showConditions) {
     for (const [id, data] of selectedNodeDataMap.entries()) {
-      if (data.kind === 'condition') {
+      if (data.kind === 'condition' || data.kind === 'logical') {
         selectedNodeDataMap.delete(id);
       }
     }
@@ -952,7 +1055,7 @@ const filterGraph = (
 
   if (onlySelectedQuest) {
     for (const [id, data] of selectedNodeDataMap.entries()) {
-      if (!data.touchesSelectedQuest && data.kind !== 'condition') {
+      if (!data.touchesSelectedQuest && data.kind !== 'condition' && data.kind !== 'logical') {
         selectedNodeDataMap.delete(id);
       }
     }
@@ -1062,9 +1165,11 @@ const calculateDagreLayout = (
     const data = nodeDataMap.get(nodeId);
     if (!data) return;
 
-    let nodeType: 'dialog' | 'questState' | 'condition' = 'dialog';
+    let nodeType: 'dialog' | 'questState' | 'condition' | 'logical' = 'dialog';
     if (data.kind === 'condition') {
       nodeType = 'condition';
+    } else if (data.kind === 'logical') {
+      nodeType = 'logical';
     } else if (
       data.kind === 'topic' ||
       data.kind === 'topicStatus' ||
@@ -1084,6 +1189,8 @@ const calculateDagreLayout = (
         npc: data.npc,
         description: data.description,
         expression: data.expression,
+        operator: data.operator,
+        negated: data.negated,
         type: data.type,
         status: data.description,
         variableName: semanticModel.variables?.[misVarName] ? misVarName : undefined,

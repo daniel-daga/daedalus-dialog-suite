@@ -155,20 +155,50 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       runtimeNode.title = String(node.data?.label || node.id);
       runtimeNode.pos = [node.position.x, node.position.y];
       runtimeNode.size = [220, 90];
-      runtimeNode.addInput('Conditions', '*');
-      runtimeNode.addOutput(node.type === 'condition' ? 'Result' : 'Out', '*');
-      runtimeNode.color = node.type === 'condition' ? '#8a6d1f' : node.type === 'questState' ? '#2c6936' : '#2d4f7c';
+      if (node.type === 'logical') {
+        runtimeNode.addInput('A', '*');
+        runtimeNode.addInput('B', '*');
+        runtimeNode.addOutput(String(node.data?.operator || 'Result'), '*');
+      } else if (node.type === 'dialog') {
+        runtimeNode.addInput('Condition A', '*');
+        runtimeNode.addInput('Condition B', '*');
+        runtimeNode.addOutput('Out', '*');
+      } else {
+        runtimeNode.addInput('Conditions', '*');
+        runtimeNode.addOutput(node.type === 'condition' ? 'Result' : 'Out', '*');
+      }
+      runtimeNode.color = node.type === 'condition'
+        ? '#8a6d1f'
+        : node.type === 'logical'
+          ? '#7b1fa2'
+          : node.type === 'questState'
+            ? '#2c6936'
+            : '#2d4f7c';
       graph.add(runtimeNode);
       runtimeNodes.set(node.id, runtimeNode);
       questIdToRuntimeNodeRef.current.set(node.id, runtimeNode);
       nodeMapRef.current.set(String(runtimeNode.id), node);
     });
 
+    const resolveOutputSlot = (edge: QuestGraphEdge): number => {
+      if (edge.sourceHandle === 'out-bool') return 0;
+      if (edge.sourceHandle === 'out-state') return 0;
+      if (edge.sourceHandle === 'out-finished') return 0;
+      return 0;
+    };
+
+    const resolveInputSlot = (edge: QuestGraphEdge): number => {
+      if (edge.targetHandle === 'in-left' || edge.targetHandle === 'in-condition') return 0;
+      if (edge.targetHandle === 'in-right') return 1;
+      if (edge.targetHandle === 'in-trigger') return 0;
+      return 0;
+    };
+
     edges.forEach((edge) => {
       const source = runtimeNodes.get(edge.source);
       const target = runtimeNodes.get(edge.target);
       if (!source || !target) return;
-      source.connect(0, target, 0);
+      source.connect(resolveOutputSlot(edge), target, resolveInputSlot(edge));
       edgeMapRef.current.set(edge.id, edge);
     });
 
