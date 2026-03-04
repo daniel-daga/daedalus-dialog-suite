@@ -27,6 +27,13 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
+    - name: Clean previous build outputs
+      shell: pwsh
+      run: |
+        if (Test-Path "daedalus-dialog-editor/dist") {
+          Remove-Item "daedalus-dialog-editor/dist" -Recurse -Force
+        }
+
     - name: Build Parser
       run: pnpm --filter daedalus-parser run build
 
@@ -38,10 +45,45 @@ jobs:
         npm_execpath: pnpm.cmd
       run: pnpm --filter daedalus-dialog-editor run package
 
+    - name: Verify packaged app dependencies
+      shell: pwsh
+      run: |
+        @'
+        const asar = require('@electron/asar');
+        const appAsarPath = 'daedalus-dialog-editor/dist/win-unpacked/resources/app.asar';
+        const files = asar.listPackage(appAsarPath);
+        const hasSafeBuffer = files.some((f) => f === '\\node_modules\\safe-buffer\\index.js');
+        const hasSaferBuffer = files.some((f) => f === '\\node_modules\\safer-buffer\\safer.js');
+        if (!hasSafeBuffer || !hasSaferBuffer) {
+          console.error('Missing packaged buffer modules:', { hasSafeBuffer, hasSaferBuffer });
+          process.exit(1);
+        }
+        console.log('Packaged buffer modules verified:', { hasSafeBuffer, hasSaferBuffer, files: files.length });
+        '@ | node -
+
+    - name: Smoke-test packaged app startup
+      shell: pwsh
+      run: |
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Daedalus Dialog Editor.exe"
+        if (-not (Test-Path $exe)) {
+          throw "Packaged app executable not found: $exe"
+        }
+
+        $process = Start-Process -FilePath $exe -PassThru
+        Start-Sleep -Seconds 8
+
+        if ($process.HasExited) {
+          throw "Packaged app exited early with code $($process.ExitCode)"
+        }
+
+        Stop-Process -Id $process.Id -Force
+
     - name: Normalize installer filename
       shell: pwsh
       run: |
-        $installer = Get-ChildItem -Path "daedalus-dialog-editor/dist" -Filter "*.exe" | Select-Object -First 1
+        $installer = Get-ChildItem -Path "daedalus-dialog-editor/dist" -Filter "*.exe" |
+          Sort-Object LastWriteTime -Descending |
+          Select-Object -First 1
         if (-not $installer) {
           throw "No .exe file found in daedalus-dialog-editor/dist"
         }

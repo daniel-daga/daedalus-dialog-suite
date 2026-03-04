@@ -43,6 +43,7 @@
       "dist/renderer/**/*",
       "dist/shared/**/*",
       "node_modules/safe-buffer/**/*",
+      "node_modules/safer-buffer/**/*",
       "package.json"
     ],
     "directories": {
@@ -80,6 +81,7 @@
     "react-window": "^1.8.10",
     "reactflow": "^11.11.1",
     "safe-buffer": "^5.2.1",
+    "safer-buffer": "^2.1.2",
     "tree-sitter": "^0.21.1",
     "zustand": "^4.5.2"
   },
