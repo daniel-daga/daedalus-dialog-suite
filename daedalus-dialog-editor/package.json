@@ -39,7 +39,10 @@
     "productName": "Daedalus Dialog Editor",
     "electronVersion": "29.4.6",
     "files": [
-      "dist/**/*",
+      "dist/main/**/*",
+      "dist/renderer/**/*",
+      "dist/shared/**/*",
+      "node_modules/safe-buffer/**/*",
       "package.json"
     ],
     "directories": {
@@ -76,6 +79,7 @@
     "react-virtualized-auto-sizer": "^1.0.24",
     "react-window": "^1.8.10",
     "reactflow": "^11.11.1",
+    "safe-buffer": "^5.2.1",
     "tree-sitter": "^0.21.1",
     "zustand": "^4.5.2"
   },
