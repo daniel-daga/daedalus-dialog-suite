@@ -121,26 +121,53 @@
         align-items: center;
         justify-content: center;
         gap: 0.55rem;
-        background: #1a1a1a;
-        color: var(--primary);
+        background: linear-gradient(135deg, #d4a63a 0%, #ffb24a 100%);
+        color: #1b1200;
         text-decoration: none;
         font-weight: 700;
         font-size: 0.9rem;
-        border-radius: 2px;
-        border: 1px solid var(--border);
-        padding: 0.64rem 0.95rem;
-        transition: transform 120ms ease, background 120ms ease;
+        border-radius: 3px;
+        border: 1px solid #7a4b00;
+        padding: 0.7rem 1.05rem;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.2),
+          0 5px 16px rgba(0, 0, 0, 0.4);
+        transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
       }
 
       .download:hover {
-        background: var(--primary-hover);
-        color: #1a1200;
-        transform: translateY(-1px);
+        filter: brightness(1.05);
+        transform: translateY(-2px);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.25),
+          0 8px 22px rgba(0, 0, 0, 0.5);
       }
 
       .download[aria-disabled='true'] {
-        opacity: 0.8;
+        opacity: 0.75;
+        filter: grayscale(0.25);
         pointer-events: none;
+      }
+
+      .repo-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        color: var(--text);
+        border: 1px solid var(--border);
+        background: #141414;
+        border-radius: 2px;
+        padding: 0.62rem 0.85rem;
+        font-size: 0.84rem;
+        font-weight: 600;
+        transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+      }
+
+      .repo-link:hover {
+        background: #1d1d1d;
+        color: var(--primary-hover);
+        transform: translateY(-1px);
       }
 
       #status {
@@ -237,6 +264,7 @@
       <div class="download-wrap">
         <a id="downloadLink" class="download" href="#" aria-disabled="true">Loading latest build...</a>
         <div id="status">Checking for newest Windows release...</div>
+        <a id="repoLink" class="repo-link" href="#" target="_blank" rel="noopener noreferrer">View repository</a>
       </div>
 
       <section class="panels">
@@ -273,6 +301,7 @@
     <script>
       const statusEl = document.getElementById('status');
       const linkEl = document.getElementById('downloadLink');
+      const repoLinkEl = document.getElementById('repoLink');
       const repoPathEl = document.getElementById('repoPath');
 
       function detectRepoPath() {
@@ -319,10 +348,13 @@
         if (!owner || !repo) {
           statusEl.textContent = 'Could not detect repository from this URL.';
           linkEl.textContent = 'Build unavailable';
+          repoLinkEl.style.display = 'none';
           return;
         }
 
-        repoPathEl.textContent = `Repository: ${owner}/${repo}`;
+        const repoUrl = `https://github.com/${owner}/${repo}`;
+        repoLinkEl.href = repoUrl;
+        repoPathEl.innerHTML = `Repository: <a href="${repoUrl}" target="_blank" rel="noopener noreferrer">${owner}/${repo}</a>`;
 
         const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/tags/windows-latest`;
 
