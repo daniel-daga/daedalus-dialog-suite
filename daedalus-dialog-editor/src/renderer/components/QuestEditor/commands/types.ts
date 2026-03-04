@@ -66,6 +66,7 @@ export interface RemoveTransitionCommand {
   mode?: 'transition' | 'requires';
   sourceFunctionName: string;
   targetFunctionName: string;
+  choiceIndex?: number;
   variableName?: string;
   value?: string | number | boolean;
   operator?: '==' | '!=';
@@ -95,6 +96,7 @@ export interface UpdateTransitionTextCommand {
   type: 'updateTransitionText';
   sourceFunctionName: string;
   targetFunctionName: string;
+  choiceIndex?: number;
   text: string;
 }
 

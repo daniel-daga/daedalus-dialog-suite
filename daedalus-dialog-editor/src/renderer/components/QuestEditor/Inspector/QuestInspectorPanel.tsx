@@ -16,8 +16,17 @@ interface QuestInspectorPanelProps {
   onSetMisState: (payload: { functionName: string; variableName: string; value: string }) => void;
   onAddTopicStatus: (payload: { functionName: string; topic: string; status: string }) => void;
   onAddLogEntry: (payload: { functionName: string; topic: string; text: string }) => void;
-  onRemoveTransition: (payload: { sourceFunctionName: string; targetFunctionName: string }) => void;
-  onUpdateTransitionText: (payload: { sourceFunctionName: string; targetFunctionName: string; text: string }) => void;
+  onRemoveTransition: (payload: {
+    sourceFunctionName: string;
+    targetFunctionName: string;
+    choiceIndex?: number;
+  }) => void;
+  onUpdateTransitionText: (payload: {
+    sourceFunctionName: string;
+    targetFunctionName: string;
+    text: string;
+    choiceIndex?: number;
+  }) => void;
   onRemoveConditionLink: (payload: {
     targetFunctionName: string;
     variableName: string;
@@ -432,12 +441,13 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   onClick={() => {
                     const targetFunctionName = selectedNode.data.provenance?.functionName;
                     if (!targetFunctionName) return;
+                    const originalCondition = selectedNode.data.condition;
+                    if (!isVariableCondition(originalCondition)) return;
                     onRemoveConditionLink({
                       targetFunctionName,
-                      variableName: conditionDraft.variableName.trim(),
-                      value: conditionDraft.value.trim(),
-                      operator: conditionDraft.operator,
-                      negated: conditionDraft.negated
+                      variableName: originalCondition.variableName,
+                      value: String(originalCondition.value ?? ''),
+                      operator: originalCondition.operator === '!=' ? '!=' : '=='
                     });
                   }}
                 >
@@ -574,7 +584,10 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   onClick={() => onUpdateTransitionText({
                     sourceFunctionName: selectedEdge.source,
                     targetFunctionName: selectedEdge.target,
-                    text: transitionText.trim()
+                    text: transitionText.trim(),
+                    choiceIndex: typeof selectedEdge.data?.choiceIndex === 'number'
+                      ? selectedEdge.data.choiceIndex
+                      : undefined
                   })}
                 >
                   Preview Diff
@@ -586,7 +599,10 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   disabled={commandBusy}
                   onClick={() => onRemoveTransition({
                     sourceFunctionName: selectedEdge.source,
-                    targetFunctionName: selectedEdge.target
+                    targetFunctionName: selectedEdge.target,
+                    choiceIndex: typeof selectedEdge.data?.choiceIndex === 'number'
+                      ? selectedEdge.data.choiceIndex
+                      : undefined
                   })}
                 >
                   Remove Transition
@@ -625,7 +641,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   size="small"
                   disabled={commandBusy || !edgeVariable.trim() || !edgeValue.trim()}
                   onClick={() => onUpdateConditionLink({
-                    targetFunctionName: selectedEdge.target,
+                    targetFunctionName: selectedEdge.data?.provenance?.functionName || selectedEdge.target,
                     oldVariableName: originalEdgeVariable || edgeVariable,
                     oldValue: originalEdgeValue || edgeValue,
                     variableName: edgeVariable.trim(),
@@ -641,7 +657,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   size="small"
                   disabled={commandBusy || !edgeVariable.trim() || !edgeValue.trim()}
                   onClick={() => onRemoveConditionLink({
-                    targetFunctionName: selectedEdge.target,
+                    targetFunctionName: selectedEdge.data?.provenance?.functionName || selectedEdge.target,
                     variableName: edgeVariable.trim(),
                     value: edgeValue.trim(),
                     operator: edgeOperator

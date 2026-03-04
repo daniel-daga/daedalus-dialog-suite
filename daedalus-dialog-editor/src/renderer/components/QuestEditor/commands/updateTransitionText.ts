@@ -27,9 +27,14 @@ export const executeUpdateTransitionTextCommand = (
     };
   }
 
-  const choiceIndex = (sourceFunction.actions || []).findIndex((action) => {
-    return action.type === 'Choice' && action.targetFunction === command.targetFunctionName;
-  });
+  const sourceActions = sourceFunction.actions || [];
+  const isMatchingChoice = (action: (typeof sourceActions)[number]) => (
+    action.type === 'Choice' && action.targetFunction === command.targetFunctionName
+  );
+  const choiceIndex =
+    typeof command.choiceIndex === 'number'
+      ? (isMatchingChoice(sourceActions[command.choiceIndex]) ? command.choiceIndex : -1)
+      : sourceActions.findIndex((action) => isMatchingChoice(action));
   if (choiceIndex < 0) {
     return {
       ok: false,

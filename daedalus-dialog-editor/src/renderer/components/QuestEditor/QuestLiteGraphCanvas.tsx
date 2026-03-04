@@ -68,9 +68,11 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const nodeMapRef = useRef<Map<string, QuestGraphNode>>(new Map());
   const questIdToRuntimeNodeRef = useRef<Map<string, LGraphNode>>(new Map());
   const edgeMapRef = useRef<Map<string, QuestGraphEdge>>(new Map());
+  const linkIdToEdgeRef = useRef<Map<number, QuestGraphEdge>>(new Map());
 
   useEffect(() => {
     if (!canvasRef.current) return;
+    if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')) return;
 
     const graph = new LGraph();
     const graphCanvas = new LGraphCanvas(canvasRef.current, graph);
@@ -98,14 +100,20 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     };
 
     graphCanvas.onLinkSelected = (linkId: number) => {
+      const directMatch = linkIdToEdgeRef.current.get(linkId);
+      if (directMatch) {
+        onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, directMatch);
+        return;
+      }
+
       const link = graph.links[linkId];
       if (!link) return;
       const sourceNode = nodeMapRef.current.get(String(link.origin_id));
       const targetNode = nodeMapRef.current.get(String(link.target_id));
       if (!sourceNode || !targetNode) return;
-      const edge = Array.from(edgeMapRef.current.values()).find(
-        (candidate) => candidate.source === sourceNode.id && candidate.target === targetNode.id
-      );
+      const edge = Array.from(edgeMapRef.current.values()).find((candidate) => (
+        candidate.source === sourceNode.id && candidate.target === targetNode.id
+      ));
       if (edge) {
         onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, edge);
       }
@@ -177,6 +185,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     nodeMapRef.current = new Map();
     questIdToRuntimeNodeRef.current = new Map();
     edgeMapRef.current = new Map();
+    linkIdToEdgeRef.current = new Map();
 
     const runtimeNodes = new Map<string, LGraphNode>();
 
@@ -235,7 +244,10 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       const source = runtimeNodes.get(edge.source);
       const target = runtimeNodes.get(edge.target);
       if (!source || !target) return;
-      source.connect(resolveOutputSlot(edge), target, resolveInputSlot(edge));
+      const linkInfo = source.connect(resolveOutputSlot(edge), target, resolveInputSlot(edge)) as { id?: number } | null;
+      if (typeof linkInfo?.id === 'number') {
+        linkIdToEdgeRef.current.set(linkInfo.id, edge);
+      }
       edgeMapRef.current.set(edge.id, edge);
     });
 

@@ -71,6 +71,7 @@ export interface QuestGraphEdgeData {
   inferred?: boolean;
   expression?: string;
   operator?: '==' | '!=' | '<' | '>' | '<=' | '>=';
+  choiceIndex?: number;
   provenance?: QuestGraphProvenance;
 }
 

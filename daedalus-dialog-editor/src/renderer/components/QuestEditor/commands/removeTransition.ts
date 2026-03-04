@@ -83,9 +83,13 @@ export const executeRemoveTransitionCommand = (
   }
 
   const actions = sourceFunction.actions || [];
-  const choiceIndex = actions.findIndex((action) => {
-    return action.type === 'Choice' && action.targetFunction === command.targetFunctionName;
-  });
+  const isMatchingChoice = (action: (typeof actions)[number]) => (
+    action.type === 'Choice' && action.targetFunction === command.targetFunctionName
+  );
+  const choiceIndex =
+    typeof command.choiceIndex === 'number'
+      ? (isMatchingChoice(actions[command.choiceIndex]) ? command.choiceIndex : -1)
+      : actions.findIndex((action) => isMatchingChoice(action));
   if (choiceIndex < 0) {
     return {
       ok: false,

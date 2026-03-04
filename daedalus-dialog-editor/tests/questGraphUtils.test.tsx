@@ -385,6 +385,15 @@ describe('questGraphUtils', () => {
         expect(expressions.has('MIS_Henry_FreeBDTTower == LOG_SUCCESS')).toBe(true);
         expect(expressions.has('Henry_EnterCrewMember == TRUE')).toBe(true);
         expect(Array.from(expressions).some((expr) => expr.includes('Malcom') && expr.includes('alive'))).toBe(true);
+        expect(conditionNodes.length).toBeGreaterThan(0);
+        expect(
+            conditionNodes.every((node) => node.data.provenance?.functionName === conditionFunction)
+        ).toBe(true);
+        const conditionIndices = conditionNodes
+            .map((node) => node.data.conditionIndex)
+            .filter((index): index is number => typeof index === 'number')
+            .sort((left, right) => left - right);
+        expect(conditionIndices).toEqual([0, 1, 2]);
     });
 
     it('does not parse raw condition action strings in quest graph builder', () => {

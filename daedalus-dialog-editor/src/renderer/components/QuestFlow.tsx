@@ -377,7 +377,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
 
   const runTransitionRemoveWithPreview = useCallback(async (
     sourceFunctionName: string,
-    targetFunctionName: string
+    targetFunctionName: string,
+    choiceIndex?: number
   ) => {
     if (!writableEnabled) {
       setCommandError('Writable quest editor is disabled by feature flag.');
@@ -408,7 +409,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
           type: 'removeTransition',
           mode: 'transition',
           sourceFunctionName,
-          targetFunctionName
+          targetFunctionName,
+          choiceIndex
         }
       );
       if (!sourceResult.ok) {
@@ -451,7 +453,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   const runTransitionTextUpdateWithPreview = useCallback(async (
     sourceFunctionName: string,
     targetFunctionName: string,
-    text: string
+    text: string,
+    choiceIndex?: number
   ) => {
     if (!writableEnabled) {
       setCommandError('Writable quest editor is disabled by feature flag.');
@@ -482,6 +485,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
           type: 'updateTransitionText',
           sourceFunctionName,
           targetFunctionName,
+          choiceIndex,
           text
         }
       );
@@ -590,16 +594,26 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     }, 'Failed to execute addLogEntry command.');
   }, [runQuestCommandWithPreview]);
 
-  const handleRemoveTransition = useCallback(async (payload: { sourceFunctionName: string; targetFunctionName: string }) => {
-    await runTransitionRemoveWithPreview(payload.sourceFunctionName, payload.targetFunctionName);
+  const handleRemoveTransition = useCallback(async (payload: {
+    sourceFunctionName: string;
+    targetFunctionName: string;
+    choiceIndex?: number;
+  }) => {
+    await runTransitionRemoveWithPreview(payload.sourceFunctionName, payload.targetFunctionName, payload.choiceIndex);
   }, [runTransitionRemoveWithPreview]);
 
   const handleUpdateTransitionText = useCallback(async (payload: {
     sourceFunctionName: string;
     targetFunctionName: string;
     text: string;
+    choiceIndex?: number;
   }) => {
-    await runTransitionTextUpdateWithPreview(payload.sourceFunctionName, payload.targetFunctionName, payload.text);
+    await runTransitionTextUpdateWithPreview(
+      payload.sourceFunctionName,
+      payload.targetFunctionName,
+      payload.text,
+      payload.choiceIndex
+    );
   }, [runTransitionTextUpdateWithPreview]);
 
   const handleRemoveConditionLink = useCallback(async (payload: {

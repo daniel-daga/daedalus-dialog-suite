@@ -391,6 +391,43 @@ describe('quest commands', () => {
     expect(result.updatedModel.functions.DIA_Test_Info.actions).toHaveLength(0);
   });
 
+  it('removes the specific duplicate transition when choiceIndex is provided', () => {
+    const model = createModel();
+    model.functions.DIA_Test_Info.actions.push(
+      {
+        type: 'Choice',
+        dialogRef: 'self',
+        text: 'First branch',
+        targetFunction: 'DIA_Target_Info'
+      },
+      {
+        type: 'Choice',
+        dialogRef: 'self',
+        text: 'Second branch',
+        targetFunction: 'DIA_Target_Info'
+      }
+    );
+
+    const result = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model },
+      {
+        type: 'removeTransition',
+        sourceFunctionName: 'DIA_Test_Info',
+        targetFunctionName: 'DIA_Target_Info',
+        choiceIndex: 1
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const choices = (result.updatedModel.functions.DIA_Test_Info.actions || []).filter((action) => action.type === 'Choice');
+    expect(choices).toHaveLength(1);
+    expect(choices[0]).toMatchObject({
+      text: 'First branch',
+      targetFunction: 'DIA_Target_Info'
+    });
+  });
+
   it('updates transition text via updateTransitionText', () => {
     const model = createModel();
     model.functions.DIA_Test_Info.actions.push({
@@ -417,6 +454,42 @@ describe('quest commands', () => {
       targetFunction: 'DIA_Target_Info',
       text: 'New Text'
     });
+  });
+
+  it('updates the specific duplicate transition when choiceIndex is provided', () => {
+    const model = createModel();
+    model.functions.DIA_Test_Info.actions.push(
+      {
+        type: 'Choice',
+        dialogRef: 'self',
+        text: 'First label',
+        targetFunction: 'DIA_Target_Info'
+      },
+      {
+        type: 'Choice',
+        dialogRef: 'self',
+        text: 'Second label',
+        targetFunction: 'DIA_Target_Info'
+      }
+    );
+
+    const result = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model },
+      {
+        type: 'updateTransitionText',
+        sourceFunctionName: 'DIA_Test_Info',
+        targetFunctionName: 'DIA_Target_Info',
+        choiceIndex: 1,
+        text: 'Updated second label'
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const choices = (result.updatedModel.functions.DIA_Test_Info.actions || []).filter((action) => action.type === 'Choice');
+    expect(choices).toHaveLength(2);
+    expect(choices[0]).toMatchObject({ text: 'First label', targetFunction: 'DIA_Target_Info' });
+    expect(choices[1]).toMatchObject({ text: 'Updated second label', targetFunction: 'DIA_Target_Info' });
   });
 
   it('removes a condition link via removeConditionLink', () => {

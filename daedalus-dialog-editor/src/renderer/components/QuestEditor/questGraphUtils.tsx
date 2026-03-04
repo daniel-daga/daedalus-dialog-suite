@@ -49,6 +49,12 @@ interface EdgeBuildResult {
   adjacency: Map<string, string[]>;
 }
 
+interface EffectiveConditionEntry {
+  condition: DialogCondition;
+  ownerFunctionName: string;
+  ownerConditionIndex: number;
+}
+
 const isStateNode = (type: string, description?: string): boolean => {
   const desc = description || '';
   return (
@@ -189,14 +195,18 @@ const getDialogContextForFunction = (
   return { npc: 'Global/Other' };
 };
 
-const getEffectiveConditionsForFunction = (
+const getEffectiveConditionEntriesForFunction = (
   funcName: string,
   semanticModel: SemanticModel
-): DialogCondition[] => {
+): EffectiveConditionEntry[] => {
   const func = semanticModel.functions?.[funcName];
   if (!func) return [];
 
-  const mergedConditions: DialogCondition[] = [...(func.conditions || [])];
+  const mergedConditions: EffectiveConditionEntry[] = (func.conditions || []).map((condition, index) => ({
+    condition,
+    ownerFunctionName: funcName,
+    ownerConditionIndex: index
+  }));
   const context = getDialogContextForFunction(funcName, semanticModel);
   if (!context.conditionFunctionName || context.conditionFunctionName === funcName) {
     return mergedConditions;
@@ -207,7 +217,13 @@ const getEffectiveConditionsForFunction = (
     return mergedConditions;
   }
 
-  mergedConditions.push(...conditionFunc.conditions);
+  conditionFunc.conditions.forEach((condition, index) => {
+    mergedConditions.push({
+      condition,
+      ownerFunctionName: context.conditionFunctionName!,
+      ownerConditionIndex: index
+    });
+  });
   return mergedConditions;
 };
 
@@ -263,7 +279,7 @@ const identifyQuestNodes = (
 
   Object.values(semanticModel.functions || {}).forEach((func) => {
     const context = getDialogContextForFunction(func.name, semanticModel);
-    const effectiveConditions = getEffectiveConditionsForFunction(func.name, semanticModel);
+    const effectiveConditionEntries = getEffectiveConditionEntriesForFunction(func.name, semanticModel);
     let isRelevant = false;
     let type: InternalNodeData['type'] = 'check';
     let description = '';
@@ -332,7 +348,7 @@ const identifyQuestNodes = (
       }
     });
 
-    effectiveConditions.forEach((cond: DialogCondition) => {
+    effectiveConditionEntries.forEach(({ condition: cond }) => {
       const conditionType = inferConditionType(cond);
       if (conditionType === 'VariableCondition' && 'variableName' in cond && cond.variableName === misVarName) {
         isRelevant = true;
@@ -526,10 +542,10 @@ const buildQuestEdges = (
   nodeDataMap.forEach((consumerData, consumerId) => {
     const func = semanticModel.functions[consumerId];
     if (!func) return;
-    const effectiveConditions = getEffectiveConditionsForFunction(consumerId, semanticModel);
+    const effectiveConditionEntries = getEffectiveConditionEntriesForFunction(consumerId, semanticModel);
     let addedConditionEdge = false;
 
-    func.actions?.forEach((action: DialogAction) => {
+    func.actions?.forEach((action: DialogAction, actionIndex: number) => {
       if (action.type !== 'Choice') return;
       const targetFunc = action.targetFunction;
       if (!nodeDataMap.has(targetFunc)) return;
@@ -543,7 +559,7 @@ const buildQuestEdges = (
         : 'in-condition';
 
       edges.push({
-        id: `choice-${consumerId}-${targetFunc}`,
+        id: `choice-${consumerId}-${targetFunc}-${actionIndex}`,
         source: consumerId,
         target: targetFunc,
         sourceHandle,
@@ -555,6 +571,7 @@ const buildQuestEdges = (
         labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 },
         data: {
           kind: 'transitions',
+          choiceIndex: actionIndex,
           inferred: false,
           provenance: {
             functionName: consumerId,
@@ -565,12 +582,14 @@ const buildQuestEdges = (
       addAdjacency(consumerId, targetFunc);
     });
 
-    effectiveConditions.forEach((cond: DialogCondition, condIndex: number) => {
+    effectiveConditionEntries.forEach(({ condition: cond, ownerFunctionName, ownerConditionIndex }, condIndex: number) => {
       const conditionType = inferConditionType(cond) || 'Condition';
       const expression = getConditionExpression(cond).trim();
       const condToken = toNodeToken(expression || conditionType || `condition_${condIndex}`);
-      const conditionNodeId = `condition-${consumerId}-${condIndex}-${condToken}`;
+      const ownerToken = toNodeToken(ownerFunctionName);
+      const conditionNodeId = `condition-${consumerId}-${ownerToken}-${ownerConditionIndex}-${condToken}`;
       const conditionLabel = getConditionNodeLabel(conditionType, expression);
+      const ownerFilePath = getFunctionFilePath(semanticModel.functions?.[ownerFunctionName]);
 
       if (!unresolvedConditionNodes.has(conditionNodeId)) {
         unresolvedConditionNodes.set(conditionNodeId, {
@@ -591,7 +610,12 @@ const buildQuestEdges = (
           inferred: false,
           touchesSelectedQuest: false,
           condition: cond,
-          conditionIndex: condIndex
+          conditionIndex: ownerConditionIndex,
+          provenance: {
+            filePath: ownerFilePath,
+            functionName: ownerFunctionName,
+            dialogName: consumerData.provenance?.dialogName
+          }
         });
       }
 
@@ -614,7 +638,7 @@ const buildQuestEdges = (
             ? ((cond as { operator?: '==' | '!=' | '<' | '>' | '<=' | '>=' }).operator)
             : undefined,
           provenance: {
-            functionName: consumerId,
+            functionName: ownerFunctionName,
             dialogName: consumerData.provenance?.dialogName
           }
         }
@@ -649,7 +673,7 @@ const buildQuestEdges = (
               inferred: nodeDataMap.get(producerFunc)?.inferred || false,
               expression: `Npc_KnowsInfo(..., ${producerDialogName})`,
               provenance: {
-                functionName: consumerId,
+                functionName: ownerFunctionName,
                 dialogName: consumerData.provenance?.dialogName
               }
             }
@@ -692,7 +716,7 @@ const buildQuestEdges = (
               expression: `${variableName} ${operator} ${rawValue}`,
               operator: operator as '==' | '!=' | '<' | '>' | '<=' | '>=' | undefined,
               provenance: {
-                functionName: consumerId,
+                functionName: ownerFunctionName,
                 dialogName: consumerData.provenance?.dialogName
               }
             }

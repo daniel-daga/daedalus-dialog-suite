@@ -99,6 +99,37 @@ describe('QuestInspectorPanel requires edge editing', () => {
     });
   });
 
+  it('uses requires-edge provenance owner when editing condition links', () => {
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedEdge={{
+          ...createRequiresEdge('MIS_TEST == LOG_RUNNING'),
+          target: 'DIA_Target_Info',
+          data: {
+            kind: 'requires',
+            expression: 'MIS_TEST == LOG_RUNNING',
+            provenance: {
+              functionName: 'DIA_Target_Condition'
+            }
+          }
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'LOG_SUCCESS' } });
+    fireEvent.click(screen.getByText('Preview Diff'));
+
+    expect(baseProps.onUpdateConditionLink).toHaveBeenCalledWith({
+      targetFunctionName: 'DIA_Target_Condition',
+      oldVariableName: 'MIS_TEST',
+      oldValue: 'LOG_RUNNING',
+      variableName: 'MIS_TEST',
+      value: 'LOG_SUCCESS',
+      operator: '=='
+    });
+  });
+
   it('allows editing simple variable inequality requires expressions', () => {
     render(
       <QuestInspectorPanel
@@ -156,6 +187,28 @@ describe('QuestInspectorPanel requires edge editing', () => {
       negated: false
     });
   });
+
+  it('removes condition node links using original condition keys even after draft edits', () => {
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedNode={createConditionNode()}
+        selectedEdge={null}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Variable Name'), { target: { value: 'MIS_OTHER' } });
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'LOG_FAILED' } });
+    fireEvent.click(screen.getByText('Remove Condition Link'));
+
+    expect(baseProps.onRemoveConditionLink).toHaveBeenCalledWith({
+      targetFunctionName: 'DIA_Target_Info',
+      variableName: 'MIS_TEST',
+      value: 'LOG_RUNNING',
+      operator: '=='
+    });
+  });
+
   it('shows read-only message for range requires expressions', () => {
     render(
       <QuestInspectorPanel
