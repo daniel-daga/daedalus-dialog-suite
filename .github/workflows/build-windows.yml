@@ -49,7 +49,11 @@ jobs:
       shell: pwsh
       run: |
         @'
-        const asar = require('@electron/asar');
+        const path = require('path');
+        const electronBuilderDir = path.dirname(
+          require.resolve('electron-builder/package.json', { paths: ['daedalus-dialog-editor'] })
+        );
+        const asar = require(require.resolve('@electron/asar', { paths: [electronBuilderDir] }));
         const appAsarPath = 'daedalus-dialog-editor/dist/win-unpacked/resources/app.asar';
         const files = asar.listPackage(appAsarPath);
         const hasSafeBuffer = files.some((f) => f === '\\node_modules\\safe-buffer\\index.js');
