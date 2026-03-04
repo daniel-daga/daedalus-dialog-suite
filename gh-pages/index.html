@@ -336,7 +336,11 @@
           linkEl.href = windowsAsset.browser_download_url;
           linkEl.textContent = `Download ${windowsAsset.name}`;
           linkEl.removeAttribute('aria-disabled');
-          statusEl.innerHTML = `<span class="dot"></span> Updated: ${new Date(release.published_at).toLocaleString()}`;
+          const updatedAt =
+            windowsAsset.updated_at ||
+            release.updated_at ||
+            release.published_at;
+          statusEl.innerHTML = `<span class="dot"></span> Updated: ${new Date(updatedAt).toLocaleString()}`;
         } catch (error) {
           linkEl.textContent = 'Build unavailable';
           statusEl.textContent = `Could not fetch latest build: ${error.message}`;
