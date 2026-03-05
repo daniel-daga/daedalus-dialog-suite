@@ -107,7 +107,8 @@ describe('formatRuntimeNodeTitle', () => {
     expect(formatRuntimeNodeTitle('Variable', 'Variable')).toBe('Variable');
   });
 
-  it('adds condition type suffix when label differs', () => {
-    expect(formatRuntimeNodeTitle('Quest Flag', 'Variable')).toBe('Quest Flag (Variable)');
+  it('keeps condition node titles free of type suffixes', () => {
+    expect(formatRuntimeNodeTitle('Quest Flag', 'Variable')).toBe('Quest Flag');
   });
 });
+

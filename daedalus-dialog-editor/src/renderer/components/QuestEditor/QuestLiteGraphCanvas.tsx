@@ -64,15 +64,18 @@ export const formatRuntimeNodeTitle = (
   conditionTypeLabel?: string | null
 ): string => {
   const normalizedLabel = String(label || '').trim();
-  const normalizedType = String(conditionTypeLabel || '').trim();
-  if (!normalizedType || normalizedType === 'Condition') return normalizedLabel;
-  if (normalizedLabel.toLowerCase() === normalizedType.toLowerCase()) return normalizedLabel;
-  return `${normalizedLabel} (${normalizedType})`;
+  void conditionTypeLabel;
+  return normalizedLabel;
 };
 const truncateExpressionPreview = (expression: string, maxLength = 48): string => {
   if (expression.length <= maxLength) return expression;
   return `${expression.slice(0, maxLength - 1)}...`;
 };
+
+const CONDITION_WIDGET_PREVIEW_MAX_LENGTH = 24;
+const CONDITION_WIDGET_START_Y = 72;
+const CONDITION_WIDGET_MIN_WIDTH = 240;
+const CONDITION_WIDGET_MIN_HEIGHT = 112;
 
 const isJsdomEnvironment = (): boolean => (
   typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')
@@ -358,11 +361,16 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             runtimeNodeAny.size = runtimeNode.computeSize();
           }
         } else if (node.type === 'condition' && typeof node.data?.expression === 'string') {
-          const expressionPreview = truncateExpressionPreview(String(node.data.expression || '').trim(), 30);
+          const expressionPreview = truncateExpressionPreview(
+            String(node.data.expression || '').trim(),
+            CONDITION_WIDGET_PREVIEW_MAX_LENGTH
+          );
           if (expressionPreview.length > 0) {
-            runtimeNodeAny.widgets_start_y = 58;
-            runtimeNodeAny.addWidget('text', 'Condition', expressionPreview, () => undefined, { disabled: true });
+            runtimeNodeAny.widgets_start_y = CONDITION_WIDGET_START_Y;
+            runtimeNodeAny.addWidget('text', '', expressionPreview, () => undefined, { disabled: true });
             runtimeNodeAny.size = runtimeNode.computeSize();
+            runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_WIDGET_MIN_WIDTH);
+            runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_WIDGET_MIN_HEIGHT);
           }
         }
       }
@@ -633,8 +641,4 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 };
 
 export default QuestLiteGraphCanvas;
-
-
-
-
 
