@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import QuestLiteGraphCanvas from '../src/renderer/components/QuestEditor/QuestLiteGraphCanvas';
 import type { QuestGraphEdge, QuestGraphNode } from '../src/renderer/types/questGraph';
 
@@ -45,11 +45,18 @@ const renderCanvas = ({
 };
 
 describe('QuestLiteGraphCanvas condition expression capsule', () => {
+  it('shows inline condition body content without opening edit mode', () => {
+    renderCanvas();
+
+    const body = screen.getByTestId('condition-inline-body-DIA_Target_Info');
+    expect(within(body).getByText('Condition')).toBeInTheDocument();
+    expect(within(body).getByText(/MIS_TEST == LOG_RUNNING/i)).toBeInTheDocument();
+  });
+
   it('renders IF capsule for dialog nodes with condition expression metadata', () => {
     renderCanvas();
 
     expect(screen.getByRole('button', { name: /if:/i })).toBeInTheDocument();
-    expect(screen.getByText(/MIS_TEST == LOG_RUNNING/i)).toBeInTheDocument();
   });
 
   it('opens inline node editor and submits edited expression through callback', () => {
@@ -68,4 +75,6 @@ describe('QuestLiteGraphCanvas condition expression capsule', () => {
     });
   });
 });
+
+
 

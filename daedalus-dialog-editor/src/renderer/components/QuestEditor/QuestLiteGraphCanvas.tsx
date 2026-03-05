@@ -435,106 +435,115 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     closeExpressionEditor();
   };
 
-  const editingNode = useMemo(
-    () => conditionCapsuleNodes.find((node) => node.id === expressionEditorNodeId) || null,
-    [conditionCapsuleNodes, expressionEditorNodeId]
-  );
-
-  const editingNodePosition = editingNode
-    ? getOverlayPosition(editingNode, { x: 8, y: 28 })
-    : null;
-
   return (
     <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }} data-overlay-tick={overlayTick}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
 
-      {conditionCapsuleNodes.map((node) => {
+            {conditionCapsuleNodes.map((node) => {
         const preview = truncateExpressionPreview(String(node.data.conditionExpression || '').trim());
-        const position = getOverlayPosition(node, { x: 8, y: 8 });
+        const chipPosition = getOverlayPosition(node, { x: 8, y: 8 });
+        const bodyPosition = getOverlayPosition(node, { x: 8, y: 28 });
+        const isEditing = expressionEditorNodeId === node.id;
+
         return (
-          <Button
-            key={`condition-capsule-${node.id}`}
-            variant="contained"
-            size="small"
-            onClick={() => openExpressionEditor(node)}
-            sx={{
-              position: 'absolute',
-              left: `${position.left}px`,
-              top: `${position.top}px`,
-              minWidth: 0,
-              px: 0.8,
-              py: 0.25,
-              fontSize: '0.65rem',
-              lineHeight: 1.1,
-              textTransform: 'none',
-              bgcolor: '#ffb74d',
-              color: '#1a1a1a',
-              borderRadius: 1,
-              zIndex: 5,
-              pointerEvents: 'auto',
-              '&:hover': {
-                bgcolor: '#ffcc80'
-              }
-            }}
-            aria-label={`IF: ${preview}`}
-          >
-            {`IF: ${preview}`}
-          </Button>
+          <React.Fragment key={`condition-node-body-${node.id}`}>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => openExpressionEditor(node)}
+              sx={{
+                position: 'absolute',
+                left: `${chipPosition.left}px`,
+                top: `${chipPosition.top}px`,
+                minWidth: 0,
+                px: 0.8,
+                py: 0.25,
+                fontSize: '0.65rem',
+                lineHeight: 1.1,
+                textTransform: 'none',
+                bgcolor: '#ffb74d',
+                color: '#1a1a1a',
+                borderRadius: 1,
+                zIndex: 5,
+                pointerEvents: 'auto',
+                '&:hover': {
+                  bgcolor: '#ffcc80'
+                }
+              }}
+              aria-label={`IF: ${preview}`}
+            >
+              {`IF: ${preview}`}
+            </Button>
+
+            <Paper
+              data-testid={`condition-inline-body-${node.id}`}
+              sx={{
+                position: 'absolute',
+                left: `${bodyPosition.left}px`,
+                top: `${bodyPosition.top}px`,
+                p: 0.75,
+                width: 204,
+                maxWidth: '70vw',
+                zIndex: 6,
+                pointerEvents: 'auto',
+                backgroundColor: '#212121',
+                border: '1px solid #3a3a3a'
+              }}
+            >
+              {isEditing ? (
+                <Stack spacing={1} data-testid="condition-inline-editor">
+                  <Typography variant="caption" sx={{ color: '#ffcc80', fontWeight: 700 }}>
+                    Condition
+                  </Typography>
+                  <TextField
+                    multiline
+                    minRows={2}
+                    maxRows={6}
+                    label="Condition expression"
+                    value={expressionEditorDraft}
+                    onChange={(event) => {
+                      setExpressionEditorDraft(event.target.value);
+                      if (expressionEditorError) setExpressionEditorError(null);
+                    }}
+                    error={Boolean(expressionEditorError)}
+                    helperText={expressionEditorError || 'Use && for simple clauses.'}
+                    fullWidth
+                    size="small"
+                  />
+                  <Stack direction="row" spacing={1} justifyContent="flex-end">
+                    <Button size="small" onClick={closeExpressionEditor}>Cancel</Button>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={applyExpressionEditor}
+                      disabled={!expressionEditorNodeId || !expressionEditorDraft.trim() || !onSetConditionExpression}
+                    >
+                      Apply Expression
+                    </Button>
+                  </Stack>
+                </Stack>
+              ) : (
+                <Stack spacing={0.6}>
+                  <Typography variant="caption" sx={{ color: '#ffcc80', fontWeight: 700 }}>
+                    Condition
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#d0d0d0', lineHeight: 1.2 }}>
+                    {preview}
+                  </Typography>
+                  <Stack direction="row" justifyContent="flex-end">
+                    <Button size="small" onClick={() => openExpressionEditor(node)}>Edit</Button>
+                  </Stack>
+                </Stack>
+              )}
+            </Paper>
+          </React.Fragment>
         );
       })}
-
-      {editingNode && editingNodePosition && (
-        <Paper
-          data-testid="condition-inline-editor"
-          sx={{
-            position: 'absolute',
-            left: `${editingNodePosition.left}px`,
-            top: `${editingNodePosition.top}px`,
-            p: 1,
-            width: 204,
-            maxWidth: '70vw',
-            zIndex: 6,
-            pointerEvents: 'auto',
-            backgroundColor: '#212121',
-            border: '1px solid #3a3a3a'
-          }}
-        >
-          <Stack spacing={1}>
-            <Typography variant="caption" sx={{ color: '#ffcc80', fontWeight: 700 }}>
-              Condition
-            </Typography>
-            <TextField
-              multiline
-              minRows={2}
-              maxRows={6}
-              label="Condition expression"
-              value={expressionEditorDraft}
-              onChange={(event) => {
-                setExpressionEditorDraft(event.target.value);
-                if (expressionEditorError) setExpressionEditorError(null);
-              }}
-              error={Boolean(expressionEditorError)}
-              helperText={expressionEditorError || 'Use && for simple clauses.'}
-              fullWidth
-              size="small"
-            />
-            <Stack direction="row" spacing={1} justifyContent="flex-end">
-              <Button size="small" onClick={closeExpressionEditor}>Cancel</Button>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={applyExpressionEditor}
-                disabled={!expressionEditorNodeId || !expressionEditorDraft.trim() || !onSetConditionExpression}
-              >
-                Apply Expression
-              </Button>
-            </Stack>
-          </Stack>
-        </Paper>
-      )}
     </Box>
   );
 };
 
 export default QuestLiteGraphCanvas;
+
+
 
