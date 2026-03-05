@@ -16,7 +16,7 @@ import {
   Tooltip
 } from '@mui/material';
 import { Close as CloseIcon, CheckCircle as CheckCircleIcon, Error as ErrorIcon } from '@mui/icons-material';
-import { useProjectStore, ParsedFileCache } from '../store/projectStore';
+import { useProjectStore } from '../store/projectStore';
 
 interface IngestedFilesDialogProps {
   open: boolean;
@@ -112,7 +112,7 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
                         file.hasErrors ? (
                            <Tooltip title={
                              <Box sx={{ p: 0.5 }}>
-                               {file.errors.slice(0, 10).map((e, i) => (
+                               {file.errors.slice(0, 10).map((e: { message: string }, i: number) => (
                                  <Typography key={i} variant="caption" display="block" sx={{ whiteSpace: 'pre-wrap', mb: 0.5 }}>
                                    {e.message}
                                  </Typography>

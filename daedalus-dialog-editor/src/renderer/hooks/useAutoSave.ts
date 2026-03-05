@@ -19,7 +19,6 @@ export function useAutoSave(): AutoSaveStatus {
   const openFiles = useEditorStore((state) => state.openFiles);
   const autoSaveEnabled = useEditorStore((state) => state.autoSaveEnabled);
   const autoSaveInterval = useEditorStore((state) => state.autoSaveInterval);
-  const codeSettings = useEditorStore((state) => state.codeSettings);
 
   const performAutoSave = useCallback(async () => {
     const state = useEditorStore.getState();

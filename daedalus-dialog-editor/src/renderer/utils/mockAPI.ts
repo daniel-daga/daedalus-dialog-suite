@@ -179,7 +179,7 @@ function parseSource(sourceCode: string): any {
 
     while ((propMatch = propRegex.exec(body)) !== null) {
       const key = propMatch[1].trim();
-      let value = propMatch[2].trim();
+      let value: string | boolean = propMatch[2].trim();
 
       // Convert TRUE/FALSE to boolean
       if (value === 'TRUE') value = true;
@@ -352,6 +352,10 @@ export const mockEditorAPI: EditorAPI = {
     }
   },
 
+  async generateDialogCode(model: any, _dialogName: string, settings: any): Promise<string> {
+    return this.generateCode(model, settings);
+  },
+
   async generateCode(model: any, settings: any): Promise<string> {
     try {
       const code = generateCode(model, settings);
@@ -363,7 +367,7 @@ export const mockEditorAPI: EditorAPI = {
     }
   },
 
-  async validateModel(model: any, settings: any, options?: any): Promise<ValidationResult> {
+  async validateModel(model: any, settings: any, _options?: any): Promise<ValidationResult> {
     // Mock validation - always passes in browser mode
     console.log('[Mock API] Validating model');
     const generatedCode = generateCode(model, settings);
@@ -375,7 +379,7 @@ export const mockEditorAPI: EditorAPI = {
     };
   },
 
-  async saveFile(filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean }): Promise<SaveResult> {
+  async saveFile(filePath: string, model: any, settings: any, _options?: { skipValidation?: boolean; forceOnErrors?: boolean }): Promise<SaveResult> {
     try {
       const code = generateCode(model, settings);
       MockFileSystem.writeFile(filePath, code);
@@ -400,7 +404,7 @@ export const mockEditorAPI: EditorAPI = {
     return path || null;
   },
 
-  async buildProjectIndex(folderPath: string): Promise<any> {
+  async buildProjectIndex(_folderPath: string): Promise<any> {
     // Scan all files in the mock file system to build an index
     const files = MockFileSystem.listFiles();
     const npcs = new Set<string>();

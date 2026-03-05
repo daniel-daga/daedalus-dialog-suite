@@ -1,6 +1,8 @@
 import React, { createContext, useContext } from 'react';
 import { ThemeMode } from './theme';
 
+void React;
+
 interface ThemeContextValue {
   mode: ThemeMode;
   setMode: (mode: ThemeMode) => void;

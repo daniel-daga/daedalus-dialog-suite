@@ -1,6 +1,5 @@
 import React from 'react';
 import { Box, Typography, Paper } from '@mui/material';
-import { Handle, Position } from 'reactflow';
 
 export interface BaseNodeProps {
   label: string | React.ReactNode;

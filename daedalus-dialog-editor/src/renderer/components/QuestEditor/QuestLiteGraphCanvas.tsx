@@ -19,6 +19,11 @@ interface QuestLiteGraphCanvasProps {
   onPaneClick: () => void;
 }
 
+type ExtendedLGraphCanvas = LGraphCanvas & {
+  bgcolor?: string;
+  onLinkSelected?: (linkId: number) => void;
+};
+
 const getConditionTypeLabel = (conditionType?: QuestGraphConditionType): string => {
   if (!conditionType) return 'Condition';
   if (conditionType === 'ExternalTriggerCondition') return 'External Trigger';
@@ -64,7 +69,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const graphRef = useRef<LGraph | null>(null);
-  const graphCanvasRef = useRef<LGraphCanvas | null>(null);
+  const graphCanvasRef = useRef<ExtendedLGraphCanvas | null>(null);
   const nodeMapRef = useRef<Map<string, QuestGraphNode>>(new Map());
   const questIdToRuntimeNodeRef = useRef<Map<string, LGraphNode>>(new Map());
   const edgeMapRef = useRef<Map<string, QuestGraphEdge>>(new Map());
@@ -75,7 +80,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')) return;
 
     const graph = new LGraph();
-    const graphCanvas = new LGraphCanvas(canvasRef.current, graph);
+    const graphCanvas = new LGraphCanvas(canvasRef.current, graph) as ExtendedLGraphCanvas;
     graphCanvas.allow_dragcanvas = true;
     graphCanvas.bgcolor = '#1f1f1f';
 

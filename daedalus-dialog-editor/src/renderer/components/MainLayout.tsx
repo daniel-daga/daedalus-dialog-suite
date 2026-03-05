@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Box, ToggleButton, ToggleButtonGroup, Paper, Tooltip } from '@mui/material';
-import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, Code as CodeIcon } from '@mui/icons-material';
+import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
-import SourceCodeEditor from './SourceCodeEditor';
 import QuestEditor from './QuestEditor';
 import VariableManager from './VariableManager';
 import { useEditorStore } from '../store/editorStore';

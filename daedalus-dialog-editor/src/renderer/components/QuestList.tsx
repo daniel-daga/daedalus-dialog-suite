@@ -29,7 +29,7 @@ import {
 } from '@mui/icons-material';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeList as VirtualizedList, ListChildComponentProps, areEqual } from 'react-window';
-import type { SemanticModel, ConstantSymbol } from '../types/global';
+import type { SemanticModel, GlobalConstant } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
 import { analyzeQuest, getUsedQuestTopics, QuestAnalysis } from './QuestEditor/questAnalysis';
@@ -46,7 +46,7 @@ interface QuestListProps {
 }
 
 interface ItemData {
-  filteredQuests: ConstantSymbol[];
+  filteredQuests: GlobalConstant[];
   questAnalysisMap: Map<string, QuestAnalysis>;
   selectedQuest: string | null;
   onSelectQuest: (questName: string) => void;

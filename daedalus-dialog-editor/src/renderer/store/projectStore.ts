@@ -49,7 +49,7 @@ interface ProjectState {
 
   // Project index (lightweight)
   npcList: string[];
-  dialogIndex: Map<string, DialogMetadata[]>; // NPC ID → dialogs
+  dialogIndex: Map<string, DialogMetadata[]>; // NPC ID Ã¢â€ â€™ dialogs
   allDialogFiles: string[];
   questFiles: string[];
 
@@ -406,22 +406,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         Object.assign(mergedModel.functions, model.functions);
       }
       if (model?.constants) {
-        Object.assign(mergedModel.constants, model.constants);
+        Object.assign(mergedModel.constants!, model.constants);
       }
       if (model?.variables) {
-        Object.assign(mergedModel.variables, model.variables);
+        Object.assign(mergedModel.variables!, model.variables);
       }
       if (model?.instances) {
-        Object.assign(mergedModel.instances, model.instances);
+        Object.assign(mergedModel.instances!, model.instances);
       }
       if (model?.items) {
-        Object.assign(mergedModel.items, model.items);
+        Object.assign(mergedModel.items!, model.items);
       }
       if (model?.npcs) {
-        Object.assign(mergedModel.npcs, model.npcs);
+        Object.assign(mergedModel.npcs!, model.npcs);
       }
       if (model?.animations) {
-        Object.assign(mergedModel.animations, model.animations);
+        Object.assign(mergedModel.animations!, model.animations);
       }
     });
 
@@ -528,7 +528,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   createQuest: async (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => {
-    const { getSemanticModel, mergeSemanticModels } = get();
 
     try {
       set({ isLoading: true });
@@ -589,7 +588,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   addVariable: async (name: string, type: string, value: string | number | boolean | undefined, filePath: string, isConstant: boolean) => {
-    const { getSemanticModel, mergeSemanticModels } = get();
 
     try {
       set({ isLoading: true });
@@ -634,7 +632,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateGlobalConstant: async (name: string, value: string, filePath: string) => {
-    const { getSemanticModel, mergeSemanticModels } = get();
 
     try {
       set({ isLoading: true });
@@ -681,7 +678,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   deleteVariable: async (filePath: string, range: { startIndex: number, endIndex: number }) => {
-    const { getSemanticModel, mergeSemanticModels } = get();
 
     try {
       set({ isLoading: true });

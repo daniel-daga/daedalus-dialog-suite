@@ -12,6 +12,8 @@ import {
 } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 
+void React;
+
 interface DialogTreeItemProps {
   dialogName: string;
   semanticModel: SemanticModel;

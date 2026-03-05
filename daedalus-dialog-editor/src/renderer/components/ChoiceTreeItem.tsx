@@ -13,10 +13,11 @@ import {
 } from '@mui/icons-material';
 import type { FunctionTreeChild } from '../types/global';
 
+void React;
+
 interface ChoiceTreeItemProps {
   choice: FunctionTreeChild;
   depth: number;
-  index: number;
   choiceKey: string;
   isExpanded: boolean;
   hasChildren: boolean;
@@ -30,7 +31,6 @@ interface ChoiceTreeItemProps {
 const ChoiceTreeItem = memo(({
   choice,
   depth,
-  index,
   choiceKey,
   isExpanded,
   hasChildren,

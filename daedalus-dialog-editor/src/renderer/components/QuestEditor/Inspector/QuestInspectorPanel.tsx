@@ -419,11 +419,13 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   onClick={() => {
                     const targetFunctionName = selectedNode.data.provenance?.functionName;
                     if (!targetFunctionName || selectedNode.data.conditionIndex === undefined) return;
+                    const originalCondition = selectedNode.data.condition;
+                    if (!isVariableCondition(originalCondition)) return;
                     onUpdateConditionLink({
                       targetFunctionName,
                       conditionIndex: selectedNode.data.conditionIndex,
-                      oldVariableName: selectedNode.data.condition.variableName,
-                      oldValue: String(selectedNode.data.condition.value ?? ''),
+                      oldVariableName: originalCondition.variableName,
+                      oldValue: String(originalCondition.value ?? ''),
                       variableName: conditionDraft.variableName.trim(),
                       value: conditionDraft.value.trim(),
                       operator: conditionDraft.operator,

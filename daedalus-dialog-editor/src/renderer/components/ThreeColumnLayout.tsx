@@ -85,6 +85,13 @@ function createNpcInstanceTemplate(npcName: string): string {
   ].join('\n');
 }
 
+const EMPTY_SEMANTIC_MODEL: SemanticModel = {
+  dialogs: {},
+  functions: {},
+  hasErrors: false,
+  errors: []
+};
+
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { 
     openFiles, 
@@ -141,7 +148,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Determine which mode we're in: project mode or single-file mode
   const isProjectMode = !!projectPath;
-  const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
+  const semanticModel: SemanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel ?? EMPTY_SEMANTIC_MODEL);
 
   // Defer the semantic model update for the heavy tree view to prevent blocking the main thread
   const deferredSemanticModel = useDeferredValue(semanticModel);
@@ -320,7 +327,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
     const newPath = [...ancestorPath, funcName];
 
-    // Pre-compute isShared for all choices at once (O(n) instead of O(n²))
+    // Pre-compute isShared for all choices at once (O(n) instead of O(nÂ²))
     const targetCounts = new Map<string, number>();
     choices.forEach((choice) => {
       const target = choice.targetFunction;
@@ -853,38 +860,31 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   ]);
 
   const handleCloseRecentDialog = useCallback((dialogName: string, npcName: string) => {
-    let nextTabToSelect: RecentDialogTab | null = null;
-    let shouldClearSelection = false;
+    const tabIndex = recentDialogs.findIndex((tab) => tab.dialogName === dialogName && tab.npcName === npcName);
+    if (tabIndex < 0) {
+      return;
+    }
 
-    setRecentDialogs((prev) => {
-      const tabIndex = prev.findIndex((tab) => tab.dialogName === dialogName && tab.npcName === npcName);
-      if (tabIndex < 0) {
-        return prev;
-      }
+    const nextTabs = recentDialogs.filter((_, index) => index !== tabIndex);
+    setRecentDialogs(nextTabs);
 
-      const nextTabs = prev.filter((_, index) => index !== tabIndex);
-      const closingSelectedTab = selectedDialog === dialogName && activeNpcName === npcName;
+    const closingSelectedTab = selectedDialog === dialogName && activeNpcName === npcName;
+    if (!closingSelectedTab) {
+      return;
+    }
 
-      if (closingSelectedTab) {
-        if (nextTabs.length > 0) {
-          const fallbackIndex = Math.min(tabIndex, nextTabs.length - 1);
-          nextTabToSelect = nextTabs[fallbackIndex];
-        } else {
-          shouldClearSelection = true;
-        }
-      }
-
-      return nextTabs;
-    });
+    const fallbackIndex = Math.min(tabIndex, nextTabs.length - 1);
+    const nextTabToSelect = nextTabs[fallbackIndex];
 
     if (nextTabToSelect) {
       void handleSelectRecentDialog(nextTabToSelect.dialogName, nextTabToSelect.functionName, nextTabToSelect.npcName);
-    } else if (shouldClearSelection) {
-      setSelectedDialog(null);
-      setSelectedFunctionName(null);
-      setIsLoadingDialog(false);
+      return;
     }
-  }, [selectedDialog, activeNpcName, handleSelectRecentDialog, setSelectedDialog, setSelectedFunctionName]);
+
+    setSelectedDialog(null);
+    setSelectedFunctionName(null);
+    setIsLoadingDialog(false);
+  }, [recentDialogs, selectedDialog, activeNpcName, handleSelectRecentDialog, setSelectedDialog, setSelectedFunctionName]);
 
   useEffect(() => {
     if (!selectedDialog) return;

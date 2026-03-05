@@ -74,7 +74,6 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => 
       <ChoiceTreeItem
         choice={item.choice}
         depth={item.depth}
-        index={item.index}
         choiceKey={item.id}
         isExpanded={item.isExpanded}
         hasChildren={item.hasChildren}

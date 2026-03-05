@@ -36,7 +36,7 @@ type VariableEntry = {
 };
 
 const VariableManager: React.FC = () => {
-  const { mergedSemanticModel, deleteVariable, allDialogFiles, questFiles } = useProjectStore();
+  const { mergedSemanticModel, deleteVariable } = useProjectStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'constants' | 'variables'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
