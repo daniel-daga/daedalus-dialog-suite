@@ -1,4 +1,4 @@
-#!/usr/bin/env npx ts-node
+#!/usr/bin/env ts-node
 
 // CLI tool for generating Daedalus code from semantic model
 // Demonstrates round-trip: Parse -> Semantic Model -> Generate
@@ -176,7 +176,7 @@ function processFile(filename: string, options: CLIOptions) {
 function printHelp() {
   console.log('Daedalus Semantic Code Generator CLI');
   console.log('');
-  console.log('Usage: npm run generate <file.d> [options]');
+  console.log('Usage: npm run format -- <file.d> [options]');
   console.log('');
   console.log('Generate Daedalus source code from semantic model (round-trip demo)');
   console.log('');
@@ -190,9 +190,9 @@ function printHelp() {
   console.log('  -h, --help                  Show this help');
   console.log('');
   console.log('Examples:');
-  console.log('  npm run generate examples/DIA_Szmyk.d');
-  console.log('  npm run generate examples/DIA_Szmyk.d -o output.d --verbose');
-  console.log('  npm run generate examples/DIA_Szmyk.d --indent-spaces 4 --no-comments');
+  console.log('  npm run format -- examples/DIA_Szmyk.d');
+  console.log('  npm run format -- examples/DIA_Szmyk.d -o output.d --verbose');
+  console.log('  npm run format -- examples/DIA_Szmyk.d --indent-spaces 4 --no-comments');
 }
 
 // Run if called directly

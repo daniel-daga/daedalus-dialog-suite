@@ -27,7 +27,7 @@ instance Dia (C_Info) {
 
   // If it's a string, it means linking failed
   if (typeof infoFunc === 'string') {
-      assert.fail(`Linking failed: Expected function object but got string "${infoFunc}"`);
+    assert.fail(`Linking failed: Expected function object but got string "${infoFunc}"`);
   }
 
   assert.strictEqual(typeof infoFunc, 'object', 'Information property should be an object (linked function)');

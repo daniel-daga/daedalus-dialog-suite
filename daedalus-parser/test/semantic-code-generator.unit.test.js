@@ -67,8 +67,8 @@ test('SemanticCodeGenerator should generate dialog with functions', () => {
   dialog.properties.information = func;
 
   const model = {
-    dialogs: { 'DIA_Test_Hello': dialog },
-    functions: { 'DIA_Test_Hello_Info': func }
+    dialogs: { DIA_Test_Hello: dialog },
+    functions: { DIA_Test_Hello_Info: func }
   };
 
   const result = generator.generateDialogWithFunctions('DIA_Test_Hello', model);

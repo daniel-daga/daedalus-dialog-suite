@@ -53,7 +53,7 @@ test('should parse global variables', () => {
 });
 
 test('should handle mixed global declarations', () => {
-    const source = `
+  const source = `
       const string TOPIC_Test = "Test Quest";
       var int MIS_Test;
 
@@ -62,12 +62,12 @@ test('should handle mixed global declarations', () => {
       };
     `;
 
-    const model = parseSemanticModel(source);
+  const model = parseSemanticModel(source);
 
-    assert.equal(model.hasErrors, false);
-    assert.ok(model.constants['TOPIC_Test']);
-    assert.ok(model.variables['MIS_Test']);
-    assert.ok(model.functions['TestFunc']);
+  assert.equal(model.hasErrors, false);
+  assert.ok(model.constants['TOPIC_Test']);
+  assert.ok(model.variables['MIS_Test']);
+  assert.ok(model.functions['TestFunc']);
 });
 
 test('should parse non-dialog instances into semantic model instances', () => {

@@ -48,7 +48,8 @@ class DaedalusParser {
    * Parse file from filesystem
    * @param {string} filePath - Path to Daedalus file
    * @param {Object} options - Parsing options
-   * @param {string} options.encoding - Specific encoding to use (e.g., 'windows-1250', 'utf8'). If not specified, auto-detection is used.
+   * @param {string} options.encoding - Specific encoding to use
+   *   (e.g., 'windows-1250', 'utf8'). If not specified, auto-detection is used.
    * @param {boolean} options.detectEncoding - Whether to detect encoding (default: true)
    * @returns {Object} Parse result
    */

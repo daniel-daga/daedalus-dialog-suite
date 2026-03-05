@@ -1,4 +1,4 @@
-#!/usr/bin/env npx ts-node
+#!/usr/bin/env ts-node
 
 // CLI tool for running semantic visitor on Daedalus files
 
@@ -14,12 +14,12 @@ function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.log('Usage: npm run semantic <file.d>');
+    console.log('Usage: npm run semantic -- <file.d>');
     console.log('');
     console.log('Analyze a Daedalus dialog file with the semantic visitor');
     console.log('');
     console.log('Examples:');
-    console.log('  npm run semantic examples/DIA_Szmyk.d');
+    console.log('  npm run semantic -- examples/DIA_Szmyk.d');
     console.log('  npm run semantic -- --help');
     process.exit(1);
   }
@@ -29,7 +29,7 @@ function main() {
   if (filename === '--help' || filename === '-h') {
     console.log('Daedalus Semantic Visitor CLI');
     console.log('');
-    console.log('Usage: npm run semantic <file.d>');
+    console.log('Usage: npm run semantic -- <file.d>');
     console.log('');
     console.log('This tool parses a Daedalus dialog file and builds a semantic model');
     console.log('showing dialogs, functions, and semantic actions in execution order.');

@@ -10,10 +10,10 @@
     "build": "tree-sitter generate",
     "build:ts": "tsc --project tsconfig.build.json",
     "parse": "node bin/daedalus-parse.js",
-    "semantic": "npx ts-node bin/semantic-visitor-cli.ts",
-    "format": "npx ts-node bin/semantic-code-generator-cli.ts",
-    "lint": "eslint src/ test/ bin/ --max-warnings 0",
-    "lint:fix": "eslint src/ test/ bin/ --fix",
+    "semantic": "ts-node bin/semantic-visitor-cli.ts",
+    "format": "ts-node bin/semantic-code-generator-cli.ts",
+    "lint": "eslint src/**/*.js test/**/*.js bin/daedalus-parse.js --max-warnings 0",
+    "lint:fix": "eslint src/**/*.js test/**/*.js bin/daedalus-parse.js --fix",
     "typecheck": "tsc --noEmit",
     "install": "node-gyp-build",
     "postinstall": "npm run build && npm run build:ts",
@@ -68,12 +68,11 @@
     "binding.gyp",
     "prebuilds/**",
     "bindings/node/*",
-    "queries/*",
     "src/**",
     "dist/**",
     "examples/**",
     "README.md",
-    "CHANGELOG.md"
+    "API.md"
   ],
   "author": "",
   "license": "MIT",
@@ -104,7 +103,8 @@
     "node-addon-api": "^8.5.0",
     "prebuildify": "^6.0.0",
     "tree-sitter-cli": "^0.25.10",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "ts-node": "^10.9.2"
   },
   "tree-sitter": [
     {

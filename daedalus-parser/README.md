@@ -114,7 +114,7 @@ console.log(code);
 Analyze dialogs and extract semantic information:
 
 ```bash
-npm run semantic examples/DIA_Szmyk.d
+npm run semantic -- examples/DIA_Szmyk.d
 ```
 
 Shows:
@@ -129,13 +129,13 @@ Generate Daedalus code from semantic models (round-trip):
 
 ```bash
 # Parse → Semantic Model → Generate → Verify round-trip
-npm run generate examples/DIA_Szmyk.d --verbose
+npm run format -- examples/DIA_Szmyk.d --verbose
 
 # Generate to file
-npm run generate examples/DIA_Szmyk.d -o output.d
+npm run format -- examples/DIA_Szmyk.d -o output.d
 
 # Custom formatting
-npm run generate examples/DIA_Szmyk.d --indent-spaces 4 --no-comments
+npm run format -- examples/DIA_Szmyk.d --indent-spaces 4 --no-comments
 ```
 
 Options:
@@ -151,8 +151,8 @@ Options:
 Format Daedalus source code:
 
 ```bash
-daedalus-format examples/script.d
-daedalus-format examples/script.d --output formatted.d --indent 2
+npm run format -- examples/script.d
+npm run format examples/script.d -- --output formatted.d --indent-spaces 2
 ```
 
 ### Parser
@@ -243,7 +243,7 @@ const code = generator.generateSemanticModel(model);
 - ✅ **Action support** - Generates all semantic action types
 - ✅ **Preserves semantics** - Function bodies can be preserved or regenerated
 
-See [SEMANTIC_CODE_GENERATOR.md](SEMANTIC_CODE_GENERATOR.md) for complete documentation.
+See [API.md](API.md) for complete parser and semantic API documentation.
 
 ## Supported Language Features
 
@@ -341,11 +341,8 @@ Test coverage:
 
 ## Documentation
 
-- **[SEMANTIC_CODE_GENERATOR.md](SEMANTIC_CODE_GENERATOR.md)** - Complete code generation API
-- **[SEMANTIC_VISITOR_ARCHITECTURE.md](SEMANTIC_VISITOR_ARCHITECTURE.md)** - Visitor pattern architecture
-- **[DIALOG_EDITOR_ARCHITECTURE.md](DIALOG_EDITOR_ARCHITECTURE.md)** - Planned Electron editor
-- **[MIGRATION_CODE_GENERATOR.md](MIGRATION_CODE_GENERATOR.md)** - Migration from old API
-- **[API.md](API.md)** - Low-level parser API reference
+- **[API.md](API.md)** - Low-level parser and semantic API reference
+- **[README.md](README.md)** - Quick-start usage and command examples
 
 ## Architecture
 

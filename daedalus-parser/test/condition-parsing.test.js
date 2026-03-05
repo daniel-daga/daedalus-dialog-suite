@@ -112,11 +112,11 @@ test('Should round-trip dialog with Npc_KnowsInfo condition', () => {
 
   // Verify generated code contains the condition
   assert.ok(generatedCode.includes('Npc_KnowsInfo(other, DIA_Farim_Hallo)'),
-           'Generated code should contain Npc_KnowsInfo call');
+    'Generated code should contain Npc_KnowsInfo call');
   assert.ok(generatedCode.includes('DIA_Farim_FirstEXIT_Condition'),
-           'Generated code should contain condition function');
+    'Generated code should contain condition function');
   assert.ok(generatedCode.includes('return TRUE'),
-           'Generated code should return TRUE');
+    'Generated code should return TRUE');
 
   // Parse generated code and verify it matches
   const model2 = parseAndBuildModel(generatedCode);
@@ -126,7 +126,7 @@ test('Should round-trip dialog with Npc_KnowsInfo condition', () => {
   const conditionFunc2 = dialog2.properties.condition;
   assert.strictEqual(conditionFunc2.conditions.length, 1, 'Re-parsed condition function should have 1 condition');
   assert.ok(conditionFunc2.conditions[0] instanceof NpcKnowsInfoCondition,
-           'Re-parsed condition should be NpcKnowsInfoCondition');
+    'Re-parsed condition should be NpcKnowsInfoCondition');
 });
 
 test('Should handle dialog without conditions', () => {
@@ -137,7 +137,7 @@ test('Should handle dialog without conditions', () => {
   assert.ok(dialog, 'Dialog should exist');
   const conditionFunc = dialog.properties.condition;
   assert.strictEqual(conditionFunc.conditions.length, 0,
-                     'Condition function with simple return should have no semantic conditions');
+    'Condition function with simple return should have no semantic conditions');
 });
 
 test('Should display condition correctly', () => {
@@ -145,18 +145,18 @@ test('Should display condition correctly', () => {
   const display = condition.toDisplayString();
 
   assert.strictEqual(display, '[NpcKnowsInfo: other knows DIA_Farim_Hallo]',
-                     'Display string should be formatted correctly');
+    'Display string should be formatted correctly');
 });
 
 test('Generic Condition should work for custom expressions', () => {
   const condition = new Condition('hero.attribute[ATR_HITPOINTS] > 50');
 
   assert.strictEqual(condition.condition, 'hero.attribute[ATR_HITPOINTS] > 50',
-                     'Condition should store expression');
+    'Condition should store expression');
   assert.strictEqual(condition.generateCode({}), 'hero.attribute[ATR_HITPOINTS] > 50',
-                     'Should generate correct code');
+    'Should generate correct code');
   assert.strictEqual(condition.getTypeName(), 'Condition',
-                     'Type name should be Condition');
+    'Type name should be Condition');
 });
 
 test('Should link condition function to dialog via properties', () => {
@@ -167,7 +167,7 @@ test('Should link condition function to dialog via properties', () => {
   // Check that condition property references the function
   assert.ok(dialog.properties.condition, 'Dialog should have condition property');
   assert.strictEqual(dialog.properties.condition.name, 'DIA_Farim_FirstEXIT_Condition',
-                     'Condition property should reference correct function');
+    'Condition property should reference correct function');
 
   // Check the function exists
   assert.ok(conditionFunc, 'Condition function should exist in model');
@@ -181,11 +181,11 @@ test('Should generate condition function with if statement', () => {
 
   // Check structure of generated condition function
   assert.ok(generatedCode.includes('func int DIA_Farim_FirstEXIT_Condition()'),
-           'Should generate function declaration');
+    'Should generate function declaration');
   assert.ok(generatedCode.includes('if (Npc_KnowsInfo(other, DIA_Farim_Hallo))'),
-           'Should generate if statement with condition');
+    'Should generate if statement with condition');
   assert.ok(generatedCode.includes('return TRUE'),
-           'Should return TRUE in if block');
+    'Should return TRUE in if block');
 });
 
 test('Multiple conditions should be handled', () => {
@@ -291,9 +291,9 @@ test('Should display variable conditions correctly', () => {
   const negatedVar = new VariableCondition('EntscheidungBuddlerMapTaken', true);
 
   assert.strictEqual(plainVar.toDisplayString(), '[Variable: EntscheidungVergessenTaken]',
-                     'Plain variable display should be correct');
+    'Plain variable display should be correct');
   assert.strictEqual(negatedVar.toDisplayString(), '[Not: EntscheidungBuddlerMapTaken]',
-                     'Negated variable display should be correct');
+    'Negated variable display should be correct');
 });
 
 test('Should round-trip dialog with variable conditions', () => {
@@ -330,11 +330,11 @@ func void DIA_Test_Roundtrip_Info()
 
   // Verify generated code contains the conditions
   assert.ok(generatedCode.includes('Npc_KnowsInfo(other, DIA_Test)'),
-           'Generated code should contain Npc_KnowsInfo');
+    'Generated code should contain Npc_KnowsInfo');
   assert.ok(generatedCode.includes('!someFlag'),
-           'Generated code should contain negated variable');
+    'Generated code should contain negated variable');
   assert.ok(generatedCode.includes('anotherFlag'),
-           'Generated code should contain plain variable');
+    'Generated code should contain plain variable');
 
   // Parse generated code and verify it matches
   const model2 = parseAndBuildModel(generatedCode);
@@ -561,7 +561,7 @@ func void DIA_Test_TypedCalls_Info() {};
 `;
 
   const model = parseAndBuildModel(source);
-  const conditions = model.dialogs['DIA_Test_TypedCalls'].properties.condition.conditions;
+  const { conditions } = model.dialogs['DIA_Test_TypedCalls'].properties.condition;
 
   assert.ok(conditions.length >= 5, 'Should parse typed call conditions');
   assert.ok(conditions.some(c => c instanceof NpcHasItemsCondition), 'Should include NpcHasItemsCondition');
@@ -598,7 +598,7 @@ func void DIA_Test_BoolComparisons_Info() {};
 `;
 
   const model = parseAndBuildModel(source);
-  const conditions = model.dialogs['DIA_Test_BoolComparisons'].properties.condition.conditions;
+  const { conditions } = model.dialogs['DIA_Test_BoolComparisons'].properties.condition;
 
   assert.strictEqual(conditions.length, 2);
   assert.ok(conditions[0] instanceof NpcIsDeadCondition);

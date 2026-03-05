@@ -4,7 +4,6 @@ const Parser = require('tree-sitter');
 const Daedalus = require('../bindings/node');
 const {
   SemanticModelBuilderVisitor,
-  SemanticCodeGenerator,
   VariableCondition
 } = require('../dist/semantic/semantic-visitor-index');
 
@@ -147,13 +146,13 @@ func void DIA_Test_Reversed_String_Info() {};
 });
 
 test('Should generate code for binary conditions', () => {
-    const condition = new VariableCondition('MIS_Quest', false, '==', 'LOG_SUCCESS');
-    const code = condition.generateCode({});
-    assert.strictEqual(code, 'MIS_Quest == LOG_SUCCESS');
+  const condition = new VariableCondition('MIS_Quest', false, '==', 'LOG_SUCCESS');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_Quest == LOG_SUCCESS');
 });
 
 test('Should display binary conditions correctly', () => {
-    const condition = new VariableCondition('MIS_Quest', false, '==', 'LOG_SUCCESS');
-    const display = condition.toDisplayString();
-    assert.strictEqual(display, '[Variable: MIS_Quest == LOG_SUCCESS]');
+  const condition = new VariableCondition('MIS_Quest', false, '==', 'LOG_SUCCESS');
+  const display = condition.toDisplayString();
+  assert.strictEqual(display, '[Variable: MIS_Quest == LOG_SUCCESS]');
 });

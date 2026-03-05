@@ -472,8 +472,12 @@ test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () 
   // The normalized code should be very similar (allowing for minor formatting differences)
   // Check that they're roughly the same length (within 20% to account for formatting)
   const lengthRatio = normalizedGenerated.length / normalizedOriginal.length;
+  const ratioMessage
+    = `Generated code length should be similar to original (ratio: ${lengthRatio.toFixed(2)}). `
+    + `Original: ${normalizedOriginal.length} chars, Generated: ${normalizedGenerated.length} chars`;
+
   assert.ok(
     lengthRatio > 0.8 && lengthRatio < 1.2,
-    `Generated code length should be similar to original (ratio: ${lengthRatio.toFixed(2)}). Original: ${normalizedOriginal.length} chars, Generated: ${normalizedGenerated.length} chars`
+    ratioMessage
   );
 });

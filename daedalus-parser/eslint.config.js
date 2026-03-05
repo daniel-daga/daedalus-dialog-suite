@@ -1,6 +1,19 @@
 const js = require('@eslint/js');
 
 module.exports = [
+  {
+    ignores: [
+      'node_modules/**',
+      'prebuilds/**',
+      'bindings/**',
+      'bin/bin/**',
+      'bin/src/**',
+      'dist/**',
+      'src/parser.c',
+      'src/grammar.json',
+      'src/node-types.json'
+    ]
+  },
   js.configs.recommended,
   {
     languageOptions: {
@@ -23,7 +36,7 @@ module.exports = [
         assert: 'readonly'
       }
     },
-    files: ['src/**/*.js', 'test/**/*.js', 'bin/**/*.js'],
+    files: ['src/**/*.js', 'test/**/*.js', 'bin/daedalus-parse.js'],
     rules: {
       // Possible Errors
       'no-console': 'off', // Allow console for CLI tools and debugging
@@ -34,8 +47,8 @@ module.exports = [
       'no-undef': 'error',
 
       // Best Practices
-      'curly': 'error',
-      'eqeqeq': ['error', 'always'],
+      curly: 'error',
+      eqeqeq: ['error', 'always'],
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',
@@ -51,9 +64,9 @@ module.exports = [
       'no-void': 'error',
       'no-with': 'error',
       'prefer-promise-reject-errors': 'error',
-      'radix': 'error',
+      radix: 'error',
       'wrap-iife': ['error', 'inside'],
-      'yoda': 'error',
+      yoda: 'error',
 
       // Stylistic Issues
       'array-bracket-spacing': ['error', 'never'],
@@ -65,7 +78,7 @@ module.exports = [
       'computed-property-spacing': ['error', 'never'],
       'eol-last': 'error',
       'func-call-spacing': ['error', 'never'],
-      'indent': ['error', 2, { SwitchCase: 1 }],
+      indent: ['error', 2, { SwitchCase: 1 }],
       'key-spacing': ['error', { beforeColon: false, afterColon: true }],
       'keyword-spacing': 'error',
       'linebreak-style': ['error', 'unix'],
@@ -89,8 +102,8 @@ module.exports = [
       'operator-linebreak': ['error', 'before'],
       'padded-blocks': ['error', 'never'],
       'quote-props': ['error', 'as-needed'],
-      'quotes': ['error', 'single', { avoidEscape: true }],
-      'semi': ['error', 'always'],
+      quotes: ['error', 'single', { avoidEscape: true }],
+      semi: ['error', 'always'],
       'semi-spacing': ['error', { before: false, after: true }],
       'space-before-blocks': 'error',
       'space-before-function-paren': ['error', 'never'],
@@ -133,10 +146,5 @@ module.exports = [
       'max-len': ['error', { code: 150 }], // Allow longer lines in tests
       'no-unused-expressions': 'off' // Allow assert expressions
     }
-  },
-  {
-    // Specific overrides for generated or vendor files
-    files: ['node_modules/**', 'prebuilds/**', 'bindings/**'],
-    ignores: ['node_modules/**', 'prebuilds/**', 'bindings/**']
   }
 ];
