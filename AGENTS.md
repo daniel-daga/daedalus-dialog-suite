@@ -30,3 +30,7 @@ Use package-local instructions when working inside a workspace:
 - `npm run test` - run tests across workspaces
 - `npm run test:roundtrip-corpus` - parser corpus roundtrip check
 
+## Sandbox Notes (Codex)
+
+- In Codex sandbox, `npm run build --workspace daedalus-dialog-editor` can fail during Vite startup with `Error: spawn EPERM` (from `esbuild` process spawn).
+- If this happens, rerun the same build command with elevated permissions; the build succeeds outside sandbox.
