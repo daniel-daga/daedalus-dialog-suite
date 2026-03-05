@@ -35,22 +35,18 @@ npm run build
 The semantic model approach is ideal for dialog editors and tools:
 
 ```typescript
-import {
-  createDaedalusParser,
-  SemanticModelBuilderVisitor,
-  SemanticCodeGenerator,
-  Dialog,
-  DialogFunction
-} from 'daedalus-parser';
+import DaedalusParser = require('daedalus-parser');
+import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 
 // Parse Daedalus source
-const parser = createDaedalusParser();
-const tree = parser.parse(sourceCode);
+const parser = DaedalusParser.create();
+const parseResult = parser.parse(sourceCode);
 
 // Build semantic model
 const visitor = new SemanticModelBuilderVisitor();
-visitor.pass1_createObjects(tree.rootNode);
-visitor.pass2_analyzeAndLink(tree.rootNode);
+visitor.pass1_createObjects(parseResult.rootNode);
+visitor.pass2_analyzeAndLink(parseResult.rootNode);
 
 // Access structured data
 console.log('Dialogs:', Object.keys(visitor.semanticModel.dialogs));
@@ -72,9 +68,9 @@ import {
   SemanticModel,
   Dialog,
   DialogFunction,
-  DialogLine,
-  SemanticCodeGenerator
-} from './src/semantic-visitor-index';
+  DialogLine
+} from 'daedalus-parser/semantic-model';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 
 const model: SemanticModel = { dialogs: {}, functions: {} };
 
@@ -152,7 +148,7 @@ Format Daedalus source code:
 
 ```bash
 npm run format -- examples/script.d
-npm run format examples/script.d -- --output formatted.d --indent-spaces 2
+npm run format -- examples/script.d --output formatted.d --indent-spaces 2
 ```
 
 ### Parser
@@ -222,7 +218,7 @@ The semantic model captures high-level dialog actions:
 Generate formatted Daedalus code from semantic models:
 
 ```typescript
-import { SemanticCodeGenerator } from './src/semantic-visitor-index';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 
 const generator = new SemanticCodeGenerator({
   indentSize: 1,           // Default: 1
@@ -331,13 +327,12 @@ func void DIA_Merchant_Trade_Info()
 npm test
 ```
 
-Test coverage:
-- ✅ 85 tests pass
-- ✅ Semantic model parsing and generation
-- ✅ Round-trip conversion (parse → generate → parse)
-- ✅ All action types
-- ✅ Formatting options
-- ✅ Error handling
+Test coverage includes:
+- semantic model parsing and generation
+- round-trip conversion (parse -> generate -> parse)
+- action extraction and generation
+- formatting options
+- error handling
 
 ## Documentation
 
@@ -375,3 +370,4 @@ MIT License - see LICENSE file for details.
 - [Daedalus EBNF Documentation](https://wiki.worldofgothic.de/doku.php?id=daedalus:ebnf)
 - [Gothic Scripting Tutorial](https://wiki.worldofgothic.de/doku.php?id=quickstart:skripte)
 - [Tree-sitter](https://tree-sitter.github.io/tree-sitter/)
+

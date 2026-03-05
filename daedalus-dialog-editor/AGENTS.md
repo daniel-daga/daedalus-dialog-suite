@@ -36,6 +36,15 @@ When changing node editor UI behavior, do a quick smoke pass:
 `semanticModel` is large and recreated frequently. Avoid passing the full object to deeply memoized components.
 Prefer stable sub-properties and granular comparisons when using `React.memo`.
 
+## Documentation Hygiene
+
+1. Keep editor-facing architecture and behavior docs under `../docs/` using canonical sections:
+   - `../docs/architecture/` for durable design/architecture decisions
+   - `../docs/reference/` for durable behavior references
+   - `../docs/plans/` only for active implementation plans
+2. If an editor plan is completed, extract lasting decisions into canonical docs, then delete the completed plan file.
+3. When changing commands, workflows, or constraints, update the relevant docs in the same change.
+
 ## Useful Commands
 
 - `npm run dev`
@@ -44,5 +53,6 @@ Prefer stable sub-properties and granular comparisons when using `React.memo`.
 - `npm run test:stable:windows` (recommended local Windows baseline)
 - `npm run test:matrix:windows` (repro matrix for intermittent `3221226505` exits)
 - `npm run test:e2e`
+
 
 

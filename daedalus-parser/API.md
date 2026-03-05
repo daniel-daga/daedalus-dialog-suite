@@ -31,23 +31,17 @@ npm run build
 ### Parse and Generate Code
 
 ```typescript
-import * as Parser from 'tree-sitter';
-import {
-  SemanticModelBuilderVisitor,
-  SemanticCodeGenerator
-} from './src/semantic-visitor-index';
+import DaedalusParser = require('daedalus-parser');
+import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 
-// Parse Daedalus source
-const Daedalus = require('./bindings/node');
-const parser = new Parser();
-parser.setLanguage(Daedalus);
-
-const tree = parser.parse(sourceCode);
+const parser = DaedalusParser.create();
+const parseResult = parser.parse(sourceCode);
 
 // Build semantic model
 const visitor = new SemanticModelBuilderVisitor();
-visitor.pass1_createObjects(tree.rootNode);
-visitor.pass2_analyzeAndLink(tree.rootNode);
+visitor.pass1_createObjects(parseResult.rootNode);
+visitor.pass2_analyzeAndLink(parseResult.rootNode);
 
 // Access structured data
 console.log('Dialogs:', visitor.semanticModel.dialogs);
@@ -392,12 +386,11 @@ type DialogAction =
 ### Example 1: Parse and Modify
 
 ```typescript
-import * as Parser from 'tree-sitter';
-import { SemanticModelBuilderVisitor, SemanticCodeGenerator } from './src/semantic-visitor-index';
+import DaedalusParser = require('daedalus-parser');
+import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 
-const Daedalus = require('./bindings/node');
-const parser = new Parser();
-parser.setLanguage(Daedalus);
+const parser = DaedalusParser.create();
 
 // Parse
 const tree = parser.parse(sourceCode);
@@ -422,9 +415,9 @@ import {
   SemanticModel,
   Dialog,
   DialogFunction,
-  DialogLine,
-  SemanticCodeGenerator
-} from './src/semantic-visitor-index';
+  DialogLine
+} from 'daedalus-parser/semantic-model';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 
 // Create model
 const model: SemanticModel = { dialogs: {}, functions: {} };
@@ -490,31 +483,29 @@ The package also includes CLI tools:
 
 ### Semantic Analyzer
 ```bash
-npm run semantic examples/DIA_Szmyk.d
+npm run semantic -- examples/DIA_Szmyk.d
 ```
 
 ### Code Generator
 ```bash
-npm run generate examples/DIA_Szmyk.d --verbose
-npm run generate examples/DIA_Szmyk.d -o output.d
+npm run format -- examples/DIA_Szmyk.d --verbose
+npm run format -- examples/DIA_Szmyk.d -o output.d
 ```
 
 ### Formatter
 ```bash
-npm run format examples/DIA_Szmyk.d
+npm run format -- examples/DIA_Szmyk.d
 ```
 
 ### Parser
 ```bash
-npm run parse examples/DIA_Szmyk.d
+npm run parse -- examples/DIA_Szmyk.d
 ```
 
 ## Further Documentation
 
-- **[README.md](README.md)** - Project overview and quick start
-- **[SEMANTIC_CODE_GENERATOR.md](SEMANTIC_CODE_GENERATOR.md)** - Detailed code generation guide
-- **[SEMANTIC_VISITOR_ARCHITECTURE.md](SEMANTIC_VISITOR_ARCHITECTURE.md)** - Visitor pattern details
-- **[MIGRATION_CODE_GENERATOR.md](MIGRATION_CODE_GENERATOR.md)** - Migration from old API
+- **[README.md](README.md)** - Quick-start usage and workflow documentation
+- **[../docs/README.md](../docs/README.md)** - Repository documentation index
 
 ## License
 

@@ -31,6 +31,15 @@ Run these checks before completion:
 - `npm run lint`
 - `npm run typecheck`
 
+## Documentation Hygiene
+
+1. Keep parser public docs split and current:
+   - `README.md` for usage and workflows
+   - `API.md` for API/interface reference
+2. Keep parser implementation plans in `../docs/plans/` while active; when complete, extract durable outcomes into canonical docs and delete the completed plan file.
+3. Any documented CLI command must match `package.json` scripts and exported binaries.
+4. Prefer package-facing import examples (`daedalus-parser` and exported subpaths), not internal source paths.
+
 ## Common Paths
 
 - `grammar.js`
@@ -38,4 +47,5 @@ Run these checks before completion:
 - `src/semantic/`
 - `src/codegen/`
 - `test/`
+
 

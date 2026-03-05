@@ -26,9 +26,20 @@ Daedalus Dialog Suite is a monorepo for creating, validating, and generating Got
 daedalus-dialog-suite/
   daedalus-dialog-editor/   Desktop editor package
   daedalus-parser/          Parser and semantic tooling
+  docs/                     Canonical repository documentation
   gh-pages/                 GitHub Pages landing page
   .github/workflows/        CI/CD workflows
 ```
+
+## Documentation Map
+
+- Repository docs index: [docs/README.md](docs/README.md)
+- Quest editor architecture: [docs/architecture/quest-editor.md](docs/architecture/quest-editor.md)
+- Parser package guide: [daedalus-parser/README.md](daedalus-parser/README.md)
+- Parser API reference: [daedalus-parser/API.md](daedalus-parser/API.md)
+- Workspace agent guidance:
+  - [daedalus-dialog-editor/AGENTS.md](daedalus-dialog-editor/AGENTS.md)
+  - [daedalus-parser/AGENTS.md](daedalus-parser/AGENTS.md)
 
 ## Getting Started
 
@@ -66,3 +77,4 @@ npm run test
 - `all-tests.yml` - automated test pipeline
 - `build-windows.yml` - builds and publishes rolling Windows installer artifacts
 - `deploy-pages.yml` - publishes the GitHub Pages download site
+
