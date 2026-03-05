@@ -1,6 +1,7 @@
 import React from 'react';
 import { TextField, MenuItem } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
+import type { CreateTopicAction } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -14,12 +15,14 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as CreateTopicAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Topic"
-        value={action.topic || ''}
-        onChange={(value) => handleUpdate({ ...action, topic: value })}
+        value={typedAction.topic || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, topic: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -32,8 +35,8 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         select
         fullWidth
         label="Topic Type"
-        value={action.topicType || 'LOG_MISSION'}
-        onChange={(e) => handleUpdate({ ...action, topicType: e.target.value })}
+        value={typedAction.topicType || 'LOG_MISSION'}
+        onChange={(e) => handleUpdate({ ...typedAction, topicType: e.target.value })}
         onBlur={flushUpdate}
         onKeyDown={handleKeyDown}
         size="small"

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { PlayAniAction } from '../../../shared/types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -13,12 +14,14 @@ const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as PlayAniAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Target"
-        value={action.target || 'self'}
-        onChange={(value) => handleUpdate({ ...action, target: value })}
+        value={typedAction.target || 'self'}
+        onChange={(value) => handleUpdate({ ...typedAction, target: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -30,8 +33,8 @@ const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
       <VariableAutocomplete
         fullWidth
         label="Animation"
-        value={action.animationName || ''}
-        onChange={(value) => handleUpdate({ ...action, animationName: value })}
+        value={typedAction.animationName || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, animationName: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         placeholder="e.g. T_SEARCH"

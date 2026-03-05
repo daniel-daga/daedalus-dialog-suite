@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { CreateInventoryItemsAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -13,12 +14,14 @@ const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as CreateInventoryItemsAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Target"
-        value={action.target || ''}
-        onChange={(value) => handleUpdate({ ...action, target: value })}
+        value={typedAction.target || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, target: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -29,8 +32,8 @@ const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <VariableAutocomplete
         label="Item"
-        value={action.item || ''}
-        onChange={(value) => handleUpdate({ ...action, item: value })}
+        value={typedAction.item || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, item: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ flex: 1 }}
@@ -40,8 +43,8 @@ const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         label="Quantity"
         type="number"
-        value={action.quantity || ''}
-        onChange={(value) => handleUpdate({ ...action, quantity: parseInt(value) || 0 })}
+        value={typedAction.quantity || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, quantity: parseInt(value) || 0 })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}

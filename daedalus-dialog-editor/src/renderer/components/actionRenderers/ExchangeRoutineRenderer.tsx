@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { ExchangeRoutineAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -13,14 +14,16 @@ const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as ExchangeRoutineAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Target NPC"
-        value={action.target || action.npc || ''}
+        value={typedAction.target || typedAction.npc || ''}
         onChange={(value) => {
-          const updated: any = { ...action, routine: action.routine };
-          if (action.target !== undefined) {
+          const updated: any = { ...typedAction, routine: typedAction.routine };
+          if (typedAction.target !== undefined) {
             updated.target = value;
             delete updated.npc;
           } else {
@@ -40,8 +43,8 @@ const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         fullWidth
         label="Routine"
-        value={action.routine || ''}
-        onChange={(value) => handleUpdate({ ...action, routine: value })}
+        value={typedAction.routine || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, routine: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
       />

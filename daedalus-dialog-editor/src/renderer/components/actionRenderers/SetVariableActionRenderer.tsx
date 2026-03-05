@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { SetVariableAction } from '../../../shared/types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import { TextField, MenuItem } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
@@ -14,12 +15,14 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as SetVariableAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Variable"
-        value={action.variableName || ''}
-        onChange={(value) => handleUpdate({ ...action, variableName: value })}
+        value={typedAction.variableName || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, variableName: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -28,16 +31,16 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         {...AUTOCOMPLETE_POLICIES.actions.setVariableName}
         semanticModel={semanticModel}
         textFieldProps={{
-          error: !action.variableName?.trim(),
-          helperText: !action.variableName?.trim() ? 'Variable name required' : undefined
+          error: !typedAction.variableName?.trim(),
+          helperText: !typedAction.variableName?.trim() ? 'Variable name required' : undefined
         }}
       />
       <TextField
         select
         label="Op"
-        value={action.operator || '='}
+        value={typedAction.operator || '='}
         onChange={(e) => {
-            handleUpdate({ ...action, operator: e.target.value });
+            handleUpdate({ ...typedAction, operator: e.target.value });
             flushUpdate();
         }}
         onKeyDown={handleKeyDown}
@@ -52,13 +55,13 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
       <TextField
         fullWidth
         label="Value"
-        value={String(action.value !== undefined ? action.value : '')}
+        value={String(typedAction.value !== undefined ? typedAction.value : '')}
         onChange={(e) => {
           const value = e.target.value;
           // Try to preserve number type if it looks like a number
           const num = Number(value);
           const isNum = !isNaN(num) && value.trim() !== '';
-          handleUpdate({ ...action, value: isNum ? num : value });
+          handleUpdate({ ...typedAction, value: isNum ? num : value });
         }}
         onBlur={flushUpdate}
         onKeyDown={handleKeyDown}

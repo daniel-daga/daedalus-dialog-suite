@@ -3,6 +3,7 @@ import { Box, TextField, IconButton, Tooltip, Badge } from '@mui/material';
 import { Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
 import { validateChoiceFunctionName } from '../dialogUtils';
 import type { BaseActionRendererProps } from './types';
+import type { ChoiceAction } from '../../types/global';
 
 const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -16,23 +17,26 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   onRenameFunction,
   dialogContextName
 }) => {
+  const typedAction = action as ChoiceAction;
+
   // Track the original function name when editing starts
   const originalFunctionNameRef = React.useRef<string | null>(null);
 
   // Track the current local value to avoid race condition with debounced updates
-  const [localTargetFunction, setLocalTargetFunction] = React.useState(action.targetFunction || '');
+  const [localTargetFunction, setLocalTargetFunction] = React.useState(typedAction.targetFunction || '');
 
   // Sync local state when action prop changes (e.g., from external updates)
   React.useEffect(() => {
-    setLocalTargetFunction(action.targetFunction || '');
-  }, [action.targetFunction]);
+    setLocalTargetFunction(typedAction.targetFunction || '');
+  }, [typedAction.targetFunction]);
+
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <TextField
         label="Choice Text"
-        value={action.text || ''}
-        onChange={(e) => handleUpdate({ ...action, text: e.target.value })}
+        value={typedAction.text || ''}
+        onChange={(e) => handleUpdate({ ...typedAction, text: e.target.value })}
         size="small"
         inputRef={mainFieldRef}
         onBlur={flushUpdate}
@@ -49,7 +53,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
         onChange={(e) => {
           const newName = e.target.value;
           setLocalTargetFunction(newName);
-          handleUpdate({ ...action, targetFunction: newName });
+          handleUpdate({ ...typedAction, targetFunction: newName });
         }}
         onBlur={() => {
           flushUpdate();
@@ -69,7 +73,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
             if (validationError) {
               // Revert to original name on validation error
               setLocalTargetFunction(originalName);
-              handleUpdate({ ...action, targetFunction: originalName });
+              handleUpdate({ ...typedAction, targetFunction: originalName });
               alert(validationError);
             } else {
               // Valid rename - trigger the rename callback
@@ -84,10 +88,10 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
         sx={{ flex: '1 1 40%', minWidth: 150 }}
         error={dialogContextName && localTargetFunction ? !localTargetFunction.startsWith(dialogContextName) : false}
       />
-      {semanticModel && action.targetFunction && semanticModel.functions && semanticModel.functions[action.targetFunction] && onNavigateToFunction && (
+      {semanticModel && typedAction.targetFunction && semanticModel.functions && semanticModel.functions[typedAction.targetFunction] && onNavigateToFunction && (
         <Tooltip title="Edit choice actions" arrow>
           <Badge
-            badgeContent={semanticModel.functions[action.targetFunction]?.actions?.length || 0}
+            badgeContent={semanticModel.functions[typedAction.targetFunction]?.actions?.length || 0}
             color="secondary"
             sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', height: '16px', minWidth: '16px' } }}
           >
@@ -96,7 +100,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
               color="primary"
               onClick={() => {
                 flushUpdate();
-                onNavigateToFunction(action.targetFunction);
+                onNavigateToFunction(typedAction.targetFunction);
               }}
               sx={{ flexShrink: 0 }}
               aria-label="Edit choice actions"

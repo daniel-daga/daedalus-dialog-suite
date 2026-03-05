@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { GiveInventoryItemsAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -13,12 +14,14 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as GiveInventoryItemsAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Giver"
-        value={action.giver || ''}
-        onChange={(value) => handleUpdate({ ...action, giver: value })}
+        value={typedAction.giver || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, giver: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -29,8 +32,8 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <VariableAutocomplete
         label="Receiver"
-        value={action.receiver || ''}
-        onChange={(value) => handleUpdate({ ...action, receiver: value })}
+        value={typedAction.receiver || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, receiver: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}
@@ -39,8 +42,8 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <VariableAutocomplete
         label="Item"
-        value={action.item || ''}
-        onChange={(value) => handleUpdate({ ...action, item: value })}
+        value={typedAction.item || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, item: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ flex: 1 }}
@@ -50,8 +53,8 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         label="Quantity"
         type="number"
-        value={action.quantity || ''}
-        onChange={(value) => handleUpdate({ ...action, quantity: parseInt(value) || 0 })}
+        value={typedAction.quantity || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, quantity: parseInt(value) || 0 })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { InsertNpcActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -13,12 +14,14 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as InsertNpcActionType;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="NPC Instance"
-        value={action.npcInstance || ''}
-        onChange={(value) => handleUpdate({ ...action, npcInstance: value })}
+        value={typedAction.npcInstance || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, npcInstance: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -30,8 +33,8 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         fullWidth
         label="Spawn Point"
-        value={action.spawnPoint || ''}
-        onChange={(value) => handleUpdate({ ...action, spawnPoint: value })}
+        value={typedAction.spawnPoint || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, spawnPoint: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
       />

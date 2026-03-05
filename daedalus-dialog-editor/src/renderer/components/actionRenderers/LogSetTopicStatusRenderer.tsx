@@ -1,6 +1,7 @@
 import React from 'react';
 import { TextField, MenuItem, Box, Chip } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
+import type { LogSetTopicStatusAction } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -25,12 +26,14 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
     }
   };
 
+  const typedAction = action as LogSetTopicStatusAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Topic"
-        value={action.topic || ''}
-        onChange={(value) => handleUpdate({ ...action, topic: value })}
+        value={typedAction.topic || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, topic: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -43,8 +46,8 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
         select
         fullWidth
         label="Status"
-        value={action.status || 'LOG_RUNNING'}
-        onChange={(e) => handleUpdate({ ...action, status: e.target.value })}
+        value={typedAction.status || 'LOG_RUNNING'}
+        onChange={(e) => handleUpdate({ ...typedAction, status: e.target.value })}
         onBlur={flushUpdate}
         onKeyDown={handleKeyDown}
         size="small"

@@ -1,6 +1,7 @@
 import React from 'react';
 import { MenuItem, TextField } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
+import type { PickpocketActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 
 const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -11,7 +12,8 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleKeyDown,
   mainFieldRef
 }) => {
-  const mode = action.pickpocketMode || 'B_Beklauen';
+  const typedAction = action as PickpocketActionType;
+  const mode = typedAction.pickpocketMode || 'B_Beklauen';
 
   return (
     <ActionFieldContainer>
@@ -21,7 +23,7 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
         value={mode}
         onChange={(e) => {
           const nextMode = e.target.value as 'B_Beklauen' | 'C_Beklauen';
-          handleUpdate({ ...action, pickpocketMode: nextMode });
+          handleUpdate({ ...typedAction, pickpocketMode: nextMode });
           flushUpdate();
         }}
         onKeyDown={handleKeyDown}
@@ -37,16 +39,16 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
         <>
           <ActionTextField
             label="Min"
-            value={action.minChance || ''}
-            onChange={(value) => handleUpdate({ ...action, minChance: value })}
+            value={typedAction.minChance || ''}
+            onChange={(value) => handleUpdate({ ...typedAction, minChance: value })}
             onFlush={flushUpdate}
             onKeyDown={handleKeyDown}
             sx={{ width: 100 }}
           />
           <ActionTextField
             label="Max"
-            value={action.maxChance || ''}
-            onChange={(value) => handleUpdate({ ...action, maxChance: value })}
+            value={typedAction.maxChance || ''}
+            onChange={(value) => handleUpdate({ ...typedAction, maxChance: value })}
             onFlush={flushUpdate}
             onKeyDown={handleKeyDown}
             sx={{ width: 100 }}
@@ -60,4 +62,3 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
 };
 
 export default PickpocketActionRenderer;
-

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { CustomAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 const CustomActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -10,13 +11,15 @@ const CustomActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleKeyDown,
   mainFieldRef
 }) => {
+  const typedAction = action as CustomAction & { action: string };
+
   return (
     <ActionFieldContainer alignItems="flex-start">
       <ActionTextField
         fullWidth
         label="Action"
-        value={action.action || ''}
-        onChange={(value) => handleUpdate({ ...action, action: value })}
+        value={typedAction.action || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, action: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

@@ -1,6 +1,7 @@
 import React from 'react';
 import { MenuItem, TextField } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
+import type { StartOtherRoutineActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 
 const StartOtherRoutineActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -11,15 +12,17 @@ const StartOtherRoutineActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleKeyDown,
   mainFieldRef
 }) => {
+  const typedAction = action as StartOtherRoutineActionType;
+
   return (
     <ActionFieldContainer>
       <TextField
         select
         label="Function"
-        value={action.routineFunctionName || 'B_StartOtherRoutine'}
+        value={typedAction.routineFunctionName || 'B_StartOtherRoutine'}
         onChange={(e) => {
           handleUpdate({
-            ...action,
+            ...typedAction,
             routineFunctionName: e.target.value as 'B_StartOtherRoutine' | 'B_StartotherRoutine'
           });
           flushUpdate();
@@ -33,8 +36,8 @@ const StartOtherRoutineActionRenderer: React.FC<BaseActionRendererProps> = ({
       </TextField>
       <ActionTextField
         label="NPC"
-        value={action.routineNpc || ''}
-        onChange={(value) => handleUpdate({ ...action, routineNpc: value })}
+        value={typedAction.routineNpc || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, routineNpc: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -43,8 +46,8 @@ const StartOtherRoutineActionRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <ActionTextField
         label="Routine"
-        value={action.routineName || ''}
-        onChange={(value) => handleUpdate({ ...action, routineName: value })}
+        value={typedAction.routineName || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, routineName: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ minWidth: 160 }}

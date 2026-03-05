@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { StopProcessInfosAction } from '../../../shared/types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { Typography } from '@mui/material';
@@ -14,6 +15,8 @@ const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as StopProcessInfosAction;
+
   return (
     <ActionFieldContainer>
       <Typography variant="body2" sx={{ mr: 2, whiteSpace: 'nowrap', fontWeight: 'bold', color: 'primary.main' }}>
@@ -22,8 +25,8 @@ const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
       <VariableAutocomplete
         fullWidth
         label="Target"
-        value={action.target || 'self'}
-        onChange={(value) => handleUpdate({ ...action, target: value })}
+        value={typedAction.target || 'self'}
+        onChange={(value) => handleUpdate({ ...typedAction, target: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

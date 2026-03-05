@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { GiveTradeInventoryActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 
 const GiveTradeInventoryActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -10,13 +11,15 @@ const GiveTradeInventoryActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleKeyDown,
   mainFieldRef
 }) => {
+  const typedAction = action as GiveTradeInventoryActionType;
+
   return (
     <ActionFieldContainer>
       <ActionTextField
         fullWidth
         label="Trade Target"
-        value={action.tradeTarget || ''}
-        onChange={(value) => handleUpdate({ ...action, tradeTarget: value })}
+        value={typedAction.tradeTarget || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, tradeTarget: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

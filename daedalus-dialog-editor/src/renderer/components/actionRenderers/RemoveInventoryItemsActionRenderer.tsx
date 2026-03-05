@@ -1,6 +1,7 @@
 import React from 'react';
 import { MenuItem, TextField } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
+import type { RemoveInventoryItemsActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 
 const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -11,15 +12,17 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleKeyDown,
   mainFieldRef
 }) => {
+  const typedAction = action as RemoveInventoryItemsActionType;
+
   return (
     <ActionFieldContainer>
       <TextField
         select
         label="Function"
-        value={action.removeFunctionName || 'Npc_RemoveInvItems'}
+        value={typedAction.removeFunctionName || 'Npc_RemoveInvItems'}
         onChange={(e) => {
           handleUpdate({
-            ...action,
+            ...typedAction,
             removeFunctionName: e.target.value as 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem'
           });
           flushUpdate();
@@ -33,8 +36,8 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
       </TextField>
       <ActionTextField
         label="NPC"
-        value={action.removeNpc || ''}
-        onChange={(value) => handleUpdate({ ...action, removeNpc: value })}
+        value={typedAction.removeNpc || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, removeNpc: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -43,16 +46,16 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <ActionTextField
         label="Item"
-        value={action.removeItem || ''}
-        onChange={(value) => handleUpdate({ ...action, removeItem: value })}
+        value={typedAction.removeItem || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, removeItem: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ minWidth: 180 }}
       />
       <ActionTextField
         label="Quantity"
-        value={action.removeQuantity || ''}
-        onChange={(value) => handleUpdate({ ...action, removeQuantity: value })}
+        value={typedAction.removeQuantity || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, removeQuantity: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ minWidth: 180 }}

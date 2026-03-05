@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { GivePlayerXPActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 
 const GivePlayerXPActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -10,13 +11,15 @@ const GivePlayerXPActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleKeyDown,
   mainFieldRef
 }) => {
+  const typedAction = action as GivePlayerXPActionType;
+
   return (
     <ActionFieldContainer>
       <ActionTextField
         fullWidth
         label="XP Amount"
-        value={action.xpAmount || ''}
-        onChange={(value) => handleUpdate({ ...action, xpAmount: value })}
+        value={typedAction.xpAmount || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, xpAmount: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

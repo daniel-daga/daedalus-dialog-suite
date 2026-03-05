@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { TeachActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 
 const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
@@ -10,14 +11,15 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleKeyDown,
   mainFieldRef
 }) => {
-  const argsText = Array.isArray(action.teachArgs) ? action.teachArgs.join(', ') : '';
+  const typedAction = action as TeachActionType;
+  const argsText = Array.isArray(typedAction.teachArgs) ? typedAction.teachArgs.join(', ') : '';
 
   return (
     <ActionFieldContainer>
       <ActionTextField
         label="Teach Function"
-        value={action.teachFunctionName || ''}
-        onChange={(value) => handleUpdate({ ...action, teachFunctionName: value })}
+        value={typedAction.teachFunctionName || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, teachFunctionName: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -30,7 +32,7 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
         value={argsText}
         onChange={(value) =>
           handleUpdate({
-            ...action,
+            ...typedAction,
             teachArgs: value.split(',').map((part) => part.trim()).filter(Boolean)
           })
         }
@@ -43,4 +45,3 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
 };
 
 export default TeachActionRenderer;
-

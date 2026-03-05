@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { LogEntryAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -13,12 +14,14 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as LogEntryAction;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Topic"
-        value={action.topic || ''}
-        onChange={(value) => handleUpdate({ ...action, topic: value })}
+        value={typedAction.topic || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, topic: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ minWidth: 180 }}
@@ -28,8 +31,8 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         fullWidth
         label="Text"
-        value={action.text || ''}
-        onChange={(value) => handleUpdate({ ...action, text: value })}
+        value={typedAction.text || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, text: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
+import type { AttackActionType } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -13,12 +14,14 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef,
   semanticModel
 }) => {
+  const typedAction = action as AttackActionType;
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Attacker"
-        value={action.attacker || ''}
-        onChange={(value) => handleUpdate({ ...action, attacker: value })}
+        value={typedAction.attacker || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, attacker: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
@@ -29,8 +32,8 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <VariableAutocomplete
         label="Target"
-        value={action.target || ''}
-        onChange={(value) => handleUpdate({ ...action, target: value })}
+        value={typedAction.target || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, target: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 80 }}
@@ -39,8 +42,8 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <ActionTextField
         label="Reason"
-        value={action.attackReason || ''}
-        onChange={(value) => handleUpdate({ ...action, attackReason: value })}
+        value={typedAction.attackReason || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, attackReason: value })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ flex: 1 }}
@@ -48,8 +51,8 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         label="Damage"
         type="number"
-        value={action.damage || ''}
-        onChange={(value) => handleUpdate({ ...action, damage: parseInt(value) || 0 })}
+        value={typedAction.damage || ''}
+        onChange={(value) => handleUpdate({ ...typedAction, damage: parseInt(value) || 0 })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}

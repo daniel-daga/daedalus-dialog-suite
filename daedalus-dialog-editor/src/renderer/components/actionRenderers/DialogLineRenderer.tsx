@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, TextField, IconButton, Tooltip, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import { Delete as DeleteIcon, Info as InfoIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
+import type { DialogLineAction } from '../../types/global';
 
 const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -14,6 +15,8 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
   index
 }) => {
   const lineNumber = typeof index === 'number' ? index + 1 : null;
+
+  const typedAction = action as DialogLineAction;
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -34,9 +37,9 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
       <FormControl size="small" sx={{ width: 150, flexShrink: 0 }}>
         <InputLabel>Speaker</InputLabel>
         <Select
-          value={action.speaker || 'self'}
+          value={typedAction.speaker || 'self'}
           label="Speaker"
-          onChange={(e) => handleUpdate({ ...action, speaker: e.target.value })}
+          onChange={(e) => handleUpdate({ ...typedAction, speaker: e.target.value as 'self' | 'other' })}
           onBlur={flushUpdate}
           onKeyDown={handleKeyDown}
         >
@@ -47,16 +50,16 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
       <TextField
         fullWidth
         label="Text"
-        value={action.text || ''}
-        onChange={(e) => handleUpdate({ ...action, text: e.target.value })}
+        value={typedAction.text || ''}
+        onChange={(e) => handleUpdate({ ...typedAction, text: e.target.value })}
         size="small"
         inputRef={mainFieldRef}
         onBlur={flushUpdate}
         onKeyDown={handleKeyDown}
       />
-      {action.id && (
-        <Tooltip title={`Dialog ID: ${action.id}`} arrow>
-          <IconButton size="small" sx={{ flexShrink: 0 }} aria-label={`Dialog ID: ${action.id}`}>
+      {typedAction.id && (
+        <Tooltip title={`Dialog ID: ${typedAction.id}`} arrow>
+          <IconButton size="small" sx={{ flexShrink: 0 }} aria-label={`Dialog ID: ${typedAction.id}`}>
             <InfoIcon fontSize="small" />
           </IconButton>
         </Tooltip>
