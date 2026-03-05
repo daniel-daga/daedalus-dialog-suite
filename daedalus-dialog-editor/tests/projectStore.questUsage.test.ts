@@ -1,4 +1,5 @@
 import { useProjectStore } from '../src/renderer/store/projectStore';
+import { buildQuestGraph } from '../src/renderer/quest/domain/graph';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 const createEmptyModel = (): SemanticModel => ({
@@ -125,5 +126,120 @@ describe('ProjectStore - getQuestUsage', () => {
     expect(usage.functions).toHaveProperty('DIA_Bennet_State');
     expect(usage.dialogs).toHaveProperty('DIA_Bennet_Start_Dlg');
     expect(usage.dialogs).toHaveProperty('DIA_Bennet_State_Dlg');
+  });
+
+  it('includes one-hop linked condition functions referenced by relevant dialogs', () => {
+    const filePath = '/dialogs/linked-condition.d';
+    const model = createEmptyModel();
+    model.constants = {
+      TOPIC_LINKED: { name: 'TOPIC_LINKED', type: 'string', value: '"Linked Quest"' }
+    };
+    model.variables = {
+      MIS_LINKED: { name: 'MIS_LINKED', type: 'int' }
+    };
+    model.functions = {
+      DIA_Linked_Info: {
+        name: 'DIA_Linked_Info',
+        returnType: 'VOID',
+        actions: [
+          { type: 'LogSetTopicStatus', topic: 'TOPIC_LINKED', status: 'LOG_RUNNING' }
+        ],
+        conditions: [],
+        calls: []
+      },
+      DIA_Linked_Condition: {
+        name: 'DIA_Linked_Condition',
+        returnType: 'INT',
+        actions: [],
+        conditions: [
+          { type: 'NpcIsDeadCondition', npc: 'XARDAS', negated: true }
+        ],
+        calls: []
+      }
+    };
+    model.dialogs = {
+      DIA_Linked: {
+        name: 'DIA_Linked',
+        parent: 'C_INFO',
+        properties: {
+          npc: 'NPC_LINKED',
+          information: 'DIA_Linked_Info',
+          condition: 'DIA_Linked_Condition'
+        }
+      }
+    };
+
+    useProjectStore.setState({
+      parsedFiles: new Map([
+        [filePath, { filePath, semanticModel: model, lastParsed: new Date('2026-03-05T00:00:00Z') }]
+      ])
+    });
+
+    const usage = useProjectStore.getState().getQuestUsage('TOPIC_LINKED');
+
+    expect(usage.functions).toHaveProperty('DIA_Linked_Info');
+    expect(usage.functions).toHaveProperty('DIA_Linked_Condition');
+    expect(usage.dialogs).toHaveProperty('DIA_Linked');
+  });
+
+  it('builds condition requires edges from linked condition functions instead of world-trigger fallback', () => {
+    const filePath = '/dialogs/linked-condition-graph.d';
+    const model = createEmptyModel();
+    model.constants = {
+      TOPIC_LINKED_GRAPH: { name: 'TOPIC_LINKED_GRAPH', type: 'string', value: '"Linked Graph Quest"' }
+    };
+    model.variables = {
+      MIS_LINKED_GRAPH: { name: 'MIS_LINKED_GRAPH', type: 'int' }
+    };
+    model.functions = {
+      DIA_Linked_Graph_Info: {
+        name: 'DIA_Linked_Graph_Info',
+        returnType: 'VOID',
+        actions: [
+          { type: 'LogSetTopicStatus', topic: 'TOPIC_LINKED_GRAPH', status: 'LOG_RUNNING' }
+        ],
+        conditions: [],
+        calls: []
+      },
+      DIA_Linked_Graph_Condition: {
+        name: 'DIA_Linked_Graph_Condition',
+        returnType: 'INT',
+        actions: [],
+        conditions: [
+          { type: 'NpcIsDeadCondition', npc: 'XARDAS', negated: true }
+        ],
+        calls: []
+      }
+    };
+    model.dialogs = {
+      DIA_Linked_Graph: {
+        name: 'DIA_Linked_Graph',
+        parent: 'C_INFO',
+        properties: {
+          npc: 'NPC_LINKED',
+          information: 'DIA_Linked_Graph_Info',
+          condition: 'DIA_Linked_Graph_Condition'
+        }
+      }
+    };
+
+    useProjectStore.setState({
+      parsedFiles: new Map([
+        [filePath, { filePath, semanticModel: model, lastParsed: new Date('2026-03-05T00:00:00Z') }]
+      ])
+    });
+
+    const usage = useProjectStore.getState().getQuestUsage('TOPIC_LINKED_GRAPH');
+    const graph = buildQuestGraph(usage, 'TOPIC_LINKED_GRAPH');
+
+    const conditionRequiresEdges = graph.edges.filter(
+      (edge) => edge.target === 'DIA_Linked_Graph_Info' && edge.source.startsWith('condition-DIA_Linked_Graph_Info-')
+    );
+    const externalEntryEdges = graph.edges.filter(
+      (edge) => edge.target === 'DIA_Linked_Graph_Info' && edge.source.startsWith('external-entry-')
+    );
+
+    expect(conditionRequiresEdges.length).toBeGreaterThan(0);
+    expect(externalEntryEdges).toHaveLength(0);
   });
 });

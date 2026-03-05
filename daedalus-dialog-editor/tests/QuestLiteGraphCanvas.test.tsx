@@ -1,0 +1,70 @@
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import QuestLiteGraphCanvas from '../src/renderer/components/QuestEditor/QuestLiteGraphCanvas';
+import type { QuestGraphEdge, QuestGraphNode } from '../src/renderer/types/questGraph';
+
+const createDialogNode = (overrides: Partial<QuestGraphNode> = {}): QuestGraphNode => ({
+  id: 'DIA_Target_Info',
+  type: 'dialog',
+  position: { x: 120, y: 90 },
+  data: {
+    label: 'DIA_Target',
+    npc: 'NPC_Target',
+    kind: 'dialog',
+    conditionExpression: 'MIS_TEST == LOG_RUNNING && Npc_KnowsInfo(self, DIA_Test)',
+    conditionCount: 2,
+    conditionMode: 'structured'
+  },
+  ...overrides
+} as QuestGraphNode);
+
+const renderCanvas = ({
+  nodes = [createDialogNode()],
+  edges = [] as QuestGraphEdge[],
+  onSetConditionExpression = jest.fn()
+}: {
+  nodes?: QuestGraphNode[];
+  edges?: QuestGraphEdge[];
+  onSetConditionExpression?: (payload: { nodeId: string; expression: string }) => void;
+} = {}) => {
+  render(
+    <QuestLiteGraphCanvas
+      nodes={nodes}
+      edges={edges}
+      selectedNodeId={null}
+      onNodeClick={jest.fn()}
+      onNodeDoubleClick={jest.fn()}
+      onEdgeClick={jest.fn()}
+      onNodeMove={jest.fn()}
+      onPaneClick={jest.fn()}
+      onSetConditionExpression={onSetConditionExpression}
+    />
+  );
+
+  return { onSetConditionExpression };
+};
+
+describe('QuestLiteGraphCanvas condition expression capsule', () => {
+  it('renders IF capsule for dialog nodes with condition expression metadata', () => {
+    renderCanvas();
+
+    expect(screen.getByRole('button', { name: /if:/i })).toBeInTheDocument();
+    expect(screen.getByText(/MIS_TEST == LOG_RUNNING/i)).toBeInTheDocument();
+  });
+
+  it('opens popover editor and submits edited expression through callback', () => {
+    const { onSetConditionExpression } = renderCanvas();
+
+    fireEvent.click(screen.getByRole('button', { name: /if:/i }));
+    fireEvent.change(screen.getByLabelText('Condition expression'), {
+      target: { value: 'MIS_TEST == LOG_SUCCESS' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Expression' }));
+
+    expect(onSetConditionExpression).toHaveBeenCalledWith({
+      nodeId: 'DIA_Target_Info',
+      expression: 'MIS_TEST == LOG_SUCCESS'
+    });
+  });
+});
+

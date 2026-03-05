@@ -212,6 +212,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         return command.targetFunctionName;
       case 'updateTransitionText':
         return command.sourceFunctionName;
+      case 'setConditionExpression':
+        return command.targetFunctionName;
       default:
         return null;
     }
@@ -653,6 +655,14 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     }, 'Failed to update condition link.');
   }, [runQuestCommandWithPreview]);
 
+  const handleSetConditionExpression = useCallback(async (payload: { nodeId: string; expression: string }) => {
+    await runQuestCommandWithPreview({
+      type: 'setConditionExpression',
+      targetFunctionName: payload.nodeId,
+      expression: payload.expression
+    }, 'Failed to update condition expression.');
+  }, [runQuestCommandWithPreview]);
+
   const handleApplyDiff = useCallback(() => {
     if (!pendingPreview) return;
     applyQuestModelsWithHistory(
@@ -749,6 +759,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
             onEdgeClick={onEdgeClick}
             onNodeMove={handleLiteGraphNodeMove}
             onPaneClick={handlePaneClick}
+            onSetConditionExpression={handleSetConditionExpression}
           />
         </Box>
       </Box>

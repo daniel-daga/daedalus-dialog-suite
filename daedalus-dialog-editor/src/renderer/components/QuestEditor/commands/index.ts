@@ -6,6 +6,7 @@ import { executeMoveNodeCommand } from './moveNode';
 import { executeRemoveKnowsInfoRequirementCommand } from './removeKnowsInfoRequirement';
 import { executeRemoveTransitionCommand } from './removeTransition';
 import { executeSetMisStateCommand } from './setMisState';
+import { executeSetConditionExpressionCommand } from './setConditionExpression';
 import { executeUpdateConditionLinkCommand } from './updateConditionLink';
 import { executeUpdateTransitionTextCommand } from './updateTransitionText';
 import type { QuestCommandContext, QuestCommandResult, QuestGraphCommand } from './types';
@@ -28,7 +29,8 @@ export type {
   UpdateConditionLinkCommand,
   UpdateTransitionTextCommand,
   MoveNodeCommand,
-  SetMisStateCommand
+  SetMisStateCommand,
+  SetConditionExpressionCommand
 } from './types';
 
 export const executeQuestGraphCommand = (
@@ -64,6 +66,8 @@ export const executeQuestGraphCommand = (
       return executeUpdateConditionLinkCommand(context, command);
     case 'updateTransitionText':
       return executeUpdateTransitionTextCommand(context, command);
+    case 'setConditionExpression':
+      return executeSetConditionExpressionCommand(context, command);
     case 'moveNode':
       return executeMoveNodeCommand(context, command);
     default:
@@ -76,3 +80,4 @@ export const executeQuestGraphCommand = (
       };
   }
 };
+

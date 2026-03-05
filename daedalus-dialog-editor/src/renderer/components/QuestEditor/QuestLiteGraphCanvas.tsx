@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
-import { Box } from '@mui/material';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box, Button, Paper, Popover, Stack, TextField, Typography } from '@mui/material';
 import { LGraph, LGraphCanvas, LGraphNode } from 'litegraph.js';
 import type { QuestGraphConditionType, QuestGraphEdge, QuestGraphNode } from '../../types/questGraph';
+import { validateConditionExpressionSyntax } from './commands/conditionExpressionCodec';
 
 interface QuestLiteGraphCanvasProps {
   nodes: QuestGraphNode[];
@@ -17,11 +18,13 @@ interface QuestLiteGraphCanvasProps {
     ownerFilePath?: string
   ) => void;
   onPaneClick: () => void;
+  onSetConditionExpression?: (payload: { nodeId: string; expression: string }) => void;
 }
 
 type ExtendedLGraphCanvas = LGraphCanvas & {
   bgcolor?: string;
   onLinkSelected?: (linkId: number) => void;
+  convertOffsetToCanvas?: (pos: [number, number], out?: [number, number]) => [number, number];
 };
 
 const getConditionTypeLabel = (conditionType?: QuestGraphConditionType): string => {
@@ -56,6 +59,11 @@ const getConditionNodeColor = (conditionType?: QuestGraphConditionType): string 
   }
 };
 
+const truncateExpressionPreview = (expression: string, maxLength = 48): string => {
+  if (expression.length <= maxLength) return expression;
+  return `${expression.slice(0, maxLength - 1)}...`;
+};
+
 const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   nodes,
   edges,
@@ -64,7 +72,8 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   onNodeDoubleClick,
   onEdgeClick,
   onNodeMove,
-  onPaneClick
+  onPaneClick,
+  onSetConditionExpression
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -74,6 +83,20 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const questIdToRuntimeNodeRef = useRef<Map<string, LGraphNode>>(new Map());
   const edgeMapRef = useRef<Map<string, QuestGraphEdge>>(new Map());
   const linkIdToEdgeRef = useRef<Map<number, QuestGraphEdge>>(new Map());
+  const [overlayTick, setOverlayTick] = useState(0);
+  const [expressionEditorAnchorEl, setExpressionEditorAnchorEl] = useState<HTMLElement | null>(null);
+  const [expressionEditorNodeId, setExpressionEditorNodeId] = useState<string | null>(null);
+  const [expressionEditorDraft, setExpressionEditorDraft] = useState('');
+  const [expressionEditorError, setExpressionEditorError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      setOverlayTick((value) => value + 1);
+    }, 250);
+    return () => {
+      window.clearInterval(handle);
+    };
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -193,6 +216,64 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     linkIdToEdgeRef.current = new Map();
 
     const runtimeNodes = new Map<string, LGraphNode>();
+    const questNodesById = new Map(nodes.map((node) => [node.id, node]));
+    const dialogInputSlotByEdgeId = new Map<string, number>();
+    const dialogRequiredInputsByNode = new Map<string, number>();
+    const isMultiInputTarget = (targetNode?: QuestGraphNode): boolean => (
+      targetNode?.type === 'dialog' || targetNode?.type === 'questState'
+    );
+
+    const parsePreferredDialogSlot = (targetHandle?: string | null): number => {
+      if (!targetHandle) return 0;
+      if (targetHandle === 'in-right') return 1;
+      if (
+        targetHandle === 'in-left' ||
+        targetHandle === 'in-condition' ||
+        targetHandle === 'in-trigger'
+      ) {
+        return 0;
+      }
+      const conditionMatch = /^in-condition-(\d+)/.exec(targetHandle);
+      if (conditionMatch) {
+        return Number(conditionMatch[1]);
+      }
+      return 0;
+    };
+
+    const incomingDialogEdgesByTarget = new Map<string, QuestGraphEdge[]>();
+    edges.forEach((edge) => {
+      const targetNode = questNodesById.get(edge.target);
+      if (!isMultiInputTarget(targetNode)) return;
+      const bucket = incomingDialogEdgesByTarget.get(edge.target) || [];
+      bucket.push(edge);
+      incomingDialogEdgesByTarget.set(edge.target, bucket);
+    });
+
+    incomingDialogEdgesByTarget.forEach((incomingEdges, targetNodeId) => {
+      const targetNode = questNodesById.get(targetNodeId);
+      const declaredConditionCountRaw = Number(targetNode?.data?.conditionCount ?? 0);
+      const declaredConditionCount = Number.isFinite(declaredConditionCountRaw)
+        ? Math.max(0, Math.floor(declaredConditionCountRaw))
+        : 0;
+
+      const usedSlots = new Set<number>();
+      let maxSlotIndex = Math.max(0, declaredConditionCount - 1);
+
+      incomingEdges.forEach((edge) => {
+        let slot = parsePreferredDialogSlot(edge.targetHandle);
+        if (!Number.isFinite(slot) || slot < 0) {
+          slot = 0;
+        }
+        while (usedSlots.has(slot)) {
+          slot += 1;
+        }
+        usedSlots.add(slot);
+        maxSlotIndex = Math.max(maxSlotIndex, slot);
+        dialogInputSlotByEdgeId.set(edge.id, slot);
+      });
+
+      dialogRequiredInputsByNode.set(targetNodeId, Math.max(1, maxSlotIndex + 1));
+    });
 
     nodes.forEach((node, index) => {
       if (node.type === 'group') return;
@@ -210,9 +291,22 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
         runtimeNode.addInput('A', '*');
         runtimeNode.addInput('B', '*');
         runtimeNode.addOutput(String(node.data?.operator || 'Result'), '*');
-      } else if (node.type === 'dialog') {
-        runtimeNode.addInput('Condition A', '*');
-        runtimeNode.addInput('Condition B', '*');
+      } else if (node.type === 'dialog' || node.type === 'questState') {
+        const declaredConditionCountRaw = Number(node.data?.conditionCount ?? 0);
+        const declaredConditionCount = Number.isFinite(declaredConditionCountRaw)
+          ? Math.max(0, Math.floor(declaredConditionCountRaw))
+          : 0;
+        const requiredInputCount = dialogRequiredInputsByNode.get(node.id)
+          ?? Math.max(1, declaredConditionCount);
+        const labeledConditionCount = Math.max(1, declaredConditionCount);
+
+        for (let slotIndex = 0; slotIndex < requiredInputCount; slotIndex += 1) {
+          const label = slotIndex < labeledConditionCount
+            ? `Condition ${slotIndex + 1}`
+            : `Input ${slotIndex + 1}`;
+          runtimeNode.addInput(label, '*');
+        }
+        runtimeNode.size = [220, Math.max(90, 44 + requiredInputCount * 18)];
         runtimeNode.addOutput('Out', '*');
       } else {
         runtimeNode.addInput('Conditions', '*');
@@ -239,6 +333,16 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     };
 
     const resolveInputSlot = (edge: QuestGraphEdge): number => {
+      const targetQuestNode = questNodesById.get(edge.target);
+      if (isMultiInputTarget(targetQuestNode)) {
+        const mappedSlot = dialogInputSlotByEdgeId.get(edge.id);
+        if (typeof mappedSlot === 'number') return mappedSlot;
+      }
+
+      const conditionMatch = /^in-condition-(\d+)/.exec(edge.targetHandle || '');
+      if (conditionMatch) {
+        return Number(conditionMatch[1]);
+      }
       if (edge.targetHandle === 'in-left' || edge.targetHandle === 'in-condition') return 0;
       if (edge.targetHandle === 'in-right') return 1;
       if (edge.targetHandle === 'in-trigger') return 0;
@@ -278,11 +382,136 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     graphCanvas.setDirty(true, true);
   }, [selectedNodeId]);
 
+  const conditionCapsuleNodes = useMemo(() => (
+    nodes.filter((node) => (
+      node.type === 'dialog' &&
+      typeof node.data.conditionExpression === 'string' &&
+      node.data.conditionExpression.trim().length > 0
+    ))
+  ), [nodes]);
+
+  const getCapsulePosition = (node: QuestGraphNode): { left: number; top: number } => {
+    const graphCanvas = graphCanvasRef.current;
+    if (graphCanvas?.convertOffsetToCanvas) {
+      const [left, top] = graphCanvas.convertOffsetToCanvas([node.position.x, node.position.y]);
+      return { left: left + 8, top: top + 8 };
+    }
+    return { left: node.position.x + 8, top: node.position.y + 8 };
+  };
+
+  const closeExpressionEditor = () => {
+    setExpressionEditorAnchorEl(null);
+    setExpressionEditorNodeId(null);
+    setExpressionEditorDraft('');
+    setExpressionEditorError(null);
+  };
+
+  const openExpressionEditor = (event: React.MouseEvent<HTMLButtonElement>, node: QuestGraphNode) => {
+    setExpressionEditorAnchorEl(event.currentTarget);
+    setExpressionEditorNodeId(node.id);
+    setExpressionEditorDraft(String(node.data.conditionExpression || ''));
+    setExpressionEditorError(null);
+  };
+
+  const applyExpressionEditor = () => {
+    if (!expressionEditorNodeId) return;
+    const validation = validateConditionExpressionSyntax(expressionEditorDraft);
+    if (!validation.ok) {
+      setExpressionEditorError(validation.error);
+      return;
+    }
+
+    onSetConditionExpression?.({
+      nodeId: expressionEditorNodeId,
+      expression: expressionEditorDraft.trim()
+    });
+    closeExpressionEditor();
+  };
+
   return (
-    <Box ref={containerRef} sx={{ height: '100%', width: '100%' }}>
+    <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }} data-overlay-tick={overlayTick}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
+
+      {conditionCapsuleNodes.map((node) => {
+        const preview = truncateExpressionPreview(String(node.data.conditionExpression || '').trim());
+        const position = getCapsulePosition(node);
+        return (
+          <Button
+            key={`condition-capsule-${node.id}`}
+            variant="contained"
+            size="small"
+            onClick={(event) => openExpressionEditor(event, node)}
+            sx={{
+              position: 'absolute',
+              left: `${position.left}px`,
+              top: `${position.top}px`,
+              minWidth: 0,
+              px: 0.8,
+              py: 0.25,
+              fontSize: '0.65rem',
+              lineHeight: 1.1,
+              textTransform: 'none',
+              bgcolor: '#ffb74d',
+              color: '#1a1a1a',
+              borderRadius: 1,
+              zIndex: 5,
+              pointerEvents: 'auto',
+              '&:hover': {
+                bgcolor: '#ffcc80'
+              }
+            }}
+            aria-label={`IF: ${preview}`}
+          >
+            {`IF: ${preview}`}
+          </Button>
+        );
+      })}
+
+      <Popover
+        open={Boolean(expressionEditorAnchorEl)}
+        anchorEl={expressionEditorAnchorEl}
+        onClose={closeExpressionEditor}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+      >
+        <Paper sx={{ p: 1.25, width: 380, maxWidth: '85vw' }}>
+          <Stack spacing={1}>
+            <Typography variant="subtitle2">Edit Condition Expression</Typography>
+            <TextField
+              multiline
+              minRows={3}
+              maxRows={8}
+              label="Condition expression"
+              value={expressionEditorDraft}
+              onChange={(event) => {
+                setExpressionEditorDraft(event.target.value);
+                if (expressionEditorError) setExpressionEditorError(null);
+              }}
+              error={Boolean(expressionEditorError)}
+              helperText={expressionEditorError || 'Supports simple structured clauses with &&. Complex valid expressions are stored verbatim.'}
+              fullWidth
+            />
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Button size="small" onClick={closeExpressionEditor}>Cancel</Button>
+              <Button
+                size="small"
+                variant="contained"
+                onClick={applyExpressionEditor}
+                disabled={!expressionEditorNodeId || !expressionEditorDraft.trim() || !onSetConditionExpression}
+              >
+                Apply Expression
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      </Popover>
     </Box>
   );
 };
 
 export default QuestLiteGraphCanvas;
+
+
+
+
+

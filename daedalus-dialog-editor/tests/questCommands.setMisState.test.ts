@@ -660,3 +660,75 @@ describe('quest commands', () => {
     expect(removeResult.updatedModel.functions.DIA_Target_Info.conditions).toHaveLength(0);
   });
 });
+
+describe('setConditionExpression command', () => {
+  it('compiles simple conjunctions into structured conditions', () => {
+    const model = createModel();
+    const result = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model },
+      {
+        type: 'setConditionExpression',
+        targetFunctionName: 'DIA_Target_Info',
+        expression: 'MIS_TEST == LOG_RUNNING && Npc_KnowsInfo(self, DIA_Test)'
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.updatedModel.functions.DIA_Target_Info.conditions).toEqual([
+      {
+        type: 'VariableCondition',
+        variableName: 'MIS_TEST',
+        operator: '==',
+        value: 'LOG_RUNNING',
+        negated: false
+      },
+      {
+        type: 'NpcKnowsInfoCondition',
+        npc: 'self',
+        dialogRef: 'DIA_Test'
+      }
+    ]);
+  });
+
+  it('stores complex but valid expressions as generic condition entries', () => {
+    const model = createModel();
+    const expression = '(MIS_TEST == LOG_RUNNING) || (MIS_TEST == LOG_SUCCESS)';
+    const result = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model },
+      {
+        type: 'setConditionExpression',
+        targetFunctionName: 'DIA_Target_Info',
+        expression
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.updatedModel.functions.DIA_Target_Info.conditions).toEqual([
+      {
+        type: 'Condition',
+        condition: expression
+      }
+    ]);
+  });
+
+  it('rejects invalid condition expression syntax without mutating model', () => {
+    const model = createModel();
+    const before = JSON.stringify(model.functions.DIA_Target_Info.conditions);
+    const result = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model },
+      {
+        type: 'setConditionExpression',
+        targetFunctionName: 'DIA_Target_Info',
+        expression: 'MIS_TEST == && Npc_KnowsInfo(self, DIA_Test)'
+      }
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0].code).toBe('INVALID_CONDITION_LINK');
+    expect(JSON.stringify(model.functions.DIA_Target_Info.conditions)).toBe(before);
+  });
+});
+

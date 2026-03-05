@@ -445,6 +445,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const result = createEmptySemanticModel();
     const misVarName = getQuestMisVariableName(questName);
     const relevantFunctionKeys = new Set<string>();
+    const functionLookup = new Map<string, { name: string; func: any; filePath: string }>();
 
     // Pass 1: Identify all relevant functions and add definitions
     for (const [filePath, fileData] of parsedFiles.entries()) {
@@ -464,6 +465,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
         // Functions
         if (model.functions) {
+             Object.values(model.functions).forEach((func) => {
+                 const funcKey = getCanonicalQuestKey(func.name);
+                 if (!functionLookup.has(funcKey)) {
+                     functionLookup.set(funcKey, {
+                         name: func.name,
+                         func,
+                         filePath: func.filePath || filePath
+                     });
+                 }
+             });
+
              Object.values(model.functions).forEach(func => {
                  let isRelevant = false;
 
@@ -504,7 +516,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }
     }
 
-    // Pass 2: Identify Dialogs that use relevant functions
+    // Pass 2: Identify dialogs that use relevant functions and include one-hop linked condition functions.
     for (const fileData of parsedFiles.values()) {
         const model = fileData.semanticModel;
 
@@ -515,9 +527,28 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
                 const infoName = typeof info === 'string' ? info : (typeof info === 'object' ? info.name : null);
                 const condName = typeof cond === 'string' ? cond : (typeof cond === 'object' ? cond.name : null);
+                const infoKey = infoName ? getCanonicalQuestKey(infoName) : null;
+                const condKey = condName ? getCanonicalQuestKey(condName) : null;
+                const infoIsRelevant = Boolean(infoKey && relevantFunctionKeys.has(infoKey));
 
-                if ((infoName && relevantFunctionKeys.has(getCanonicalQuestKey(infoName))) ||
-                    (condName && relevantFunctionKeys.has(getCanonicalQuestKey(condName)))) {
+                // One-hop closure: include linked condition functions for already relevant dialog info functions.
+                if (infoIsRelevant && condName && condKey && !relevantFunctionKeys.has(condKey)) {
+                    const linkedConditionFunc = functionLookup.get(condKey);
+                    if (linkedConditionFunc) {
+                        relevantFunctionKeys.add(condKey);
+                        result.functions[linkedConditionFunc.name] = {
+                            ...linkedConditionFunc.func,
+                            filePath: linkedConditionFunc.func.filePath || linkedConditionFunc.filePath
+                        };
+                    }
+                }
+
+                const dialogUsesRelevantFunction = Boolean(
+                    (infoKey && relevantFunctionKeys.has(infoKey)) ||
+                    (condKey && relevantFunctionKeys.has(condKey))
+                );
+
+                if (dialogUsesRelevantFunction) {
                     result.dialogs[dialog.name] = dialog;
                 }
             });

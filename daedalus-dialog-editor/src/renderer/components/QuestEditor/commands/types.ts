@@ -11,6 +11,7 @@ export type QuestCommandType =
   | 'removeConditionLink'
   | 'updateConditionLink'
   | 'updateTransitionText'
+  | 'setConditionExpression'
   | 'moveNode';
 
 export interface AddTopicStatusCommand {
@@ -100,6 +101,12 @@ export interface UpdateTransitionTextCommand {
   text: string;
 }
 
+export interface SetConditionExpressionCommand {
+  type: 'setConditionExpression';
+  targetFunctionName: string;
+  expression: string;
+}
+
 export interface MoveNodeCommand {
   type: 'moveNode';
   nodeId: string;
@@ -120,6 +127,7 @@ export type QuestGraphCommand =
   | RemoveConditionLinkCommand
   | UpdateConditionLinkCommand
   | UpdateTransitionTextCommand
+  | SetConditionExpressionCommand
   | MoveNodeCommand;
 
 export interface QuestCommandContext {
@@ -157,3 +165,4 @@ export interface QuestCommandFailure {
 }
 
 export type QuestCommandResult = QuestCommandSuccess | QuestCommandFailure;
+

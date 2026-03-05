@@ -28,6 +28,9 @@ interface InternalNodeData {
   conditionType?: QuestGraphConditionType;
   condition?: DialogCondition;
   conditionIndex?: number;
+  conditionExpression?: string;
+  conditionCount?: number;
+  conditionMode?: 'structured' | 'generic-expression';
   sourceKind: QuestGraphSourceKind;
   entrySurface?: boolean;
   latentEntry?: boolean;
@@ -100,13 +103,6 @@ const buildGeneratedConditionNodeId = (
   return `condition-${consumerId}-${ownerToken}-${ownerConditionIndex}-${conditionToken}`;
 };
 
-const buildGeneratedLogicalNodeId = (
-  consumerId: string,
-  leftSourceId: string,
-  rightSourceId: string
-): string => {
-  return `logical-${toNodeToken(consumerId)}-${toNodeToken(leftSourceId)}-${toNodeToken(rightSourceId)}`;
-};
 
 const buildGeneratedExternalEntryNodeId = (
   consumerId: string,
@@ -253,6 +249,39 @@ const getEffectiveConditionEntriesForFunction = (
   return mergedConditions;
 };
 
+const getConditionSummaryForFunction = (
+  funcName: string,
+  semanticModel: SemanticModel
+): {
+  conditionExpression?: string;
+  conditionCount: number;
+  conditionMode?: 'structured' | 'generic-expression';
+} => {
+  const effectiveConditions = getEffectiveConditionEntriesForFunction(funcName, semanticModel);
+  if (effectiveConditions.length === 0) {
+    return { conditionCount: 0 };
+  }
+
+  const expressions = effectiveConditions
+    .map(({ condition }) => getConditionExpression(condition).trim())
+    .filter(Boolean);
+
+  const conditionMode: 'structured' | 'generic-expression' = effectiveConditions.some(({ condition }) => inferConditionType(condition) === 'Condition')
+    ? 'generic-expression'
+    : 'structured';
+
+  const conditionExpression = conditionMode === 'generic-expression'
+    ? (effectiveConditions.length === 1 && 'condition' in effectiveConditions[0].condition
+      ? String((effectiveConditions[0].condition as { condition?: unknown }).condition || '').trim()
+      : expressions.join(' && '))
+    : expressions.join(' && ');
+
+  return {
+    conditionExpression,
+    conditionCount: effectiveConditions.length,
+    conditionMode
+  };
+};
 export const getNpcForFunction = (funcName: string, semanticModel: SemanticModel): string | null => {
   return getDialogContextForFunction(funcName, semanticModel).npc || null;
 };
@@ -413,6 +442,7 @@ const identifyQuestNodes = (
         entryReason = reasonParts.join('; ');
       }
 
+      const conditionSummary = getConditionSummaryForFunction(func.name, semanticModel);
       nodeDataMap.set(func.name, {
         id: func.name,
         type,
@@ -422,6 +452,9 @@ const identifyQuestNodes = (
         nodeKind: 'function',
         kind,
         sourceKind,
+        conditionExpression: conditionSummary.conditionExpression,
+        conditionCount: conditionSummary.conditionCount,
+        conditionMode: conditionSummary.conditionMode,
         entrySurface,
         latentEntry,
         entryReason,
@@ -456,7 +489,8 @@ const identifyQuestNodes = (
 
       if (isRelevantByKnows) {
         const context = getDialogContextForFunction(func.name, semanticModel);
-        nodeDataMap.set(func.name, {
+        const conditionSummary = getConditionSummaryForFunction(func.name, semanticModel);
+      nodeDataMap.set(func.name, {
           id: func.name,
           type: 'check',
           label: context.dialogName || func.name,
@@ -469,6 +503,9 @@ const identifyQuestNodes = (
             Boolean(context.dialogName),
             getFunctionFilePath(func)
           ),
+          conditionExpression: conditionSummary.conditionExpression,
+          conditionCount: conditionSummary.conditionCount,
+          conditionMode: conditionSummary.conditionMode,
           entrySurface: false,
           latentEntry: false,
           entryReason: undefined,
@@ -513,6 +550,7 @@ const identifyQuestNodes = (
           if (!producerFunc) return;
 
           const context = getDialogContextForFunction(producerId, semanticModel);
+          const conditionSummary = getConditionSummaryForFunction(producerId, semanticModel);
           nodeDataMap.set(producerId, {
             id: producerId,
             type: 'check',
@@ -526,6 +564,9 @@ const identifyQuestNodes = (
               Boolean(context.dialogName),
               getFunctionFilePath(producerFunc)
             ),
+            conditionExpression: conditionSummary.conditionExpression,
+            conditionCount: conditionSummary.conditionCount,
+            conditionMode: conditionSummary.conditionMode,
             entrySurface: false,
             latentEntry: false,
             entryReason: undefined,
@@ -582,7 +623,7 @@ const buildQuestEdges = (
         : 'out-finished';
       const targetHandle = isStateNode(targetData.type, targetData.description)
         ? 'in-trigger'
-        : 'in-condition';
+        : 'in-condition-0';
 
       edges.push({
         id: `choice-${consumerId}-${targetFunc}-${actionIndex}`,
@@ -608,7 +649,7 @@ const buildQuestEdges = (
       addAdjacency(consumerId, targetFunc);
     });
 
-    effectiveConditionEntries.forEach(({ condition: cond, ownerFunctionName, ownerConditionIndex }) => {
+    effectiveConditionEntries.forEach(({ condition: cond, ownerFunctionName, ownerConditionIndex }, conditionPosition) => {
       const conditionType = inferConditionType(cond) || 'Condition';
       const expression = getConditionExpression(cond).trim();
       const conditionNodeId = buildGeneratedConditionNodeId(
@@ -654,7 +695,7 @@ const buildQuestEdges = (
         source: conditionNodeId,
         target: consumerId,
         sourceHandle: 'out-bool',
-        targetHandle: 'in-condition',
+        targetHandle: 'in-condition-' + conditionPosition,
         label: `requires ${shortenExpression(expression || conditionLabel, 40)}`,
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
@@ -692,7 +733,7 @@ const buildQuestEdges = (
             source: producerFunc,
             target: consumerId,
             sourceHandle: 'out-finished',
-            targetHandle: 'in-condition',
+            targetHandle: 'in-condition-' + conditionPosition,
             label: `requires knows ${producerDialogName}`,
             type: 'smoothstep',
             markerEnd: { type: MarkerType.ArrowClosed },
@@ -733,7 +774,7 @@ const buildQuestEdges = (
             source: producerId,
             target: consumerId,
             sourceHandle: 'out-state',
-            targetHandle: 'in-condition',
+            targetHandle: 'in-condition-' + conditionPosition,
             label: `requires ${variableName} == ${rawValue}`,
             type: 'smoothstep',
             animated: true,
@@ -755,97 +796,6 @@ const buildQuestEdges = (
         });
       }
     });
-
-    const consumerConditionEdges = edges.filter((edge) =>
-      edge.target === consumerId &&
-      edge.data?.kind === 'requires' &&
-      edge.source.startsWith(`condition-${consumerId}-`)
-    );
-
-    if (consumerConditionEdges.length > 1) {
-      const obsoleteEdgeIds = new Set(consumerConditionEdges.map((edge) => edge.id));
-      const keptEdges = edges.filter((edge) => !obsoleteEdgeIds.has(edge.id));
-      edges.length = 0;
-      edges.push(...keptEdges);
-
-      let combinedSourceId = consumerConditionEdges[0].source;
-      for (let idx = 1; idx < consumerConditionEdges.length; idx += 1) {
-        const nextSourceId = consumerConditionEdges[idx].source;
-        const logicalNodeId = buildGeneratedLogicalNodeId(consumerId, combinedSourceId, nextSourceId);
-        if (!unresolvedConditionNodes.has(logicalNodeId)) {
-          unresolvedConditionNodes.set(logicalNodeId, {
-            id: logicalNodeId,
-            type: 'check',
-            label: 'AND',
-            npc: 'External/World',
-            description: 'Logical AND composition',
-            nodeKind: 'external-condition',
-            expression: 'AND',
-            operator: 'AND',
-            kind: 'logical',
-            conditionType: 'LogicalCondition',
-            negated: false,
-            sourceKind: 'external',
-            entrySurface: false,
-            latentEntry: false,
-            entryReason: undefined,
-            inferred: false,
-            touchesSelectedQuest: false
-          });
-        }
-
-        edges.push({
-          id: `logical-left-${logicalNodeId}-${combinedSourceId}`,
-          source: combinedSourceId,
-          target: logicalNodeId,
-          sourceHandle: 'out-bool',
-          targetHandle: 'in-left',
-          type: 'smoothstep',
-          markerEnd: { type: MarkerType.ArrowClosed },
-          style: { stroke: '#ffb74d', strokeWidth: 2 },
-          data: { kind: 'requires', inferred: false }
-        });
-        addAdjacency(combinedSourceId, logicalNodeId);
-
-        edges.push({
-          id: `logical-right-${logicalNodeId}-${nextSourceId}`,
-          source: nextSourceId,
-          target: logicalNodeId,
-          sourceHandle: 'out-bool',
-          targetHandle: 'in-right',
-          type: 'smoothstep',
-          markerEnd: { type: MarkerType.ArrowClosed },
-          style: { stroke: '#ffb74d', strokeWidth: 2 },
-          data: { kind: 'requires', inferred: false }
-        });
-        addAdjacency(nextSourceId, logicalNodeId);
-
-        combinedSourceId = logicalNodeId;
-      }
-
-      edges.push({
-        id: `logical-out-${combinedSourceId}-${consumerId}`,
-        source: combinedSourceId,
-        target: consumerId,
-        sourceHandle: 'out-bool',
-        targetHandle: 'in-condition',
-        label: 'requires all conditions',
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: '#ffb74d', strokeWidth: 2 },
-        labelStyle: { fill: '#ffb74d', fontSize: 10 },
-        data: {
-          kind: 'requires',
-          inferred: false,
-          expression: 'AND',
-          provenance: {
-            functionName: consumerId,
-            dialogName: consumerData.provenance?.dialogName
-          }
-        }
-      });
-      addAdjacency(combinedSourceId, consumerId);
-    }
 
     if (consumerData.entrySurface && !addedConditionEdge) {
       const externalId = buildGeneratedExternalEntryNodeId(
@@ -885,7 +835,7 @@ const buildQuestEdges = (
         source: externalId,
         target: consumerId,
         sourceHandle: 'out-bool',
-        targetHandle: 'in-condition',
+        targetHandle: 'in-condition-0',
         label: 'requires entry trigger',
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
@@ -981,6 +931,22 @@ const filterGraph = (
       (edge) => selectedNodeDataMap.has(edge.source) && selectedNodeDataMap.has(edge.target)
     );
   }
+
+  const incidentNodeIds = new Set<string>();
+  selectedEdges.forEach((edge) => {
+    incidentNodeIds.add(edge.source);
+    incidentNodeIds.add(edge.target);
+  });
+
+  for (const [nodeId, data] of selectedNodeDataMap.entries()) {
+    if ((data.kind === 'condition' || data.kind === 'logical') && !incidentNodeIds.has(nodeId)) {
+      selectedNodeDataMap.delete(nodeId);
+    }
+  }
+
+  selectedEdges = selectedEdges.filter(
+    (edge) => selectedNodeDataMap.has(edge.source) && selectedNodeDataMap.has(edge.target)
+  );
 
   return { nodeDataMap: selectedNodeDataMap, edges: selectedEdges };
 };
@@ -1087,6 +1053,9 @@ const calculateDagreLayout = (
         conditionType: data.conditionType,
         status: data.description,
         variableName: semanticModel.variables?.[misVarName] ? misVarName : undefined,
+        conditionExpression: data.conditionExpression,
+        conditionCount: data.conditionCount,
+        conditionMode: data.conditionMode,
         condition: data.condition,
         conditionIndex: data.conditionIndex,
         kind: data.kind,
@@ -1130,7 +1099,6 @@ export const buildQuestGraph = (
     )
   };
 };
-
 
 
 

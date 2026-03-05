@@ -268,7 +268,7 @@ describe('questGraphUtils', () => {
         expect(rangeEdge?.data?.operator).toBe('>=');
     });
 
-    it('composes multiple conditions through logical nodes and preserves negation metadata', () => {
+    it('collapses multiple conditions into dialog-level expression metadata and preserves negation metadata', () => {
         const questName = 'TOPIC_LOGICAL';
         const functions = [
             {
@@ -298,11 +298,23 @@ describe('questGraphUtils', () => {
         const { nodes, edges } = buildQuestGraph(model, questName);
 
         const logicalNodes = nodes.filter((node) => node.data.kind === 'logical');
-        expect(logicalNodes.length).toBeGreaterThan(0);
-        expect(logicalNodes[0].data.operator).toBe('AND');
+        expect(logicalNodes).toHaveLength(0);
 
         const combinedEdge = edges.find((edge) => edge.target === 'DIA_Target_Info' && edge.data?.expression === 'AND');
-        expect(combinedEdge).toBeDefined();
+        expect(combinedEdge).toBeUndefined();
+
+        const targetHandles = edges
+            .filter((edge) => edge.target === 'DIA_Target_Info' && edge.id.startsWith('condition-edge-'))
+            .map((edge) => edge.targetHandle)
+            .sort();
+        expect(targetHandles).toEqual(['in-condition-0', 'in-condition-1']);
+
+        const dialogNode = nodes.find((node) => node.id === 'DIA_Target_Info');
+        expect(dialogNode).toBeDefined();
+        expect((dialogNode as any)?.data?.conditionCount).toBe(2);
+        expect((dialogNode as any)?.data?.conditionMode).toBe('structured');
+        expect((dialogNode as any)?.data?.conditionExpression).toContain('MIS_LOGICAL == 1');
+        expect((dialogNode as any)?.data?.conditionExpression).toContain('XARDAS is alive');
 
         const variableConditionNode = nodes.find((node) => node.data.conditionType === 'VariableCondition');
         expect(variableConditionNode).toBeDefined();
@@ -455,7 +467,7 @@ describe('questGraphUtils', () => {
         ).toBe(false);
     });
 
-    it('builds deterministic generated IDs for condition/logical/external nodes', () => {
+    it('builds deterministic generated IDs for condition/external nodes', () => {
         const questName = 'TOPIC_DETERMINISTIC';
 
         const functions = [
@@ -494,7 +506,7 @@ describe('questGraphUtils', () => {
 
         const collectGeneratedIds = (graph: { nodes: Array<{ id: string }> }): string[] => graph.nodes
             .map((node) => node.id)
-            .filter((id) => id.startsWith('condition-') || id.startsWith('logical-') || id.startsWith('external-entry-'))
+            .filter((id) => id.startsWith('condition-') || id.startsWith('external-entry-'))
             .sort();
 
         const firstIds = collectGeneratedIds(first);
@@ -506,13 +518,56 @@ describe('questGraphUtils', () => {
         expect(conditionIds.length).toBeGreaterThan(0);
         expect(conditionIds.every((id) => /^condition-[^-]+-[^-]+-\d+-/.test(id))).toBe(true);
 
-        const logicalIds = firstIds.filter((id) => id.startsWith('logical-'));
-        expect(logicalIds.length).toBeGreaterThan(0);
-        expect(logicalIds.every((id) => /^logical-[^-]+-/.test(id))).toBe(true);
-
         const externalIds = firstIds.filter((id) => id.startsWith('external-entry-'));
         expect(externalIds.length).toBeGreaterThan(0);
         expect(externalIds.some((id) => id.startsWith('external-entry-WORLD_TRIGGER_INFO-'))).toBe(true);
+    });
+});
+
+
+describe('questGraphUtils filtering regressions', () => {
+    it('prunes orphaned condition nodes after selected-quest filtering', () => {
+        const questName = 'TOPIC_ORPHAN_CONDITION';
+        const functions = [
+            {
+                name: 'DIA_Quest_Info',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'WORLD_FLAG', operator: '==', value: 1 }
+                ],
+                actions: [
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }
+                ]
+            },
+            {
+                name: 'DIA_WorldSetter_Info',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'OTHER_FLAG', operator: '==', value: 1 }
+                ],
+                actions: [
+                    { type: 'SetVariableAction', variableName: 'WORLD_FLAG', operator: '=', value: 1 }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: 'DIA_Quest', properties: { information: 'DIA_Quest_Info', npc: 'NPC_Quest' } },
+            { name: 'DIA_WorldSetter', properties: { information: 'DIA_WorldSetter_Info', npc: 'NPC_World' } }
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const graph = buildQuestGraph(model, questName, { onlySelectedQuest: true, showConditions: true });
+
+        const incidentNodeIds = new Set<string>();
+        graph.edges.forEach((edge) => {
+            incidentNodeIds.add(edge.source);
+            incidentNodeIds.add(edge.target);
+        });
+
+        const orphanConditionNodes = graph.nodes.filter((node) => (
+            (node.data.kind === 'condition' || node.data.kind === 'logical') &&
+            !incidentNodeIds.has(node.id)
+        ));
+        expect(orphanConditionNodes).toHaveLength(0);
     });
 });
 
