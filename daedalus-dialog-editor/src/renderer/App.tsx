@@ -22,6 +22,7 @@ import { useAutoSave } from './hooks/useAutoSave';
 import MainLayout from './components/MainLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
+import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
 import { RecentProject } from './types/global';
 import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
@@ -43,6 +44,7 @@ const App: React.FC = () => {
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [appError, setAppError] = useState<string | null>(null);
+  const [isProjectOpening, setIsProjectOpening] = useState(false);
   const { mode, setMode } = useThemeMode();
 
   const ingestionProgress = useMemo(() => {
@@ -50,6 +52,10 @@ const App: React.FC = () => {
     if (total === 0) return 0;
     return (parsedFiles.size / total) * 100;
   }, [allDialogFiles.length, parsedFiles.size]);
+
+  const overlayTotalFiles = isIngesting ? allDialogFiles.length : 0;
+  const overlayParsedFiles = isIngesting ? parsedFiles.size : 0;
+  const showProjectOpeningOverlay = isProjectOpening || (!!projectPath && isIngesting);
 
   const hasUnsavedChanges = useMemo(
     () => Array.from(openFiles.values()).some((fileState) => fileState.isDirty),
@@ -103,11 +109,15 @@ const App: React.FC = () => {
       return;
     }
 
+    setIsProjectOpening(true);
+
     try {
       resetEditorSession();
       await openProject(nextProjectPath);
     } catch (error) {
       setAppError(`Failed to open project: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsProjectOpening(false);
     }
   };
 
@@ -356,6 +366,14 @@ const App: React.FC = () => {
           )}
         </ErrorBoundary>
       </Box>
+
+      <ProjectOpeningOverlay
+        open={showProjectOpeningOverlay}
+        totalFiles={overlayTotalFiles}
+        parsedFiles={overlayParsedFiles}
+        projectName={projectName}
+      />
+
       <Snackbar
         open={!!appError}
         autoHideDuration={5000}
@@ -371,3 +389,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+
