@@ -59,6 +59,16 @@ const getConditionNodeColor = (conditionType?: QuestGraphConditionType): string 
   }
 };
 
+export const formatRuntimeNodeTitle = (
+  label: string,
+  conditionTypeLabel?: string | null
+): string => {
+  const normalizedLabel = String(label || '').trim();
+  const normalizedType = String(conditionTypeLabel || '').trim();
+  if (!normalizedType || normalizedType === 'Condition') return normalizedLabel;
+  if (normalizedLabel.toLowerCase() === normalizedType.toLowerCase()) return normalizedLabel;
+  return `${normalizedLabel} (${normalizedType})`;
+};
 const truncateExpressionPreview = (expression: string, maxLength = 48): string => {
   if (expression.length <= maxLength) return expression;
   return `${expression.slice(0, maxLength - 1)}...`;
@@ -287,7 +297,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       const showConditionTypeSuffix = Boolean(conditionTypeLabel && conditionTypeLabel !== 'Condition');
       const runtimeNode = new LGraphNode(label);
       runtimeNode.id = index + 1;
-      runtimeNode.title = showConditionTypeSuffix ? `${label} (${conditionTypeLabel})` : label;
+      runtimeNode.title = node.type === 'condition'
+        ? formatRuntimeNodeTitle(label, conditionTypeLabel)
+        : (showConditionTypeSuffix ? `${label} (${conditionTypeLabel})` : label);
       runtimeNode.pos = [node.position.x, node.position.y];
       runtimeNode.size = [220, 90];
       if (node.type === 'logical') {
@@ -346,8 +358,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             runtimeNodeAny.size = runtimeNode.computeSize();
           }
         } else if (node.type === 'condition' && typeof node.data?.expression === 'string') {
-          const expressionPreview = truncateExpressionPreview(String(node.data.expression || '').trim(), 72);
+          const expressionPreview = truncateExpressionPreview(String(node.data.expression || '').trim(), 30);
           if (expressionPreview.length > 0) {
+            runtimeNodeAny.widgets_start_y = 58;
             runtimeNodeAny.addWidget('text', 'Condition', expressionPreview, () => undefined, { disabled: true });
             runtimeNodeAny.size = runtimeNode.computeSize();
           }
@@ -620,6 +633,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 };
 
 export default QuestLiteGraphCanvas;
+
 
 
 

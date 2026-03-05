@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import QuestLiteGraphCanvas from '../src/renderer/components/QuestEditor/QuestLiteGraphCanvas';
+import QuestLiteGraphCanvas, { formatRuntimeNodeTitle } from '../src/renderer/components/QuestEditor/QuestLiteGraphCanvas';
 import type { QuestGraphEdge, QuestGraphNode } from '../src/renderer/types/questGraph';
 
 const createDialogNode = (overrides: Partial<QuestGraphNode> = {}): QuestGraphNode => ({
@@ -101,3 +101,13 @@ describe('QuestLiteGraphCanvas condition expression capsule', () => {
 
 
 
+
+describe('formatRuntimeNodeTitle', () => {
+  it('does not duplicate condition type when label already matches', () => {
+    expect(formatRuntimeNodeTitle('Variable', 'Variable')).toBe('Variable');
+  });
+
+  it('adds condition type suffix when label differs', () => {
+    expect(formatRuntimeNodeTitle('Quest Flag', 'Variable')).toBe('Quest Flag (Variable)');
+  });
+});
