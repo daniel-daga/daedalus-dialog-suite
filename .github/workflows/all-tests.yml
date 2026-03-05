@@ -66,10 +66,26 @@ jobs:
 
       - name: Typecheck editor renderer
         run: pnpm --filter daedalus-dialog-editor run typecheck:renderer
+      - name: Build editor renderer (warning guard)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter daedalus-dialog-editor run build:renderer 2>&1 | tee /tmp/editor-renderer-build.log
 
-      - name: Build editor main process
-        run: pnpm --filter daedalus-dialog-editor run build:main
+          if grep -q "Some chunks are larger than" /tmp/editor-renderer-build.log; then
+            echo "Renderer build emitted chunk-size warning."
+            exit 1
+          fi
 
+          eval_lines=$(grep -i "eval" /tmp/editor-renderer-build.log || true)
+          if [ -n "$eval_lines" ]; then
+            non_litegraph_eval=$(echo "$eval_lines" | grep -vi "litegraph" || true)
+            if [ -n "$non_litegraph_eval" ]; then
+              echo "Renderer build emitted unexpected eval warnings:"
+              echo "$non_litegraph_eval"
+              exit 1
+            fi
+          fi
       - name: Run editor tests
         run: pnpm --filter daedalus-dialog-editor test
 
@@ -169,6 +185,7 @@ jobs:
             reports/dialog-roundtrip-corpus-details.json
             reports/dialog-roundtrip-corpus-byte-idempotence.json
           if-no-files-found: warn
+
 
 
 

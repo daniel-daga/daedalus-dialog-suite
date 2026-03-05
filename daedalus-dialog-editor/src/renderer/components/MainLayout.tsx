@@ -1,17 +1,38 @@
-import React, { useEffect } from 'react';
-import { Box, ToggleButton, ToggleButtonGroup, Paper, Tooltip } from '@mui/material';
+import React, { Suspense, lazy, useEffect } from 'react';
+import { Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
-import QuestEditor from './QuestEditor';
-import VariableManager from './VariableManager';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import { isWritableQuestEditorEnabled } from '../config/features';
 import type { SemanticModel } from '../types/global';
 
+const QuestEditor = lazy(() => import('./QuestEditor'));
+const VariableManager = lazy(() => import('./VariableManager'));
+
 interface MainLayoutProps {
   filePath: string | null;
 }
+
+interface LoadingViewProps {
+  label: string;
+}
+
+const LoadingView: React.FC<LoadingViewProps> = ({ label }) => (
+  <Box
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'column',
+      gap: 1,
+      height: '100%'
+    }}
+  >
+    <CircularProgress size={24} />
+    <Typography variant="body2" color="text.secondary">{label}</Typography>
+  </Box>
+);
 
 const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   const { openFiles, activeView: view, setActiveView: setView } = useEditorStore();
@@ -76,16 +97,20 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
 
          {view === 'quest' && (
              <Box sx={{ height: '100%' }}>
-                 <QuestEditor
-                   semanticModel={semanticModel as SemanticModel}
-                   writableEnabled={writableQuestEditorEnabled}
-                 />
+                 <Suspense fallback={<LoadingView label="Loading quest editor..." />}>
+                   <QuestEditor
+                     semanticModel={semanticModel as SemanticModel}
+                     writableEnabled={writableQuestEditorEnabled}
+                   />
+                 </Suspense>
              </Box>
          )}
 
          {view === 'variable' && (
              <Box sx={{ height: '100%' }}>
-                 <VariableManager />
+                 <Suspense fallback={<LoadingView label="Loading variable manager..." />}>
+                   <VariableManager />
+                 </Suspense>
              </Box>
          )}
       </Box>

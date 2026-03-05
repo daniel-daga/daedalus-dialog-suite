@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { Box, ToggleButton, ToggleButtonGroup, Paper, Alert, LinearProgress } from '@mui/material';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
+import { Box, ToggleButton, ToggleButtonGroup, Paper, Alert, LinearProgress, CircularProgress, Typography } from '@mui/material';
 import { FormatListBulleted, AccountTree } from '@mui/icons-material';
 import QuestList from './QuestList';
 import QuestDetails from './QuestDetails';
-import QuestFlow from './QuestFlow';
 import { useProjectStore } from '../store/projectStore';
 import { useEditorStore } from '../store/editorStore';
 import type { SemanticModel } from '../types/global';
+
+const QuestFlow = lazy(() => import('./QuestFlow'));
 
 interface QuestEditorProps {
   semanticModel: SemanticModel;
@@ -16,7 +17,7 @@ interface QuestEditorProps {
 const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnabled = true }) => {
   const [viewMode, setViewMode] = useState<'details' | 'flow'>('details');
 
-  const { getQuestUsage, isIngesting, parsedFiles, projectPath } = useProjectStore(state => ({
+  const { getQuestUsage, isIngesting, parsedFiles, projectPath } = useProjectStore((state) => ({
       getQuestUsage: state.getQuestUsage,
       isIngesting: state.isIngesting,
       parsedFiles: state.parsedFiles,
@@ -85,11 +86,29 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnable
                         questName={selectedQuest}
                     />
                 ) : (
-                    <QuestFlow
-                        semanticModel={activeModel}
-                        questName={selectedQuest}
-                        writableEnabled={writableEnabled}
-                    />
+                    <Suspense
+                      fallback={
+                        <Box
+                          sx={{
+                            height: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexDirection: 'column',
+                            gap: 1
+                          }}
+                        >
+                          <CircularProgress size={24} />
+                          <Typography variant="body2" color="text.secondary">Loading quest graph...</Typography>
+                        </Box>
+                      }
+                    >
+                      <QuestFlow
+                          semanticModel={activeModel}
+                          questName={selectedQuest}
+                          writableEnabled={writableEnabled}
+                      />
+                    </Suspense>
                 )}
             </Box>
         </Box>
