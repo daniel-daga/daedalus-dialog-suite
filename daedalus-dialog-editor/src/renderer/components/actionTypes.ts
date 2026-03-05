@@ -205,9 +205,9 @@ export type ActionTypeId =
 
 export type UnknownDialogAction = Record<string, unknown>;
 
-export type DetectableAction = ActionType | UnknownDialogAction;
+export type DetectableAction = object;
 
-function hasProperty<T extends string>(value: Record<string, unknown>, key: T): value is Record<T, unknown> {
+function hasProperty<T extends string>(value: object, key: T): value is Record<T, unknown> {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
@@ -292,3 +292,4 @@ export function getActionType(action: DetectableAction): ActionTypeId {
 
   return 'customAction'; // Fallback
 }
+
