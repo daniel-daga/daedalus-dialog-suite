@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNodesState, useEdgesState } from 'reactflow';
 import {
   Alert,
   Box,
@@ -97,8 +96,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     codeSettings: state.codeSettings
   }));
 
-  const [nodes, setNodes] = useNodesState<QuestGraphNode['data']>([]);
-  const [edges, setEdges] = useEdgesState<QuestGraphEdge['data']>([]);
+  const [nodes, setNodes] = useState<QuestGraphNode[]>([]);
+  const [edges, setEdges] = useState<QuestGraphEdge[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
@@ -788,3 +787,4 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
 };
 
 export default QuestFlow;
+

@@ -4,27 +4,22 @@ import QuestFlow from '../src/renderer/components/QuestFlow';
 import * as questCommands from '../src/renderer/quest/domain/commands';
 import type { SemanticModel } from '../src/renderer/types/global';
 
-jest.mock('reactflow', () => {
-  const ReactModule = require('react');
-
-  const ReactFlow = ({
+jest.mock('../src/renderer/components/QuestEditor/QuestLiteGraphCanvas', () => ({
+  __esModule: true,
+  default: ({
     nodes = [],
     edges = [],
     onNodeClick,
-    onNodeDragStop,
-    onEdgeClick,
-    onConnect,
-    children
+    onNodeMove,
+    onEdgeClick
   }: {
     nodes?: Array<any>;
     edges?: Array<any>;
     onNodeClick?: (event: React.MouseEvent, node: any) => void;
-    onNodeDragStop?: (event: React.MouseEvent, node: any) => void;
+    onNodeMove?: (nodeId: string, position: { x: number; y: number }, nodeType?: string, ownerFilePath?: string) => void;
     onEdgeClick?: (event: React.MouseEvent, edge: any) => void;
-    onConnect?: (connection: { source?: string; target?: string }) => void;
-    children?: React.ReactNode;
   }) => (
-    <div data-testid="reactflow">
+    <div data-testid="quest-litegraph-canvas">
       {nodes.map((node) => (
         <div key={String(node.id)}>
           <button
@@ -35,10 +30,7 @@ jest.mock('reactflow', () => {
           </button>
           <button
             type="button"
-            onClick={() => onNodeDragStop?.(
-              ({ preventDefault: () => undefined } as unknown) as React.MouseEvent,
-              { ...node, position: { x: 99, y: 101 } }
-            )}
+            onClick={() => onNodeMove?.(String(node.id), { x: 99, y: 101 }, node.type, node.data?.provenance?.filePath)}
           >
             Drag {String(node.id)}
           </button>
@@ -53,44 +45,9 @@ jest.mock('reactflow', () => {
           Edge {String(edge.id)}
         </button>
       ))}
-      <button
-        type="button"
-        onClick={() => onConnect?.({ source: 'DIA_Test_Info', target: 'DIA_Target_Info' })}
-      >
-        Connect DIA_Test_Info {'->'} DIA_Target_Info
-      </button>
-      <button
-        type="button"
-        onClick={() => onConnect?.({ source: 'DIA_Test_Info' })}
-      >
-        Connect Invalid Missing Target
-      </button>
-      <button
-        type="button"
-        onClick={() => onConnect?.({ source: 'DIA_Unknown', target: 'DIA_Target_Info' })}
-      >
-        Connect Unknown Source {'->'} DIA_Target_Info
-      </button>
-      {children}
     </div>
-  );
-
-  return {
-    __esModule: true,
-    default: ReactFlow,
-    Background: () => null,
-    Controls: () => null,
-    MiniMap: () => null,
-    useNodesState: (initialNodes: Array<any>) => {
-      const [nodes, setNodes] = ReactModule.useState(initialNodes);
-      return [nodes, setNodes, jest.fn()];
-    },
-    useEdgesState: (initialEdges: Array<any>) => {
-      const [edges, setEdges] = ReactModule.useState(initialEdges);
-      return [edges, setEdges, jest.fn()];
-    }
-  };
-});
+  )
+}));
 
 jest.mock('../src/renderer/quest/domain/graph', () => ({
   buildQuestGraph: () => ({
@@ -382,76 +339,24 @@ describe('QuestFlow command preview integration', () => {
       expect(screen.getByText('Quest Command Diff Preview')).toBeInTheDocument();
     });
   });
-
-  it('creates multi-file transition updates when source and target are in different files', async () => {
-    const sourcePath = 'C:/tmp/source.d';
-    const targetPath = 'C:/tmp/target.d';
-    const sourceModel: SemanticModel = {
-      ...semanticModel,
-      functions: {
-        DIA_Test_Info: semanticModel.functions.DIA_Test_Info
-      }
-    };
-    const targetModel: SemanticModel = {
-      ...semanticModel,
-      functions: {
-        DIA_Target_Info: {
-          name: 'DIA_Target_Info',
-          returnType: 'VOID',
-          actions: [],
-          conditions: [],
-          calls: []
-        }
-      }
-    };
-    const testHarness = (globalThis as any).__questFlowPreviewTest;
-    const getFileStateMock = testHarness.getFileState as jest.Mock;
-
-    projectStoreState.parsedFiles = new Map([
-      [sourcePath, { filePath: sourcePath, semanticModel: sourceModel, lastParsed: new Date('2026-02-02T00:00:00Z') }],
-      [targetPath, { filePath: targetPath, semanticModel: targetModel, lastParsed: new Date('2026-02-03T00:00:00Z') }]
-    ]);
-
-    getFileStateMock.mockImplementation((filePath: string) => {
-      if (filePath === sourcePath) return { filePath: sourcePath, semanticModel: sourceModel };
-      if (filePath === targetPath) return { filePath: targetPath, semanticModel: targetModel };
-      return null;
-    });
-
-    render(
-      <QuestFlow
-        semanticModel={semanticModel}
-        questName="TOPIC_TEST"
-        writableEnabled
-      />
-    );
-
-    fireEvent.click(screen.getByLabelText('Connect mode'));
-    fireEvent.click(screen.getByText('Connect DIA_Test_Info -> DIA_Target_Info'));
-
-    await waitFor(() => {
-      expect(screen.getByText('Quest Command Diff Preview')).toBeInTheDocument();
-    });
-    expect(screen.getByText(sourcePath)).toBeInTheDocument();
-    expect(screen.getByText(targetPath)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Apply'));
-
-    await waitFor(() => {
-      expect(testHarness.applyQuestModelsWithHistory).toHaveBeenCalledWith([
-        { filePath: sourcePath, model: expect.any(Object) },
-        { filePath: targetPath, model: expect.any(Object) }
-      ]);
-    });
-  });
-
-  it('canceling multi-file preview does not apply batched updates', async () => {
+  it('canceling multi-file remove-transition preview does not apply batched updates', async () => {
     const sourcePath = 'C:/tmp/source-cancel.d';
     const targetPath = 'C:/tmp/target-cancel.d';
     const sourceModel: SemanticModel = {
       ...semanticModel,
       functions: {
-        DIA_Test_Info: semanticModel.functions.DIA_Test_Info
+        DIA_Test_Info: {
+          name: 'DIA_Test_Info',
+          returnType: 'VOID',
+          actions: [{
+            type: 'Choice',
+            dialogRef: 'self',
+            text: 'Continue',
+            targetFunction: 'DIA_Target_Info'
+          }],
+          conditions: [],
+          calls: []
+        }
       }
     };
     const targetModel: SemanticModel = {
@@ -461,7 +366,11 @@ describe('QuestFlow command preview integration', () => {
           name: 'DIA_Target_Info',
           returnType: 'VOID',
           actions: [],
-          conditions: [],
+          conditions: [{
+            type: 'NpcKnowsInfoCondition',
+            npc: 'self',
+            dialogRef: 'DIA_Test'
+          }],
           calls: []
         }
       }
@@ -488,8 +397,8 @@ describe('QuestFlow command preview integration', () => {
       />
     );
 
-    fireEvent.click(screen.getByLabelText('Connect mode'));
-    fireEvent.click(screen.getByText('Connect DIA_Test_Info -> DIA_Target_Info'));
+    fireEvent.click(await screen.findByText('Edge choice-DIA_Test_Info-DIA_Target_Info'));
+    fireEvent.click(screen.getByText('Remove Transition'));
 
     await waitFor(() => {
       expect(screen.getByText('Quest Command Diff Preview')).toBeInTheDocument();
@@ -788,8 +697,7 @@ describe('QuestFlow command preview integration', () => {
 
     commandSpy.mockRestore();
   });
-
-  it('shows specific connect-mode validation messages for invalid edge interactions', async () => {
+  it('does not expose legacy connect-mode controls', async () => {
     render(
       <QuestFlow
         semanticModel={semanticModel}
@@ -798,17 +706,9 @@ describe('QuestFlow command preview integration', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Connect DIA_Test_Info -> DIA_Target_Info'));
-    expect(screen.getByText('Enable Connect Mode to create transitions.')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText('Connect mode'));
-    fireEvent.click(screen.getByText('Connect Invalid Missing Target'));
-    expect(screen.getByText('Invalid edge: missing source or target.')).toBeInTheDocument();
-
-    fireEvent.mouseDown(screen.getByLabelText('Connect As'));
-    fireEvent.click(await screen.findByText('Condition Link'));
-    fireEvent.click(screen.getByText('Connect Unknown Source -> DIA_Target_Info'));
-    expect(screen.getByText('Unable to infer variable condition from source node.')).toBeInTheDocument();
+    await screen.findByTestId('quest-litegraph-canvas');
+    expect(screen.queryByLabelText('Connect mode')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Connect As')).not.toBeInTheDocument();
   });
 
   it('produces deterministic diff preview output for repeated identical command previews', async () => {
@@ -845,3 +745,4 @@ describe('QuestFlow command preview integration', () => {
     expect(generateCodeMock).toHaveBeenCalled();
   });
 });
+

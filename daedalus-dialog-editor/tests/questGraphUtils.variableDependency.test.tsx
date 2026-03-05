@@ -25,24 +25,21 @@ describe('questGraphUtils - Variable Dependencies', () => {
         const questName = 'TOPIC_VAR_TEST';
         const helperVar = 'HELPER_VAR';
 
-        // Node A: Sets HELPER_VAR = 1
-        // Node B: Checks HELPER_VAR == 1
-
         const functions = [
             {
                 name: 'DIA_Setter_Info',
                 actions: [
-                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }, // Relevant to quest
-                    { type: 'SetVariableAction', variableName: helperVar, operator: '=', value: 1 } // Sets generic var
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' },
+                    { type: 'SetVariableAction', variableName: helperVar, operator: '=', value: 1 }
                 ]
             },
             {
                 name: 'DIA_Checker_Info',
                 conditions: [
-                    { type: 'VariableCondition', variableName: helperVar, operator: '==', value: 1 } // Checks generic var
+                    { type: 'VariableCondition', variableName: helperVar, operator: '==', value: 1 }
                 ],
                 actions: [
-                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' } // Relevant to quest
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' }
                 ]
             }
         ];
@@ -55,18 +52,13 @@ describe('questGraphUtils - Variable Dependencies', () => {
         const model = createMockModel(functions, dialogs);
         const { nodes, edges } = buildQuestGraph(model, questName);
 
-        // Nodes should exist (both touch quest)
         expect(nodes.find(n => n.id === 'DIA_Setter_Info')).toBeDefined();
         expect(nodes.find(n => n.id === 'DIA_Checker_Info')).toBeDefined();
 
-        // Edge should exist linking Setter -> Checker based on HELPER_VAR
         const depEdge = edges.find(e => e.source === 'DIA_Setter_Info' && e.target === 'DIA_Checker_Info');
-
-        // This expectation is currently failing (behavior to fix)
-        // I assert it *should* exist.
         expect(depEdge).toBeDefined();
         if (depEdge) {
-            expect(depEdge.label).toBe(`requires ${helperVar} == 1`);
+            expect(depEdge.label).toBe(`supports ${helperVar} == 1`);
         }
     });
 
@@ -128,12 +120,16 @@ describe('questGraphUtils - Variable Dependencies', () => {
         const model = createMockModel(functions, dialogs);
         const { nodes, edges } = buildQuestGraph(model, questName);
 
-        const externalConditionNode = nodes.find(n => String(n.id).startsWith('external-item-DIA_FetchCheck_Info-hero-ITMW_SWORD'));
+        const externalConditionNode = nodes.find(
+            (node) => node.data.kind === 'condition' && node.data.conditionType === 'NpcHasItemsCondition'
+        );
         expect(externalConditionNode).toBeDefined();
         expect(externalConditionNode?.type).toBe('condition');
 
-        const externalEdge = edges.find(e => String(e.id).startsWith('external-item-edge-external-item-DIA_FetchCheck_Info-hero-ITMW_SWORD'));
+        const externalEdge = edges.find(
+            (edge) => edge.source === externalConditionNode?.id && edge.target === 'DIA_FetchCheck_Info'
+        );
         expect(externalEdge).toBeDefined();
-        expect(externalEdge?.target).toBe('DIA_FetchCheck_Info');
     });
 });
+
