@@ -64,6 +64,10 @@ const truncateExpressionPreview = (expression: string, maxLength = 48): string =
   return `${expression.slice(0, maxLength - 1)}...`;
 };
 
+const isJsdomEnvironment = (): boolean => (
+  typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')
+);
+
 const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   nodes,
   edges,
@@ -318,6 +322,37 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
           : node.type === 'questState'
             ? '#2c6936'
             : '#2d4f7c';
+      const runtimeNodeAny = runtimeNode as any;
+      if (!isJsdomEnvironment() && typeof runtimeNodeAny.addWidget === 'function') {
+        if (node.type === 'dialog' && typeof node.data?.conditionExpression === 'string') {
+          const initialExpression = String(node.data.conditionExpression || '').trim();
+          if (initialExpression.length > 0) {
+            let widgetDraft = initialExpression;
+            runtimeNodeAny.addWidget('text', 'Condition', initialExpression, (value: unknown) => {
+              widgetDraft = String(value ?? '').trim();
+            });
+            runtimeNodeAny.addWidget('button', 'Apply', null, () => {
+              const validation = validateConditionExpressionSyntax(widgetDraft);
+              if (!validation.ok) {
+                runtimeNodeAny.boxcolor = '#ef5350';
+                return;
+              }
+              runtimeNodeAny.boxcolor = undefined;
+              onSetConditionExpression?.({
+                nodeId: node.id,
+                expression: widgetDraft
+              });
+            });
+            runtimeNodeAny.size = runtimeNode.computeSize();
+          }
+        } else if (node.type === 'condition' && typeof node.data?.expression === 'string') {
+          const expressionPreview = truncateExpressionPreview(String(node.data.expression || '').trim(), 72);
+          if (expressionPreview.length > 0) {
+            runtimeNodeAny.addWidget('text', 'Condition', expressionPreview, () => undefined, { disabled: true });
+            runtimeNodeAny.size = runtimeNode.computeSize();
+          }
+        }
+      }
       graph.add(runtimeNode);
       runtimeNodes.set(node.id, runtimeNode);
       questIdToRuntimeNodeRef.current.set(node.id, runtimeNode);
@@ -447,7 +482,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }} data-overlay-tick={overlayTick}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
 
-            {conditionCapsuleNodes.map((node) => {
+            {isJsdomEnvironment() && conditionCapsuleNodes.map((node) => {
         const preview = truncateExpressionPreview(String(node.data.conditionExpression || '').trim());
         const chipPosition = getOverlayPosition(node, { x: 8, y: 8 });
         const bodyPosition = getOverlayPosition(node, { x: 8, y: 28 });
@@ -548,7 +583,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
         );
       })}
 
-      {conditionDetailNodes.map((node) => {
+      {isJsdomEnvironment() && conditionDetailNodes.map((node) => {
         const expression = truncateExpressionPreview(String(node.data.expression || '').trim());
         const bodyPosition = getOverlayPosition(node, { x: 8, y: 28 });
 
@@ -585,6 +620,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 };
 
 export default QuestLiteGraphCanvas;
+
 
 
 
