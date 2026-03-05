@@ -64,8 +64,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck editor renderer
+        run: pnpm --filter daedalus-dialog-editor run typecheck:renderer
+
+      - name: Build editor main process
+        run: pnpm --filter daedalus-dialog-editor run build:main
+
       - name: Run editor tests
-        run: pnpm --filter daedalus-dialog-editor run build:main && pnpm --filter daedalus-dialog-editor test
+        run: pnpm --filter daedalus-dialog-editor test
 
   editor-e2e-tests:
     runs-on: ubuntu-latest
@@ -163,3 +169,7 @@ jobs:
             reports/dialog-roundtrip-corpus-details.json
             reports/dialog-roundtrip-corpus-byte-idempotence.json
           if-no-files-found: warn
+
+
+
+

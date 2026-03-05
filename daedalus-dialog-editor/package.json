@@ -10,8 +10,9 @@
     "dev:renderer": "vite",
     "dev:browser": "vite",
     "dev:electron": "wait-on dist/main/main.js && electron . --enable-logging --no-sandbox",
-    "build": "npm run build:main && npm run build:renderer",
+    "build": "npm run build:main && npm run typecheck:renderer && npm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json",
+    "typecheck:renderer": "tsc -p tsconfig.json --noEmit",
     "build:renderer": "vite build",
     "package": "electron-builder",
     "test": "jest",
@@ -116,3 +117,10 @@
     "wait-on": "^9.0.1"
   }
 }
+
+
+
+
+
+
+
