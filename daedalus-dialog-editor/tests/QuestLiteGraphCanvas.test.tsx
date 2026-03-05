@@ -52,10 +52,11 @@ describe('QuestLiteGraphCanvas condition expression capsule', () => {
     expect(screen.getByText(/MIS_TEST == LOG_RUNNING/i)).toBeInTheDocument();
   });
 
-  it('opens popover editor and submits edited expression through callback', () => {
+  it('opens inline node editor and submits edited expression through callback', () => {
     const { onSetConditionExpression } = renderCanvas();
 
     fireEvent.click(screen.getByRole('button', { name: /if:/i }));
+    expect(screen.getByTestId('condition-inline-editor')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Condition expression'), {
       target: { value: 'MIS_TEST == LOG_SUCCESS' }
     });

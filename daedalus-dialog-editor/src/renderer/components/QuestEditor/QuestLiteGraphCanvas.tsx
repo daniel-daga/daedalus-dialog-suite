@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, Paper, Popover, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
 import { LGraph, LGraphCanvas, LGraphNode } from 'litegraph.js';
 import type { QuestGraphConditionType, QuestGraphEdge, QuestGraphNode } from '../../types/questGraph';
 import { validateConditionExpressionSyntax } from './commands/conditionExpressionCodec';
@@ -24,7 +24,7 @@ interface QuestLiteGraphCanvasProps {
 type ExtendedLGraphCanvas = LGraphCanvas & {
   bgcolor?: string;
   onLinkSelected?: (linkId: number) => void;
-  convertOffsetToCanvas?: (pos: [number, number], out?: [number, number]) => [number, number];
+  ds?: { scale: number; offset: [number, number] };
 };
 
 const getConditionTypeLabel = (conditionType?: QuestGraphConditionType): string => {
@@ -84,7 +84,6 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const edgeMapRef = useRef<Map<string, QuestGraphEdge>>(new Map());
   const linkIdToEdgeRef = useRef<Map<number, QuestGraphEdge>>(new Map());
   const [overlayTick, setOverlayTick] = useState(0);
-  const [expressionEditorAnchorEl, setExpressionEditorAnchorEl] = useState<HTMLElement | null>(null);
   const [expressionEditorNodeId, setExpressionEditorNodeId] = useState<string | null>(null);
   const [expressionEditorDraft, setExpressionEditorDraft] = useState('');
   const [expressionEditorError, setExpressionEditorError] = useState<string | null>(null);
@@ -390,24 +389,32 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     ))
   ), [nodes]);
 
-  const getCapsulePosition = (node: QuestGraphNode): { left: number; top: number } => {
+  const getOverlayPosition = (
+    node: QuestGraphNode,
+    offset: { x: number; y: number }
+  ): { left: number; top: number } => {
+    const runtimeNode = questIdToRuntimeNodeRef.current.get(node.id);
+    const baseX = runtimeNode?.pos?.[0] ?? node.position.x;
+    const baseY = runtimeNode?.pos?.[1] ?? node.position.y;
+
     const graphCanvas = graphCanvasRef.current;
-    if (graphCanvas?.convertOffsetToCanvas) {
-      const [left, top] = graphCanvas.convertOffsetToCanvas([node.position.x, node.position.y]);
-      return { left: left + 8, top: top + 8 };
-    }
-    return { left: node.position.x + 8, top: node.position.y + 8 };
+    const scale = graphCanvas?.ds?.scale ?? 1;
+    const offsetX = graphCanvas?.ds?.offset?.[0] ?? 0;
+    const offsetY = graphCanvas?.ds?.offset?.[1] ?? 0;
+
+    return {
+      left: baseX * scale + offsetX + offset.x,
+      top: baseY * scale + offsetY + offset.y
+    };
   };
 
   const closeExpressionEditor = () => {
-    setExpressionEditorAnchorEl(null);
     setExpressionEditorNodeId(null);
     setExpressionEditorDraft('');
     setExpressionEditorError(null);
   };
 
-  const openExpressionEditor = (event: React.MouseEvent<HTMLButtonElement>, node: QuestGraphNode) => {
-    setExpressionEditorAnchorEl(event.currentTarget);
+  const openExpressionEditor = (node: QuestGraphNode) => {
     setExpressionEditorNodeId(node.id);
     setExpressionEditorDraft(String(node.data.conditionExpression || ''));
     setExpressionEditorError(null);
@@ -428,19 +435,28 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     closeExpressionEditor();
   };
 
+  const editingNode = useMemo(
+    () => conditionCapsuleNodes.find((node) => node.id === expressionEditorNodeId) || null,
+    [conditionCapsuleNodes, expressionEditorNodeId]
+  );
+
+  const editingNodePosition = editingNode
+    ? getOverlayPosition(editingNode, { x: 8, y: 28 })
+    : null;
+
   return (
     <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }} data-overlay-tick={overlayTick}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
 
       {conditionCapsuleNodes.map((node) => {
         const preview = truncateExpressionPreview(String(node.data.conditionExpression || '').trim());
-        const position = getCapsulePosition(node);
+        const position = getOverlayPosition(node, { x: 8, y: 8 });
         return (
           <Button
             key={`condition-capsule-${node.id}`}
             variant="contained"
             size="small"
-            onClick={(event) => openExpressionEditor(event, node)}
+            onClick={() => openExpressionEditor(node)}
             sx={{
               position: 'absolute',
               left: `${position.left}px`,
@@ -467,20 +483,30 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
         );
       })}
 
-      <Popover
-        open={Boolean(expressionEditorAnchorEl)}
-        anchorEl={expressionEditorAnchorEl}
-        onClose={closeExpressionEditor}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-      >
-        <Paper sx={{ p: 1.25, width: 380, maxWidth: '85vw' }}>
+      {editingNode && editingNodePosition && (
+        <Paper
+          data-testid="condition-inline-editor"
+          sx={{
+            position: 'absolute',
+            left: `${editingNodePosition.left}px`,
+            top: `${editingNodePosition.top}px`,
+            p: 1,
+            width: 204,
+            maxWidth: '70vw',
+            zIndex: 6,
+            pointerEvents: 'auto',
+            backgroundColor: '#212121',
+            border: '1px solid #3a3a3a'
+          }}
+        >
           <Stack spacing={1}>
-            <Typography variant="subtitle2">Edit Condition Expression</Typography>
+            <Typography variant="caption" sx={{ color: '#ffcc80', fontWeight: 700 }}>
+              Condition
+            </Typography>
             <TextField
               multiline
-              minRows={3}
-              maxRows={8}
+              minRows={2}
+              maxRows={6}
               label="Condition expression"
               value={expressionEditorDraft}
               onChange={(event) => {
@@ -488,8 +514,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
                 if (expressionEditorError) setExpressionEditorError(null);
               }}
               error={Boolean(expressionEditorError)}
-              helperText={expressionEditorError || 'Supports simple structured clauses with &&. Complex valid expressions are stored verbatim.'}
+              helperText={expressionEditorError || 'Use && for simple clauses.'}
               fullWidth
+              size="small"
             />
             <Stack direction="row" spacing={1} justifyContent="flex-end">
               <Button size="small" onClick={closeExpressionEditor}>Cancel</Button>
@@ -504,14 +531,10 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             </Stack>
           </Stack>
         </Paper>
-      </Popover>
+      )}
     </Box>
   );
 };
 
 export default QuestLiteGraphCanvas;
-
-
-
-
 
