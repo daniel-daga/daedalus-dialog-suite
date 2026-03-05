@@ -41,5 +41,8 @@ Prefer stable sub-properties and granular comparisons when using `React.memo`.
 - `npm run dev`
 - `npm run build`
 - `npm run test`
+- `npm run test:stable:windows` (recommended local Windows baseline)
+- `npm run test:matrix:windows` (repro matrix for intermittent `3221226505` exits)
 - `npm run test:e2e`
+
 

@@ -19,6 +19,8 @@
     "test:mocked": "jest --config jest.mocked.config.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:stable:windows": "powershell -ExecutionPolicy Bypass -File scripts/run-jest-stable-windows.ps1",
+    "test:matrix:windows": "powershell -ExecutionPolicy Bypass -File scripts/run-jest-stability-matrix.ps1",
     "test:actioncard": "jest ActionCard.test.tsx",
     "test:encoding": "npm run build:main && tsx tests/encoding.test.ts",
     "test:e2e": "playwright test",
@@ -117,6 +119,7 @@
     "wait-on": "^9.0.1"
   }
 }
+
 
 
 
