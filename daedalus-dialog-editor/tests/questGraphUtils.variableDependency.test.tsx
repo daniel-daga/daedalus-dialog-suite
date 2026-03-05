@@ -58,7 +58,7 @@ describe('questGraphUtils - Variable Dependencies', () => {
         const depEdge = edges.find(e => e.source === 'DIA_Setter_Info' && e.target === 'DIA_Checker_Info');
         expect(depEdge).toBeDefined();
         if (depEdge) {
-            expect(depEdge.label).toBe(`supports ${helperVar} == 1`);
+            expect(depEdge.label).toBe(`requires ${helperVar} == 1`);
         }
     });
 
@@ -132,4 +132,5 @@ describe('questGraphUtils - Variable Dependencies', () => {
         expect(externalEdge).toBeDefined();
     });
 });
+
 

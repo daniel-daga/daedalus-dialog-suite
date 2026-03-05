@@ -88,6 +88,32 @@ const shortenExpression = (expression: string, maxLength = 56): string => {
   return `${expression.slice(0, maxLength - 1)}...`;
 };
 
+const buildGeneratedConditionNodeId = (
+  consumerId: string,
+  ownerFunctionName: string,
+  ownerConditionIndex: number,
+  expression: string,
+  conditionType: QuestGraphConditionType
+): string => {
+  const ownerToken = toNodeToken(ownerFunctionName);
+  const conditionToken = toNodeToken(expression || conditionType || `condition_${ownerConditionIndex}`);
+  return `condition-${consumerId}-${ownerToken}-${ownerConditionIndex}-${conditionToken}`;
+};
+
+const buildGeneratedLogicalNodeId = (
+  consumerId: string,
+  leftSourceId: string,
+  rightSourceId: string
+): string => {
+  return `logical-${toNodeToken(consumerId)}-${toNodeToken(leftSourceId)}-${toNodeToken(rightSourceId)}`;
+};
+
+const buildGeneratedExternalEntryNodeId = (
+  consumerId: string,
+  entryReason: string
+): string => {
+  return `external-entry-${consumerId}-${toNodeToken(entryReason)}`;
+};
 const isNegatedCondition = (cond: DialogCondition): boolean => {
   if ('negated' in cond) {
     return Boolean((cond as { negated?: boolean }).negated);
@@ -582,12 +608,16 @@ const buildQuestEdges = (
       addAdjacency(consumerId, targetFunc);
     });
 
-    effectiveConditionEntries.forEach(({ condition: cond, ownerFunctionName, ownerConditionIndex }, condIndex: number) => {
+    effectiveConditionEntries.forEach(({ condition: cond, ownerFunctionName, ownerConditionIndex }) => {
       const conditionType = inferConditionType(cond) || 'Condition';
       const expression = getConditionExpression(cond).trim();
-      const condToken = toNodeToken(expression || conditionType || `condition_${condIndex}`);
-      const ownerToken = toNodeToken(ownerFunctionName);
-      const conditionNodeId = `condition-${consumerId}-${ownerToken}-${ownerConditionIndex}-${condToken}`;
+      const conditionNodeId = buildGeneratedConditionNodeId(
+        consumerId,
+        ownerFunctionName,
+        ownerConditionIndex,
+        expression,
+        conditionType
+      );
       const conditionLabel = getConditionNodeLabel(conditionType, expression);
       const ownerFilePath = getFunctionFilePath(semanticModel.functions?.[ownerFunctionName]);
 
@@ -704,7 +734,7 @@ const buildQuestEdges = (
             target: consumerId,
             sourceHandle: 'out-state',
             targetHandle: 'in-condition',
-            label: `supports ${variableName} == ${rawValue}`,
+            label: `requires ${variableName} == ${rawValue}`,
             type: 'smoothstep',
             animated: true,
             markerEnd: { type: MarkerType.ArrowClosed },
@@ -741,7 +771,7 @@ const buildQuestEdges = (
       let combinedSourceId = consumerConditionEdges[0].source;
       for (let idx = 1; idx < consumerConditionEdges.length; idx += 1) {
         const nextSourceId = consumerConditionEdges[idx].source;
-        const logicalNodeId = `logical-${consumerId}-${idx - 1}`;
+        const logicalNodeId = buildGeneratedLogicalNodeId(consumerId, combinedSourceId, nextSourceId);
         if (!unresolvedConditionNodes.has(logicalNodeId)) {
           unresolvedConditionNodes.set(logicalNodeId, {
             id: logicalNodeId,
@@ -818,8 +848,10 @@ const buildQuestEdges = (
     }
 
     if (consumerData.entrySurface && !addedConditionEdge) {
-      const entryToken = toNodeToken(consumerData.entryReason || consumerData.sourceKind || 'world_trigger');
-      const externalId = `external-entry-${consumerId}-${entryToken}`;
+      const externalId = buildGeneratedExternalEntryNodeId(
+        consumerId,
+        consumerData.entryReason || consumerData.sourceKind || 'world_trigger'
+      );
       if (!unresolvedConditionNodes.has(externalId)) {
         const triggerLabel = consumerData.sourceKind === 'item'
           ? 'Item Trigger'
@@ -854,7 +886,7 @@ const buildQuestEdges = (
         target: consumerId,
         sourceHandle: 'out-bool',
         targetHandle: 'in-condition',
-        label: 'entry trigger',
+        label: 'requires entry trigger',
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
         style: { stroke: '#81c784', strokeWidth: 2, strokeDasharray: '3,3' },
@@ -1098,3 +1130,7 @@ export const buildQuestGraph = (
     )
   };
 };
+
+
+
+

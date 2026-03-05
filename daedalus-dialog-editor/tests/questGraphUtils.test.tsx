@@ -455,4 +455,66 @@ describe('questGraphUtils', () => {
         ).toBe(false);
     });
 
+    it('builds deterministic generated IDs for condition/logical/external nodes', () => {
+        const questName = 'TOPIC_DETERMINISTIC';
+
+        const functions = [
+            {
+                name: 'DIA_Start_Info',
+                actions: [
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }
+                ]
+            },
+            {
+                name: 'DIA_Target_Info',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'MIS_DETERMINISTIC', operator: '==', value: 1 },
+                    { type: 'NpcIsDeadCondition', npc: 'XARDAS' }
+                ],
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' }
+                ]
+            },
+            {
+                name: 'WORLD_TRIGGER_INFO',
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_RUNNING' }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: 'DIA_Start', properties: { information: 'DIA_Start_Info', npc: 'NPC_Start' } },
+            { name: 'DIA_Target', properties: { information: 'DIA_Target_Info', npc: 'NPC_Target' } },
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const first = buildQuestGraph(model, questName);
+        const second = buildQuestGraph(model, questName);
+
+        const collectGeneratedIds = (graph: { nodes: Array<{ id: string }> }): string[] => graph.nodes
+            .map((node) => node.id)
+            .filter((id) => id.startsWith('condition-') || id.startsWith('logical-') || id.startsWith('external-entry-'))
+            .sort();
+
+        const firstIds = collectGeneratedIds(first);
+        const secondIds = collectGeneratedIds(second);
+        expect(firstIds.length).toBeGreaterThan(0);
+        expect(firstIds).toEqual(secondIds);
+
+        const conditionIds = firstIds.filter((id) => id.startsWith('condition-'));
+        expect(conditionIds.length).toBeGreaterThan(0);
+        expect(conditionIds.every((id) => /^condition-[^-]+-[^-]+-\d+-/.test(id))).toBe(true);
+
+        const logicalIds = firstIds.filter((id) => id.startsWith('logical-'));
+        expect(logicalIds.length).toBeGreaterThan(0);
+        expect(logicalIds.every((id) => /^logical-[^-]+-/.test(id))).toBe(true);
+
+        const externalIds = firstIds.filter((id) => id.startsWith('external-entry-'));
+        expect(externalIds.length).toBeGreaterThan(0);
+        expect(externalIds.some((id) => id.startsWith('external-entry-WORLD_TRIGGER_INFO-'))).toBe(true);
+    });
 });
+
+
+
