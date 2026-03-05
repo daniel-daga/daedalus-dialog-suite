@@ -140,7 +140,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const rafId1Ref = useRef<number | null>(null);
   const rafId2Ref = useRef<number | null>(null);
   const dialogTransitionIdRef = useRef(0);
-  const loadingTimeoutRef = useRef<number | null>(null);
 
   // Max cache size to prevent unbounded growth (Bug #4 fix)
   const MAX_CACHE_SIZE = 1000;
@@ -217,9 +216,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       }
       if (rafId2Ref.current !== null) {
         cancelAnimationFrame(rafId2Ref.current);
-      }
-      if (loadingTimeoutRef.current !== null) {
-        clearTimeout(loadingTimeoutRef.current);
       }
     };
   }, []);
@@ -452,16 +448,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       cancelAnimationFrame(rafId2Ref.current);
       rafId2Ref.current = null;
     }
-    if (loadingTimeoutRef.current !== null) {
-      clearTimeout(loadingTimeoutRef.current);
-      loadingTimeoutRef.current = null;
-    }
 
-    // Show loading immediately to prevent flickering
+    // Show loading immediately to prevent stale content flash during transitions
     setIsLoadingDialog(true);
-
-    const loadingStartTime = performance.now();
-    const MIN_LOADING_MS = 180;
 
     // Use startTransition to keep UI responsive when switching to dialogs with many actions
     startTransition(() => {
@@ -477,15 +466,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
         // Wait one more frame to ensure rendering is complete
         rafId2Ref.current = requestAnimationFrame(() => {
-          const elapsed = performance.now() - loadingStartTime;
-          const remaining = Math.max(0, MIN_LOADING_MS - elapsed);
-
-          loadingTimeoutRef.current = window.setTimeout(() => {
-            if (dialogTransitionIdRef.current === transitionId) {
-              setIsLoadingDialog(false);
-            }
-            loadingTimeoutRef.current = null;
-          }, remaining);
+          if (dialogTransitionIdRef.current === transitionId) {
+            setIsLoadingDialog(false);
+          }
 
           // Clear refs after execution
           rafId1Ref.current = null;
@@ -773,18 +756,51 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   }, [selectedNPC, createDialogForNpc]);
 
-  const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
-    // In project mode, ensure the file containing this dialog is opened in editorStore
-    // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
-    if (isProjectMode && selectedNPC) {
-      const npcDialogs = dialogIndex.get(selectedNPC);
-      const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
-      if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
-        await openFile(metadata.filePath);
-      }
-    }
+  const navigateToDialogWithLoading = useCallback(async (dialogName: string, functionName?: string | null) => {
+    setIsLoadingDialog(true);
 
-    finalizeDialogSelection(dialogName, functionName);
+    try {
+      const navigated = await navigateToDialog(dialogName, functionName ?? undefined);
+      if (!navigated) {
+        setIsLoadingDialog(false);
+        return false;
+      }
+
+      const { selectedDialog: resolvedDialog, selectedFunctionName: resolvedFunction } = useEditorStore.getState();
+      if (!resolvedDialog) {
+        setIsLoadingDialog(false);
+        return false;
+      }
+
+      finalizeDialogSelection(resolvedDialog, resolvedFunction ?? null);
+      return true;
+    } catch (error) {
+      setIsLoadingDialog(false);
+      throw error;
+    }
+  }, [navigateToDialog, finalizeDialogSelection]);
+
+  const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
+    setOperationError(null);
+    setIsLoadingDialog(true);
+
+    try {
+      // In project mode, ensure the file containing this dialog is opened in editorStore
+      // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
+      if (isProjectMode && selectedNPC) {
+        const npcDialogs = dialogIndex.get(selectedNPC);
+        const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
+        if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
+          await openFile(metadata.filePath);
+        }
+      }
+
+      finalizeDialogSelection(dialogName, functionName);
+    } catch (error) {
+      setIsLoadingDialog(false);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setOperationError(`Failed to switch dialog: ${message}`);
+    }
   }, [isProjectMode, selectedNPC, dialogIndex, activeFile, openFile, finalizeDialogSelection]);
 
   const addRecentDialog = useCallback((dialogName: string, npcName: string, functionName: string | null) => {
@@ -811,33 +827,30 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     setOperationError(null);
     setIsLoadingDialog(true);
 
-    if (isProjectMode) {
-      const dialogMetadata = dialogIndex.get(npcName) || [];
-      const metadata = dialogMetadata.find((entry) => entry.dialogName === dialogName);
-
-      if (metadata) {
-        selectNpc(npcName);
-        setSelectedNPC(npcName);
-
-        const uniqueFilePaths = [...new Set(dialogMetadata.map((entry) => entry.filePath))];
-        await Promise.all(uniqueFilePaths.map((path) => getSemanticModel(path)));
-        loadAndMergeNpcModels(npcName);
-
-        if (activeFile !== metadata.filePath) {
-          await openFile(metadata.filePath);
-        }
-
-        finalizeDialogSelection(dialogName, functionName);
-        return;
-      }
-    }
-
     try {
-      const navigated = await navigateToDialog(dialogName, functionName ?? undefined);
-      if (navigated) {
-        finalizeDialogSelection(dialogName, functionName);
-      } else {
-        setIsLoadingDialog(false);
+      if (isProjectMode) {
+        const dialogMetadata = dialogIndex.get(npcName) || [];
+        const metadata = dialogMetadata.find((entry) => entry.dialogName === dialogName);
+
+        if (metadata) {
+          selectNpc(npcName);
+          setSelectedNPC(npcName);
+
+          const uniqueFilePaths = [...new Set(dialogMetadata.map((entry) => entry.filePath))];
+          await Promise.all(uniqueFilePaths.map((path) => getSemanticModel(path)));
+          loadAndMergeNpcModels(npcName);
+
+          if (activeFile !== metadata.filePath) {
+            await openFile(metadata.filePath);
+          }
+
+          finalizeDialogSelection(dialogName, functionName);
+          return;
+        }
+      }
+
+      const navigated = await navigateToDialogWithLoading(dialogName, functionName);
+      if (!navigated) {
         setOperationError(`Could not find dialog "${dialogName}" in the current context.`);
       }
     } catch (error) {
@@ -856,7 +869,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     activeFile,
     openFile,
     finalizeDialogSelection,
-    navigateToDialog
+    navigateToDialogWithLoading
   ]);
 
   const handleCloseRecentDialog = useCallback((dialogName: string, npcName: string) => {
@@ -943,7 +956,17 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
     // For dialog results, use the navigation hook
     if (result.type === 'dialog' && result.dialogName) {
-      await navigateToDialog(result.dialogName);
+      setOperationError(null);
+      try {
+        const navigated = await navigateToDialogWithLoading(result.dialogName);
+        if (!navigated) {
+          setOperationError(`Could not find dialog "${result.dialogName}" in the current context.`);
+        }
+      } catch (error) {
+        setIsLoadingDialog(false);
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        setOperationError(`Failed to navigate to dialog: ${message}`);
+      }
       return;
     }
 
@@ -956,7 +979,17 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
 
         if (infoFuncName === result.functionName) {
-          await navigateToDialog(dialogName);
+          setOperationError(null);
+          try {
+            const navigated = await navigateToDialogWithLoading(dialogName);
+            if (!navigated) {
+              setOperationError(`Could not find dialog "${dialogName}" in the current context.`);
+            }
+          } catch (error) {
+            setIsLoadingDialog(false);
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            setOperationError(`Failed to navigate to dialog: ${message}`);
+          }
           return;
         }
       }
@@ -964,7 +997,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       // If not found as a direct dialog function, just navigate to the function
       setSelectedFunctionName(result.functionName);
     }
-  }, [selectedNPC, semanticModel, handleSelectNPC, navigateToDialog]);
+  }, [semanticModel, handleSelectNPC, navigateToDialogWithLoading]);
 
   // Handle early return conditions after all hooks have been called
   // In project mode, we might not have a file loaded yet
@@ -1075,3 +1108,5 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 };
 
 export default ThreeColumnLayout;
+
+

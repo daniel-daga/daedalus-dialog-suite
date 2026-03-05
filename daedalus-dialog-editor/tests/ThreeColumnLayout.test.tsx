@@ -1595,3 +1595,47 @@ describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () =>
     expect(Object.keys(mergedModel.functions)).toEqual(['DIA_Farim_Hallo_Info', 'DIA_Farim_Trade_Info']);
   });
 });
+
+describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
+  const readSource = () => {
+    const fs = require('fs');
+    const path = require('path');
+    return fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/ThreeColumnLayout.tsx'), 'utf8');
+  };
+
+  test('sets loading before awaiting file-open work in handleSelectDialog', () => {
+    const source = readSource();
+    const start = source.indexOf('const handleSelectDialog');
+    const end = source.indexOf('const addRecentDialog', start);
+    const block = source.slice(start, end);
+
+    const loadingIndex = block.indexOf('setIsLoadingDialog(true)');
+    const awaitOpenFileIndex = block.indexOf('await openFile');
+
+    expect(loadingIndex).toBeGreaterThan(-1);
+    expect(awaitOpenFileIndex).toBeGreaterThan(-1);
+    expect(loadingIndex).toBeLessThan(awaitOpenFileIndex);
+  });
+
+  test('removes minimum loading timeout in finalizeDialogSelection', () => {
+    const source = readSource();
+    const start = source.indexOf('const finalizeDialogSelection');
+    const end = source.indexOf('const resolveTargetFilePath', start);
+    const block = source.slice(start, end);
+
+    expect(block).not.toContain('MIN_LOADING_MS');
+    expect(block).not.toContain('window.setTimeout');
+  });
+
+  test('search-driven dialog navigation uses loading lifecycle', () => {
+    const source = readSource();
+    const start = source.indexOf('const handleSearchResultClick');
+    const end = source.indexOf('// Handle early return conditions', start);
+    const block = source.slice(start, end);
+
+    expect(block).toContain('navigateToDialogWithLoading');
+    expect(block).toContain('setIsLoadingDialog(false)');
+  });
+});
+
+

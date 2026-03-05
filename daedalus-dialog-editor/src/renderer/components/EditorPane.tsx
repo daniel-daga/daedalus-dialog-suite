@@ -1,8 +1,7 @@
 import React, { forwardRef } from 'react';
-import { Box, Typography, Alert, Tabs, Tab, IconButton } from '@mui/material';
+import { Box, Typography, Alert, Tabs, Tab, IconButton, CircularProgress } from '@mui/material';
 import { Close as CloseIcon } from '@mui/icons-material';
 import DialogDetailsEditor from './DialogDetailsEditor';
-import DialogLoadingSkeleton from './DialogLoadingSkeleton';
 import type { SemanticModel, Dialog, DialogFunction } from '../types/global';
 
 interface RecentDialogTab {
@@ -132,6 +131,10 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
     </Box>
   );
 
+  if (isLoadingDialog) {
+    return renderStateShell(<CircularProgress />);
+  }
+
   // No dialog selected - show placeholder
   if (!selectedDialog || !dialogData) {
     return renderStateShell(
@@ -169,18 +172,14 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
       {tabsHeader}
 
       <Box sx={{ width: '100%', p: 2, minHeight: 0, flex: 1 }}>
-        {isLoadingDialog ? (
-          <DialogLoadingSkeleton />
-        ) : (
-          <DialogDetailsEditor
-            dialogName={selectedDialog}
-            filePath={filePath}
-            functionName={selectedFunctionName || undefined}
-            onNavigateToFunction={onNavigateToFunction}
-            semanticModel={semanticModel}
-            isProjectMode={isProjectMode}
-          />
-        )}
+        <DialogDetailsEditor
+          dialogName={selectedDialog}
+          filePath={filePath}
+          functionName={selectedFunctionName || undefined}
+          onNavigateToFunction={onNavigateToFunction}
+          semanticModel={semanticModel}
+          isProjectMode={isProjectMode}
+        />
       </Box>
     </Box>
   );
