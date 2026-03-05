@@ -18,6 +18,21 @@ const createDialogNode = (overrides: Partial<QuestGraphNode> = {}): QuestGraphNo
   ...overrides
 } as QuestGraphNode);
 
+
+const createConditionNode = (overrides: Partial<QuestGraphNode> = {}): QuestGraphNode => ({
+  id: 'condition-DIA_Target_Info-dia_target_info-0-mis_test_1',
+  type: 'condition',
+  position: { x: 120, y: 90 },
+  data: {
+    label: 'Variable',
+    npc: 'External/World',
+    kind: 'condition',
+    conditionType: 'VariableCondition',
+    expression: 'MIS_TEST == 1'
+  },
+  ...overrides
+} as QuestGraphNode);
+
 const renderCanvas = ({
   nodes = [createDialogNode()],
   edges = [] as QuestGraphEdge[],
@@ -45,6 +60,14 @@ const renderCanvas = ({
 };
 
 describe('QuestLiteGraphCanvas condition expression capsule', () => {
+  it('shows inline body content on condition nodes', () => {
+    renderCanvas({ nodes: [createConditionNode()] });
+
+    const body = screen.getByTestId('condition-readonly-body-condition-DIA_Target_Info-dia_target_info-0-mis_test_1');
+    expect(within(body).getByText('Condition')).toBeInTheDocument();
+    expect(within(body).getByText('MIS_TEST == 1')).toBeInTheDocument();
+  });
+
   it('shows inline condition body content without opening edit mode', () => {
     renderCanvas();
 

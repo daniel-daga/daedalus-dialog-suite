@@ -389,6 +389,14 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     ))
   ), [nodes]);
 
+  const conditionDetailNodes = useMemo(() => (
+    nodes.filter((node) => (
+      node.type === 'condition' &&
+      typeof node.data.expression === 'string' &&
+      node.data.expression.trim().length > 0
+    ))
+  ), [nodes]);
+
   const getOverlayPosition = (
     node: QuestGraphNode,
     offset: { x: number; y: number }
@@ -537,6 +545,39 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
               )}
             </Paper>
           </React.Fragment>
+        );
+      })}
+
+      {conditionDetailNodes.map((node) => {
+        const expression = truncateExpressionPreview(String(node.data.expression || '').trim());
+        const bodyPosition = getOverlayPosition(node, { x: 8, y: 28 });
+
+        return (
+          <Paper
+            key={`condition-readonly-${node.id}`}
+            data-testid={`condition-readonly-body-${node.id}`}
+            sx={{
+              position: 'absolute',
+              left: `${bodyPosition.left}px`,
+              top: `${bodyPosition.top}px`,
+              p: 0.75,
+              width: 204,
+              maxWidth: '70vw',
+              zIndex: 6,
+              pointerEvents: 'none',
+              backgroundColor: '#1f1f1f',
+              border: '1px solid #3a3a3a'
+            }}
+          >
+            <Stack spacing={0.6}>
+              <Typography variant="caption" sx={{ color: "#9ecbff", fontWeight: 700 }}>
+                Condition
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#d0d0d0", lineHeight: 1.2 }}>
+                {expression}
+              </Typography>
+            </Stack>
+          </Paper>
         );
       })}
     </Box>
