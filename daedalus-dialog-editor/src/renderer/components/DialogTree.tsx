@@ -26,8 +26,15 @@ import DialogTreeItem from './DialogTreeItem';
 import ChoiceTreeItem from './ChoiceTreeItem';
 import { flattenDialogs } from './dialogTreeUtils';
 import type { SemanticModel } from '../types/global';
+import {
+  SEARCHABLE_PANE_PATTERN,
+  searchablePaneContentSx,
+  searchablePaneFilterStripSx,
+  searchablePaneHeaderSx,
+  searchablePaneShellSx,
+  searchablePaneTextFieldSx
+} from './common/searchablePaneStyles';
 
-// Interface for item data passed to the virtualized list
 interface ItemData {
   flatItems: any[];
   semanticModel: SemanticModel;
@@ -38,8 +45,6 @@ interface ItemData {
   onToggleChoiceExpand: (choiceKey: string) => void;
 }
 
-// Row component defined outside to prevent recreation
-// Wrapped in memo to prevent unnecessary re-renders if itemData hasn't changed relevantly
 const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => {
   const {
     flatItems,
@@ -69,22 +74,22 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => 
         style={style}
       />
     );
-  } else {
-    return (
-      <ChoiceTreeItem
-        choice={item.choice}
-        depth={item.depth}
-        choiceKey={item.id}
-        isExpanded={item.isExpanded}
-        hasChildren={item.hasChildren}
-        selectedFunctionName={selectedFunctionName}
-        dialogName={item.dialogName}
-        onSelectDialog={onSelectDialog}
-        onToggleChoiceExpand={onToggleChoiceExpand}
-        style={style}
-      />
-    );
   }
+
+  return (
+    <ChoiceTreeItem
+      choice={item.choice}
+      depth={item.depth}
+      choiceKey={item.id}
+      isExpanded={item.isExpanded}
+      hasChildren={item.hasChildren}
+      selectedFunctionName={selectedFunctionName}
+      dialogName={item.dialogName}
+      onSelectDialog={onSelectDialog}
+      onToggleChoiceExpand={onToggleChoiceExpand}
+      style={style}
+    />
+  );
 });
 
 Row.displayName = 'DialogTreeRow';
@@ -109,13 +114,11 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   const [isCreating, setIsCreating] = React.useState(false);
   const [createError, setCreateError] = React.useState<string | null>(null);
 
-  // Sort dialogs by priority (nr field)
   const sortedDialogs = useMemo(() => {
     return [...dialogsForNPC].sort((a, b) => {
       const dialogA = semanticModel.dialogs?.[a];
       const dialogB = semanticModel.dialogs?.[b];
 
-      // Safety check: skip sorting if dialogs or properties are missing
       if (!dialogA || !dialogB) return 0;
 
       const priorityA = typeof dialogA.properties?.nr === 'number' ? dialogA.properties.nr : 999999;
@@ -124,12 +127,10 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     });
   }, [dialogsForNPC, semanticModel.dialogs]);
 
-  // Filter dialogs based on the current filter
   const filteredDialogs = useMemo(() => {
     return filterDialogs(sortedDialogs);
   }, [sortedDialogs, filterDialogs, dialogFilter]);
 
-  // Flatten the dialogs and choices into a single list
   const flatItems = useMemo(() => {
     if (!selectedNPC) return [];
     return flattenDialogs(
@@ -141,7 +142,6 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     );
   }, [selectedNPC, filteredDialogs, semanticModel, expandedDialogs, expandedChoices, buildFunctionTree]);
 
-  // Memoize item data to pass to the list
   const itemData = useMemo(() => ({
     flatItems,
     semanticModel,
@@ -186,68 +186,74 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   };
 
   return (
-    <Paper sx={{ width: 350, overflow: 'hidden', borderRadius: 0, borderLeft: 1, borderRight: 1, borderColor: 'divider', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }} elevation={1}>
-      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+    <Paper
+      data-ui-pattern={SEARCHABLE_PANE_PATTERN}
+      sx={(theme) => ({ ...searchablePaneShellSx(theme), width: 350, flexShrink: 0, height: '100%', borderLeft: 1, borderRight: 1, borderColor: 'divider' })}
+      elevation={1}
+    >
+      <Box sx={searchablePaneHeaderSx}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">Dialogs</Typography>
+          <Typography variant='h6'>Dialogs</Typography>
           <Tooltip title={selectedNPC ? 'Add Dialog' : 'Select an NPC first'}>
             <span>
               <IconButton
-                size="small"
-                aria-label="Add Dialog"
+                size='small'
+                aria-label='Add Dialog'
                 onClick={handleOpenCreateDialog}
                 disabled={!selectedNPC || !onAddDialog}
               >
-                <AddIcon fontSize="small" />
+                <AddIcon fontSize='small' />
               </IconButton>
             </span>
           </Tooltip>
         </Box>
         {selectedNPC && (
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant='caption' color='text.secondary'>
             {selectedNPC} - {filteredDialogs.length} of {dialogsForNPC.length} shown
           </Typography>
         )}
       </Box>
+
       {selectedNPC && (
-        <Box sx={{ px: 1, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+        <Box sx={searchablePaneFilterStripSx}>
           <TextField
-            size="small"
+            size='small'
             fullWidth
-            placeholder="Filter dialogs..."
+            placeholder='Filter dialogs...'
             value={dialogFilter}
             onChange={(e) => setDialogFilter(e.target.value)}
             InputProps={{
               startAdornment: (
-                <InputAdornment position="start">
-                  <FilterListIcon fontSize="small" color="action" />
+                <InputAdornment position='start'>
+                  <FilterListIcon fontSize='small' color='action' />
                 </InputAdornment>
               ),
               endAdornment: dialogFilter ? (
-                <InputAdornment position="end">
+                <InputAdornment position='end'>
                   <IconButton
-                    size="small"
+                    size='small'
                     onClick={() => setDialogFilter('')}
-                    aria-label="Clear filter"
+                    aria-label='Clear filter'
                   >
-                    <ClearIcon fontSize="small" />
+                    <ClearIcon fontSize='small' />
                   </IconButton>
                 </InputAdornment>
               ) : null
             }}
+            sx={searchablePaneTextFieldSx}
           />
         </Box>
       )}
 
-      <Dialog open={isCreateOpen} onClose={() => !isCreating && setIsCreateOpen(false)} fullWidth maxWidth="sm">
+      <Dialog open={isCreateOpen} onClose={() => !isCreating && setIsCreateOpen(false)} fullWidth maxWidth='sm'>
         <DialogTitle>Create Dialog</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
-            margin="dense"
+            margin='dense'
             fullWidth
-            label="Dialog Name"
-            placeholder="DIA_MyNpc_NewDialog"
+            label='Dialog Name'
+            placeholder='DIA_MyNpc_NewDialog'
             value={newDialogName}
             onChange={(e) => setNewDialogName(e.target.value)}
             disabled={isCreating}
@@ -259,7 +265,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
             }}
           />
           {createError && (
-            <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+            <Typography variant='caption' color='error' sx={{ mt: 1, display: 'block' }}>
               {createError}
             </Typography>
           )}
@@ -268,7 +274,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
           <Button onClick={() => setIsCreateOpen(false)} disabled={isCreating}>Cancel</Button>
           <Button
             onClick={() => void handleCreateDialog()}
-            variant="contained"
+            variant='contained'
             disabled={!newDialogName.trim() || isCreating}
           >
             Create
@@ -276,7 +282,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
         </DialogActions>
       </Dialog>
 
-      <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+      <Box sx={searchablePaneContentSx}>
         {selectedNPC ? (
           flatItems.length > 0 ? (
             <AutoSizer>
@@ -295,14 +301,14 @@ const DialogTree: React.FC<DialogTreeProps> = ({
             </AutoSizer>
           ) : (
             <Box sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
-                 {dialogFilter ? `No dialogs match "${dialogFilter}"` : 'No dialogs available'}
+              <Typography variant='body2' color='text.secondary'>
+                {dialogFilter ? `No dialogs match "${dialogFilter}"` : 'No dialogs available'}
               </Typography>
             </Box>
           )
         ) : (
           <Box sx={{ p: 2 }}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant='body2' color='text.secondary'>
               Select an NPC to view dialogs
             </Typography>
           </Box>
@@ -313,3 +319,4 @@ const DialogTree: React.FC<DialogTreeProps> = ({
 };
 
 export default DialogTree;
+

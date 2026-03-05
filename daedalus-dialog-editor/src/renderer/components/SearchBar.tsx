@@ -7,6 +7,7 @@ import { TextField, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
 import { useSearchStore } from '../store/searchStore';
 import { debounce } from '../utils/debounce';
+import { searchablePaneTextFieldSx } from './common/searchablePaneStyles';
 
 interface SearchBarProps {
   placeholder?: string;
@@ -24,13 +25,11 @@ const SearchBar: React.FC<SearchBarProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const { searchQuery, setSearchQuery, clearSearch } = useSearchStore();
 
-  // Debounced search callback
   const debouncedOnSearch = useMemo(
     () => onSearch ? debounce(onSearch, debounceMs) : null,
     [onSearch, debounceMs]
   );
 
-  // Expose focus function via ref
   useEffect(() => {
     if (focusRef) {
       focusRef.current = () => {
@@ -54,37 +53,33 @@ const SearchBar: React.FC<SearchBarProps> = ({
   return (
     <TextField
       inputRef={inputRef}
-      size="small"
+      size='small'
       fullWidth
       placeholder={placeholder}
       value={searchQuery}
       onChange={handleChange}
       InputProps={{
         startAdornment: (
-          <InputAdornment position="start">
-            <SearchIcon fontSize="small" color="action" data-testid="SearchIcon" />
+          <InputAdornment position='start'>
+            <SearchIcon fontSize='small' color='action' data-testid='SearchIcon' />
           </InputAdornment>
         ),
         endAdornment: searchQuery ? (
-          <InputAdornment position="end">
-            <Tooltip title="Clear search">
+          <InputAdornment position='end'>
+            <Tooltip title='Clear search'>
               <IconButton
-                size="small"
+                size='small'
                 onClick={handleClear}
-                aria-label="clear"
-                edge="end"
+                aria-label='clear'
+                edge='end'
               >
-                <ClearIcon fontSize="small" />
+                <ClearIcon fontSize='small' />
               </IconButton>
             </Tooltip>
           </InputAdornment>
         ) : null
       }}
-      sx={{
-        '& .MuiOutlinedInput-root': {
-          backgroundColor: 'background.paper'
-        }
-      }}
+      sx={searchablePaneTextFieldSx}
     />
   );
 };

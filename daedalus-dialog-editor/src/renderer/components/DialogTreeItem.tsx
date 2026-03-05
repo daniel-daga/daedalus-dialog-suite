@@ -11,6 +11,7 @@ import {
   ChevronRight as ChevronRightIcon
 } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
+import { searchablePaneRowButtonSx } from './common/searchablePaneStyles';
 
 void React;
 
@@ -37,7 +38,6 @@ const DialogTreeItem = memo(({
 }: DialogTreeItemProps) => {
   const dialog = semanticModel.dialogs?.[dialogName];
 
-  // Safety check: skip rendering if dialog is missing
   if (!dialog) return null;
 
   const infoFunc = dialog.properties?.information as any;
@@ -50,12 +50,12 @@ const DialogTreeItem = memo(({
         onClick={() => {
           onSelectDialog(dialogName, infoFuncName);
         }}
-        sx={{ pr: 1, height: '100%' }}
+        sx={(theme) => ({ ...searchablePaneRowButtonSx(theme), pr: 1, height: '100%' })}
       >
         {hasChildren ? (
           <Tooltip title={isExpanded ? 'Collapse' : 'Expand'}>
             <IconButton
-              size="small"
+              size='small'
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleDialogExpand(dialogName);
@@ -63,7 +63,7 @@ const DialogTreeItem = memo(({
               sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }}
               aria-label={isExpanded ? 'Collapse dialog' : 'Expand dialog'}
             >
-              {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+              {isExpanded ? <ExpandMoreIcon fontSize='small' /> : <ChevronRightIcon fontSize='small' />}
             </IconButton>
           </Tooltip>
         ) : (
@@ -81,21 +81,16 @@ const DialogTreeItem = memo(({
 }, (prev, next) => {
   if (prev.dialogName !== next.dialogName) return false;
 
-  // Optimization: specific check for relevant semantic model parts
   const prevDialog = prev.semanticModel.dialogs?.[prev.dialogName];
   const nextDialog = next.semanticModel.dialogs?.[next.dialogName];
 
-  // Check for deep equality of relevant properties because semanticModel reference
-  // often changes due to worker serialization, breaking simple reference equality.
   if (!prevDialog && !nextDialog) {
-    // Both missing, effectively equal
+    // both undefined
   } else if (!prevDialog || !nextDialog) {
-    return false; // One missing, one present -> changed
+    return false;
   } else {
-    // Both exist, check relevant properties used in render
     if (prevDialog.properties?.description !== nextDialog.properties?.description) return false;
 
-    // Check information function name
     const prevInfo = prevDialog.properties?.information;
     const nextInfo = nextDialog.properties?.information;
 
@@ -109,8 +104,6 @@ const DialogTreeItem = memo(({
   if (prev.isSelected !== next.isSelected) return false;
   if (prev.isExpanded !== next.isExpanded) return false;
   if (prev.hasChildren !== next.hasChildren) return false;
-
-  // Check style (positioning)
   if (prev.style !== next.style) return false;
 
   return true;
@@ -119,3 +112,4 @@ const DialogTreeItem = memo(({
 DialogTreeItem.displayName = 'DialogTreeItem';
 
 export default DialogTreeItem;
+

@@ -25,18 +25,26 @@ import { NPCListProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
+import {
+  SEARCHABLE_PANE_PATTERN,
+  searchablePaneContentSx,
+  searchablePaneFilterStripSx,
+  searchablePaneHeaderSx,
+  searchablePaneRowButtonSx,
+  searchablePaneShellSx,
+  searchablePaneTextFieldSx
+} from './common/searchablePaneStyles';
 
 const Row = ({ index, style, data }: ListChildComponentProps) => {
   const { filteredNpcs, selectedNPC, onSelectNPC, npcMap } = data;
   const npc = filteredNpcs[index];
 
   return (
-    <ListItem style={style} key={npc} disablePadding component="div" dense>
+    <ListItem style={style} key={npc} disablePadding component='div'>
       <ListItemButton
         selected={selectedNPC === npc}
         onClick={() => onSelectNPC(npc)}
-        style={{ height: '100%' }}
-        dense
+        sx={(theme) => ({ ...searchablePaneRowButtonSx(theme), height: '100%' })}
       >
         <ListItemText
           primary={npc}
@@ -54,7 +62,6 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
   const [isCreating, setIsCreating] = React.useState(false);
   const [createError, setCreateError] = React.useState<string | null>(null);
 
-  // Filter NPCs based on the current filter
   const filteredNpcs = useMemo(() => {
     return filterNpcs(npcs);
   }, [npcs, filterNpcs, npcFilter]);
@@ -90,61 +97,68 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
   };
 
   return (
-    <Paper sx={{ width: 250, height: '100%', overflow: 'hidden', borderRadius: 0, flexShrink: 0, display: 'flex', flexDirection: 'column' }} elevation={1}>
-      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+    <Paper
+      data-ui-pattern={SEARCHABLE_PANE_PATTERN}
+      sx={(theme) => ({ ...searchablePaneShellSx(theme), width: 250, height: '100%', flexShrink: 0 })}
+      elevation={1}
+    >
+      <Box sx={searchablePaneHeaderSx}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">NPCs</Typography>
-          <Tooltip title="Add NPC">
+          <Typography variant='h6'>NPCs</Typography>
+          <Tooltip title='Add NPC'>
             <span>
               <IconButton
-                size="small"
-                aria-label="Add NPC"
+                size='small'
+                aria-label='Add NPC'
                 onClick={() => {
                   setCreateError(null);
                   setIsCreateOpen(true);
                 }}
                 disabled={!onAddNpc}
               >
-                <AddIcon fontSize="small" />
+                <AddIcon fontSize='small' />
               </IconButton>
             </span>
           </Tooltip>
         </Box>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant='caption' color='text.secondary'>
           {filteredNpcs.length} of {npcs.length} shown
         </Typography>
       </Box>
-      <Box sx={{ px: 1, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+
+      <Box sx={searchablePaneFilterStripSx}>
         <TextField
-          size="small"
+          size='small'
           fullWidth
-          placeholder="Filter NPCs..."
+          placeholder='Filter NPCs...'
           value={npcFilter}
           onChange={(e) => setNpcFilter(e.target.value)}
           InputProps={{
             startAdornment: (
-              <InputAdornment position="start">
-                <FilterListIcon fontSize="small" color="action" />
+              <InputAdornment position='start'>
+                <FilterListIcon fontSize='small' color='action' />
               </InputAdornment>
             ),
             endAdornment: npcFilter ? (
-              <InputAdornment position="end">
-                <Tooltip title="Clear filter">
+              <InputAdornment position='end'>
+                <Tooltip title='Clear filter'>
                   <IconButton
-                    size="small"
+                    size='small'
                     onClick={handleClear}
-                    aria-label="Clear filter"
-                    edge="end"
+                    aria-label='Clear filter'
+                    edge='end'
                   >
-                    <ClearIcon fontSize="small" />
+                    <ClearIcon fontSize='small' />
                   </IconButton>
                 </Tooltip>
               </InputAdornment>
             ) : null
           }}
+          sx={searchablePaneTextFieldSx}
         />
       </Box>
-      <Box sx={{ flexGrow: 1, width: '100%', overflow: 'hidden', minHeight: 0 }}>
+
+      <Box sx={searchablePaneContentSx}>
         {filteredNpcs.length > 0 ? (
           <AutoSizer>
             {({ height, width }) => (
@@ -162,7 +176,7 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
         ) : (
           npcFilter && (
             <Box sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant='body2' color='text.secondary'>
                 No NPCs match "{npcFilter}"
               </Typography>
             </Box>
@@ -170,15 +184,15 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
         )}
       </Box>
 
-      <Dialog open={isCreateOpen} onClose={() => !isCreating && setIsCreateOpen(false)} fullWidth maxWidth="xs">
+      <Dialog open={isCreateOpen} onClose={() => !isCreating && setIsCreateOpen(false)} fullWidth maxWidth='xs'>
         <DialogTitle>Create NPC</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
-            margin="dense"
+            margin='dense'
             fullWidth
-            label="NPC Name"
-            placeholder="SLD_99999_NewNPC"
+            label='NPC Name'
+            placeholder='SLD_99999_NewNPC'
             value={newNpcName}
             onChange={(e) => setNewNpcName(e.target.value)}
             disabled={isCreating}
@@ -190,7 +204,7 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
             }}
           />
           {createError && (
-            <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+            <Typography variant='caption' color='error' sx={{ mt: 1, display: 'block' }}>
               {createError}
             </Typography>
           )}
@@ -199,7 +213,7 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
           <Button onClick={() => setIsCreateOpen(false)} disabled={isCreating}>Cancel</Button>
           <Button
             onClick={() => void handleCreate()}
-            variant="contained"
+            variant='contained'
             disabled={!newNpcName.trim() || isCreating}
           >
             Create
@@ -211,3 +225,4 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
 };
 
 export default NPCList;
+

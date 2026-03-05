@@ -7,6 +7,13 @@ const sharedShape = {
 };
 
 const sharedComponents = {
+  MuiCssBaseline: {
+    styleOverrides: {
+      html: {
+        fontSize: '80%',
+      },
+    },
+  },
   MuiPaper: {
     defaultProps: {
       elevation: 0,

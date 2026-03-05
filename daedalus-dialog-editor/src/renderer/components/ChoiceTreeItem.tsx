@@ -12,6 +12,7 @@ import {
   ChevronRight as ChevronRightIcon
 } from '@mui/icons-material';
 import type { FunctionTreeChild } from '../types/global';
+import { searchablePaneRowButtonSx } from './common/searchablePaneStyles';
 
 void React;
 
@@ -49,12 +50,12 @@ const ChoiceTreeItem = memo(({
         onClick={() => {
           onSelectDialog(dialogName, choice.targetFunction);
         }}
-        sx={{ pl: (depth + 1) * 2, pr: 1, height: '100%' }}
+        sx={(theme) => ({ ...searchablePaneRowButtonSx(theme), pl: (depth + 1) * 2, pr: 1, height: '100%' })}
       >
         {hasChildren ? (
           <Tooltip title={isExpanded ? 'Collapse' : 'Expand'}>
             <IconButton
-              size="small"
+              size='small'
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleChoiceExpand(choiceKey);
@@ -62,13 +63,13 @@ const ChoiceTreeItem = memo(({
               sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }}
               aria-label={isExpanded ? 'Collapse choice' : 'Expand choice'}
             >
-              {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+              {isExpanded ? <ExpandMoreIcon fontSize='small' /> : <ChevronRightIcon fontSize='small' />}
             </IconButton>
           </Tooltip>
         ) : (
           <Box sx={{ width: 28, height: 28, mr: 0.5, flexShrink: 0 }} />
         )}
-        <CallSplitIcon fontSize="small" sx={{ mr: 1, fontSize: '1rem', color: 'text.secondary', flexShrink: 0 }} />
+        <CallSplitIcon fontSize='small' sx={{ mr: 1, fontSize: '1rem', color: 'text.secondary', flexShrink: 0 }} />
         <ListItemText
           primary={choice.text}
           secondary={choice.targetFunction}
@@ -94,3 +95,4 @@ const ChoiceTreeItem = memo(({
 ChoiceTreeItem.displayName = 'ChoiceTreeItem';
 
 export default ChoiceTreeItem;
+
