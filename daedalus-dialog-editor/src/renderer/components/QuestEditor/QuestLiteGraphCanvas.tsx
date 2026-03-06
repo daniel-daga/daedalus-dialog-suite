@@ -75,20 +75,7 @@ const truncateExpressionPreview = (expression: string, maxLength = 48): string =
 const CONDITION_PANEL_PREVIEW_MAX_LENGTH = 34;
 const CONDITION_PANEL_MIN_WIDTH = 250;
 const CONDITION_PANEL_MIN_HEIGHT = 118;
-const DIALOG_CONDITION_WIDGET_MIN_WIDTH = 320;
-const DIALOG_CONDITION_WIDGET_EXTRA_HEIGHT = 98;
-const DIALOG_CONDITION_WIDGET_STATUS_MAX_LENGTH = 56;
-
-export const getDialogConditionWidgetsStartY = (inputCount: number): number => {
-  const normalizedInputCount = Number.isFinite(inputCount) ? Math.max(0, Math.floor(inputCount)) : 0;
-  return Math.max(58, 38 + normalizedInputCount * 18);
-};
-
-export const getDialogConditionWidgetMinHeight = (widgetsStartY: number): number => {
-  const normalizedStartY = Number.isFinite(widgetsStartY) ? Math.max(0, Math.floor(widgetsStartY)) : 0;
-  return normalizedStartY + DIALOG_CONDITION_WIDGET_EXTRA_HEIGHT;
-};
-
+const DIALOG_INLINE_PANEL_HEIGHT = 86;
 const drawRoundedRect = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -397,7 +384,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             : `Input ${slotIndex + 1}`;
           runtimeNode.addInput(label, '*');
         }
-        runtimeNode.size = [220, Math.max(90, 44 + requiredInputCount * 18)];
+        runtimeNode.size = [220, Math.max(130, 44 + requiredInputCount * 18 + DIALOG_INLINE_PANEL_HEIGHT)];
         runtimeNode.addOutput('Out', '*');
       } else {
         runtimeNode.addInput('Conditions', '*');
@@ -411,80 +398,12 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             ? '#2c6936'
             : '#2d4f7c';
       const runtimeNodeAny = runtimeNode as any;
-      if (!isJsdomEnvironment() && typeof runtimeNodeAny.addWidget === 'function') {
-        if (node.type === 'dialog') {
-          const initialExpression = String(node.data?.conditionExpression || '').trim();
-          let widgetDraft = initialExpression;
-          let lastAppliedExpression = initialExpression;
-          const inputCount = Array.isArray(runtimeNode.inputs) ? runtimeNode.inputs.length : 0;
-          const widgetsStartY = getDialogConditionWidgetsStartY(inputCount);
-
-          runtimeNodeAny.widgets_start_y = widgetsStartY;
-          runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], DIALOG_CONDITION_WIDGET_MIN_WIDTH);
-          runtimeNodeAny.size[1] = Math.max(
-            runtimeNodeAny.size[1],
-            getDialogConditionWidgetMinHeight(widgetsStartY)
-          );
-
-          const expressionWidget = runtimeNodeAny.addWidget('text', 'Condition', initialExpression, (value: unknown) => {
-            widgetDraft = String(value ?? '').trim();
-          });
-          const statusWidget = runtimeNodeAny.addWidget(
-            'text',
-            'Status',
-            initialExpression.length > 0
-              ? 'Edit expression, validate, then apply.'
-              : 'Enter expression, then apply.',
-            () => undefined,
-            { disabled: true }
-          );
-          const applyStatus = (message: string, isError = false) => {
-            statusWidget.value = truncateExpressionPreview(message, DIALOG_CONDITION_WIDGET_STATUS_MAX_LENGTH);
-            runtimeNodeAny.boxcolor = isError ? '#ef5350' : undefined;
-            graphCanvasRef.current?.setDirty(true, true);
-          };
-
-          runtimeNodeAny.addWidget('button', 'Validate', null, () => {
-            const validation = validateConditionExpressionSyntax(widgetDraft);
-            if (!validation.ok) {
-              applyStatus(validation.error, true);
-              return;
-            }
-            applyStatus('Expression syntax is valid.');
-          });
-          runtimeNodeAny.addWidget('button', 'Reset', null, () => {
-            widgetDraft = lastAppliedExpression;
-            if (expressionWidget) {
-              expressionWidget.value = lastAppliedExpression;
-            }
-            applyStatus('Reverted to last applied expression.');
-          });
-          runtimeNodeAny.addWidget('button', 'Apply', null, () => {
-            const validation = validateConditionExpressionSyntax(widgetDraft);
-            if (!validation.ok) {
-              applyStatus(validation.error, true);
-              return;
-            }
-            onSetConditionExpression?.({
-              nodeId: node.id,
-              expression: widgetDraft
-            });
-            lastAppliedExpression = widgetDraft;
-            applyStatus('Expression applied.');
-          });
-          runtimeNodeAny.size = runtimeNode.computeSize();
-          runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], DIALOG_CONDITION_WIDGET_MIN_WIDTH);
-          runtimeNodeAny.size[1] = Math.max(
-            runtimeNodeAny.size[1],
-            getDialogConditionWidgetMinHeight(widgetsStartY)
-          );
-        } else if (node.type === 'condition' && typeof node.data?.expression === 'string') {
-          const expressionPreviewSource = String(node.data.expression || '').trim();
-          if (expressionPreviewSource.length > 0) {
-            runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_PANEL_MIN_WIDTH);
-            runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_PANEL_MIN_HEIGHT);
-            attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource);
-          }
+      if (!isJsdomEnvironment() && node.type === 'condition' && typeof node.data?.expression === 'string') {
+        const expressionPreviewSource = String(node.data.expression || '').trim();
+        if (expressionPreviewSource.length > 0) {
+          runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_PANEL_MIN_WIDTH);
+          runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_PANEL_MIN_HEIGHT);
+          attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource);
         }
       }
       graph.add(runtimeNode);
@@ -551,11 +470,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   }, [selectedNodeId]);
 
   const conditionCapsuleNodes = useMemo(() => (
-    nodes.filter((node) => (
-      node.type === 'dialog' &&
-      typeof node.data.conditionExpression === 'string' &&
-      node.data.conditionExpression.trim().length > 0
-    ))
+    nodes.filter((node) => node.type === 'dialog')
   ), [nodes]);
 
   const conditionDetailNodes = useMemo(() => (
@@ -616,10 +531,17 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }} data-overlay-tick={overlayTick}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
 
-            {isJsdomEnvironment() && conditionCapsuleNodes.map((node) => {
-        const preview = truncateExpressionPreview(String(node.data.conditionExpression || '').trim());
+            {conditionCapsuleNodes.map((node) => {
+        const rawExpression = String(node.data.conditionExpression || '').trim();
+        const preview = rawExpression.length > 0
+          ? truncateExpressionPreview(rawExpression)
+          : 'No condition expression.';
+        const runtimeNode = questIdToRuntimeNodeRef.current.get(node.id);
+        const inputCount = Array.isArray(runtimeNode?.inputs) ? runtimeNode.inputs.length : Number(node.data.conditionCount || 0);
+        const bodyOffsetY = Math.max(46, 30 + Math.max(0, inputCount) * 18);
         const chipPosition = getOverlayPosition(node, { x: 8, y: 8 });
-        const bodyPosition = getOverlayPosition(node, { x: 8, y: 28 });
+        const bodyPosition = getOverlayPosition(node, { x: 8, y: bodyOffsetY });
+        const bodyWidth = Math.max(188, (runtimeNode?.size?.[0] ?? 220) - 16);
         const isEditing = expressionEditorNodeId === node.id;
 
         return (
@@ -647,9 +569,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
                   bgcolor: '#ffcc80'
                 }
               }}
-              aria-label={`IF: ${preview}`}
+              aria-label={['IF: ', preview].join('')}
             >
-              {`IF: ${preview}`}
+              IF
             </Button>
 
             <Paper
@@ -659,7 +581,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
                 left: `${bodyPosition.left}px`,
                 top: `${bodyPosition.top}px`,
                 p: 0.75,
-                width: 204,
+                width: bodyWidth,
                 maxWidth: '70vw',
                 zIndex: 6,
                 pointerEvents: 'auto',
@@ -754,5 +676,4 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 };
 
 export default QuestLiteGraphCanvas;
-
 
