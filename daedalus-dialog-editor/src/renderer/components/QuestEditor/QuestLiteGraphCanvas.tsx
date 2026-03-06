@@ -72,10 +72,70 @@ const truncateExpressionPreview = (expression: string, maxLength = 48): string =
   return `${expression.slice(0, maxLength - 1)}...`;
 };
 
-const CONDITION_WIDGET_PREVIEW_MAX_LENGTH = 24;
-const CONDITION_WIDGET_START_Y = 72;
-const CONDITION_WIDGET_MIN_WIDTH = 240;
-const CONDITION_WIDGET_MIN_HEIGHT = 112;
+const CONDITION_PANEL_PREVIEW_MAX_LENGTH = 34;
+const CONDITION_PANEL_MIN_WIDTH = 250;
+const CONDITION_PANEL_MIN_HEIGHT = 118;
+
+const drawRoundedRect = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius = 8
+): void => {
+  const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+};
+
+const attachConditionPreviewRenderer = (runtimeNode: LGraphNode, expression: string): void => {
+  const runtimeNodeAny = runtimeNode as any;
+  const previousOnDrawForeground = runtimeNodeAny.onDrawForeground;
+  runtimeNodeAny.onDrawForeground = function onDrawForeground(ctx: CanvasRenderingContext2D) {
+    if (typeof previousOnDrawForeground === 'function') {
+      previousOnDrawForeground.call(this, ctx);
+    }
+    if (!ctx || runtimeNodeAny.flags?.collapsed) return;
+
+    const panelX = 10;
+    const panelY = 52;
+    const panelWidth = Math.max(120, (runtimeNodeAny.size?.[0] ?? 220) - 20);
+    const panelHeight = 40;
+
+    ctx.save();
+    drawRoundedRect(ctx, panelX, panelY, panelWidth, panelHeight, 8);
+    ctx.fillStyle = 'rgba(14, 18, 27, 0.92)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 1;
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#9ecbff';
+    ctx.font = '600 10px "Segoe UI", sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText('IF', panelX + 8, panelY + 6);
+
+    ctx.fillStyle = '#e2ebf7';
+    ctx.font = '12px "Segoe UI", sans-serif';
+    ctx.fillText(
+      truncateExpressionPreview(expression, CONDITION_PANEL_PREVIEW_MAX_LENGTH),
+      panelX + 8,
+      panelY + 19,
+      panelWidth - 16
+    );
+    ctx.restore();
+  };
+};
 
 const isJsdomEnvironment = (): boolean => (
   typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')
@@ -361,16 +421,11 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             runtimeNodeAny.size = runtimeNode.computeSize();
           }
         } else if (node.type === 'condition' && typeof node.data?.expression === 'string') {
-          const expressionPreview = truncateExpressionPreview(
-            String(node.data.expression || '').trim(),
-            CONDITION_WIDGET_PREVIEW_MAX_LENGTH
-          );
-          if (expressionPreview.length > 0) {
-            runtimeNodeAny.widgets_start_y = CONDITION_WIDGET_START_Y;
-            runtimeNodeAny.addWidget('text', '', expressionPreview, () => undefined, { disabled: true });
-            runtimeNodeAny.size = runtimeNode.computeSize();
-            runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_WIDGET_MIN_WIDTH);
-            runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_WIDGET_MIN_HEIGHT);
+          const expressionPreviewSource = String(node.data.expression || '').trim();
+          if (expressionPreviewSource.length > 0) {
+            runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_PANEL_MIN_WIDTH);
+            runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_PANEL_MIN_HEIGHT);
+            attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource);
           }
         }
       }
