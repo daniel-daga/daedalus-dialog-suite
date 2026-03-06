@@ -75,6 +75,19 @@ const truncateExpressionPreview = (expression: string, maxLength = 48): string =
 const CONDITION_PANEL_PREVIEW_MAX_LENGTH = 34;
 const CONDITION_PANEL_MIN_WIDTH = 250;
 const CONDITION_PANEL_MIN_HEIGHT = 118;
+const DIALOG_CONDITION_WIDGET_MIN_WIDTH = 320;
+const DIALOG_CONDITION_WIDGET_EXTRA_HEIGHT = 98;
+const DIALOG_CONDITION_WIDGET_STATUS_MAX_LENGTH = 56;
+
+export const getDialogConditionWidgetsStartY = (inputCount: number): number => {
+  const normalizedInputCount = Number.isFinite(inputCount) ? Math.max(0, Math.floor(inputCount)) : 0;
+  return Math.max(58, 38 + normalizedInputCount * 18);
+};
+
+export const getDialogConditionWidgetMinHeight = (widgetsStartY: number): number => {
+  const normalizedStartY = Number.isFinite(widgetsStartY) ? Math.max(0, Math.floor(widgetsStartY)) : 0;
+  return normalizedStartY + DIALOG_CONDITION_WIDGET_EXTRA_HEIGHT;
+};
 
 const drawRoundedRect = (
   ctx: CanvasRenderingContext2D,
@@ -401,25 +414,70 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       if (!isJsdomEnvironment() && typeof runtimeNodeAny.addWidget === 'function') {
         if (node.type === 'dialog' && typeof node.data?.conditionExpression === 'string') {
           const initialExpression = String(node.data.conditionExpression || '').trim();
-          if (initialExpression.length > 0) {
-            let widgetDraft = initialExpression;
-            runtimeNodeAny.addWidget('text', 'Condition', initialExpression, (value: unknown) => {
-              widgetDraft = String(value ?? '').trim();
+          let widgetDraft = initialExpression;
+          let lastAppliedExpression = initialExpression;
+          const inputCount = Array.isArray(runtimeNode.inputs) ? runtimeNode.inputs.length : 0;
+          const widgetsStartY = getDialogConditionWidgetsStartY(inputCount);
+
+          runtimeNodeAny.widgets_start_y = widgetsStartY;
+          runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], DIALOG_CONDITION_WIDGET_MIN_WIDTH);
+          runtimeNodeAny.size[1] = Math.max(
+            runtimeNodeAny.size[1],
+            getDialogConditionWidgetMinHeight(widgetsStartY)
+          );
+
+          const expressionWidget = runtimeNodeAny.addWidget('text', 'Condition', initialExpression, (value: unknown) => {
+            widgetDraft = String(value ?? '').trim();
+          });
+          const statusWidget = runtimeNodeAny.addWidget(
+            'text',
+            'Status',
+            initialExpression.length > 0
+              ? 'Edit expression, validate, then apply.'
+              : 'Enter expression, then apply.',
+            () => undefined,
+            { disabled: true }
+          );
+          const applyStatus = (message: string, isError = false) => {
+            statusWidget.value = truncateExpressionPreview(message, DIALOG_CONDITION_WIDGET_STATUS_MAX_LENGTH);
+            runtimeNodeAny.boxcolor = isError ? '#ef5350' : undefined;
+            graphCanvasRef.current?.setDirty(true, true);
+          };
+
+          runtimeNodeAny.addWidget('button', 'Validate', null, () => {
+            const validation = validateConditionExpressionSyntax(widgetDraft);
+            if (!validation.ok) {
+              applyStatus(validation.error, true);
+              return;
+            }
+            applyStatus('Expression syntax is valid.');
+          });
+          runtimeNodeAny.addWidget('button', 'Reset', null, () => {
+            widgetDraft = lastAppliedExpression;
+            if (expressionWidget) {
+              expressionWidget.value = lastAppliedExpression;
+            }
+            applyStatus('Reverted to last applied expression.');
+          });
+          runtimeNodeAny.addWidget('button', 'Apply', null, () => {
+            const validation = validateConditionExpressionSyntax(widgetDraft);
+            if (!validation.ok) {
+              applyStatus(validation.error, true);
+              return;
+            }
+            onSetConditionExpression?.({
+              nodeId: node.id,
+              expression: widgetDraft
             });
-            runtimeNodeAny.addWidget('button', 'Apply', null, () => {
-              const validation = validateConditionExpressionSyntax(widgetDraft);
-              if (!validation.ok) {
-                runtimeNodeAny.boxcolor = '#ef5350';
-                return;
-              }
-              runtimeNodeAny.boxcolor = undefined;
-              onSetConditionExpression?.({
-                nodeId: node.id,
-                expression: widgetDraft
-              });
-            });
-            runtimeNodeAny.size = runtimeNode.computeSize();
-          }
+            lastAppliedExpression = widgetDraft;
+            applyStatus('Expression applied.');
+          });
+          runtimeNodeAny.size = runtimeNode.computeSize();
+          runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], DIALOG_CONDITION_WIDGET_MIN_WIDTH);
+          runtimeNodeAny.size[1] = Math.max(
+            runtimeNodeAny.size[1],
+            getDialogConditionWidgetMinHeight(widgetsStartY)
+          );
         } else if (node.type === 'condition' && typeof node.data?.expression === 'string') {
           const expressionPreviewSource = String(node.data.expression || '').trim();
           if (expressionPreviewSource.length > 0) {

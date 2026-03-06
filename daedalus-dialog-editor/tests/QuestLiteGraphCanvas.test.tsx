@@ -1,6 +1,10 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import QuestLiteGraphCanvas, { formatRuntimeNodeTitle } from '../src/renderer/components/QuestEditor/QuestLiteGraphCanvas';
+import QuestLiteGraphCanvas, {
+  formatRuntimeNodeTitle,
+  getDialogConditionWidgetMinHeight,
+  getDialogConditionWidgetsStartY
+} from '../src/renderer/components/QuestEditor/QuestLiteGraphCanvas';
 import type { QuestGraphEdge, QuestGraphNode } from '../src/renderer/types/questGraph';
 
 const createDialogNode = (overrides: Partial<QuestGraphNode> = {}): QuestGraphNode => ({
@@ -109,6 +113,19 @@ describe('formatRuntimeNodeTitle', () => {
 
   it('keeps condition node titles free of type suffixes', () => {
     expect(formatRuntimeNodeTitle('Quest Flag', 'Variable')).toBe('Quest Flag');
+  });
+});
+
+describe('dialog inline condition widgets', () => {
+  it('positions widget stack below dialog input rows', () => {
+    expect(getDialogConditionWidgetsStartY(0)).toBe(58);
+    expect(getDialogConditionWidgetsStartY(2)).toBe(74);
+    expect(getDialogConditionWidgetsStartY(4)).toBe(110);
+  });
+
+  it('computes stable minimum height for inline editor controls', () => {
+    expect(getDialogConditionWidgetMinHeight(58)).toBe(156);
+    expect(getDialogConditionWidgetMinHeight(110)).toBe(208);
   });
 });
 
