@@ -98,7 +98,11 @@ const drawRoundedRect = (
   ctx.closePath();
 };
 
-const attachConditionPreviewRenderer = (runtimeNode: LGraphNode, expression: string): void => {
+const attachConditionPreviewRenderer = (
+  runtimeNode: LGraphNode,
+  expression: string,
+  options?: { panelY?: number; chipLabel?: string }
+): void => {
   const runtimeNodeAny = runtimeNode as any;
   const previousOnDrawForeground = runtimeNodeAny.onDrawForeground;
   runtimeNodeAny.onDrawForeground = function onDrawForeground(ctx: CanvasRenderingContext2D) {
@@ -108,7 +112,7 @@ const attachConditionPreviewRenderer = (runtimeNode: LGraphNode, expression: str
     if (!ctx || runtimeNodeAny.flags?.collapsed) return;
 
     const panelX = 10;
-    const panelY = 52;
+    const panelY = Math.max(36, Math.floor(options?.panelY ?? 52));
     const panelWidth = Math.max(120, (runtimeNodeAny.size?.[0] ?? 220) - 20);
     const panelHeight = 40;
 
@@ -123,7 +127,7 @@ const attachConditionPreviewRenderer = (runtimeNode: LGraphNode, expression: str
     ctx.fillStyle = '#9ecbff';
     ctx.font = '600 10px "Segoe UI", sans-serif';
     ctx.textBaseline = 'top';
-    ctx.fillText('IF', panelX + 8, panelY + 6);
+    ctx.fillText(options?.chipLabel || 'IF', panelX + 8, panelY + 6);
 
     ctx.fillStyle = '#e2ebf7';
     ctx.font = '12px "Segoe UI", sans-serif';
@@ -398,12 +402,21 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             ? '#2c6936'
             : '#2d4f7c';
       const runtimeNodeAny = runtimeNode as any;
-      if (!isJsdomEnvironment() && node.type === 'condition' && typeof node.data?.expression === 'string') {
-        const expressionPreviewSource = String(node.data.expression || '').trim();
-        if (expressionPreviewSource.length > 0) {
-          runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_PANEL_MIN_WIDTH);
-          runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_PANEL_MIN_HEIGHT);
-          attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource);
+      if (!isJsdomEnvironment()) {
+        if (node.type === 'condition' && typeof node.data?.expression === 'string') {
+          const expressionPreviewSource = String(node.data.expression || '').trim();
+          if (expressionPreviewSource.length > 0) {
+            runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_PANEL_MIN_WIDTH);
+            runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_PANEL_MIN_HEIGHT);
+            attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource, { chipLabel: 'IF' });
+          }
+        }
+
+        if (node.type === 'dialog') {
+          const expressionPreviewSource = String(node.data?.conditionExpression || '').trim() || 'No condition expression.';
+          const inputCount = Array.isArray(runtimeNode.inputs) ? runtimeNode.inputs.length : 0;
+          const panelY = Math.max(52, 34 + Math.max(0, inputCount) * 18);
+          attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource, { panelY, chipLabel: 'IF' });
         }
       }
       graph.add(runtimeNode);
@@ -531,7 +544,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }} data-overlay-tick={overlayTick}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
 
-            {conditionCapsuleNodes.map((node) => {
+            {isJsdomEnvironment() && conditionCapsuleNodes.map((node) => {
         const rawExpression = String(node.data.conditionExpression || '').trim();
         const preview = rawExpression.length > 0
           ? truncateExpressionPreview(rawExpression)
