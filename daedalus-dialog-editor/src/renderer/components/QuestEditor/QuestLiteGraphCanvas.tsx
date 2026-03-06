@@ -412,8 +412,8 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             : '#2d4f7c';
       const runtimeNodeAny = runtimeNode as any;
       if (!isJsdomEnvironment() && typeof runtimeNodeAny.addWidget === 'function') {
-        if (node.type === 'dialog' && typeof node.data?.conditionExpression === 'string') {
-          const initialExpression = String(node.data.conditionExpression || '').trim();
+        if (node.type === 'dialog') {
+          const initialExpression = String(node.data?.conditionExpression || '').trim();
           let widgetDraft = initialExpression;
           let lastAppliedExpression = initialExpression;
           const inputCount = Array.isArray(runtimeNode.inputs) ? runtimeNode.inputs.length : 0;
@@ -754,4 +754,5 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 };
 
 export default QuestLiteGraphCanvas;
+
 
