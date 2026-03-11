@@ -1636,6 +1636,16 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
     expect(block).toContain('navigateToDialogWithLoading');
     expect(block).toContain('setIsLoadingDialog(false)');
   });
+
+  test('creates new dialogs with empty description by default', () => {
+    const source = readSource();
+    const start = source.indexOf('const createDialogForNpc');
+    const end = source.indexOf('const conditionFunction: DialogFunction', start);
+    const block = source.slice(start, end);
+
+    expect(block).toContain("description: ''");
+    expect(block).not.toContain('description: dialogName');
+  });
 });
 
 

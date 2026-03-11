@@ -582,7 +582,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         nr: nextNr,
         condition: conditionFunctionName,
         information: infoFunctionName,
-        description: dialogName,
+        description: '',
         permanent: false,
         important: false
       }
