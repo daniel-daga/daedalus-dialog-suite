@@ -19,7 +19,7 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
   const typedAction = action as DialogLineAction;
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
       {lineNumber !== null && (
         <Box
           sx={{
@@ -52,6 +52,9 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
         label="Text"
         value={typedAction.text || ''}
         onChange={(e) => handleUpdate({ ...typedAction, text: e.target.value })}
+        multiline
+        minRows={1}
+        inputProps={{ style: { resize: 'vertical' } }}
         size="small"
         inputRef={mainFieldRef}
         onBlur={flushUpdate}
