@@ -7,7 +7,9 @@ import {
   TextField,
   IconButton,
   Tooltip,
-  Chip
+  Chip,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -114,6 +116,40 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
             }}
             semanticModel={semanticModel}
           />
+          <Stack direction="row" spacing={2}>
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  size="small"
+                  checked={Boolean(dialog.properties?.important)}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    onDialogPropertyChange((existingDialog) => ({
+                      ...existingDialog,
+                      properties: { ...existingDialog.properties, important: checked }
+                    }));
+                  }}
+                />
+              )}
+              label="Important"
+            />
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  size="small"
+                  checked={Boolean(dialog.properties?.permanent)}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    onDialogPropertyChange((existingDialog) => ({
+                      ...existingDialog,
+                      properties: { ...existingDialog.properties, permanent: checked }
+                    }));
+                  }}
+                />
+              )}
+              label="Permanent"
+            />
+          </Stack>
         </Stack>
       )}
     </Paper>
