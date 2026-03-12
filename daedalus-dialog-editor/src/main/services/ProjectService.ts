@@ -17,6 +17,10 @@ export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
 
+function normalizeIdentifier(value: string): string {
+  return value.trim().toUpperCase();
+}
+
 class ProjectService {
   /**
    * Recursively scan directory for .d files (async)
@@ -35,7 +39,7 @@ class ProjectService {
 
           if (entry.isDirectory()) {
             promises.push(scanRecursive(fullPath));
-          } else if (entry.isFile() && entry.name.endsWith('.d')) {
+          } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.d') {
             files.push(fullPath);
           }
         }
@@ -66,6 +70,7 @@ class ProjectService {
 
     // Map to store dialogs by NPC
     const dialogsByNpc = new Map<string, DialogMetadata[]>();
+    const allNpcs = new Set<string>();
     const questFiles: string[] = [];
 
     // Use worker pool to process files in parallel
@@ -76,13 +81,53 @@ class ProjectService {
         allFiles.map(filePath => pool.processFile(filePath))
       );
 
+      const parentByType = new Map<string, string>();
+      results.forEach((result) => {
+        result.prototypes.forEach((prototype) => {
+          parentByType.set(normalizeIdentifier(prototype.name), prototype.parent);
+        });
+      });
+
+      const isNpcParent = (parentName: string): boolean => {
+        const visited = new Set<string>();
+        let currentParent = parentName;
+
+        while (currentParent) {
+          const normalizedParent = normalizeIdentifier(currentParent);
+          if (normalizedParent === 'C_NPC') {
+            return true;
+          }
+          if (visited.has(normalizedParent)) {
+            return false;
+          }
+
+          visited.add(normalizedParent);
+          currentParent = parentByType.get(normalizedParent) || '';
+        }
+
+        return false;
+      };
+
       // Process results
       for (let i = 0; i < allFiles.length; i++) {
         const result = results[i];
         const filePath = allFiles[i];
 
+        // Track NPC instances from dialogs and prototype inheritance chains.
+        result.instances.forEach((instance) => {
+          if (!isNpcParent(instance.parent)) {
+            return;
+          }
+
+          allNpcs.add(instance.name);
+          if (!dialogsByNpc.has(instance.name)) {
+            dialogsByNpc.set(instance.name, []);
+          }
+        });
+
         // Group dialogs by NPC
         for (const dialog of result.dialogs) {
+          allNpcs.add(dialog.npc);
           if (!dialogsByNpc.has(dialog.npc)) {
             dialogsByNpc.set(dialog.npc, []);
           }
@@ -99,7 +144,7 @@ class ProjectService {
     }
 
     // Extract and sort NPC list
-    const npcs = Array.from(dialogsByNpc.keys()).sort();
+    const npcs = Array.from(allNpcs).sort();
 
     return {
       npcs,

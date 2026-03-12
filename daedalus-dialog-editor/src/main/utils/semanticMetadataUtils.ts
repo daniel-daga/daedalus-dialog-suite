@@ -7,6 +7,8 @@ const daedalusWrapper = new DaedalusParser();
 
 export interface ParsedFileMetadata {
   dialogs: DialogMetadata[];
+  instances: Array<{ name: string; parent: string }>;
+  prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
 }
 
@@ -39,6 +41,32 @@ const extractDialogs = (semanticModel: SemanticModel, filePath: string): DialogM
   return dialogs;
 };
 
+const extractInstanceDeclarations = (parseResult: any): Array<{ name: string; parent: string }> => {
+  const declarations = typeof daedalusWrapper.extractDeclarations === 'function'
+    ? daedalusWrapper.extractDeclarations(parseResult)
+    : [];
+
+  return declarations
+    .filter((declaration: any) => declaration?.type === 'instance' && declaration.name && declaration.parent)
+    .map((declaration: any) => ({
+      name: declaration.name,
+      parent: declaration.parent
+    }));
+};
+
+const extractPrototypeDeclarations = (parseResult: any): Array<{ name: string; parent: string }> => {
+  const declarations = typeof daedalusWrapper.extractDeclarations === 'function'
+    ? daedalusWrapper.extractDeclarations(parseResult)
+    : [];
+
+  return declarations
+    .filter((declaration: any) => declaration?.type === 'prototype' && declaration.name && declaration.parent)
+    .map((declaration: any) => ({
+      name: declaration.name,
+      parent: declaration.parent
+    }));
+};
+
 export function extractFileMetadataFromSource(sourceCode: string, filePath: string): ParsedFileMetadata {
   const parseResult = daedalusWrapper.parse(sourceCode);
   const tree = parseResult.tree;
@@ -58,6 +86,8 @@ export function extractFileMetadataFromSource(sourceCode: string, filePath: stri
 
   return {
     dialogs: extractDialogs(semanticModel, filePath),
+    instances: extractInstanceDeclarations(parseResult),
+    prototypes: extractPrototypeDeclarations(parseResult),
     isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel)
   };
 }

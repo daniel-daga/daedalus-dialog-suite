@@ -79,6 +79,21 @@ describe('ProjectService', () => {
       expect(files).toHaveLength(1);
       expect(files[0]).toContain('deep.d');
     });
+
+    it('should find .d files regardless of extension casing', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Lower.d'), '// lower');
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Upper.D'), '// upper');
+
+      const service = new ProjectService();
+      const files = await service.scanDirectory(tempDir);
+
+      expect(files).toHaveLength(2);
+      expect(files).toContain(path.join(dialogDir, 'DIA_Lower.d'));
+      expect(files).toContain(path.join(dialogDir, 'DIA_Upper.D'));
+    });
   });
 
   describe('extractDialogMetadata', () => {
@@ -271,6 +286,61 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       const index = await service.buildProjectIndex(tempDir);
 
       expect(index.npcs).toEqual(['Alpha', 'Beta', 'Zebra']);
+    });
+
+    it('includes npc instances that have no dialogs yet', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      const npcDir = path.join(tempDir, 'NPC');
+      fs.mkdirSync(dialogDir, { recursive: true });
+      fs.mkdirSync(npcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Guard.d'), `
+INSTANCE DIA_Guard_Hello (C_INFO)
+{
+    npc = SLD_200_Guard;
+};
+      `);
+
+      fs.writeFileSync(path.join(npcDir, 'SLD_201_Blacksmith.d'), `
+INSTANCE SLD_201_Blacksmith (C_NPC)
+{
+    name = "Blacksmith";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toEqual(['SLD_200_Guard', 'SLD_201_Blacksmith']);
+      expect(index.dialogsByNpc.get('SLD_200_Guard')).toHaveLength(1);
+      expect(index.dialogsByNpc.get('SLD_201_Blacksmith')).toEqual([]);
+    });
+
+    it('includes npc instances whose parent prototype derives from C_NPC', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      const npcDir = path.join(storyDir, 'NPC');
+      fs.mkdirSync(npcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(storyDir, 'Prototypes.d'), `
+PROTOTYPE Npc_Default(C_NPC)
+{
+    name = "";
+};
+      `);
+
+      fs.writeFileSync(path.join(npcDir, 'VLK_99064_Schurfer.d'), `
+INSTANCE VLK_99064_Schurfer (Npc_Default)
+{
+    name = "Schurfer";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toContain('VLK_99064_Schurfer');
+      expect(index.dialogsByNpc.get('VLK_99064_Schurfer')).toEqual([]);
+      expect(index.allFiles).toContain(path.join(npcDir, 'VLK_99064_Schurfer.d'));
     });
 
     it('should detect quest files containing TOPIC_ constants or MIS_ variables', async () => {

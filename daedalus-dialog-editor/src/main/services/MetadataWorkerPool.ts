@@ -8,7 +8,12 @@ import { promises as fsPromises } from 'fs';
 import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 
 interface PendingTask {
-  resolve: (value: { dialogs: DialogMetadata[]; isQuestFile: boolean }) => void;
+  resolve: (value: {
+    dialogs: DialogMetadata[];
+    instances: Array<{ name: string; parent: string }>;
+    prototypes: Array<{ name: string; parent: string }>;
+    isQuestFile: boolean;
+  }) => void;
   reject: (reason?: any) => void;
 }
 
@@ -25,6 +30,12 @@ export class MetadataWorkerPool {
   private useInlineProcessing = false;
 
   constructor() {
+    if (isLikelyTestRuntime()) {
+      // Jest should execute the current TS sources, not a potentially stale dist worker build.
+      this.useInlineProcessing = true;
+      return;
+    }
+
     // Leave one core for the main thread/event loop
     const numWorkers = Math.max(1, os.cpus().length - 1);
 
@@ -43,30 +54,35 @@ export class MetadataWorkerPool {
     }
 
     if (!fs.existsSync(workerPath)) {
-      if (isLikelyTestRuntime()) {
-        // In TS/Jest execution, worker JS may not exist yet.
-        // Fall back to in-process metadata extraction for test reliability.
-        this.useInlineProcessing = true;
-        return;
-      }
-
       throw new Error(`Metadata worker entry was not found at ${workerPath}. Build the app/workers before runtime.`);
     }
 
     for (let i = 0; i < numWorkers; i++) {
       const worker = new Worker(workerPath);
 
-      worker.on('message', (message: { id: string; dialogs?: DialogMetadata[]; isQuestFile?: boolean; error?: string }) => {
-        const { id, dialogs, isQuestFile, error } = message;
+      worker.on('message', (message: {
+        id: string;
+        dialogs?: DialogMetadata[];
+        instances?: Array<{ name: string; parent: string }>;
+        prototypes?: Array<{ name: string; parent: string }>;
+        isQuestFile?: boolean;
+        error?: string;
+      }) => {
+        const { id, dialogs, instances, prototypes, isQuestFile, error } = message;
         const pending = this.pendingRequests.get(id);
 
         if (pending) {
           if (error) {
             // On error, we resolve with empty result to continue processing other files
             // consistent with original ProjectService behavior
-            pending.resolve({ dialogs: [], isQuestFile: false });
+            pending.resolve({ dialogs: [], instances: [], prototypes: [], isQuestFile: false });
           } else {
-            pending.resolve({ dialogs: dialogs || [], isQuestFile: !!isQuestFile });
+            pending.resolve({
+              dialogs: dialogs || [],
+              instances: instances || [],
+              prototypes: prototypes || [],
+              isQuestFile: !!isQuestFile
+            });
           }
           this.pendingRequests.delete(id);
         }
@@ -100,7 +116,12 @@ export class MetadataWorkerPool {
     }
   }
 
-  public processFile(filePath: string): Promise<{ dialogs: DialogMetadata[]; isQuestFile: boolean }> {
+  public processFile(filePath: string): Promise<{
+    dialogs: DialogMetadata[];
+    instances: Array<{ name: string; parent: string }>;
+    prototypes: Array<{ name: string; parent: string }>;
+    isQuestFile: boolean;
+  }> {
     if (this.isTerminated) {
         return Promise.reject(new Error('Pool terminated'));
     }
@@ -122,13 +143,18 @@ export class MetadataWorkerPool {
     });
   }
 
-  private async processFileInline(filePath: string): Promise<{ dialogs: DialogMetadata[]; isQuestFile: boolean }> {
+  private async processFileInline(filePath: string): Promise<{
+    dialogs: DialogMetadata[];
+    instances: Array<{ name: string; parent: string }>;
+    prototypes: Array<{ name: string; parent: string }>;
+    isQuestFile: boolean;
+  }> {
     try {
       const content = await fsPromises.readFile(filePath, 'utf-8');
       return extractFileMetadataFromSource(content, filePath);
     } catch {
       // Match worker-path behavior: tolerate per-file processing failures.
-      return { dialogs: [], isQuestFile: false };
+      return { dialogs: [], instances: [], prototypes: [], isQuestFile: false };
     }
   }
 

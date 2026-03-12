@@ -8,11 +8,13 @@ if (parentPort) {
 
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const { dialogs, isQuestFile } = extractFileMetadataFromSource(content, filePath);
+      const { dialogs, instances, prototypes, isQuestFile } = extractFileMetadataFromSource(content, filePath);
 
       parentPort!.postMessage({
         id,
         dialogs,
+        instances,
+        prototypes,
         isQuestFile
       });
     } catch (error) {

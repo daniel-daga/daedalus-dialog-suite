@@ -163,6 +163,7 @@ function parseSource(sourceCode: string): any {
   // This is a very simplified parser for testing purposes
   const dialogs: any = {};
   const functions: any = {};
+  const npcs: any = {};
 
   // Match INSTANCE declarations
   const instanceRegex = /INSTANCE\s+(\w+)\s*\([^)]+\)\s*\{([^}]+)\}/gi;
@@ -170,6 +171,7 @@ function parseSource(sourceCode: string): any {
 
   while ((match = instanceRegex.exec(sourceCode)) !== null) {
     const dialogName = match[1];
+    const parent = sourceCode.slice(match.index).match(/INSTANCE\s+\w+\s*\(([^)]+)\)/i)?.[1]?.trim() || 'C_INFO';
     const body = match[2];
 
     // Parse properties
@@ -188,11 +190,18 @@ function parseSource(sourceCode: string): any {
       properties[key] = value;
     }
 
-    dialogs[dialogName] = {
-      name: dialogName,
-      parent: 'C_INFO',
-      properties,
-    };
+    if (parent === 'C_NPC') {
+      npcs[dialogName] = {
+        name: dialogName,
+        parent: 'C_NPC',
+      };
+    } else {
+      dialogs[dialogName] = {
+        name: dialogName,
+        parent: 'C_INFO',
+        properties,
+      };
+    }
   }
 
   // Match FUNC declarations
@@ -229,6 +238,7 @@ function parseSource(sourceCode: string): any {
   return {
     dialogs,
     functions,
+    npcs,
     hasErrors: false,
     errors: [],
   };
@@ -413,6 +423,13 @@ export const mockEditorAPI: EditorAPI = {
     for (const filePath of files) {
       const content = MockFileSystem.readFile(filePath);
       const model = parseSource(content);
+
+      for (const npcName in model.npcs || {}) {
+        npcs.add(npcName);
+        if (!dialogsByNpc[npcName]) {
+          dialogsByNpc[npcName] = [];
+        }
+      }
       
       for (const dialogName in model.dialogs) {
         const dialog = model.dialogs[dialogName];
