@@ -6,7 +6,8 @@ import {
   SemanticModel,
   SetVariableAction,
   Action,
-  DialogAction
+  DialogAction,
+  ConditionalAction
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
@@ -150,6 +151,16 @@ export class LinkingVisitor {
     }
 
     if (this.currentFunction && !isConditionFunc && isConditionModeBlockingStatement(type)) {
+      if (type === 'if_statement') {
+        const conditionalAction = this.parseConditionalAction(node);
+        if (conditionalAction) {
+          this.recordActionForCurrentFunction(conditionalAction);
+        } else {
+          this.preserveUnsupportedStatement(node);
+        }
+        return true;
+      }
+
       this.preserveUnsupportedStatement(node);
       return true;
     }
@@ -556,6 +567,113 @@ export class LinkingVisitor {
   private preserveUnsupportedStatement(node: TreeSitterNode): void {
     const action = new Action(node.text.trim());
     this.recordActionForCurrentFunction(action);
+  }
+
+  private parseConditionalAction(node: TreeSitterNode): ConditionalAction | null {
+    const conditionNode = node.childForFieldName('condition');
+    const consequenceNode = node.childForFieldName('consequence');
+    const alternativeNode = node.childForFieldName('alternative');
+
+    if (!conditionNode || !consequenceNode) {
+      return null;
+    }
+
+    if (alternativeNode && alternativeNode.type !== 'block') {
+      return null;
+    }
+
+    const thenActions = this.parseActionsFromBlock(consequenceNode);
+    if (!thenActions) {
+      return null;
+    }
+
+    const elseActions = alternativeNode ? this.parseActionsFromBlock(alternativeNode) : [];
+    if (alternativeNode && !elseActions) {
+      return null;
+    }
+
+    return new ConditionalAction(this.normalizeIfCondition(conditionNode.text), thenActions, elseActions || []);
+  }
+
+  private parseActionsFromBlock(blockNode: TreeSitterNode): DialogAction[] | null {
+    if (blockNode.type !== 'block') {
+      return null;
+    }
+
+    const actions: DialogAction[] = [];
+    for (const child of blockNode.namedChildren || []) {
+      if (child.type === 'comment') {
+        continue;
+      }
+
+      const action = this.parseActionStatementNode(child);
+      if (!action) {
+        return null;
+      }
+      actions.push(action);
+    }
+
+    return actions;
+  }
+
+  private parseActionStatementNode(node: TreeSitterNode): DialogAction | null {
+    if (node.type === 'expression_statement') {
+      const callNode = (node.namedChildren || []).find((child) => child.type === 'call_expression');
+      if (!callNode) {
+        return null;
+      }
+
+      const functionNode = callNode.childForFieldName('function');
+      if (!functionNode) {
+        return null;
+      }
+
+      return ActionParsers.parseSemanticAction(callNode, functionNode.text);
+    }
+
+    if (node.type === 'assignment_statement') {
+      const leftNode = node.childForFieldName('left');
+      const rightNode = node.childForFieldName('right');
+      const operatorNode = node.childForFieldName('operator');
+
+      if (!leftNode || !rightNode) {
+        return null;
+      }
+
+      return new SetVariableAction(
+        leftNode.text,
+        operatorNode ? operatorNode.text : '=',
+        parseLiteralOrIdentifier(rightNode)
+      );
+    }
+
+    if (node.type === 'if_statement') {
+      return this.parseConditionalAction(node);
+    }
+
+    return null;
+  }
+
+  private normalizeIfCondition(conditionText: string): string {
+    const trimmed = conditionText.trim();
+    if (!trimmed.startsWith('(') || !trimmed.endsWith(')')) {
+      return trimmed;
+    }
+
+    let depth = 0;
+    for (let index = 0; index < trimmed.length; index += 1) {
+      const char = trimmed[index];
+      if (char === '(') {
+        depth += 1;
+      } else if (char === ')') {
+        depth -= 1;
+        if (depth === 0 && index < trimmed.length - 1) {
+          return trimmed;
+        }
+      }
+    }
+
+    return trimmed.slice(1, -1).trim();
   }
 
   /**

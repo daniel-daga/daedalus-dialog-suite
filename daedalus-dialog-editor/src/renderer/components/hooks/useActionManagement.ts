@@ -4,6 +4,16 @@ import { createAction, createActionAfterIndex, createDialogLineId } from '../act
 import type { ActionTypeId } from '../actionTypes';
 import type { DialogAction, DialogFunction, DialogLineAction, SemanticModel } from '../../types/global';
 import type { FunctionUpdater } from '../dialogTypes';
+import type { ActionBranchKey, ActionPath } from '../nestedActionUtils';
+import {
+  appendActionToBranch,
+  collectDialogLineActions,
+  deleteActionAtPath as deleteNestedActionAtPath,
+  flattenActionPaths,
+  getActionAtPath,
+  insertActionAfterPath,
+  updateActionAtPath as updateNestedActionAtPath
+} from '../nestedActionUtils';
 
 /**
  * Configuration for action management
@@ -11,7 +21,7 @@ import type { FunctionUpdater } from '../dialogTypes';
 export interface ActionManagementConfig {
   setFunction: (funcOrUpdater: FunctionUpdater) => void;
   /** Function to focus a specific action by index */
-  focusAction: (index: number, scrollIntoView?: boolean) => void;
+  focusAction: (path: ActionPath, scrollIntoView?: boolean) => void;
   /** Semantic model for generating unique function names */
   semanticModel?: SemanticModel;
   /** Callback to update the semantic model with a new function */
@@ -32,14 +42,23 @@ export function useActionManagement(config: ActionManagementConfig) {
     contextName
   } = config;
 
-  /**
-   * Update an action at a specific index
-   */
-  const updateAction = useCallback((index: number, updatedAction: DialogAction) => {
+  const buildDialogLineAction = useCallback((actions: DialogAction[], speaker: 'self' | 'other', text: string = ''): DialogLineAction => ({
+    type: 'DialogLine',
+    speaker,
+    text,
+    id: createDialogLineId({
+      dialogName: contextName,
+      speaker,
+      actions: collectDialogLineActions(actions)
+    })
+  }), [contextName]);
+
+  const updateAction = useCallback((path: ActionPath, updatedAction: DialogAction) => {
     setFunction((prev) => {
       if (!prev) return prev;
-      const newActions = [...(prev.actions || [])];
-      const previousAction = newActions[index];
+      const actions = prev.actions || [];
+      const previousAction = getActionAtPath(actions, path);
+      let nextAction = updatedAction;
 
       if (updatedAction.type === 'DialogLine') {
         const currentId = (updatedAction as DialogLineAction).id;
@@ -47,7 +66,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         const needsGeneratedId = !currentId || currentId === 'NEW_LINE_ID';
 
         if (speakerChanged || needsGeneratedId) {
-          const actionsWithoutCurrent = newActions.filter((_, actionIndex) => actionIndex !== index);
+          const actionsWithoutCurrent = collectDialogLineActions(deleteNestedActionAtPath(actions, path));
           const generatedId = createDialogLineId({
             dialogName: contextName,
             speaker: updatedAction.speaker,
@@ -71,27 +90,24 @@ export function useActionManagement(config: ActionManagementConfig) {
             }
           }
 
-          newActions[index] = {
+          nextAction = {
             ...updatedAction,
             id
           };
-        } else {
-          newActions[index] = updatedAction;
         }
-      } else {
-        newActions[index] = updatedAction;
       }
-      return { ...prev, actions: newActions };
+
+      return { ...prev, actions: updateNestedActionAtPath(actions, path, nextAction) };
     });
   }, [setFunction, contextName]);
 
   /**
    * Delete an action at a specific index
    */
-  const deleteAction = useCallback((index: number) => {
+  const deleteAction = useCallback((path: ActionPath) => {
     setFunction((prev) => {
       if (!prev) return prev;
-      const newActions = (prev.actions || []).filter((_, i) => i !== index);
+      const newActions = deleteNestedActionAtPath(prev.actions || [], path);
       return { ...prev, actions: newActions };
     });
   }, [setFunction]);
@@ -99,17 +115,19 @@ export function useActionManagement(config: ActionManagementConfig) {
   /**
    * Delete an action and focus the previous one
    */
-  const deleteActionAndFocusPrev = useCallback((index: number) => {
+  const deleteActionAndFocusPrev = useCallback((path: ActionPath) => {
+    let focusTarget: ActionPath | null = null;
     setFunction((prev) => {
       if (!prev) return prev;
-      const newActions = (prev.actions || []).filter((_, i) => i !== index);
+      const visiblePaths = flattenActionPaths(prev.actions || []);
+      const currentIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path));
+      focusTarget = currentIndex > 0 ? visiblePaths[currentIndex - 1] : null;
+      const newActions = deleteNestedActionAtPath(prev.actions || [], path);
       return { ...prev, actions: newActions };
     });
 
-    // Focus the previous action after state update
-    const prevIdx = index - 1;
-    if (prevIdx >= 0) {
-      setTimeout(() => focusAction(prevIdx), 0);
+    if (focusTarget) {
+      setTimeout(() => focusAction(focusTarget as ActionPath), 0);
     }
   }, [setFunction, focusAction]);
 
@@ -117,40 +135,36 @@ export function useActionManagement(config: ActionManagementConfig) {
    * Add a dialog line after a specific index
    * By default toggles the speaker (self/other), unless toggleSpeaker is false
    */
-  const addDialogLineAfter = useCallback((index: number, toggleSpeaker: boolean = true) => {
+  const addDialogLineAfter = useCallback((path: ActionPath, toggleSpeaker: boolean = true) => {
+    let nextPath: ActionPath | null = null;
     setFunction((prev) => {
       if (!prev) return prev;
       const actions = prev.actions || [];
 
-      const currentAction = actions[index];
+      const currentAction = getActionAtPath(actions, path);
       const newSpeaker = toggleSpeaker
         ? (currentAction?.type === 'DialogLine' && currentAction.speaker === 'self' ? 'other' : 'self')
         : (currentAction?.type === 'DialogLine' ? currentAction.speaker : 'self');
-      const newAction: DialogLineAction = {
-        type: 'DialogLine',
-        speaker: newSpeaker,
-        text: '',
-        id: createDialogLineId({
-          dialogName: contextName,
-          speaker: newSpeaker,
-          actions
-        })
-      };
+      const newAction = buildDialogLineAction(actions, newSpeaker);
 
-      const newActions = [...actions];
-      newActions.splice(index + 1, 0, newAction);
+      const newActions = insertActionAfterPath(actions, path, newAction);
+      const visiblePaths = flattenActionPaths(newActions);
+      const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+      nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
       return { ...prev, actions: newActions };
     });
 
-    // Focus the new action after state update with smooth scroll
-    setTimeout(() => focusAction(index + 1, true), 0);
-  }, [setFunction, focusAction]);
+    if (nextPath) {
+      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+    }
+  }, [setFunction, focusAction, buildDialogLineAction]);
 
   /**
    * Add an action after a specific index
    * Handles choice creation with automatic target function generation
    */
-  const addActionAfter = useCallback((index: number, actionType: ActionTypeId) => {
+  const addActionAfter = useCallback((path: ActionPath, actionType: ActionTypeId) => {
+    let nextPath: ActionPath | null = null;
     // Handle choice creation specially to generate target function
     if (actionType === 'choice' && semanticModel) {
       const newFunctionName = generateUniqueChoiceFunctionName(contextName, semanticModel);
@@ -164,18 +178,23 @@ export function useActionManagement(config: ActionManagementConfig) {
       // Now add the choice action using factory
       setFunction((prev) => {
         if (!prev) return prev;
+        const actions = prev.actions || [];
 
         const newAction = createAction('choice', { dialogName: contextName }) as DialogAction;
         if ('targetFunction' in newAction) {
           newAction.targetFunction = newFunctionName;
         }
 
-        const newActions = [...(prev.actions || [])];
-        newActions.splice(index + 1, 0, newAction);
+        const newActions = insertActionAfterPath(actions, path, newAction);
+        const visiblePaths = flattenActionPaths(newActions);
+        const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+        nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
         return { ...prev, actions: newActions };
       });
 
-      setTimeout(() => focusAction(index + 1, true), 0);
+      if (nextPath) {
+        setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+      }
       return;
     }
 
@@ -183,28 +202,88 @@ export function useActionManagement(config: ActionManagementConfig) {
     setFunction((prev) => {
       if (!prev) return prev;
       const actions = prev.actions || [];
+      const parentIndex = path[path.length - 1] as number;
+      const siblingActions = path.length === 1
+        ? actions
+        : (() => {
+            const branch = path[path.length - 2];
+            const parentPath = path.slice(0, -2);
+            const parent = getActionAtPath(actions, parentPath);
+            if (branch !== 'then' && branch !== 'else') {
+              return actions;
+            }
+            return parent?.type === 'ConditionalAction'
+              ? parent[branch === 'then' ? 'thenActions' : 'elseActions']
+              : actions;
+          })();
 
       const newAction = createActionAfterIndex(
         actionType,
-        index,
-        actions,
+        parentIndex,
+        siblingActions,
         contextName
       ) as DialogAction;
+      if (newAction.type === 'DialogLine') {
+        newAction.id = createDialogLineId({
+          dialogName: contextName,
+          speaker: newAction.speaker,
+          actions: collectDialogLineActions(actions)
+        });
+      }
 
-      const newActions = [...actions];
-      newActions.splice(index + 1, 0, newAction);
+      const newActions = insertActionAfterPath(actions, path, newAction);
+      const visiblePaths = flattenActionPaths(newActions);
+      const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+      nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
       return { ...prev, actions: newActions };
     });
 
-    // Focus the new action after state update with smooth scroll
-    setTimeout(() => focusAction(index + 1, true), 0);
+    if (nextPath) {
+      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+    }
   }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName]);
+
+  const addActionToBranchEnd = useCallback((path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => {
+    let nextPath: ActionPath | null = null;
+    setFunction((prev) => {
+      if (!prev) return prev;
+      const actions = prev.actions || [];
+      const target = getActionAtPath(actions, path);
+      const branchActions = target?.type === 'ConditionalAction'
+        ? target[branch === 'then' ? 'thenActions' : 'elseActions']
+        : [];
+      const currentAction = branchActions[branchActions.length - 1];
+      const newAction = createAction(actionType, {
+        dialogName: contextName,
+        currentAction,
+        actions: branchActions
+      }) as DialogAction;
+      if (newAction.type === 'DialogLine') {
+        newAction.id = createDialogLineId({
+          dialogName: contextName,
+          speaker: newAction.speaker,
+          actions: collectDialogLineActions(actions)
+        });
+      }
+
+      nextPath = [...path, branch, branchActions.length];
+      return {
+        ...prev,
+        actions: appendActionToBranch(actions, path, branch, newAction)
+      };
+    });
+
+    if (nextPath) {
+      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+    }
+  }, [setFunction, contextName, focusAction]);
 
   return {
     updateAction,
     deleteAction,
     deleteActionAndFocusPrev,
     addDialogLineAfter,
-    addActionAfter
+    addActionAfter,
+    addActionToBranchEnd
   };
 }

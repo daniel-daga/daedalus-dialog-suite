@@ -29,6 +29,7 @@ import TeachActionRenderer from './TeachActionRenderer';
 import GiveTradeInventoryActionRenderer from './GiveTradeInventoryActionRenderer';
 import RemoveInventoryItemsActionRenderer from './RemoveInventoryItemsActionRenderer';
 import InsertNpcActionRenderer from './InsertNpcActionRenderer';
+import ConditionalActionRenderer from './ConditionalActionRenderer';
 import CustomActionRenderer from './CustomActionRenderer';
 import UnknownActionRenderer from './UnknownActionRenderer';
 
@@ -57,6 +58,7 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   giveTradeInventoryAction: GiveTradeInventoryActionRenderer,
   removeInventoryItemsAction: RemoveInventoryItemsActionRenderer,
   insertNpcAction: InsertNpcActionRenderer,
+  conditionalAction: ConditionalActionRenderer,
   customAction: CustomActionRenderer
 };
 
@@ -93,6 +95,7 @@ export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
   giveTradeInventoryAction: 'Give Trade Inventory',
   removeInventoryItemsAction: 'Remove Inventory Items',
   insertNpcAction: 'Insert NPC',
+  conditionalAction: 'If / Else Block',
   customAction: 'Action'
 };
 

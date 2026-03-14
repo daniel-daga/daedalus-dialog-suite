@@ -7,8 +7,9 @@ import { getActionType } from './actionTypes';
 import type { ActionTypeId } from './actionTypes';
 import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
+import { actionPathToKey } from './nestedActionUtils';
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, index, totalActions, npcName, updateAction, deleteAction, focusAction, addDialogLineAfter, deleteActionAndFocusPrev, addActionAfter, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -21,8 +22,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
 
   // Use refs to store latest values without triggering re-renders
   const localActionRef = useRef(localAction);
-  const indexRef = useRef(index);
-  const updateActionRef = useRef(updateAction);
+  const pathRef = useRef(path);
+  const updateActionRef = useRef(updateActionAtPath);
 
   // Keep refs in sync with latest values
   React.useEffect(() => {
@@ -30,12 +31,12 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, [localAction]);
 
   React.useEffect(() => {
-    indexRef.current = index;
-  }, [index]);
+    pathRef.current = path;
+  }, [path]);
 
   React.useEffect(() => {
-    updateActionRef.current = updateAction;
-  }, [updateAction]);
+    updateActionRef.current = updateActionAtPath;
+  }, [updateActionAtPath]);
 
   // Sync local state when action prop changes from parent
   React.useEffect(() => {
@@ -45,14 +46,19 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   // Expose the ref to parent
   React.useImperativeHandle(ref, () => mainFieldRef.current!);
 
+  React.useEffect(() => {
+    registerActionRef(path, mainFieldRef.current);
+    return () => registerActionRef(path, null);
+  }, [path, registerActionRef]);
+
   const flushUpdate = useCallback(() => {
     if (updateTimerRef.current) {
       clearTimeout(updateTimerRef.current);
       updateTimerRef.current = null;
     }
     // Sync local state to parent immediately
-    updateAction(index, localAction);
-  }, [updateAction, index, localAction]);
+    updateActionAtPath(path, localAction);
+  }, [updateActionAtPath, path, localAction]);
 
   const handleUpdate = useCallback((updated: typeof localAction) => {
     // Update local state immediately for responsive UI
@@ -63,10 +69,10 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       clearTimeout(updateTimerRef.current);
     }
     updateTimerRef.current = setTimeout(() => {
-      updateAction(index, updated);
+      updateActionAtPath(path, updated);
       updateTimerRef.current = null;
     }, 300); // 300ms debounce
-  }, [updateAction, index]);
+  }, [updateActionAtPath, path]);
 
   // Cleanup timer on unmount - use refs to avoid stale closures
   React.useEffect(() => {
@@ -75,40 +81,44 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
         clearTimeout(updateTimerRef.current);
         // Flush using refs to get latest values and avoid data corruption
         // This ensures we use the current index/action, not stale values from closure
-        updateActionRef.current(indexRef.current, localActionRef.current);
+        updateActionRef.current(pathRef.current, localActionRef.current);
       }
     };
   }, []); // Empty deps - cleanup function only created once, uses refs for latest values
 
   const handleDelete = useCallback(() => {
-    deleteAction(index);
-  }, [deleteAction, index]);
+    deleteActionAtPath(path);
+  }, [deleteActionAtPath, path]);
 
   const handleTabToNext = useCallback(() => {
-    const nextIdx = index + 1;
-    if (nextIdx < totalActions) {
-      focusAction(nextIdx);
+    const visiblePaths = getVisibleActionPaths();
+    const currentIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path));
+    const nextPath = currentIndex >= 0 ? visiblePaths[currentIndex + 1] : undefined;
+    if (nextPath) {
+      focusActionAtPath(nextPath);
     }
-  }, [focusAction, index, totalActions]);
+  }, [focusActionAtPath, getVisibleActionPaths, path]);
 
   const handleTabToPrev = useCallback(() => {
-    const prevIdx = index - 1;
-    if (prevIdx >= 0) {
-      focusAction(prevIdx);
+    const visiblePaths = getVisibleActionPaths();
+    const currentIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path));
+    const prevPath = currentIndex > 0 ? visiblePaths[currentIndex - 1] : undefined;
+    if (prevPath) {
+      focusActionAtPath(prevPath);
     }
-  }, [focusAction, index]);
+  }, [focusActionAtPath, getVisibleActionPaths, path]);
 
   const handleAddNewAfter = useCallback((toggleSpeaker: boolean = true) => {
-    addDialogLineAfter(index, toggleSpeaker);
-  }, [addDialogLineAfter, index]);
+    addDialogLineAfterPath(path, toggleSpeaker);
+  }, [addDialogLineAfterPath, path]);
 
   const handleDeleteAndFocusPrev = useCallback(() => {
-    deleteActionAndFocusPrev(index);
-  }, [deleteActionAndFocusPrev, index]);
+    deleteActionAndFocusPrevAtPath(path);
+  }, [deleteActionAndFocusPrevAtPath, path]);
 
   const handleAddActionAfter = useCallback((actionType: ActionTypeId) => {
-    addActionAfter(index, actionType);
-  }, [addActionAfter, index]);
+    addActionAfterPath(path, actionType);
+  }, [addActionAfterPath, path]);
 
 
 
@@ -178,6 +188,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       case 'giveTradeInventoryAction': return <Inventory2Icon fontSize="small" />;
       case 'removeInventoryItemsAction': return <RemoveShoppingCartIcon fontSize="small" />;
       case 'insertNpcAction': return <PersonAddIcon fontSize="small" />;
+      case 'conditionalAction': return <CallSplitIcon fontSize="small" />;
       case 'customAction': return <CodeIcon fontSize="small" />;
       default: return <CodeIcon fontSize="small" />;
     }
@@ -205,6 +216,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     { type: 'giveTradeInventoryAction', label: 'Give Trade Inventory', icon: <Inventory2Icon fontSize="small" /> },
     { type: 'removeInventoryItemsAction', label: 'Remove Inventory Items', icon: <RemoveShoppingCartIcon fontSize="small" /> },
     { type: 'insertNpcAction', label: 'Insert NPC', icon: <PersonAddIcon fontSize="small" /> },
+    { type: 'conditionalAction', label: 'If / Else Block', icon: <CallSplitIcon fontSize="small" /> },
     { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
   ], []);
 
@@ -231,6 +243,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   // Prepare props for the renderer
   const rendererProps: BaseActionRendererProps = {
     action: localAction,
+    path,
     index,
     totalActions,
     npcName,
@@ -242,7 +255,16 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     semanticModel,
     onNavigateToFunction,
     onRenameFunction,
-    dialogContextName
+    dialogContextName,
+    updateActionAtPath,
+    deleteActionAtPath,
+    focusActionAtPath,
+    addDialogLineAfterPath,
+    deleteActionAndFocusPrevAtPath,
+    addActionAfterPath,
+    addActionToBranchEnd,
+    registerActionRef,
+    getVisibleActionPaths
   };
 
   return (
@@ -394,6 +416,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   // Compare by action ID and check if action content is deeply equal
   // This prevents re-renders when only function props change (which happens often)
 
+  if (actionPathToKey(prevProps.path) !== actionPathToKey(nextProps.path)) return false;
   if (prevProps.index !== nextProps.index) return false;
   if (prevProps.totalActions !== nextProps.totalActions) return false;
   if (prevProps.npcName !== nextProps.npcName) return false;

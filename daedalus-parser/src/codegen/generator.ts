@@ -381,7 +381,8 @@ export class SemanticCodeGenerator {
    */
   generateAction(action: DialogAction): string {
     return (action as CodeGeneratable).generateCode({
-      includeComments: this.options.includeComments
+      includeComments: this.options.includeComments,
+      indentUnit: this.indent()
     });
   }
 

@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
-import { createAction } from '../actionFactory';
+import { createAction, createDialogLineId } from '../actionFactory';
 import type { ActionTypeId } from '../actionTypes';
 import type { DialogUpdater, FunctionUpdater } from '../dialogTypes';
 import type {
@@ -9,6 +9,7 @@ import type {
   SemanticModel,
   ValidationResult
 } from '../../types/global';
+import { collectDialogLineActions, type ActionPath } from '../nestedActionUtils';
 import type {
   DialogEditorSnackbarState,
   DialogEditorValidationDialogState
@@ -25,7 +26,7 @@ interface UseDialogEditorCommandsParams {
     validationResult?: ValidationResult;
   }>;
   updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
-  focusAction: (index: number, scrollIntoView?: boolean) => void;
+  focusAction: (path: ActionPath, scrollIntoView?: boolean) => void;
   setIsSaving: (value: boolean) => void;
   setIsResetting: (value: boolean) => void;
   setSnackbar: (value: DialogEditorSnackbarState) => void;
@@ -83,6 +84,16 @@ export function useDialogEditorCommands({
       dialogName,
       currentAction: undefined
     });
+    if (newAction.type === 'DialogLine') {
+      newAction = {
+        ...newAction,
+        id: createDialogLineId({
+          dialogName,
+          speaker: newAction.speaker,
+          actions: collectDialogLineActions(currentFunction.actions || [])
+        })
+      };
+    }
 
     if (actionType === 'choice') {
       const modelForUniqueness = semanticModel;
@@ -100,13 +111,13 @@ export function useDialogEditorCommands({
       };
     }
 
-    setFunction((previousFunction) => {
-      const newActions = [...(previousFunction.actions || []), newAction];
-      setTimeout(() => focusAction(newActions.length - 1, true), 0);
-      return {
-        ...previousFunction,
-        actions: newActions
-      };
+      setFunction((previousFunction) => {
+        const newActions = [...(previousFunction.actions || []), newAction];
+        setTimeout(() => focusAction([newActions.length - 1], true), 0);
+        return {
+          ...previousFunction,
+          actions: newActions
+        };
     });
   }, [currentFunction, filePath, dialogName, semanticModel, updateFunction, setFunction, focusAction]);
 

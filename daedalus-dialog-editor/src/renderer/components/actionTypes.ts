@@ -148,6 +148,13 @@ export interface CustomAction {
   action: string;
 }
 
+export interface ConditionalAction {
+  type: 'ConditionalAction';
+  condition: string;
+  thenActions: ActionType[];
+  elseActions: ActionType[];
+}
+
 /**
  * Discriminated union of all action types
  */
@@ -173,6 +180,7 @@ export type ActionType =
   | GiveTradeInventoryAction
   | RemoveInventoryItemsAction
   | InsertNpcAction
+  | ConditionalAction
   | Action
   | CustomAction;
 
@@ -201,6 +209,7 @@ export type ActionTypeId =
   | 'giveTradeInventoryAction'
   | 'removeInventoryItemsAction'
   | 'insertNpcAction'
+  | 'conditionalAction'
   | 'customAction';
 
 export type UnknownDialogAction = Record<string, unknown>;
@@ -277,6 +286,9 @@ export function getActionType(action: DetectableAction): ActionTypeId {
   }
   if (hasProperty(a, 'npcInstance') && hasProperty(a, 'spawnPoint')) {
     return 'insertNpcAction';
+  }
+  if (hasProperty(a, 'condition') && hasProperty(a, 'thenActions') && hasProperty(a, 'elseActions')) {
+    return 'conditionalAction';
   }
   // Loose check for StopProcessInfos - assuming it only has target
   if (hasProperty(a, 'target') &&

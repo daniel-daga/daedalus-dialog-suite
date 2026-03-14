@@ -27,6 +27,7 @@ export type {
   GiveTradeInventoryActionType,
   RemoveInventoryItemsActionType,
   InsertNpcActionType,
+  ConditionalAction,
   CustomAction,
   DialogAction,
   NpcKnowsInfoCondition,

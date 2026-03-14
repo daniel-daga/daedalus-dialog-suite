@@ -17,18 +17,21 @@ import {
 import ActionsList from './ActionsList';
 import type { ActionTypeId } from './actionTypes';
 import type { DialogAction, DialogFunction, SemanticModel } from '../types/global';
+import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
 
 interface DialogActionsSectionProps {
   dialogName: string;
   currentFunction: DialogFunction;
   npcName: string;
-  actionRefs: React.MutableRefObject<(HTMLInputElement | null)[]>;
-  updateAction: (index: number, updatedAction: DialogAction) => void;
-  deleteAction: (index: number) => void;
-  deleteActionAndFocusPrev: (index: number) => void;
-  addDialogLineAfter: (index: number, toggleSpeaker?: boolean) => void;
-  addActionAfter: (index: number, actionType: ActionTypeId) => void;
-  focusAction: (index: number, scrollIntoView?: boolean) => void;
+  updateActionAtPath: (path: ActionPath, updatedAction: DialogAction) => void;
+  deleteActionAtPath: (path: ActionPath) => void;
+  deleteActionAndFocusPrevAtPath: (path: ActionPath) => void;
+  addDialogLineAfterPath: (path: ActionPath, toggleSpeaker?: boolean) => void;
+  addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
+  addActionToBranchEnd: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
+  focusActionAtPath: (path: ActionPath, scrollIntoView?: boolean) => void;
+  registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
+  getVisibleActionPaths: () => ActionPath[];
   semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction: (oldName: string, newName: string) => void;
@@ -60,6 +63,7 @@ const ADD_ACTION_ITEMS: AddActionItem[] = [
   { actionType: 'giveTradeInventoryAction', label: 'Add Give Trade Inventory', placement: 'menu' },
   { actionType: 'removeInventoryItemsAction', label: 'Add Remove Inventory Items', placement: 'menu' },
   { actionType: 'insertNpcAction', label: 'Add Insert NPC', placement: 'menu' },
+  { actionType: 'conditionalAction', label: 'Add If / Else Block', placement: 'menu' },
   { actionType: 'customAction', label: 'Add Custom Action', placement: 'menu' }
 ];
 
@@ -70,13 +74,15 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
   dialogName,
   currentFunction,
   npcName,
-  actionRefs,
-  updateAction,
-  deleteAction,
-  deleteActionAndFocusPrev,
-  addDialogLineAfter,
-  addActionAfter,
-  focusAction,
+  updateActionAtPath,
+  deleteActionAtPath,
+  deleteActionAndFocusPrevAtPath,
+  addDialogLineAfterPath,
+  addActionAfterPath,
+  addActionToBranchEnd,
+  focusActionAtPath,
+  registerActionRef,
+  getVisibleActionPaths,
   semanticModel,
   onNavigateToFunction,
   onRenameFunction,
@@ -142,14 +148,16 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
       ) : (
         <ActionsList
           actions={currentFunction.actions || []}
-          actionRefs={actionRefs}
           npcName={npcName}
-          updateAction={updateAction}
-          deleteAction={deleteAction}
-          focusAction={focusAction}
-          addDialogLineAfter={addDialogLineAfter}
-          deleteActionAndFocusPrev={deleteActionAndFocusPrev}
-          addActionAfter={addActionAfter}
+          updateActionAtPath={updateActionAtPath}
+          deleteActionAtPath={deleteActionAtPath}
+          focusActionAtPath={focusActionAtPath}
+          addDialogLineAfterPath={addDialogLineAfterPath}
+          deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
+          addActionAfterPath={addActionAfterPath}
+          addActionToBranchEnd={addActionToBranchEnd}
+          registerActionRef={registerActionRef}
+          getVisibleActionPaths={getVisibleActionPaths}
           semanticModel={semanticModel}
           onNavigateToFunction={onNavigateToFunction}
           onRenameFunction={onRenameFunction}

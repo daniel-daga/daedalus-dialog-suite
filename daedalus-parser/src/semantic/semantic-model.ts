@@ -133,6 +133,7 @@ export interface PropertyFormatting {
 export interface CodeGenOptions {
   includeComments?: boolean;
   preserveSourceStyle?: boolean;
+  indentUnit?: string;
 }
 
 /**
@@ -270,6 +271,69 @@ export class Action implements CodeGeneratable {
 
   getTypeName(): string {
     return 'Action';
+  }
+}
+
+export class ConditionalAction implements CodeGeneratable {
+  public readonly type = 'ConditionalAction';
+  public condition: string;
+  public thenActions: DialogAction[];
+  public elseActions: DialogAction[];
+
+  constructor(condition: string, thenActions: DialogAction[] = [], elseActions: DialogAction[] = []) {
+    this.condition = condition;
+    this.thenActions = thenActions;
+    this.elseActions = elseActions;
+  }
+
+  generateCode(options: CodeGenOptions): string {
+    const indentUnit = options.indentUnit || '\t';
+    const lines: string[] = [];
+
+    lines.push(`if (${this.condition.trim()})`);
+    lines.push('{');
+    lines.push(...this.renderBranch(this.thenActions, indentUnit, options));
+
+    if (this.elseActions.length > 0) {
+      lines.push('}');
+      lines.push('else');
+      lines.push('{');
+      lines.push(...this.renderBranch(this.elseActions, indentUnit, options));
+      lines.push('};');
+    } else {
+      lines.push('};');
+    }
+
+    return lines.join('\n');
+  }
+
+  toDisplayString(): string {
+    return `[ConditionalAction: if (${this.condition})]`;
+  }
+
+  getTypeName(): string {
+    return 'ConditionalAction';
+  }
+
+  private renderBranch(actions: DialogAction[], indentUnit: string, options: CodeGenOptions): string[] {
+    const lines: string[] = [];
+
+    for (const action of actions) {
+      const actionCode = (action as CodeGeneratable).generateCode({
+        ...options,
+        indentUnit
+      });
+      const actionLines = actionCode.split('\n');
+      actionLines.forEach((line) => {
+        if (line.trim()) {
+          lines.push(`${indentUnit}${line}`);
+        } else {
+          lines.push('');
+        }
+      });
+    }
+
+    return lines;
   }
 }
 
@@ -713,6 +777,7 @@ export type DialogAction =
   | LogEntry
   | LogSetTopicStatus
   | Action
+  | ConditionalAction
   | Choice
   | CreateInventoryItems
   | GiveInventoryItems
@@ -739,6 +804,7 @@ const ACTION_DISCRIMINATOR = {
     { value: LogEntry, name: 'LogEntry' },
     { value: LogSetTopicStatus, name: 'LogSetTopicStatus' },
     { value: Action, name: 'Action' },
+    { value: ConditionalAction, name: 'ConditionalAction' },
     { value: Choice, name: 'Choice' },
     { value: CreateInventoryItems, name: 'CreateInventoryItems' },
     { value: GiveInventoryItems, name: 'GiveInventoryItems' },
@@ -766,6 +832,7 @@ function ensureActionType(json: any): void {
     else if ('topic' in json && 'topicType' in json) json.type = 'CreateTopic';
     else if ('topic' in json && 'text' in json) json.type = 'LogEntry';
     else if ('topic' in json && 'status' in json) json.type = 'LogSetTopicStatus';
+    else if ('condition' in json && 'thenActions' in json && 'elseActions' in json) json.type = 'ConditionalAction';
     else if ('dialogRef' in json && 'targetFunction' in json) json.type = 'Choice';
     else if ('target' in json && 'item' in json && 'quantity' in json && !('giver' in json)) json.type = 'CreateInventoryItems';
     else if ('giver' in json && 'receiver' in json) json.type = 'GiveInventoryItems';
@@ -785,6 +852,13 @@ function ensureActionType(json: any): void {
     else if ('npcInstance' in json && 'spawnPoint' in json) json.type = 'InsertNpcAction';
     else if ('action' in json) json.type = 'Action';
   }
+
+  if (Array.isArray(json.thenActions)) {
+    json.thenActions.forEach((action: any) => ensureActionType(action));
+  }
+  if (Array.isArray(json.elseActions)) {
+    json.elseActions.forEach((action: any) => ensureActionType(action));
+  }
 }
 
 // Helper to deserialize any action
@@ -794,7 +868,16 @@ export function deserializeAction(json: any): DialogAction | any {
   if (json.type) {
     const subType = ACTION_DISCRIMINATOR.subTypes.find(s => s.name === json.type);
     if (subType) {
-      return plainToInstance(subType.value as ClassConstructor<any>, json);
+      const instance = plainToInstance(subType.value as ClassConstructor<any>, json);
+      if (instance instanceof ConditionalAction) {
+        instance.thenActions = Array.isArray(json.thenActions)
+          ? json.thenActions.map((action: any) => deserializeAction(action))
+          : [];
+        instance.elseActions = Array.isArray(json.elseActions)
+          ? json.elseActions.map((action: any) => deserializeAction(action))
+          : [];
+      }
+      return instance;
     }
   }
 
@@ -1295,6 +1378,8 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     }
 
     model.functions[funcName] = plainToInstance(DialogFunction as ClassConstructor<any>, funcJson);
+    model.functions[funcName].actions = (model.functions[funcName].actions || []).map((action: any) => deserializeAction(action));
+    model.functions[funcName].calls = funcJson.calls || [];
   }
 
   // 2. Reconstruct dialogs and link to functions

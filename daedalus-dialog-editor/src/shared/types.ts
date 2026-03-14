@@ -186,6 +186,13 @@ export interface CustomAction {
   action: string;
 }
 
+export interface ConditionalAction {
+  type: 'ConditionalAction';
+  condition: string;
+  thenActions: DialogAction[];
+  elseActions: DialogAction[];
+}
+
 /**
  * Union type for all possible dialog actions
  */
@@ -211,6 +218,7 @@ export type DialogAction =
   | GiveTradeInventoryActionType
   | RemoveInventoryItemsActionType
   | InsertNpcActionType
+  | ConditionalAction
   | Action
   | CustomAction;
 

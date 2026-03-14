@@ -250,6 +250,10 @@ export function createAction(
       action = ACTION_TEMPLATES.insertNpcAction();
       break;
 
+    case 'conditionalAction':
+      action = ACTION_TEMPLATES.conditionalAction();
+      break;
+
     case 'customAction':
       action = ACTION_TEMPLATES.customAction();
       break;

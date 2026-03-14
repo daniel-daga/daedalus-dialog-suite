@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
 
-test('preserves if statements as raw actions in non-condition functions', () => {
+test('parses supported if statements as structured conditional actions in non-condition functions', () => {
   const source = `
   func void DIA_Test_Info()
   {
@@ -17,12 +17,11 @@ test('preserves if statements as raw actions in non-condition functions', () => 
   const func = model.functions.DIA_Test_Info;
   assert.ok(func, 'Function should be parsed');
 
-  assert.equal(func.actions.length, 1, 'Should store one raw action for the if-statement');
-  assert.equal(func.actions[0].constructor.name, 'Action', 'Should preserve if-statement as Action');
-  assert.ok(func.actions[0].action.includes('if (SC_IsRanger == TRUE)'), 'Action should contain if-statement text');
-
-  const hasDialogLine = func.actions.some(a => a.constructor.name === 'DialogLine');
-  assert.equal(hasDialogLine, false, 'Should not flatten inner AI_Output into DialogLine actions');
+  assert.equal(func.actions.length, 1, 'Should store one structured conditional action');
+  assert.equal(func.actions[0].constructor.name, 'ConditionalAction', 'Should parse if-statement as ConditionalAction');
+  assert.equal(func.actions[0].condition, 'SC_IsRanger == TRUE', 'Structured action should keep the if condition');
+  assert.equal(func.actions[0].thenActions.length, 1, 'Then branch should contain inner actions');
+  assert.equal(func.actions[0].thenActions[0].constructor.name, 'DialogLine', 'Inner AI_Output should remain a dialog line');
 });
 
 

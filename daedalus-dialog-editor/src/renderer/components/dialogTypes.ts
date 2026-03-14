@@ -11,6 +11,7 @@ import type {
   FunctionTreeNode
 } from '../types/global';
 import type { ActionTypeId } from './actionTypes';
+import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
 
 export type FunctionUpdater = DialogFunction | ((prev: DialogFunction) => DialogFunction);
 export type DialogUpdater = (dialog: Dialog) => Dialog;
@@ -20,15 +21,19 @@ export type ConditionEditorCondition = DialogCondition & {
 
 export interface ActionCardProps {
   action: DialogAction;
+  path: ActionPath;
   index: number;
   totalActions: number;
   npcName: string;
-  updateAction: (index: number, action: DialogAction) => void;
-  deleteAction: (index: number) => void;
-  focusAction: (index: number, scrollIntoView?: boolean) => void;
-  addDialogLineAfter: (index: number, toggleSpeaker?: boolean) => void;
-  deleteActionAndFocusPrev: (index: number) => void;
-  addActionAfter: (index: number, actionType: ActionTypeId) => void;
+  updateActionAtPath: (path: ActionPath, action: DialogAction) => void;
+  deleteActionAtPath: (path: ActionPath) => void;
+  focusActionAtPath: (path: ActionPath, scrollIntoView?: boolean) => void;
+  addDialogLineAfterPath: (path: ActionPath, toggleSpeaker?: boolean) => void;
+  deleteActionAndFocusPrevAtPath: (path: ActionPath) => void;
+  addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
+  addActionToBranchEnd?: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
+  registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
+  getVisibleActionPaths: () => ActionPath[];
   semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;

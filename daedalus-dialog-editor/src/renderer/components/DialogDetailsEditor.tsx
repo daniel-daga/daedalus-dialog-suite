@@ -22,6 +22,7 @@ import { useFocusNavigation } from './hooks/useFocusNavigation';
 import { useActionManagement } from './hooks/useActionManagement';
 import { useDialogEditorUIState } from './hooks/useDialogEditorUIState';
 import { useDialogEditorCommands } from './hooks/useDialogEditorCommands';
+import { flattenActionPaths } from './nestedActionUtils';
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
@@ -44,7 +45,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     : null;
 
   const uiState = useDialogEditorUIState();
-  const { actionRefs, focusAction, trimRefs } = useFocusNavigation();
+  const { registerActionRef, focusAction, trimRefs } = useFocusNavigation();
 
   const {
     setFunction,
@@ -75,7 +76,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     deleteAction,
     deleteActionAndFocusPrev,
     addDialogLineAfter,
-    addActionAfter
+    addActionAfter,
+    addActionToBranchEnd
   } = useActionManagement({
     setFunction,
     focusAction,
@@ -89,8 +91,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   });
 
   useEffect(() => {
-    trimRefs(currentFunction?.actions?.length || 0);
-  }, [currentFunction?.actions?.length, trimRefs]);
+    trimRefs(flattenActionPaths(currentFunction?.actions || []));
+  }, [currentFunction?.actions, trimRefs]);
 
   const isDirty = fileState?.isDirty || false;
 
@@ -144,13 +146,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           dialogName={dialogName}
           currentFunction={currentFunction}
           npcName={dialog?.properties?.npc || 'NPC'}
-          actionRefs={actionRefs}
-          updateAction={updateAction}
-          deleteAction={deleteAction}
-          deleteActionAndFocusPrev={deleteActionAndFocusPrev}
-          addDialogLineAfter={addDialogLineAfter}
-          addActionAfter={addActionAfter}
-          focusAction={focusAction}
+          updateActionAtPath={updateAction}
+          deleteActionAtPath={deleteAction}
+          deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrev}
+          addDialogLineAfterPath={addDialogLineAfter}
+          addActionAfterPath={addActionAfter}
+          addActionToBranchEnd={addActionToBranchEnd}
+          focusActionAtPath={focusAction}
+          registerActionRef={registerActionRef}
+          getVisibleActionPaths={() => flattenActionPaths(currentFunction.actions || [])}
           semanticModel={semanticModel}
           onNavigateToFunction={onNavigateToFunction}
           onRenameFunction={handleRenameFunction}

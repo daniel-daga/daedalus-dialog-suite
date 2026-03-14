@@ -25,6 +25,7 @@ import type {
   GiveTradeInventoryAction,
   RemoveInventoryItemsAction,
   InsertNpcAction,
+  ConditionalAction,
   CustomAction
 } from './actionTypes';
 
@@ -175,6 +176,13 @@ export const ACTION_TEMPLATES = {
     type: 'InsertNpcAction',
     npcInstance,
     spawnPoint
+  }),
+
+  conditionalAction: (condition: string = ''): ConditionalAction => ({
+    type: 'ConditionalAction',
+    condition,
+    thenActions: [],
+    elseActions: []
   }),
 
   customAction: (action: string = 'AI_StopProcessInfos(self)'): CustomAction => ({

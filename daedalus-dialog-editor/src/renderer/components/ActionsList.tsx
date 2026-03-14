@@ -3,17 +3,21 @@ import { Stack, Box } from '@mui/material';
 import ActionCard from './ActionCard';
 import type { ActionTypeId } from './actionTypes';
 import type { DialogAction, SemanticModel } from '../types/global';
+import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
 
 interface ActionsListProps {
   actions: DialogAction[];
-  actionRefs: React.MutableRefObject<(HTMLInputElement | null)[]>;
+  pathPrefix?: ActionPath;
   npcName: string;
-  updateAction: (index: number, updatedAction: DialogAction) => void;
-  deleteAction: (index: number) => void;
-  focusAction: (index: number, scrollIntoView?: boolean) => void;
-  addDialogLineAfter: (index: number, toggleSpeaker?: boolean) => void;
-  deleteActionAndFocusPrev: (index: number) => void;
-  addActionAfter: (index: number, actionType: ActionTypeId) => void;
+  updateActionAtPath: (path: ActionPath, updatedAction: DialogAction) => void;
+  deleteActionAtPath: (path: ActionPath) => void;
+  focusActionAtPath: (path: ActionPath, scrollIntoView?: boolean) => void;
+  addDialogLineAfterPath: (path: ActionPath, toggleSpeaker?: boolean) => void;
+  deleteActionAndFocusPrevAtPath: (path: ActionPath) => void;
+  addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
+  addActionToBranchEnd?: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
+  registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
+  getVisibleActionPaths: () => ActionPath[];
   semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
@@ -34,14 +38,17 @@ const getActionIdentity = (action: DialogAction, fallbackIndex: number): string 
  */
 const ActionsList = React.memo<ActionsListProps>(({
   actions,
-  actionRefs,
+  pathPrefix = [],
   npcName,
-  updateAction,
-  deleteAction,
-  focusAction,
-  addDialogLineAfter,
-  deleteActionAndFocusPrev,
-  addActionAfter,
+  updateActionAtPath,
+  deleteActionAtPath,
+  focusActionAtPath,
+  addDialogLineAfterPath,
+  deleteActionAndFocusPrevAtPath,
+  addActionAfterPath,
+  addActionToBranchEnd,
+  registerActionRef,
+  getVisibleActionPaths,
   semanticModel,
   onNavigateToFunction,
   onRenameFunction,
@@ -92,17 +99,20 @@ const ActionsList = React.memo<ActionsListProps>(({
       {actions.slice(0, Math.max(renderedCount, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0)).map((action: DialogAction, idx: number) => (
         <ActionCard
           key={getActionIdentity(action, idx)}
-          ref={(el) => (actionRefs.current[idx] = el)}
+          path={[...pathPrefix, idx]}
           action={action}
           index={idx}
           totalActions={actions.length}
           npcName={npcName}
-          updateAction={updateAction}
-          deleteAction={deleteAction}
-          focusAction={focusAction}
-          addDialogLineAfter={addDialogLineAfter}
-          deleteActionAndFocusPrev={deleteActionAndFocusPrev}
-          addActionAfter={addActionAfter}
+          updateActionAtPath={updateActionAtPath}
+          deleteActionAtPath={deleteActionAtPath}
+          focusActionAtPath={focusActionAtPath}
+          addDialogLineAfterPath={addDialogLineAfterPath}
+          deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
+          addActionAfterPath={addActionAfterPath}
+          addActionToBranchEnd={addActionToBranchEnd}
+          registerActionRef={registerActionRef}
+          getVisibleActionPaths={getVisibleActionPaths}
           semanticModel={semanticModel}
           onNavigateToFunction={onNavigateToFunction}
           onRenameFunction={onRenameFunction}
@@ -128,6 +138,7 @@ const ActionsList = React.memo<ActionsListProps>(({
   if (prevProps.npcName !== nextProps.npcName) return false;
   if (prevProps.dialogContextName !== nextProps.dialogContextName) return false;
   if (prevProps.contextId !== nextProps.contextId) return false; // Check contextId
+  if ((prevProps.pathPrefix || []).join('.') !== (nextProps.pathPrefix || []).join('.')) return false;
 
   // Quick check - if the arrays have the same actions in the same order
   // We rely on action IDs for identity, and ActionCard memo for deep comparison
