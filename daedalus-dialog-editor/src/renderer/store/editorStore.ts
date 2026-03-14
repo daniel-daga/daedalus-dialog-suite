@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
-import { createDialogLineId } from '../components/actionFactory';
+import { createDialogLineId, resolveDialogNameForLineId } from '../components/actionFactory';
+import { collectDialogLineActions } from '../components/nestedActionUtils';
 import { useProjectStore } from './projectStore';
 import type {
   SemanticModel,
@@ -22,15 +23,42 @@ enableMapSet();
 function ensureActionIds(model: SemanticModel): SemanticModel {
   if (!model || !model.functions) return model;
 
-  const infoFunctionToDialogName = new Map<string, string>();
+  // Build a map from function name to dialog base name.
+  // First, map info functions directly via dialog properties.
+  const funcToDialogName = new Map<string, string>();
+  const dialogBaseNames = new Set<string>();
+
   Object.entries(model.dialogs || {}).forEach(([dialogName, dialog]) => {
     const infoRef = dialog?.properties?.information;
     const infoFunctionName = typeof infoRef === 'string'
       ? infoRef
       : infoRef?.name;
     if (infoFunctionName) {
-      infoFunctionToDialogName.set(infoFunctionName, dialogName);
+      funcToDialogName.set(infoFunctionName, dialogName);
     }
+    dialogBaseNames.add(dialogName);
+  });
+
+  // For functions not directly mapped (e.g. choice target functions),
+  // check if a dialog name is a prefix of the function name.
+  Object.keys(model.functions).forEach(funcName => {
+    if (funcToDialogName.has(funcName)) return;
+    for (const baseName of dialogBaseNames) {
+      if (funcName.startsWith(baseName + '_')) {
+        funcToDialogName.set(funcName, baseName);
+        return;
+      }
+    }
+  });
+
+  // Pre-collect all existing dialog line actions per dialog base name
+  // (only those that already have valid IDs).
+  const dialogLinesByBaseName = new Map<string, DialogAction[]>();
+  Object.entries(model.functions).forEach(([funcName, func]) => {
+    const baseName = funcToDialogName.get(funcName) || funcName;
+    const existing = dialogLinesByBaseName.get(baseName) || [];
+    existing.push(...collectDialogLineActions(func.actions || []));
+    dialogLinesByBaseName.set(baseName, existing);
   });
 
   const updatedFunctions = { ...model.functions };
@@ -39,7 +67,8 @@ function ensureActionIds(model: SemanticModel): SemanticModel {
     if (func.actions && Array.isArray(func.actions)) {
       const actions = [...func.actions];
       let hasChanges = false;
-      const dialogName = infoFunctionToDialogName.get(funcName) || funcName;
+      const dialogName = funcToDialogName.get(funcName) || funcName;
+      const allDialogLines = dialogLinesByBaseName.get(dialogName) || [];
 
       for (let index = 0; index < actions.length; index += 1) {
         const action = actions[index] as DialogAction & { speaker?: 'self' | 'other' };
@@ -52,15 +81,16 @@ function ensureActionIds(model: SemanticModel): SemanticModel {
         }
 
         const speaker: 'self' | 'other' = action.speaker === 'other' ? 'other' : 'self';
-        const actionsWithoutCurrent = actions.filter((_, actionIndex) => actionIndex !== index);
-        actions[index] = {
-          ...action,
-          id: createDialogLineId({
-            dialogName,
-            speaker,
-            actions: actionsWithoutCurrent
-          })
-        } as DialogAction;
+        const actionsWithoutCurrent = allDialogLines.filter((a) => a !== action);
+        const newId = createDialogLineId({
+          dialogName,
+          speaker,
+          actions: actionsWithoutCurrent
+        });
+        const newAction = { ...action, id: newId } as DialogAction;
+        actions[index] = newAction;
+        // Update the shared collection so subsequent ID generation sees this new ID
+        allDialogLines.push(newAction);
         hasChanges = true;
       }
 

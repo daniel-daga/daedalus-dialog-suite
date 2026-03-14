@@ -7,6 +7,7 @@ import type { FunctionUpdater } from '../dialogTypes';
 import type { ActionBranchKey, ActionPath } from '../nestedActionUtils';
 import {
   appendActionToBranch,
+  collectAllDialogLineActionsFromModel,
   collectDialogLineActions,
   deleteActionAtPath as deleteNestedActionAtPath,
   flattenActionPaths,
@@ -28,6 +29,8 @@ export interface ActionManagementConfig {
   onUpdateSemanticModel?: (functionName: string, func: DialogFunction) => void;
   /** Context name for dialog/function (used for generating unique names) */
   contextName: string;
+  /** Name of the function currently being edited (used to avoid stale data from semanticModel) */
+  currentFunctionName?: string | null;
 }
 
 /**
@@ -39,8 +42,24 @@ export function useActionManagement(config: ActionManagementConfig) {
     focusAction,
     semanticModel,
     onUpdateSemanticModel,
-    contextName
+    contextName,
+    currentFunctionName
   } = config;
+
+  /**
+   * Collect all dialog line actions across all functions belonging to the same dialog.
+   * Uses live actions for the current function (may have unsaved edits) and
+   * semantic model data for all sibling functions.
+   */
+  const getAllDialogLineActions = useCallback((liveActions: DialogAction[]): DialogAction[] => {
+    if (!semanticModel) {
+      return collectDialogLineActions(liveActions);
+    }
+    const fromOtherFunctions = collectAllDialogLineActionsFromModel(
+      semanticModel, contextName, currentFunctionName
+    );
+    return [...fromOtherFunctions, ...collectDialogLineActions(liveActions)];
+  }, [semanticModel, contextName, currentFunctionName]);
 
   const buildDialogLineAction = useCallback((actions: DialogAction[], speaker: 'self' | 'other', text: string = ''): DialogLineAction => ({
     type: 'DialogLine',
@@ -49,9 +68,9 @@ export function useActionManagement(config: ActionManagementConfig) {
     id: createDialogLineId({
       dialogName: contextName,
       speaker,
-      actions: collectDialogLineActions(actions)
+      actions: getAllDialogLineActions(actions)
     })
-  }), [contextName]);
+  }), [contextName, getAllDialogLineActions]);
 
   const updateAction = useCallback((path: ActionPath, updatedAction: DialogAction) => {
     setFunction((prev) => {
@@ -66,7 +85,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         const needsGeneratedId = !currentId || currentId === 'NEW_LINE_ID';
 
         if (speakerChanged || needsGeneratedId) {
-          const actionsWithoutCurrent = collectDialogLineActions(deleteNestedActionAtPath(actions, path));
+          const actionsWithoutCurrent = getAllDialogLineActions(deleteNestedActionAtPath(actions, path));
           const generatedId = createDialogLineId({
             dialogName: contextName,
             speaker: updatedAction.speaker,
@@ -99,7 +118,7 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       return { ...prev, actions: updateNestedActionAtPath(actions, path, nextAction) };
     });
-  }, [setFunction, contextName]);
+  }, [setFunction, contextName, getAllDialogLineActions]);
 
   /**
    * Delete an action at a specific index
@@ -227,7 +246,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         newAction.id = createDialogLineId({
           dialogName: contextName,
           speaker: newAction.speaker,
-          actions: collectDialogLineActions(actions)
+          actions: getAllDialogLineActions(actions)
         });
       }
 
@@ -241,7 +260,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     if (nextPath) {
       setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
     }
-  }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName]);
+  }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, getAllDialogLineActions]);
 
   const addActionToBranchEnd = useCallback((path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => {
     let nextPath: ActionPath | null = null;
@@ -262,7 +281,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         newAction.id = createDialogLineId({
           dialogName: contextName,
           speaker: newAction.speaker,
-          actions: collectDialogLineActions(actions)
+          actions: getAllDialogLineActions(actions)
         });
       }
 
@@ -276,7 +295,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     if (nextPath) {
       setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
     }
-  }, [setFunction, contextName, focusAction]);
+  }, [setFunction, contextName, focusAction, getAllDialogLineActions]);
 
   return {
     updateAction,

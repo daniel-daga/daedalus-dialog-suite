@@ -9,7 +9,7 @@ import type {
   SemanticModel,
   ValidationResult
 } from '../../types/global';
-import { collectDialogLineActions, type ActionPath } from '../nestedActionUtils';
+import { collectAllDialogLineActionsFromModel, collectDialogLineActions, type ActionPath } from '../nestedActionUtils';
 import type {
   DialogEditorSnackbarState,
   DialogEditorValidationDialogState
@@ -90,7 +90,12 @@ export function useDialogEditorCommands({
         id: createDialogLineId({
           dialogName,
           speaker: newAction.speaker,
-          actions: collectDialogLineActions(currentFunction.actions || [])
+          actions: semanticModel
+            ? [
+                ...collectAllDialogLineActionsFromModel(semanticModel, dialogName, currentFunctionName),
+                ...collectDialogLineActions(currentFunction.actions || [])
+              ]
+            : collectDialogLineActions(currentFunction.actions || [])
         })
       };
     }

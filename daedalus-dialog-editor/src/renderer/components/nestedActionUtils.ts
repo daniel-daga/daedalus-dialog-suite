@@ -1,4 +1,5 @@
 import type { ConditionalAction, DialogAction } from '../types/global';
+import { resolveDialogNameForLineId } from './actionFactory';
 
 export type ActionBranchKey = 'then' | 'else';
 export type ActionPath = Array<number | ActionBranchKey>;
@@ -179,5 +180,28 @@ export function collectDialogLineActions(actions: DialogAction[]): DialogAction[
     }
   });
 
+  return collected;
+}
+
+/**
+ * Collect all dialog line actions from all functions in a semantic model
+ * that belong to the same dialog (matched by name prefix).
+ * Optionally excludes a specific function (e.g. the one being live-edited).
+ */
+export function collectAllDialogLineActionsFromModel(
+  semanticModel: { functions: Record<string, { actions?: DialogAction[] }> },
+  dialogName: string,
+  excludeFunctionName?: string | null
+): DialogAction[] {
+  const baseName = resolveDialogNameForLineId(dialogName);
+  if (!baseName) return [];
+
+  const collected: DialogAction[] = [];
+  for (const [funcName, func] of Object.entries(semanticModel.functions)) {
+    if (funcName === excludeFunctionName) continue;
+    if (funcName === baseName || funcName.startsWith(baseName + '_')) {
+      collected.push(...collectDialogLineActions(func.actions || []));
+    }
+  }
   return collected;
 }

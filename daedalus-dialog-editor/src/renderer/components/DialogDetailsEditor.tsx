@@ -87,7 +87,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         updateFunction(filePath, functionNameToUpdate, updatedFunction);
       }
     },
-    contextName: dialogName
+    contextName: dialogName,
+    currentFunctionName
   });
 
   useEffect(() => {
