@@ -149,22 +149,22 @@ export interface CodeGeneratable {
 export class DialogLine implements CodeGeneratable {
   public readonly type = 'DialogLine';
   public speaker: string;
-  public listener: string = 'other';
+  public listener: string;
   public text: string;
   public id: string;
   public inlineComment?: boolean;
 
-  constructor(speaker: string, text: string, id: string, listener: string = 'other') {
+  constructor(speaker: string, text: string, id: string, listener?: string) {
     this.speaker = speaker;
     this.text = text;
     this.id = id;
-    this.listener = listener || 'other';
+    this.listener = listener ?? (speaker === 'other' ? 'self' : 'other');
   }
 
   generateCode(options: CodeGenOptions): string {
     const shouldEmitComment = options.includeComments && (this.inlineComment ?? this.text !== this.id);
     const comment = shouldEmitComment ? ` //${this.text}` : '';
-    const listener = this.listener || 'other';
+    const listener = this.listener || (this.speaker === 'other' ? 'self' : 'other');
     return `AI_Output (${this.speaker}, ${listener}, "${this.id}");${comment}`;
   }
 
