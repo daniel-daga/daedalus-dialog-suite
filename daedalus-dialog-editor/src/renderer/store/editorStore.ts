@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
-import { createDialogLineId, resolveDialogNameForLineId } from '../components/actionFactory';
+import { createDialogLineId } from '../components/actionFactory';
 import { collectDialogLineActions } from '../components/nestedActionUtils';
 import { useProjectStore } from './projectStore';
 import type {
