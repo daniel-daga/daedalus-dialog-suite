@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
-import { Box, Tooltip, Typography, Menu, MenuItem } from '@mui/material';
+import React, { useState, useRef, useCallback } from 'react';
+import { Box, Tooltip, Typography } from '@mui/material';
 import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon, Star as StarIcon, School as SchoolIcon, PersonAdd as PersonAddIcon, RemoveShoppingCart as RemoveShoppingCartIcon, Inventory2 as Inventory2Icon, DragIndicator as DragIndicatorIcon } from '@mui/icons-material';
 import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
@@ -8,12 +8,12 @@ import type { ActionTypeId } from './actionTypes';
 import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
 import { actionPathToKey } from './nestedActionUtils';
+import ActionTypeMenu from './common/ActionTypeMenu';
 
 const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName, dragHandleProps }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
   const [hasFocus, setHasFocus] = useState(false);
 
   // Local state for text input to avoid parent re-renders on every keystroke
@@ -148,7 +148,6 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       e.preventDefault();
       flushUpdate();
       setMenuAnchor(actionBoxRef.current);
-      setSelectedMenuIndex(0);
     } else if (e.key === 'Enter' && e.shiftKey && isDialogLine && hasNonEmptyText(localAction)) {
       // Shift+Enter creates a new dialog line WITHOUT toggling speaker
       e.preventDefault();
@@ -193,49 +192,6 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       default: return <CodeIcon fontSize="small" />;
     }
   };
-
-  const actionTypes = useMemo<{ type: ActionTypeId; label: string; icon: React.ReactNode }[]>(() => [
-    { type: 'dialogLine', label: 'Dialog Line', icon: <ChatIcon fontSize="small" /> },
-    { type: 'choice', label: 'Choice', icon: <CallSplitIcon fontSize="small" /> },
-    { type: 'logEntry', label: 'Log Entry', icon: <DescriptionIcon fontSize="small" /> },
-    { type: 'createTopic', label: 'Create Topic', icon: <LibraryBooksIcon fontSize="small" /> },
-    { type: 'logSetTopicStatus', label: 'Log Set Status', icon: <DescriptionIcon fontSize="small" /> },
-    { type: 'createInventoryItems', label: 'Create Inventory Items', icon: <InventoryIcon fontSize="small" /> },
-    { type: 'giveInventoryItems', label: 'Give Inventory Items', icon: <CardGiftcardIcon fontSize="small" /> },
-    { type: 'attackAction', label: 'Attack Action', icon: <GavelIcon fontSize="small" /> },
-    { type: 'setAttitudeAction', label: 'Set Attitude', icon: <EmojiPeopleIcon fontSize="small" /> },
-    { type: 'chapterTransition', label: 'Chapter Transition', icon: <NavigationIcon fontSize="small" /> },
-    { type: 'exchangeRoutine', label: 'Exchange Routine', icon: <SwapHorizIcon fontSize="small" /> },
-    { type: 'setVariableAction', label: 'Set Variable', icon: <EditIcon fontSize="small" /> },
-    { type: 'stopProcessInfosAction', label: 'End Dialog', icon: <StopIcon fontSize="small" /> },
-    { type: 'playAniAction', label: 'Play Animation', icon: <PlayArrowIcon fontSize="small" /> },
-    { type: 'givePlayerXPAction', label: 'Give XP', icon: <StarIcon fontSize="small" /> },
-    { type: 'pickpocketAction', label: 'Pickpocket', icon: <GavelIcon fontSize="small" /> },
-    { type: 'startOtherRoutineAction', label: 'Start Other Routine', icon: <SwapHorizIcon fontSize="small" /> },
-    { type: 'teachAction', label: 'Teach', icon: <SchoolIcon fontSize="small" /> },
-    { type: 'giveTradeInventoryAction', label: 'Give Trade Inventory', icon: <Inventory2Icon fontSize="small" /> },
-    { type: 'removeInventoryItemsAction', label: 'Remove Inventory Items', icon: <RemoveShoppingCartIcon fontSize="small" /> },
-    { type: 'insertNpcAction', label: 'Insert NPC', icon: <PersonAddIcon fontSize="small" /> },
-    { type: 'conditionalAction', label: 'If / Else Block', icon: <CallSplitIcon fontSize="small" /> },
-    { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
-  ], []);
-
-  const handleMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      e.stopPropagation();
-      setSelectedMenuIndex((prev) => (prev + 1) % actionTypes.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      e.stopPropagation();
-      setSelectedMenuIndex((prev) => (prev - 1 + actionTypes.length) % actionTypes.length);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      setMenuAnchor(null);
-      mainFieldRef.current?.focus();
-    }
-  }, [actionTypes]);
 
   // Get the appropriate renderer for this action type
   const Renderer = getRendererForAction(localAction);
@@ -330,59 +286,14 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       </Box>
 
       {/* Action Type Selection Menu */}
-      <Menu
+      <ActionTypeMenu
         anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
         onClose={() => {
           setMenuAnchor(null);
           mainFieldRef.current?.focus();
         }}
-        onKeyDown={handleMenuKeyDown}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'center',
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'center',
-        }}
-        slotProps={{
-          paper: {
-            sx: {
-              mt: 1,
-              boxShadow: 2,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              minWidth: 200
-            }
-          }
-        }}
-        MenuListProps={{
-          dense: true,
-          sx: {
-            outline: 'none',
-            py: 1
-          }
-        }}
-      >
-        {actionTypes.map((actionType, idx) => (
-          <MenuItem
-            key={actionType.type}
-            selected={idx === selectedMenuIndex}
-            onClick={() => {
-              handleAddActionAfter(actionType.type);
-              setMenuAnchor(null);
-            }}
-            sx={{ gap: 1.5 }}
-          >
-            <Box sx={{ display: 'flex', color: 'text.secondary' }}>
-              {actionType.icon}
-            </Box>
-            {actionType.label}
-          </MenuItem>
-        ))}
-      </Menu>
+        onSelect={handleAddActionAfter}
+      />
 
       {/* "+" button in divider */}
       <Box
@@ -421,14 +332,12 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
             onClick={(e) => {
               e.stopPropagation();
               setMenuAnchor(e.currentTarget);
-              setSelectedMenuIndex(0);
             }}
             onMouseDown={(e) => e.preventDefault()}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 setMenuAnchor(e.currentTarget);
-                setSelectedMenuIndex(0);
               }
             }}
           >
