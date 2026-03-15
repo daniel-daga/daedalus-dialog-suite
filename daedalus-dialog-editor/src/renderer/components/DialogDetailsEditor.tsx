@@ -6,7 +6,6 @@ import {
   Button,
   Snackbar,
   Alert,
-  CircularProgress
 } from '@mui/material';
 import {
   Code as CodeIcon
@@ -54,8 +53,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     handleDialogPropertyChange,
     handleConditionFunctionUpdate,
     handleSaveAnyway,
-    handleCancelValidation,
-    handleReset
+    handleCancelValidation
   } = useDialogEditorCommands({
     dialogName,
     filePath,
@@ -96,8 +94,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     trimRefs(flattenActionPaths(currentFunction?.actions || []));
   }, [currentFunction?.actions, trimRefs]);
 
-  const isDirty = fileState?.isDirty || false;
-
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -111,14 +107,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             startIcon={<CodeIcon />}
           >
             View Source
-          </Button>
-          <Button
-            variant="outlined"
-            disabled={!isDirty || uiState.isResetting || uiState.isSaving}
-            onClick={handleReset}
-            startIcon={uiState.isResetting ? <CircularProgress size={16} /> : undefined}
-          >
-            {uiState.isResetting ? 'Resetting...' : 'Reset'}
           </Button>
         </Stack>
       </Box>

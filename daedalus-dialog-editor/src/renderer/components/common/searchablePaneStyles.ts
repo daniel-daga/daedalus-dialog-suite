@@ -36,7 +36,7 @@ export const searchablePaneContentSx = (theme: Theme) => ({
 });
 
 export const searchablePaneRowButtonSx = (theme: Theme) => ({
-  borderRadius: 1,
+  borderRadius: 0,
   transition: 'background-color 120ms ease',
   '&:hover': {
     backgroundColor: alpha(theme.palette.primary.main, 0.08),

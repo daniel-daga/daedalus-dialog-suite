@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, TextField, IconButton, Tooltip, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
-import { Delete as DeleteIcon, Info as InfoIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
 import type { DialogLineAction } from '../../types/global';
 
@@ -11,29 +11,12 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  index
+  mainFieldRef
 }) => {
-  const lineNumber = typeof index === 'number' ? index + 1 : null;
-
   const typedAction = action as DialogLineAction;
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-      {lineNumber !== null && (
-        <Box
-          sx={{
-            minWidth: 32,
-            textAlign: 'right',
-            color: 'text.secondary',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 500
-          }}
-          aria-label={`Dialog line ${lineNumber}`}
-        >
-          {lineNumber}.
-        </Box>
-      )}
       <FormControl size="small" sx={{ width: 150, flexShrink: 0 }}>
         <InputLabel>Speaker</InputLabel>
         <Select
@@ -60,13 +43,6 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
         onBlur={flushUpdate}
         onKeyDown={handleKeyDown}
       />
-      {typedAction.id && (
-        <Tooltip title={`Dialog ID: ${typedAction.id}`} arrow>
-          <IconButton size="small" sx={{ flexShrink: 0 }} aria-label={`Dialog ID: ${typedAction.id}`}>
-            <InfoIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      )}
       <Tooltip title="Delete dialog line">
         <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }} aria-label="Delete dialog line">
           <DeleteIcon fontSize="small" />

@@ -271,7 +271,23 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   return (
     <Box
       ref={actionBoxRef}
-      sx={{ pb: 2, mb: 2, borderBottom: '1px solid', borderColor: 'divider', position: 'relative' }}
+      sx={{
+        pt: 2,
+        px: 0.5,
+        pb: 2,
+        borderBottom: '1px solid',
+        borderColor: (theme) =>
+          theme.palette.mode === 'dark'
+            ? 'rgba(255, 255, 255, 0.2)'
+            : 'rgba(0, 0, 0, 0.18)',
+        position: 'relative',
+        bgcolor: (theme) =>
+          index % 2 === 1
+            ? theme.palette.mode === 'dark'
+              ? 'rgba(255, 255, 255, 0.03)'
+              : 'rgba(0, 0, 0, 0.02)'
+            : 'transparent',
+      }}
       onFocus={(e) => {
         // Only set focus if the target is an input/select element
         const target = e.target as HTMLElement;

@@ -113,9 +113,10 @@ const ActionsList = React.memo<ActionsListProps>(({
       <Droppable droppableId={droppableId}>
         {(provided) => (
           <Stack
-            spacing={2}
+            spacing={0}
             ref={provided.innerRef}
             {...provided.droppableProps}
+            sx={{}}
           >
             {visibleActions.map((action: DialogAction, idx: number) => {
               const draggableId = `${droppableId}-${getActionIdentity(action, idx)}`;

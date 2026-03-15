@@ -3,7 +3,6 @@ import {
   Box,
   Paper,
   Typography,
-  Stack,
   Button,
   IconButton,
   Tooltip,
@@ -12,7 +11,22 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon,
-  MoreVert as MoreVertIcon
+  Chat as ChatIcon,
+  CallSplit as CallSplitIcon,
+  Description as DescriptionIcon,
+  LibraryBooks as LibraryBooksIcon,
+  Inventory as InventoryIcon,
+  CardGiftcard as CardGiftcardIcon,
+  Gavel as GavelIcon,
+  EmojiPeople as EmojiPeopleIcon,
+  Navigation as NavigationIcon,
+  SwapHoriz as SwapHorizIcon,
+  Code as CodeIcon,
+  Star as StarIcon,
+  School as SchoolIcon,
+  PersonAdd as PersonAddIcon,
+  RemoveShoppingCart as RemoveShoppingCartIcon,
+  Inventory2 as Inventory2Icon
 } from '@mui/icons-material';
 import ActionsList from './ActionsList';
 import type { ActionTypeId } from './actionTypes';
@@ -39,37 +53,28 @@ interface DialogActionsSectionProps {
   onAddActionToEnd: (actionType: ActionTypeId) => void;
 }
 
-type AddActionItem = {
-  actionType: ActionTypeId;
-  label: string;
-  placement: 'primary' | 'menu';
-};
-
-const ADD_ACTION_ITEMS: AddActionItem[] = [
-  { actionType: 'dialogLine', label: 'Add Line', placement: 'primary' },
-  { actionType: 'choice', label: 'Add Choice', placement: 'primary' },
-  { actionType: 'logEntry', label: 'Add Log Entry', placement: 'menu' },
-  { actionType: 'createTopic', label: 'Add Create Topic', placement: 'menu' },
-  { actionType: 'logSetTopicStatus', label: 'Add Log Set Status', placement: 'menu' },
-  { actionType: 'createInventoryItems', label: 'Add Create Inventory Items', placement: 'menu' },
-  { actionType: 'giveInventoryItems', label: 'Add Give Inventory Items', placement: 'menu' },
-  { actionType: 'attackAction', label: 'Add Attack Action', placement: 'menu' },
-  { actionType: 'setAttitudeAction', label: 'Add Set Attitude', placement: 'menu' },
-  { actionType: 'chapterTransition', label: 'Add Chapter Transition', placement: 'menu' },
-  { actionType: 'exchangeRoutine', label: 'Add Exchange Routine', placement: 'menu' },
-  { actionType: 'givePlayerXPAction', label: 'Add Give XP', placement: 'menu' },
-  { actionType: 'pickpocketAction', label: 'Add Pickpocket', placement: 'menu' },
-  { actionType: 'startOtherRoutineAction', label: 'Add Start Other Routine', placement: 'menu' },
-  { actionType: 'teachAction', label: 'Add Teach', placement: 'menu' },
-  { actionType: 'giveTradeInventoryAction', label: 'Add Give Trade Inventory', placement: 'menu' },
-  { actionType: 'removeInventoryItemsAction', label: 'Add Remove Inventory Items', placement: 'menu' },
-  { actionType: 'insertNpcAction', label: 'Add Insert NPC', placement: 'menu' },
-  { actionType: 'conditionalAction', label: 'Add If / Else Block', placement: 'menu' },
-  { actionType: 'customAction', label: 'Add Custom Action', placement: 'menu' }
+const ADD_ACTION_ITEMS: { actionType: ActionTypeId; label: string; icon: React.ReactNode }[] = [
+  { actionType: 'dialogLine', label: 'Dialog Line', icon: <ChatIcon fontSize="small" /> },
+  { actionType: 'choice', label: 'Choice', icon: <CallSplitIcon fontSize="small" /> },
+  { actionType: 'logEntry', label: 'Log Entry', icon: <DescriptionIcon fontSize="small" /> },
+  { actionType: 'createTopic', label: 'Create Topic', icon: <LibraryBooksIcon fontSize="small" /> },
+  { actionType: 'logSetTopicStatus', label: 'Log Set Status', icon: <DescriptionIcon fontSize="small" /> },
+  { actionType: 'createInventoryItems', label: 'Create Inventory Items', icon: <InventoryIcon fontSize="small" /> },
+  { actionType: 'giveInventoryItems', label: 'Give Inventory Items', icon: <CardGiftcardIcon fontSize="small" /> },
+  { actionType: 'attackAction', label: 'Attack Action', icon: <GavelIcon fontSize="small" /> },
+  { actionType: 'setAttitudeAction', label: 'Set Attitude', icon: <EmojiPeopleIcon fontSize="small" /> },
+  { actionType: 'chapterTransition', label: 'Chapter Transition', icon: <NavigationIcon fontSize="small" /> },
+  { actionType: 'exchangeRoutine', label: 'Exchange Routine', icon: <SwapHorizIcon fontSize="small" /> },
+  { actionType: 'givePlayerXPAction', label: 'Give XP', icon: <StarIcon fontSize="small" /> },
+  { actionType: 'pickpocketAction', label: 'Pickpocket', icon: <GavelIcon fontSize="small" /> },
+  { actionType: 'startOtherRoutineAction', label: 'Start Other Routine', icon: <SwapHorizIcon fontSize="small" /> },
+  { actionType: 'teachAction', label: 'Teach', icon: <SchoolIcon fontSize="small" /> },
+  { actionType: 'giveTradeInventoryAction', label: 'Give Trade Inventory', icon: <Inventory2Icon fontSize="small" /> },
+  { actionType: 'removeInventoryItemsAction', label: 'Remove Inventory Items', icon: <RemoveShoppingCartIcon fontSize="small" /> },
+  { actionType: 'insertNpcAction', label: 'Insert NPC', icon: <PersonAddIcon fontSize="small" /> },
+  { actionType: 'conditionalAction', label: 'If / Else Block', icon: <CallSplitIcon fontSize="small" /> },
+  { actionType: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
 ];
-
-const PRIMARY_ACTION_ITEMS = ADD_ACTION_ITEMS.filter((item) => item.placement === 'primary');
-const MENU_ACTION_ITEMS = ADD_ACTION_ITEMS.filter((item) => item.placement === 'menu');
 
 const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
   dialogName,
@@ -97,56 +102,73 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box>
           <Typography variant="h6">{currentFunction.name || 'Dialog Actions'}</Typography>
-          <Typography variant="caption" color="text.secondary">
-            {(currentFunction.actions || []).length} action(s)
-          </Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
-          {PRIMARY_ACTION_ITEMS.map((item) => (
-            <Button
-              key={item.actionType}
-              startIcon={<AddIcon />}
-              size="small"
-              variant="outlined"
-              onClick={() => onAddActionToEnd(item.actionType)}
-            >
-              {item.label}
-            </Button>
-          ))}
-          <Tooltip title="More actions">
-            <IconButton
-              size="small"
-              onClick={(event) => setAddMenuAnchor(event.currentTarget)}
-              sx={{ ml: 0.5 }}
-              aria-label="More actions"
-            >
-              <MoreVertIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Menu
-            anchorEl={addMenuAnchor}
-            open={Boolean(addMenuAnchor)}
-            onClose={() => setAddMenuAnchor(null)}
+        <Tooltip title="Add action">
+          <IconButton
+            size="small"
+            onClick={(event) => setAddMenuAnchor(event.currentTarget)}
+            aria-label="Add action"
           >
-            {MENU_ACTION_ITEMS.map((item) => (
-              <MenuItem
-                key={item.actionType}
-                onClick={() => {
-                  onAddActionToEnd(item.actionType);
-                  setAddMenuAnchor(null);
-                }}
-              >
-                {item.label}
-              </MenuItem>
-            ))}
-          </Menu>
-        </Stack>
+            <AddIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Menu
+          anchorEl={addMenuAnchor}
+          open={Boolean(addMenuAnchor)}
+          onClose={() => setAddMenuAnchor(null)}
+          MenuListProps={{ dense: true, sx: { py: 1 } }}
+          slotProps={{
+            paper: {
+              sx: {
+                mt: 1,
+                boxShadow: 2,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+                minWidth: 200
+              }
+            }
+          }}
+        >
+          {ADD_ACTION_ITEMS.map((item) => (
+            <MenuItem
+              key={item.actionType}
+              onClick={() => {
+                onAddActionToEnd(item.actionType);
+                setAddMenuAnchor(null);
+              }}
+              sx={{ gap: 1.5 }}
+            >
+              <Box sx={{ display: 'flex', color: 'text.secondary' }}>
+                {item.icon}
+              </Box>
+              {item.label}
+            </MenuItem>
+          ))}
+        </Menu>
       </Box>
 
       {(currentFunction.actions || []).length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          No dialog actions yet. Use the buttons above to add actions.
-        </Typography>
+        <Box sx={{
+          p: 3,
+          border: '2px dashed',
+          borderColor: 'divider',
+          borderRadius: 1,
+          textAlign: 'center',
+          bgcolor: 'action.hover'
+        }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            No actions yet
+          </Typography>
+          <Button
+            startIcon={<AddIcon />}
+            size="small"
+            variant="outlined"
+            onClick={(e) => setAddMenuAnchor(e.currentTarget)}
+          >
+            Add Action
+          </Button>
+        </Box>
       ) : (
         <ActionsList
           actions={currentFunction.actions || []}
