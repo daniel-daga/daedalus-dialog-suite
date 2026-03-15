@@ -77,7 +77,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     deleteActionAndFocusPrev,
     addDialogLineAfter,
     addActionAfter,
-    addActionToBranchEnd
+    addActionToBranchEnd,
+    moveAction
   } = useActionManagement({
     setFunction,
     focusAction,
@@ -153,6 +154,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           addDialogLineAfterPath={addDialogLineAfter}
           addActionAfterPath={addActionAfter}
           addActionToBranchEnd={addActionToBranchEnd}
+          moveAction={moveAction}
           focusActionAtPath={focusAction}
           registerActionRef={registerActionRef}
           getVisibleActionPaths={() => flattenActionPaths(currentFunction.actions || [])}

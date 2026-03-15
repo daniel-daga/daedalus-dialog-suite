@@ -59,6 +59,7 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   deleteActionAndFocusPrevAtPath,
   addActionAfterPath,
   addActionToBranchEnd,
+  moveAction,
   registerActionRef,
   getVisibleActionPaths,
   semanticModel,
@@ -122,6 +123,7 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
                 deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath!}
                 addActionAfterPath={addActionAfterPath!}
                 addActionToBranchEnd={addActionToBranchEnd}
+                moveAction={moveAction}
                 registerActionRef={registerActionRef!}
                 getVisibleActionPaths={getVisibleActionPaths!}
                 semanticModel={semanticModel}

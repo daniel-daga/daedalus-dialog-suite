@@ -29,6 +29,7 @@ interface DialogActionsSectionProps {
   addDialogLineAfterPath: (path: ActionPath, toggleSpeaker?: boolean) => void;
   addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
   addActionToBranchEnd: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
+  moveAction: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
   focusActionAtPath: (path: ActionPath, scrollIntoView?: boolean) => void;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
@@ -80,6 +81,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
   addDialogLineAfterPath,
   addActionAfterPath,
   addActionToBranchEnd,
+  moveAction,
   focusActionAtPath,
   registerActionRef,
   getVisibleActionPaths,
@@ -156,6 +158,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
           deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
           addActionAfterPath={addActionAfterPath}
           addActionToBranchEnd={addActionToBranchEnd}
+          moveAction={moveAction}
           registerActionRef={registerActionRef}
           getVisibleActionPaths={getVisibleActionPaths}
           semanticModel={semanticModel}

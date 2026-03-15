@@ -13,6 +13,7 @@ import {
   flattenActionPaths,
   getActionAtPath,
   insertActionAfterPath,
+  moveActionWithinLevel,
   updateActionAtPath as updateNestedActionAtPath
 } from '../nestedActionUtils';
 
@@ -297,12 +298,20 @@ export function useActionManagement(config: ActionManagementConfig) {
     }
   }, [setFunction, contextName, focusAction, getAllDialogLineActions]);
 
+  const moveAction = useCallback((pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => {
+    setFunction((prev) => {
+      if (!prev) return prev;
+      return { ...prev, actions: moveActionWithinLevel(prev.actions || [], pathPrefix, sourceIndex, destinationIndex) };
+    });
+  }, [setFunction]);
+
   return {
     updateAction,
     deleteAction,
     deleteActionAndFocusPrev,
     addDialogLineAfter,
     addActionAfter,
-    addActionToBranchEnd
+    addActionToBranchEnd,
+    moveAction
   };
 }

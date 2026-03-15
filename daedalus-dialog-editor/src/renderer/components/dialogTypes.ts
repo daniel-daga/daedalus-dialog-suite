@@ -2,6 +2,7 @@
  * Shared type definitions for dialog editing components
  */
 
+import type { DraggableProvidedDragHandleProps } from 'react-beautiful-dnd';
 import type {
   Dialog,
   DialogAction,
@@ -32,12 +33,14 @@ export interface ActionCardProps {
   deleteActionAndFocusPrevAtPath: (path: ActionPath) => void;
   addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
   addActionToBranchEnd?: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
+  moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
   semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName?: string; // The dialog/function name for validation prefix
+  dragHandleProps?: DraggableProvidedDragHandleProps | null;
 }
 
 export interface DialogDetailsEditorProps {

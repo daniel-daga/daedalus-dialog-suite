@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Stack, Box } from '@mui/material';
+import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import ActionCard from './ActionCard';
 import type { ActionTypeId } from './actionTypes';
 import type { DialogAction, SemanticModel } from '../types/global';
 import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
+import { actionPathToKey } from './nestedActionUtils';
 
 interface ActionsListProps {
   actions: DialogAction[];
@@ -16,6 +18,7 @@ interface ActionsListProps {
   deleteActionAndFocusPrevAtPath: (path: ActionPath) => void;
   addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
   addActionToBranchEnd?: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
+  moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
   semanticModel?: SemanticModel;
@@ -47,6 +50,7 @@ const ActionsList = React.memo<ActionsListProps>(({
   deleteActionAndFocusPrevAtPath,
   addActionAfterPath,
   addActionToBranchEnd,
+  moveAction,
   registerActionRef,
   getVisibleActionPaths,
   semanticModel,
@@ -94,37 +98,77 @@ const ActionsList = React.memo<ActionsListProps>(({
     }
   }, [renderedCount, actions.length]);
 
+  const droppableId = actionPathToKey(pathPrefix) || 'root';
+
+  const handleDragEnd = useCallback((result: DropResult) => {
+    if (!result.destination || !moveAction) return;
+    if (result.source.index === result.destination.index) return;
+    moveAction(pathPrefix, result.source.index, result.destination.index);
+  }, [moveAction, pathPrefix]);
+
+  const visibleActions = actions.slice(0, Math.max(renderedCount, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0));
+
   return (
-    <Stack spacing={2}>
-      {actions.slice(0, Math.max(renderedCount, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0)).map((action: DialogAction, idx: number) => (
-        <ActionCard
-          key={getActionIdentity(action, idx)}
-          path={[...pathPrefix, idx]}
-          action={action}
-          index={idx}
-          totalActions={actions.length}
-          npcName={npcName}
-          updateActionAtPath={updateActionAtPath}
-          deleteActionAtPath={deleteActionAtPath}
-          focusActionAtPath={focusActionAtPath}
-          addDialogLineAfterPath={addDialogLineAfterPath}
-          deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
-          addActionAfterPath={addActionAfterPath}
-          addActionToBranchEnd={addActionToBranchEnd}
-          registerActionRef={registerActionRef}
-          getVisibleActionPaths={getVisibleActionPaths}
-          semanticModel={semanticModel}
-          onNavigateToFunction={onNavigateToFunction}
-          onRenameFunction={onRenameFunction}
-          dialogContextName={dialogContextName}
-        />
-      ))}
-      {renderedCount < actions.length && (
-        <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary', fontStyle: 'italic' }}>
-          Loading {actions.length - renderedCount} more actions...
-        </Box>
-      )}
-    </Stack>
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <Droppable droppableId={droppableId}>
+        {(provided) => (
+          <Stack
+            spacing={2}
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+          >
+            {visibleActions.map((action: DialogAction, idx: number) => {
+              const draggableId = `${droppableId}-${getActionIdentity(action, idx)}`;
+              return (
+                <Draggable key={getActionIdentity(action, idx)} draggableId={draggableId} index={idx}>
+                  {(draggableProvided, snapshot) => (
+                    <Box
+                      ref={draggableProvided.innerRef}
+                      {...draggableProvided.draggableProps}
+                      sx={{
+                        opacity: snapshot.isDragging ? 0.8 : 1,
+                        boxShadow: snapshot.isDragging ? 4 : 0,
+                        borderRadius: snapshot.isDragging ? 1 : 0,
+                        bgcolor: snapshot.isDragging ? 'background.paper' : 'transparent',
+                      }}
+                    >
+                      <ActionCard
+                        path={[...pathPrefix, idx]}
+                        action={action}
+                        index={idx}
+                        totalActions={actions.length}
+                        npcName={npcName}
+                        updateActionAtPath={updateActionAtPath}
+                        deleteActionAtPath={deleteActionAtPath}
+                        focusActionAtPath={focusActionAtPath}
+                        addDialogLineAfterPath={addDialogLineAfterPath}
+                        deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
+                        addActionAfterPath={addActionAfterPath}
+                        addActionToBranchEnd={addActionToBranchEnd}
+                        moveAction={moveAction}
+                        registerActionRef={registerActionRef}
+                        getVisibleActionPaths={getVisibleActionPaths}
+                        semanticModel={semanticModel}
+                        onNavigateToFunction={onNavigateToFunction}
+                        onRenameFunction={onRenameFunction}
+                        dialogContextName={dialogContextName}
+                        dragHandleProps={draggableProvided.dragHandleProps}
+                      />
+                    </Box>
+                  )}
+                </Draggable>
+              );
+            })}
+            {provided.placeholder}
+            {renderedCount < actions.length && (
+              <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary', fontStyle: 'italic' }}>
+                Loading {actions.length - renderedCount} more actions...
+              </Box>
+            )}
+          </Stack>
+        )}
+      </Droppable>
+    </DragDropContext>
   );
 }, (prevProps, nextProps) => {
   // Fast bailout checks

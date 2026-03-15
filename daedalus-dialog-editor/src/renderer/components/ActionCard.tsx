@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { Box, Tooltip, Typography, Menu, MenuItem } from '@mui/material';
-import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon, Star as StarIcon, School as SchoolIcon, PersonAdd as PersonAddIcon, RemoveShoppingCart as RemoveShoppingCartIcon, Inventory2 as Inventory2Icon } from '@mui/icons-material';
+import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon, Star as StarIcon, School as SchoolIcon, PersonAdd as PersonAddIcon, RemoveShoppingCart as RemoveShoppingCartIcon, Inventory2 as Inventory2Icon, DragIndicator as DragIndicatorIcon } from '@mui/icons-material';
 import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
 import { getActionType } from './actionTypes';
@@ -9,7 +9,7 @@ import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
 import { actionPathToKey } from './nestedActionUtils';
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName, dragHandleProps }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -263,6 +263,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     deleteActionAndFocusPrevAtPath,
     addActionAfterPath,
     addActionToBranchEnd,
+    moveAction,
     registerActionRef,
     getVisibleActionPaths
   };
@@ -287,6 +288,21 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     >
       {/* Action type icon and renderer */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {dragHandleProps && (
+          <Box
+            {...dragHandleProps}
+            sx={{
+              display: 'flex',
+              color: 'text.disabled',
+              cursor: 'grab',
+              flexShrink: 0,
+              '&:hover': { color: 'text.secondary' },
+              '&:active': { cursor: 'grabbing' }
+            }}
+          >
+            <DragIndicatorIcon fontSize="small" />
+          </Box>
+        )}
         <Tooltip title={getActionTypeLabel(localAction)} arrow>
           <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>
             {getActionIcon()}

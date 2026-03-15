@@ -161,6 +161,39 @@ export function flattenActionPaths(actions: DialogAction[], prefix: ActionPath =
   return paths;
 }
 
+export function moveActionWithinLevel(
+  actions: DialogAction[],
+  pathPrefix: ActionPath,
+  sourceIndex: number,
+  destinationIndex: number
+): DialogAction[] {
+  if (sourceIndex === destinationIndex) return actions;
+
+  if (pathPrefix.length === 0) {
+    // Top-level move
+    const result = [...actions];
+    const [moved] = result.splice(sourceIndex, 1);
+    result.splice(destinationIndex, 0, moved);
+    return result;
+  }
+
+  // Nested move (inside a conditional branch)
+  const parentPath = pathPrefix.slice(0, -1);
+  const branch = pathPrefix[pathPrefix.length - 1] as ActionBranchKey;
+  const parent = getActionAtPath(actions, parentPath);
+  if (!parent || parent.type !== 'ConditionalAction') return actions;
+
+  const property = branch === 'then' ? 'thenActions' : 'elseActions';
+  const branchActions = [...(parent as ConditionalAction)[property]];
+  const [moved] = branchActions.splice(sourceIndex, 1);
+  branchActions.splice(destinationIndex, 0, moved);
+
+  return updateActionAtPath(actions, parentPath, {
+    ...parent,
+    [property]: branchActions
+  });
+}
+
 export function actionPathToKey(path: ActionPath): string {
   return path.join('.');
 }
