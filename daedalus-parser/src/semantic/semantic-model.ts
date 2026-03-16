@@ -188,10 +188,10 @@ export class CreateTopic implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    if (this.topicType) {
-      return `Log_CreateTopic (${this.topic}, ${this.topicType});`;
-    }
-    return `Log_CreateTopic (${this.topic});`;
+    const code = this.topicType
+      ? `Log_CreateTopic (${this.topic}, ${this.topicType});`
+      : `Log_CreateTopic (${this.topic});`;
+    return `\n${code}\n`;
   }
 
   toDisplayString(): string {
@@ -214,7 +214,7 @@ export class LogEntry implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_LogEntry (${this.topic}, "${this.text}");`;
+    return `\nB_LogEntry (${this.topic}, "${this.text}");\n`;
   }
 
   toDisplayString(): string {

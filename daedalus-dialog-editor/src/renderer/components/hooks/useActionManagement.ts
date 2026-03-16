@@ -117,7 +117,28 @@ export function useActionManagement(config: ActionManagementConfig) {
         }
       }
 
-      return { ...prev, actions: updateNestedActionAtPath(actions, path, nextAction) };
+      let updatedActions = updateNestedActionAtPath(actions, path, nextAction);
+
+      // Sync next sibling LogEntry topic when CreateTopic topic changes
+      if (
+        updatedAction.type === 'CreateTopic' &&
+        previousAction?.type === 'CreateTopic' &&
+        updatedAction.topic !== previousAction.topic
+      ) {
+        const lastIndex = path[path.length - 1];
+        if (typeof lastIndex === 'number') {
+          const nextPath: ActionPath = [...path.slice(0, -1), lastIndex + 1];
+          const nextSibling = getActionAtPath(updatedActions, nextPath);
+          if (nextSibling?.type === 'LogEntry' && nextSibling.topic === previousAction.topic) {
+            updatedActions = updateNestedActionAtPath(updatedActions, nextPath, {
+              ...nextSibling,
+              topic: updatedAction.topic
+            });
+          }
+        }
+      }
+
+      return { ...prev, actions: updatedActions };
     });
   }, [setFunction, contextName, getAllDialogLineActions]);
 
@@ -251,10 +272,19 @@ export function useActionManagement(config: ActionManagementConfig) {
         });
       }
 
-      const newActions = insertActionAfterPath(actions, path, newAction);
+      let newActions = insertActionAfterPath(actions, path, newAction);
       const visiblePaths = flattenActionPaths(newActions);
       const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
-      nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
+      const createTopicPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
+
+      if (actionType === 'createTopic' && createTopicPath) {
+        const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined }) as DialogAction;
+        newActions = insertActionAfterPath(newActions, createTopicPath, logEntryAction);
+        nextPath = createTopicPath;
+      } else {
+        nextPath = createTopicPath;
+      }
+
       return { ...prev, actions: newActions };
     });
 

@@ -44,13 +44,13 @@ export const ACTION_TEMPLATES = {
     targetFunction
   }),
 
-  logEntry: (topic: string = 'TOPIC_NAME', text: string = ''): LogEntryAction => ({
+  logEntry: (topic: string = 'TOPIC_', text: string = ''): LogEntryAction => ({
     type: 'LogEntry',
     topic,
     text
   }),
 
-  createTopic: (topic: string = 'TOPIC_NAME', topicType: string = 'LOG_MISSION'): CreateTopicAction => ({
+  createTopic: (topic: string = 'TOPIC_', topicType: string = 'LOG_MISSION'): CreateTopicAction => ({
     type: 'CreateTopic',
     topic,
     topicType

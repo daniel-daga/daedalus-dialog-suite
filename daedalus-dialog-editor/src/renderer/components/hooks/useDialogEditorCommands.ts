@@ -116,13 +116,20 @@ export function useDialogEditorCommands({
       };
     }
 
-      setFunction((previousFunction) => {
-        const newActions = [...(previousFunction.actions || []), newAction];
-        setTimeout(() => focusAction([newActions.length - 1], true), 0);
-        return {
-          ...previousFunction,
-          actions: newActions
-        };
+    const logEntryAction = actionType === 'createTopic'
+      ? createAction('logEntry', { dialogName, currentAction: undefined })
+      : null;
+
+    setFunction((previousFunction) => {
+      const existingActions = previousFunction.actions || [];
+      if (logEntryAction) {
+        const newActions = [...existingActions, newAction, logEntryAction];
+        setTimeout(() => focusAction([newActions.length - 2], true), 0);
+        return { ...previousFunction, actions: newActions };
+      }
+      const newActions = [...existingActions, newAction];
+      setTimeout(() => focusAction([newActions.length - 1], true), 0);
+      return { ...previousFunction, actions: newActions };
     });
   }, [currentFunction, filePath, dialogName, semanticModel, updateFunction, setFunction, focusAction]);
 

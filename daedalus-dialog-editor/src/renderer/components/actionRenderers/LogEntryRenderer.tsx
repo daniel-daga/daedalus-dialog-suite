@@ -5,6 +5,14 @@ import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../co
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
+const normalizeTopicName = (value: string): string => {
+  const normalized = value.replace(/ /g, '_');
+  if (normalized && !normalized.startsWith('TOPIC_')) {
+    return `TOPIC_${normalized}`;
+  }
+  return normalized;
+};
+
 const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
   action,
   handleUpdate,
@@ -21,7 +29,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
       <VariableAutocomplete
         label="Topic"
         value={typedAction.topic || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, topic: value })}
+        onChange={(value) => handleUpdate({ ...typedAction, topic: normalizeTopicName(value) })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ minWidth: 180 }}
