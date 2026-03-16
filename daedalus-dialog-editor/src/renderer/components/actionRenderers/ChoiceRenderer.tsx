@@ -1,7 +1,13 @@
 import React from 'react';
-import { Box, TextField, IconButton, Tooltip, Badge } from '@mui/material';
-import { Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
+import { Box, Collapse, TextField, IconButton, Tooltip, Badge } from '@mui/material';
+import {
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  ExpandMore as ExpandMoreIcon,
+  ChevronRight as ChevronRightIcon,
+} from '@mui/icons-material';
 import { validateChoiceFunctionName } from '../dialogUtils';
+import InlineChoiceEditor from '../InlineChoiceEditor';
 import type { BaseActionRendererProps } from './types';
 import type { ChoiceAction } from '../../types/global';
 
@@ -15,106 +21,124 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   semanticModel,
   onNavigateToFunction,
   onRenameFunction,
-  dialogContextName
+  dialogContextName,
+  filePath,
+  npcName,
 }) => {
   const typedAction = action as ChoiceAction;
-
-  // Track the original function name when editing starts
   const originalFunctionNameRef = React.useRef<string | null>(null);
-
-  // Track the current local value to avoid race condition with debounced updates
   const [localTargetFunction, setLocalTargetFunction] = React.useState(typedAction.targetFunction || '');
+  const [expanded, setExpanded] = React.useState(false);
 
-  // Sync local state when action prop changes (e.g., from external updates)
   React.useEffect(() => {
     setLocalTargetFunction(typedAction.targetFunction || '');
   }, [typedAction.targetFunction]);
 
+  const targetFunctionExists = !!(
+    semanticModel &&
+    typedAction.targetFunction &&
+    semanticModel.functions &&
+    semanticModel.functions[typedAction.targetFunction]
+  );
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <TextField
-        label="Choice Text"
-        value={typedAction.text || ''}
-        onChange={(e) => handleUpdate({ ...typedAction, text: e.target.value })}
-        size="small"
-        inputRef={mainFieldRef}
-        onBlur={flushUpdate}
-        onKeyDown={handleKeyDown}
-        sx={{ flex: '1 1 40%', minWidth: 150 }}
-      />
-      <TextField
-        label="Function"
-        value={localTargetFunction}
-        onFocus={() => {
-          // Capture the original function name when editing starts
-          originalFunctionNameRef.current = localTargetFunction || null;
-        }}
-        onChange={(e) => {
-          const newName = e.target.value;
-          setLocalTargetFunction(newName);
-          handleUpdate({ ...typedAction, targetFunction: newName });
-        }}
-        onBlur={() => {
-          flushUpdate();
-
-          const originalName = originalFunctionNameRef.current;
-          const newName = localTargetFunction; // Use local state, not stale props
-
-          // Validate and handle rename if needed
-          if (dialogContextName && onRenameFunction && originalName && newName !== originalName) {
-            const validationError = validateChoiceFunctionName(
-              newName,
-              dialogContextName,
-              semanticModel,
-              originalName
-            );
-
-            if (validationError) {
-              // Revert to original name on validation error
-              setLocalTargetFunction(originalName);
-              handleUpdate({ ...typedAction, targetFunction: originalName });
-              alert(validationError);
-            } else {
-              // Valid rename - trigger the rename callback
-              onRenameFunction(originalName, newName);
-            }
-          }
-
-          // Clear the original name reference
-          originalFunctionNameRef.current = null;
-        }}
-        size="small"
-        sx={{ flex: '1 1 40%', minWidth: 150 }}
-        error={dialogContextName && localTargetFunction ? !localTargetFunction.startsWith(dialogContextName) : false}
-      />
-      {semanticModel && typedAction.targetFunction && semanticModel.functions && semanticModel.functions[typedAction.targetFunction] && onNavigateToFunction && (
-        <Tooltip title="Edit choice actions" arrow>
-          <Badge
-            badgeContent={semanticModel.functions[typedAction.targetFunction]?.actions?.length || 0}
-            color="secondary"
-            sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', height: '16px', minWidth: '16px' } }}
-          >
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {/* Expand/collapse toggle */}
+        {targetFunctionExists && (
+          <Tooltip title={expanded ? 'Collapse choice actions' : 'Expand choice actions'} arrow>
             <IconButton
               size="small"
-              color="primary"
-              onClick={() => {
-                flushUpdate();
-                onNavigateToFunction(typedAction.targetFunction);
-              }}
+              onClick={() => setExpanded((prev) => !prev)}
+              aria-label={expanded ? 'Collapse choice actions' : 'Expand choice actions'}
               sx={{ flexShrink: 0 }}
-              aria-label="Edit choice actions"
             >
-              <EditIcon fontSize="small" />
+              {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
             </IconButton>
-          </Badge>
+          </Tooltip>
+        )}
+        <TextField
+          label="Choice Text"
+          value={typedAction.text || ''}
+          onChange={(e) => handleUpdate({ ...typedAction, text: e.target.value })}
+          size="small"
+          inputRef={mainFieldRef}
+          onBlur={flushUpdate}
+          onKeyDown={handleKeyDown}
+          sx={{ flex: '1 1 40%', minWidth: 150 }}
+        />
+        <TextField
+          label="Function"
+          value={localTargetFunction}
+          onFocus={() => {
+            originalFunctionNameRef.current = localTargetFunction || null;
+          }}
+          onChange={(e) => {
+            const newName = e.target.value;
+            setLocalTargetFunction(newName);
+            handleUpdate({ ...typedAction, targetFunction: newName });
+          }}
+          onBlur={() => {
+            flushUpdate();
+            const originalName = originalFunctionNameRef.current;
+            const newName = localTargetFunction;
+            if (dialogContextName && onRenameFunction && originalName && newName !== originalName) {
+              const validationError = validateChoiceFunctionName(
+                newName, dialogContextName, semanticModel, originalName
+              );
+              if (validationError) {
+                setLocalTargetFunction(originalName);
+                handleUpdate({ ...typedAction, targetFunction: originalName });
+                alert(validationError);
+              } else {
+                onRenameFunction(originalName, newName);
+              }
+            }
+            originalFunctionNameRef.current = null;
+          }}
+          size="small"
+          sx={{ flex: '1 1 40%', minWidth: 150 }}
+          error={dialogContextName && localTargetFunction ? !localTargetFunction.startsWith(dialogContextName) : false}
+        />
+        {targetFunctionExists && onNavigateToFunction && (
+          <Tooltip title="Edit choice actions (navigate)" arrow>
+            <Badge
+              badgeContent={semanticModel!.functions![typedAction.targetFunction]?.actions?.length || 0}
+              color="secondary"
+              sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', height: '16px', minWidth: '16px' } }}
+            >
+              <IconButton
+                size="small"
+                color="primary"
+                onClick={() => {
+                  flushUpdate();
+                  onNavigateToFunction(typedAction.targetFunction);
+                }}
+                sx={{ flexShrink: 0 }}
+                aria-label="Edit choice actions"
+              >
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Badge>
+          </Tooltip>
+        )}
+        <Tooltip title="Delete choice">
+          <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }} aria-label="Delete choice">
+            <DeleteIcon fontSize="small" />
+          </IconButton>
         </Tooltip>
-      )}
-      <Tooltip title="Delete choice">
-        <IconButton size="small" color="error" onClick={handleDelete} sx={{ flexShrink: 0 }} aria-label="Delete choice">
-          <DeleteIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      </Box>
+
+      {/* Inline expanded choice editor */}
+      <Collapse in={expanded} unmountOnExit>
+        <InlineChoiceEditor
+          targetFunctionName={typedAction.targetFunction}
+          dialogName={dialogContextName || ''}
+          filePath={filePath || null}
+          semanticModel={semanticModel}
+          npcName={npcName || ''}
+        />
+      </Collapse>
     </Box>
   );
 };

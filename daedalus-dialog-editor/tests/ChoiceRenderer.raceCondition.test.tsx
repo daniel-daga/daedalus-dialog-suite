@@ -3,6 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ChoiceRenderer from '../src/renderer/components/actionRenderers/ChoiceRenderer';
 
+jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
+  __esModule: true,
+  default: () => <div data-testid="inline-editor-mock" />
+}));
+
 describe('ChoiceRenderer Race Condition', () => {
   let handleUpdate: jest.Mock;
   let handleDelete: jest.Mock;
