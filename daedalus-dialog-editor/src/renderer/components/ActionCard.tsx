@@ -10,7 +10,7 @@ import { shallowEqual } from '../utils/shallowEqual';
 import { actionPathToKey } from './nestedActionUtils';
 import ActionTypeMenu from './common/ActionTypeMenu';
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName, dragHandleProps }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName, dragHandleProps, filePath }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -221,7 +221,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     addActionToBranchEnd,
     moveAction,
     registerActionRef,
-    getVisibleActionPaths
+    getVisibleActionPaths,
+    filePath
   };
 
   return (
@@ -362,6 +363,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   if (prevProps.totalActions !== nextProps.totalActions) return false;
   if (prevProps.npcName !== nextProps.npcName) return false;
   if (prevProps.dialogContextName !== nextProps.dialogContextName) return false;
+  if (prevProps.filePath !== nextProps.filePath) return false;
 
   // Shallow comparison for action - only re-render if action data actually changed
   // This is faster than JSON.stringify for shallow objects like DialogAction

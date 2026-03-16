@@ -65,7 +65,8 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   semanticModel,
   onNavigateToFunction,
   onRenameFunction,
-  dialogContextName
+  dialogContextName,
+  filePath
 }) => {
   const typedAction = action as ConditionalAction;
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -131,6 +132,7 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
                 onRenameFunction={onRenameFunction}
                 dialogContextName={dialogContextName || ''}
                 contextId={`${dialogContextName || 'dialog'}:${path.join('.')}:${branch}`}
+                filePath={filePath}
               />
 
               {branchActions.length === 0 && (

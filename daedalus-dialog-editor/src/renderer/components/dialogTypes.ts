@@ -41,6 +41,7 @@ export interface ActionCardProps {
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName?: string; // The dialog/function name for validation prefix
   dragHandleProps?: DraggableProvidedDragHandleProps | null;
+  filePath?: string | null;
 }
 
 export interface DialogDetailsEditorProps {

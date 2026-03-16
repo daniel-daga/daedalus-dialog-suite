@@ -26,6 +26,7 @@ interface ActionsListProps {
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName: string;
   contextId?: string; // Unique ID to reset progressive rendering (e.g. function name)
+  filePath?: string | null;
 }
 
 // Progressive rendering threshold - render all if less than this
@@ -57,7 +58,8 @@ const ActionsList = React.memo<ActionsListProps>(({
   onNavigateToFunction,
   onRenameFunction,
   dialogContextName,
-  contextId
+  contextId,
+  filePath
 }) => {
   // Progressive rendering for large lists
   const [renderedCount, setRenderedCount] = useState(() =>
@@ -153,6 +155,7 @@ const ActionsList = React.memo<ActionsListProps>(({
                         onNavigateToFunction={onNavigateToFunction}
                         onRenameFunction={onRenameFunction}
                         dialogContextName={dialogContextName}
+                        filePath={filePath}
                         dragHandleProps={draggableProvided.dragHandleProps}
                       />
                     </Box>
@@ -176,6 +179,7 @@ const ActionsList = React.memo<ActionsListProps>(({
   // If semantic model changed, we must re-render because callbacks (like onRenameFunction)
   // likely depend on it and need to be updated to capture the latest model.
   if (prevProps.semanticModel !== nextProps.semanticModel) return false;
+  if (prevProps.filePath !== nextProps.filePath) return false;
   if (prevProps.onRenameFunction !== nextProps.onRenameFunction) return false;
 
   if (prevProps.actions === nextProps.actions) return true; // Same reference

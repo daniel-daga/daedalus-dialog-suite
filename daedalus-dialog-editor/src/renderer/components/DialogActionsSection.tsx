@@ -34,6 +34,7 @@ interface DialogActionsSectionProps {
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction: (oldName: string, newName: string) => void;
   onAddActionToEnd: (actionType: ActionTypeId) => void;
+  filePath?: string | null;
 }
 
 const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
@@ -53,7 +54,8 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
   semanticModel,
   onNavigateToFunction,
   onRenameFunction,
-  onAddActionToEnd
+  onAddActionToEnd,
+  filePath
 }) => {
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
@@ -119,6 +121,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
           onRenameFunction={onRenameFunction}
           dialogContextName={dialogName}
           contextId={currentFunction.name}
+          filePath={filePath}
         />
       )}
     </Paper>

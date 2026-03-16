@@ -31,4 +31,5 @@ export interface BaseActionRendererProps {
   moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
   registerActionRef?: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths?: () => ActionPath[];
+  filePath?: string | null;
 }

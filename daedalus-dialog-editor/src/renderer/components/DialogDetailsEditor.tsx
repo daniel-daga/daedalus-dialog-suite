@@ -150,6 +150,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           onNavigateToFunction={onNavigateToFunction}
           onRenameFunction={handleRenameFunction}
           onAddActionToEnd={addActionToEnd}
+          filePath={filePath}
         />
       )}
 
