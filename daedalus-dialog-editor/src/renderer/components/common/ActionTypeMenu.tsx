@@ -20,7 +20,8 @@ import {
   School as SchoolIcon,
   PersonAdd as PersonAddIcon,
   RemoveShoppingCart as RemoveShoppingCartIcon,
-  Inventory2 as Inventory2Icon
+  Inventory2 as Inventory2Icon,
+  DirectionsWalk as DirectionsWalkIcon
 } from '@mui/icons-material';
 import type { ActionTypeId } from '../actionTypes';
 
@@ -46,6 +47,7 @@ const ACTION_TYPE_ITEMS: { type: ActionTypeId; label: string; icon: React.ReactN
   { type: 'giveTradeInventoryAction', label: 'Give Trade Inventory', icon: <Inventory2Icon fontSize="small" /> },
   { type: 'removeInventoryItemsAction', label: 'Remove Inventory Items', icon: <RemoveShoppingCartIcon fontSize="small" /> },
   { type: 'insertNpcAction', label: 'Insert NPC', icon: <PersonAddIcon fontSize="small" /> },
+  { type: 'heroFollowsAction', label: 'Hero Follows NPC', icon: <DirectionsWalkIcon fontSize="small" /> },
   { type: 'conditionalAction', label: 'If / Else Block', icon: <CallSplitIcon fontSize="small" /> },
   { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
 ];

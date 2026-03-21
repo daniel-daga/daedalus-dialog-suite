@@ -29,6 +29,7 @@ import TeachActionRenderer from './TeachActionRenderer';
 import GiveTradeInventoryActionRenderer from './GiveTradeInventoryActionRenderer';
 import RemoveInventoryItemsActionRenderer from './RemoveInventoryItemsActionRenderer';
 import InsertNpcActionRenderer from './InsertNpcActionRenderer';
+import HeroFollowsActionRenderer from './HeroFollowsActionRenderer';
 import ConditionalActionRenderer from './ConditionalActionRenderer';
 import CustomActionRenderer from './CustomActionRenderer';
 import UnknownActionRenderer from './UnknownActionRenderer';
@@ -58,7 +59,7 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   giveTradeInventoryAction: GiveTradeInventoryActionRenderer,
   removeInventoryItemsAction: RemoveInventoryItemsActionRenderer,
   insertNpcAction: InsertNpcActionRenderer,
-  heroFollowsAction: UnknownActionRenderer,
+  heroFollowsAction: HeroFollowsActionRenderer,
   conditionalAction: ConditionalActionRenderer,
   customAction: CustomActionRenderer
 };
