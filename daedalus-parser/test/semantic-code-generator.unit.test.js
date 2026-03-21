@@ -278,3 +278,29 @@ test('CreateInventoryItems should generate code even with missing item (legacy b
 
   assert.equal(result, 'CreateInvItems (self, , 5);');
 });
+
+// ===================================================================
+// HERO FOLLOWS ACTION TESTS
+// ===================================================================
+
+test('HeroFollowsAction should generate correct three-line code', () => {
+  const { HeroFollowsAction } = require('../dist/semantic/semantic-visitor-index');
+  const action = new HeroFollowsAction('RTN_SZMYK_15_GUIDEMITTE');
+  const code = action.generateCode({ includeComments: true });
+  assert.ok(code.includes('AI_StopProcessInfos (self);'), `Missing StopProcessInfos: ${code}`);
+  assert.ok(code.includes('self.aivar[AIV_PARTYMEMBER] = TRUE;'), `Missing PARTYMEMBER assignment: ${code}`);
+  assert.ok(code.includes('Npc_ExchangeRoutine (self, "RTN_SZMYK_15_GUIDEMITTE");'), `Missing ExchangeRoutine: ${code}`);
+});
+
+test('HeroFollowsAction should have correct type property', () => {
+  const { HeroFollowsAction } = require('../dist/semantic/semantic-visitor-index');
+  const action = new HeroFollowsAction('RTN_GUIDE');
+  assert.equal(action.type, 'HeroFollowsAction');
+  assert.equal(action.getTypeName(), 'HeroFollowsAction');
+});
+
+test('HeroFollowsAction toDisplayString should include routine name', () => {
+  const { HeroFollowsAction } = require('../dist/semantic/semantic-visitor-index');
+  const action = new HeroFollowsAction('RTN_SZMYK_15_GUIDEMITTE');
+  assert.ok(action.toDisplayString().includes('RTN_SZMYK_15_GUIDEMITTE'));
+});

@@ -771,6 +771,31 @@ export class InsertNpcAction implements CodeGeneratable {
   }
 }
 
+export class HeroFollowsAction implements CodeGeneratable {
+  public readonly type = 'HeroFollowsAction';
+  public guideRoutine: string;
+
+  constructor(guideRoutine: string = '') {
+    this.guideRoutine = guideRoutine;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return [
+      `AI_StopProcessInfos (self);`,
+      `self.aivar[AIV_PARTYMEMBER] = TRUE;`,
+      `Npc_ExchangeRoutine (self, "${this.guideRoutine}");`
+    ].join('\n');
+  }
+
+  toDisplayString(): string {
+    return `[HeroFollows: routine="${this.guideRoutine}"]`;
+  }
+
+  getTypeName(): string {
+    return 'HeroFollowsAction';
+  }
+}
+
 export type DialogAction =
   | DialogLine
   | CreateTopic
@@ -794,7 +819,8 @@ export type DialogAction =
   | TeachAction
   | GiveTradeInventoryAction
   | RemoveInventoryItemsAction
-  | InsertNpcAction;
+  | InsertNpcAction
+  | HeroFollowsAction;
 
 const ACTION_DISCRIMINATOR = {
   property: 'type',
@@ -822,6 +848,7 @@ const ACTION_DISCRIMINATOR = {
     { value: GiveTradeInventoryAction, name: 'GiveTradeInventoryAction' },
     { value: RemoveInventoryItemsAction, name: 'RemoveInventoryItemsAction' },
     { value: InsertNpcAction, name: 'InsertNpcAction' },
+    { value: HeroFollowsAction, name: 'HeroFollowsAction' },
   ],
 };
 
@@ -850,6 +877,7 @@ function ensureActionType(json: any): void {
     else if ('tradeTarget' in json) json.type = 'GiveTradeInventoryAction';
     else if ('removeFunctionName' in json && 'removeNpc' in json && 'removeItem' in json) json.type = 'RemoveInventoryItemsAction';
     else if ('npcInstance' in json && 'spawnPoint' in json) json.type = 'InsertNpcAction';
+    else if ('guideRoutine' in json) json.type = 'HeroFollowsAction';
     else if ('action' in json) json.type = 'Action';
   }
 
