@@ -58,6 +58,7 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   giveTradeInventoryAction: GiveTradeInventoryActionRenderer,
   removeInventoryItemsAction: RemoveInventoryItemsActionRenderer,
   insertNpcAction: InsertNpcActionRenderer,
+  heroFollowsAction: UnknownActionRenderer,
   conditionalAction: ConditionalActionRenderer,
   customAction: CustomActionRenderer
 };
@@ -95,6 +96,7 @@ export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
   giveTradeInventoryAction: 'Give Trade Inventory',
   removeInventoryItemsAction: 'Remove Inventory Items',
   insertNpcAction: 'Insert NPC',
+  heroFollowsAction: 'Hero Follows NPC',
   conditionalAction: 'If / Else Block',
   customAction: 'Action'
 };

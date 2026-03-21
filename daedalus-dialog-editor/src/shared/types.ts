@@ -176,6 +176,11 @@ export interface InsertNpcActionType {
   spawnPoint: string;
 }
 
+export interface HeroFollowsActionType {
+  type: 'HeroFollowsAction';
+  guideRoutine: string;
+}
+
 export interface Action {
   type: 'Action';
   action: string;
@@ -218,6 +223,7 @@ export type DialogAction =
   | GiveTradeInventoryActionType
   | RemoveInventoryItemsActionType
   | InsertNpcActionType
+  | HeroFollowsActionType
   | ConditionalAction
   | Action
   | CustomAction;

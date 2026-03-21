@@ -25,6 +25,7 @@ import type {
   GiveTradeInventoryAction,
   RemoveInventoryItemsAction,
   InsertNpcAction,
+  HeroFollowsAction,
   ConditionalAction,
   CustomAction
 } from './actionTypes';
@@ -176,6 +177,11 @@ export const ACTION_TEMPLATES = {
     type: 'InsertNpcAction',
     npcInstance,
     spawnPoint
+  }),
+
+  heroFollowsAction: (guideRoutine: string = ''): HeroFollowsAction => ({
+    type: 'HeroFollowsAction',
+    guideRoutine
   }),
 
   conditionalAction: (condition: string = ''): ConditionalAction => ({

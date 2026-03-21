@@ -143,6 +143,11 @@ export interface InsertNpcAction {
   spawnPoint: string;
 }
 
+export interface HeroFollowsAction {
+  type: 'HeroFollowsAction';
+  guideRoutine: string;
+}
+
 export interface CustomAction {
   type: 'CustomAction';
   action: string;
@@ -180,6 +185,7 @@ export type ActionType =
   | GiveTradeInventoryAction
   | RemoveInventoryItemsAction
   | InsertNpcAction
+  | HeroFollowsAction
   | ConditionalAction
   | Action
   | CustomAction;
@@ -209,6 +215,7 @@ export type ActionTypeId =
   | 'giveTradeInventoryAction'
   | 'removeInventoryItemsAction'
   | 'insertNpcAction'
+  | 'heroFollowsAction'
   | 'conditionalAction'
   | 'customAction';
 
@@ -286,6 +293,9 @@ export function getActionType(action: DetectableAction): ActionTypeId {
   }
   if (hasProperty(a, 'npcInstance') && hasProperty(a, 'spawnPoint')) {
     return 'insertNpcAction';
+  }
+  if (hasProperty(a, 'guideRoutine')) {
+    return 'heroFollowsAction';
   }
   if (hasProperty(a, 'condition') && hasProperty(a, 'thenActions') && hasProperty(a, 'elseActions')) {
     return 'conditionalAction';
