@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
-import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon } from '@mui/icons-material';
+import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
 import ConditionCard from './ConditionCard';
 import type { DialogCondition, DialogFunction, SemanticModel } from '../types/global';
 import type { ConditionEditorCondition, FunctionUpdater } from './dialogTypes';
@@ -113,7 +113,7 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
     }, 10);
   }, []);
 
-  const addCondition = useCallback((conditionType: 'npcKnowsInfo' | 'variable' | 'npcHasItems' | 'npcIsInState' | 'npcIsDead' | 'npcGetDistToWp' | 'npcGetTalentSkill' | 'generic') => {
+  const addCondition = useCallback((conditionType: 'npcKnowsInfo' | 'variable' | 'npcHasItems' | 'npcIsInState' | 'npcIsDead' | 'npcGetDistToWp' | 'npcGetTalentSkill' | 'questState' | 'generic') => {
     let newCondition: ConditionEditorCondition;
     switch (conditionType) {
       case 'npcKnowsInfo':
@@ -177,6 +177,14 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
           operator: '>=',
           value: 1,
           getTypeName: () => 'NpcGetTalentSkillCondition'
+        };
+        break;
+      case 'questState':
+        newCondition = {
+          type: 'QuestStateCondition',
+          questVariable: '',
+          state: 'LOG_SUCCESS',
+          getTypeName: () => 'QuestStateCondition'
         };
         break;
       case 'generic':
@@ -392,6 +400,10 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
             <MenuItem onClick={() => { addCondition('npcGetTalentSkill'); setAddMenuAnchor(null); }}>
               <InfoIcon fontSize="small" sx={{ mr: 1 }} />
               Talent Skill
+            </MenuItem>
+            <MenuItem onClick={() => { addCondition('questState'); setAddMenuAnchor(null); }}>
+              <AssignmentIcon fontSize="small" sx={{ mr: 1 }} />
+              Quest-Zustand
             </MenuItem>
             <MenuItem onClick={() => { addCondition('generic'); setAddMenuAnchor(null); }}>
               <CodeIcon fontSize="small" sx={{ mr: 1 }} />
