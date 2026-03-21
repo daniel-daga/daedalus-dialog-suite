@@ -23,6 +23,9 @@ export const AUTOCOMPLETE_POLICIES = {
     item: {
       showInstances: true,
       typeFilter: 'C_ITEM'
+    } as AutocompletePolicy,
+    questVariable: {
+      namePrefix: 'MIS_'
     } as AutocompletePolicy
   },
   dialogProperties: {
