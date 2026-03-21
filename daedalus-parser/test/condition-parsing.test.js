@@ -12,7 +12,8 @@ const {
   NpcGetDistToWpCondition,
   NpcGetTalentSkillCondition,
   Condition,
-  VariableCondition
+  VariableCondition,
+  QuestStateCondition
 } = require('../dist/semantic/semantic-visitor-index');
 
 // Test data: Dialog with Npc_KnowsInfo condition
@@ -630,4 +631,20 @@ func void DIA_Test_ReturnTrue_Info() {};
 
   assert.strictEqual(fn.conditions.length, 0, 'Simple always-true condition has no structured predicates');
   assert.strictEqual(fn.actions.length, 0, 'Simple always-true condition should not enter raw mode');
+});
+
+// ============================================================
+// QuestStateCondition tests
+// ============================================================
+
+test('QuestStateCondition generates correct code expression', () => {
+  const condition = new QuestStateCondition('MIS_Addon_Greg_ClearCanyon', 'LOG_RUNNING');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_Addon_Greg_ClearCanyon == LOG_RUNNING');
+});
+
+test('QuestStateCondition generates code with LOG_SUCCESS', () => {
+  const condition = new QuestStateCondition('MIS_TestQuest', 'LOG_SUCCESS');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_TestQuest == LOG_SUCCESS');
 });

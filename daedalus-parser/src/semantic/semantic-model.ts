@@ -1190,6 +1190,33 @@ export class VariableCondition implements CodeGeneratable {
   }
 }
 
+/**
+ * Represents a quest state condition: checks if a quest MIS variable equals a given log state.
+ * Generates: MIS_QuestName == LOG_RUNNING  (the if-wrapper is added by the code generator)
+ */
+export class QuestStateCondition implements CodeGeneratable {
+  public readonly type = 'QuestStateCondition';
+  public questVariable: string;
+  public state: string;
+
+  constructor(questVariable: string, state: string) {
+    this.questVariable = questVariable;
+    this.state = state;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `${this.questVariable} == ${this.state}`;
+  }
+
+  toDisplayString(): string {
+    return `[QuestState: ${this.questVariable} == ${this.state}]`;
+  }
+
+  getTypeName(): string {
+    return 'QuestStateCondition';
+  }
+}
+
 export type DialogCondition =
   | NpcKnowsInfoCondition
   | NpcHasItemsCondition
@@ -1198,7 +1225,8 @@ export type DialogCondition =
   | NpcGetDistToWpCondition
   | NpcGetTalentSkillCondition
   | Condition
-  | VariableCondition;
+  | VariableCondition
+  | QuestStateCondition;
 
 const CONDITION_DISCRIMINATOR = {
   property: 'type',
@@ -1211,6 +1239,7 @@ const CONDITION_DISCRIMINATOR = {
     { value: NpcGetTalentSkillCondition, name: 'NpcGetTalentSkillCondition' },
     { value: Condition, name: 'Condition' },
     { value: VariableCondition, name: 'VariableCondition' },
+    { value: QuestStateCondition, name: 'QuestStateCondition' },
   ],
 };
 
@@ -1223,6 +1252,7 @@ function ensureConditionType(json: any): void {
     else if ('npc' in json && !('dialogRef' in json) && !('item' in json) && !('state' in json) && !('waypoint' in json) && !('talent' in json)) json.type = 'NpcIsDeadCondition';
     else if ('npc' in json && 'waypoint' in json) json.type = 'NpcGetDistToWpCondition';
     else if ('npc' in json && 'talent' in json) json.type = 'NpcGetTalentSkillCondition';
+    else if ('questVariable' in json) json.type = 'QuestStateCondition';
     else if ('variableName' in json) json.type = 'VariableCondition';
     else if ('condition' in json) json.type = 'Condition';
   }
