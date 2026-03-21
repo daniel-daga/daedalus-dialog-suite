@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Box, TextField, IconButton, Tooltip, Chip, Typography, Switch, FormControlLabel } from '@mui/material';
-import { Delete as DeleteIcon, Info as InfoIcon, Code as CodeIcon, Check as CheckIcon } from '@mui/icons-material';
+import { Box, TextField, IconButton, Tooltip, Chip, Typography, Switch, FormControlLabel, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
+import { Delete as DeleteIcon, Info as InfoIcon, Code as CodeIcon, Check as CheckIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
 import VariableAutocomplete from './common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from './common/autocompletePolicies';
 import type { SemanticModel } from '../types/global';
@@ -66,6 +66,10 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
     operator?: string;
     value?: string | number | boolean;
   } => current.type === 'NpcGetTalentSkillCondition';
+  const isQuestStateCondition = (current: ConditionEditorCondition): current is ConditionEditorCondition & {
+    questVariable: string;
+    state: string;
+  } => current.type === 'QuestStateCondition';
 
   // Use refs to store latest values without triggering re-renders
   const localConditionRef = useRef(localCondition);
@@ -141,6 +145,9 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
     if (isNpcGetTalentSkillCondition(localCondition)) {
       return 'NpcGetTalentSkillCondition';
     }
+    if (isQuestStateCondition(localCondition)) {
+      return 'QuestStateCondition';
+    }
     return 'Condition';
   };
 
@@ -162,6 +169,8 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
         return <InfoIcon fontSize="small" />;
       case 'NpcGetTalentSkillCondition':
         return <InfoIcon fontSize="small" />;
+      case 'QuestStateCondition':
+        return <AssignmentIcon fontSize="small" />;
       case 'Condition':
       default:
         return <CodeIcon fontSize="small" />;
@@ -184,6 +193,8 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
         return 'Distance To Waypoint';
       case 'NpcGetTalentSkillCondition':
         return 'NPC Talent Skill';
+      case 'QuestStateCondition':
+        return 'Quest-Zustand';
       case 'Condition':
       default:
         return 'Custom Condition';
@@ -604,6 +615,54 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
               size="small"
               sx={{ width: 110 }}
             />
+          </Box>
+        );
+
+      case 'QuestStateCondition':
+        if (!isQuestStateCondition(localCondition)) {
+          return null;
+        }
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <VariableAutocomplete
+              label="Quest-Variable"
+              value={localCondition.questVariable || ''}
+              onChange={(value) => handleUpdate({
+                type: 'QuestStateCondition',
+                questVariable: value,
+                state: localCondition.state as 'LOG_RUNNING' | 'LOG_SUCCESS' | 'LOG_FAILED' | 'LOG_OBSOLETE',
+                getTypeName: localCondition.getTypeName
+              })}
+              onFlush={flushUpdate}
+              {...AUTOCOMPLETE_POLICIES.conditions.questVariable}
+              isMainField
+              mainFieldRef={mainFieldRef}
+              sx={{ flex: '1 1 55%', minWidth: 180 }}
+              placeholder="e.g. MIS_Addon_Greg_ClearCanyon"
+              semanticModel={semanticModel}
+            />
+            <FormControl size="small" sx={{ flex: '1 1 35%', minWidth: 140 }}>
+              <InputLabel>Zustand</InputLabel>
+              <Select
+                label="Zustand"
+                value={localCondition.state || 'LOG_SUCCESS'}
+                onChange={(e) => {
+                  const updated: ConditionEditorCondition = {
+                    type: 'QuestStateCondition',
+                    questVariable: localCondition.questVariable,
+                    state: e.target.value as 'LOG_RUNNING' | 'LOG_SUCCESS' | 'LOG_FAILED' | 'LOG_OBSOLETE',
+                    getTypeName: localCondition.getTypeName
+                  };
+                  setLocalCondition(updated);
+                  updateCondition(index, updated);
+                }}
+              >
+                <MenuItem value="LOG_RUNNING">LOG_RUNNING</MenuItem>
+                <MenuItem value="LOG_SUCCESS">LOG_SUCCESS</MenuItem>
+                <MenuItem value="LOG_FAILED">LOG_FAILED</MenuItem>
+                <MenuItem value="LOG_OBSOLETE">LOG_OBSOLETE</MenuItem>
+              </Select>
+            </FormControl>
           </Box>
         );
 
