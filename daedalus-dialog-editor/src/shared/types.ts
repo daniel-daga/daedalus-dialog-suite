@@ -293,6 +293,12 @@ export interface GenericCondition {
   condition: string;
 }
 
+export interface QuestStateCondition {
+  type: 'QuestStateCondition';
+  questVariable: string;
+  state: 'LOG_RUNNING' | 'LOG_SUCCESS' | 'LOG_FAILED' | 'LOG_OBSOLETE';
+}
+
 export type DialogCondition =
   | NpcKnowsInfoCondition
   | VariableCondition
@@ -302,7 +308,8 @@ export type DialogCondition =
   | NpcGetDistToWpCondition
   | NpcGetTalentSkillCondition
   | Condition
-  | GenericCondition;
+  | GenericCondition
+  | QuestStateCondition;
 
 // ============================================================================
 // Semantic Model Types - Functions and Dialogs
