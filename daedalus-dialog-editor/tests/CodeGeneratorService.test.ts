@@ -463,6 +463,52 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
   });
 });
 
+describe('HeroFollowsAction code generation', () => {
+  let service: CodeGeneratorService;
+
+  beforeEach(() => {
+    service = new CodeGeneratorService();
+  });
+
+  test('should generate three-line Hero Follows NPC code from semantic model', () => {
+    const settings = {
+      indentChar: '\t' as const,
+      includeComments: false,
+      sectionHeaders: false,
+      uppercaseKeywords: false,
+    };
+
+    const plainModel = {
+      declarationOrder: [
+        { type: 'function', name: 'DIA_NPC_Guide_Info' }
+      ],
+      dialogs: {},
+      functions: {
+        'DIA_NPC_Guide_Info': {
+          name: 'DIA_NPC_Guide_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [
+            {
+              type: 'HeroFollowsAction',
+              guideRoutine: 'RTN_NPC_GUIDEMITTE'
+            }
+          ]
+        }
+      },
+      hasErrors: false,
+      errors: []
+    };
+
+    const result = service.generateCode(plainModel, settings);
+
+    expect(result).toContain('AI_StopProcessInfos (self);');
+    expect(result).toContain('self.aivar[AIV_PARTYMEMBER] = TRUE;');
+    expect(result).toContain('Npc_ExchangeRoutine (self, "RTN_NPC_GUIDEMITTE");');
+  });
+});
+
 /**
  * Test Summary:
  *
