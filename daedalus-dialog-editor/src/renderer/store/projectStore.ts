@@ -49,6 +49,7 @@ interface ProjectState {
 
   // Project index (lightweight)
   npcList: string[];
+  routineList: string[];
   dialogIndex: Map<string, DialogMetadata[]>; // NPC ID Ã¢â€ â€™ dialogs
   allDialogFiles: string[];
   questFiles: string[];
@@ -143,6 +144,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   projectPath: null,
   projectName: null,
   npcList: [],
+  routineList: [],
   dialogIndex: new Map(),
   allDialogFiles: [],
   questFiles: [],
@@ -193,6 +195,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         projectPath: folderPath,
         projectName,
         npcList: rawIndex.npcs || [],
+        routineList: rawIndex.routines || [],
         dialogIndex: dialogsByNpc,
         allDialogFiles: rawIndex.allFiles || [],
         questFiles: rawIndex.questFiles || [],
@@ -328,6 +331,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       projectPath: null,
       projectName: null,
       npcList: [],
+      routineList: [],
       dialogIndex: new Map(),
       allDialogFiles: [],
       parsedFiles: new Map(),

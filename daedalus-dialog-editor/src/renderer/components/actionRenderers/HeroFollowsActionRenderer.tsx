@@ -1,7 +1,9 @@
 import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { HeroFollowsActionType } from '../../../shared/types';
-import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
+import { ActionFieldContainer, ActionDeleteButton } from '../common';
+import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 
 const HeroFollowsActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -9,13 +11,14 @@ const HeroFollowsActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef
+  mainFieldRef,
+  semanticModel
 }) => {
   const typedAction = action as HeroFollowsActionType;
 
   return (
     <ActionFieldContainer>
-      <ActionTextField
+      <VariableAutocomplete
         fullWidth
         label="Guide Routine"
         value={typedAction.guideRoutine || ''}
@@ -25,6 +28,8 @@ const HeroFollowsActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         placeholder="e.g. RTN_SZMYK_15_GUIDEMITTE"
+        semanticModel={semanticModel}
+        {...AUTOCOMPLETE_POLICIES.actions.routine}
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>

@@ -72,6 +72,7 @@ class ProjectService {
     const dialogsByNpc = new Map<string, DialogMetadata[]>();
     const allNpcs = new Set<string>();
     const questFiles: string[] = [];
+    const allRoutines = new Set<string>();
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
@@ -138,6 +139,11 @@ class ProjectService {
         if (result.isQuestFile) {
           questFiles.push(filePath);
         }
+
+        // Collect routine names
+        for (const routine of result.routines || []) {
+          allRoutines.add(routine);
+        }
       }
     } finally {
       pool.terminate();
@@ -150,7 +156,8 @@ class ProjectService {
       npcs,
       dialogsByNpc,
       allFiles,
-      questFiles
+      questFiles,
+      routines: Array.from(allRoutines).sort()
     };
   }
 

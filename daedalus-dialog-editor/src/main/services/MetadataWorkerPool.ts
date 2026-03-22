@@ -13,6 +13,7 @@ interface PendingTask {
     instances: Array<{ name: string; parent: string }>;
     prototypes: Array<{ name: string; parent: string }>;
     isQuestFile: boolean;
+    routines: string[];
   }) => void;
   reject: (reason?: any) => void;
 }
@@ -66,22 +67,24 @@ export class MetadataWorkerPool {
         instances?: Array<{ name: string; parent: string }>;
         prototypes?: Array<{ name: string; parent: string }>;
         isQuestFile?: boolean;
+        routines?: string[];
         error?: string;
       }) => {
-        const { id, dialogs, instances, prototypes, isQuestFile, error } = message;
+        const { id, dialogs, instances, prototypes, isQuestFile, routines, error } = message;
         const pending = this.pendingRequests.get(id);
 
         if (pending) {
           if (error) {
             // On error, we resolve with empty result to continue processing other files
             // consistent with original ProjectService behavior
-            pending.resolve({ dialogs: [], instances: [], prototypes: [], isQuestFile: false });
+            pending.resolve({ dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [] });
           } else {
             pending.resolve({
               dialogs: dialogs || [],
               instances: instances || [],
               prototypes: prototypes || [],
-              isQuestFile: !!isQuestFile
+              isQuestFile: !!isQuestFile,
+              routines: routines || []
             });
           }
           this.pendingRequests.delete(id);
@@ -121,6 +124,7 @@ export class MetadataWorkerPool {
     instances: Array<{ name: string; parent: string }>;
     prototypes: Array<{ name: string; parent: string }>;
     isQuestFile: boolean;
+    routines: string[];
   }> {
     if (this.isTerminated) {
         return Promise.reject(new Error('Pool terminated'));
@@ -148,13 +152,14 @@ export class MetadataWorkerPool {
     instances: Array<{ name: string; parent: string }>;
     prototypes: Array<{ name: string; parent: string }>;
     isQuestFile: boolean;
+    routines: string[];
   }> {
     try {
       const content = await fsPromises.readFile(filePath, 'utf-8');
       return extractFileMetadataFromSource(content, filePath);
     } catch {
       // Match worker-path behavior: tolerate per-file processing failures.
-      return { dialogs: [], instances: [], prototypes: [], isQuestFile: false };
+      return { dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [] };
     }
   }
 

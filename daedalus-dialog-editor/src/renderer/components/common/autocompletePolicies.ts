@@ -2,7 +2,7 @@ import type { VariableAutocompleteProps } from './VariableAutocomplete';
 
 type AutocompletePolicy = Pick<
   VariableAutocompleteProps,
-  'typeFilter' | 'namePrefix' | 'showInstances' | 'showDialogs' | 'allowCreation'
+  'typeFilter' | 'namePrefix' | 'showInstances' | 'showDialogs' | 'showFunctions' | 'showRoutines' | 'allowCreation'
 >;
 
 export const AUTOCOMPLETE_POLICIES = {
@@ -64,6 +64,10 @@ export const AUTOCOMPLETE_POLICIES = {
     } as AutocompletePolicy,
     npcNoInstances: {
       typeFilter: 'C_NPC'
+    } as AutocompletePolicy,
+    routine: {
+      showRoutines: true,
+      allowCreation: false
     } as AutocompletePolicy
   }
 } as const;

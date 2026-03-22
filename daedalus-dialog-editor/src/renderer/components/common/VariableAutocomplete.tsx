@@ -23,6 +23,10 @@ export interface VariableAutocompleteProps {
   showInstances?: boolean;
   /** Whether to include dialogs from the project index */
   showDialogs?: boolean;
+  /** Whether to include functions (e.g. routines) */
+  showFunctions?: boolean;
+  /** Whether to include daily routines from NPC instances */
+  showRoutines?: boolean;
   /** Whether to allow values that are not in the list */
   allowFreeInput?: boolean;
   /** Whether to allow creating a new variable if not found (default: true) */
@@ -76,6 +80,8 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   namePrefix,
   showInstances = false,
   showDialogs = false,
+  showFunctions = false,
+  showRoutines = false,
   allowFreeInput = true,
   allowCreation = true,
   sx,
@@ -88,7 +94,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   semanticModel,
   showNavigation = true
 }) => {
-  const { mergedSemanticModel, dialogIndex, npcList } = useProjectStore();
+  const { mergedSemanticModel, dialogIndex, npcList, routineList } = useProjectStore();
   const { navigateToSymbol, navigateToDialog } = useNavigation();
   const [creationDialogOpen, setCreationDialogOpen] = useState(false);
   const [pendingCreationName, setPendingCreationName] = useState('');
@@ -205,6 +211,64 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
       }
     }
 
+    // Add functions
+    if (showFunctions) {
+      const addFunctions = (record: Record<string, any> | undefined) => {
+        if (!record) return;
+        for (const name in record) {
+          const lowerName = name.toLowerCase();
+          if (!seenNames.has(lowerName) && isNameMatch(name)) {
+            opts.push({
+              name,
+              type: 'function',
+              source: 'instance',
+              filePath: record[name].filePath
+            });
+            seenNames.add(lowerName);
+          }
+        }
+      };
+      addFunctions(semanticModel?.functions);
+      addFunctions(mergedSemanticModel.functions);
+    }
+
+    // Add daily routines from NPC instances
+    if (showRoutines) {
+      const addRoutinesFromInstances = (record: Record<string, any> | undefined) => {
+        if (!record) return;
+        for (const item of Object.values(record)) {
+          if (typeof item.dailyRoutine !== 'string' || !item.dailyRoutine) continue;
+          const lowerName = item.dailyRoutine.toLowerCase();
+          if (!seenNames.has(lowerName) && isNameMatch(item.dailyRoutine)) {
+            opts.push({
+              name: item.dailyRoutine,
+              type: 'routine',
+              source: 'instance',
+              filePath: item.filePath
+            });
+            seenNames.add(lowerName);
+          }
+        }
+      };
+      addRoutinesFromInstances(semanticModel?.instances);
+      addRoutinesFromInstances(mergedSemanticModel.instances);
+      addRoutinesFromInstances(semanticModel?.npcs);
+      addRoutinesFromInstances(mergedSemanticModel.npcs);
+
+      // Fallback: project index routine list (populated at project open time)
+      for (const routineName of routineList || []) {
+        const lowerName = routineName.toLowerCase();
+        if (!seenNames.has(lowerName) && isNameMatch(routineName)) {
+          opts.push({
+            name: routineName,
+            type: 'routine',
+            source: 'instance'
+          });
+          seenNames.add(lowerName);
+        }
+      }
+    }
+
     // Add dialogs
     if (showDialogs && dialogIndex) {
       for (const dialogs of dialogIndex.values()) {
@@ -224,7 +288,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     }
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel, semanticModel, typeFilter, namePrefix, showInstances, showDialogs, dialogIndex, npcList]);
+  }, [mergedSemanticModel, semanticModel, typeFilter, namePrefix, showInstances, showDialogs, showFunctions, showRoutines, dialogIndex, npcList, routineList]);
 
   // Check if current value exists in options (to enable navigation)
   const canNavigate = useMemo(() => {

@@ -17,6 +17,7 @@ export interface ProjectIndex {
   dialogsByNpc: Map<string, DialogMetadata[]>;
   allFiles: string[];
   questFiles: string[];
+  routines: string[];
 }
 
 export interface RecentProject {
@@ -385,6 +386,7 @@ export interface GlobalInstance {
   name: string;
   parent: string;
   displayName?: string;
+  dailyRoutine?: string;
   filePath?: string;
   position?: {
     startLine: number;

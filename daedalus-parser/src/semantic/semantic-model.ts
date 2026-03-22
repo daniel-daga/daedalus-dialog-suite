@@ -94,6 +94,7 @@ export class GlobalInstance {
   public name: string;
   public parent: string;
   public displayName?: string;
+  public dailyRoutine?: string;
   public filePath?: string;
   public position?: {
     startLine: number;

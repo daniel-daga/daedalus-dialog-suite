@@ -117,6 +117,11 @@ export class DeclarationVisitor {
             }
           }
 
+          const dailyRoutine = this.extractDailyRoutine(node);
+          if (dailyRoutine !== undefined) {
+            instance.dailyRoutine = dailyRoutine;
+          }
+
           if (upperParent === 'C_ITEM') {
             if (!this.semanticModel.items) {
               this.semanticModel.items = {};
@@ -171,6 +176,22 @@ export class DeclarationVisitor {
       return typeof value === 'string' && value.trim() !== '' ? value : undefined;
     }
 
+    return undefined;
+  }
+
+  private extractDailyRoutine(instanceNode: TreeSitterNode): string | undefined {
+    const bodyNode = instanceNode.childForFieldName('body');
+    if (!bodyNode) return undefined;
+
+    for (const child of bodyNode.namedChildren) {
+      if (child.type !== 'assignment_statement') continue;
+      const leftNode = child.childForFieldName('left');
+      const rightNode = child.childForFieldName('right');
+      if (!leftNode || !rightNode) continue;
+      if (leftNode.text.toLowerCase() !== 'daily_routine') continue;
+      const value = rightNode.text.trim();
+      return value || undefined;
+    }
     return undefined;
   }
 

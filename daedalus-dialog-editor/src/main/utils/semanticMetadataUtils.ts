@@ -10,6 +10,7 @@ export interface ParsedFileMetadata {
   instances: Array<{ name: string; parent: string }>;
   prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
+  routines: string[];
 }
 
 const hasQuestTopicConstants = (semanticModel: SemanticModel): boolean => {
@@ -67,6 +68,18 @@ const extractPrototypeDeclarations = (parseResult: any): Array<{ name: string; p
     }));
 };
 
+const extractDailyRoutines = (semanticModel: SemanticModel): string[] => {
+  const routines: string[] = [];
+  const seen = new Set<string>();
+  for (const instance of Object.values(semanticModel.instances || {})) {
+    if (instance.dailyRoutine && !seen.has(instance.dailyRoutine)) {
+      routines.push(instance.dailyRoutine);
+      seen.add(instance.dailyRoutine);
+    }
+  }
+  return routines;
+};
+
 export function extractFileMetadataFromSource(sourceCode: string, filePath: string): ParsedFileMetadata {
   const parseResult = daedalusWrapper.parse(sourceCode);
   const tree = parseResult.tree;
@@ -88,6 +101,7 @@ export function extractFileMetadataFromSource(sourceCode: string, filePath: stri
     dialogs: extractDialogs(semanticModel, filePath),
     instances: extractInstanceDeclarations(parseResult),
     prototypes: extractPrototypeDeclarations(parseResult),
-    isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel)
+    isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel),
+    routines: extractDailyRoutines(semanticModel)
   };
 }
