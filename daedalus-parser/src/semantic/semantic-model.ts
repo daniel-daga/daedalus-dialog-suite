@@ -165,7 +165,7 @@ export class DialogLine implements CodeGeneratable {
   generateCode(options: CodeGenOptions): string {
     const shouldEmitComment = options.includeComments && (this.inlineComment ?? this.text !== this.id);
     const comment = shouldEmitComment ? ` //${this.text}` : '';
-    const listener = this.listener || (this.speaker === 'other' ? 'self' : 'other');
+    const listener = this.speaker === 'other' ? 'self' : 'other';
     return `AI_Output (${this.speaker}, ${listener}, "${this.id}");${comment}`;
   }
 
