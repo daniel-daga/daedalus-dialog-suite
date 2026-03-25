@@ -184,8 +184,8 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       const currentAction = getActionAtPath(actions, path);
       const newSpeaker = toggleSpeaker
-        ? (currentAction?.type === 'DialogLine' && currentAction.speaker === 'self' ? 'other' : 'self')
-        : (currentAction?.type === 'DialogLine' ? currentAction.speaker : 'self');
+        ? (currentAction?.type === 'DialogLine' ? (currentAction.speaker === 'self' ? 'other' : 'self') : 'other')
+        : (currentAction?.type === 'DialogLine' ? currentAction.speaker : 'other');
       const newAction = buildDialogLineAction(actions, newSpeaker);
 
       const newActions = insertActionAfterPath(actions, path, newAction);
