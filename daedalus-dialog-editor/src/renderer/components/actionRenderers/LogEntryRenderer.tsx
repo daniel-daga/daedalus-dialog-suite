@@ -24,6 +24,22 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const typedAction = action as LogEntryAction;
 
+  // Topic field: Tab moves naturally to Text, Shift+Tab goes to previous action
+  const handleTopicKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      return; // Let browser Tab naturally to the Text field
+    }
+    handleKeyDown(e);
+  };
+
+  // Text field: Tab goes to next action, Shift+Tab moves naturally back to Topic
+  const handleTextKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab' && e.shiftKey) {
+      return; // Let browser Shift+Tab naturally back to the Topic field
+    }
+    handleKeyDown(e);
+  };
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
@@ -31,7 +47,9 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.topic || ''}
         onChange={(value) => handleUpdate({ ...typedAction, topic: normalizeTopicName(value) })}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={handleTopicKeyDown}
+        isMainField
+        mainFieldRef={mainFieldRef}
         sx={{ minWidth: 180 }}
         {...AUTOCOMPLETE_POLICIES.actions.topic}
         semanticModel={semanticModel}
@@ -42,9 +60,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.text || ''}
         onChange={(value) => handleUpdate({ ...typedAction, text: value })}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
-        isMainField
-        mainFieldRef={mainFieldRef}
+        onKeyDown={handleTextKeyDown}
         multiline
         rows={2}
       />
