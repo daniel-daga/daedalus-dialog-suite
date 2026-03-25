@@ -161,6 +161,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     } else if (e.key === 'Backspace' && isDialogLine && !hasNonEmptyText(localAction)) {
       e.preventDefault();
       handleDeleteAndFocusPrev();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleDeleteAndFocusPrev();
     }
   }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText]);
 
