@@ -91,6 +91,9 @@ function waitForFile(filePath, callback) {
   }, 100);
 }
 
+// Set NODE_ENV so Electron loads from the Vite dev server (localhost:5173)
+process.env.NODE_ENV = 'development';
+
 console.log('Starting development environment...\n');
 
 // Start TypeScript compiler
