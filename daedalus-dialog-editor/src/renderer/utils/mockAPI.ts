@@ -296,8 +296,9 @@ function generateCode(model: any, settings: any): string {
     if (func.actions && func.actions.length > 0) {
       for (const action of func.actions) {
         if (action.speaker && action.text && action.id) {
-          // DialogLine
-          code += `${indent}AI_Output(${action.speaker}, other, "${action.id}");\n`;
+          // DialogLine: listener is the opposite of speaker
+          const listener = action.speaker === 'other' ? 'self' : 'other';
+          code += `${indent}AI_Output(${action.speaker}, ${listener}, "${action.id}");\n`;
         }
       }
     }
