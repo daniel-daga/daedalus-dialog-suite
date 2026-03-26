@@ -146,6 +146,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     });
   };
 
+  /**
+   * Read a quest file, apply a transformation, write it back, invalidate the
+   * cache, and return the freshly-parsed semantic model.  Centralises the
+   * read → modify → write → invalidate → re-parse sequence shared by
+   * createQuest, addVariable, updateGlobalConstant, and deleteVariable.
+   */
+  const mutateQuestFile = async (
+    filePath: string,
+    mutatorFn: (currentContent: string) => Promise<string> | string
+  ): Promise<SemanticModel> => {
+    const content = await window.editorAPI.readFile(filePath);
+    const newContent = await mutatorFn(content);
+    await window.editorAPI.writeFile(filePath, newContent);
+    invalidateCacheForFile(filePath);
+    return get().getSemanticModel(filePath);
+  };
+
   return {
   // Initial state
   projectPath: null,
@@ -445,49 +462,35 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     try {
       set({ isLoading: true });
 
-      // 1. Prepare content to append
-      // Check if we need to create a variable
       const hasVariable = !!variableFilePath;
 
       if (hasVariable && topicFilePath === variableFilePath) {
-        const content = `\n// Quest: ${title}\nconst string TOPIC_${internalName} = "${title}";\nvar int MIS_${internalName};\n`;
-
-        // Read current content to ensure we append correctly (newline check)
-        let currentContent = await window.editorAPI.readFile(topicFilePath);
-        if (!currentContent.endsWith('\n')) currentContent += '\n';
-
-        await window.editorAPI.writeFile(topicFilePath, currentContent + content);
+        // Both declarations go into the same file
+        const questBlock = `\n// Quest: ${title}\nconst string TOPIC_${internalName} = "${title}";\nvar int MIS_${internalName};\n`;
+        const combinedModel = await mutateQuestFile(topicFilePath, (c) => {
+          if (!c.endsWith('\n')) c += '\n';
+          return c + questBlock;
+        });
+        get().mergeSemanticModels([get().mergedSemanticModel, combinedModel]);
       } else {
-        // Append constant
-        const constContent = `\nconst string TOPIC_${internalName} = "${title}";\n`;
-        let topicFileContent = await window.editorAPI.readFile(topicFilePath);
-        if (!topicFileContent.endsWith('\n')) topicFileContent += '\n';
-        await window.editorAPI.writeFile(topicFilePath, topicFileContent + constContent);
+        const constLine = `\nconst string TOPIC_${internalName} = "${title}";\n`;
+        const topicModel = await mutateQuestFile(topicFilePath, (c) => {
+          if (!c.endsWith('\n')) c += '\n';
+          return c + constLine;
+        });
+        const modelsToMerge = [get().mergedSemanticModel, topicModel];
 
-        // Append variable if requested
         if (hasVariable) {
-            const varContent = `\nvar int MIS_${internalName};\n`;
-            let varFileContent = await window.editorAPI.readFile(variableFilePath);
-            if (!varFileContent.endsWith('\n')) varFileContent += '\n';
-            await window.editorAPI.writeFile(variableFilePath, varFileContent + varContent);
-        }
-      }
-
-      // 2. Clear cache for modified files
-      invalidateCacheForFile(topicFilePath);
-      if (hasVariable) invalidateCacheForFile(variableFilePath);
-
-      // 3. Re-load quest data (re-parse the modified files)
-      const topicModel = await get().getSemanticModel(topicFilePath);
-      const modelsToMerge = [get().mergedSemanticModel, topicModel];
-      
-      if (hasVariable && variableFilePath !== topicFilePath) {
-          const variableModel = await get().getSemanticModel(variableFilePath);
+          const varLine = `\nvar int MIS_${internalName};\n`;
+          const variableModel = await mutateQuestFile(variableFilePath, (c) => {
+            if (!c.endsWith('\n')) c += '\n';
+            return c + varLine;
+          });
           modelsToMerge.push(variableModel);
-      }
+        }
 
-      // Merge into current model
-      get().mergeSemanticModels(modelsToMerge);
+        get().mergeSemanticModels(modelsToMerge);
+      }
 
       set({ isLoading: false });
 
@@ -502,34 +505,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     try {
       set({ isLoading: true });
 
-      let content = '';
+      let varLine: string;
       if (isConstant) {
-          // Format value based on type or just as string if complex
-          let valueStr = String(value);
-          // Only quote if type is string
-          if (type === 'string') {
-              valueStr = `"${value}"`;
-          }
-          content = `\nconst ${type} ${name} = ${valueStr};\n`;
+        let valueStr = String(value);
+        if (type === 'string') valueStr = `"${value}"`;
+        varLine = `\nconst ${type} ${name} = ${valueStr};\n`;
       } else {
-          content = `\nvar ${type} ${name};\n`;
+        varLine = `\nvar ${type} ${name};\n`;
       }
 
-      // Read current content to ensure we append correctly (newline check)
-      let currentContent = await window.editorAPI.readFile(filePath);
-      if (!currentContent.endsWith('\n')) currentContent += '\n';
+      const updatedModel = await mutateQuestFile(filePath, (c) => {
+        if (!c.endsWith('\n')) c += '\n';
+        return c + varLine;
+      });
 
-      await window.editorAPI.writeFile(filePath, currentContent + content);
-
-      // Clear cache for modified file
-      invalidateCacheForFile(filePath);
-
-      // Re-parse the modified file
-      const updatedModel = await get().getSemanticModel(filePath);
-
-      // Merge into current model
       get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
-
       set({ isLoading: false });
 
     } catch (error) {
@@ -543,36 +533,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     try {
       set({ isLoading: true });
 
-      // Read current content
-      const content = await window.editorAPI.readFile(filePath);
-
-      // Find the constant definition using regex
-      // Matches: const <type> <name> = <value>;
-      const regex = new RegExp(`(const\\s+\\w+\\s+${name}\\s*=\\s*)([^;]+)(;)`);
-
-      const match = content.match(regex);
-      if (!match) {
-          throw new Error(`Could not find constant definition for ${name} in ${filePath}`);
-      }
-
       // Check type from existing constant to decide on quotes
       const constant = get().mergedSemanticModel.constants?.[name];
       const isString = constant?.type?.toLowerCase() === 'string';
       const newValue = isString ? `"${value}"` : value;
 
-      const newContent = content.replace(regex, `$1${newValue}$3`);
+      // Matches: const <type> <name> = <value>;
+      const regex = new RegExp(`(const\\s+\\w+\\s+${name}\\s*=\\s*)([^;]+)(;)`);
 
-      await window.editorAPI.writeFile(filePath, newContent);
+      const updatedModel = await mutateQuestFile(filePath, (content) => {
+        const match = content.match(regex);
+        if (!match) {
+          throw new Error(`Could not find constant definition for ${name} in ${filePath}`);
+        }
+        return content.replace(regex, `$1${newValue}$3`);
+      });
 
-      // Clear cache for modified file
-      invalidateCacheForFile(filePath);
-
-      // Re-parse the modified file
-      const updatedModel = await get().getSemanticModel(filePath);
-
-      // Merge into current model
       get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
-
       set({ isLoading: false });
 
     } catch (error) {
@@ -586,28 +563,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     try {
       set({ isLoading: true });
 
-      // Read current content
-      const content = await window.editorAPI.readFile(filePath);
+      const updatedModel = await mutateQuestFile(filePath, (content) => {
+        // Also consume a following newline to avoid leaving a blank line
+        let end = range.endIndex;
+        if (content[end] === '\n') end++;
+        else if (content[end] === '\r' && content[end + 1] === '\n') end += 2;
+        return content.slice(0, range.startIndex) + content.slice(end);
+      });
 
-      // Remove the variable definition
-      // We also check for a following newline to remove blank lines if possible
-      let end = range.endIndex;
-      if (content[end] === '\n') end++;
-      else if (content[end] === '\r' && content[end + 1] === '\n') end += 2;
-
-      const newContent = content.slice(0, range.startIndex) + content.slice(end);
-
-      await window.editorAPI.writeFile(filePath, newContent);
-
-      // Clear cache for modified file
-      invalidateCacheForFile(filePath);
-
-      // Re-parse the modified file
-      const updatedModel = await get().getSemanticModel(filePath);
-
-      // Merge into current model
       get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
-
       set({ isLoading: false });
 
     } catch (error) {
