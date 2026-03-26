@@ -56,6 +56,20 @@ export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Normalise a dialog property that can be either a plain function-name string
+ * or an object with an optional `name` field (as produced by the parser for
+ * inline function references).  Returns the string name, or `undefined` when
+ * neither form yields a value.
+ */
+export function extractFunctionName(
+  ref: string | { name?: string } | null | undefined
+): string | undefined {
+  if (!ref) return undefined;
+  if (typeof ref === 'string') return ref || undefined;
+  return ref.name || undefined;
+}
+
 export function createNpcInstanceTemplate(npcName: string): string {
   return [
     `INSTANCE ${npcName} (C_NPC)`,
