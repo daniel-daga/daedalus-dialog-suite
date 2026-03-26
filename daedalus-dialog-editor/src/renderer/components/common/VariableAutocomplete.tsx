@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import { OpenInNew as OpenInNewIcon, Add as AddIcon } from '@mui/icons-material';
-import { useProjectStore } from '../../store/projectStore';
 import { SemanticModel } from '../../types/global';
 import { useNavigation } from '../../hooks/useNavigation';
 import VariableCreationDialog from './VariableCreationDialog';
+import { useVariableOptions, VariableOption } from '../hooks/useVariableOptions';
 
 export interface VariableAutocompleteProps {
   /** Current value */
@@ -51,16 +51,7 @@ export interface VariableAutocompleteProps {
   showNavigation?: boolean;
 }
 
-type OptionType = {
-  name: string;
-  type: string;
-  source: 'variable' | 'constant' | 'instance' | 'dialog' | 'new';
-  insertValue?: string;
-  aliasOf?: string;
-  filePath?: string;
-  value?: string | number | boolean;
-  isCreationSuggestion?: boolean;
-};
+type OptionType = VariableOption;
 
 const MAX_RESULTS = 200;
 const LARGE_LIST_THRESHOLD = 2000;
@@ -94,7 +85,6 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   semanticModel,
   showNavigation = true
 }) => {
-  const { mergedSemanticModel, dialogIndex, npcList, routineList } = useProjectStore();
   const { navigateToSymbol, navigateToDialog } = useNavigation();
   const [creationDialogOpen, setCreationDialogOpen] = useState(false);
   const [pendingCreationName, setPendingCreationName] = useState('');
@@ -104,191 +94,15 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
     setInputValue(value);
   }, [value]);
 
-  const options = useMemo(() => {
-    const opts: OptionType[] = [];
-    const seenNames = new Set<string>();
-    
-    const filters = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.map(f => f.toLowerCase()) : [typeFilter.toLowerCase()]) : null;
-    const prefixes = namePrefix ? (Array.isArray(namePrefix) ? namePrefix.map(p => p.toLowerCase()) : [namePrefix.toLowerCase()]) : null;
-
-    // Helper to check type
-    const isTypeMatch = (type: string | undefined) => {
-      if (!filters) return true;
-      if (!type) return false;
-      return filters.includes(type.toLowerCase());
-    };
-
-    // Helper to check name prefix
-    const isNameMatch = (name: string) => {
-      if (!prefixes) return true;
-      const lowerName = name.toLowerCase();
-      return prefixes.some(p => lowerName.startsWith(p));
-    };
-
-    // Helper to add options from a Record/Object
-    const addFromRecord = (record: Record<string, any> | undefined, source: 'variable' | 'constant' | 'instance') => {
-      if (!record) return;
-      
-      for (const name in record) {
-        const item = record[name];
-        const lowerName = name.toLowerCase();
-        
-        if (!seenNames.has(lowerName)) {
-          // For instances, check parent class type
-          const itemType = source === 'instance' ? (item.parent || 'instance') : item.type;
-          
-          if (isTypeMatch(itemType) && isNameMatch(name)) {
-            opts.push({
-              name: item.name || name,
-              type: itemType,
-              source,
-              insertValue: item.name || name,
-              filePath: item.filePath,
-              value: item.value
-            });
-            seenNames.add(lowerName);
-          }
-
-          // For item instances, support matching by display name while inserting instance id.
-          if (
-            source === 'instance' &&
-            typeof item.displayName === 'string' &&
-            item.displayName.trim() !== ''
-          ) {
-            const aliasName = item.displayName.trim();
-            const aliasLower = aliasName.toLowerCase();
-            const instanceName = item.name || name;
-            if (
-              aliasLower !== lowerName &&
-              !seenNames.has(aliasLower) &&
-              isTypeMatch(itemType) &&
-              isNameMatch(aliasName)
-            ) {
-              opts.push({
-                name: aliasName,
-                type: itemType,
-                source,
-                insertValue: instanceName,
-                aliasOf: instanceName,
-                filePath: item.filePath,
-                value: item.value
-              });
-              seenNames.add(aliasLower);
-            }
-          }
-        }
-      }
-    };
-
-    // Add constants (highest priority for same names)
-    addFromRecord(semanticModel?.constants, 'constant');
-    addFromRecord(mergedSemanticModel.constants, 'constant');
-
-    // Add variables
-    addFromRecord(semanticModel?.variables, 'variable');
-    addFromRecord(mergedSemanticModel.variables, 'variable');
-
-    // Add instances
-    if (showInstances) {
-      addFromRecord(semanticModel?.instances, 'instance');
-      addFromRecord(mergedSemanticModel.instances, 'instance');
-      addFromRecord(semanticModel?.npcs, 'instance');
-      addFromRecord(mergedSemanticModel.npcs, 'instance');
-      addFromRecord(semanticModel?.animations, 'instance');
-      addFromRecord(mergedSemanticModel.animations, 'instance');
-
-      // Fallback source: project index NPC list (when semantic instances are unavailable)
-      for (const npcName of npcList || []) {
-        const lowerName = npcName.toLowerCase();
-        if (!seenNames.has(lowerName) && isTypeMatch('C_NPC') && isNameMatch(npcName)) {
-          opts.push({
-            name: npcName,
-            type: 'C_NPC',
-            source: 'instance'
-          });
-          seenNames.add(lowerName);
-        }
-      }
-    }
-
-    // Add functions
-    if (showFunctions) {
-      const addFunctions = (record: Record<string, any> | undefined) => {
-        if (!record) return;
-        for (const name in record) {
-          const lowerName = name.toLowerCase();
-          if (!seenNames.has(lowerName) && isNameMatch(name)) {
-            opts.push({
-              name,
-              type: 'function',
-              source: 'instance',
-              filePath: record[name].filePath
-            });
-            seenNames.add(lowerName);
-          }
-        }
-      };
-      addFunctions(semanticModel?.functions);
-      addFunctions(mergedSemanticModel.functions);
-    }
-
-    // Add daily routines from NPC instances
-    if (showRoutines) {
-      const addRoutinesFromInstances = (record: Record<string, any> | undefined) => {
-        if (!record) return;
-        for (const item of Object.values(record)) {
-          if (typeof item.dailyRoutine !== 'string' || !item.dailyRoutine) continue;
-          const lowerName = item.dailyRoutine.toLowerCase();
-          if (!seenNames.has(lowerName) && isNameMatch(item.dailyRoutine)) {
-            opts.push({
-              name: item.dailyRoutine,
-              type: 'routine',
-              source: 'instance',
-              filePath: item.filePath
-            });
-            seenNames.add(lowerName);
-          }
-        }
-      };
-      addRoutinesFromInstances(semanticModel?.instances);
-      addRoutinesFromInstances(mergedSemanticModel.instances);
-      addRoutinesFromInstances(semanticModel?.npcs);
-      addRoutinesFromInstances(mergedSemanticModel.npcs);
-
-      // Fallback: project index routine list (populated at project open time)
-      for (const routineName of routineList || []) {
-        const lowerName = routineName.toLowerCase();
-        if (!seenNames.has(lowerName) && isNameMatch(routineName)) {
-          opts.push({
-            name: routineName,
-            type: 'routine',
-            source: 'instance'
-          });
-          seenNames.add(lowerName);
-        }
-      }
-    }
-
-    // Add dialogs
-    if (showDialogs && dialogIndex) {
-      for (const dialogs of dialogIndex.values()) {
-        for (const d of dialogs) {
-          const lowerName = d.dialogName.toLowerCase();
-          if (!seenNames.has(lowerName) && isTypeMatch('C_INFO') && isNameMatch(d.dialogName)) {
-            opts.push({
-              name: d.dialogName,
-              type: 'C_INFO',
-              source: 'dialog',
-              filePath: d.filePath
-            });
-            seenNames.add(lowerName);
-          }
-        }
-      }
-    }
-
-    return opts.sort((a, b) => a.name.localeCompare(b.name));
-  }, [mergedSemanticModel, semanticModel, typeFilter, namePrefix, showInstances, showDialogs, showFunctions, showRoutines, dialogIndex, npcList, routineList]);
+  const options = useVariableOptions({
+    semanticModel,
+    typeFilter,
+    namePrefix,
+    showInstances,
+    showDialogs,
+    showFunctions,
+    showRoutines
+  });
 
   // Check if current value exists in options (to enable navigation)
   const canNavigate = useMemo(() => {

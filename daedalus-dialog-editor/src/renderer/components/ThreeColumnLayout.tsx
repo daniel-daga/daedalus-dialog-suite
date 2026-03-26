@@ -1,4 +1,7 @@
 import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect, useDeferredValue } from 'react';
+import { useFunctionTreeBuilder } from './hooks/useFunctionTreeBuilder';
+import { useRecentDialogTabs } from './hooks/useRecentDialogTabs';
+import { useDialogFactory } from './hooks/useDialogFactory';
 import { Box, Typography, Alert, Button } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
@@ -9,26 +12,11 @@ import DialogTree from './DialogTree';
 import EditorPane from './EditorPane';
 import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
 import SearchPanel from './SearchPanel';
-import { createDialogLineId } from './actionFactory';
-import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction, Dialog, DialogFunction, GlobalInstance } from '../types/global';
-import {
-  normalizeIdentifier,
-  makeUniqueName,
-  normalizePath,
-  getDirectoryName,
-  joinPath,
-  escapeRegExp,
-  createNpcInstanceTemplate
-} from '../utils/pathAndIdentifierUtils';
+import type { SemanticModel } from '../types/global';
+import { extractFunctionName } from '../utils/pathAndIdentifierUtils';
 
 interface ThreeColumnLayoutProps {
   filePath: string | null;
-}
-
-interface RecentDialogTab {
-  dialogName: string;
-  npcName: string;
-  functionName: string | null;
 }
 
 const EMPTY_SEMANTIC_MODEL: SemanticModel = {
@@ -71,25 +59,17 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
-  const [isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
-  void isPending;
+  const [_isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
   const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
   const [isSearchOpen, setIsSearchOpen] = useState(false); // Search panel visibility
-  const [recentDialogs, setRecentDialogs] = useState<RecentDialogTab[]>([]);
+  const { recentDialogs, addRecentDialog, closeRecentDialog } = useRecentDialogTabs();
   const [operationError, setOperationError] = useState<string | null>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
-
-  // Cache for buildFunctionTree to prevent exponential recomputation
-  const functionTreeCacheRef = useRef<Map<string, FunctionTreeNode | null>>(new Map());
 
   // Refs to track RAF IDs for cleanup (Bug #1 fix)
   const rafId1Ref = useRef<number | null>(null);
   const rafId2Ref = useRef<number | null>(null);
   const dialogTransitionIdRef = useRef(0);
-
-  // Max cache size to prevent unbounded growth (Bug #4 fix)
-  const MAX_CACHE_SIZE = 1000;
-  const MAX_RECENT_DIALOGS = 10;
 
   // Determine which mode we're in: project mode or single-file mode
   const isProjectMode = !!projectPath;
@@ -166,100 +146,10 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     };
   }, []);
 
-  // LRU cache helpers (Bug #4 fix)
-  const lruCacheGet = useCallback((key: string): FunctionTreeNode | null | undefined => {
-    const cache = functionTreeCacheRef.current;
-    if (!cache.has(key)) return undefined;
-
-    // Move to end (most recently used)
-    const value = cache.get(key);
-    cache.delete(key);
-    cache.set(key, value!);
-    return value;
-  }, []);
-
-  const lruCacheSet = useCallback((key: string, value: FunctionTreeNode | null): void => {
-    const cache = functionTreeCacheRef.current;
-
-    // Remove old position if exists
-    if (cache.has(key)) {
-      cache.delete(key);
-    }
-
-    // Add at end (most recent)
-    cache.set(key, value);
-
-    // Evict oldest if over limit
-    if (cache.size > MAX_CACHE_SIZE) {
-      const oldestKey = cache.keys().next().value;
-      if (oldestKey) cache.delete(oldestKey);
-    }
-  }, [MAX_CACHE_SIZE]);
-
-  // Build function tree for a given function (recursively find choices)
-  // ancestorPath tracks the path from root to current node to prevent direct cycles
-  // Uses memoization to prevent exponential recomputation in diamond patterns
-  // Uses deferred functions to avoid re-calculating the tree on every keystroke
+  // Build function tree for a given function (recursively finds choice branches).
+  // Uses deferred functions to avoid re-calculating on every keystroke.
   const deferredFunctions = deferredSemanticModel.functions;
-  const buildFunctionTree = useCallback((funcName: string, ancestorPath: string[] = []): FunctionTreeNode | null => {
-    // Prevent direct cycles (A -> B -> A), but allow diamonds (A -> B, A -> C, both -> D)
-    if (ancestorPath.includes(funcName)) {
-      return null; // Direct cycle detected
-    }
-
-    // Create cache key including ancestor path to handle different contexts
-    const cacheKey = `${funcName}|${ancestorPath.join(',')}`;
-
-    const func = deferredFunctions?.[funcName];
-    if (!func) return null;
-
-    // Check cache first (LRU). Fast path: reference equality only.
-    // Content-equality via JSON.stringify was O(n) serialization on every reference-miss
-    // and defeated the purpose of caching. When the reference changes we rebuild instead.
-    const cached = lruCacheGet(cacheKey);
-    if (cached !== undefined && cached !== null) {
-      if (cached.function === func) {
-        return cached;
-      }
-    }
-
-    // Filter actions that are choices (have dialogRef and targetFunction)
-    const choices = (func.actions || []).filter((action): action is ChoiceAction =>
-      'dialogRef' in action && 'targetFunction' in action
-    );
-
-    const newPath = [...ancestorPath, funcName];
-
-    // Pre-compute isShared for all choices at once (O(n) instead of O(nÂ²))
-    const targetCounts = new Map<string, number>();
-    choices.forEach((choice) => {
-      const target = choice.targetFunction;
-      targetCounts.set(target, (targetCounts.get(target) || 0) + 1);
-    });
-
-    const children: FunctionTreeChild[] = choices
-      .map((choice) => {
-        const subtree = buildFunctionTree(choice.targetFunction, newPath);
-        return {
-          text: choice.text || '(no text)',
-          targetFunction: choice.targetFunction,
-          subtree: subtree,
-          isShared: (targetCounts.get(choice.targetFunction) || 0) > 1
-        };
-      })
-      .filter((c): c is FunctionTreeChild => c.subtree !== null);
-
-    const result: FunctionTreeNode = {
-      name: funcName,
-      function: func,
-      children
-    };
-
-    // Cache the result (LRU - Bug #4 fix)
-    lruCacheSet(cacheKey, result);
-
-    return result;
-  }, [deferredFunctions, lruCacheGet, lruCacheSet]);
+  const buildFunctionTree = useFunctionTreeBuilder(deferredFunctions);
 
   // Memoize NPC map extraction to avoid rebuilding on every render
   // In project mode, use project NPCs; in single-file mode, extract from file
@@ -297,7 +187,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   // Get the information function for the selected dialog
   const infoFunction = dialogData?.properties?.information;
-  const dialogInfoFunctionName = typeof infoFunction === 'string' ? infoFunction : (infoFunction as { name?: string })?.name;
+  const dialogInfoFunctionName = extractFunctionName(infoFunction);
 
   // Get the currently selected function (either dialog info or choice function)
   const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
@@ -385,258 +275,30 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     });
   }, [setSelectedDialog, setSelectedFunctionName]);
 
-  const resolveTargetFilePath = useCallback((npcName: string): string | null => {
-    const npcDialogMetadata = dialogIndex.get(npcName) || [];
-    if (npcDialogMetadata.length > 0) {
-      return npcDialogMetadata[0].filePath;
-    }
-
-    if (isProjectMode) {
-      const npcToken = normalizeIdentifier(npcName, 'NEW_NPC');
-      const defaultFileName = `DIA_${npcToken}.d`;
-      const baseDirectory = projectPath
-        ? normalizePath(projectPath)
-        : getDirectoryName(activeFile || filePath || allDialogFiles[0] || '');
-
-      if (!baseDirectory) {
-        return null;
-      }
-
-      return joinPath(baseDirectory, defaultFileName);
-    }
-
-    if (selectedNPC) {
-      const selectedNpcMetadata = dialogIndex.get(selectedNPC) || [];
-      if (selectedNpcMetadata.length > 0) {
-        return selectedNpcMetadata[0].filePath;
-      }
-    }
-
-    if (activeFile) {
-      return activeFile;
-    }
-
-    if (filePath) {
-      return filePath;
-    }
-
-    return null;
-  }, [dialogIndex, isProjectMode, projectPath, activeFile, filePath, allDialogFiles, selectedNPC]);
-
-  const createDialogForNpc = useCallback(async (rawNpcName: string, requestedDialogName?: string) => {
-    const npcName = normalizeIdentifier(rawNpcName, 'NEW_NPC');
-    const targetFilePath = resolveTargetFilePath(npcName);
-
-    if (!targetFilePath) {
-      throw new Error('No target file available. Open a dialog file first.');
-    }
-
-    const knownDialogPaths = new Set(allDialogFiles.map((path) => normalizePath(path)));
-    const normalizedTargetPath = normalizePath(targetFilePath);
-    if (isProjectMode && !knownDialogPaths.has(normalizedTargetPath)) {
-      const writeResult = await window.editorAPI.writeFile(targetFilePath, '');
-      if (!writeResult?.success) {
-        throw new Error(`Could not create NPC dialog file: ${targetFilePath}`);
-      }
-    }
-
-    if (!openFiles.has(targetFilePath)) {
-      await openFile(targetFilePath);
-    }
-
-    const latestModel = getFileState(targetFilePath)?.semanticModel;
-    if (!latestModel || latestModel.hasErrors) {
-      throw new Error('Target file contains syntax errors and cannot be edited.');
-    }
-
-    const uniquenessModel = (isProjectMode ? semanticModel : latestModel) as SemanticModel;
-
-    const npcToken = normalizeIdentifier(npcName, 'NEW_NPC');
-    const dialogBaseName = requestedDialogName?.trim()
-      ? normalizeIdentifier(requestedDialogName, `DIA_${npcToken}_Start`)
-      : `DIA_${npcToken}_Start`;
-    const prefixedDialogBase = dialogBaseName.startsWith('DIA_')
-      ? dialogBaseName
-      : `DIA_${dialogBaseName}`;
-
-    const existingDialogNames = new Set<string>([
-      ...Object.keys(uniquenessModel.dialogs || {}),
-      ...Object.keys(latestModel.dialogs || {})
-    ]);
-    const dialogName = makeUniqueName(prefixedDialogBase, existingDialogNames);
-
-    const existingFunctionNames = new Set<string>([
-      ...Object.keys(uniquenessModel.functions || {}),
-      ...Object.keys(latestModel.functions || {})
-    ]);
-    const infoFunctionName = makeUniqueName(`${dialogName}_Info`, existingFunctionNames);
-    existingFunctionNames.add(infoFunctionName);
-    const conditionFunctionName = makeUniqueName(`${dialogName}_Condition`, existingFunctionNames);
-
-    const nextNr = Object.values(latestModel.dialogs || {}).reduce((maxNr, dialog) => {
-      if (dialog?.properties?.npc !== npcName) {
-        return maxNr;
-      }
-      const nr = typeof dialog.properties?.nr === 'number' ? dialog.properties.nr : 0;
-      return Math.max(maxNr, nr);
-    }, 0) + 1;
-
-    const newDialog: Dialog = {
-      name: dialogName,
-      parent: 'C_INFO',
-      properties: {
-        npc: npcName,
-        nr: nextNr,
-        condition: conditionFunctionName,
-        information: infoFunctionName,
-        description: '',
-        permanent: false,
-        important: false
-      }
-    };
-
-    const conditionFunction: DialogFunction = {
-      name: conditionFunctionName,
-      returnType: 'INT',
-      actions: [],
-      conditions: [],
-      calls: []
-    };
-
-    const informationFunction: DialogFunction = {
-      name: infoFunctionName,
-      returnType: 'VOID',
-      actions: [
-        {
-          type: 'DialogLine',
-          speaker: 'self',
-          text: '',
-          id: createDialogLineId({
-            dialogName,
-            speaker: 'self',
-            actions: []
-          })
-        }
-      ],
-      conditions: [],
-      calls: []
-    };
-
-    const existingInstances = latestModel.instances || {};
-    const existingNpcs = latestModel.npcs || {};
-    const hasNpcInstance = Boolean(
-      uniquenessModel.instances?.[npcName]
-      || uniquenessModel.npcs?.[npcName]
-      || existingInstances[npcName]
-      || existingNpcs[npcName]
-    );
-
-    let npcInstanceFilePath = targetFilePath;
-    if (!hasNpcInstance) {
-      const npcDirectory = getDirectoryName(targetFilePath) || (projectPath ? normalizePath(projectPath) : '');
-      if (npcDirectory) {
-        const npcFilePath = joinPath(npcDirectory, `NPC_${npcToken}.d`);
-        const instanceTemplate = createNpcInstanceTemplate(npcName);
-        const instanceRegex = new RegExp(`\\bINSTANCE\\s+${escapeRegExp(npcName)}\\s*\\(`, 'i');
-
-        let existingNpcContent: string | null = null;
-        try {
-          existingNpcContent = await window.editorAPI.readFile(npcFilePath);
-        } catch {
-          existingNpcContent = null;
-        }
-
-        if (existingNpcContent === null) {
-          const createNpcFileResult = await window.editorAPI.writeFile(npcFilePath, instanceTemplate);
-          if (!createNpcFileResult?.success) {
-            throw new Error(`Could not create NPC instance file: ${npcFilePath}`);
-          }
-        } else if (!instanceRegex.test(existingNpcContent)) {
-          const separator = existingNpcContent.endsWith('\n') ? '' : '\n';
-          const appendedContent = `${existingNpcContent}${separator}\n${instanceTemplate}`;
-          const appendNpcFileResult = await window.editorAPI.writeFile(npcFilePath, appendedContent);
-          if (!appendNpcFileResult?.success) {
-            throw new Error(`Could not update NPC instance file: ${npcFilePath}`);
-          }
-        }
-
-        npcInstanceFilePath = npcFilePath;
-        addProjectFile(npcFilePath);
-
-        try {
-          await getSemanticModel(npcFilePath);
-        } catch (error) {
-          console.warn(`Failed to parse NPC instance file ${npcFilePath}:`, error);
-        }
-      }
-    }
-
-    const npcInstance: GlobalInstance = {
-      name: npcName,
-      parent: 'C_NPC',
-      filePath: npcInstanceFilePath
-    };
-
-    const updatedModel: SemanticModel = {
-      ...latestModel,
-      dialogs: {
-        ...(latestModel.dialogs || {}),
-        [dialogName]: newDialog
-      },
-      functions: {
-        ...(latestModel.functions || {}),
-        [conditionFunctionName]: conditionFunction,
-        [infoFunctionName]: informationFunction
-      },
-      instances: hasNpcInstance
-        ? existingInstances
-        : {
-            ...existingInstances,
-            [npcName]: npcInstance
-          },
-      npcs: hasNpcInstance
-        ? existingNpcs
-        : {
-            ...existingNpcs,
-            [npcName]: npcInstance
-          },
-      hasErrors: false,
-      errors: latestModel.errors || []
-    };
-
-    updateModel(targetFilePath, updatedModel);
-
-    if (isProjectMode) {
-      addDialogToIndex({
-        dialogName,
-        npc: npcName,
-        filePath: targetFilePath
-      });
-      selectNpc(npcName);
-      loadAndMergeNpcModels(npcName);
-    }
-
-    setSelectedNPC(npcName);
-    setExpandedDialogs((prev) => new Set([...prev, dialogName]));
-    finalizeDialogSelection(dialogName, infoFunctionName);
-  }, [
-    resolveTargetFilePath,
-    openFiles,
-    openFile,
-    getFileState,
+  const { createDialogForNpc } = useDialogFactory({
+    projectPath,
+    activeFile,
+    filePath,
     allDialogFiles,
     isProjectMode,
+    openFiles,
     semanticModel,
+    dialogIndex,
+    selectedNPC,
+    openFile,
+    getFileState,
     updateModel,
     addDialogToIndex,
     addProjectFile,
-    projectPath,
     getSemanticModel,
     selectNpc,
     loadAndMergeNpcModels,
     setSelectedNPC,
-    finalizeDialogSelection
-  ]);
+    onDialogCreated: (dialogName, infoFunctionName) => {
+      setExpandedDialogs((prev) => new Set([...prev, dialogName]));
+      finalizeDialogSelection(dialogName, infoFunctionName);
+    }
+  });
 
   const handleAddNpc = useCallback(async (npcName: string) => {
     setOperationError(null);
@@ -710,26 +372,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   }, [isProjectMode, selectedNPC, dialogIndex, activeFile, openFile, finalizeDialogSelection]);
 
-  const addRecentDialog = useCallback((dialogName: string, npcName: string, functionName: string | null) => {
-    setRecentDialogs((prev) => {
-      const existingIndex = prev.findIndex((tab) => tab.dialogName === dialogName && tab.npcName === npcName);
-
-      // Keep tab order stable to avoid janky horizontal reflow when selecting.
-      // Only update metadata for existing tabs; append only when it's a newly opened dialog.
-      if (existingIndex >= 0) {
-        const next = [...prev];
-        next[existingIndex] = { ...next[existingIndex], functionName };
-        return next;
-      }
-
-      const next = [...prev, { dialogName, npcName, functionName }];
-      if (next.length > MAX_RECENT_DIALOGS) {
-        return next.slice(next.length - MAX_RECENT_DIALOGS);
-      }
-      return next;
-    });
-  }, [MAX_RECENT_DIALOGS]);
-
   const handleSelectRecentDialog = useCallback(async (dialogName: string, functionName: string | null, npcName: string) => {
     setOperationError(null);
     setIsLoadingDialog(true);
@@ -780,31 +422,19 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   ]);
 
   const handleCloseRecentDialog = useCallback((dialogName: string, npcName: string) => {
-    const tabIndex = recentDialogs.findIndex((tab) => tab.dialogName === dialogName && tab.npcName === npcName);
-    if (tabIndex < 0) {
-      return;
-    }
-
-    const nextTabs = recentDialogs.filter((_, index) => index !== tabIndex);
-    setRecentDialogs(nextTabs);
-
-    const closingSelectedTab = selectedDialog === dialogName && activeNpcName === npcName;
-    if (!closingSelectedTab) {
-      return;
-    }
-
-    const fallbackIndex = Math.min(tabIndex, nextTabs.length - 1);
-    const nextTabToSelect = nextTabs[fallbackIndex];
+    const nextTabToSelect = closeRecentDialog(dialogName, npcName, selectedDialog, activeNpcName);
 
     if (nextTabToSelect) {
       void handleSelectRecentDialog(nextTabToSelect.dialogName, nextTabToSelect.functionName, nextTabToSelect.npcName);
       return;
     }
 
-    setSelectedDialog(null);
-    setSelectedFunctionName(null);
-    setIsLoadingDialog(false);
-  }, [recentDialogs, selectedDialog, activeNpcName, handleSelectRecentDialog, setSelectedDialog, setSelectedFunctionName]);
+    if (selectedDialog === dialogName && activeNpcName === npcName) {
+      setSelectedDialog(null);
+      setSelectedFunctionName(null);
+      setIsLoadingDialog(false);
+    }
+  }, [closeRecentDialog, selectedDialog, activeNpcName, handleSelectRecentDialog, setSelectedDialog, setSelectedFunctionName]);
 
   useEffect(() => {
     if (!selectedDialog) return;
@@ -814,7 +444,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
     const npcName = dialog.properties?.npc || selectedNPC || 'Unknown NPC';
     const infoFunction = dialog.properties?.information;
-    const infoFunctionName = typeof infoFunction === 'string' ? infoFunction : (infoFunction as { name?: string })?.name;
+    const infoFunctionName = extractFunctionName(infoFunction);
     const functionName = selectedFunctionName || infoFunctionName || null;
 
     addRecentDialog(selectedDialog, npcName, functionName);
@@ -882,8 +512,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       // Try to find which dialog this function belongs to
       const dialogs = semanticModel.dialogs || {};
       for (const [dialogName, dialog] of Object.entries(dialogs)) {
-        const infoFunc = dialog.properties?.information as any;
-        const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+        const infoFuncName = extractFunctionName(dialog.properties?.information);
 
         if (infoFuncName === result.functionName) {
           setOperationError(null);

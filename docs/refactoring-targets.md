@@ -39,16 +39,18 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 2. `ThreeColumnLayout.tsx` — 1,111 lines (partially refactored)
+---
+
+### 2. `ThreeColumnLayout.tsx` — ~~1,111~~ 647 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/components/ThreeColumnLayout.tsx`
 
 10 distinct concerns inside one React component:
 
 | Concern | Lines | Status |
 |---------|-------|--------|
-| Dialog creation (`createDialogForNpc`) | 518–732 | pending |
-| Function tree building with LRU caching (`buildFunctionTree`) | 252–354 | pending |
-| Recent dialog tab management | 806–900 | pending |
+| Dialog creation (`createDialogForNpc`) | 518–732 | ✅ extracted |
+| Function tree building with LRU caching (`buildFunctionTree`) | 252–354 | ✅ extracted |
+| Recent dialog tab management | 806–900 | ✅ extracted |
 | NPC/dialog selection and navigation | 401–435, 783–804, 826–873 | pending |
 | Keyboard shortcuts (Ctrl+F, Escape) | 193–208 | pending |
 | Search panel integration | 949–1000 | pending |
@@ -58,19 +60,17 @@ Handles 8 unrelated concerns in a single Zustand store:
 | Identifier/path utilities (8 pure functions) | 24–85 | ✅ extracted |
 
 **Red flags:**
-- `createDialogForNpc` (lines 518–732): **214-line function** with 7 levels of nesting — mixes file I/O, semantic model construction, and NPC instance creation
+- ~~`createDialogForNpc` (lines 518–732): **214-line function** with 7 levels of nesting~~ ✅ moved to `hooks/useDialogFactory.ts`
 - ~~`buildFunctionTree` uses `JSON.stringify` for cache comparison on every call (line 281) — O(n) serialisation defeats the caching purpose~~ ✅ fixed: replaced with reference-equality only; misses rebuild and re-cache
-- `void isPending;` on line 128 — variable extracted but never read; leftover from "Bug #3 fix"
-- `typeof infoFunction === 'string' ? infoFunction : (infoFunction as { name?: string })?.name` duplicated 5+ times (lines 392, 642, 909, 978…) — missing a `extractFunctionName()` helper
+- ~~`void isPending;` on line 128 — variable extracted but never read; leftover from "Bug #3 fix"~~ ✅ fixed: renamed to `_isPending`
+- ~~`typeof infoFunction === 'string' ? infoFunction : (infoFunction as { name?: string })?.name` duplicated 5+ times~~ ✅ fixed: extracted to `extractFunctionName()` in `utils/pathAndIdentifierUtils.ts`
 - ~~8 pure utility functions (`normalizeIdentifier`, `makeUniqueName`, `normalizePath`, `getDirectoryName`, `joinPath`, `escapeRegExp`, `createNpcInstanceTemplate`) defined inline in the component file~~ ✅ moved to `utils/pathAndIdentifierUtils.ts`
 
-**Suggested split (remaining):**
-- `useDialogFactory()` hook — creation logic
-- `useFunctionTreeBuilder()` hook — tree building + LRU cache
-- `useRecentDialogTabs()` hook — tab state
-
 **Completed:**
-- ✅ `utils/pathAndIdentifierUtils.ts` — 7 pure functions extracted from component scope
+- ✅ `utils/pathAndIdentifierUtils.ts` — 7 pure functions + `extractFunctionName()` extracted from component scope
+- ✅ `hooks/useDialogFactory.ts` — `createDialogForNpc` + `resolveTargetFilePath` extracted (214-line function removed from component)
+- ✅ `hooks/useFunctionTreeBuilder.ts` — LRU cache + `buildFunctionTree` recursive tree builder extracted
+- ✅ `hooks/useRecentDialogTabs.ts` — recent-tab state (`addRecentDialog`, `closeRecentDialog`) extracted
 
 ---
 
@@ -109,27 +109,25 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ## Tier 2 — Muddled Interests (500–850 lines)
 
-### 4. `projectStore.ts` — 850 lines
+### 4. `projectStore.ts` — ~~850~~ 717 lines (partially refactored)
 **File:** `daedalus-dialog-editor/src/renderer/store/projectStore.ts`
 
 11 concerns in one store. Key issues:
 
-- `getQuestUsage()` (lines 447–563, **116 lines**): pure two-pass O(n²) computation — has no reason to live inside a store action
+- ~~`getQuestUsage()` (lines 447–563, **116 lines**): pure two-pass O(n²) computation — has no reason to live inside a store action~~ ✅ extracted to `utils/questAnalyzer.ts`; store action is now a one-liner delegate
 - File mutation template repeated 4× (lines 565–667, 669–713, 715–751): read → modify → write → clear cache → re-parse → merge
-- `invalidateCacheForFile()` inline boilerplate repeated 4× (lines 600–603, 650–653, 696–699, 734–737):
-  ```ts
-  const newCache = new Map(parsedFiles);
-  newCache.delete(filePath);
-  set({ parsedFiles: newCache });
-  ```
+- ~~`invalidateCacheForFile()` inline boilerplate repeated 4×~~ ✅ consolidated into a shared `invalidateCacheForFile()` closure inside the store
 - ~~Encoding bug at line 53: `// NPC ID Ã¢â€ â€™ dialogs`~~ ✅ fixed: `// NPC ID → dialogs`
-- IPC Map deserialisation block copy-pasted 3× (lines 175–178) — Maps sent as plain objects over IPC, converted back without a shared helper
+- ~~IPC Map deserialisation block copy-pasted 3× (lines 175–178)~~ ✅ extracted to `utils/ipcSerialisation.ts` (`deserialiseIpcMap`)
 - Magic concurrency constants not documented: `CONCURRENCY_LIMIT = 20` (line 253), `500` ms flush interval (line 247)
 
-**Suggested split:**
-- `questAnalyzer.ts` — pure function taking parsed files + quest name
-- shared `invalidateCacheForFile()` helper called from all mutation actions
-- `utils/ipcSerialisation.ts` — IPC Map round-trip helper
+**Completed:**
+- ✅ `utils/questAnalyzer.ts` — pure `getQuestUsage(parsedFiles, questName)` extracted; 116-line store action replaced with a one-liner
+- ✅ `invalidateCacheForFile()` — shared closure helper replacing 4 inline cache-invalidation patterns
+- ✅ `utils/ipcSerialisation.ts` — `deserialiseIpcMap<K, V>()` handles both Map and plain-object IPC payloads
+
+**Remaining suggested split:**
+- Read the file mutation template (4 near-identical async sequences) into a shared `mutateQuestFile(filePath, mutatorFn)` helper
 
 ---
 
@@ -181,10 +179,13 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 8. `VariableAutocomplete.tsx` — 473 lines
+### 8. `VariableAutocomplete.tsx` — ~~473~~ 287 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/components/common/VariableAutocomplete.tsx`
 
-Five concerns in one component: projectStore data fetching, option filtering, autocomplete state, TextField rendering, and variable-creation dialog. A `useVariableOptions()` hook would separate data from presentation.
+~~Five concerns in one component: projectStore data fetching, option filtering, autocomplete state, TextField rendering, and variable-creation dialog. A `useVariableOptions()` hook would separate data from presentation.~~
+
+**Completed:**
+- ✅ `hooks/useVariableOptions.ts` — all data fetching and option-building logic extracted; component reduced from 473 → 287 lines
 
 ---
 
@@ -206,12 +207,12 @@ Orchestrates parser, semantic analysis, and code-generator validation, and also 
 | Priority | Target | File | Lines | Key Smell |
 |----------|--------|------|-------|-----------|
 | HIGH 🔄 | `editorStore.ts` | store/editorStore.ts | ~~1,137~~ 1,046 | 8 concerns (sync pattern fixed ✅, history types extracted ✅) |
-| HIGH 🔄 | `ThreeColumnLayout.tsx` | components/ | 1,111 | 214-line creation fn (utils extracted ✅, JSON.stringify cache fixed ✅) |
+| ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 647 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅) |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
-| MEDIUM | `projectStore.ts` | store/ | 850 | 116-line pure computation inside store |
+| MEDIUM 🔄 | `projectStore.ts` | store/ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅) file-mutation template still repeated 4× |
 | MEDIUM | `semantic-model.ts` | parser/ | 1,510 | 24 boilerplate action classes |
 | LOW | `useActionManagement.ts` | hooks/ | 354 | Duplicated path calculation, undocumented regex |
-| LOW | `VariableAutocomplete.tsx` | common/ | 473 | Mixed data fetching + presentation |
+| ~~LOW~~ ✅ | ~~`VariableAutocomplete.tsx`~~ | ~~common/~~ | ~~473~~ → 287 | ~~Mixed data fetching + presentation~~ (useVariableOptions ✅) |
 | LOW | `ValidationService.ts` | main/services/ | 551 | Mixed I/O + validation concerns |
 | ARCH | Store sync pattern | editorStore ↔ projectStore | — | No SSOT, invisible coupling |

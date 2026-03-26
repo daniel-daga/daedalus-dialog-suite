@@ -11,11 +11,8 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
-import {
-  getCanonicalQuestKey,
-  getQuestMisVariableName,
-  isCaseInsensitiveMatch
-} from '../utils/questIdentity';
+import { getQuestUsage } from '../utils/questAnalyzer';
+import { deserialiseIpcMap } from '../utils/ipcSerialisation';
 
 // Enable Map/Set support in Immer
 enableMapSet();
@@ -139,7 +136,17 @@ interface ProjectActions {
 
 type ProjectStore = ProjectState & ProjectActions;
 
-export const useProjectStore = create<ProjectStore>((set, get) => ({
+export const useProjectStore = create<ProjectStore>((set, get) => {
+  /** Remove a single file from the parsed-files cache. */
+  const invalidateCacheForFile = (filePath: string) => {
+    set((state) => {
+      const newCache = new Map(state.parsedFiles);
+      newCache.delete(filePath);
+      return { parsedFiles: newCache };
+    });
+  };
+
+  return {
   // Initial state
   projectPath: null,
   projectName: null,
@@ -169,20 +176,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const rawIndex = await window.editorAPI.buildProjectIndex(folderPath);
 
       // Convert the plain object back to Map (IPC serialization loses Map type)
-      const dialogsByNpc = new Map<string, DialogMetadata[]>();
-      if (rawIndex.dialogsByNpc) {
-        // If it's already a Map
-        if (rawIndex.dialogsByNpc instanceof Map) {
-          rawIndex.dialogsByNpc.forEach((value, key) => {
-            dialogsByNpc.set(key, value);
-          });
-        } else {
-          // If it was serialized as an object
-          Object.entries(rawIndex.dialogsByNpc).forEach(([key, value]) => {
-            dialogsByNpc.set(key, value as DialogMetadata[]);
-          });
-        }
-      }
+      const dialogsByNpc = deserialiseIpcMap<string, DialogMetadata[]>(rawIndex.dialogsByNpc);
 
       // Extract project name from path
       const pathParts = folderPath.split(/[\\/]/);
@@ -444,123 +438,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     mergeSemanticModels([currentModel, ...models]);
   },
 
-  getQuestUsage: (questName: string) => {
-    const { parsedFiles } = get();
-    const result = createEmptySemanticModel();
-    const misVarName = getQuestMisVariableName(questName);
-    const relevantFunctionKeys = new Set<string>();
-    const functionLookup = new Map<string, { name: string; func: any; filePath: string }>();
-
-    // Pass 1: Identify all relevant functions and add definitions
-    for (const [filePath, fileData] of parsedFiles.entries()) {
-        const model = fileData.semanticModel;
-
-        // Constants & Variables
-        const topicKey = Object.keys(model.constants || {}).find((key) => isCaseInsensitiveMatch(key, questName));
-        if (topicKey && model.constants) {
-             result.constants = result.constants || {};
-             result.constants[topicKey] = model.constants[topicKey];
-        }
-        const misKey = Object.keys(model.variables || {}).find((key) => isCaseInsensitiveMatch(key, misVarName));
-        if (misKey && model.variables) {
-             result.variables = result.variables || {};
-             result.variables[misKey] = model.variables[misKey];
-        }
-
-        // Functions
-        if (model.functions) {
-             Object.values(model.functions).forEach((func) => {
-                 const funcKey = getCanonicalQuestKey(func.name);
-                 if (!functionLookup.has(funcKey)) {
-                     functionLookup.set(funcKey, {
-                         name: func.name,
-                         func,
-                         filePath: func.filePath || filePath
-                     });
-                 }
-             });
-
-             Object.values(model.functions).forEach(func => {
-                 let isRelevant = false;
-
-                 // Check Actions
-                 if (func.actions) {
-                     for (const action of func.actions) {
-                         // Topic references
-                         if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
-                             isRelevant = true;
-                             break;
-                         }
-                         // Explicit MIS writers (writer-only quest handlers)
-                         if (action.type === 'SetVariableAction' && isCaseInsensitiveMatch(action.variableName, misVarName)) {
-                             isRelevant = true;
-                             break;
-                         }
-                     }
-                 }
-
-                 // Check Conditions
-                 if (!isRelevant && func.conditions) {
-                     for (const cond of func.conditions) {
-                         if ('variableName' in cond && isCaseInsensitiveMatch(cond.variableName, misVarName)) {
-                             isRelevant = true;
-                             break;
-                         }
-                     }
-                 }
-
-                 if (isRelevant) {
-                     relevantFunctionKeys.add(getCanonicalQuestKey(func.name));
-                     result.functions[func.name] = {
-                       ...func,
-                       filePath: func.filePath || filePath
-                     };
-                 }
-             });
-        }
-    }
-
-    // Pass 2: Identify dialogs that use relevant functions and include one-hop linked condition functions.
-    for (const fileData of parsedFiles.values()) {
-        const model = fileData.semanticModel;
-
-        if (model.dialogs) {
-            Object.values(model.dialogs).forEach(dialog => {
-                const info = dialog.properties.information;
-                const cond = dialog.properties.condition;
-
-                const infoName = typeof info === 'string' ? info : (typeof info === 'object' ? info.name : null);
-                const condName = typeof cond === 'string' ? cond : (typeof cond === 'object' ? cond.name : null);
-                const infoKey = infoName ? getCanonicalQuestKey(infoName) : null;
-                const condKey = condName ? getCanonicalQuestKey(condName) : null;
-                const infoIsRelevant = Boolean(infoKey && relevantFunctionKeys.has(infoKey));
-
-                // One-hop closure: include linked condition functions for already relevant dialog info functions.
-                if (infoIsRelevant && condName && condKey && !relevantFunctionKeys.has(condKey)) {
-                    const linkedConditionFunc = functionLookup.get(condKey);
-                    if (linkedConditionFunc) {
-                        relevantFunctionKeys.add(condKey);
-                        result.functions[linkedConditionFunc.name] = {
-                            ...linkedConditionFunc.func,
-                            filePath: linkedConditionFunc.func.filePath || linkedConditionFunc.filePath
-                        };
-                    }
-                }
-
-                const dialogUsesRelevantFunction = Boolean(
-                    (infoKey && relevantFunctionKeys.has(infoKey)) ||
-                    (condKey && relevantFunctionKeys.has(condKey))
-                );
-
-                if (dialogUsesRelevantFunction) {
-                    result.dialogs[dialog.name] = dialog;
-                }
-            });
-        }
-    }
-
-    return result;
-  },
+  getQuestUsage: (questName: string) => getQuestUsage(get().parsedFiles, questName),
 
   createQuest: async (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => {
 
@@ -596,11 +474,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       }
 
       // 2. Clear cache for modified files
-      const { parsedFiles } = get();
-      const newCache = new Map(parsedFiles);
-      newCache.delete(topicFilePath);
-      if (hasVariable) newCache.delete(variableFilePath);
-      set({ parsedFiles: newCache });
+      invalidateCacheForFile(topicFilePath);
+      if (hasVariable) invalidateCacheForFile(variableFilePath);
 
       // 3. Re-load quest data (re-parse the modified files)
       const topicModel = await get().getSemanticModel(topicFilePath);
@@ -647,10 +522,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await window.editorAPI.writeFile(filePath, currentContent + content);
 
       // Clear cache for modified file
-      const { parsedFiles } = get();
-      const newCache = new Map(parsedFiles);
-      newCache.delete(filePath);
-      set({ parsedFiles: newCache });
+      invalidateCacheForFile(filePath);
 
       // Re-parse the modified file
       const updatedModel = await get().getSemanticModel(filePath);
@@ -693,10 +565,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await window.editorAPI.writeFile(filePath, newContent);
 
       // Clear cache for modified file
-      const { parsedFiles } = get();
-      const newCache = new Map(parsedFiles);
-      newCache.delete(filePath);
-      set({ parsedFiles: newCache });
+      invalidateCacheForFile(filePath);
 
       // Re-parse the modified file
       const updatedModel = await get().getSemanticModel(filePath);
@@ -731,10 +600,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await window.editorAPI.writeFile(filePath, newContent);
 
       // Clear cache for modified file
-      const { parsedFiles } = get();
-      const newCache = new Map(parsedFiles);
-      newCache.delete(filePath);
-      set({ parsedFiles: newCache });
+      invalidateCacheForFile(filePath);
 
       // Re-parse the modified file
       const updatedModel = await get().getSemanticModel(filePath);
@@ -847,4 +713,5 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   setIngestedFilesOpen: (open: boolean) => {
     set({ isIngestedFilesOpen: open });
   }
-}));
+  }; // end return
+});
