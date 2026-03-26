@@ -327,11 +327,11 @@ interface TypedRendererProps<T extends DialogAction> extends Omit<BaseActionRend
 | High | #1 Remove `any` types from factories/utils | Medium | FIXED |
 | High | #2 Use `type` discriminant in `getActionType` | Low | FIXED |
 | High | #10 Fix `ActionsList` memo comparator | Low | FIXED |
-| Medium | #3 Deduplicate action menu items | Low | |
-| Medium | #4 Fix unmount flush race condition | Medium | |
-| Medium | #5 Replace `JSON.stringify` with `actionPathToKey` | Low | |
-| Medium | #7 Replace `alert()` with snackbar | Low | |
-| Medium | #8b Verify default speaker consistency | Low | |
+| Medium | #3 Deduplicate action menu items | Low | FIXED |
+| Medium | #4 Fix unmount flush race condition | Medium | FIXED |
+| Medium | #5 Replace `JSON.stringify` with `actionPathToKey` | Low | FIXED |
+| Medium | #7 Replace `alert()` with inline error | Low | FIXED |
+| Medium | #8b Verify default speaker consistency | Low | VERIFIED |
 | Low | #6 Replace `setTimeout` with proper deferred focus | Medium | |
 | Low | #14 Simplify `createAction` switch to lookup | Low | |
 | Low | #8, #9, #11-13, #15-16 | Low | |
@@ -368,3 +368,36 @@ lack a `type` field, and finally to `'customAction'`.
 **File:** `ActionsList.tsx`
 When action references differ (even if identity matches), the comparator now returns
 `false` so the updated action propagates to `ActionCard`.
+
+### #3 - Deduplicated action menu items in `ConditionalActionRenderer`
+**File:** `ConditionalActionRenderer.tsx`
+Removed the hardcoded `ACTION_MENU_ITEMS` array and local `<Menu>` rendering. Replaced
+with the shared `ActionTypeMenu` searchable popover component already used by `ActionCard`.
+This ensures a single source of truth for action type labels and menu items.
+
+### #4 - Fixed unmount flush race condition in `ActionCard`
+**File:** `ActionCard.tsx`
+Added an `actionRef` that tracks the last parent-synced action value. The unmount cleanup
+now compares `localActionRef.current` against `actionRef.current` using `shallowEqual`
+and only flushes if they differ. This prevents stale writes during drag-and-drop reorder
+when the component unmounts and remounts at a new index.
+
+### #5 - Replaced `JSON.stringify` path comparisons with `actionPathToKey`
+**File:** `useActionManagement.ts`
+Replaced 4 occurrences of `JSON.stringify(candidate) === JSON.stringify(path)` with
+`actionPathToKey(candidate) === actionPathToKey(path)`. The `actionPathToKey` function
+uses a simple `join('.')` which is faster and already existed for this purpose.
+
+### #7 - Replaced `alert()` with inline error state in `ChoiceRenderer`
+**File:** `ChoiceRenderer.tsx`
+Replaced the blocking `alert(validationError)` with a `functionNameError` local state
+that displays as `helperText` on the Function TextField with `error` styling. The error
+clears on focus or when the user starts typing a new value.
+
+### #8b - Default speaker consistency verified
+**Files:** `actionTemplates.ts`, `actionFactory.ts`, `useActionManagement.ts`, `useDialogEditorCommands.ts`
+Verified all code paths default to `'other'` (Hero speaks first):
+- `actionTemplates.ts:34`: default parameter `speaker = 'other'` ✓
+- `actionFactory.ts:169`: fallback when no current action is `'other'` ✓
+- `useActionManagement.ts:188`: non-dialog-line fallback is `'other'` ✓
+- `useDialogEditorCommands.ts:83-86`: `createAction` with no `currentAction` → `'other'` ✓

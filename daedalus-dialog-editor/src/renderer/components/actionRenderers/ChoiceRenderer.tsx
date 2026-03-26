@@ -29,6 +29,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   const originalFunctionNameRef = React.useRef<string | null>(null);
   const [localTargetFunction, setLocalTargetFunction] = React.useState(typedAction.targetFunction || '');
   const [expanded, setExpanded] = React.useState(false);
+  const [functionNameError, setFunctionNameError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setLocalTargetFunction(typedAction.targetFunction || '');
@@ -72,10 +73,12 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
           value={localTargetFunction}
           onFocus={() => {
             originalFunctionNameRef.current = localTargetFunction || null;
+            setFunctionNameError(null);
           }}
           onChange={(e) => {
             const newName = e.target.value;
             setLocalTargetFunction(newName);
+            setFunctionNameError(null);
             handleUpdate({ ...typedAction, targetFunction: newName });
           }}
           onBlur={() => {
@@ -89,8 +92,9 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
               if (validationError) {
                 setLocalTargetFunction(originalName);
                 handleUpdate({ ...typedAction, targetFunction: originalName });
-                alert(validationError);
+                setFunctionNameError(validationError);
               } else {
+                setFunctionNameError(null);
                 onRenameFunction(originalName, newName);
               }
             }
@@ -98,7 +102,8 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
           }}
           size="small"
           sx={{ flex: '1 1 40%', minWidth: 150 }}
-          error={dialogContextName && localTargetFunction ? !localTargetFunction.startsWith(dialogContextName) : false}
+          error={!!functionNameError || (dialogContextName && localTargetFunction ? !localTargetFunction.startsWith(dialogContextName) : false)}
+          helperText={functionNameError}
         />
         {targetFunctionExists && onNavigateToFunction && (
           <Tooltip title="Edit choice actions (navigate)" arrow>

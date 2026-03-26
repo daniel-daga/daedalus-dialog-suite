@@ -24,6 +24,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
 
   // Use refs to store latest values without triggering re-renders
   const localActionRef = useRef(localAction);
+  const actionRef = useRef(action);
   const pathRef = useRef(path);
   const updateActionRef = useRef(updateActionAtPath);
 
@@ -42,6 +43,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
 
   // Sync local state when action prop changes from parent
   React.useEffect(() => {
+    actionRef.current = action;
     setLocalAction(action);
   }, [action]);
 
@@ -81,9 +83,13 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     return () => {
       if (updateTimerRef.current) {
         clearTimeout(updateTimerRef.current);
-        // Flush using refs to get latest values and avoid data corruption
-        // This ensures we use the current index/action, not stale values from closure
-        updateActionRef.current(pathRef.current, localActionRef.current);
+        updateTimerRef.current = null;
+        // Only flush if the local action actually differs from the last parent-synced action.
+        // During drag-and-drop reorder, the component unmounts and remounts at a new index.
+        // Without this guard the flush could write to a stale path, corrupting data.
+        if (!shallowEqual(localActionRef.current, actionRef.current)) {
+          updateActionRef.current(pathRef.current, localActionRef.current);
+        }
       }
     };
   }, []); // Empty deps - cleanup function only created once, uses refs for latest values

@@ -6,6 +6,7 @@ import type { DialogAction, DialogFunction, DialogLineAction, SemanticModel } fr
 import type { FunctionUpdater } from '../dialogTypes';
 import type { ActionBranchKey, ActionPath } from '../nestedActionUtils';
 import {
+  actionPathToKey,
   appendActionToBranch,
   collectAllDialogLineActionsFromModel,
   collectDialogLineActions,
@@ -161,7 +162,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     setFunction((prev) => {
       if (!prev) return prev;
       const visiblePaths = flattenActionPaths(prev.actions || []);
-      const currentIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path));
+      const currentIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path));
       focusTarget = currentIndex > 0 ? visiblePaths[currentIndex - 1] : null;
       const newActions = deleteNestedActionAtPath(prev.actions || [], path);
       return { ...prev, actions: newActions };
@@ -190,7 +191,7 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       const newActions = insertActionAfterPath(actions, path, newAction);
       const visiblePaths = flattenActionPaths(newActions);
-      const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+      const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
       nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
       return { ...prev, actions: newActions };
     });
@@ -228,7 +229,7 @@ export function useActionManagement(config: ActionManagementConfig) {
 
         const newActions = insertActionAfterPath(actions, path, newAction);
         const visiblePaths = flattenActionPaths(newActions);
-        const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+        const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
         nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
         return { ...prev, actions: newActions };
       });
@@ -277,7 +278,7 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       let newActions = insertActionAfterPath(actions, path, newAction);
       const visiblePaths = flattenActionPaths(newActions);
-      const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+      const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
       const createTopicPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
 
       if (actionType === 'createTopic' && createTopicPath) {
