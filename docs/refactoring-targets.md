@@ -36,36 +36,38 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 2. `ThreeColumnLayout.tsx` — 1,111 lines
+### 2. `ThreeColumnLayout.tsx` — 1,111 lines (partially refactored)
 **File:** `daedalus-dialog-editor/src/renderer/components/ThreeColumnLayout.tsx`
 
 10 distinct concerns inside one React component:
 
-| Concern | Lines |
-|---------|-------|
-| Dialog creation (`createDialogForNpc`) | 518–732 |
-| Function tree building with LRU caching (`buildFunctionTree`) | 252–354 |
-| Recent dialog tab management | 806–900 |
-| NPC/dialog selection and navigation | 401–435, 783–804, 826–873 |
-| Keyboard shortcuts (Ctrl+F, Escape) | 193–208 |
-| Search panel integration | 949–1000 |
-| Three-column layout rendering | 1013–1106 |
-| Error display (syntax errors, operation errors) | 156–190, 1008–1072 |
-| RAF-based state transition sequencing | 210–220, 441–449, 460–475 |
-| Identifier/path utilities (8 pure functions) | 24–85 |
+| Concern | Lines | Status |
+|---------|-------|--------|
+| Dialog creation (`createDialogForNpc`) | 518–732 | pending |
+| Function tree building with LRU caching (`buildFunctionTree`) | 252–354 | pending |
+| Recent dialog tab management | 806–900 | pending |
+| NPC/dialog selection and navigation | 401–435, 783–804, 826–873 | pending |
+| Keyboard shortcuts (Ctrl+F, Escape) | 193–208 | pending |
+| Search panel integration | 949–1000 | pending |
+| Three-column layout rendering | 1013–1106 | pending |
+| Error display (syntax errors, operation errors) | 156–190, 1008–1072 | pending |
+| RAF-based state transition sequencing | 210–220, 441–449, 460–475 | pending |
+| Identifier/path utilities (8 pure functions) | 24–85 | ✅ extracted |
 
 **Red flags:**
 - `createDialogForNpc` (lines 518–732): **214-line function** with 7 levels of nesting — mixes file I/O, semantic model construction, and NPC instance creation
-- `buildFunctionTree` uses `JSON.stringify` for cache comparison on every call (line 281) — O(n) serialisation defeats the caching purpose
+- ~~`buildFunctionTree` uses `JSON.stringify` for cache comparison on every call (line 281) — O(n) serialisation defeats the caching purpose~~ ✅ fixed: replaced with reference-equality only; misses rebuild and re-cache
 - `void isPending;` on line 128 — variable extracted but never read; leftover from "Bug #3 fix"
 - `typeof infoFunction === 'string' ? infoFunction : (infoFunction as { name?: string })?.name` duplicated 5+ times (lines 392, 642, 909, 978…) — missing a `extractFunctionName()` helper
-- 8 pure utility functions (`normalizeIdentifier`, `makeUniqueName`, `normalizePath`, `getDirectoryName`, `joinPath`, `escapeRegExp`, `createNpcInstanceTemplate`) defined inline in the component file
+- ~~8 pure utility functions (`normalizeIdentifier`, `makeUniqueName`, `normalizePath`, `getDirectoryName`, `joinPath`, `escapeRegExp`, `createNpcInstanceTemplate`) defined inline in the component file~~ ✅ moved to `utils/pathAndIdentifierUtils.ts`
 
-**Suggested split:**
+**Suggested split (remaining):**
 - `useDialogFactory()` hook — creation logic
 - `useFunctionTreeBuilder()` hook — tree building + LRU cache
 - `useRecentDialogTabs()` hook — tab state
-- `utils/pathAndIdentifierUtils.ts` — the 8 pure functions
+
+**Completed:**
+- ✅ `utils/pathAndIdentifierUtils.ts` — 7 pure functions extracted from component scope
 
 ---
 
@@ -117,7 +119,7 @@ Handles 8 unrelated concerns in a single Zustand store:
   newCache.delete(filePath);
   set({ parsedFiles: newCache });
   ```
-- Encoding bug at line 53: `// NPC ID Ã¢â€ â€™ dialogs` — should be `// NPC ID → dialogs`
+- ~~Encoding bug at line 53: `// NPC ID Ã¢â€ â€™ dialogs`~~ ✅ fixed: `// NPC ID → dialogs`
 - IPC Map deserialisation block copy-pasted 3× (lines 175–178) — Maps sent as plain objects over IPC, converted back without a shared helper
 - Magic concurrency constants not documented: `CONCURRENCY_LIMIT = 20` (line 253), `500` ms flush interval (line 247)
 
@@ -201,7 +203,7 @@ Orchestrates parser, semantic analysis, and code-generator validation, and also 
 | Priority | Target | File | Lines | Key Smell |
 |----------|--------|------|-------|-----------|
 | HIGH | `editorStore.ts` | store/editorStore.ts | 1,137 | 8 concerns, manual cross-store sync |
-| HIGH | `ThreeColumnLayout.tsx` | components/ | 1,111 | 214-line creation fn, inline utility soup |
+| HIGH 🔄 | `ThreeColumnLayout.tsx` | components/ | 1,111 | 214-line creation fn (utils extracted ✅, JSON.stringify cache fixed ✅) |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
 | MEDIUM | `projectStore.ts` | store/ | 850 | 116-line pure computation inside store |
