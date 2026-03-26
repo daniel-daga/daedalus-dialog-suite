@@ -1,5 +1,7 @@
 # Dialog Editor - Code Review
 
+*Reviewed against: `master` @ 5f66f1e (2026-03-26)*
+
 ## Summary
 
 The dialog editor is a well-structured React + TypeScript application with clear separation
@@ -155,6 +157,27 @@ in Electron (it shows a native dialog instead of an in-app notification).
 **Recommendation:** Use the snackbar mechanism already in place, or show an inline
 error state on the text field.
 
+### 7b. New `Escape` key handler deletes any focused action (not just empty dialog lines)
+
+**File:** `ActionCard.tsx:164-166` *(added in 39100c5)*
+
+```ts
+} else if (e.key === 'Escape') {
+  e.preventDefault();
+  handleDeleteAndFocusPrev();
+}
+```
+
+The new Escape handler calls `handleDeleteAndFocusPrev` unconditionally for *all* action
+types. Unlike the Backspace handler (which guards on `isDialogLine && !hasNonEmptyText`),
+pressing Escape will immediately delete a fully-filled-out action with no confirmation.
+This is destructive and easy to trigger accidentally (e.g., trying to dismiss a dropdown
+or deselect). Combined with the debounce flush issue (#4), this could also cause data loss
+on the previously focused action.
+
+**Recommendation:** Either limit Escape to empty dialog lines (like Backspace), add a
+confirmation, or change it to blur/defocus instead of delete.
+
 ### 8. `shallowEqual` on `ActionCard` memo won't catch nested action changes
 
 **File:** `ActionCard.tsx:356-371`
@@ -170,6 +193,17 @@ For `ConditionalAction`, the action has nested `thenActions` and `elseActions` a
 branch array won't trigger a re-render of the parent `ActionCard` unless the array
 reference itself changes. This *probably* works because Immer/spread creates new references,
 but it's a latent bug if any code path mutates in place.
+
+### 8b. Default speaker logic changed but inconsistently
+
+**File:** `useActionManagement.ts:187-188` *(changed in 0849c5c)*
+
+The default speaker when `toggleSpeaker` is false was changed from `'self'` to `'other'`
+(Hero), and the non-toggle fallback also flipped. However, the same logic in
+`useDialogEditorCommands.ts:addActionToEnd` still defaults to `'other'` via the
+`createAction` factory (which calls `getOppositeSpeaker` defaulting to `'other'`).
+These two code paths should agree on the default speaker convention. Verify the factory
+default in `actionTemplates.ts:34` (`speaker = 'other'`) is intentionally aligned.
 
 ### 9. Unused `isProjectMode` prop
 
@@ -289,6 +323,7 @@ interface TypedRendererProps<T extends DialogAction> extends Omit<BaseActionRend
 
 | Priority | Issue | Effort |
 |----------|-------|--------|
+| High | #7b Escape key deletes any action unconditionally | Low |
 | High | #1 Remove `any` types from factories/utils | Medium |
 | High | #2 Use `type` discriminant in `getActionType` | Low |
 | High | #10 Fix `ActionsList` memo comparator | Low |
@@ -296,6 +331,7 @@ interface TypedRendererProps<T extends DialogAction> extends Omit<BaseActionRend
 | Medium | #4 Fix unmount flush race condition | Medium |
 | Medium | #5 Replace `JSON.stringify` with `actionPathToKey` | Low |
 | Medium | #7 Replace `alert()` with snackbar | Low |
+| Medium | #8b Verify default speaker consistency | Low |
 | Low | #6 Replace `setTimeout` with proper deferred focus | Medium |
 | Low | #14 Simplify `createAction` switch to lookup | Low |
 | Low | #8, #9, #11-13, #15-16 | Low |
