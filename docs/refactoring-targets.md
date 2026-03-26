@@ -128,7 +128,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 5. `ConditionCard.tsx` — 765 lines
+### 5. `ConditionCard.tsx` — 765 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/components/ConditionCard.tsx`
 
 - `renderConditionFields()` (lines 204–695): **492-line function** — a switch statement with 9 nearly-identical branches, each rebuilding the full condition object inline
@@ -138,10 +138,11 @@ Handles 8 unrelated concerns in a single Zustand store:
 - Debounce timeout hardcoded at `300` ms with no comment (line 116)
 - Layout flex widths (`'1 1 30%'`, `'1 1 60%'`, `'1 1 35%'`) repeated without design tokens
 
-**Suggested split:**
-- One focused field component per condition type (9 components, ~50 lines each)
-- `useConditionUpdate()` hook — debounce + dispatch
-- Unified type-guard / type registry replacing the 10 individual guards
+**Implemented split:**
+- 9 focused field components in `conditions/` — one per condition type (~30–50 lines each)
+- `hooks/useConditionUpdate.ts` — debounce, immediate-update, flush, and unmount-cleanup
+- `conditions/conditionRegistry.tsx` — single lookup table (`type → { icon, label, Fields }`), replacing all 3 switches and 10 type guards
+- `ConditionCard.tsx` reduced from 765 → 90 lines, zero switch statements
 
 ---
 
@@ -202,7 +203,7 @@ Orchestrates parser, semantic analysis, and code-generator validation, and also 
 | HIGH | `editorStore.ts` | store/editorStore.ts | 1,137 | 8 concerns, manual cross-store sync |
 | HIGH | `ThreeColumnLayout.tsx` | components/ | 1,111 | 214-line creation fn, inline utility soup |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
-| HIGH | `ConditionCard.tsx` | components/ | 765 | 492-line render function, 30+ object rebuilds |
+| ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
 | MEDIUM | `projectStore.ts` | store/ | 850 | 116-line pure computation inside store |
 | MEDIUM | `semantic-model.ts` | parser/ | 1,510 | 24 boilerplate action classes |
 | LOW | `useActionManagement.ts` | hooks/ | 354 | Duplicated path calculation, undocumented regex |
