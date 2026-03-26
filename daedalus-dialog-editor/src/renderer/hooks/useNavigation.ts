@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { useEditorStore } from '../store/editorStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
 
 export interface NavigationOptions {
   functionName?: string;
@@ -19,16 +20,15 @@ export const useNavigation = () => {
     mergedSemanticModel
   } = useProjectStore();
   
-  const { 
+  const { openFile, openFiles, activeFile } = useEditorStore();
+
+  const {
     setSelectedNPC,
-    setSelectedDialog, 
+    setSelectedDialog,
     setSelectedQuest,
     setSelectedFunctionName,
     setActiveView,
-    openFile, 
-    openFiles,
-    activeFile
-  } = useEditorStore();
+  } = useUISelectionStore();
 
   const isProjectMode = !!projectPath;
 

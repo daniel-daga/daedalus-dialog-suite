@@ -4,6 +4,7 @@ import { enableMapSet } from 'immer';
 import { createDialogLineId } from '../components/actionFactory';
 import { collectDialogLineActions } from '../components/nestedActionUtils';
 import { useProjectStore } from './projectStore';
+import { useUISelectionStore } from './uiSelectionStore';
 import {
   cloneSemanticModel,
   cloneQuestNodePositionsForFile,
@@ -228,16 +229,6 @@ interface EditorStore {
   // Current active file
   activeFile: string | null;
 
-  // View state
-  activeView: 'dialog' | 'quest' | 'variable' | 'source';
-
-  // UI state
-  selectedNPC: string | null;
-  selectedDialog: string | null;
-  selectedQuest: string | null;
-  selectedFunctionName: string | null;
-  selectedAction: number | null;
-
   // Validation dialog state
   pendingValidation: {
     filePath: string;
@@ -314,12 +305,6 @@ interface EditorStore {
   ) => void;
   getQuestNodePositions: (filePath: string, questName: string) => QuestNodePositionMap;
   clearQuestNodePositions: (filePath: string, questName?: string) => void;
-  setSelectedNPC: (npcName: string | null) => void;
-  setSelectedDialog: (dialogName: string | null) => void;
-  setSelectedQuest: (questName: string | null) => void;
-  setSelectedFunctionName: (functionName: string | null) => void;
-  setSelectedAction: (actionIndex: number | null) => void;
-  setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'source') => void;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   setAutoSaveInterval: (interval: number) => void;
@@ -344,12 +329,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   questBatchHistory: { past: [], future: [] },
   questNodePositions: new Map(),
   activeFile: null,
-  activeView: 'dialog',
-  selectedNPC: null,
-  selectedDialog: null,
-  selectedQuest: null,
-  selectedFunctionName: null,
-  selectedAction: null,
   pendingValidation: null,
   codeSettings: {
     indentChar: '\t',
@@ -989,30 +968,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     });
   },
 
-  setSelectedNPC: (npcName: string | null) => {
-    set((state) => { state.selectedNPC = npcName; });
-  },
-
-  setSelectedDialog: (dialogName: string | null) => {
-    set((state) => { state.selectedDialog = dialogName; });
-  },
-
-  setSelectedQuest: (questName: string | null) => {
-    set((state) => { state.selectedQuest = questName; });
-  },
-
-  setSelectedFunctionName: (functionName: string | null) => {
-    set((state) => { state.selectedFunctionName = functionName; });
-  },
-
-  setSelectedAction: (actionIndex: number | null) => {
-    set((state) => { state.selectedAction = actionIndex; });
-  },
-
-  setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'source') => {
-    set((state) => { state.activeView = view; });
-  },
-
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => {
     set((state) => {
       state.codeSettings = { ...state.codeSettings, ...settings };
@@ -1034,13 +989,8 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       state.questNodePositions.clear();
       state.questBatchHistory = { past: [], future: [] };
       state.activeFile = null;
-      state.activeView = 'dialog';
-      state.selectedNPC = null;
-      state.selectedDialog = null;
-      state.selectedQuest = null;
-      state.selectedFunctionName = null;
-      state.selectedAction = null;
       state.pendingValidation = null;
     });
+    useUISelectionStore.getState().resetUISelection();
   }
 })));

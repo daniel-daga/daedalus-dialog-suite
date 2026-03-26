@@ -125,22 +125,41 @@ const isNegatedCondition = (cond: DialogCondition): boolean => {
   return false;
 };
 
+/**
+ * WeakMap cache so that repeated calls with the same condition object (e.g. the
+ * same condition appearing in both identifyQuestNodes and buildQuestEdges within
+ * one graph-build pass) skip the property-check walk entirely.
+ */
+const _conditionTypeCache = new WeakMap<object, QuestGraphConditionType | undefined>();
+
 const inferConditionType = (cond?: DialogCondition): QuestGraphConditionType | undefined => {
   if (!cond) return undefined;
+  if (_conditionTypeCache.has(cond)) return _conditionTypeCache.get(cond);
 
   const explicitType = typeof cond.type === 'string' ? cond.type : undefined;
+  let result: QuestGraphConditionType | undefined;
   if (explicitType && explicitType !== 'GenericCondition') {
-    return explicitType as QuestGraphConditionType;
+    result = explicitType as QuestGraphConditionType;
+  } else if ('variableName' in cond) {
+    result = 'VariableCondition';
+  } else if ('npc' in cond && 'dialogRef' in cond) {
+    result = 'NpcKnowsInfoCondition';
+  } else if ('npc' in cond && 'item' in cond) {
+    result = 'NpcHasItemsCondition';
+  } else if ('npc' in cond && 'state' in cond) {
+    result = 'NpcIsInStateCondition';
+  } else if ('npc' in cond && 'waypoint' in cond) {
+    result = 'NpcGetDistToWpCondition';
+  } else if ('npc' in cond && 'talent' in cond) {
+    result = 'NpcGetTalentSkillCondition';
+  } else if ('npc' in cond) {
+    result = 'NpcIsDeadCondition';
+  } else {
+    result = 'Condition';
   }
-  if ('variableName' in cond) return 'VariableCondition';
-  if ('npc' in cond && 'dialogRef' in cond) return 'NpcKnowsInfoCondition';
-  if ('npc' in cond && 'item' in cond) return 'NpcHasItemsCondition';
-  if ('npc' in cond && 'state' in cond) return 'NpcIsInStateCondition';
-  if ('npc' in cond && 'waypoint' in cond) return 'NpcGetDistToWpCondition';
-  if ('npc' in cond && 'talent' in cond) return 'NpcGetTalentSkillCondition';
-  if ('npc' in cond) return 'NpcIsDeadCondition';
-  if ('condition' in cond && typeof cond.condition === 'string') return 'Condition';
-  return 'Condition';
+
+  _conditionTypeCache.set(cond, result);
+  return result;
 };
 
 const getConditionLabel = (conditionType?: QuestGraphConditionType): string => {
