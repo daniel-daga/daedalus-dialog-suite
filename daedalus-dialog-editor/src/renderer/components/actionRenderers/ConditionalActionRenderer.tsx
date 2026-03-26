@@ -4,8 +4,6 @@ import {
   Button,
   Divider,
   IconButton,
-  Menu,
-  MenuItem,
   Paper,
   Stack,
   TextField,
@@ -16,32 +14,9 @@ import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
 import type { ConditionalAction } from '../../types/global';
 import type { ActionTypeId } from '../actionTypes';
+import type { ActionBranchKey } from '../nestedActionUtils';
 import ActionsList from '../ActionsList';
-
-const ACTION_MENU_ITEMS: { type: ActionTypeId; label: string }[] = [
-  { type: 'dialogLine', label: 'Dialog Line' },
-  { type: 'choice', label: 'Choice' },
-  { type: 'logEntry', label: 'Log Entry' },
-  { type: 'createTopic', label: 'Create Topic' },
-  { type: 'logSetTopicStatus', label: 'Log Set Status' },
-  { type: 'createInventoryItems', label: 'Create Inventory Items' },
-  { type: 'giveInventoryItems', label: 'Give Inventory Items' },
-  { type: 'attackAction', label: 'Attack Action' },
-  { type: 'setAttitudeAction', label: 'Set Attitude' },
-  { type: 'chapterTransition', label: 'Chapter Transition' },
-  { type: 'exchangeRoutine', label: 'Exchange Routine' },
-  { type: 'stopProcessInfosAction', label: 'End Dialog' },
-  { type: 'playAniAction', label: 'Play Animation' },
-  { type: 'givePlayerXPAction', label: 'Give XP' },
-  { type: 'pickpocketAction', label: 'Pickpocket' },
-  { type: 'startOtherRoutineAction', label: 'Start Other Routine' },
-  { type: 'teachAction', label: 'Teach' },
-  { type: 'giveTradeInventoryAction', label: 'Give Trade Inventory' },
-  { type: 'removeInventoryItemsAction', label: 'Remove Inventory Items' },
-  { type: 'insertNpcAction', label: 'Insert NPC' },
-  { type: 'conditionalAction', label: 'If / Else Block' },
-  { type: 'customAction', label: 'Custom Action' }
-];
+import ActionTypeMenu from '../common/ActionTypeMenu';
 
 const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -70,14 +45,14 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const typedAction = action as ConditionalAction;
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [activeBranch, setActiveBranch] = useState<'then' | 'else'>('then');
+  const [activeBranch, setActiveBranch] = useState<ActionBranchKey>('then');
 
   const branchSections = useMemo(() => ([
     { branch: 'then' as const, label: 'If' },
     { branch: 'else' as const, label: 'Else' }
   ]), []);
 
-  const openBranchMenu = (event: React.MouseEvent<HTMLElement>, branch: 'then' | 'else') => {
+  const openBranchMenu = (event: React.MouseEvent<HTMLElement>, branch: ActionBranchKey) => {
     setActiveBranch(branch);
     setMenuAnchor(event.currentTarget);
   };
@@ -175,19 +150,13 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
         })}
       </Stack>
 
-      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
-        {ACTION_MENU_ITEMS.map((item) => (
-          <MenuItem
-            key={item.type}
-            onClick={() => {
-              addActionToBranchEnd?.(path, activeBranch, item.type);
-              setMenuAnchor(null);
-            }}
-          >
-            {item.label}
-          </MenuItem>
-        ))}
-      </Menu>
+      <ActionTypeMenu
+        anchorEl={menuAnchor}
+        onClose={() => setMenuAnchor(null)}
+        onSelect={(actionType: ActionTypeId) => {
+          addActionToBranchEnd?.(path, activeBranch, actionType);
+        }}
+      />
     </Paper>
   );
 };

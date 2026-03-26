@@ -2,11 +2,13 @@
  * Utility functions for dialog editing
  */
 
+import type { DialogFunction, SemanticModel } from '../types/global';
+
 /**
  * Generate a unique function name for a choice's target function
  * Format: <DialogName>_Choice_<Number>
  */
-export const generateUniqueChoiceFunctionName = (dialogName: string, semanticModel: any): string => {
+export const generateUniqueChoiceFunctionName = (dialogName: string, semanticModel: SemanticModel): string => {
   const baseName = `${dialogName}_Choice`;
   let counter = 1;
   let candidateName = `${baseName}_${counter}`;
@@ -23,12 +25,13 @@ export const generateUniqueChoiceFunctionName = (dialogName: string, semanticMod
 /**
  * Create a new empty function in the semantic model
  */
-export const createEmptyFunction = (functionName: string): any => {
+export const createEmptyFunction = (functionName: string): DialogFunction => {
   return {
     name: functionName,
-    returnType: 'void',
+    returnType: 'VOID',
     calls: [],
-    actions: []
+    actions: [],
+    conditions: []
   };
 };
 
@@ -39,7 +42,7 @@ export const createEmptyFunction = (functionName: string): any => {
 export const validateChoiceFunctionName = (
   functionName: string,
   requiredPrefix: string,
-  semanticModel: any,
+  semanticModel: SemanticModel | undefined,
   originalFunctionName?: string
 ): string | null => {
   if (!functionName || functionName.trim() === '') {

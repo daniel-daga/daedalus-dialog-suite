@@ -5,6 +5,7 @@
 
 import { ACTION_TEMPLATES, getOppositeSpeaker } from './actionTemplates';
 import type { ActionTypeId } from './actionTypes';
+import type { DialogAction, SemanticModel } from '../types/global';
 
 type DialogSpeaker = 'self' | 'other';
 
@@ -23,7 +24,7 @@ const DEFAULT_DIALOG_SPEAKER_TOKEN: Record<DialogSpeaker, string> = {
  * Generate a unique ID for an action
  */
 export function generateActionId(): string {
-  return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `action_${crypto.randomUUID()}`;
 }
 
 function escapeRegExp(value: string): string {
@@ -66,7 +67,7 @@ function parseDialogLineId(id: string, dialogName?: string): ParsedDialogLineId 
 
 function chooseSpeakerToken(
   speaker: DialogSpeaker,
-  actions: any[]
+  actions: DialogAction[]
 ): string {
   const tokenCounts = new Map<string, number>();
 
@@ -102,7 +103,7 @@ function chooseSpeakerToken(
 export interface DialogLineIdOptions {
   dialogName?: string;
   speaker: DialogSpeaker;
-  actions?: any[];
+  actions?: DialogAction[];
 }
 
 export function createDialogLineId(options: DialogLineIdOptions): string {
@@ -145,9 +146,9 @@ export function createDialogLineId(options: DialogLineIdOptions): string {
 
 export interface ActionCreationContext {
   dialogName?: string;
-  currentAction?: any;
-  semanticModel?: any;
-  actions?: any[];
+  currentAction?: DialogAction;
+  semanticModel?: SemanticModel;
+  actions?: DialogAction[];
 }
 
 /**
@@ -156,124 +157,39 @@ export interface ActionCreationContext {
 export function createAction(
   actionType: ActionTypeId,
   context: ActionCreationContext = {}
-): any {
+): DialogAction {
   const { dialogName, currentAction, actions } = context;
 
-  let action: any;
-  switch (actionType) {
-    case 'dialogLine': {
-      // Toggle speaker if we have a current action
-      const speaker = currentAction?.speaker
-        ? getOppositeSpeaker(currentAction.speaker)
-        : 'other';
-      action = ACTION_TEMPLATES.dialogLine(speaker, '');
-      break;
-    }
+  let action: DialogAction;
 
-    case 'choice':
-      action = ACTION_TEMPLATES.choice(dialogName || '', '', '');
-      break;
-
-    case 'logEntry':
-      action = ACTION_TEMPLATES.logEntry();
-      break;
-
-    case 'createTopic':
-      action = ACTION_TEMPLATES.createTopic();
-      break;
-
-    case 'logSetTopicStatus':
-      action = ACTION_TEMPLATES.logSetTopicStatus();
-      break;
-
-    case 'createInventoryItems':
-      action = ACTION_TEMPLATES.createInventoryItems();
-      break;
-
-    case 'giveInventoryItems':
-      action = ACTION_TEMPLATES.giveInventoryItems();
-      break;
-
-    case 'attackAction':
-      action = ACTION_TEMPLATES.attackAction();
-      break;
-
-    case 'setAttitudeAction':
-      action = ACTION_TEMPLATES.setAttitudeAction();
-      break;
-
-    case 'chapterTransition':
-      action = ACTION_TEMPLATES.chapterTransition();
-      break;
-
-    case 'exchangeRoutine':
-      action = ACTION_TEMPLATES.exchangeRoutine();
-      break;
-
-    case 'setVariableAction':
-      action = ACTION_TEMPLATES.setVariableAction();
-      break;
-
-    case 'stopProcessInfosAction':
-      action = ACTION_TEMPLATES.stopProcessInfosAction();
-      break;
-
-    case 'playAniAction':
-      action = ACTION_TEMPLATES.playAniAction();
-      break;
-
-    case 'givePlayerXPAction':
-      action = ACTION_TEMPLATES.givePlayerXPAction();
-      break;
-
-    case 'pickpocketAction':
-      action = ACTION_TEMPLATES.pickpocketAction();
-      break;
-
-    case 'startOtherRoutineAction':
-      action = ACTION_TEMPLATES.startOtherRoutineAction();
-      break;
-
-    case 'teachAction':
-      action = ACTION_TEMPLATES.teachAction();
-      break;
-
-    case 'giveTradeInventoryAction':
-      action = ACTION_TEMPLATES.giveTradeInventoryAction();
-      break;
-
-    case 'removeInventoryItemsAction':
-      action = ACTION_TEMPLATES.removeInventoryItemsAction();
-      break;
-
-    case 'insertNpcAction':
-      action = ACTION_TEMPLATES.insertNpcAction();
-      break;
-
-    case 'heroFollowsAction':
-      action = ACTION_TEMPLATES.heroFollowsAction();
-      break;
-
-    case 'conditionalAction':
-      action = ACTION_TEMPLATES.conditionalAction();
-      break;
-
-    case 'customAction':
-      action = ACTION_TEMPLATES.customAction();
-      break;
-
-    default:
+  // Handle special cases that need context-aware arguments
+  if (actionType === 'dialogLine') {
+    const speaker = currentAction && 'speaker' in currentAction && currentAction.speaker
+      ? getOppositeSpeaker(currentAction.speaker)
+      : 'other';
+    action = ACTION_TEMPLATES.dialogLine(speaker, '');
+  } else if (actionType === 'choice') {
+    action = ACTION_TEMPLATES.choice(dialogName || '', '', '');
+  } else {
+    // All other action types use default arguments
+    const templateFn = ACTION_TEMPLATES[actionType];
+    if (!templateFn) {
       throw new Error(`Unknown action type: ${actionType}`);
+    }
+    action = (templateFn as () => DialogAction)();
   }
 
-  if (actionType === 'dialogLine' && action && action.speaker) {
-    action.id = createDialogLineId({
-      dialogName,
-      speaker: action.speaker,
-      actions: actions || []
-    });
-  } else if (action && (!action.id || action.id === 'NEW_LINE_ID')) {
-    action.id = generateActionId();
+  if (actionType === 'dialogLine' && 'speaker' in action) {
+    action = {
+      ...action,
+      id: createDialogLineId({
+        dialogName,
+        speaker: action.speaker,
+        actions: actions || []
+      })
+    };
+  } else if (!('id' in action) || !action.id || action.id === 'NEW_LINE_ID') {
+    action = { ...action, id: generateActionId() } as DialogAction;
   }
 
   return action;
@@ -286,9 +202,9 @@ export function createAction(
 export function createActionAfterIndex(
   actionType: ActionTypeId,
   index: number,
-  actions: any[],
+  actions: DialogAction[],
   dialogName?: string
-): any {
+): DialogAction {
   const currentAction = actions[index];
   return createAction(actionType, {
     dialogName,

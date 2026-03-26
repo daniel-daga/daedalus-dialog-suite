@@ -110,10 +110,9 @@ export function useDialogEditorCommands({
       const newFunctionName = generateUniqueChoiceFunctionName(dialogName, modelForUniqueness);
       const newFunction = createEmptyFunction(newFunctionName);
       updateFunction(filePath, newFunctionName, newFunction);
-      newAction = {
-        ...newAction,
-        targetFunction: newFunctionName
-      };
+      if (newAction.type === 'Choice') {
+        newAction = { ...newAction, targetFunction: newFunctionName };
+      }
     }
 
     const logEntryAction = actionType === 'createTopic'
@@ -124,11 +123,11 @@ export function useDialogEditorCommands({
       const existingActions = previousFunction.actions || [];
       if (logEntryAction) {
         const newActions = [...existingActions, newAction, logEntryAction];
-        setTimeout(() => focusAction([newActions.length - 2], true), 0);
+        focusAction([newActions.length - 2], true);
         return { ...previousFunction, actions: newActions };
       }
       const newActions = [...existingActions, newAction];
-      setTimeout(() => focusAction([newActions.length - 1], true), 0);
+      focusAction([newActions.length - 1], true);
       return { ...previousFunction, actions: newActions };
     });
   }, [currentFunction, filePath, dialogName, semanticModel, updateFunction, setFunction, focusAction]);

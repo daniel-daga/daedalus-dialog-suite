@@ -223,95 +223,50 @@ export type UnknownDialogAction = Record<string, unknown>;
 
 export type DetectableAction = object;
 
-function hasProperty<T extends string>(value: object, key: T): value is Record<T, unknown> {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
+/**
+ * Map from the `type` discriminant field value to the ActionTypeId.
+ * This is the primary detection mechanism -- fast and unambiguous.
+ */
+const TYPE_TO_ID: Record<string, ActionTypeId> = {
+  'DialogLine': 'dialogLine',
+  'Choice': 'choice',
+  'LogEntry': 'logEntry',
+  'CreateTopic': 'createTopic',
+  'LogSetTopicStatus': 'logSetTopicStatus',
+  'CreateInventoryItems': 'createInventoryItems',
+  'GiveInventoryItems': 'giveInventoryItems',
+  'AttackAction': 'attackAction',
+  'SetAttitudeAction': 'setAttitudeAction',
+  'ChapterTransitionAction': 'chapterTransition',
+  'ExchangeRoutineAction': 'exchangeRoutine',
+  'SetVariableAction': 'setVariableAction',
+  'StopProcessInfosAction': 'stopProcessInfosAction',
+  'PlayAniAction': 'playAniAction',
+  'GivePlayerXPAction': 'givePlayerXPAction',
+  'PickpocketAction': 'pickpocketAction',
+  'StartOtherRoutineAction': 'startOtherRoutineAction',
+  'TeachAction': 'teachAction',
+  'GiveTradeInventoryAction': 'giveTradeInventoryAction',
+  'RemoveInventoryItemsAction': 'removeInventoryItemsAction',
+  'InsertNpcAction': 'insertNpcAction',
+  'HeroFollowsAction': 'heroFollowsAction',
+  'ConditionalAction': 'conditionalAction',
+  'Action': 'customAction',
+  'CustomAction': 'customAction',
+};
 
 /**
- * Detect the action type from an action object
+ * Detect the action type from an action object.
+ * Uses the `type` discriminant field as the primary lookup.
+ * Falls back to `'customAction'` for unrecognized or missing type values.
  */
 export function getActionType(action: DetectableAction): ActionTypeId {
-  const a = action;
-
-  if (hasProperty(a, 'speaker') && hasProperty(a, 'text') && hasProperty(a, 'id')) {
-    return 'dialogLine';
-  }
-  if (hasProperty(a, 'dialogRef') && hasProperty(a, 'targetFunction')) {
-    return 'choice';
-  }
-  if (hasProperty(a, 'topic') && hasProperty(a, 'topicType') && !hasProperty(a, 'status')) {
-    return 'createTopic';
-  }
-  if (hasProperty(a, 'topic') && hasProperty(a, 'text') && !hasProperty(a, 'topicType')) {
-    return 'logEntry';
-  }
-  if (hasProperty(a, 'topic') && hasProperty(a, 'status')) {
-    return 'logSetTopicStatus';
-  }
-  if (hasProperty(a, 'target') && hasProperty(a, 'item') && hasProperty(a, 'quantity') &&
-      !hasProperty(a, 'giver') && !hasProperty(a, 'receiver')) {
-    return 'createInventoryItems';
-  }
-  if (hasProperty(a, 'giver') && hasProperty(a, 'receiver')) {
-    return 'giveInventoryItems';
-  }
-  if (hasProperty(a, 'attacker') && hasProperty(a, 'attackReason')) {
-    return 'attackAction';
-  }
-  if (hasProperty(a, 'attitude') && !hasProperty(a, 'routine')) {
-    return 'setAttitudeAction';
-  }
-  if (hasProperty(a, 'chapter') && hasProperty(a, 'world')) {
-    return 'chapterTransition';
-  }
-  if ((hasProperty(a, 'npc') || hasProperty(a, 'target')) && hasProperty(a, 'routine') && !hasProperty(a, 'attitude')) {
-    return 'exchangeRoutine';
-  }
-  if (hasProperty(a, 'variableName') && hasProperty(a, 'operator') && hasProperty(a, 'value')) {
-    return 'setVariableAction';
-  }
-  if (hasProperty(a, 'target') && hasProperty(a, 'animationName')) {
-    return 'playAniAction';
-  }
-  if (hasProperty(a, 'xpAmount')) {
-    return 'givePlayerXPAction';
-  }
-  if (hasProperty(a, 'pickpocketMode')) {
-    return 'pickpocketAction';
-  }
-  if (hasProperty(a, 'routineFunctionName') && hasProperty(a, 'routineNpc')) {
-    return 'startOtherRoutineAction';
-  }
-  if (hasProperty(a, 'teachFunctionName') && hasProperty(a, 'teachArgs') && Array.isArray(a.teachArgs)) {
-    return 'teachAction';
-  }
-  if (hasProperty(a, 'tradeTarget')) {
-    return 'giveTradeInventoryAction';
-  }
-  if (hasProperty(a, 'removeFunctionName') && hasProperty(a, 'removeNpc')) {
-    return 'removeInventoryItemsAction';
-  }
-  if (hasProperty(a, 'npcInstance') && hasProperty(a, 'spawnPoint')) {
-    return 'insertNpcAction';
-  }
-  if (hasProperty(a, 'guideRoutine')) {
-    return 'heroFollowsAction';
-  }
-  if (hasProperty(a, 'condition') && hasProperty(a, 'thenActions') && hasProperty(a, 'elseActions')) {
-    return 'conditionalAction';
-  }
-  // Loose check for StopProcessInfos - assuming it only has target
-  if (hasProperty(a, 'target') &&
-      !hasProperty(a, 'item') &&
-      !hasProperty(a, 'attitude') &&
-      !hasProperty(a, 'routine') &&
-      !hasProperty(a, 'animationName')) {
-    return 'stopProcessInfosAction';
-  }
-  if (hasProperty(a, 'action')) {
-    return 'customAction';
+  if ('type' in action && typeof (action as Record<string, unknown>).type === 'string') {
+    const mapped = TYPE_TO_ID[(action as Record<string, unknown>).type as string];
+    if (mapped) return mapped;
   }
 
-  return 'customAction'; // Fallback
+  // Fallback for legacy actions without a `type` field
+  return 'customAction';
 }
 

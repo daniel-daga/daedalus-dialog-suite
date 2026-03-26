@@ -9,12 +9,14 @@ import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
 import { actionPathToKey } from './nestedActionUtils';
 import ActionTypeMenu from './common/ActionTypeMenu';
+import DeleteConfirmDialog from './common/DeleteConfirmDialog';
 
 const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName, dragHandleProps, filePath }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [hasFocus, setHasFocus] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   // Local state for text input to avoid parent re-renders on every keystroke
   const [localAction, setLocalAction] = useState(action);
@@ -22,6 +24,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
 
   // Use refs to store latest values without triggering re-renders
   const localActionRef = useRef(localAction);
+  const actionRef = useRef(action);
   const pathRef = useRef(path);
   const updateActionRef = useRef(updateActionAtPath);
 
@@ -40,6 +43,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
 
   // Sync local state when action prop changes from parent
   React.useEffect(() => {
+    actionRef.current = action;
     setLocalAction(action);
   }, [action]);
 
@@ -79,9 +83,13 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     return () => {
       if (updateTimerRef.current) {
         clearTimeout(updateTimerRef.current);
-        // Flush using refs to get latest values and avoid data corruption
-        // This ensures we use the current index/action, not stale values from closure
-        updateActionRef.current(pathRef.current, localActionRef.current);
+        updateTimerRef.current = null;
+        // Only flush if the local action actually differs from the last parent-synced action.
+        // During drag-and-drop reorder, the component unmounts and remounts at a new index.
+        // Without this guard the flush could write to a stale path, corrupting data.
+        if (!shallowEqual(localActionRef.current, actionRef.current)) {
+          updateActionRef.current(pathRef.current, localActionRef.current);
+        }
       }
     };
   }, []); // Empty deps - cleanup function only created once, uses refs for latest values
@@ -163,7 +171,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       handleDeleteAndFocusPrev();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      handleDeleteAndFocusPrev();
+      flushUpdate();
+      setDeleteConfirmOpen(true);
     }
   }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText]);
 
@@ -297,6 +306,19 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
           mainFieldRef.current?.focus();
         }}
         onSelect={handleAddActionAfter}
+      />
+
+      {/* Delete confirmation dialog */}
+      <DeleteConfirmDialog
+        open={deleteConfirmOpen}
+        onConfirm={() => {
+          setDeleteConfirmOpen(false);
+          handleDeleteAndFocusPrev();
+        }}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          mainFieldRef.current?.focus();
+        }}
       />
 
       {/* "+" button in divider */}

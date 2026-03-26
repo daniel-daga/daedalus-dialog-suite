@@ -189,20 +189,11 @@ const ActionsList = React.memo<ActionsListProps>(({
   if (prevProps.contextId !== nextProps.contextId) return false; // Check contextId
   if ((prevProps.pathPrefix || []).join('.') !== (nextProps.pathPrefix || []).join('.')) return false;
 
-  // Quick check - if the arrays have the same actions in the same order
-  // We rely on action IDs for identity, and ActionCard memo for deep comparison
+  // Check each action by reference - if any reference changed, re-render so
+  // ActionCard can receive the updated props and apply its own memo comparison.
   for (let i = 0; i < prevProps.actions.length; i++) {
-    // Only check if the action reference changed
-    // Don't do deep comparison here - let ActionCard handle that
     if (prevProps.actions[i] !== nextProps.actions[i]) {
-      // Actions array was recreated but might have same content
-      // Check IDs as a fast heuristic
-      if (
-        getActionIdentity(prevProps.actions[i], i) !==
-        getActionIdentity(nextProps.actions[i], i)
-      ) {
-        return false; // Different action
-      }
+      return false;
     }
   }
 

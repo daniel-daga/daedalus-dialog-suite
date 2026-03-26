@@ -11,3 +11,6 @@ export type { ActionTextFieldProps } from './ActionTextField';
 
 export { default as ActionFieldContainer } from './ActionFieldContainer';
 export type { ActionFieldContainerProps } from './ActionFieldContainer';
+
+export { default as DeleteConfirmDialog } from './DeleteConfirmDialog';
+export type { DeleteConfirmDialogProps } from './DeleteConfirmDialog';

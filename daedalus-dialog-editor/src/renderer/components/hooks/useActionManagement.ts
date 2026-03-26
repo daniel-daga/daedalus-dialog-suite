@@ -6,6 +6,7 @@ import type { DialogAction, DialogFunction, DialogLineAction, SemanticModel } fr
 import type { FunctionUpdater } from '../dialogTypes';
 import type { ActionBranchKey, ActionPath } from '../nestedActionUtils';
 import {
+  actionPathToKey,
   appendActionToBranch,
   collectAllDialogLineActionsFromModel,
   collectDialogLineActions,
@@ -161,14 +162,14 @@ export function useActionManagement(config: ActionManagementConfig) {
     setFunction((prev) => {
       if (!prev) return prev;
       const visiblePaths = flattenActionPaths(prev.actions || []);
-      const currentIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path));
+      const currentIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path));
       focusTarget = currentIndex > 0 ? visiblePaths[currentIndex - 1] : null;
       const newActions = deleteNestedActionAtPath(prev.actions || [], path);
       return { ...prev, actions: newActions };
     });
 
     if (focusTarget) {
-      setTimeout(() => focusAction(focusTarget as ActionPath), 0);
+      focusAction(focusTarget);
     }
   }, [setFunction, focusAction]);
 
@@ -190,13 +191,13 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       const newActions = insertActionAfterPath(actions, path, newAction);
       const visiblePaths = flattenActionPaths(newActions);
-      const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+      const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
       nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
       return { ...prev, actions: newActions };
     });
 
     if (nextPath) {
-      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+      focusAction(nextPath, true);
     }
   }, [setFunction, focusAction, buildDialogLineAction]);
 
@@ -221,20 +222,20 @@ export function useActionManagement(config: ActionManagementConfig) {
         if (!prev) return prev;
         const actions = prev.actions || [];
 
-        const newAction = createAction('choice', { dialogName: contextName }) as DialogAction;
-        if ('targetFunction' in newAction) {
-          newAction.targetFunction = newFunctionName;
-        }
+        const newAction = {
+          ...createAction('choice', { dialogName: contextName }),
+          targetFunction: newFunctionName
+        };
 
         const newActions = insertActionAfterPath(actions, path, newAction);
         const visiblePaths = flattenActionPaths(newActions);
-        const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+        const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
         nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
         return { ...prev, actions: newActions };
       });
 
       if (nextPath) {
-        setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+        focusAction(nextPath, true);
       }
       return;
     }
@@ -258,27 +259,30 @@ export function useActionManagement(config: ActionManagementConfig) {
               : actions;
           })();
 
-      const newAction = createActionAfterIndex(
+      let newAction = createActionAfterIndex(
         actionType,
         parentIndex,
         siblingActions,
         contextName
-      ) as DialogAction;
+      );
       if (newAction.type === 'DialogLine') {
-        newAction.id = createDialogLineId({
-          dialogName: contextName,
-          speaker: newAction.speaker,
-          actions: getAllDialogLineActions(actions)
-        });
+        newAction = {
+          ...newAction,
+          id: createDialogLineId({
+            dialogName: contextName,
+            speaker: newAction.speaker,
+            actions: getAllDialogLineActions(actions)
+          })
+        };
       }
 
       let newActions = insertActionAfterPath(actions, path, newAction);
       const visiblePaths = flattenActionPaths(newActions);
-      const insertedIndex = visiblePaths.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(path)) + 1;
+      const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
       const createTopicPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
 
       if (actionType === 'createTopic' && createTopicPath) {
-        const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined }) as DialogAction;
+        const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined });
         newActions = insertActionAfterPath(newActions, createTopicPath, logEntryAction);
         nextPath = createTopicPath;
       } else {
@@ -289,7 +293,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     });
 
     if (nextPath) {
-      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+      focusAction(nextPath, true);
     }
   }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, getAllDialogLineActions]);
 
@@ -303,17 +307,20 @@ export function useActionManagement(config: ActionManagementConfig) {
         ? target[branch === 'then' ? 'thenActions' : 'elseActions']
         : [];
       const currentAction = branchActions[branchActions.length - 1];
-      const newAction = createAction(actionType, {
+      let newAction = createAction(actionType, {
         dialogName: contextName,
         currentAction,
         actions: branchActions
-      }) as DialogAction;
+      });
       if (newAction.type === 'DialogLine') {
-        newAction.id = createDialogLineId({
-          dialogName: contextName,
-          speaker: newAction.speaker,
-          actions: getAllDialogLineActions(actions)
-        });
+        newAction = {
+          ...newAction,
+          id: createDialogLineId({
+            dialogName: contextName,
+            speaker: newAction.speaker,
+            actions: getAllDialogLineActions(actions)
+          })
+        };
       }
 
       nextPath = [...path, branch, branchActions.length];
@@ -324,7 +331,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     });
 
     if (nextPath) {
-      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+      focusAction(nextPath, true);
     }
   }, [setFunction, contextName, focusAction, getAllDialogLineActions]);
 
