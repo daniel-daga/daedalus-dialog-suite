@@ -3,6 +3,7 @@ import { Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip,
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
 import { useEditorStore } from '../store/editorStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
 import { isWritableQuestEditorEnabled } from '../config/features';
 import type { SemanticModel } from '../types/global';
@@ -35,7 +36,8 @@ const LoadingView: React.FC<LoadingViewProps> = ({ label }) => (
 );
 
 const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
-  const { openFiles, activeView: view, setActiveView: setView } = useEditorStore();
+  const { openFiles } = useEditorStore();
+  const { activeView: view, setActiveView: setView } = useUISelectionStore();
   const { projectPath, mergedSemanticModel, loadQuestData } = useProjectStore();
 
   const fileState = filePath ? openFiles.get(filePath) : null;

@@ -4,6 +4,7 @@ import { useRecentDialogTabs } from './hooks/useRecentDialogTabs';
 import { useDialogFactory } from './hooks/useDialogFactory';
 import { Box, Typography, Alert, Button } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
 import { SearchResult } from '../store/searchStore';
 import { useNavigation } from '../hooks/useNavigation';
@@ -27,19 +28,21 @@ const EMPTY_SEMANTIC_MODEL: SemanticModel = {
 };
 
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
-  const { 
-    openFiles, 
+  const {
+    openFiles,
     openFile,
     updateModel,
     getFileState,
     activeFile,
+  } = useEditorStore();
+  const {
     selectedNPC,
     selectedDialog,
     selectedFunctionName,
     setSelectedNPC,
     setSelectedDialog,
-    setSelectedFunctionName
-  } = useEditorStore();
+    setSelectedFunctionName,
+  } = useUISelectionStore();
   const {
     projectPath,
     npcList: projectNpcs,
@@ -335,7 +338,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         return false;
       }
 
-      const { selectedDialog: resolvedDialog, selectedFunctionName: resolvedFunction } = useEditorStore.getState();
+      const { selectedDialog: resolvedDialog, selectedFunctionName: resolvedFunction } = useUISelectionStore.getState();
       if (!resolvedDialog) {
         setIsLoadingDialog(false);
         return false;

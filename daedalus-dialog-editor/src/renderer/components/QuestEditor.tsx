@@ -4,7 +4,7 @@ import { FormatListBulleted, AccountTree } from '@mui/icons-material';
 import QuestList from './QuestList';
 import QuestDetails from './QuestDetails';
 import { useProjectStore } from '../store/projectStore';
-import { useEditorStore } from '../store/editorStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
 import type { SemanticModel } from '../types/global';
 
 const QuestFlow = lazy(() => import('./QuestFlow'));
@@ -23,7 +23,7 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnable
       parsedFiles: state.parsedFiles,
       projectPath: state.projectPath
   }));
-  const { selectedQuest, setSelectedQuest } = useEditorStore((state) => ({
+  const { selectedQuest, setSelectedQuest } = useUISelectionStore((state) => ({
     selectedQuest: state.selectedQuest,
     setSelectedQuest: state.setSelectedQuest
   }));

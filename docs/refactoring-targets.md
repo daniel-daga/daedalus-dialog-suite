@@ -31,11 +31,11 @@ Handles 8 unrelated concerns in a single Zustand store:
 **Completed:**
 - ✅ `utils/historyUtils.ts` — history types (`QuestNodePosition`, `QuestNodePositionMap`, `QuestHistorySnapshot`, `QuestHistoryState`, `QuestBatchHistoryState`) and 4 pure helper functions extracted from module scope
 - ✅ `syncToProjectStore()` — single named helper replaces 13 inline repetitions of the cross-store sync pattern
+- ✅ `store/uiSelectionStore.ts` — `selectedNPC`, `selectedDialog`, `selectedQuest`, `selectedFunctionName`, `selectedAction`, `activeView` and their 6 setters extracted to a standalone Zustand store; `editorStore.resetEditorSession()` delegates to `useUISelectionStore.getState().resetUISelection()`; 4 consumer files updated (`ThreeColumnLayout`, `MainLayout`, `QuestEditor`, `useNavigation`)
 
 **Remaining suggested split (architectural, deferred):**
 - `fileStore` — open/close/save, dirty tracking
 - `historyStore` — undo/redo state + snapshot helpers (move `applyUndoForFile`/`applyRedoForFile` + store state)
-- `uiSelectionStore` — selected NPC/dialog/quest/action
 
 ---
 
@@ -92,18 +92,24 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 **Red flags:**
 - `identifyQuestNodes` and `buildQuestEdges` are each ~275 lines with `forEach → forEach → forEach` nesting
-- `inferConditionType()` called 8+ times (lines 120, 157, 407, 535, 653, 757, 834, 908) without memoisation
-- `InternalNodeData` structure constructed twice with identical shape (lines 493–519 and 554–580) — copy/paste duplication
-- Edge creation object literal repeated 6+ times with the same 10 properties (lines 628–648, 693–716, 772–794)
-- Magic colour strings inline throughout: `'#ff9800'`, `'#ffb74d'`, `'#2196f3'` (lines 15, 702, 740, 782, 842)
-- Magic layout numbers: `NODE_WIDTH=280`, `NODE_HEIGHT=132`, `ranksep=180`, `nodesep=120` — no named constants
-- Node IDs built via string concatenation — collision-prone (lines 103, 111)
+- ~~`inferConditionType()` called 8+ times (lines 120, 157, 407, 535, 653, 757, 834, 908) without memoisation~~ ✅ fixed: `WeakMap` cache added; repeated calls with the same condition object skip the property-check walk entirely
+- ~~`InternalNodeData` structure constructed twice with identical shape (lines 493–519 and 554–580) — copy/paste duplication~~ ✅ fixed: extracted to `buildInferredFunctionNodeData()` factory
+- ~~Edge creation object literal repeated 6+ times with the same 10 properties (lines 628–648, 693–716, 772–794)~~ ✅ fixed: extracted to `buildChoiceEdge`, `buildConditionEdge`, `buildKnowsEdge`, `buildVariableEdge`, `buildExternalEntryEdge` factories
+- ~~Magic colour strings inline throughout: `'#ff9800'`, `'#ffb74d'`, `'#2196f3'` (lines 15, 702, 740, 782, 842)~~ ✅ fixed: moved to `constants/questGraphConstants.ts`
+- ~~Magic layout numbers: `NODE_WIDTH=280`, `NODE_HEIGHT=132`, `ranksep=180`, `nodesep=120` — no named constants~~ ✅ fixed: moved to `constants/questGraphConstants.ts`
+- ~~Node IDs built via string concatenation — collision-prone (lines 103, 111)~~ ✅ fixed: extracted to `buildGeneratedConditionNodeId()` and `buildGeneratedExternalEntryNodeId()` with `toNodeToken()` sanitisation
 
-**Suggested split:**
+**Completed:**
+- ✅ `constants/questGraphConstants.ts` — all colour constants (`CHOICE_EDGE_COLOR`, `CONDITION_EDGE_COLOR`, `KNOWS_EDGE_COLOR`, `VARIABLE_EDGE_COLOR`, `ENTRY_EDGE_COLOR`) and layout dimensions (`NODE_WIDTH`, `NODE_HEIGHT`, `DAGRE_LAYOUT`) extracted
+- ✅ `buildInferredFunctionNodeData()` — factory replacing the duplicated `InternalNodeData` literal
+- ✅ `buildChoiceEdge` / `buildConditionEdge` / `buildKnowsEdge` / `buildVariableEdge` / `buildExternalEntryEdge` — named edge factories replacing the 6+ repeated 10-property object literals
+- ✅ `buildGeneratedConditionNodeId()` / `buildGeneratedExternalEntryNodeId()` — ID builders with `toNodeToken()` sanitisation replacing raw string concatenation
+- ✅ `inferConditionType()` WeakMap memoisation — `_conditionTypeCache` skips repeated property-check walks for the same condition object
+
+**Remaining suggested split (architectural, deferred):**
 - `NodeIdentifier` class — node creation/identification
 - `EdgeBuilder` class — edge construction
 - `LayoutCalculator` class — Dagre layout
-- `constants/questGraphConstants.ts` — colours, dimensions, layout params
 
 ---
 
@@ -220,9 +226,9 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 | Priority | Target | File | Lines | Key Smell |
 |----------|--------|------|-------|-----------|
-| HIGH 🔄 | `editorStore.ts` | store/editorStore.ts | ~~1,137~~ 1,046 | 8 concerns (sync pattern fixed ✅, history types extracted ✅) |
+| HIGH 🔄 | `editorStore.ts` | store/editorStore.ts | ~~1,137~~ 1,046 | 8 concerns (sync pattern ✅, history types ✅, uiSelectionStore ✅) |
 | ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 647 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅) |
-| ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
+| ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ (constants ✅, buildInferredFunctionNodeData ✅, edge factories ✅, ID builders ✅, inferConditionType WeakMap ✅) |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
 | ~~MEDIUM~~ ✅ | ~~`projectStore.ts`~~ | ~~store/~~ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅, mutateQuestFile ✅) |
 | MEDIUM 🔄 | `semantic-model.ts` | parser/ | 1,510 | (DiscriminatorConfig ✅, ensureActionType comments ✅, deserializeAction warn ✅) domain split + boilerplate reduction deferred |
