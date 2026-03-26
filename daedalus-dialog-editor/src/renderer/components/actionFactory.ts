@@ -24,7 +24,7 @@ const DEFAULT_DIALOG_SPEAKER_TOKEN: Record<DialogSpeaker, string> = {
  * Generate a unique ID for an action
  */
 export function generateActionId(): string {
-  return `action_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  return `action_${crypto.randomUUID()}`;
 }
 
 function escapeRegExp(value: string): string {
@@ -161,110 +161,22 @@ export function createAction(
   const { dialogName, currentAction, actions } = context;
 
   let action: DialogAction;
-  switch (actionType) {
-    case 'dialogLine': {
-      // Toggle speaker if we have a current action
-      const speaker = currentAction && 'speaker' in currentAction && currentAction.speaker
-        ? getOppositeSpeaker(currentAction.speaker)
-        : 'other';
-      action = ACTION_TEMPLATES.dialogLine(speaker, '');
-      break;
-    }
 
-    case 'choice':
-      action = ACTION_TEMPLATES.choice(dialogName || '', '', '');
-      break;
-
-    case 'logEntry':
-      action = ACTION_TEMPLATES.logEntry();
-      break;
-
-    case 'createTopic':
-      action = ACTION_TEMPLATES.createTopic();
-      break;
-
-    case 'logSetTopicStatus':
-      action = ACTION_TEMPLATES.logSetTopicStatus();
-      break;
-
-    case 'createInventoryItems':
-      action = ACTION_TEMPLATES.createInventoryItems();
-      break;
-
-    case 'giveInventoryItems':
-      action = ACTION_TEMPLATES.giveInventoryItems();
-      break;
-
-    case 'attackAction':
-      action = ACTION_TEMPLATES.attackAction();
-      break;
-
-    case 'setAttitudeAction':
-      action = ACTION_TEMPLATES.setAttitudeAction();
-      break;
-
-    case 'chapterTransition':
-      action = ACTION_TEMPLATES.chapterTransition();
-      break;
-
-    case 'exchangeRoutine':
-      action = ACTION_TEMPLATES.exchangeRoutine();
-      break;
-
-    case 'setVariableAction':
-      action = ACTION_TEMPLATES.setVariableAction();
-      break;
-
-    case 'stopProcessInfosAction':
-      action = ACTION_TEMPLATES.stopProcessInfosAction();
-      break;
-
-    case 'playAniAction':
-      action = ACTION_TEMPLATES.playAniAction();
-      break;
-
-    case 'givePlayerXPAction':
-      action = ACTION_TEMPLATES.givePlayerXPAction();
-      break;
-
-    case 'pickpocketAction':
-      action = ACTION_TEMPLATES.pickpocketAction();
-      break;
-
-    case 'startOtherRoutineAction':
-      action = ACTION_TEMPLATES.startOtherRoutineAction();
-      break;
-
-    case 'teachAction':
-      action = ACTION_TEMPLATES.teachAction();
-      break;
-
-    case 'giveTradeInventoryAction':
-      action = ACTION_TEMPLATES.giveTradeInventoryAction();
-      break;
-
-    case 'removeInventoryItemsAction':
-      action = ACTION_TEMPLATES.removeInventoryItemsAction();
-      break;
-
-    case 'insertNpcAction':
-      action = ACTION_TEMPLATES.insertNpcAction();
-      break;
-
-    case 'heroFollowsAction':
-      action = ACTION_TEMPLATES.heroFollowsAction();
-      break;
-
-    case 'conditionalAction':
-      action = ACTION_TEMPLATES.conditionalAction();
-      break;
-
-    case 'customAction':
-      action = ACTION_TEMPLATES.customAction();
-      break;
-
-    default:
+  // Handle special cases that need context-aware arguments
+  if (actionType === 'dialogLine') {
+    const speaker = currentAction && 'speaker' in currentAction && currentAction.speaker
+      ? getOppositeSpeaker(currentAction.speaker)
+      : 'other';
+    action = ACTION_TEMPLATES.dialogLine(speaker, '');
+  } else if (actionType === 'choice') {
+    action = ACTION_TEMPLATES.choice(dialogName || '', '', '');
+  } else {
+    // All other action types use default arguments
+    const templateFn = ACTION_TEMPLATES[actionType];
+    if (!templateFn) {
       throw new Error(`Unknown action type: ${actionType}`);
+    }
+    action = (templateFn as () => DialogAction)();
   }
 
   if (actionType === 'dialogLine' && 'speaker' in action) {

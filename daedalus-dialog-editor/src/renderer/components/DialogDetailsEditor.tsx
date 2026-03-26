@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -90,9 +90,14 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     currentFunctionName
   });
 
+  const visibleActionPaths = useMemo(
+    () => flattenActionPaths(currentFunction?.actions || []),
+    [currentFunction?.actions]
+  );
+
   useEffect(() => {
-    trimRefs(flattenActionPaths(currentFunction?.actions || []));
-  }, [currentFunction?.actions, trimRefs]);
+    trimRefs(visibleActionPaths);
+  }, [visibleActionPaths, trimRefs]);
 
   return (
     <Box>
@@ -112,23 +117,22 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       </Box>
 
       {dialog && (
-        <DialogPropertiesSection
-          dialog={dialog}
-          semanticModel={semanticModel}
-          propertiesExpanded={uiState.propertiesExpanded}
-          onToggleExpanded={() => uiState.setPropertiesExpanded(!uiState.propertiesExpanded)}
-          onDialogPropertyChange={handleDialogPropertyChange}
-        />
-      )}
-
-      {dialog && (
-        <ConditionSection
-          dialogName={dialogName}
-          dialog={dialog}
-          semanticModel={semanticModel}
-          filePath={filePath}
-          onUpdateFunction={handleConditionFunctionUpdate}
-        />
+        <>
+          <DialogPropertiesSection
+            dialog={dialog}
+            semanticModel={semanticModel}
+            propertiesExpanded={uiState.propertiesExpanded}
+            onToggleExpanded={() => uiState.setPropertiesExpanded(!uiState.propertiesExpanded)}
+            onDialogPropertyChange={handleDialogPropertyChange}
+          />
+          <ConditionSection
+            dialogName={dialogName}
+            dialog={dialog}
+            semanticModel={semanticModel}
+            filePath={filePath}
+            onUpdateFunction={handleConditionFunctionUpdate}
+          />
+        </>
       )}
 
       {currentFunction && (
@@ -145,7 +149,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           moveAction={moveAction}
           focusActionAtPath={focusAction}
           registerActionRef={registerActionRef}
-          getVisibleActionPaths={() => flattenActionPaths(currentFunction.actions || [])}
+          getVisibleActionPaths={() => visibleActionPaths}
           semanticModel={semanticModel}
           onNavigateToFunction={onNavigateToFunction}
           onRenameFunction={handleRenameFunction}

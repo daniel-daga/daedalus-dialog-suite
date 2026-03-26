@@ -18,7 +18,6 @@ interface EditorPaneProps {
   selectedFunctionName: string | null;
   filePath: string | null;
   semanticModel: SemanticModel;
-  isProjectMode: boolean;
   isLoadingDialog: boolean;
   recentDialogs: RecentDialogTab[];
   onSelectRecentDialog: (dialogName: string, functionName: string | null, npcName: string) => void;
@@ -60,7 +59,6 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
   selectedFunctionName,
   filePath,
   semanticModel,
-  isProjectMode,
   isLoadingDialog,
   recentDialogs,
   onSelectRecentDialog,
@@ -178,7 +176,6 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
           functionName={selectedFunctionName || undefined}
           onNavigateToFunction={onNavigateToFunction}
           semanticModel={semanticModel}
-          isProjectMode={isProjectMode}
         />
       </Box>
     </Box>

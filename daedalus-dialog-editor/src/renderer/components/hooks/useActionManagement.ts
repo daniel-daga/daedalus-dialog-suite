@@ -169,7 +169,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     });
 
     if (focusTarget) {
-      setTimeout(() => focusAction(focusTarget as ActionPath), 0);
+      focusAction(focusTarget);
     }
   }, [setFunction, focusAction]);
 
@@ -197,7 +197,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     });
 
     if (nextPath) {
-      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+      focusAction(nextPath, true);
     }
   }, [setFunction, focusAction, buildDialogLineAction]);
 
@@ -235,7 +235,7 @@ export function useActionManagement(config: ActionManagementConfig) {
       });
 
       if (nextPath) {
-        setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+        focusAction(nextPath, true);
       }
       return;
     }
@@ -293,7 +293,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     });
 
     if (nextPath) {
-      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+      focusAction(nextPath, true);
     }
   }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, getAllDialogLineActions]);
 
@@ -331,7 +331,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     });
 
     if (nextPath) {
-      setTimeout(() => focusAction(nextPath as ActionPath, true), 0);
+      focusAction(nextPath, true);
     }
   }, [setFunction, contextName, focusAction, getAllDialogLineActions]);
 

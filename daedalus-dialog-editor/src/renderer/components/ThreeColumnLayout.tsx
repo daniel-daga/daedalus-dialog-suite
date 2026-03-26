@@ -1096,7 +1096,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         selectedFunctionName={selectedFunctionName}
         filePath={filePath}
         semanticModel={semanticModel as SemanticModel}
-        isProjectMode={isProjectMode}
         isLoadingDialog={isLoadingDialog}
         recentDialogs={recentDialogs}
         onSelectRecentDialog={handleSelectRecentDialog}

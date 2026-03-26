@@ -332,9 +332,15 @@ interface TypedRendererProps<T extends DialogAction> extends Omit<BaseActionRend
 | Medium | #5 Replace `JSON.stringify` with `actionPathToKey` | Low | FIXED |
 | Medium | #7 Replace `alert()` with inline error | Low | FIXED |
 | Medium | #8b Verify default speaker consistency | Low | VERIFIED |
-| Low | #6 Replace `setTimeout` with proper deferred focus | Medium | |
-| Low | #14 Simplify `createAction` switch to lookup | Low | |
-| Low | #8, #9, #11-13, #15-16 | Low | |
+| Low | #6 Replace `setTimeout` with proper deferred focus | Medium | FIXED |
+| Low | #14 Simplify `createAction` switch to lookup | Low | FIXED |
+| Low | #9 Remove unused `isProjectMode` prop | Low | FIXED |
+| Low | #11 Combine redundant `dialog &&` guards | Low | FIXED |
+| Low | #12 Memoize `flattenActionPaths` | Low | FIXED |
+| Low | #15 Use `crypto.randomUUID()` for action IDs | Low | FIXED |
+| Low | #8 Shallow memo on nested actions | Low | N/A (observation) |
+| Low | #13 Inconsistent export style | Low | SKIPPED (style) |
+| Low | #16 Type casting with `as` in renderers | Low | SKIPPED (invasive) |
 
 ---
 
@@ -401,3 +407,38 @@ Verified all code paths default to `'other'` (Hero speaks first):
 - `actionFactory.ts:169`: fallback when no current action is `'other'` ✓
 - `useActionManagement.ts:188`: non-dialog-line fallback is `'other'` ✓
 - `useDialogEditorCommands.ts:83-86`: `createAction` with no `currentAction` → `'other'` ✓
+
+### #6 - Replaced `setTimeout` with direct `focusAction` calls
+**Files:** `useActionManagement.ts`, `useDialogEditorCommands.ts`
+Removed all `setTimeout(() => focusAction(...), 0)` wrappers. The `useFocusNavigation`
+hook already handles deferred focus via `pendingFocusRequests` — if the target element
+isn't registered yet (because React hasn't rendered the new component), `focusAction`
+queues the request and `registerActionRef` applies it on mount.
+
+### #9 - Removed unused `isProjectMode` prop
+**Files:** `dialogTypes.ts`, `EditorPane.tsx`, `ThreeColumnLayout.tsx`
+Removed `isProjectMode` from `DialogDetailsEditorProps` (never read in `DialogDetailsEditor`).
+Also removed from `EditorPaneProps` and the caller in `ThreeColumnLayout` since it was only
+passed through to `DialogDetailsEditor`.
+
+### #11 - Combined redundant `dialog &&` guards
+**File:** `DialogDetailsEditor.tsx`
+Merged two consecutive `{dialog && (...)}` blocks into a single `{dialog && (<>...</>)}`.
+
+### #12 - Memoized `flattenActionPaths`
+**File:** `DialogDetailsEditor.tsx`
+Replaced inline `() => flattenActionPaths(...)` callback and duplicate `flattenActionPaths`
+call in `useEffect` with a single `useMemo` that recomputes only when `currentFunction.actions`
+changes. The memoized value is passed to both `trimRefs` and `getVisibleActionPaths`.
+
+### #14 - Simplified `createAction` switch to lookup
+**File:** `actionFactory.ts`
+Replaced the 24-case `switch` with a template lookup: `ACTION_TEMPLATES[actionType]()`.
+Special cases (`dialogLine` needing speaker toggle, `choice` needing `dialogRef`) are
+handled explicitly before the general lookup. Reduces ~100 lines to ~10 and ensures
+new template additions are automatically picked up.
+
+### #15 - Replaced `Date.now()` + `Math.random()` with `crypto.randomUUID()`
+**File:** `actionFactory.ts`
+`generateActionId()` now uses `crypto.randomUUID()` which is simpler, more
+collision-resistant, and available in Electron's renderer process.
