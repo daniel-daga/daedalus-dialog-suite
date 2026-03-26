@@ -32,7 +32,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 - ✅ `utils/historyUtils.ts` — history types (`QuestNodePosition`, `QuestNodePositionMap`, `QuestHistorySnapshot`, `QuestHistoryState`, `QuestBatchHistoryState`) and 4 pure helper functions extracted from module scope
 - ✅ `syncToProjectStore()` — single named helper replaces 13 inline repetitions of the cross-store sync pattern
 
-**Remaining suggested split:**
+**Remaining suggested split (architectural, deferred):**
 - `fileStore` — open/close/save, dirty tracking
 - `historyStore` — undo/redo state + snapshot helpers (move `applyUndoForFile`/`applyRedoForFile` + store state)
 - `uiSelectionStore` — selected NPC/dialog/quest/action
@@ -109,13 +109,13 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ## Tier 2 — Muddled Interests (500–850 lines)
 
-### 4. `projectStore.ts` — ~~850~~ 717 lines (partially refactored)
+### 4. `projectStore.ts` — ~~850~~ 717 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/store/projectStore.ts`
 
 11 concerns in one store. Key issues:
 
 - ~~`getQuestUsage()` (lines 447–563, **116 lines**): pure two-pass O(n²) computation — has no reason to live inside a store action~~ ✅ extracted to `utils/questAnalyzer.ts`; store action is now a one-liner delegate
-- File mutation template repeated 4× (lines 565–667, 669–713, 715–751): read → modify → write → clear cache → re-parse → merge
+- ~~File mutation template repeated 4× (lines 565–667, 669–713, 715–751): read → modify → write → clear cache → re-parse → merge~~ ✅ extracted to `mutateQuestFile()`
 - ~~`invalidateCacheForFile()` inline boilerplate repeated 4×~~ ✅ consolidated into a shared `invalidateCacheForFile()` closure inside the store
 - ~~Encoding bug at line 53: `// NPC ID Ã¢â€ â€™ dialogs`~~ ✅ fixed: `// NPC ID → dialogs`
 - ~~IPC Map deserialisation block copy-pasted 3× (lines 175–178)~~ ✅ extracted to `utils/ipcSerialisation.ts` (`deserialiseIpcMap`)
@@ -125,9 +125,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 - ✅ `utils/questAnalyzer.ts` — pure `getQuestUsage(parsedFiles, questName)` extracted; 116-line store action replaced with a one-liner
 - ✅ `invalidateCacheForFile()` — shared closure helper replacing 4 inline cache-invalidation patterns
 - ✅ `utils/ipcSerialisation.ts` — `deserialiseIpcMap<K, V>()` handles both Map and plain-object IPC payloads
-
-**Remaining suggested split:**
-- Read the file mutation template (4 near-identical async sequences) into a shared `mutateQuestFile(filePath, mutatorFn)` helper
+- ✅ `mutateQuestFile(filePath, mutatorFn)` — shared read → transform → write → invalidate → re-parse helper replacing the 4 near-identical async sequences in `createQuest`, `addVariable`, `updateGlobalConstant`, and `deleteVariable`
 
 ---
 
@@ -168,14 +166,18 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ## Tier 3 — Maintainability Red Flags
 
-### 7. `useActionManagement.ts` — 354 lines
+### 7. `useActionManagement.ts` — ~~354~~ 354 lines (partially refactored)
 **File:** `daedalus-dialog-editor/src/renderer/components/hooks/useActionManagement.ts`
 
-- `updateAction()` (lines 77–144): dialog line ID generation uses a 3-capture-group regex to preserve sequence numbers — completely undocumented
-- `addActionAfter()` (lines 208–298): `visiblePaths` / `insertedIndex` calculation copy-pasted 3×
+- ~~`updateAction()` (lines 77–144): dialog line ID generation uses a 3-capture-group regex to preserve sequence numbers — completely undocumented~~ ✅ documented: ID format (`<prefix>_<speakerIndex>_<sequenceNumber>`) and speaker-change sequence-preservation logic explained
+- ~~`addActionAfter()` (lines 208–298): `visiblePaths` / `insertedIndex` calculation copy-pasted 3×~~ ✅ extracted to `findInsertedPath(newActions, afterPath)` module-scope helper
 - `setFunction((prev) => ({...prev, actions: newActions}))` pattern repeated 6+×
 - Nested `setFunction` inside the choice-creation path (lines 221–235) — hard to follow control flow
 - No validation that the target action path is valid before mutation begins
+
+**Completed:**
+- ✅ `findInsertedPath()` — pure helper replacing 3 inline `flattenActionPaths` + `findIndex` + index-offset blocks
+- ✅ Regex in `updateAction` documented with DialogLine ID format and speaker-change preservation rationale
 
 ---
 
@@ -210,9 +212,9 @@ Orchestrates parser, semantic analysis, and code-generator validation, and also 
 | ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 647 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅) |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
-| MEDIUM 🔄 | `projectStore.ts` | store/ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅) file-mutation template still repeated 4× |
+| ~~MEDIUM~~ ✅ | ~~`projectStore.ts`~~ | ~~store/~~ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅, mutateQuestFile ✅) |
 | MEDIUM | `semantic-model.ts` | parser/ | 1,510 | 24 boilerplate action classes |
-| LOW | `useActionManagement.ts` | hooks/ | 354 | Duplicated path calculation, undocumented regex |
+| LOW 🔄 | `useActionManagement.ts` | hooks/ | 354 | (findInsertedPath ✅, regex documented ✅) setFunction pattern + choice control flow still pending |
 | ~~LOW~~ ✅ | ~~`VariableAutocomplete.tsx`~~ | ~~common/~~ | ~~473~~ → 287 | ~~Mixed data fetching + presentation~~ (useVariableOptions ✅) |
 | LOW | `ValidationService.ts` | main/services/ | 551 | Mixed I/O + validation concerns |
 | ARCH | Store sync pattern | editorStore ↔ projectStore | — | No SSOT, invisible coupling |

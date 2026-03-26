@@ -19,6 +19,21 @@ import {
 } from '../nestedActionUtils';
 
 /**
+ * Given a flat path list derived from `newActions` (after an insertion
+ * immediately following `insertedAfterPath`), return the path of the newly
+ * inserted item.  Returns null when `insertedAfterPath` is not found or the
+ * inserted item is beyond the end of the list.
+ */
+function findInsertedPath(newActions: DialogAction[], insertedAfterPath: ActionPath): ActionPath | null {
+  const paths = flattenActionPaths(newActions);
+  const afterIndex = paths.findIndex(
+    (p) => actionPathToKey(p) === actionPathToKey(insertedAfterPath)
+  );
+  const insertedIndex = afterIndex + 1;
+  return insertedIndex > 0 && insertedIndex < paths.length ? paths[insertedIndex] : null;
+}
+
+/**
  * Configuration for action management
  */
 export interface ActionManagementConfig {
@@ -96,11 +111,21 @@ export function useActionManagement(config: ActionManagementConfig) {
           let id = generatedId;
 
           // Preserve sequence number when only the speaker changes.
+          //
+          // DialogLine IDs follow the format: `<prefix>_<speakerIndex>_<sequenceNumber>`
+          //   Group 1 — full prefix up to the last two numeric segments
+          //   Group 2 — speaker index  (e.g. 0 = self, 1 = other)
+          //   Group 3 — per-speaker sequence number
+          //
+          // When the speaker flips we generate a new ID for the new speaker, but
+          // we try to reuse the OLD sequence number so existing references don't
+          // break unnecessarily.
           if (speakerChanged && currentId) {
             const generatedMatch = generatedId.match(/^(.*)_(\d+)_([0-9]+)$/);
             const currentMatch = currentId.match(/^(?:.+)_(\d+)_([0-9]+)$/);
 
             if (generatedMatch && currentMatch) {
+              // candidateWithSameIndex: new prefix + new speaker index + old sequence number
               const candidateWithSameIndex = `${generatedMatch[1]}_${generatedMatch[2]}_${currentMatch[2]}`;
               const hasConflict = actionsWithoutCurrent.some((action) =>
                 action?.type === 'DialogLine' && action.id === candidateWithSameIndex
@@ -190,9 +215,7 @@ export function useActionManagement(config: ActionManagementConfig) {
       const newAction = buildDialogLineAction(actions, newSpeaker);
 
       const newActions = insertActionAfterPath(actions, path, newAction);
-      const visiblePaths = flattenActionPaths(newActions);
-      const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
-      nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
+      nextPath = findInsertedPath(newActions, path);
       return { ...prev, actions: newActions };
     });
 
@@ -228,9 +251,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         };
 
         const newActions = insertActionAfterPath(actions, path, newAction);
-        const visiblePaths = flattenActionPaths(newActions);
-        const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
-        nextPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
+        nextPath = findInsertedPath(newActions, path);
         return { ...prev, actions: newActions };
       });
 
@@ -277,9 +298,7 @@ export function useActionManagement(config: ActionManagementConfig) {
       }
 
       let newActions = insertActionAfterPath(actions, path, newAction);
-      const visiblePaths = flattenActionPaths(newActions);
-      const insertedIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path)) + 1;
-      const createTopicPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
+      const createTopicPath = findInsertedPath(newActions, path);
 
       if (actionType === 'createTopic' && createTopicPath) {
         const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined });
