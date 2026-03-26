@@ -11,8 +11,16 @@ import type {
   QuestGraphProvenance,
   QuestGraphSourceKind
 } from '../../types/questGraph';
-
-const CHOICE_EDGE_COLOR = '#ff9800';
+import {
+  CHOICE_EDGE_COLOR,
+  CONDITION_EDGE_COLOR,
+  DAGRE_LAYOUT,
+  ENTRY_EDGE_COLOR,
+  KNOWS_EDGE_COLOR,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  VARIABLE_EDGE_COLOR
+} from './constants/questGraphConstants';
 
 interface InternalNodeData {
   id: string;
@@ -313,6 +321,181 @@ const inferFunctionSourceKind = (
   return 'script';
 };
 
+// ── Node factory ─────────────────────────────────────────────────────────────
+
+/**
+ * Build the `InternalNodeData` object for a function that has been drawn into
+ * the graph as an *inferred indirect prerequisite* (i.e. it does not directly
+ * touch the selected quest but is reachable via knows-info or variable-value
+ * chains).  Centralises a block that was previously duplicated twice.
+ */
+const buildInferredFunctionNodeData = (
+  funcName: string,
+  context: { npc: string; dialogName?: string },
+  conditionSummary: ReturnType<typeof getConditionSummaryForFunction>,
+  filePath: string | undefined
+): InternalNodeData => ({
+  id: funcName,
+  type: 'check',
+  label: context.dialogName || funcName,
+  npc: context.npc,
+  description: 'Indirect prerequisite',
+  nodeKind: 'function',
+  kind: 'dialog',
+  sourceKind: inferFunctionSourceKind(funcName, Boolean(context.dialogName), filePath),
+  conditionExpression: conditionSummary.conditionExpression,
+  conditionCount: conditionSummary.conditionCount,
+  conditionMode: conditionSummary.conditionMode,
+  entrySurface: false,
+  latentEntry: false,
+  entryReason: undefined,
+  inferred: true,
+  touchesSelectedQuest: false,
+  provenance: {
+    filePath,
+    functionName: funcName,
+    dialogName: context.dialogName
+  }
+});
+
+// ── Edge factories ───────────────────────────────────────────────────────────
+
+const buildChoiceEdge = (
+  consumerId: string,
+  targetFunc: string,
+  actionIndex: number,
+  actionText: string | undefined,
+  sourceHandle: string,
+  targetHandle: string,
+  provenance: QuestGraphProvenance
+): QuestGraphEdge => ({
+  id: `choice-${consumerId}-${targetFunc}-${actionIndex}`,
+  source: consumerId,
+  target: targetFunc,
+  sourceHandle,
+  targetHandle,
+  label: actionText,
+  type: 'smoothstep',
+  markerEnd: { type: MarkerType.ArrowClosed },
+  style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' },
+  labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 },
+  data: { kind: 'transitions', choiceIndex: actionIndex, inferred: false, provenance }
+});
+
+const buildConditionEdge = (
+  conditionNodeId: string,
+  consumerId: string,
+  conditionPosition: number,
+  expression: string,
+  conditionLabel: string,
+  conditionType: QuestGraphConditionType,
+  cond: DialogCondition,
+  ownerFunctionName: string,
+  provenance: QuestGraphProvenance
+): QuestGraphEdge => ({
+  id: `condition-edge-${conditionNodeId}-${consumerId}`,
+  source: conditionNodeId,
+  target: consumerId,
+  sourceHandle: 'out-bool',
+  targetHandle: `in-condition-${conditionPosition}`,
+  label: `requires ${shortenExpression(expression || conditionLabel, 40)}`,
+  type: 'smoothstep',
+  markerEnd: { type: MarkerType.ArrowClosed },
+  style: { stroke: CONDITION_EDGE_COLOR, strokeWidth: 2 },
+  labelStyle: { fill: CONDITION_EDGE_COLOR, fontSize: 10 },
+  data: {
+    kind: 'requires',
+    inferred: false,
+    expression,
+    operator: conditionType === 'VariableCondition'
+      ? ((cond as { operator?: '==' | '!=' | '<' | '>' | '<=' | '>=' }).operator)
+      : undefined,
+    provenance: { functionName: ownerFunctionName, dialogName: provenance.dialogName }
+  }
+});
+
+const buildKnowsEdge = (
+  producerFunc: string,
+  consumerId: string,
+  conditionPosition: number,
+  producerDialogName: string,
+  inferred: boolean,
+  ownerFunctionName: string,
+  provenance: QuestGraphProvenance
+): QuestGraphEdge => ({
+  id: `knows-${producerFunc}-${consumerId}`,
+  source: producerFunc,
+  target: consumerId,
+  sourceHandle: 'out-finished',
+  targetHandle: `in-condition-${conditionPosition}`,
+  label: `requires knows ${producerDialogName}`,
+  type: 'smoothstep',
+  markerEnd: { type: MarkerType.ArrowClosed },
+  style: { stroke: KNOWS_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '3,3' },
+  labelStyle: { fill: KNOWS_EDGE_COLOR, fontSize: 10 },
+  data: {
+    kind: 'requires',
+    inferred,
+    expression: `Npc_KnowsInfo(..., ${producerDialogName})`,
+    provenance: { functionName: ownerFunctionName, dialogName: provenance.dialogName }
+  }
+});
+
+const buildVariableEdge = (
+  producerFunc: string,
+  consumerId: string,
+  conditionPosition: number,
+  variableName: string,
+  rawValue: string,
+  operator: string,
+  inferred: boolean,
+  ownerFunctionName: string,
+  provenance: QuestGraphProvenance
+): QuestGraphEdge => ({
+  id: `var-${variableName}-${producerFunc}-${consumerId}`,
+  source: producerFunc,
+  target: consumerId,
+  sourceHandle: 'out-state',
+  targetHandle: `in-condition-${conditionPosition}`,
+  label: `requires ${variableName} == ${rawValue}`,
+  type: 'smoothstep',
+  animated: true,
+  markerEnd: { type: MarkerType.ArrowClosed },
+  style: { stroke: VARIABLE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '3,3' },
+  labelStyle: { fill: VARIABLE_EDGE_COLOR, fontSize: 10 },
+  data: {
+    kind: 'requires',
+    inferred,
+    expression: `${variableName} ${operator} ${rawValue}`,
+    operator: operator as '==' | '!=' | '<' | '>' | '<=' | '>=' | undefined,
+    provenance: { functionName: ownerFunctionName, dialogName: provenance.dialogName }
+  }
+});
+
+const buildExternalEntryEdge = (
+  externalId: string,
+  consumerId: string,
+  entryReason: string,
+  provenance: QuestGraphProvenance
+): QuestGraphEdge => ({
+  id: `external-entry-edge-${externalId}-${consumerId}`,
+  source: externalId,
+  target: consumerId,
+  sourceHandle: 'out-bool',
+  targetHandle: 'in-condition-0',
+  label: 'requires entry trigger',
+  type: 'smoothstep',
+  markerEnd: { type: MarkerType.ArrowClosed },
+  style: { stroke: ENTRY_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '3,3' },
+  labelStyle: { fill: ENTRY_EDGE_COLOR, fontSize: 10 },
+  data: {
+    kind: 'requires',
+    inferred: true,
+    expression: entryReason || 'entry trigger',
+    provenance: { functionName: consumerId, dialogName: provenance.dialogName }
+  }
+});
+
 const identifyQuestNodes = (
   semanticModel: SemanticModel,
   questName: string,
@@ -490,33 +673,10 @@ const identifyQuestNodes = (
       if (isRelevantByKnows) {
         const context = getDialogContextForFunction(func.name, semanticModel);
         const conditionSummary = getConditionSummaryForFunction(func.name, semanticModel);
-      nodeDataMap.set(func.name, {
-          id: func.name,
-          type: 'check',
-          label: context.dialogName || func.name,
-          npc: context.npc,
-          description: 'Indirect prerequisite',
-          nodeKind: 'function',
-          kind: 'dialog',
-          sourceKind: inferFunctionSourceKind(
-            func.name,
-            Boolean(context.dialogName),
-            getFunctionFilePath(func)
-          ),
-          conditionExpression: conditionSummary.conditionExpression,
-          conditionCount: conditionSummary.conditionCount,
-          conditionMode: conditionSummary.conditionMode,
-          entrySurface: false,
-          latentEntry: false,
-          entryReason: undefined,
-          inferred: true,
-          touchesSelectedQuest: false,
-          provenance: {
-            filePath: getFunctionFilePath(func),
-            functionName: func.name,
-            dialogName: context.dialogName
-          }
-        });
+        nodeDataMap.set(
+          func.name,
+          buildInferredFunctionNodeData(func.name, context, conditionSummary, getFunctionFilePath(func))
+        );
         addedAny = true;
       }
     });
@@ -551,33 +711,10 @@ const identifyQuestNodes = (
 
           const context = getDialogContextForFunction(producerId, semanticModel);
           const conditionSummary = getConditionSummaryForFunction(producerId, semanticModel);
-          nodeDataMap.set(producerId, {
-            id: producerId,
-            type: 'check',
-            label: context.dialogName || producerId,
-            npc: context.npc,
-            description: 'Indirect prerequisite',
-            nodeKind: 'function',
-            kind: 'dialog',
-            sourceKind: inferFunctionSourceKind(
-              producerId,
-              Boolean(context.dialogName),
-              getFunctionFilePath(producerFunc)
-            ),
-            conditionExpression: conditionSummary.conditionExpression,
-            conditionCount: conditionSummary.conditionCount,
-            conditionMode: conditionSummary.conditionMode,
-            entrySurface: false,
-            latentEntry: false,
-            entryReason: undefined,
-            inferred: true,
-            touchesSelectedQuest: false,
-            provenance: {
-              filePath: getFunctionFilePath(producerFunc),
-              functionName: producerId,
-              dialogName: context.dialogName
-            }
-          });
+          nodeDataMap.set(
+            producerId,
+            buildInferredFunctionNodeData(producerId, context, conditionSummary, getFunctionFilePath(producerFunc))
+          );
           addedAny = true;
         });
       });
@@ -625,27 +762,15 @@ const buildQuestEdges = (
         ? 'in-trigger'
         : 'in-condition-0';
 
-      edges.push({
-        id: `choice-${consumerId}-${targetFunc}-${actionIndex}`,
-        source: consumerId,
-        target: targetFunc,
+      edges.push(buildChoiceEdge(
+        consumerId,
+        targetFunc,
+        actionIndex,
+        action.text,
         sourceHandle,
         targetHandle,
-        label: action.text,
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' },
-        labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 },
-        data: {
-          kind: 'transitions',
-          choiceIndex: actionIndex,
-          inferred: false,
-          provenance: {
-            functionName: consumerId,
-            dialogName: consumerData.provenance?.dialogName
-          }
-        }
-      });
+        { functionName: consumerId, dialogName: consumerData.provenance?.dialogName }
+      ));
       addAdjacency(consumerId, targetFunc);
     });
 
@@ -690,30 +815,17 @@ const buildQuestEdges = (
         });
       }
 
-      edges.push({
-        id: `condition-edge-${conditionNodeId}-${consumerId}`,
-        source: conditionNodeId,
-        target: consumerId,
-        sourceHandle: 'out-bool',
-        targetHandle: 'in-condition-' + conditionPosition,
-        label: `requires ${shortenExpression(expression || conditionLabel, 40)}`,
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: '#ffb74d', strokeWidth: 2 },
-        labelStyle: { fill: '#ffb74d', fontSize: 10 },
-        data: {
-          kind: 'requires',
-          inferred: false,
-          expression,
-          operator: conditionType === 'VariableCondition'
-            ? ((cond as { operator?: '==' | '!=' | '<' | '>' | '<=' | '>=' }).operator)
-            : undefined,
-          provenance: {
-            functionName: ownerFunctionName,
-            dialogName: consumerData.provenance?.dialogName
-          }
-        }
-      });
+      edges.push(buildConditionEdge(
+        conditionNodeId,
+        consumerId,
+        conditionPosition,
+        expression,
+        conditionLabel,
+        conditionType,
+        cond,
+        ownerFunctionName,
+        { functionName: ownerFunctionName, dialogName: consumerData.provenance?.dialogName }
+      ));
       addedConditionEdge = true;
       addAdjacency(conditionNodeId, consumerId);
 
@@ -728,27 +840,15 @@ const buildQuestEdges = (
         }
 
         if (producerFunc && nodeDataMap.has(producerFunc)) {
-          edges.push({
-            id: `knows-${producerFunc}-${consumerId}`,
-            source: producerFunc,
-            target: consumerId,
-            sourceHandle: 'out-finished',
-            targetHandle: 'in-condition-' + conditionPosition,
-            label: `requires knows ${producerDialogName}`,
-            type: 'smoothstep',
-            markerEnd: { type: MarkerType.ArrowClosed },
-            style: { stroke: '#b1b1b7', strokeWidth: 2, strokeDasharray: '3,3' },
-            labelStyle: { fill: '#b1b1b7', fontSize: 10 },
-            data: {
-              kind: 'requires',
-              inferred: nodeDataMap.get(producerFunc)?.inferred || false,
-              expression: `Npc_KnowsInfo(..., ${producerDialogName})`,
-              provenance: {
-                functionName: ownerFunctionName,
-                dialogName: consumerData.provenance?.dialogName
-              }
-            }
-          });
+          edges.push(buildKnowsEdge(
+            producerFunc,
+            consumerId,
+            conditionPosition,
+            producerDialogName,
+            nodeDataMap.get(producerFunc)?.inferred || false,
+            ownerFunctionName,
+            { functionName: ownerFunctionName, dialogName: consumerData.provenance?.dialogName }
+          ));
           addAdjacency(producerFunc, consumerId);
         }
         return;
@@ -769,29 +869,17 @@ const buildQuestEdges = (
         producers.forEach((producerId) => {
           if (producerId === consumerId || !nodeDataMap.has(producerId)) return;
           const producerNode = nodeDataMap.get(producerId)!;
-          edges.push({
-            id: `var-${variableName}-${producerId}-${consumerId}`,
-            source: producerId,
-            target: consumerId,
-            sourceHandle: 'out-state',
-            targetHandle: 'in-condition-' + conditionPosition,
-            label: `requires ${variableName} == ${rawValue}`,
-            type: 'smoothstep',
-            animated: true,
-            markerEnd: { type: MarkerType.ArrowClosed },
-            style: { stroke: '#2196f3', strokeWidth: 2, strokeDasharray: '3,3' },
-            labelStyle: { fill: '#2196f3', fontSize: 10 },
-            data: {
-              kind: 'requires',
-              inferred: producerNode.inferred,
-              expression: `${variableName} ${operator} ${rawValue}`,
-              operator: operator as '==' | '!=' | '<' | '>' | '<=' | '>=' | undefined,
-              provenance: {
-                functionName: ownerFunctionName,
-                dialogName: consumerData.provenance?.dialogName
-              }
-            }
-          });
+          edges.push(buildVariableEdge(
+            producerId,
+            consumerId,
+            conditionPosition,
+            variableName,
+            rawValue,
+            operator,
+            producerNode.inferred,
+            ownerFunctionName,
+            { functionName: ownerFunctionName, dialogName: consumerData.provenance?.dialogName }
+          ));
           addAdjacency(producerId, consumerId);
         });
       }
@@ -830,27 +918,12 @@ const buildQuestEdges = (
         });
       }
 
-      edges.push({
-        id: `external-entry-edge-${externalId}-${consumerId}`,
-        source: externalId,
-        target: consumerId,
-        sourceHandle: 'out-bool',
-        targetHandle: 'in-condition-0',
-        label: 'requires entry trigger',
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: '#81c784', strokeWidth: 2, strokeDasharray: '3,3' },
-        labelStyle: { fill: '#81c784', fontSize: 10 },
-        data: {
-          kind: 'requires',
-          inferred: true,
-          expression: consumerData.entryReason || 'entry trigger',
-          provenance: {
-            functionName: consumerId,
-            dialogName: consumerData.provenance?.dialogName
-          }
-        }
-      });
+      edges.push(buildExternalEntryEdge(
+        externalId,
+        consumerId,
+        consumerData.entryReason || 'entry trigger',
+        { functionName: consumerId, dialogName: consumerData.provenance?.dialogName }
+      ));
       addAdjacency(externalId, consumerId);
     }
   });
@@ -957,11 +1030,8 @@ const calculateDagreLayout = (
   edges: QuestGraphEdge[],
   misVarName: string
 ): QuestGraphNode[] => {
-  const NODE_WIDTH = 280;
-  const NODE_HEIGHT = 132;
-
   const g = new dagre.graphlib.Graph({ compound: true });
-  g.setGraph({ rankdir: 'LR', align: 'UL', ranksep: 180, nodesep: 120, edgesep: 60, marginx: 40, marginy: 40 });
+  g.setGraph(DAGRE_LAYOUT);
   g.setDefaultEdgeLabel(() => ({}));
 
   const npcNodes = new Map<string, string[]>();

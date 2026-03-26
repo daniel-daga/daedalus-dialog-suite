@@ -69,7 +69,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 3. `questGraphUtils.tsx` — 1,104 lines
+### 3. `questGraphUtils.tsx` — 1,104 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/components/QuestEditor/questGraphUtils.tsx`
 
 8 concerns in a single utility module:
@@ -201,7 +201,7 @@ Orchestrates parser, semantic analysis, and code-generator validation, and also 
 |----------|--------|------|-------|-----------|
 | HIGH | `editorStore.ts` | store/editorStore.ts | 1,137 | 8 concerns, manual cross-store sync |
 | HIGH | `ThreeColumnLayout.tsx` | components/ | 1,111 | 214-line creation fn, inline utility soup |
-| HIGH | `questGraphUtils.tsx` | QuestEditor/ | 1,104 | Duplicated node/edge builders, magic constants |
+| ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
 | HIGH | `ConditionCard.tsx` | components/ | 765 | 492-line render function, 30+ object rebuilds |
 | MEDIUM | `projectStore.ts` | store/ | 850 | 116-line pure computation inside store |
 | MEDIUM | `semantic-model.ts` | parser/ | 1,510 | 24 boilerplate action classes |
