@@ -5,6 +5,7 @@
 
 import { ACTION_TEMPLATES, getOppositeSpeaker } from './actionTemplates';
 import type { ActionTypeId } from './actionTypes';
+import type { DialogAction, SemanticModel } from '../types/global';
 
 type DialogSpeaker = 'self' | 'other';
 
@@ -23,7 +24,7 @@ const DEFAULT_DIALOG_SPEAKER_TOKEN: Record<DialogSpeaker, string> = {
  * Generate a unique ID for an action
  */
 export function generateActionId(): string {
-  return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `action_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 }
 
 function escapeRegExp(value: string): string {
@@ -66,7 +67,7 @@ function parseDialogLineId(id: string, dialogName?: string): ParsedDialogLineId 
 
 function chooseSpeakerToken(
   speaker: DialogSpeaker,
-  actions: any[]
+  actions: DialogAction[]
 ): string {
   const tokenCounts = new Map<string, number>();
 
@@ -102,7 +103,7 @@ function chooseSpeakerToken(
 export interface DialogLineIdOptions {
   dialogName?: string;
   speaker: DialogSpeaker;
-  actions?: any[];
+  actions?: DialogAction[];
 }
 
 export function createDialogLineId(options: DialogLineIdOptions): string {
@@ -145,9 +146,9 @@ export function createDialogLineId(options: DialogLineIdOptions): string {
 
 export interface ActionCreationContext {
   dialogName?: string;
-  currentAction?: any;
-  semanticModel?: any;
-  actions?: any[];
+  currentAction?: DialogAction;
+  semanticModel?: SemanticModel;
+  actions?: DialogAction[];
 }
 
 /**
@@ -156,14 +157,14 @@ export interface ActionCreationContext {
 export function createAction(
   actionType: ActionTypeId,
   context: ActionCreationContext = {}
-): any {
+): DialogAction {
   const { dialogName, currentAction, actions } = context;
 
-  let action: any;
+  let action: DialogAction;
   switch (actionType) {
     case 'dialogLine': {
       // Toggle speaker if we have a current action
-      const speaker = currentAction?.speaker
+      const speaker = currentAction && 'speaker' in currentAction && currentAction.speaker
         ? getOppositeSpeaker(currentAction.speaker)
         : 'other';
       action = ACTION_TEMPLATES.dialogLine(speaker, '');
@@ -266,14 +267,17 @@ export function createAction(
       throw new Error(`Unknown action type: ${actionType}`);
   }
 
-  if (actionType === 'dialogLine' && action && action.speaker) {
-    action.id = createDialogLineId({
-      dialogName,
-      speaker: action.speaker,
-      actions: actions || []
-    });
-  } else if (action && (!action.id || action.id === 'NEW_LINE_ID')) {
-    action.id = generateActionId();
+  if (actionType === 'dialogLine' && 'speaker' in action) {
+    action = {
+      ...action,
+      id: createDialogLineId({
+        dialogName,
+        speaker: action.speaker,
+        actions: actions || []
+      })
+    };
+  } else if (!('id' in action) || !action.id || action.id === 'NEW_LINE_ID') {
+    action = { ...action, id: generateActionId() } as DialogAction;
   }
 
   return action;
@@ -286,9 +290,9 @@ export function createAction(
 export function createActionAfterIndex(
   actionType: ActionTypeId,
   index: number,
-  actions: any[],
+  actions: DialogAction[],
   dialogName?: string
-): any {
+): DialogAction {
   const currentAction = actions[index];
   return createAction(actionType, {
     dialogName,

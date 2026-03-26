@@ -110,10 +110,9 @@ export function useDialogEditorCommands({
       const newFunctionName = generateUniqueChoiceFunctionName(dialogName, modelForUniqueness);
       const newFunction = createEmptyFunction(newFunctionName);
       updateFunction(filePath, newFunctionName, newFunction);
-      newAction = {
-        ...newAction,
-        targetFunction: newFunctionName
-      };
+      if (newAction.type === 'Choice') {
+        newAction = { ...newAction, targetFunction: newFunctionName };
+      }
     }
 
     const logEntryAction = actionType === 'createTopic'

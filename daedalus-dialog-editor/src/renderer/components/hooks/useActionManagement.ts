@@ -221,10 +221,10 @@ export function useActionManagement(config: ActionManagementConfig) {
         if (!prev) return prev;
         const actions = prev.actions || [];
 
-        const newAction = createAction('choice', { dialogName: contextName }) as DialogAction;
-        if ('targetFunction' in newAction) {
-          newAction.targetFunction = newFunctionName;
-        }
+        const newAction = {
+          ...createAction('choice', { dialogName: contextName }),
+          targetFunction: newFunctionName
+        };
 
         const newActions = insertActionAfterPath(actions, path, newAction);
         const visiblePaths = flattenActionPaths(newActions);
@@ -258,18 +258,21 @@ export function useActionManagement(config: ActionManagementConfig) {
               : actions;
           })();
 
-      const newAction = createActionAfterIndex(
+      let newAction = createActionAfterIndex(
         actionType,
         parentIndex,
         siblingActions,
         contextName
-      ) as DialogAction;
+      );
       if (newAction.type === 'DialogLine') {
-        newAction.id = createDialogLineId({
-          dialogName: contextName,
-          speaker: newAction.speaker,
-          actions: getAllDialogLineActions(actions)
-        });
+        newAction = {
+          ...newAction,
+          id: createDialogLineId({
+            dialogName: contextName,
+            speaker: newAction.speaker,
+            actions: getAllDialogLineActions(actions)
+          })
+        };
       }
 
       let newActions = insertActionAfterPath(actions, path, newAction);
@@ -278,7 +281,7 @@ export function useActionManagement(config: ActionManagementConfig) {
       const createTopicPath = insertedIndex > 0 ? visiblePaths[insertedIndex] : null;
 
       if (actionType === 'createTopic' && createTopicPath) {
-        const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined }) as DialogAction;
+        const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined });
         newActions = insertActionAfterPath(newActions, createTopicPath, logEntryAction);
         nextPath = createTopicPath;
       } else {
@@ -303,17 +306,20 @@ export function useActionManagement(config: ActionManagementConfig) {
         ? target[branch === 'then' ? 'thenActions' : 'elseActions']
         : [];
       const currentAction = branchActions[branchActions.length - 1];
-      const newAction = createAction(actionType, {
+      let newAction = createAction(actionType, {
         dialogName: contextName,
         currentAction,
         actions: branchActions
-      }) as DialogAction;
+      });
       if (newAction.type === 'DialogLine') {
-        newAction.id = createDialogLineId({
-          dialogName: contextName,
-          speaker: newAction.speaker,
-          actions: getAllDialogLineActions(actions)
-        });
+        newAction = {
+          ...newAction,
+          id: createDialogLineId({
+            dialogName: contextName,
+            speaker: newAction.speaker,
+            actions: getAllDialogLineActions(actions)
+          })
+        };
       }
 
       nextPath = [...path, branch, branchActions.length];

@@ -321,17 +321,48 @@ interface TypedRendererProps<T extends DialogAction> extends Omit<BaseActionRend
 
 ## Recommended Priority
 
-| Priority | Issue | Effort |
-|----------|-------|--------|
-| High | #7b Escape key deletes any action unconditionally | Low |
-| High | #1 Remove `any` types from factories/utils | Medium |
-| High | #2 Use `type` discriminant in `getActionType` | Low |
-| High | #10 Fix `ActionsList` memo comparator | Low |
-| Medium | #3 Deduplicate action menu items | Low |
-| Medium | #4 Fix unmount flush race condition | Medium |
-| Medium | #5 Replace `JSON.stringify` with `actionPathToKey` | Low |
-| Medium | #7 Replace `alert()` with snackbar | Low |
-| Medium | #8b Verify default speaker consistency | Low |
-| Low | #6 Replace `setTimeout` with proper deferred focus | Medium |
-| Low | #14 Simplify `createAction` switch to lookup | Low |
-| Low | #8, #9, #11-13, #15-16 | Low |
+| Priority | Issue | Effort | Status |
+|----------|-------|--------|--------|
+| High | #7b Escape key deletes any action unconditionally | Low | FIXED |
+| High | #1 Remove `any` types from factories/utils | Medium | FIXED |
+| High | #2 Use `type` discriminant in `getActionType` | Low | FIXED |
+| High | #10 Fix `ActionsList` memo comparator | Low | FIXED |
+| Medium | #3 Deduplicate action menu items | Low | |
+| Medium | #4 Fix unmount flush race condition | Medium | |
+| Medium | #5 Replace `JSON.stringify` with `actionPathToKey` | Low | |
+| Medium | #7 Replace `alert()` with snackbar | Low | |
+| Medium | #8b Verify default speaker consistency | Low | |
+| Low | #6 Replace `setTimeout` with proper deferred focus | Medium | |
+| Low | #14 Simplify `createAction` switch to lookup | Low | |
+| Low | #8, #9, #11-13, #15-16 | Low | |
+
+---
+
+## Fix Log
+
+### #7b - Escape key: changed from unconditional delete to blur/defocus
+**File:** `ActionCard.tsx`
+Escape now blurs the focused input instead of deleting the action. This is safe,
+non-destructive, and consistent with standard UI conventions.
+
+### #1 - Removed `any` types from `dialogUtils.ts` and `actionFactory.ts`
+**Files:** `dialogUtils.ts`, `actionFactory.ts`
+- `createEmptyFunction` now returns `DialogFunction` (also fixed `returnType: 'void'`
+  to `'VOID'` to match the union type).
+- `generateUniqueChoiceFunctionName` now accepts `SemanticModel` instead of `any`.
+- `validateChoiceFunctionName` now accepts `SemanticModel` instead of `any`.
+- `createAction` now returns `DialogAction` instead of `any`.
+- `createActionAfterIndex` now returns `DialogAction` instead of `any`.
+- `ActionCreationContext` fields now use `DialogAction[]` and `SemanticModel` instead of `any`.
+- `chooseSpeakerToken` `actions` parameter now uses `DialogAction[]`.
+
+### #2 - `getActionType` rewritten to use `type` discriminant
+**File:** `actionTypes.ts`
+Replaced the fragile property-sniffing chain with a `TYPE_TO_ID` lookup map keyed on the
+`type` discriminant field. Falls back to property-sniffing only for legacy actions that
+lack a `type` field, and finally to `'customAction'`.
+
+### #10 - `ActionsList` memo comparator: allow re-render on changed action references
+**File:** `ActionsList.tsx`
+When action references differ (even if identity matches), the comparator now returns
+`false` so the updated action propagates to `ActionCard`.

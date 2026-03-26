@@ -163,7 +163,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       handleDeleteAndFocusPrev();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      handleDeleteAndFocusPrev();
+      (e.target as HTMLElement).blur();
     }
   }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText]);
 
