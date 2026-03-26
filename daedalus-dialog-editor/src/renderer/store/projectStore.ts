@@ -50,7 +50,7 @@ interface ProjectState {
   // Project index (lightweight)
   npcList: string[];
   routineList: string[];
-  dialogIndex: Map<string, DialogMetadata[]>; // NPC ID Ã¢â€ â€™ dialogs
+  dialogIndex: Map<string, DialogMetadata[]>; // NPC ID → dialogs
   allDialogFiles: string[];
   questFiles: string[];
 

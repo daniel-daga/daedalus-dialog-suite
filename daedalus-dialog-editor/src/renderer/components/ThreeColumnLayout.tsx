@@ -11,6 +11,15 @@ import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
 import SearchPanel from './SearchPanel';
 import { createDialogLineId } from './actionFactory';
 import type { SemanticModel, FunctionTreeNode, FunctionTreeChild, ChoiceAction, Dialog, DialogFunction, GlobalInstance } from '../types/global';
+import {
+  normalizeIdentifier,
+  makeUniqueName,
+  normalizePath,
+  getDirectoryName,
+  joinPath,
+  escapeRegExp,
+  createNpcInstanceTemplate
+} from '../utils/pathAndIdentifierUtils';
 
 interface ThreeColumnLayoutProps {
   filePath: string | null;
@@ -20,69 +29,6 @@ interface RecentDialogTab {
   dialogName: string;
   npcName: string;
   functionName: string | null;
-}
-
-function normalizeIdentifier(value: string, fallback: string): string {
-  const normalized = value
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/[^A-Za-z0-9_]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-  if (!normalized) {
-    return fallback;
-  }
-
-  return /^[0-9]/.test(normalized) ? `N_${normalized}` : normalized;
-}
-
-function makeUniqueName(baseName: string, existing: Set<string>): string {
-  if (!existing.has(baseName)) {
-    return baseName;
-  }
-
-  let suffix = 1;
-  let candidate = `${baseName}_${suffix}`;
-  while (existing.has(candidate)) {
-    suffix += 1;
-    candidate = `${baseName}_${suffix}`;
-  }
-
-  return candidate;
-}
-
-function normalizePath(pathValue: string): string {
-  return pathValue.replace(/\\/g, '/');
-}
-
-function getDirectoryName(pathValue: string): string {
-  const normalized = normalizePath(pathValue);
-  const lastSlash = normalized.lastIndexOf('/');
-  return lastSlash >= 0 ? normalized.slice(0, lastSlash) : '';
-}
-
-function joinPath(directory: string, fileName: string): string {
-  if (!directory) {
-    return fileName;
-  }
-
-  const normalized = normalizePath(directory).replace(/\/+$/g, '');
-  return `${normalized}/${fileName}`;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function createNpcInstanceTemplate(npcName: string): string {
-  return [
-    `INSTANCE ${npcName} (C_NPC)`,
-    '{',
-    `\tname = "${npcName}";`,
-    '};',
-    ''
-  ].join('\n');
 }
 
 const EMPTY_SEMANTIC_MODEL: SemanticModel = {
@@ -267,52 +213,13 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     const func = deferredFunctions?.[funcName];
     if (!func) return null;
 
-    // Check cache first (LRU - Bug #4 fix)
-    // PERFORMANCE OPTIMIZATION: Lazy Verification
-    // Instead of clearing the entire cache when semanticModel changes, we verify if the cached node is still valid.
+    // Check cache first (LRU). Fast path: reference equality only.
+    // Content-equality via JSON.stringify was O(n) serialization on every reference-miss
+    // and defeated the purpose of caching. When the reference changes we rebuild instead.
     const cached = lruCacheGet(cacheKey);
     if (cached !== undefined && cached !== null) {
-      // 1. Fast Path: Reference equality (Same model or same object)
       if (cached.function === func) {
         return cached;
-      }
-
-      // 2. Optimization: Content equality
-      // Check if function definition is identical (using JSON.stringify for deep comparison)
-      if (JSON.stringify(func) === JSON.stringify(cached.function)) {
-        // Function definition is same, but children might have changed (if their functions changed)
-        // We must verify children subtrees recursively.
-        const newPath = [...ancestorPath, funcName];
-        let childrenChanged = false;
-
-        const newChildren = cached.children
-          .map((child) => {
-            const newSubtree = buildFunctionTree(child.targetFunction, newPath);
-            // Reference comparison: if subtree changed, it returns a new object
-            if (newSubtree !== child.subtree) {
-              childrenChanged = true;
-              return { ...child, subtree: newSubtree };
-            }
-            return child;
-          })
-          .filter((child) => child.subtree !== null);
-
-        // If all children are identical to cached version, return cached node
-        if (!childrenChanged) {
-          // Update the cached function reference to the new one to hit fast path next time!
-          const updatedNode = { ...cached, function: func };
-          lruCacheSet(cacheKey, updatedNode);
-          return updatedNode;
-        }
-
-        // If children changed, create new node but avoid reparsing actions
-        const newNode: FunctionTreeNode = {
-          ...cached,
-          function: func, // Update function ref
-          children: newChildren
-        };
-        lruCacheSet(cacheKey, newNode);
-        return newNode;
       }
     }
 
