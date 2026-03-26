@@ -312,6 +312,18 @@ interface EditorStore {
 }
 
 /**
+ * Parse source code and normalise action IDs in one step.
+ *
+ * Separates the parse + ID-normalisation concern from the I/O and store-mutation
+ * logic in `openFile` and `saveSource`. When the parsed model has syntax errors
+ * it is returned as-is (ID normalisation is skipped for broken models).
+ */
+async function parseSourceWithIds(sourceCode: string): Promise<SemanticModel> {
+  const model = await window.editorAPI.parseSource(sourceCode);
+  return model.hasErrors ? model : ensureActionIds(model);
+}
+
+/**
  * Sync the committed semantic model for a file from editorStore into projectStore.
  * Called after every mutation that updates a file's semantic model.
  */
@@ -343,42 +355,20 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
 
   openFile: async (filePath: string) => {
     try {
-      // Read and parse file in main process (has access to native modules)
+      // I/O: read raw source from disk (main process has access to native modules)
       const sourceCode = await window.editorAPI.readFile(filePath);
-      const model = await window.editorAPI.parseSource(sourceCode);
 
-      // Check for syntax errors
-      if (model.hasErrors) {
-        // Do not process the model if there are syntax errors
-        const fileState: FileState = {
-          filePath,
-          semanticModel: model,
-          isDirty: false,
-          lastSaved: new Date(),
-          originalCode: sourceCode,
-          hasErrors: true,
-          errors: model.errors || [],
-        };
-
-      set((state) => {
-          state.openFiles.set(filePath, fileState);
-          state.questHistory.set(filePath, { past: [], future: [] });
-          state.activeFile = filePath;
-        });
-        return;
-      }
-
-      // Ensure all actions have unique IDs (only for valid models)
-      const modelWithIds = ensureActionIds(model);
+      // Parse + normalise: single step that owns both concerns
+      const processedModel = await parseSourceWithIds(sourceCode);
 
       const fileState: FileState = {
         filePath,
-        semanticModel: modelWithIds,
+        semanticModel: processedModel,
         isDirty: false,
         lastSaved: new Date(),
         originalCode: sourceCode,
-        hasErrors: false,
-        errors: [],
+        hasErrors: processedModel.hasErrors || false,
+        errors: processedModel.errors || [],
       };
 
       set((state) => {
@@ -699,24 +689,21 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       // 1. Write file
       await window.editorAPI.writeFile(filePath, code);
 
-      // 2. Parse and update model
-      const model = await window.editorAPI.parseSource(code);
+      // 2. Parse + normalise IDs
+      const processedModel = await parseSourceWithIds(code);
 
-      // 3. Ensure action IDs if valid
-      const processedModel = model.hasErrors ? model : ensureActionIds(model);
-
-      // 4. Update state
+      // 3. Update state
       set((state) => {
         const currentFileState = state.openFiles.get(filePath);
         if (currentFileState) {
-            currentFileState.semanticModel = processedModel;
-            currentFileState.isDirty = false;
-            currentFileState.lastSaved = new Date();
-            currentFileState.originalCode = code;
-            currentFileState.workingCode = undefined; // Clear working code as it matches disk
-            currentFileState.hasErrors = model.hasErrors || false;
-            currentFileState.errors = model.errors || [];
-            currentFileState.lastValidationResult = undefined; // Clear old validation result
+          currentFileState.semanticModel = processedModel;
+          currentFileState.isDirty = false;
+          currentFileState.lastSaved = new Date();
+          currentFileState.originalCode = code;
+          currentFileState.workingCode = undefined; // Clear working code as it matches disk
+          currentFileState.hasErrors = processedModel.hasErrors || false;
+          currentFileState.errors = processedModel.errors || [];
+          currentFileState.lastValidationResult = undefined; // Clear old validation result
         }
         state.questHistory.set(filePath, { past: [], future: [] });
         state.questNodePositions.set(filePath, new Map());
