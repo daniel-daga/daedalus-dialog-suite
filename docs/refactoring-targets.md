@@ -6,7 +6,7 @@ Audit of god components, muddled concerns, and maintainability red flags.
 
 ## Tier 1 — God Components (>1000 lines, 5+ distinct concerns)
 
-### 1. `editorStore.ts` — 1,137 lines
+### 1. `editorStore.ts` — ~~1,137~~ 1,046 lines (partially refactored)
 **File:** `daedalus-dialog-editor/src/renderer/store/editorStore.ts`
 
 Handles 8 unrelated concerns in a single Zustand store:
@@ -15,24 +15,27 @@ Handles 8 unrelated concerns in a single Zustand store:
 |---------|-------|
 | File open/close lifecycle | 398–481 |
 | Dialog/function update operations (`updateDialog`, `updateFunction`, `updateDialogConditionFunction`) | 484–675 |
-| Undo/redo history helpers (`applyUndoForFile`, `applyRedoForFile`, `createQuestHistorySnapshot`) | 171–247 |
-| Batch quest history across files (`applyQuestModelsWithHistory`) | 847–892 |
-| Quest node position (visual state) | 1004–1081 |
-| Source code save/parse cycle (`saveSource`) | 774–812 |
-| Validation + code generation (`validateFile`, `saveFile`, `generateCode`) | 677–763 |
-| UI selection state (selected NPC, dialog, quest, action) | 1083–1105 |
+| Undo/redo history helpers (`applyUndoForFile`, `applyRedoForFile`) | 138–204 |
+| Batch quest history across files (`applyQuestModelsWithHistory`) | 786–831 |
+| Quest node position (visual state) | 919–958 |
+| Source code save/parse cycle (`saveSource`) | 713–752 |
+| Validation + code generation (`validateFile`, `saveFile`, `generateCode`) | 619–712 |
+| UI selection state (selected NPC, dialog, quest, action) | 992–1014 |
 
 **Red flags:**
 - `openFile()` (lines 398–447): 50-line function mixing I/O, parsing, and ID normalisation
-- Repeated store-sync pattern 4× with no abstraction: `useProjectStore.getState().updateFileModel(filePath, model)` (lines 477, 497, 528, 600)
+- ~~Repeated store-sync pattern 4× with no abstraction~~ ✅ fixed: 13 inline sync blocks consolidated into `syncToProjectStore(filePath, get)`
 - No single source of truth: both `editorStore` and `projectStore` hold a copy of `semanticModel`; updates are manually pushed between them
-- History helper functions live at module scope (lines 156–247) with 4-argument signatures instead of encapsulated context
+- ~~History helper functions live at module scope (lines 156–247) with 4-argument signatures instead of encapsulated context~~ ✅ fixed: `cloneSemanticModel`, `cloneQuestNodePositionsForFile`, `createQuestHistorySnapshot`, `normalizeBatchFilePaths` and all history types extracted to `utils/historyUtils.ts`
 
-**Suggested split:**
+**Completed:**
+- ✅ `utils/historyUtils.ts` — history types (`QuestNodePosition`, `QuestNodePositionMap`, `QuestHistorySnapshot`, `QuestHistoryState`, `QuestBatchHistoryState`) and 4 pure helper functions extracted from module scope
+- ✅ `syncToProjectStore()` — single named helper replaces 13 inline repetitions of the cross-store sync pattern
+
+**Remaining suggested split:**
 - `fileStore` — open/close/save, dirty tracking
-- `historyStore` — undo/redo state + snapshot helpers
+- `historyStore` — undo/redo state + snapshot helpers (move `applyUndoForFile`/`applyRedoForFile` + store state)
 - `uiSelectionStore` — selected NPC/dialog/quest/action
-- `utils/historyUtils.ts` — pure helper functions extracted from module scope
 
 ---
 
@@ -202,7 +205,7 @@ Orchestrates parser, semantic analysis, and code-generator validation, and also 
 
 | Priority | Target | File | Lines | Key Smell |
 |----------|--------|------|-------|-----------|
-| HIGH | `editorStore.ts` | store/editorStore.ts | 1,137 | 8 concerns, manual cross-store sync |
+| HIGH 🔄 | `editorStore.ts` | store/editorStore.ts | ~~1,137~~ 1,046 | 8 concerns (sync pattern fixed ✅, history types extracted ✅) |
 | HIGH 🔄 | `ThreeColumnLayout.tsx` | components/ | 1,111 | 214-line creation fn (utils extracted ✅, JSON.stringify cache fixed ✅) |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |

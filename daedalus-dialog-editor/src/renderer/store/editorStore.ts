@@ -4,6 +4,18 @@ import { enableMapSet } from 'immer';
 import { createDialogLineId } from '../components/actionFactory';
 import { collectDialogLineActions } from '../components/nestedActionUtils';
 import { useProjectStore } from './projectStore';
+import {
+  cloneSemanticModel,
+  cloneQuestNodePositionsForFile,
+  createQuestHistorySnapshot,
+  normalizeBatchFilePaths,
+} from '../utils/historyUtils';
+import type {
+  QuestNodePosition,
+  QuestNodePositionMap,
+  QuestHistoryState,
+  QuestBatchHistoryState,
+} from '../utils/historyUtils';
 import type {
   SemanticModel,
   Dialog,
@@ -108,13 +120,6 @@ function ensureActionIds(model: SemanticModel): SemanticModel {
   return { ...model, functions: updatedFunctions };
 }
 
-function cloneSemanticModel(model: SemanticModel): SemanticModel {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(model);
-  }
-  return JSON.parse(JSON.stringify(model)) as SemanticModel;
-}
-
 interface FileState {
   filePath: string;
   semanticModel: SemanticModel;
@@ -128,56 +133,6 @@ interface FileState {
   autoSaveError?: ValidationResult;
 }
 
-interface QuestHistoryState {
-  past: QuestHistorySnapshot[];
-  future: QuestHistorySnapshot[];
-}
-
-interface QuestNodePosition {
-  x: number;
-  y: number;
-}
-
-type QuestNodePositionMap = Map<string, QuestNodePosition>;
-
-interface QuestHistorySnapshot {
-  model: SemanticModel;
-  nodePositions: Map<string, QuestNodePositionMap>;
-}
-
-interface QuestBatchHistoryState {
-  past: string[][];
-  future: string[][];
-}
-
-const normalizeBatchFilePaths = (filePaths: string[]): string[] => (
-  Array.from(new Set(filePaths.filter((filePath) => filePath.trim().length > 0)))
-);
-
-function cloneQuestNodePositionsForFile(
-  positions: Map<string, QuestNodePositionMap> | undefined
-): Map<string, QuestNodePositionMap> {
-  if (!positions) return new Map();
-  const cloned = new Map<string, QuestNodePositionMap>();
-  positions.forEach((nodeMap, questName) => {
-    const nextNodeMap: QuestNodePositionMap = new Map();
-    nodeMap.forEach((position, nodeId) => {
-      nextNodeMap.set(nodeId, { x: position.x, y: position.y });
-    });
-    cloned.set(questName, nextNodeMap);
-  });
-  return cloned;
-}
-
-function createQuestHistorySnapshot(
-  model: SemanticModel,
-  fileQuestPositions: Map<string, QuestNodePositionMap> | undefined
-): QuestHistorySnapshot {
-  return {
-    model: cloneSemanticModel(model),
-    nodePositions: cloneQuestNodePositionsForFile(fileQuestPositions)
-  };
-}
 
 const applyUndoForFile = (
   openFiles: Map<string, FileState>,
@@ -371,6 +326,17 @@ interface EditorStore {
   resetEditorSession: () => void;
 }
 
+/**
+ * Sync the committed semantic model for a file from editorStore into projectStore.
+ * Called after every mutation that updates a file's semantic model.
+ */
+function syncToProjectStore(filePath: string, get: () => EditorStore): void {
+  const committedModel = get().openFiles.get(filePath)?.semanticModel;
+  if (committedModel) {
+    useProjectStore.getState().updateFileModel(filePath, committedModel);
+  }
+}
+
 export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   project: null,
   openFiles: new Map(),
@@ -475,11 +441,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
         fileState.hasErrors = false;
       }
     });
-    // Sync with project store using the committed (non-draft) state
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => {
@@ -494,11 +456,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    // Sync with project store using the committed (non-draft) state
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   updateDialogWithUpdater: (filePath: string, dialogName: string, updater: (existingDialog: Dialog) => Dialog | null) => {
@@ -524,11 +482,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   updateDialogWithNormalizedProperties: (filePath: string, dialogName: string, updater: (existingDialog: Dialog) => Dialog | null) => {
@@ -565,11 +519,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    // Sync with project store using the committed (non-draft) state
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   updateFunctionWithUpdater: (filePath: string, functionName: string, updater: (existingFunction: DialogFunction) => DialogFunction | null) => {
@@ -595,11 +545,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   renameFunction: (filePath: string, oldFunctionName: string, newFunctionName: string) => {
@@ -624,11 +570,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   updateDialogConditionFunction: (filePath: string, dialogName: string, updater: (existingFunction: DialogFunction) => DialogFunction | null) => {
@@ -663,11 +605,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   replaceDialogConditionFunction: (filePath: string, dialogName: string, updatedFunction: DialogFunction) => {
@@ -837,11 +775,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    syncToProjectStore(filePath, get);
   },
 
   applyQuestModelsWithHistory: (updates: Array<{ filePath: string; model: SemanticModel }>) => {
@@ -883,12 +817,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       }
     });
 
-    uniqueUpdates.forEach((_, filePath) => {
-      const committedModel = get().openFiles.get(filePath)?.semanticModel;
-      if (committedModel) {
-        useProjectStore.getState().updateFileModel(filePath, committedModel);
-      }
-    });
+    uniqueUpdates.forEach((_, filePath) => { syncToProjectStore(filePath, get); });
   },
 
   undoQuestModel: (filePath: string) => {
@@ -896,12 +825,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     set((state) => {
       didUndo = applyUndoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
     });
-
-    if (!didUndo) return;
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    if (didUndo) syncToProjectStore(filePath, get);
   },
 
   redoQuestModel: (filePath: string) => {
@@ -909,12 +833,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     set((state) => {
       didRedo = applyRedoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
     });
-
-    if (!didRedo) return;
-    const committedModel = get().openFiles.get(filePath)?.semanticModel;
-    if (committedModel) {
-      useProjectStore.getState().updateFileModel(filePath, committedModel);
-    }
+    if (didRedo) syncToProjectStore(filePath, get);
   },
 
   canUndoQuestModel: (filePath: string) => {
@@ -954,12 +873,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       undoneBatch = actuallyUndone;
     });
 
-    undoneBatch.forEach((filePath) => {
-      const committedModel = get().openFiles.get(filePath)?.semanticModel;
-      if (committedModel) {
-        useProjectStore.getState().updateFileModel(filePath, committedModel);
-      }
-    });
+    undoneBatch.forEach((filePath) => { syncToProjectStore(filePath, get); });
   },
 
   redoLastQuestBatch: () => {
@@ -989,12 +903,7 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       redoneBatch = actuallyRedone;
     });
 
-    redoneBatch.forEach((filePath) => {
-      const committedModel = get().openFiles.get(filePath)?.semanticModel;
-      if (committedModel) {
-        useProjectStore.getState().updateFileModel(filePath, committedModel);
-      }
-    });
+    redoneBatch.forEach((filePath) => { syncToProjectStore(filePath, get); });
   },
 
   canUndoLastQuestBatch: () => get().questBatchHistory.past.length > 0,
