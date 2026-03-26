@@ -64,6 +64,60 @@ interface CodeGeneratorSettings {
 }
 
 /**
+ * Maps action type names to human-readable display labels used in error messages.
+ */
+const ACTION_DISPLAY_NAMES: Readonly<Partial<Record<string, string>>> = {
+  SetVariableAction:        'Set Variable',
+  DialogLine:               'Dialog Line',
+  Choice:                   'Choice',
+  LogEntry:                 'Log Entry',
+  CreateTopic:              'Create Topic',
+  LogSetTopicStatus:        'Log Set Topic Status',
+  CreateInventoryItems:     'Create Inventory Items',
+  GiveInventoryItems:       'Give Inventory Items',
+  AttackAction:             'Attack Action',
+  SetAttitudeAction:        'Set Attitude',
+  ExchangeRoutineAction:    'Exchange Routine',
+  PlayAniAction:            'Play Animation',
+  GivePlayerXPAction:       'Give XP',
+  PickpocketAction:         'Pickpocket',
+  StartOtherRoutineAction:  'Start Other Routine',
+  TeachAction:              'Teach',
+  GiveTradeInventoryAction: 'Give Trade Inventory',
+  RemoveInventoryItemsAction: 'Remove Inventory Items',
+  InsertNpcAction:          'Insert NPC',
+};
+
+/**
+ * Registry of required-field validators, one per action type.
+ * Each function returns a human-readable error suffix (starting with "is missing …")
+ * or null when the action is valid. PickpocketAction has mode-dependent rules and is
+ * handled separately in validateActions().
+ */
+type ActionValidatorFn = (action: any) => string | null;
+
+const ACTION_REQUIRED_FIELD_VALIDATORS: Readonly<Partial<Record<string, ActionValidatorFn>>> = {
+  SetVariableAction:        (a) => (!a.variableName || !a.variableName.trim())    ? 'is missing a variable name' : null,
+  DialogLine:               (a) => (!a.speaker || !a.id)                          ? 'is missing speaker or ID' : null,
+  Choice:                   (a) => (!a.dialogRef || !a.targetFunction)            ? 'is missing dialog reference or target function' : null,
+  LogEntry:                 (a) => (!a.topic)                                     ? 'is missing a topic' : null,
+  CreateTopic:              (a) => (!a.topic)                                     ? 'is missing a topic' : null,
+  LogSetTopicStatus:        (a) => (!a.topic)                                     ? 'is missing a topic' : null,
+  CreateInventoryItems:     (a) => (!a.target || !a.item)                         ? 'is missing target or item' : null,
+  GiveInventoryItems:       (a) => (!a.giver || !a.receiver || !a.item)           ? 'is missing giver, receiver, or item' : null,
+  AttackAction:             (a) => (!a.attacker || !a.target || !a.attackReason)  ? 'is missing attacker, target, or reason' : null,
+  SetAttitudeAction:        (a) => (!a.target || !a.attitude)                     ? 'is missing target or attitude' : null,
+  ExchangeRoutineAction:    (a) => (!a.target || !a.routine)                      ? 'is missing target or routine' : null,
+  PlayAniAction:            (a) => (!a.target || !a.animationName)                ? 'is missing target or animation name' : null,
+  GivePlayerXPAction:       (a) => (!a.xpAmount || !String(a.xpAmount).trim())    ? 'is missing XP amount' : null,
+  StartOtherRoutineAction:  (a) => (!a.routineFunctionName || !a.routineNpc || !a.routineName) ? 'is missing function, NPC, or routine name' : null,
+  TeachAction:              (a) => (!a.teachFunctionName || !Array.isArray(a.teachArgs))        ? 'is missing teach function or argument list' : null,
+  GiveTradeInventoryAction: (a) => (!a.tradeTarget)                               ? 'is missing target' : null,
+  RemoveInventoryItemsAction: (a) => (!a.removeFunctionName || !a.removeNpc || !a.removeItem || !a.removeQuantity) ? 'is missing function, NPC, item, or quantity' : null,
+  InsertNpcAction:          (a) => (!a.npcInstance || !a.spawnPoint)              ? 'is missing NPC instance or spawn point' : null,
+};
+
+/**
  * ValidationService - Validates semantic models before saving
  *
  * Performs the following validations:
@@ -366,7 +420,9 @@ export class ValidationService {
   }
 
   /**
-   * Comprehensive validation for all action types
+   * Comprehensive validation for all action types.
+   * Most types are handled via ACTION_REQUIRED_FIELD_VALIDATORS; PickpocketAction
+   * has mode-dependent rules and is handled inline below.
    */
   private validateActions(model: any): ValidationError[] {
     const errors: ValidationError[] = [];
@@ -378,170 +434,37 @@ export class ValidationService {
       actions.forEach((action: any, index: number) => {
         const actionType = action.type;
         const location = `action ${index + 1} in function '${funcName}'`;
+        const displayName = ACTION_DISPLAY_NAMES[actionType] ?? actionType;
 
-        switch (actionType) {
-          case 'SetVariableAction':
-            if (!action.variableName || !action.variableName.trim()) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Set Variable ${location} is missing a variable name`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'DialogLine':
-            if (!action.speaker || !action.id) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Dialog Line ${location} is missing speaker or ID`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'Choice':
-            if (!action.dialogRef || !action.targetFunction) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Choice ${location} is missing dialog reference or target function`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'LogEntry':
-          case 'CreateTopic':
-          case 'LogSetTopicStatus':
-            if (!action.topic) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `${actionType} ${location} is missing a topic`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'CreateInventoryItems':
-            if (!action.target || !action.item) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Create Inventory Items ${location} is missing target or item`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'GiveInventoryItems':
-            if (!action.giver || !action.receiver || !action.item) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Give Inventory Items ${location} is missing giver, receiver, or item`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'AttackAction':
-            if (!action.attacker || !action.target || !action.attackReason) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Attack Action ${location} is missing attacker, target, or reason`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'SetAttitudeAction':
-            if (!action.target || !action.attitude) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Set Attitude ${location} is missing target or attitude`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'ExchangeRoutineAction':
-            if (!action.target || !action.routine) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Exchange Routine ${location} is missing target or routine`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'PlayAniAction':
-            if (!action.target || !action.animationName) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Play Animation ${location} is missing target or animation name`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'GivePlayerXPAction':
-            if (!action.xpAmount || !String(action.xpAmount).trim()) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Give XP ${location} is missing XP amount`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'PickpocketAction':
-            if (!action.pickpocketMode) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Pickpocket ${location} is missing mode`,
-                functionName: funcName
-              });
-            }
-            if (action.pickpocketMode === 'C_Beklauen' && (!action.minChance || !action.maxChance)) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Pickpocket ${location} requires min/max chance for C_Beklauen`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'StartOtherRoutineAction':
-            if (!action.routineFunctionName || !action.routineNpc || !action.routineName) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Start Other Routine ${location} is missing function, NPC, or routine name`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'TeachAction':
-            if (!action.teachFunctionName || !Array.isArray(action.teachArgs)) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Teach ${location} is missing teach function or argument list`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'GiveTradeInventoryAction':
-            if (!action.tradeTarget) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Give Trade Inventory ${location} is missing target`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'RemoveInventoryItemsAction':
-            if (!action.removeFunctionName || !action.removeNpc || !action.removeItem || !action.removeQuantity) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Remove Inventory Items ${location} is missing function, NPC, item, or quantity`,
-                functionName: funcName
-              });
-            }
-            break;
-          case 'InsertNpcAction':
-            if (!action.npcInstance || !action.spawnPoint) {
-              errors.push({
-                type: 'missing_required_property',
-                message: `Insert NPC ${location} is missing NPC instance or spawn point`,
-                functionName: funcName
-              });
-            }
-            break;
+        // Registry-based required-field check
+        const validator = ACTION_REQUIRED_FIELD_VALIDATORS[actionType];
+        if (validator) {
+          const errorSuffix = validator(action);
+          if (errorSuffix) {
+            errors.push({
+              type: 'missing_required_property',
+              message: `${displayName} ${location} ${errorSuffix}`,
+              functionName: funcName
+            });
+          }
+        }
+
+        // PickpocketAction: mode-dependent validation not expressible as a single-line rule
+        if (actionType === 'PickpocketAction') {
+          if (!action.pickpocketMode) {
+            errors.push({
+              type: 'missing_required_property',
+              message: `Pickpocket ${location} is missing mode`,
+              functionName: funcName
+            });
+          }
+          if (action.pickpocketMode === 'C_Beklauen' && (!action.minChance || !action.maxChance)) {
+            errors.push({
+              type: 'missing_required_property',
+              message: `Pickpocket ${location} requires min/max chance for C_Beklauen`,
+              functionName: funcName
+            });
+          }
         }
       });
     }

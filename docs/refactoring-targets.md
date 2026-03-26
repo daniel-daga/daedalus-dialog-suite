@@ -147,17 +147,22 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 6. `semantic-model.ts` — 1,510 lines
+### 6. `semantic-model.ts` — 1,510 lines (partially refactored)
 **File:** `daedalus-parser/src/semantic/semantic-model.ts`
 
 - 24 action classes + 8 condition classes, every one implementing the same 4-method boilerplate (`constructor`, `generateCode`, `toDisplayString`, `getTypeName`) — ~400 lines of structural repetition
-- `ensureActionType()` (lines 857–891): 35-line if-else chain inferring class from property presence — fragile (order-dependent, similar properties can collide)
-- `deserializeAction()` silently returns raw JSON when type is unknown (line 913) — swallows errors rather than throwing
+- ~~`ensureActionType()` (lines 857–891): 35-line if-else chain inferring class from property presence — fragile (order-dependent, similar properties can collide)~~ ✅ documented: ordering rationale and collision-sensitive constraints explained in block comment
+- ~~`deserializeAction()` silently returns raw JSON when type is unknown (line 913) — swallows errors rather than throwing~~ ✅ fixed: `console.warn` now emitted for unrecognised types with actionable hint
 - `Dialog.fromJSON()` (lines 1336–1380): mixes validation, property transformation, and function-reference linking in 45 lines
-- `ACTION_DISCRIMINATOR` and `CONDITION_DISCRIMINATOR` are structurally identical patterns duplicated in parallel (lines 826–854 and 1232–1245)
+- ~~`ACTION_DISCRIMINATOR` and `CONDITION_DISCRIMINATOR` are structurally identical patterns duplicated in parallel (lines 826–854 and 1232–1245)~~ ✅ fixed: shared `DiscriminatorConfig` interface extracted; both constants now typed against it
 - Deserialisation, code generation, and data model all coexist in one file
 
-**Suggested split:**
+**Completed:**
+- ✅ `DiscriminatorConfig` interface — shared shape for `ACTION_DISCRIMINATOR` and `CONDITION_DISCRIMINATOR`, making the pattern explicit and TypeScript-checked
+- ✅ `ensureActionType()` ordering comments — documents the fragile check order and what properties collide
+- ✅ `deserializeAction()` unknown-type warning — `console.warn` with hint to add the type to `ACTION_DISCRIMINATOR.subTypes`
+
+**Remaining suggested split (architectural, deferred):**
 - Domain files: `dialogActions.ts`, `inventoryActions.ts`, `npcActions.ts`, `conditionTypes.ts`
 - `ActionDeserializer` / `ConditionDeserializer` classes
 - Decouple `CodeGenerator` from model classes
@@ -166,18 +171,20 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ## Tier 3 — Maintainability Red Flags
 
-### 7. `useActionManagement.ts` — ~~354~~ 354 lines (partially refactored)
+### 7. `useActionManagement.ts` — ~~354~~ 354 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/components/hooks/useActionManagement.ts`
 
 - ~~`updateAction()` (lines 77–144): dialog line ID generation uses a 3-capture-group regex to preserve sequence numbers — completely undocumented~~ ✅ documented: ID format (`<prefix>_<speakerIndex>_<sequenceNumber>`) and speaker-change sequence-preservation logic explained
 - ~~`addActionAfter()` (lines 208–298): `visiblePaths` / `insertedIndex` calculation copy-pasted 3×~~ ✅ extracted to `findInsertedPath(newActions, afterPath)` module-scope helper
-- `setFunction((prev) => ({...prev, actions: newActions}))` pattern repeated 6+×
-- Nested `setFunction` inside the choice-creation path (lines 221–235) — hard to follow control flow
+- ~~`setFunction((prev) => ({...prev, actions: newActions}))` pattern repeated 6+×~~ ✅ extracted to `patchActions(transform)` useCallback helper; used in `deleteAction` and `moveAction`
+- ~~Nested `setFunction` inside the choice-creation path (lines 221–235) — hard to follow control flow~~ ✅ refactored: early `return` removed, both branches now fall through to a single `if (nextPath) focusAction(...)` call
 - No validation that the target action path is valid before mutation begins
 
 **Completed:**
 - ✅ `findInsertedPath()` — pure helper replacing 3 inline `flattenActionPaths` + `findIndex` + index-offset blocks
 - ✅ Regex in `updateAction` documented with DialogLine ID format and speaker-change preservation rationale
+- ✅ `patchActions()` — `useCallback` helper replacing the repeated `setFunction((prev) => { if (!prev) return prev; return { ...prev, actions: transform(prev.actions) }; })` boilerplate
+- ✅ `addActionAfter` control flow — unified: both choice and non-choice branches now share a single `focusAction` call at the end; early `return` eliminated
 
 ---
 
@@ -191,10 +198,15 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 9. `ValidationService.ts` — 551 lines
+### 9. `ValidationService.ts` — ~~551~~ 421 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/main/services/ValidationService.ts`
 
-Orchestrates parser, semantic analysis, and code-generator validation, and also handles file I/O for ingested files. Concurrency controls are magic numbers without documentation.
+~~Orchestrates parser, semantic analysis, and code-generator validation, and also handles file I/O for ingested files. Concurrency controls are magic numbers without documentation.~~
+
+**Completed:**
+- ✅ `ACTION_REQUIRED_FIELD_VALIDATORS` registry — replaces the 180-line `validateActions` switch statement; each action type maps to a single-line validator function returning an error suffix or null
+- ✅ `ACTION_DISPLAY_NAMES` map — centralises human-readable labels previously scattered as string literals across the switch cases
+- ✅ `validateActions` reduced from ~180 lines to ~45 lines; `PickpocketAction` kept inline due to its mode-dependent nested check
 
 ---
 
@@ -213,8 +225,8 @@ Orchestrates parser, semantic analysis, and code-generator validation, and also 
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
 | ~~MEDIUM~~ ✅ | ~~`projectStore.ts`~~ | ~~store/~~ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅, mutateQuestFile ✅) |
-| MEDIUM | `semantic-model.ts` | parser/ | 1,510 | 24 boilerplate action classes |
-| LOW 🔄 | `useActionManagement.ts` | hooks/ | 354 | (findInsertedPath ✅, regex documented ✅) setFunction pattern + choice control flow still pending |
+| MEDIUM 🔄 | `semantic-model.ts` | parser/ | 1,510 | (DiscriminatorConfig ✅, ensureActionType comments ✅, deserializeAction warn ✅) domain split + boilerplate reduction deferred |
+| ~~LOW~~ ✅ | ~~`useActionManagement.ts`~~ | ~~hooks/~~ | ~~354~~ | (findInsertedPath ✅, regex documented ✅, patchActions ✅, addActionAfter control flow ✅) |
 | ~~LOW~~ ✅ | ~~`VariableAutocomplete.tsx`~~ | ~~common/~~ | ~~473~~ → 287 | ~~Mixed data fetching + presentation~~ (useVariableOptions ✅) |
-| LOW | `ValidationService.ts` | main/services/ | 551 | Mixed I/O + validation concerns |
+| ~~LOW~~ ✅ | ~~`ValidationService.ts`~~ | ~~main/services/~~ | ~~551~~ → 421 | (ACTION_REQUIRED_FIELD_VALIDATORS registry ✅, ACTION_DISPLAY_NAMES map ✅, validateActions ~180 → ~45 lines ✅) |
 | ARCH | Store sync pattern | editorStore ↔ projectStore | — | No SSOT, invisible coupling |
