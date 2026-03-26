@@ -9,12 +9,14 @@ import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
 import { actionPathToKey } from './nestedActionUtils';
 import ActionTypeMenu from './common/ActionTypeMenu';
+import DeleteConfirmDialog from './common/DeleteConfirmDialog';
 
 const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName, dragHandleProps, filePath }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [hasFocus, setHasFocus] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   // Local state for text input to avoid parent re-renders on every keystroke
   const [localAction, setLocalAction] = useState(action);
@@ -163,7 +165,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       handleDeleteAndFocusPrev();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      (e.target as HTMLElement).blur();
+      flushUpdate();
+      setDeleteConfirmOpen(true);
     }
   }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText]);
 
@@ -297,6 +300,19 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
           mainFieldRef.current?.focus();
         }}
         onSelect={handleAddActionAfter}
+      />
+
+      {/* Delete confirmation dialog */}
+      <DeleteConfirmDialog
+        open={deleteConfirmOpen}
+        onConfirm={() => {
+          setDeleteConfirmOpen(false);
+          handleDeleteAndFocusPrev();
+        }}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          mainFieldRef.current?.focus();
+        }}
       />
 
       {/* "+" button in divider */}

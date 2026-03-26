@@ -340,10 +340,12 @@ interface TypedRendererProps<T extends DialogAction> extends Omit<BaseActionRend
 
 ## Fix Log
 
-### #7b - Escape key: changed from unconditional delete to blur/defocus
-**File:** `ActionCard.tsx`
-Escape now blurs the focused input instead of deleting the action. This is safe,
-non-destructive, and consistent with standard UI conventions.
+### #7b - Escape key: opens delete confirmation dialog
+**Files:** `ActionCard.tsx`, `common/DeleteConfirmDialog.tsx` (new)
+Escape now opens a confirmation dialog ("Are you sure you want to delete this action?").
+The confirm button is auto-focused so pressing Enter immediately confirms deletion.
+Cancel returns focus to the action's main field. The `DeleteConfirmDialog` component is
+reusable for any future delete confirmation needs.
 
 ### #1 - Removed `any` types from `dialogUtils.ts` and `actionFactory.ts`
 **Files:** `dialogUtils.ts`, `actionFactory.ts`
