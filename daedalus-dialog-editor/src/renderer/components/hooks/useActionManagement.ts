@@ -64,6 +64,21 @@ export function useActionManagement(config: ActionManagementConfig) {
   } = config;
 
   /**
+   * Applies a pure transform to the function's actions list.
+   * Handles the null guard and `{ ...prev, actions }` spread that every
+   * setFunction callback otherwise has to repeat.
+   */
+  const patchActions = useCallback(
+    (transform: (actions: DialogAction[]) => DialogAction[]) => {
+      setFunction((prev) => {
+        if (!prev) return prev;
+        return { ...prev, actions: transform(prev.actions || []) };
+      });
+    },
+    [setFunction]
+  );
+
+  /**
    * Collect all dialog line actions across all functions belonging to the same dialog.
    * Uses live actions for the current function (may have unsaved edits) and
    * semantic model data for all sibling functions.
@@ -172,12 +187,8 @@ export function useActionManagement(config: ActionManagementConfig) {
    * Delete an action at a specific index
    */
   const deleteAction = useCallback((path: ActionPath) => {
-    setFunction((prev) => {
-      if (!prev) return prev;
-      const newActions = deleteNestedActionAtPath(prev.actions || [], path);
-      return { ...prev, actions: newActions };
-    });
-  }, [setFunction]);
+    patchActions((actions) => deleteNestedActionAtPath(actions, path));
+  }, [patchActions]);
 
   /**
    * Delete an action and focus the previous one
@@ -230,86 +241,75 @@ export function useActionManagement(config: ActionManagementConfig) {
    */
   const addActionAfter = useCallback((path: ActionPath, actionType: ActionTypeId) => {
     let nextPath: ActionPath | null = null;
-    // Handle choice creation specially to generate target function
+
     if (actionType === 'choice' && semanticModel) {
+      // Choice creation: generate a fresh target function before inserting the action
       const newFunctionName = generateUniqueChoiceFunctionName(contextName, semanticModel);
       const newFunction = createEmptyFunction(newFunctionName);
+      onUpdateSemanticModel?.(newFunctionName, newFunction);
 
-      // Add the new function to semantic model
-      if (onUpdateSemanticModel) {
-        onUpdateSemanticModel(newFunctionName, newFunction);
-      }
-
-      // Now add the choice action using factory
       setFunction((prev) => {
         if (!prev) return prev;
         const actions = prev.actions || [];
-
         const newAction = {
           ...createAction('choice', { dialogName: contextName }),
           targetFunction: newFunctionName
         };
-
         const newActions = insertActionAfterPath(actions, path, newAction);
         nextPath = findInsertedPath(newActions, path);
         return { ...prev, actions: newActions };
       });
+    } else {
+      // All other action types: use the factory
+      setFunction((prev) => {
+        if (!prev) return prev;
+        const actions = prev.actions || [];
+        const parentIndex = path[path.length - 1] as number;
+        const siblingActions = path.length === 1
+          ? actions
+          : (() => {
+              const branch = path[path.length - 2];
+              const parentPath = path.slice(0, -2);
+              const parent = getActionAtPath(actions, parentPath);
+              if (branch !== 'then' && branch !== 'else') {
+                return actions;
+              }
+              return parent?.type === 'ConditionalAction'
+                ? parent[branch === 'then' ? 'thenActions' : 'elseActions']
+                : actions;
+            })();
 
-      if (nextPath) {
-        focusAction(nextPath, true);
-      }
-      return;
+        let newAction = createActionAfterIndex(
+          actionType,
+          parentIndex,
+          siblingActions,
+          contextName
+        );
+        if (newAction.type === 'DialogLine') {
+          newAction = {
+            ...newAction,
+            id: createDialogLineId({
+              dialogName: contextName,
+              speaker: newAction.speaker,
+              actions: getAllDialogLineActions(actions)
+            })
+          };
+        }
+
+        let newActions = insertActionAfterPath(actions, path, newAction);
+        const createTopicPath = findInsertedPath(newActions, path);
+
+        if (actionType === 'createTopic' && createTopicPath) {
+          const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined });
+          newActions = insertActionAfterPath(newActions, createTopicPath, logEntryAction);
+          nextPath = createTopicPath;
+        } else {
+          nextPath = createTopicPath;
+        }
+
+        return { ...prev, actions: newActions };
+      });
     }
-
-    // Use factory for all other action types
-    setFunction((prev) => {
-      if (!prev) return prev;
-      const actions = prev.actions || [];
-      const parentIndex = path[path.length - 1] as number;
-      const siblingActions = path.length === 1
-        ? actions
-        : (() => {
-            const branch = path[path.length - 2];
-            const parentPath = path.slice(0, -2);
-            const parent = getActionAtPath(actions, parentPath);
-            if (branch !== 'then' && branch !== 'else') {
-              return actions;
-            }
-            return parent?.type === 'ConditionalAction'
-              ? parent[branch === 'then' ? 'thenActions' : 'elseActions']
-              : actions;
-          })();
-
-      let newAction = createActionAfterIndex(
-        actionType,
-        parentIndex,
-        siblingActions,
-        contextName
-      );
-      if (newAction.type === 'DialogLine') {
-        newAction = {
-          ...newAction,
-          id: createDialogLineId({
-            dialogName: contextName,
-            speaker: newAction.speaker,
-            actions: getAllDialogLineActions(actions)
-          })
-        };
-      }
-
-      let newActions = insertActionAfterPath(actions, path, newAction);
-      const createTopicPath = findInsertedPath(newActions, path);
-
-      if (actionType === 'createTopic' && createTopicPath) {
-        const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined });
-        newActions = insertActionAfterPath(newActions, createTopicPath, logEntryAction);
-        nextPath = createTopicPath;
-      } else {
-        nextPath = createTopicPath;
-      }
-
-      return { ...prev, actions: newActions };
-    });
 
     if (nextPath) {
       focusAction(nextPath, true);
@@ -355,11 +355,8 @@ export function useActionManagement(config: ActionManagementConfig) {
   }, [setFunction, contextName, focusAction, getAllDialogLineActions]);
 
   const moveAction = useCallback((pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => {
-    setFunction((prev) => {
-      if (!prev) return prev;
-      return { ...prev, actions: moveActionWithinLevel(prev.actions || [], pathPrefix, sourceIndex, destinationIndex) };
-    });
-  }, [setFunction]);
+    patchActions((actions) => moveActionWithinLevel(actions, pathPrefix, sourceIndex, destinationIndex));
+  }, [patchActions]);
 
   return {
     updateAction,

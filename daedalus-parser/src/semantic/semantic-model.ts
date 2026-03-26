@@ -823,7 +823,17 @@ export type DialogAction =
   | InsertNpcAction
   | HeroFollowsAction;
 
-const ACTION_DISCRIMINATOR = {
+/**
+ * Discriminator table shape used by class-transformer's polymorphic @Type() decorator.
+ * Both ACTION_DISCRIMINATOR and CONDITION_DISCRIMINATOR follow this same structure;
+ * the shared type makes the pattern explicit and lets TypeScript catch typos.
+ */
+interface DiscriminatorConfig {
+  property: 'type';
+  subTypes: Array<{ value: ClassConstructor<object>; name: string }>;
+}
+
+const ACTION_DISCRIMINATOR: DiscriminatorConfig = {
   property: 'type',
   subTypes: [
     { value: DialogLine, name: 'DialogLine' },
@@ -853,7 +863,19 @@ const ACTION_DISCRIMINATOR = {
   ],
 };
 
-// Helper to ensure action has a type (legacy support)
+// Helper to ensure action has a type (legacy support for serialised JSON without 'type' fields).
+//
+// IMPORTANT: The if-else order below is fragile — several action classes share overlapping
+// property names. More-specific checks (unique discriminating properties) must appear
+// before less-specific ones to avoid misclassification:
+//   - 'CreateTopic'  (topic + topicType) before 'LogEntry' (topic + text): both have 'topic'
+//   - 'CreateInventoryItems' (target + item + quantity, no giver) before 'GiveInventoryItems'
+//   - 'PlayAniAction' (target + animationName) before 'StopProcessInfosAction' (only target)
+//   - 'StartOtherRoutineAction' (routineFunctionName + routineNpc + routineName) before
+//     'ExchangeRoutineAction' (routine)
+//
+// When adding a new action type, insert its check in the correct position relative to
+// any existing checks that share property names.
 function ensureActionType(json: any): void {
   if (!json.type) {
     if ('speaker' in json && 'text' in json && 'id' in json) json.type = 'DialogLine';
@@ -908,6 +930,10 @@ export function deserializeAction(json: any): DialogAction | any {
       }
       return instance;
     }
+    // Unknown type: warn instead of silently returning raw JSON, which would let
+    // type-unsafe data propagate undetected. Add the missing type to
+    // ACTION_DISCRIMINATOR.subTypes to suppress this warning.
+    console.warn(`[deserializeAction] Unrecognised action type "${json.type}" — returning raw JSON. Add it to ACTION_DISCRIMINATOR.subTypes.`);
   }
 
   return json;
@@ -1229,7 +1255,7 @@ export type DialogCondition =
   | VariableCondition
   | QuestStateCondition;
 
-const CONDITION_DISCRIMINATOR = {
+const CONDITION_DISCRIMINATOR: DiscriminatorConfig = {
   property: 'type',
   subTypes: [
     { value: NpcKnowsInfoCondition, name: 'NpcKnowsInfoCondition' },
