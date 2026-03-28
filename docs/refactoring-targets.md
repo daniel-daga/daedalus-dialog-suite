@@ -133,7 +133,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 - ~~`invalidateCacheForFile()` inline boilerplate repeated 4×~~ ✅ consolidated into a shared `invalidateCacheForFile()` closure inside the store
 - ~~Encoding bug at line 53: `// NPC ID Ã¢â€ â€™ dialogs`~~ ✅ fixed: `// NPC ID → dialogs`
 - ~~IPC Map deserialisation block copy-pasted 3× (lines 175–178)~~ ✅ extracted to `utils/ipcSerialisation.ts` (`deserialiseIpcMap`)
-- Magic concurrency constants not documented: `CONCURRENCY_LIMIT = 20` (line 253), `500` ms flush interval (line 247)
+- ~~Magic concurrency constants not documented: `CONCURRENCY_LIMIT = 20` (line 253), `500` ms flush interval (line 247)~~ ✅ documented: `CONCURRENCY_LIMIT` comment explains the worker-pool sizing rationale; `500` ms flush interval comment explains the batch-window / progressive-loading trade-off
 
 **Completed:**
 - ✅ `utils/questAnalyzer.ts` — pure `getQuestUsage(parsedFiles, questName)` extracted; 116-line store action replaced with a one-liner
@@ -161,13 +161,13 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 6. `semantic-model.ts` — 1,510 lines (partially refactored)
+### 6. `semantic-model.ts` — ~~1,510~~ 1,536 lines ✅ DONE
 **File:** `daedalus-parser/src/semantic/semantic-model.ts`
 
 - 24 action classes + 8 condition classes, every one implementing the same 4-method boilerplate (`constructor`, `generateCode`, `toDisplayString`, `getTypeName`) — ~400 lines of structural repetition
 - ~~`ensureActionType()` (lines 857–891): 35-line if-else chain inferring class from property presence — fragile (order-dependent, similar properties can collide)~~ ✅ documented: ordering rationale and collision-sensitive constraints explained in block comment
 - ~~`deserializeAction()` silently returns raw JSON when type is unknown (line 913) — swallows errors rather than throwing~~ ✅ fixed: `console.warn` now emitted for unrecognised types with actionable hint
-- `Dialog.fromJSON()` (lines 1336–1380): mixes validation, property transformation, and function-reference linking in 45 lines
+- ~~`Dialog.fromJSON()` (lines 1336–1380): mixes validation, property transformation, and function-reference linking in 45 lines~~ ✅ fixed: `linkPropertiesToFunctions()` extracted as a module-scope helper owning the function-reference linking concern; `fromJSON` now handles only property transformation (scalar-field validation + copying)
 - ~~`ACTION_DISCRIMINATOR` and `CONDITION_DISCRIMINATOR` are structurally identical patterns duplicated in parallel (lines 826–854 and 1232–1245)~~ ✅ fixed: shared `DiscriminatorConfig` interface extracted; both constants now typed against it
 - Deserialisation, code generation, and data model all coexist in one file
 
@@ -175,6 +175,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 - ✅ `DiscriminatorConfig` interface — shared shape for `ACTION_DISCRIMINATOR` and `CONDITION_DISCRIMINATOR`, making the pattern explicit and TypeScript-checked
 - ✅ `ensureActionType()` ordering comments — documents the fragile check order and what properties collide
 - ✅ `deserializeAction()` unknown-type warning — `console.warn` with hint to add the type to `ACTION_DISCRIMINATOR.subTypes`
+- ✅ `linkPropertiesToFunctions()` — module-scope helper owning the function-reference linking concern extracted from `Dialog.fromJSON`; `fromJSON` now only handles scalar-field transformation
 
 **Remaining suggested split (architectural, deferred):**
 - Domain files: `dialogActions.ts`, `inventoryActions.ts`, `npcActions.ts`, `conditionTypes.ts`
@@ -238,8 +239,8 @@ Handles 8 unrelated concerns in a single Zustand store:
 | ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 366 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅, useDialogTransition ✅, useNpcDialogErrors ✅, useDialogNavigation ✅, useSearchNavigation ✅) |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ (constants ✅, buildInferredFunctionNodeData ✅, edge factories ✅, ID builders ✅, inferConditionType WeakMap ✅) |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
-| ~~MEDIUM~~ ✅ | ~~`projectStore.ts`~~ | ~~store/~~ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅, mutateQuestFile ✅) |
-| MEDIUM 🔄 | `semantic-model.ts` | parser/ | 1,510 | (DiscriminatorConfig ✅, ensureActionType comments ✅, deserializeAction warn ✅) domain split + boilerplate reduction deferred |
+| ~~MEDIUM~~ ✅ | ~~`projectStore.ts`~~ | ~~store/~~ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅, mutateQuestFile ✅, concurrency constants documented ✅) |
+| ~~MEDIUM~~ ✅ | ~~`semantic-model.ts`~~ | ~~parser/~~ | ~~1,510~~ | (DiscriminatorConfig ✅, ensureActionType comments ✅, deserializeAction warn ✅, linkPropertiesToFunctions ✅) domain split + boilerplate reduction deferred |
 | ~~LOW~~ ✅ | ~~`useActionManagement.ts`~~ | ~~hooks/~~ | ~~354~~ | (findInsertedPath ✅, regex documented ✅, patchActions ✅, addActionAfter control flow ✅) |
 | ~~LOW~~ ✅ | ~~`VariableAutocomplete.tsx`~~ | ~~common/~~ | ~~473~~ → 287 | ~~Mixed data fetching + presentation~~ (useVariableOptions ✅) |
 | ~~LOW~~ ✅ | ~~`ValidationService.ts`~~ | ~~main/services/~~ | ~~551~~ → 421 | (ACTION_REQUIRED_FIELD_VALIDATORS registry ✅, ACTION_DISPLAY_NAMES map ✅, validateActions ~180 → ~45 lines ✅) |

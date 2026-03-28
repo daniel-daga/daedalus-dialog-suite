@@ -255,6 +255,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
     };
     
+    // 500 ms: coarse batch window — avoids per-file state updates during bulk ingestion
+    // while still providing progressive loading feedback in the UI
     const flushInterval = setInterval(flushUpdates, 500);
 
     // Process in background
