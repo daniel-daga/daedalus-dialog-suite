@@ -1338,6 +1338,41 @@ export class DialogFunction {
 // DIALOG CLASS
 // ===================================================================
 
+/**
+ * Resolves raw property values to live `DialogFunction` instances where the
+ * value is a function reference (either a DialogFunction-shaped object or a
+ * bare name string).  Plain non-function values are passed through unchanged.
+ *
+ * Extracted from `Dialog.fromJSON` to separate the function-reference linking
+ * concern from property transformation and scalar validation.
+ */
+function linkPropertiesToFunctions(
+  dialogName: string,
+  rawProperties: Record<string, any>,
+  functionsMap: { [key: string]: DialogFunction },
+): DialogProperties {
+  const linked: DialogProperties = {};
+  for (const key in rawProperties) {
+    const value = rawProperties[key];
+    if (typeof value === 'object' && value !== null && 'name' in value && 'returnType' in value) {
+      // Property holds a serialised DialogFunction shape — resolve to the live instance.
+      const linkedFunc = functionsMap[value.name];
+      if (!linkedFunc) {
+        console.warn(`Function '${value.name}' referenced in dialog '${dialogName}' but not found in model`);
+        linked[key] = value.name;
+      } else {
+        linked[key] = linkedFunc;
+      }
+    } else if (typeof value === 'string' && functionsMap[value]) {
+      // Property was already normalised to just the function name string.
+      linked[key] = functionsMap[value];
+    } else {
+      linked[key] = value;
+    }
+  }
+  return linked;
+}
+
 export class Dialog {
   public name: string;
   public parent: string | null;
@@ -1360,6 +1395,7 @@ export class Dialog {
   }
 
   static fromJSON(json: any, functionsMap: { [key: string]: DialogFunction }): Dialog {
+    // --- property transformation: copy optional scalar fields ---
     const dialog = new Dialog(json.name, json.parent);
     if (typeof json.keyword === 'string') {
       dialog.keyword = json.keyword;
@@ -1377,30 +1413,8 @@ export class Dialog {
       dialog.propertyExpressionKeys = json.propertyExpressionKeys;
     }
 
-    // Reconstruct properties, linking to DialogFunction instances
-    for (const key in json.properties) {
-      const value = json.properties[key];
-
-      // Check if this property references a function
-      if (typeof value === 'object' && value !== null && 'name' in value && 'returnType' in value) {
-        // Link to the reconstructed function from the map
-        const linkedFunc = functionsMap[value.name];
-        if (!linkedFunc) {
-          console.warn(`Function '${value.name}' referenced in dialog '${json.name}' but not found in model`);
-          // Preserve as function name string instead of assigning undefined
-          // Or if we want to match the previous logic exactly, we keep it as is if it's already a DialogFunction-like object
-          // But since we are reconstructing, we really want the reference to the object in functionsMap
-          dialog.properties[key] = value.name; 
-        } else {
-          dialog.properties[key] = linkedFunc;
-        }
-      } else if (typeof value === 'string' && functionsMap[value]) {
-        // Handle case where it was normalized to just a string name
-        dialog.properties[key] = functionsMap[value];
-      } else {
-        dialog.properties[key] = value;
-      }
-    }
+    // --- function-reference linking: resolve property values to live DialogFunction instances ---
+    dialog.properties = linkPropertiesToFunctions(json.name, json.properties ?? {}, functionsMap);
 
     return dialog;
   }
