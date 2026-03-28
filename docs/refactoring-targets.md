@@ -41,7 +41,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 2. `ThreeColumnLayout.tsx` — ~~1,111~~ 647 lines ✅ DONE
+### 2. `ThreeColumnLayout.tsx` — ~~1,111~~ ~~647~~ 366 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/components/ThreeColumnLayout.tsx`
 
 10 distinct concerns inside one React component:
@@ -51,12 +51,12 @@ Handles 8 unrelated concerns in a single Zustand store:
 | Dialog creation (`createDialogForNpc`) | 518–732 | ✅ extracted |
 | Function tree building with LRU caching (`buildFunctionTree`) | 252–354 | ✅ extracted |
 | Recent dialog tab management | 806–900 | ✅ extracted |
-| NPC/dialog selection and navigation | 401–435, 783–804, 826–873 | pending |
-| Keyboard shortcuts (Ctrl+F, Escape) | 193–208 | pending |
-| Search panel integration | 949–1000 | pending |
-| Three-column layout rendering | 1013–1106 | pending |
-| Error display (syntax errors, operation errors) | 156–190, 1008–1072 | pending |
-| RAF-based state transition sequencing | 210–220, 441–449, 460–475 | pending |
+| NPC/dialog selection and navigation | 401–435, 783–804, 826–873 | ✅ extracted |
+| Keyboard shortcuts (Ctrl+F, Escape) | 193–208 | ✅ extracted |
+| Search panel integration | 949–1000 | ✅ extracted |
+| Three-column layout rendering | 1013–1106 | deferred (architectural split) |
+| Error display (syntax errors, operation errors) | 156–190, 1008–1072 | ✅ extracted |
+| RAF-based state transition sequencing | 210–220, 441–449, 460–475 | ✅ extracted |
 | Identifier/path utilities (8 pure functions) | 24–85 | ✅ extracted |
 
 **Red flags:**
@@ -71,6 +71,13 @@ Handles 8 unrelated concerns in a single Zustand store:
 - ✅ `hooks/useDialogFactory.ts` — `createDialogForNpc` + `resolveTargetFilePath` extracted (214-line function removed from component)
 - ✅ `hooks/useFunctionTreeBuilder.ts` — LRU cache + `buildFunctionTree` recursive tree builder extracted
 - ✅ `hooks/useRecentDialogTabs.ts` — recent-tab state (`addRecentDialog`, `closeRecentDialog`) extracted
+- ✅ `hooks/useDialogTransition.ts` — RAF-based two-frame sequencing (`finalizeDialogSelection`), loading state, scroll ref, and RAF cleanup on unmount extracted
+- ✅ `hooks/useNpcDialogErrors.ts` — NPC dialog parse-error computation (`npcDialogErrors`, `hasNpcDialogErrors`) and console.error logging effect extracted
+- ✅ `hooks/useDialogNavigation.ts` — all NPC/dialog selection and navigation handlers (`handleSelectNPC`, `handleSelectDialog`, `handleSelectRecentDialog`, `handleCloseRecentDialog`, `navigateToDialogWithLoading`) extracted
+- ✅ `hooks/useSearchNavigation.ts` — search panel open state, Ctrl+F / Escape keyboard shortcuts, and `handleSearchResultClick` extracted
+
+**Remaining suggested split (architectural, deferred):**
+- Three-column layout rendering — sub-components for NPC column, dialog-tree column, editor column
 
 ---
 
@@ -227,7 +234,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 | Priority | Target | File | Lines | Key Smell |
 |----------|--------|------|-------|-----------|
 | HIGH 🔄 | `editorStore.ts` | store/editorStore.ts | ~~1,137~~ 1,046 | 8 concerns (sync pattern ✅, history types ✅, uiSelectionStore ✅) |
-| ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 647 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅) |
+| ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 366 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅, useDialogTransition ✅, useNpcDialogErrors ✅, useDialogNavigation ✅, useSearchNavigation ✅) |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ (constants ✅, buildInferredFunctionNodeData ✅, edge factories ✅, ID builders ✅, inferConditionType WeakMap ✅) |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
 | ~~MEDIUM~~ ✅ | ~~`projectStore.ts`~~ | ~~store/~~ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅, mutateQuestFile ✅) |
