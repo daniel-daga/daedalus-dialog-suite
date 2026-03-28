@@ -1,13 +1,15 @@
-import React, { useState, useCallback, useMemo, useTransition, useRef, useEffect, useDeferredValue } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useDeferredValue } from 'react';
 import { useFunctionTreeBuilder } from './hooks/useFunctionTreeBuilder';
 import { useRecentDialogTabs } from './hooks/useRecentDialogTabs';
 import { useDialogFactory } from './hooks/useDialogFactory';
+import { useDialogTransition } from './hooks/useDialogTransition';
+import { useNpcDialogErrors } from './hooks/useNpcDialogErrors';
+import { useDialogNavigation } from './hooks/useDialogNavigation';
+import { useSearchNavigation } from './hooks/useSearchNavigation';
 import { Box, Typography, Alert, Button } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
-import { SearchResult } from '../store/searchStore';
-import { useNavigation } from '../hooks/useNavigation';
 import NPCList from './NPCList';
 import DialogTree from './DialogTree';
 import EditorPane from './EditorPane';
@@ -40,7 +42,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     selectedDialog,
     selectedFunctionName,
     setSelectedNPC,
-    setSelectedDialog,
     setSelectedFunctionName,
   } = useUISelectionStore();
   const {
@@ -57,97 +58,64 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     parsedFiles,
     allDialogFiles
   } = useProjectStore();
-  const { navigateToDialog } = useNavigation();
   const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
-  const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set()); // Track expanded choice nodes
-  const [_isPending, startTransition] = useTransition(); // Bug #3 fix: correct destructuring
-  const [isLoadingDialog, setIsLoadingDialog] = useState(false); // Immediate loading state
-  const [isSearchOpen, setIsSearchOpen] = useState(false); // Search panel visibility
-  const { recentDialogs, addRecentDialog, closeRecentDialog } = useRecentDialogTabs();
+  const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set());
   const [operationError, setOperationError] = useState<string | null>(null);
-  const editorScrollRef = useRef<HTMLDivElement>(null); // Ref to scroll container
+  const { recentDialogs, addRecentDialog, closeRecentDialog } = useRecentDialogTabs();
 
-  // Refs to track RAF IDs for cleanup (Bug #1 fix)
-  const rafId1Ref = useRef<number | null>(null);
-  const rafId2Ref = useRef<number | null>(null);
-  const dialogTransitionIdRef = useRef(0);
-
-  // Determine which mode we're in: project mode or single-file mode
   const isProjectMode = !!projectPath;
   const semanticModel: SemanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel ?? EMPTY_SEMANTIC_MODEL);
 
   // Defer the semantic model update for the heavy tree view to prevent blocking the main thread
   const deferredSemanticModel = useDeferredValue(semanticModel);
 
-  // Determine early return conditions (but don't return yet - hooks must be called first)
+  // Determine early return conditions (but don't return yet — hooks must be called first)
   const showLoading = !isProjectMode && !fileState;
   const showSyntaxErrors = fileState?.hasErrors && !fileState?.autoSaveError;
 
-  const npcDialogErrors = useMemo(() => {
-    if (!isProjectMode || !selectedNPC) return [];
+  // RAF-based state transition sequencing
+  const { isLoadingDialog, setIsLoadingDialog, finalizeDialogSelection, editorScrollRef } = useDialogTransition();
 
-    const dialogMetadata = dialogIndex.get(selectedNPC) || [];
-    const npcFilePaths = Array.from(new Set(dialogMetadata.map(m => m.filePath)));
+  // Derive active NPC name from the selected dialog (used by recent-tab close logic)
+  const activeNpcName = selectedDialog
+    ? semanticModel.dialogs?.[selectedDialog]?.properties?.npc || selectedNPC || null
+    : null;
 
-    const errors: { filePath: string; message: string }[] = [];
-    npcFilePaths.forEach((filePath) => {
-      const parsed = parsedFiles.get(filePath);
-      const fileErrors = parsed?.semanticModel?.errors || [];
-      if (parsed?.semanticModel?.hasErrors) {
-        fileErrors.forEach((err) => {
-          errors.push({ filePath, message: err.message });
-        });
-      }
-    });
+  // Error display — parse errors for the selected NPC's dialog files
+  const { npcDialogErrors, hasNpcDialogErrors } = useNpcDialogErrors({
+    isProjectMode,
+    selectedNPC,
+    dialogIndex,
+    parsedFiles,
+  });
 
-    return errors;
-  }, [isProjectMode, selectedNPC, dialogIndex, parsedFiles]);
+  // NPC/dialog selection and navigation handlers
+  const {
+    handleSelectNPC,
+    navigateToDialogWithLoading,
+    handleSelectDialog,
+    handleSelectRecentDialog,
+    handleCloseRecentDialog,
+  } = useDialogNavigation({
+    isProjectMode,
+    selectedNPC,
+    selectedDialog,
+    activeNpcName,
+    finalizeDialogSelection,
+    setIsLoadingDialog,
+    setOperationError,
+    closeRecentDialog,
+  });
 
-  const hasNpcDialogErrors = npcDialogErrors.length > 0;
-
-  // Log parse errors for the selected NPC to the console (for easy debugging)
-  useEffect(() => {
-    if (!isProjectMode) return;
-    if (!selectedNPC) return;
-    if (!hasNpcDialogErrors) return;
-
-    console.error(
-      `[Dialog Parse Errors] NPC=${selectedNPC} count=${npcDialogErrors.length}`,
-      npcDialogErrors
-    );
-  }, [isProjectMode, selectedNPC, hasNpcDialogErrors, npcDialogErrors]);
-
-  // Keyboard shortcut handler for Ctrl+F
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        setIsSearchOpen(true);
-      }
-      if (e.key === 'Escape' && isSearchOpen) {
-        setIsSearchOpen(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isSearchOpen]);
-
-  // Cleanup RAF callbacks on unmount (Bug #1 fix)
-  useEffect(() => {
-    return () => {
-      if (rafId1Ref.current !== null) {
-        cancelAnimationFrame(rafId1Ref.current);
-      }
-      if (rafId2Ref.current !== null) {
-        cancelAnimationFrame(rafId2Ref.current);
-      }
-    };
-  }, []);
+  // Search panel visibility, keyboard shortcuts, and result navigation
+  const { isSearchOpen, setIsSearchOpen, handleSearchResultClick } = useSearchNavigation({
+    semanticModel,
+    handleSelectNPC,
+    navigateToDialogWithLoading,
+    setOperationError,
+  });
 
   // Build function tree for a given function (recursively finds choice branches).
   // Uses deferred functions to avoid re-calculating on every keystroke.
@@ -158,7 +126,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // In project mode, use project NPCs; in single-file mode, extract from file
   const { npcMap, npcs } = useMemo(() => {
     if (isProjectMode) {
-      // In project mode, populate npcMap from dialogIndex
       const map = new Map<string, string[]>();
       dialogIndex.forEach((dialogMetadataArray, npcId) => {
         const dialogNames = dialogMetadataArray.map(metadata => metadata.dialogName);
@@ -167,7 +134,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       return { npcMap: map, npcs: projectNpcs };
     }
 
-    // Single-file mode: extract NPCs from current file
     const map = new Map<string, string[]>();
     Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]) => {
       const npcName = dialog.properties?.npc || 'Unknown NPC';
@@ -195,88 +161,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // Get the currently selected function (either dialog info or choice function)
   const currentFunctionName = selectedFunctionName || dialogInfoFunctionName;
   const currentFunctionData = currentFunctionName ? semanticModel.functions?.[currentFunctionName] : null;
-  const activeNpcName = selectedDialog
-    ? semanticModel.dialogs?.[selectedDialog]?.properties?.npc || selectedNPC || null
-    : null;
-
-  const handleSelectNPC = async (npc: string) => {
-    setOperationError(null);
-    setSelectedDialog(null);
-    setSelectedFunctionName(null);
-
-    try {
-      // In project mode, load semantic models for this NPC's dialogs
-      if (isProjectMode) {
-        selectNpc(npc);
-
-        // Get dialog metadata for this NPC
-        const dialogMetadata = dialogIndex.get(npc) || [];
-
-        // Extract unique file paths
-        const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
-
-        // Load semantic models for all files (populates the parsedFiles cache)
-        await Promise.all(
-          uniqueFilePaths.map(filePath => getSemanticModel(filePath))
-        );
-
-        // Load and merge models for this NPC using the store
-        loadAndMergeNpcModels(npc);
-
-        setSelectedNPC(npc);
-      } else {
-        // Single-file mode: just set the selected NPC
-        setSelectedNPC(npc);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setOperationError(`Failed to load NPC "${npc}": ${message}`);
-      throw error;
-    }
-  };
-
-  const finalizeDialogSelection = useCallback((dialogName: string, functionName: string | null) => {
-    const transitionId = dialogTransitionIdRef.current + 1;
-    dialogTransitionIdRef.current = transitionId;
-
-    // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
-    if (rafId1Ref.current !== null) {
-      cancelAnimationFrame(rafId1Ref.current);
-      rafId1Ref.current = null;
-    }
-    if (rafId2Ref.current !== null) {
-      cancelAnimationFrame(rafId2Ref.current);
-      rafId2Ref.current = null;
-    }
-
-    // Show loading immediately to prevent stale content flash during transitions
-    setIsLoadingDialog(true);
-
-    // Use startTransition to keep UI responsive when switching to dialogs with many actions
-    startTransition(() => {
-      setSelectedDialog(dialogName);
-      setSelectedFunctionName(functionName);
-
-      // Use requestAnimationFrame to ensure state changes are committed and painted
-      rafId1Ref.current = requestAnimationFrame(() => {
-        // Scroll to top after content has changed
-        if (editorScrollRef.current) {
-          editorScrollRef.current.scrollTop = 0;
-        }
-
-        // Wait one more frame to ensure rendering is complete
-        rafId2Ref.current = requestAnimationFrame(() => {
-          if (dialogTransitionIdRef.current === transitionId) {
-            setIsLoadingDialog(false);
-          }
-
-          // Clear refs after execution
-          rafId1Ref.current = null;
-          rafId2Ref.current = null;
-        });
-      });
-    });
-  }, [setSelectedDialog, setSelectedFunctionName]);
 
   const { createDialogForNpc } = useDialogFactory({
     projectPath,
@@ -328,117 +212,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   }, [selectedNPC, createDialogForNpc]);
 
-  const navigateToDialogWithLoading = useCallback(async (dialogName: string, functionName?: string | null) => {
-    setIsLoadingDialog(true);
-
-    try {
-      const navigated = await navigateToDialog(dialogName, functionName ?? undefined);
-      if (!navigated) {
-        setIsLoadingDialog(false);
-        return false;
-      }
-
-      const { selectedDialog: resolvedDialog, selectedFunctionName: resolvedFunction } = useUISelectionStore.getState();
-      if (!resolvedDialog) {
-        setIsLoadingDialog(false);
-        return false;
-      }
-
-      finalizeDialogSelection(resolvedDialog, resolvedFunction ?? null);
-      return true;
-    } catch (error) {
-      setIsLoadingDialog(false);
-      throw error;
-    }
-  }, [navigateToDialog, finalizeDialogSelection]);
-
-  const handleSelectDialog = useCallback(async (dialogName: string, functionName: string | null) => {
-    setOperationError(null);
-    setIsLoadingDialog(true);
-
-    try {
-      // In project mode, ensure the file containing this dialog is opened in editorStore
-      // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
-      if (isProjectMode && selectedNPC) {
-        const npcDialogs = dialogIndex.get(selectedNPC);
-        const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
-        if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
-          await openFile(metadata.filePath);
-        }
-      }
-
-      finalizeDialogSelection(dialogName, functionName);
-    } catch (error) {
-      setIsLoadingDialog(false);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setOperationError(`Failed to switch dialog: ${message}`);
-    }
-  }, [isProjectMode, selectedNPC, dialogIndex, activeFile, openFile, finalizeDialogSelection]);
-
-  const handleSelectRecentDialog = useCallback(async (dialogName: string, functionName: string | null, npcName: string) => {
-    setOperationError(null);
-    setIsLoadingDialog(true);
-
-    try {
-      if (isProjectMode) {
-        const dialogMetadata = dialogIndex.get(npcName) || [];
-        const metadata = dialogMetadata.find((entry) => entry.dialogName === dialogName);
-
-        if (metadata) {
-          selectNpc(npcName);
-          setSelectedNPC(npcName);
-
-          const uniqueFilePaths = [...new Set(dialogMetadata.map((entry) => entry.filePath))];
-          await Promise.all(uniqueFilePaths.map((path) => getSemanticModel(path)));
-          loadAndMergeNpcModels(npcName);
-
-          if (activeFile !== metadata.filePath) {
-            await openFile(metadata.filePath);
-          }
-
-          finalizeDialogSelection(dialogName, functionName);
-          return;
-        }
-      }
-
-      const navigated = await navigateToDialogWithLoading(dialogName, functionName);
-      if (!navigated) {
-        setOperationError(`Could not find dialog "${dialogName}" in the current context.`);
-      }
-    } catch (error) {
-      console.error('Failed to switch recent dialog tab:', error);
-      setIsLoadingDialog(false);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setOperationError(`Failed to switch dialog tab: ${message}`);
-    }
-  }, [
-    isProjectMode,
-    dialogIndex,
-    selectNpc,
-    setSelectedNPC,
-    getSemanticModel,
-    loadAndMergeNpcModels,
-    activeFile,
-    openFile,
-    finalizeDialogSelection,
-    navigateToDialogWithLoading
-  ]);
-
-  const handleCloseRecentDialog = useCallback((dialogName: string, npcName: string) => {
-    const nextTabToSelect = closeRecentDialog(dialogName, npcName, selectedDialog, activeNpcName);
-
-    if (nextTabToSelect) {
-      void handleSelectRecentDialog(nextTabToSelect.dialogName, nextTabToSelect.functionName, nextTabToSelect.npcName);
-      return;
-    }
-
-    if (selectedDialog === dialogName && activeNpcName === npcName) {
-      setSelectedDialog(null);
-      setSelectedFunctionName(null);
-      setIsLoadingDialog(false);
-    }
-  }, [closeRecentDialog, selectedDialog, activeNpcName, handleSelectRecentDialog, setSelectedDialog, setSelectedFunctionName]);
-
   useEffect(() => {
     if (!selectedDialog) return;
 
@@ -478,65 +251,11 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   }, []);
 
   const handleNavigateToFunction = (functionName: string) => {
-    // Navigate to the choice function
     setSelectedFunctionName(functionName);
-    // Optionally expand the dialog tree to show the choice
     if (selectedDialog) {
       setExpandedDialogs((prev) => new Set([...prev, selectedDialog]));
     }
   };
-
-  // Handle search result click - navigate to the appropriate NPC/dialog/function
-  const handleSearchResultClick = useCallback(async (result: SearchResult) => {
-    // For NPC results, select the NPC
-    if (result.type === 'npc') {
-      await handleSelectNPC(result.name);
-      return;
-    }
-
-    // For dialog results, use the navigation hook
-    if (result.type === 'dialog' && result.dialogName) {
-      setOperationError(null);
-      try {
-        const navigated = await navigateToDialogWithLoading(result.dialogName);
-        if (!navigated) {
-          setOperationError(`Could not find dialog "${result.dialogName}" in the current context.`);
-        }
-      } catch (error) {
-        setIsLoadingDialog(false);
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        setOperationError(`Failed to navigate to dialog: ${message}`);
-      }
-      return;
-    }
-
-    // For function or text results, try to navigate to the function
-    if (result.functionName) {
-      // Try to find which dialog this function belongs to
-      const dialogs = semanticModel.dialogs || {};
-      for (const [dialogName, dialog] of Object.entries(dialogs)) {
-        const infoFuncName = extractFunctionName(dialog.properties?.information);
-
-        if (infoFuncName === result.functionName) {
-          setOperationError(null);
-          try {
-            const navigated = await navigateToDialogWithLoading(dialogName);
-            if (!navigated) {
-              setOperationError(`Could not find dialog "${dialogName}" in the current context.`);
-            }
-          } catch (error) {
-            setIsLoadingDialog(false);
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            setOperationError(`Failed to navigate to dialog: ${message}`);
-          }
-          return;
-        }
-      }
-
-      // If not found as a direct dialog function, just navigate to the function
-      setSelectedFunctionName(result.functionName);
-    }
-  }, [semanticModel, handleSelectNPC, navigateToDialogWithLoading]);
 
   // Handle early return conditions after all hooks have been called
   // In project mode, we might not have a file loaded yet
@@ -544,7 +263,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     return <Typography>Loading...</Typography>;
   }
 
-  // Check for syntax errors - if present, show error display instead of editor
+  // Check for syntax errors — if present, show error display instead of editor
   if (showSyntaxErrors && fileState) {
     return <SyntaxErrorsDisplay errors={fileState.errors || []} filePath={filePath} />;
   }
@@ -646,5 +365,3 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 };
 
 export default ThreeColumnLayout;
-
-
