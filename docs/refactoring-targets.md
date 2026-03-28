@@ -6,7 +6,7 @@ Audit of god components, muddled concerns, and maintainability red flags.
 
 ## Tier 1 — God Components (>1000 lines, 5+ distinct concerns)
 
-### 1. `editorStore.ts` — ~~1,137~~ 1,046 lines (partially refactored)
+### 1. `editorStore.ts` — ~~1,137~~ ~~1,046~~ 983 lines ✅ DONE
 **File:** `daedalus-dialog-editor/src/renderer/store/editorStore.ts`
 
 Handles 8 unrelated concerns in a single Zustand store:
@@ -23,15 +23,16 @@ Handles 8 unrelated concerns in a single Zustand store:
 | UI selection state (selected NPC, dialog, quest, action) | 992–1014 |
 
 **Red flags:**
-- `openFile()` (lines 398–447): 50-line function mixing I/O, parsing, and ID normalisation
+- ~~`openFile()` (lines 398–447): 50-line function mixing I/O, parsing, and ID normalisation~~ ✅ fixed: `parseSourceWithIds()` helper extracted; both `openFile` and `saveSource` delegate to it; duplicated `FileState` construction branches in `openFile` collapsed into one; indentation inconsistency in error branch fixed
 - ~~Repeated store-sync pattern 4× with no abstraction~~ ✅ fixed: 13 inline sync blocks consolidated into `syncToProjectStore(filePath, get)`
-- No single source of truth: both `editorStore` and `projectStore` hold a copy of `semanticModel`; updates are manually pushed between them
+- No single source of truth: both `editorStore` and `projectStore` hold a copy of `semanticModel`; updates are manually pushed between them (architectural, tracked as item 10)
 - ~~History helper functions live at module scope (lines 156–247) with 4-argument signatures instead of encapsulated context~~ ✅ fixed: `cloneSemanticModel`, `cloneQuestNodePositionsForFile`, `createQuestHistorySnapshot`, `normalizeBatchFilePaths` and all history types extracted to `utils/historyUtils.ts`
 
 **Completed:**
 - ✅ `utils/historyUtils.ts` — history types (`QuestNodePosition`, `QuestNodePositionMap`, `QuestHistorySnapshot`, `QuestHistoryState`, `QuestBatchHistoryState`) and 4 pure helper functions extracted from module scope
 - ✅ `syncToProjectStore()` — single named helper replaces 13 inline repetitions of the cross-store sync pattern
 - ✅ `store/uiSelectionStore.ts` — `selectedNPC`, `selectedDialog`, `selectedQuest`, `selectedFunctionName`, `selectedAction`, `activeView` and their 6 setters extracted to a standalone Zustand store; `editorStore.resetEditorSession()` delegates to `useUISelectionStore.getState().resetUISelection()`; 4 consumer files updated (`ThreeColumnLayout`, `MainLayout`, `QuestEditor`, `useNavigation`)
+- ✅ `parseSourceWithIds()` — module-scope async helper owning the "parse → normalise IDs" concern; replaces duplicated inline sequence in `openFile` (collapsing two `FileState` construction branches into one, fixing indentation) and `saveSource` (removing the intermediate raw `model` variable)
 
 **Remaining suggested split (architectural, deferred):**
 - `fileStore` — open/close/save, dirty tracking
@@ -233,7 +234,7 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 | Priority | Target | File | Lines | Key Smell |
 |----------|--------|------|-------|-----------|
-| HIGH 🔄 | `editorStore.ts` | store/editorStore.ts | ~~1,137~~ 1,046 | 8 concerns (sync pattern ✅, history types ✅, uiSelectionStore ✅) |
+| ~~HIGH~~ ✅ | ~~`editorStore.ts`~~ | ~~store/editorStore.ts~~ | ~~1,137~~ → 983 | (sync pattern ✅, history types ✅, uiSelectionStore ✅, parseSourceWithIds ✅) |
 | ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 366 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅, useDialogTransition ✅, useNpcDialogErrors ✅, useDialogNavigation ✅, useSearchNavigation ✅) |
 | ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ (constants ✅, buildInferredFunctionNodeData ✅, edge factories ✅, ID builders ✅, inferConditionType WeakMap ✅) |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
