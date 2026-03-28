@@ -225,9 +225,14 @@ Handles 8 unrelated concerns in a single Zustand store:
 
 ---
 
-### 10. Cross-cutting: Store synchronisation anti-pattern
+### 10. Cross-cutting: Store synchronisation anti-pattern ✅ DONE
 
-`editorStore` and `projectStore` both hold copies of the semantic model. Updates are propagated by calling `useProjectStore.getState().updateFileModel()` directly from inside `editorStore` actions at four separate locations. This creates invisible coupling: refactoring either store's interface silently breaks the sync, and there is no single source of truth for the model state.
+~~`editorStore` and `projectStore` both hold copies of the semantic model. Updates are propagated by calling `useProjectStore.getState().updateFileModel()` directly from inside `editorStore` actions at four separate locations. This creates invisible coupling: refactoring either store's interface silently breaks the sync, and there is no single source of truth for the model state.~~
+
+**Completed:**
+- ✅ `store/storeSync.ts` — dedicated bridge module that subscribes to `editorStore` state changes and forwards model updates to `projectStore.parsedFiles` via reference-equality guard (only pushes when `semanticModel` reference changes, not on every unrelated mutation such as dirty-flag or history-stack updates)
+- ✅ `editorStore.ts` — `import { useProjectStore }` and `syncToProjectStore()` removed entirely; the 9 call sites that scattered the push logic across every mutation handler are gone
+- ✅ `App.tsx` — `initStoreSync()` called once at module load to wire up the subscription; dependency direction is now `storeSync → editorStore + projectStore` rather than `editorStore → projectStore`
 
 ---
 
@@ -244,4 +249,4 @@ Handles 8 unrelated concerns in a single Zustand store:
 | ~~LOW~~ ✅ | ~~`useActionManagement.ts`~~ | ~~hooks/~~ | ~~354~~ | (findInsertedPath ✅, regex documented ✅, patchActions ✅, addActionAfter control flow ✅) |
 | ~~LOW~~ ✅ | ~~`VariableAutocomplete.tsx`~~ | ~~common/~~ | ~~473~~ → 287 | ~~Mixed data fetching + presentation~~ (useVariableOptions ✅) |
 | ~~LOW~~ ✅ | ~~`ValidationService.ts`~~ | ~~main/services/~~ | ~~551~~ → 421 | (ACTION_REQUIRED_FIELD_VALIDATORS registry ✅, ACTION_DISPLAY_NAMES map ✅, validateActions ~180 → ~45 lines ✅) |
-| ARCH | Store sync pattern | editorStore ↔ projectStore | — | No SSOT, invisible coupling |
+| ~~ARCH~~ ✅ | ~~Store sync pattern~~ | ~~editorStore ↔ projectStore~~ | — | (storeSync.ts subscription ✅, editorStore→projectStore import removed ✅, 9 syncToProjectStore call sites eliminated ✅) |

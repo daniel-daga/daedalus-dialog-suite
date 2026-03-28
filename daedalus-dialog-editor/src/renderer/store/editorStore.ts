@@ -3,7 +3,6 @@ import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import { createDialogLineId } from '../components/actionFactory';
 import { collectDialogLineActions } from '../components/nestedActionUtils';
-import { useProjectStore } from './projectStore';
 import { useUISelectionStore } from './uiSelectionStore';
 import {
   cloneSemanticModel,
@@ -323,17 +322,6 @@ async function parseSourceWithIds(sourceCode: string): Promise<SemanticModel> {
   return model.hasErrors ? model : ensureActionIds(model);
 }
 
-/**
- * Sync the committed semantic model for a file from editorStore into projectStore.
- * Called after every mutation that updates a file's semantic model.
- */
-function syncToProjectStore(filePath: string, get: () => EditorStore): void {
-  const committedModel = get().openFiles.get(filePath)?.semanticModel;
-  if (committedModel) {
-    useProjectStore.getState().updateFileModel(filePath, committedModel);
-  }
-}
-
 export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
   project: null,
   openFiles: new Map(),
@@ -410,7 +398,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
         fileState.hasErrors = false;
       }
     });
-    syncToProjectStore(filePath, get);
   },
 
   updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => {
@@ -425,7 +412,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    syncToProjectStore(filePath, get);
   },
 
   updateDialogWithUpdater: (filePath: string, dialogName: string, updater: (existingDialog: Dialog) => Dialog | null) => {
@@ -451,7 +437,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    syncToProjectStore(filePath, get);
   },
 
   updateDialogWithNormalizedProperties: (filePath: string, dialogName: string, updater: (existingDialog: Dialog) => Dialog | null) => {
@@ -488,7 +473,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    syncToProjectStore(filePath, get);
   },
 
   updateFunctionWithUpdater: (filePath: string, functionName: string, updater: (existingFunction: DialogFunction) => DialogFunction | null) => {
@@ -514,7 +498,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    syncToProjectStore(filePath, get);
   },
 
   renameFunction: (filePath: string, oldFunctionName: string, newFunctionName: string) => {
@@ -539,7 +522,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    syncToProjectStore(filePath, get);
   },
 
   updateDialogConditionFunction: (filePath: string, dialogName: string, updater: (existingFunction: DialogFunction) => DialogFunction | null) => {
@@ -574,7 +556,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    syncToProjectStore(filePath, get);
   },
 
   replaceDialogConditionFunction: (filePath: string, dialogName: string, updatedFunction: DialogFunction) => {
@@ -741,7 +722,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       fileState.autoSaveError = undefined;
       fileState.hasErrors = false;
     });
-    syncToProjectStore(filePath, get);
   },
 
   applyQuestModelsWithHistory: (updates: Array<{ filePath: string; model: SemanticModel }>) => {
@@ -783,7 +763,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       }
     });
 
-    uniqueUpdates.forEach((_, filePath) => { syncToProjectStore(filePath, get); });
   },
 
   undoQuestModel: (filePath: string) => {
@@ -791,7 +770,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     set((state) => {
       didUndo = applyUndoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
     });
-    if (didUndo) syncToProjectStore(filePath, get);
   },
 
   redoQuestModel: (filePath: string) => {
@@ -799,7 +777,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
     set((state) => {
       didRedo = applyRedoForFile(state.openFiles, state.questHistory, state.questNodePositions, filePath);
     });
-    if (didRedo) syncToProjectStore(filePath, get);
   },
 
   canUndoQuestModel: (filePath: string) => {
@@ -839,7 +816,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       undoneBatch = actuallyUndone;
     });
 
-    undoneBatch.forEach((filePath) => { syncToProjectStore(filePath, get); });
   },
 
   redoLastQuestBatch: () => {
@@ -869,7 +845,6 @@ export const useEditorStore = create<EditorStore>()(immer((set, get) => ({
       redoneBatch = actuallyRedone;
     });
 
-    redoneBatch.forEach((filePath) => { syncToProjectStore(filePath, get); });
   },
 
   canUndoLastQuestBatch: () => get().questBatchHistory.past.length > 0,

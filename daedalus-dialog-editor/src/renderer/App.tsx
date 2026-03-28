@@ -26,7 +26,12 @@ import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
 import { RecentProject } from './types/global';
 import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
+import { initStoreSync } from './store/storeSync';
 
+// Wire up the cross-store model sync once at module load.
+// editorStore pushes semantic model changes to projectStore's parsed-files
+// cache via a Zustand subscription rather than direct imports.
+initStoreSync();
 
 const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }> = [
   { value: 'dark', label: 'Dark', icon: <DarkModeIcon fontSize="small" /> },
