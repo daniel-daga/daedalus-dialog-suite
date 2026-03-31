@@ -114,10 +114,13 @@ Handles 8 unrelated concerns in a single Zustand store:
 - ✅ `buildGeneratedConditionNodeId()` / `buildGeneratedExternalEntryNodeId()` — ID builders with `toNodeToken()` sanitisation replacing raw string concatenation
 - ✅ `inferConditionType()` WeakMap memoisation — `_conditionTypeCache` skips repeated property-check walks for the same condition object
 
-**Remaining suggested split (architectural, deferred):**
-- `NodeIdentifier` class — node creation/identification
-- `EdgeBuilder` class — edge construction
-- `LayoutCalculator` class — Dagre layout
+**Architectural split completed:**
+- ✅ `questGraphInternalTypes.ts` — shared internal types (`InternalNodeData`, `ProducerMap`, `IdentifyResult`, `EdgeBuildResult`, `EffectiveConditionEntry`) with no circular deps
+- ✅ `questGraphSharedHelpers.ts` — all pure helper functions shared across pipeline stages (~230 lines)
+- ✅ `questNodeIdentification.ts` — NodeIdentifier concern: two-pass algorithm, `identifyQuestNodes`, `buildInferredFunctionNodeData` factory
+- ✅ `questEdgeBuilding.ts` — EdgeBuilder concern: edge factories + `buildQuestEdges` main pass
+- ✅ `questLayout.ts` — LayoutCalculator concern: graph filtering + Dagre layout
+- ✅ `questGraphUtils.tsx` reduced from 1,193 → 55 lines as thin orchestrator
 
 ---
 
@@ -177,10 +180,13 @@ Handles 8 unrelated concerns in a single Zustand store:
 - ✅ `deserializeAction()` unknown-type warning — `console.warn` with hint to add the type to `ACTION_DISCRIMINATOR.subTypes`
 - ✅ `linkPropertiesToFunctions()` — module-scope helper owning the function-reference linking concern extracted from `Dialog.fromJSON`; `fromJSON` now only handles scalar-field transformation
 
-**Remaining suggested split (architectural, deferred):**
-- Domain files: `dialogActions.ts`, `inventoryActions.ts`, `npcActions.ts`, `conditionTypes.ts`
-- `ActionDeserializer` / `ConditionDeserializer` classes
-- Decouple `CodeGenerator` from model classes
+**Architectural split completed:**
+- ✅ `semanticModelInterfaces.ts` — shared `CodeGenOptions` and `CodeGeneratable` interfaces (breaks circular dep chain)
+- ✅ `dialogActions.ts` — `DialogLine`, `Choice` classes
+- ✅ `inventoryActions.ts` — `CreateInventoryItems`, `GiveInventoryItems`, `GiveTradeInventoryAction`, `RemoveInventoryItemsAction`
+- ✅ `npcActions.ts` — `AttackAction`, `SetAttitudeAction`, `ExchangeRoutineAction`, `StopProcessInfosAction`, `PlayAniAction`, `PickpocketAction`, `StartOtherRoutineAction`, `TeachAction`, `InsertNpcAction`, `HeroFollowsAction`
+- ✅ `conditionTypes.ts` — all 9 condition classes + `DialogCondition` union type
+- ✅ `semantic-model.ts` reduced from 1,550 → ~680 lines; re-exports all domain classes for backward compatibility
 
 ---
 
@@ -242,10 +248,10 @@ Handles 8 unrelated concerns in a single Zustand store:
 |----------|--------|------|-------|-----------|
 | ~~HIGH~~ ✅ | ~~`editorStore.ts`~~ | ~~store/editorStore.ts~~ | ~~1,137~~ → 983 | (sync pattern ✅, history types ✅, uiSelectionStore ✅, parseSourceWithIds ✅) |
 | ~~HIGH~~ ✅ | ~~`ThreeColumnLayout.tsx`~~ | ~~components/~~ | ~~1,111~~ → 366 | ~~214-line creation fn~~ (utils ✅, cache fix ✅, useDialogFactory ✅, useFunctionTreeBuilder ✅, useRecentDialogTabs ✅, extractFunctionName ✅, void isPending ✅, useDialogTransition ✅, useNpcDialogErrors ✅, useDialogNavigation ✅, useSearchNavigation ✅) |
-| ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ | ~~Duplicated node/edge builders, magic constants~~ (constants ✅, buildInferredFunctionNodeData ✅, edge factories ✅, ID builders ✅, inferConditionType WeakMap ✅) |
+| ~~HIGH~~ ✅ | ~~`questGraphUtils.tsx`~~ | ~~QuestEditor/~~ | ~~1,104~~ → 55 | ~~Duplicated node/edge builders, magic constants~~ (constants ✅, buildInferredFunctionNodeData ✅, edge factories ✅, ID builders ✅, inferConditionType WeakMap ✅, module split ✅) |
 | ~~HIGH~~ ✅ | ~~`ConditionCard.tsx`~~ | ~~components/~~ | ~~765~~ | ~~492-line render function, 30+ object rebuilds~~ |
 | ~~MEDIUM~~ ✅ | ~~`projectStore.ts`~~ | ~~store/~~ | ~~850~~ → 717 | (questAnalyzer ✅, invalidateCacheForFile ✅, ipcSerialisation ✅, mutateQuestFile ✅, concurrency constants documented ✅) |
-| ~~MEDIUM~~ ✅ | ~~`semantic-model.ts`~~ | ~~parser/~~ | ~~1,510~~ | (DiscriminatorConfig ✅, ensureActionType comments ✅, deserializeAction warn ✅, linkPropertiesToFunctions ✅) domain split + boilerplate reduction deferred |
+| ~~MEDIUM~~ ✅ | ~~`semantic-model.ts`~~ | ~~parser/~~ | ~~1,510~~ → ~680 | (DiscriminatorConfig ✅, ensureActionType comments ✅, deserializeAction warn ✅, linkPropertiesToFunctions ✅, domain split ✅) |
 | ~~LOW~~ ✅ | ~~`useActionManagement.ts`~~ | ~~hooks/~~ | ~~354~~ | (findInsertedPath ✅, regex documented ✅, patchActions ✅, addActionAfter control flow ✅) |
 | ~~LOW~~ ✅ | ~~`VariableAutocomplete.tsx`~~ | ~~common/~~ | ~~473~~ → 287 | ~~Mixed data fetching + presentation~~ (useVariableOptions ✅) |
 | ~~LOW~~ ✅ | ~~`ValidationService.ts`~~ | ~~main/services/~~ | ~~551~~ → 421 | (ACTION_REQUIRED_FIELD_VALIDATORS registry ✅, ACTION_DISPLAY_NAMES map ✅, validateActions ~180 → ~45 lines ✅) |
