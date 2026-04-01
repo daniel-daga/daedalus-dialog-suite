@@ -3,7 +3,91 @@ import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
 
 // Semantic model classes and types for Daedalus dialog parsing
 
-// Type definitions for tree-sitter nodes
+// ===================================================================
+// SHARED INTERFACES (re-exported for backward compatibility)
+// ===================================================================
+
+export type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
+import type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
+
+// ===================================================================
+// DOMAIN ACTION CLASSES (imported + re-exported for backward compatibility)
+// ===================================================================
+
+import { DialogLine, Choice } from './dialogActions';
+export { DialogLine, Choice } from './dialogActions';
+
+import {
+  CreateInventoryItems,
+  GiveInventoryItems,
+  GiveTradeInventoryAction,
+  RemoveInventoryItemsAction,
+} from './inventoryActions';
+export {
+  CreateInventoryItems,
+  GiveInventoryItems,
+  GiveTradeInventoryAction,
+  RemoveInventoryItemsAction,
+} from './inventoryActions';
+
+import {
+  AttackAction,
+  ExchangeRoutineAction,
+  HeroFollowsAction,
+  InsertNpcAction,
+  PickpocketAction,
+  PlayAniAction,
+  SetAttitudeAction,
+  StartOtherRoutineAction,
+  StopProcessInfosAction,
+  TeachAction,
+} from './npcActions';
+export {
+  AttackAction,
+  ExchangeRoutineAction,
+  HeroFollowsAction,
+  InsertNpcAction,
+  PickpocketAction,
+  PlayAniAction,
+  SetAttitudeAction,
+  StartOtherRoutineAction,
+  StopProcessInfosAction,
+  TeachAction,
+} from './npcActions';
+
+// ===================================================================
+// DOMAIN CONDITION CLASSES (imported + re-exported for backward compatibility)
+// ===================================================================
+
+import {
+  Condition,
+  NpcGetDistToWpCondition,
+  NpcGetTalentSkillCondition,
+  NpcHasItemsCondition,
+  NpcIsDeadCondition,
+  NpcIsInStateCondition,
+  NpcKnowsInfoCondition,
+  QuestStateCondition,
+  VariableCondition,
+} from './conditionTypes';
+export {
+  Condition,
+  NpcGetDistToWpCondition,
+  NpcGetTalentSkillCondition,
+  NpcHasItemsCondition,
+  NpcIsDeadCondition,
+  NpcIsInStateCondition,
+  NpcKnowsInfoCondition,
+  QuestStateCondition,
+  VariableCondition,
+} from './conditionTypes';
+export type { DialogCondition } from './conditionTypes';
+import type { DialogCondition } from './conditionTypes';
+
+// ===================================================================
+// TYPE DEFINITIONS FOR TREE-SITTER NODES
+// ===================================================================
+
 export interface TreeSitterNode {
   type: string;
   text: string;
@@ -125,58 +209,8 @@ export interface PropertyFormatting {
 }
 
 // ===================================================================
-// DIALOG ACTION CLASSES
+// DIALOG ACTION CLASSES (remaining — not split to domain files)
 // ===================================================================
-
-/**
- * Interface for code generation options
- */
-export interface CodeGenOptions {
-  includeComments?: boolean;
-  preserveSourceStyle?: boolean;
-  indentUnit?: string;
-}
-
-/**
- * Interface for action code generation and display
- * All action classes implement this to generate their own code and display strings
- */
-export interface CodeGeneratable {
-  generateCode(options: CodeGenOptions): string;
-  toDisplayString(): string;
-  getTypeName(): string;
-}
-
-export class DialogLine implements CodeGeneratable {
-  public readonly type = 'DialogLine';
-  public speaker: string;
-  public listener: string;
-  public text: string;
-  public id: string;
-  public inlineComment?: boolean;
-
-  constructor(speaker: string, text: string, id: string, listener?: string) {
-    this.speaker = speaker;
-    this.text = text;
-    this.id = id;
-    this.listener = listener ?? (speaker === 'other' ? 'self' : 'other');
-  }
-
-  generateCode(options: CodeGenOptions): string {
-    const shouldEmitComment = options.includeComments && (this.inlineComment ?? this.text !== this.id);
-    const comment = shouldEmitComment ? ` //${this.text}` : '';
-    const listener = this.speaker === 'other' ? 'self' : 'other';
-    return `AI_Output (${this.speaker}, ${listener}, "${this.id}");${comment}`;
-  }
-
-  toDisplayString(): string {
-    return `[DialogLine: ${this.speaker} -> ${this.listener}: "${this.text}"]`;
-  }
-
-  getTypeName(): string {
-    return 'DialogLine';
-  }
-}
 
 export class CreateTopic implements CodeGeneratable {
   public readonly type = 'CreateTopic';
@@ -259,11 +293,7 @@ export class Action implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const code = this.action.trim();
-    if (code.startsWith('//')) {
-      return code;
-    }
-    return code.endsWith(';') ? code : `${code};`;
+    return `${this.action};`;
   }
 
   toDisplayString(): string {
@@ -338,161 +368,6 @@ export class ConditionalAction implements CodeGeneratable {
   }
 }
 
-export class Choice implements CodeGeneratable {
-  public readonly type = 'Choice';
-  public dialogRef: string;
-  public text: string;
-  public targetFunction: string;
-  public textIsExpression?: boolean;
-
-  constructor(dialogRef: string, text: string, targetFunction: string) {
-    this.dialogRef = dialogRef;
-    this.text = text;
-    this.targetFunction = targetFunction;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    if (this.textIsExpression) {
-      return `Info_AddChoice (${this.dialogRef}, ${this.text}, ${this.targetFunction});`;
-    }
-    const escaped = this.text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `Info_AddChoice (${this.dialogRef}, "${escaped}", ${this.targetFunction});`;
-  }
-
-  toDisplayString(): string {
-    return `[Choice: "${this.text}" -> ${this.targetFunction}]`;
-  }
-
-  getTypeName(): string {
-    return 'Choice';
-  }
-}
-
-export class CreateInventoryItems implements CodeGeneratable {
-  public readonly type = 'CreateInventoryItems';
-  public target: string;
-  public item: string;
-  public quantity: number;
-
-  constructor(target: string, item: string, quantity: number) {
-    this.target = target;
-    this.item = item;
-    this.quantity = quantity;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `CreateInvItems (${this.target}, ${this.item}, ${this.quantity});`;
-  }
-
-  toDisplayString(): string {
-    return `[CreateItems: ${this.target} gets ${this.quantity}x ${this.item}]`;
-  }
-
-  getTypeName(): string {
-    return 'CreateInventoryItems';
-  }
-}
-
-export class GiveInventoryItems implements CodeGeneratable {
-  public readonly type = 'GiveInventoryItems';
-  public giver: string;
-  public receiver: string;
-  public item: string;
-  public quantity: number;
-
-  constructor(giver: string, receiver: string, item: string, quantity: number) {
-    this.giver = giver;
-    this.receiver = receiver;
-    this.item = item;
-    this.quantity = quantity;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `B_GiveInvItems (${this.giver}, ${this.receiver}, ${this.item}, ${this.quantity});`;
-  }
-
-  toDisplayString(): string {
-    return `[GiveItems: ${this.giver} gives ${this.receiver} ${this.quantity}x ${this.item}]`;
-  }
-
-  getTypeName(): string {
-    return 'GiveInventoryItems';
-  }
-}
-
-export class AttackAction implements CodeGeneratable {
-  public readonly type = 'AttackAction';
-  public attacker: string;
-  public target: string;
-  public attackReason: string;
-  public damage: number;
-
-  constructor(attacker: string, target: string, attackReason: string, damage: number) {
-    this.attacker = attacker;
-    this.target = target;
-    this.attackReason = attackReason;
-    this.damage = damage;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `B_Attack (${this.attacker}, ${this.target}, ${this.attackReason}, ${this.damage});`;
-  }
-
-  toDisplayString(): string {
-    return `[Attack: ${this.attacker} attacks ${this.target} (${this.attackReason}, dmg:${this.damage})]`;
-  }
-
-  getTypeName(): string {
-    return 'AttackAction';
-  }
-}
-
-export class SetAttitudeAction implements CodeGeneratable {
-  public readonly type = 'SetAttitudeAction';
-  public target: string;
-  public attitude: string;
-
-  constructor(target: string, attitude: string) {
-    this.target = target;
-    this.attitude = attitude;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `B_SetAttitude (${this.target}, ${this.attitude});`;
-  }
-
-  toDisplayString(): string {
-    return `[SetAttitude: ${this.target} -> ${this.attitude}]`;
-  }
-
-  getTypeName(): string {
-    return 'SetAttitudeAction';
-  }
-}
-
-export class ExchangeRoutineAction implements CodeGeneratable {
-  public readonly type = 'ExchangeRoutineAction';
-  public target: string;
-  public routine: string;
-
-  constructor(target: string, routine: string) {
-    this.target = target;
-    this.routine = routine;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `Npc_ExchangeRoutine (${this.target}, "${this.routine}");`;
-  }
-
-  toDisplayString(): string {
-    return `[ExchangeRoutine: ${this.target} -> "${this.routine}"]`;
-  }
-
-  getTypeName(): string {
-    return 'ExchangeRoutineAction';
-  }
-}
-
 export class ChapterTransitionAction implements CodeGeneratable {
   public readonly type = 'ChapterTransitionAction';
   public chapter: number;
@@ -541,50 +416,6 @@ export class SetVariableAction implements CodeGeneratable {
   }
 }
 
-export class StopProcessInfosAction implements CodeGeneratable {
-  public readonly type = 'StopProcessInfosAction';
-  public target: string;
-
-  constructor(target: string = 'self') {
-    this.target = target;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `AI_StopProcessInfos (${this.target});`;
-  }
-
-  toDisplayString(): string {
-    return `[StopProcessInfos: ${this.target}]`;
-  }
-
-  getTypeName(): string {
-    return 'StopProcessInfosAction';
-  }
-}
-
-export class PlayAniAction implements CodeGeneratable {
-  public readonly type = 'PlayAniAction';
-  public target: string;
-  public animationName: string;
-
-  constructor(target: string, animationName: string) {
-    this.target = target;
-    this.animationName = animationName;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `AI_PlayAni (${this.target}, "${this.animationName}");`;
-  }
-
-  toDisplayString(): string {
-    return `[PlayAni: ${this.target} -> "${this.animationName}"]`;
-  }
-
-  getTypeName(): string {
-    return 'PlayAniAction';
-  }
-}
-
 export class GivePlayerXPAction implements CodeGeneratable {
   public readonly type = 'GivePlayerXPAction';
   public xpAmount: string;
@@ -606,196 +437,9 @@ export class GivePlayerXPAction implements CodeGeneratable {
   }
 }
 
-export class PickpocketAction implements CodeGeneratable {
-  public readonly type = 'PickpocketAction';
-  public pickpocketMode: 'B_Beklauen' | 'C_Beklauen';
-  public minChance?: string;
-  public maxChance?: string;
-
-  constructor(mode: 'B_Beklauen' | 'C_Beklauen', minChance?: string, maxChance?: string) {
-    this.pickpocketMode = mode;
-    if (minChance !== undefined) {
-      this.minChance = minChance;
-    }
-    if (maxChance !== undefined) {
-      this.maxChance = maxChance;
-    }
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    if (this.pickpocketMode === 'B_Beklauen') {
-      return 'B_Beklauen ();';
-    }
-
-    const min = this.minChance || '0';
-    const max = this.maxChance || min;
-    return `C_Beklauen (${min}, ${max});`;
-  }
-
-  toDisplayString(): string {
-    if (this.pickpocketMode === 'B_Beklauen') {
-      return '[Pickpocket: execute]';
-    }
-    return `[Pickpocket: check ${this.minChance || '0'}-${this.maxChance || this.minChance || '0'}]`;
-  }
-
-  getTypeName(): string {
-    return 'PickpocketAction';
-  }
-}
-
-export class StartOtherRoutineAction implements CodeGeneratable {
-  public readonly type = 'StartOtherRoutineAction';
-  public routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine';
-  public routineNpc: string;
-  public routineName: string;
-
-  constructor(
-    routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine',
-    routineNpc: string,
-    routineName: string
-  ) {
-    this.routineFunctionName = routineFunctionName;
-    this.routineNpc = routineNpc;
-    this.routineName = routineName;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `${this.routineFunctionName} (${this.routineNpc}, "${this.routineName}");`;
-  }
-
-  toDisplayString(): string {
-    return `[StartOtherRoutine: ${this.routineNpc} -> "${this.routineName}"]`;
-  }
-
-  getTypeName(): string {
-    return 'StartOtherRoutineAction';
-  }
-}
-
-export class TeachAction implements CodeGeneratable {
-  public readonly type = 'TeachAction';
-  public teachFunctionName: string;
-  public teachArgs: string[];
-
-  constructor(teachFunctionName: string, teachArgs: string[]) {
-    this.teachFunctionName = teachFunctionName;
-    this.teachArgs = teachArgs;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `${this.teachFunctionName} (${this.teachArgs.join(', ')});`;
-  }
-
-  toDisplayString(): string {
-    return `[Teach: ${this.teachFunctionName} (${this.teachArgs.join(', ')})]`;
-  }
-
-  getTypeName(): string {
-    return 'TeachAction';
-  }
-}
-
-export class GiveTradeInventoryAction implements CodeGeneratable {
-  public readonly type = 'GiveTradeInventoryAction';
-  public tradeTarget: string;
-
-  constructor(tradeTarget: string) {
-    this.tradeTarget = tradeTarget;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `B_GiveTradeInv (${this.tradeTarget});`;
-  }
-
-  toDisplayString(): string {
-    return `[GiveTradeInventory: ${this.tradeTarget}]`;
-  }
-
-  getTypeName(): string {
-    return 'GiveTradeInventoryAction';
-  }
-}
-
-export class RemoveInventoryItemsAction implements CodeGeneratable {
-  public readonly type = 'RemoveInventoryItemsAction';
-  public removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
-  public removeNpc: string;
-  public removeItem: string;
-  public removeQuantity: string;
-
-  constructor(
-    removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
-    removeNpc: string,
-    removeItem: string,
-    removeQuantity: string
-  ) {
-    this.removeFunctionName = removeFunctionName;
-    this.removeNpc = removeNpc;
-    this.removeItem = removeItem;
-    this.removeQuantity = removeQuantity;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `${this.removeFunctionName} (${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity});`;
-  }
-
-  toDisplayString(): string {
-    return `[RemoveInventoryItems: ${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity}]`;
-  }
-
-  getTypeName(): string {
-    return 'RemoveInventoryItemsAction';
-  }
-}
-
-export class InsertNpcAction implements CodeGeneratable {
-  public readonly type = 'InsertNpcAction';
-  public npcInstance: string;
-  public spawnPoint: string;
-
-  constructor(npcInstance: string, spawnPoint: string) {
-    this.npcInstance = npcInstance;
-    this.spawnPoint = spawnPoint;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `Wld_InsertNpc (${this.npcInstance}, "${this.spawnPoint}");`;
-  }
-
-  toDisplayString(): string {
-    return `[InsertNpc: ${this.npcInstance} @ "${this.spawnPoint}"]`;
-  }
-
-  getTypeName(): string {
-    return 'InsertNpcAction';
-  }
-}
-
-export class HeroFollowsAction implements CodeGeneratable {
-  public readonly type = 'HeroFollowsAction';
-  public guideRoutine: string;
-
-  constructor(guideRoutine: string = '') {
-    this.guideRoutine = guideRoutine;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return [
-      `AI_StopProcessInfos (self);`,
-      `self.aivar[AIV_PARTYMEMBER] = TRUE;`,
-      `Npc_ExchangeRoutine (self, "${this.guideRoutine}");`
-    ].join('\n');
-  }
-
-  toDisplayString(): string {
-    return `[HeroFollows: routine="${this.guideRoutine}"]`;
-  }
-
-  getTypeName(): string {
-    return 'HeroFollowsAction';
-  }
-}
+// ===================================================================
+// ACTION UNION TYPE + DISCRIMINATOR + DESERIALIZER
+// ===================================================================
 
 export type DialogAction =
   | DialogLine
@@ -940,320 +584,8 @@ export function deserializeAction(json: any): DialogAction | any {
 }
 
 // ===================================================================
-// DIALOG CONDITION CLASSES
+// CONDITION DISCRIMINATOR + DESERIALIZER
 // ===================================================================
-
-/**
- * Represents a condition that checks if the player knows a specific dialog
- */
-export class NpcKnowsInfoCondition implements CodeGeneratable {
-  public readonly type = 'NpcKnowsInfoCondition';
-  public npc: string;
-  public dialogRef: string;
-
-  constructor(npc: string, dialogRef: string) {
-    this.npc = npc;
-    this.dialogRef = dialogRef;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `Npc_KnowsInfo(${this.npc}, ${this.dialogRef})`;
-  }
-
-  toDisplayString(): string {
-    return `[NpcKnowsInfo: ${this.npc} knows ${this.dialogRef}]`;
-  }
-
-  getTypeName(): string {
-    return 'NpcKnowsInfoCondition';
-  }
-}
-
-/**
- * Represents an Npc_HasItems condition, optionally with a comparison.
- */
-export class NpcHasItemsCondition implements CodeGeneratable {
-  public readonly type = 'NpcHasItemsCondition';
-  public npc: string;
-  public item: string;
-  public operator?: string;
-  public value?: string | number | boolean;
-
-  constructor(npc: string, item: string, operator?: string, value?: string | number | boolean) {
-    this.npc = npc;
-    this.item = item;
-    if (operator !== undefined) {
-      this.operator = operator;
-    }
-    if (value !== undefined) {
-      this.value = value;
-    }
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_HasItems(${this.npc}, ${this.item})`;
-    if (this.operator && this.value !== undefined) {
-      return `${call} ${this.operator} ${this.value}`;
-    }
-    return call;
-  }
-
-  toDisplayString(): string {
-    if (this.operator && this.value !== undefined) {
-      return `[NpcHasItems: ${this.npc}, ${this.item} ${this.operator} ${this.value}]`;
-    }
-    return `[NpcHasItems: ${this.npc}, ${this.item}]`;
-  }
-
-  getTypeName(): string {
-    return 'NpcHasItemsCondition';
-  }
-}
-
-/**
- * Represents an Npc_IsInState condition, optionally negated.
- */
-export class NpcIsInStateCondition implements CodeGeneratable {
-  public readonly type = 'NpcIsInStateCondition';
-  public npc: string;
-  public state: string;
-  public negated: boolean;
-
-  constructor(npc: string, state: string, negated: boolean = false) {
-    this.npc = npc;
-    this.state = state;
-    this.negated = negated;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_IsInState(${this.npc}, ${this.state})`;
-    return this.negated ? `!${call}` : call;
-  }
-
-  toDisplayString(): string {
-    return this.negated
-      ? `[Not NpcIsInState: ${this.npc}, ${this.state}]`
-      : `[NpcIsInState: ${this.npc}, ${this.state}]`;
-  }
-
-  getTypeName(): string {
-    return 'NpcIsInStateCondition';
-  }
-}
-
-/**
- * Represents an Npc_IsDead condition, optionally negated.
- */
-export class NpcIsDeadCondition implements CodeGeneratable {
-  public readonly type = 'NpcIsDeadCondition';
-  public npc: string;
-  public negated: boolean;
-
-  constructor(npc: string, negated: boolean = false) {
-    this.npc = npc;
-    this.negated = negated;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_IsDead(${this.npc})`;
-    return this.negated ? `!${call}` : call;
-  }
-
-  toDisplayString(): string {
-    return this.negated
-      ? `[Not NpcIsDead: ${this.npc}]`
-      : `[NpcIsDead: ${this.npc}]`;
-  }
-
-  getTypeName(): string {
-    return 'NpcIsDeadCondition';
-  }
-}
-
-/**
- * Represents an Npc_GetDistToWP comparison condition.
- */
-export class NpcGetDistToWpCondition implements CodeGeneratable {
-  public readonly type = 'NpcGetDistToWpCondition';
-  public npc: string;
-  public waypoint: string;
-  public operator?: string;
-  public value?: string | number | boolean;
-
-  constructor(npc: string, waypoint: string, operator?: string, value?: string | number | boolean) {
-    this.npc = npc;
-    this.waypoint = waypoint;
-    if (operator !== undefined) {
-      this.operator = operator;
-    }
-    if (value !== undefined) {
-      this.value = value;
-    }
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_GetDistToWP(${this.npc}, ${this.waypoint})`;
-    if (this.operator && this.value !== undefined) {
-      return `${call} ${this.operator} ${this.value}`;
-    }
-    return call;
-  }
-
-  toDisplayString(): string {
-    if (this.operator && this.value !== undefined) {
-      return `[NpcGetDistToWP: ${this.npc}, ${this.waypoint} ${this.operator} ${this.value}]`;
-    }
-    return `[NpcGetDistToWP: ${this.npc}, ${this.waypoint}]`;
-  }
-
-  getTypeName(): string {
-    return 'NpcGetDistToWpCondition';
-  }
-}
-
-/**
- * Represents an Npc_GetTalentSkill condition, optionally with a comparison.
- */
-export class NpcGetTalentSkillCondition implements CodeGeneratable {
-  public readonly type = 'NpcGetTalentSkillCondition';
-  public npc: string;
-  public talent: string;
-  public operator?: string;
-  public value?: string | number | boolean;
-
-  constructor(npc: string, talent: string, operator?: string, value?: string | number | boolean) {
-    this.npc = npc;
-    this.talent = talent;
-    if (operator !== undefined) {
-      this.operator = operator;
-    }
-    if (value !== undefined) {
-      this.value = value;
-    }
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_GetTalentSkill(${this.npc}, ${this.talent})`;
-    if (this.operator && this.value !== undefined) {
-      return `${call} ${this.operator} ${this.value}`;
-    }
-    return call;
-  }
-
-  toDisplayString(): string {
-    if (this.operator && this.value !== undefined) {
-      return `[NpcGetTalentSkill: ${this.npc}, ${this.talent} ${this.operator} ${this.value}]`;
-    }
-    return `[NpcGetTalentSkill: ${this.npc}, ${this.talent}]`;
-  }
-
-  getTypeName(): string {
-    return 'NpcGetTalentSkillCondition';
-  }
-}
-
-/**
- * Generic condition for any other condition expression
- */
-export class Condition implements CodeGeneratable {
-  public readonly type = 'Condition';
-  public condition: string;
-
-  constructor(condition: string) {
-    this.condition = condition;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return this.condition.trim();
-  }
-
-  toDisplayString(): string {
-    return `[Condition: ${this.condition}]`;
-  }
-
-  getTypeName(): string {
-    return 'Condition';
-  }
-}
-
-/**
- * Represents a variable reference condition (e.g., EntscheidungVergessenTaken)
- * or negated variable (e.g., !EntscheidungBuddlerMapTaken)
- */
-export class VariableCondition implements CodeGeneratable {
-  public readonly type = 'VariableCondition';
-  public variableName: string;
-  public negated: boolean;
-  public operator?: string;
-  public value?: string | number | boolean;
-
-  constructor(variableName: string, negated: boolean = false, operator?: string, value?: string | number | boolean) {
-    this.variableName = variableName;
-    this.negated = negated;
-    if (operator !== undefined) {
-      this.operator = operator;
-    }
-    if (value !== undefined) {
-      this.value = value;
-    }
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    if (this.operator && this.value !== undefined) {
-      return `${this.variableName} ${this.operator} ${this.value}`;
-    }
-    return this.negated ? `!${this.variableName}` : this.variableName;
-  }
-
-  toDisplayString(): string {
-    if (this.operator && this.value !== undefined) {
-      return `[Variable: ${this.variableName} ${this.operator} ${this.value}]`;
-    }
-    return this.negated ? `[Not: ${this.variableName}]` : `[Variable: ${this.variableName}]`;
-  }
-
-  getTypeName(): string {
-    return 'VariableCondition';
-  }
-}
-
-/**
- * Represents a quest state condition: checks if a quest MIS variable equals a given log state.
- * Generates: MIS_QuestName == LOG_RUNNING  (the if-wrapper is added by the code generator)
- */
-export class QuestStateCondition implements CodeGeneratable {
-  public readonly type = 'QuestStateCondition';
-  public questVariable: string;
-  public state: string;
-
-  constructor(questVariable: string, state: string) {
-    this.questVariable = questVariable;
-    this.state = state;
-  }
-
-  generateCode(_options: CodeGenOptions): string {
-    return `${this.questVariable} == ${this.state}`;
-  }
-
-  toDisplayString(): string {
-    return `[QuestState: ${this.questVariable} == ${this.state}]`;
-  }
-
-  getTypeName(): string {
-    return 'QuestStateCondition';
-  }
-}
-
-export type DialogCondition =
-  | NpcKnowsInfoCondition
-  | NpcHasItemsCondition
-  | NpcIsInStateCondition
-  | NpcIsDeadCondition
-  | NpcGetDistToWpCondition
-  | NpcGetTalentSkillCondition
-  | Condition
-  | VariableCondition
-  | QuestStateCondition;
 
 const CONDITION_DISCRIMINATOR: DiscriminatorConfig = {
   property: 'type',
