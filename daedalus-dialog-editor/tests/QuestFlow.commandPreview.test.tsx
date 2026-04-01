@@ -128,7 +128,9 @@ jest.mock('../src/renderer/store/projectStore', () => ({
   useProjectStore: (selector: (state: typeof projectStoreState) => unknown) => selector(projectStoreState)
 }));
 
-jest.mock('../src/renderer/store/editorStore', () => {
+// All mock state is initialised in the fileStore factory (which runs first) so
+// the historyStore factory can reference it via globalThis.
+jest.mock('../src/renderer/store/fileStore', () => {
   const filePath = 'C:/tmp/test.d';
   const storeModel: SemanticModel = {
     dialogs: {},
@@ -153,14 +155,11 @@ jest.mock('../src/renderer/store/editorStore', () => {
     errors: []
   };
 
+  const openFile = jest.fn();
+  const getFileState = jest.fn(() => ({ filePath, semanticModel: storeModel }));
   const applyQuestModelWithHistory = jest.fn();
   const applyQuestModelsWithHistory = jest.fn();
   const applyQuestNodePositionWithHistory = jest.fn();
-  const openFile = jest.fn();
-  const getFileState = jest.fn(() => ({
-    filePath,
-    semanticModel: storeModel
-  }));
 
   (globalThis as any).__questFlowPreviewTest = {
     filePath,
@@ -172,13 +171,34 @@ jest.mock('../src/renderer/store/editorStore', () => {
     storeModel
   };
 
-  const editorStoreState = {
+  const fileStoreState = {
     activeFile: filePath,
     getFileState,
     openFile,
-    applyQuestModelWithHistory,
-    applyQuestModelsWithHistory,
-    applyQuestNodePositionWithHistory,
+    codeSettings: {
+      indentChar: '\t',
+      includeComments: true,
+      sectionHeaders: true,
+      uppercaseKeywords: true
+    }
+  };
+
+  const useFileStore = Object.assign(
+    (selector: (state: typeof fileStoreState) => unknown) => selector(fileStoreState),
+    { getState: () => fileStoreState }
+  );
+
+  return { useFileStore };
+});
+
+jest.mock('../src/renderer/store/historyStore', () => {
+  // Re-use the fn instances created by the fileStore factory above
+  const shared = (globalThis as any).__questFlowPreviewTest;
+
+  const historyStoreState = {
+    applyQuestModelWithHistory: shared?.applyQuestModelWithHistory ?? jest.fn(),
+    applyQuestModelsWithHistory: shared?.applyQuestModelsWithHistory ?? jest.fn(),
+    applyQuestNodePositionWithHistory: shared?.applyQuestNodePositionWithHistory ?? jest.fn(),
     setQuestNodePosition: jest.fn(),
     getQuestNodePositions: jest.fn(() => new Map()),
     undoQuestModel: jest.fn(),
@@ -189,22 +209,14 @@ jest.mock('../src/renderer/store/editorStore', () => {
     redoLastQuestBatch: jest.fn(),
     canUndoLastQuestBatch: jest.fn(() => false),
     canRedoLastQuestBatch: jest.fn(() => false),
-    codeSettings: {
-      indentChar: '\t',
-      includeComments: true,
-      sectionHeaders: true,
-      uppercaseKeywords: true
-    }
   };
 
-  const useEditorStore = Object.assign(
-    (selector: (state: typeof editorStoreState) => unknown) => selector(editorStoreState),
-    {
-      getState: () => editorStoreState
-    }
+  const useHistoryStore = Object.assign(
+    (selector: (state: typeof historyStoreState) => unknown) => selector(historyStoreState),
+    { getState: () => historyStoreState }
   );
 
-  return { useEditorStore };
+  return { useHistoryStore };
 });
 
 describe('QuestFlow command preview integration', () => {
