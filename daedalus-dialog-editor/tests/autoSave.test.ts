@@ -6,6 +6,7 @@
 
 import { describe, test, expect, beforeEach, jest, afterEach } from '@jest/globals';
 import { useEditorStore } from '../src/renderer/store/editorStore';
+import { useHistoryStore } from '../src/renderer/store/historyStore';
 import { useAutoSave } from '../src/renderer/hooks/useAutoSave';
 import { renderHook, act } from '@testing-library/react';
 
@@ -399,15 +400,17 @@ describe('useAutoSave hook', () => {
           hasErrors: false
         }]
       ]),
+      activeFile: filePath1
+    });
+    useHistoryStore.setState({
       questHistory: new Map(),
       questBatchHistory: { past: [], future: [] },
-      activeFile: filePath1
     });
 
     renderHook(() => useAutoSave());
 
     act(() => {
-      useEditorStore.getState().applyQuestModelsWithHistory([
+      useHistoryStore.getState().applyQuestModelsWithHistory([
         { filePath: filePath1, model: createQuestModel('LOG_SUCCESS') },
         { filePath: filePath2, model: createQuestModel('LOG_FAILED') }
       ]);
@@ -457,18 +460,20 @@ describe('useAutoSave hook', () => {
           hasErrors: false
         }]
       ]),
+      activeFile: filePath
+    });
+    useHistoryStore.setState({
       questHistory: new Map(),
       questBatchHistory: { past: [], future: [] },
-      activeFile: filePath
     });
 
     renderHook(() => useAutoSave());
 
     act(() => {
-      useEditorStore.getState().applyQuestModelsWithHistory([
+      useHistoryStore.getState().applyQuestModelsWithHistory([
         { filePath, model: createQuestModel('LOG_SUCCESS') }
       ]);
-      useEditorStore.getState().undoLastQuestBatch();
+      useHistoryStore.getState().undoLastQuestBatch();
     });
 
     await act(async () => {

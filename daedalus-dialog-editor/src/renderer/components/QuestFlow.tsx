@@ -11,7 +11,8 @@ import { Undo as UndoIcon, Redo as RedoIcon } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import type { QuestGraphBuildOptions, QuestGraphEdge, QuestGraphNode } from '../types/questGraph';
 import { useNavigation } from '../hooks/useNavigation';
-import { useEditorStore } from '../store/editorStore';
+import { useFileStore } from '../store/fileStore';
+import { useHistoryStore } from '../store/historyStore';
 import { useProjectStore } from '../store/projectStore';
 import {
   analyzeQuestGuardrails,
@@ -70,10 +71,13 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     projectPath: state.projectPath,
     parsedFiles: state.parsedFiles
   }));
+  const { activeFile, getFileState, openFile, codeSettings } = useFileStore((state) => ({
+    activeFile: state.activeFile,
+    getFileState: state.getFileState,
+    openFile: state.openFile,
+    codeSettings: state.codeSettings
+  }));
   const {
-    activeFile,
-    getFileState,
-    openFile,
     applyQuestModelsWithHistory,
     applyQuestNodePositionWithHistory,
     getQuestNodePositions,
@@ -81,11 +85,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     redoLastQuestBatch,
     canUndoLastQuestBatch,
     canRedoLastQuestBatch,
-    codeSettings
-  } = useEditorStore((state) => ({
-    activeFile: state.activeFile,
-    getFileState: state.getFileState,
-    openFile: state.openFile,
+  } = useHistoryStore((state) => ({
     applyQuestModelsWithHistory: state.applyQuestModelsWithHistory,
     applyQuestNodePositionWithHistory: state.applyQuestNodePositionWithHistory,
     getQuestNodePositions: state.getQuestNodePositions,
@@ -93,7 +93,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     redoLastQuestBatch: state.redoLastQuestBatch,
     canUndoLastQuestBatch: state.canUndoLastQuestBatch,
     canRedoLastQuestBatch: state.canRedoLastQuestBatch,
-    codeSettings: state.codeSettings
   }));
 
   const [nodes, setNodes] = useState<QuestGraphNode[]>([]);
@@ -260,7 +259,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
 
     const beforeEntries = await Promise.all(
       updates.map(async (entry) => {
-        const stateForFile = useEditorStore.getState().getFileState(entry.filePath);
+        const stateForFile = useFileStore.getState().getFileState(entry.filePath);
         const modelForCode = stateForFile?.semanticModel || entry.updatedModel;
         return {
           filePath: entry.filePath,
@@ -288,7 +287,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
 
     const warningsByKey = new Map<string, string>();
     updates.forEach((entry) => {
-      const stateForFile = useEditorStore.getState().getFileState(entry.filePath);
+      const stateForFile = useFileStore.getState().getFileState(entry.filePath);
       if (!stateForFile) return;
       getQuestGuardrailDeltaWarnings(stateForFile.semanticModel, entry.updatedModel, questName).forEach((warning) => {
         const functions = warning.provenance?.functionNames || [];
@@ -337,7 +336,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       const filePath = await resolveFilePathForFunction(ownerFunction);
       if (!filePath) return;
 
-      const fileState = useEditorStore.getState().getFileState(filePath);
+      const fileState = useFileStore.getState().getFileState(filePath);
       if (!fileState) {
         setCommandError(`Unable to load "${filePath}" for command execution.`);
         return;
@@ -397,8 +396,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       const targetFilePath = await resolveFilePathForFunction(targetFunctionName);
       if (!sourceFilePath || !targetFilePath) return;
 
-      const sourceState = useEditorStore.getState().getFileState(sourceFilePath);
-      const targetState = useEditorStore.getState().getFileState(targetFilePath);
+      const sourceState = useFileStore.getState().getFileState(sourceFilePath);
+      const targetState = useFileStore.getState().getFileState(targetFilePath);
       if (!sourceState || !targetState) {
         setCommandError('Unable to load source/target files for transition removal.');
         return;
@@ -473,8 +472,8 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       const targetFilePath = await resolveFilePathForFunction(targetFunctionName);
       if (!sourceFilePath || !targetFilePath) return;
 
-      const sourceState = useEditorStore.getState().getFileState(sourceFilePath);
-      const targetState = useEditorStore.getState().getFileState(targetFilePath);
+      const sourceState = useFileStore.getState().getFileState(sourceFilePath);
+      const targetState = useFileStore.getState().getFileState(targetFilePath);
       if (!sourceState || !targetState) {
         setCommandError('Unable to load source/target files for transition text update.');
         return;

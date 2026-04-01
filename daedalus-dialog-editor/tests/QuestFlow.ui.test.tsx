@@ -34,11 +34,29 @@ jest.mock('../src/renderer/store/projectStore', () => ({
   useProjectStore: (selector: (state: typeof projectStoreState) => unknown) => selector(projectStoreState)
 }));
 
-jest.mock('../src/renderer/store/editorStore', () => {
-  const editorStoreState = {
+jest.mock('../src/renderer/store/fileStore', () => {
+  const fileStoreState = {
     activeFile: null,
     getFileState: jest.fn(),
     openFile: jest.fn(),
+    codeSettings: {
+      indentChar: '\t',
+      includeComments: true,
+      sectionHeaders: true,
+      uppercaseKeywords: true
+    }
+  };
+
+  const useFileStore = Object.assign(
+    (selector: (state: typeof fileStoreState) => unknown) => selector(fileStoreState),
+    { getState: () => fileStoreState }
+  );
+
+  return { useFileStore };
+});
+
+jest.mock('../src/renderer/store/historyStore', () => {
+  const historyStoreState = {
     applyQuestModelWithHistory: jest.fn(),
     applyQuestModelsWithHistory: jest.fn(),
     applyQuestNodePositionWithHistory: jest.fn(),
@@ -52,22 +70,14 @@ jest.mock('../src/renderer/store/editorStore', () => {
     redoLastQuestBatch: jest.fn(),
     canUndoLastQuestBatch: jest.fn(() => false),
     canRedoLastQuestBatch: jest.fn(() => false),
-    codeSettings: {
-      indentChar: '\t',
-      includeComments: true,
-      sectionHeaders: true,
-      uppercaseKeywords: true
-    }
   };
 
-  const useEditorStore = Object.assign(
-    (selector: (state: typeof editorStoreState) => unknown) => selector(editorStoreState),
-    {
-      getState: () => editorStoreState
-    }
+  const useHistoryStore = Object.assign(
+    (selector: (state: typeof historyStoreState) => unknown) => selector(historyStoreState),
+    { getState: () => historyStoreState }
   );
 
-  return { useEditorStore };
+  return { useHistoryStore };
 });
 
 const createModel = (): SemanticModel => ({
