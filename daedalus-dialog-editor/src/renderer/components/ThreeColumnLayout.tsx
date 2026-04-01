@@ -3,16 +3,15 @@ import { useFunctionTreeBuilder } from './hooks/useFunctionTreeBuilder';
 import { useRecentDialogTabs } from './hooks/useRecentDialogTabs';
 import { useDialogFactory } from './hooks/useDialogFactory';
 import { useDialogTransition } from './hooks/useDialogTransition';
-import { useNpcDialogErrors } from './hooks/useNpcDialogErrors';
 import { useDialogNavigation } from './hooks/useDialogNavigation';
 import { useSearchNavigation } from './hooks/useSearchNavigation';
-import { Box, Typography, Alert, Button } from '@mui/material';
+import { Box, Typography, Alert } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
-import NPCList from './NPCList';
-import DialogTree from './DialogTree';
-import EditorPane from './EditorPane';
+import NpcColumn from './NpcColumn';
+import DialogTreeColumn from './DialogTreeColumn';
+import EditorColumn from './EditorColumn';
 import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
 import SearchPanel from './SearchPanel';
 import type { SemanticModel } from '../types/global';
@@ -61,7 +60,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
-  const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set());
   const [operationError, setOperationError] = useState<string | null>(null);
   const { recentDialogs, addRecentDialog, closeRecentDialog } = useRecentDialogTabs();
 
@@ -82,14 +80,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const activeNpcName = selectedDialog
     ? semanticModel.dialogs?.[selectedDialog]?.properties?.npc || selectedNPC || null
     : null;
-
-  // Error display — parse errors for the selected NPC's dialog files
-  const { npcDialogErrors, hasNpcDialogErrors } = useNpcDialogErrors({
-    isProjectMode,
-    selectedNPC,
-    dialogIndex,
-    parsedFiles,
-  });
 
   // NPC/dialog selection and navigation handlers
   const {
@@ -122,34 +112,16 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const deferredFunctions = deferredSemanticModel.functions;
   const buildFunctionTree = useFunctionTreeBuilder(deferredFunctions);
 
-  // Memoize NPC map extraction to avoid rebuilding on every render
-  // In project mode, use project NPCs; in single-file mode, extract from file
-  const { npcMap, npcs } = useMemo(() => {
+  // Get dialogs for selected NPC (computed without npcMap to avoid redundant work)
+  const dialogsForNPC = useMemo(() => {
+    if (!selectedNPC) return [];
     if (isProjectMode) {
-      const map = new Map<string, string[]>();
-      dialogIndex.forEach((dialogMetadataArray, npcId) => {
-        const dialogNames = dialogMetadataArray.map(metadata => metadata.dialogName);
-        map.set(npcId, dialogNames);
-      });
-      return { npcMap: map, npcs: projectNpcs };
+      return (dialogIndex.get(selectedNPC) || []).map(m => m.dialogName);
     }
-
-    const map = new Map<string, string[]>();
-    Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]) => {
-      const npcName = dialog.properties?.npc || 'Unknown NPC';
-      if (!map.has(npcName)) {
-        map.set(npcName, []);
-      }
-      map.get(npcName)!.push(dialogName);
-    });
-
-    const npcList = Array.from(map.keys()).sort();
-
-    return { npcMap: map, npcs: npcList };
-  }, [isProjectMode, projectNpcs, dialogIndex, semanticModel.dialogs]);
-
-  // Get dialogs for selected NPC
-  const dialogsForNPC = selectedNPC ? (npcMap.get(selectedNPC) || []) : [];
+    return Object.entries(semanticModel.dialogs || {})
+      .filter(([, dialog]) => (dialog.properties?.npc || 'Unknown NPC') === selectedNPC)
+      .map(([name]) => name);
+  }, [isProjectMode, selectedNPC, dialogIndex, semanticModel.dialogs]);
 
   // Get selected dialog data
   const dialogData = selectedDialog ? semanticModel.dialogs?.[selectedDialog] : null;
@@ -238,18 +210,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     });
   }, []);
 
-  const handleToggleChoiceExpand = useCallback((choiceKey: string) => {
-    setExpandedChoices((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(choiceKey)) {
-        newSet.delete(choiceKey);
-      } else {
-        newSet.add(choiceKey);
-      }
-      return newSet;
-    });
-  }, []);
-
   const handleNavigateToFunction = (functionName: string) => {
     setSelectedFunctionName(functionName);
     if (selectedDialog) {
@@ -289,63 +249,36 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       />
 
       {/* Column 1: NPC List */}
-      <NPCList
-        npcs={npcs}
-        npcMap={npcMap}
+      <NpcColumn
+        isProjectMode={isProjectMode}
+        projectNpcs={projectNpcs}
+        dialogIndex={dialogIndex}
+        semanticModelDialogs={semanticModel.dialogs}
         selectedNPC={selectedNPC}
         onSelectNPC={handleSelectNPC}
         onAddNpc={handleAddNpc}
       />
 
       {/* Column 2: Dialog Tree with Nested Choices */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', flex: '0 0 350px', overflow: 'hidden' }}>
-        {/* Error Alert for Parsing Errors */}
-        {isProjectMode && hasNpcDialogErrors && (
-          <Alert severity="error" sx={{ borderRadius: 0, flexShrink: 0 }}>
-            <Typography variant="body2" gutterBottom>
-              Failed to parse dialog file(s) for {selectedNPC}
-            </Typography>
-            <Typography variant="caption" component="div" sx={{ mb: 0.5 }}>
-              {npcDialogErrors.length} error(s) found. Open the file list (top bar list icon) for full details.
-            </Typography>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => setIngestedFilesOpen(true)}
-              sx={{ mb: 0.5 }}
-            >
-              View details
-            </Button>
-            {npcDialogErrors.slice(0, 3).map((err, index) => (
-              <Typography key={index} variant="caption" display="block" sx={{ whiteSpace: 'pre-wrap' }}>
-                - {err.message}
-              </Typography>
-            ))}
-            {npcDialogErrors.length > 3 && (
-              <Typography variant="caption" display="block" sx={{ fontStyle: 'italic' }}>
-                ...and {npcDialogErrors.length - 3} more
-              </Typography>
-            )}
-          </Alert>
-        )}
-        <DialogTree
-          selectedNPC={selectedNPC}
-          dialogsForNPC={dialogsForNPC}
-          semanticModel={deferredSemanticModel}
-          selectedDialog={selectedDialog}
-          selectedFunctionName={selectedFunctionName}
-          expandedDialogs={expandedDialogs}
-          expandedChoices={expandedChoices}
-          onSelectDialog={handleSelectDialog}
-          onToggleDialogExpand={handleToggleDialogExpand}
-          onToggleChoiceExpand={handleToggleChoiceExpand}
-          buildFunctionTree={buildFunctionTree}
-          onAddDialog={handleAddDialog}
-        />
-      </Box>
+      <DialogTreeColumn
+        isProjectMode={isProjectMode}
+        selectedNPC={selectedNPC}
+        selectedDialog={selectedDialog}
+        selectedFunctionName={selectedFunctionName}
+        dialogsForNPC={dialogsForNPC}
+        deferredSemanticModel={deferredSemanticModel}
+        expandedDialogs={expandedDialogs}
+        buildFunctionTree={buildFunctionTree}
+        onSelectDialog={handleSelectDialog}
+        onToggleDialogExpand={handleToggleDialogExpand}
+        onAddDialog={handleAddDialog}
+        dialogIndex={dialogIndex}
+        parsedFiles={parsedFiles}
+        setIngestedFilesOpen={setIngestedFilesOpen}
+      />
 
       {/* Column 3: Function Action Editor */}
-      <EditorPane
+      <EditorColumn
         ref={editorScrollRef}
         selectedDialog={selectedDialog}
         dialogData={dialogData}
