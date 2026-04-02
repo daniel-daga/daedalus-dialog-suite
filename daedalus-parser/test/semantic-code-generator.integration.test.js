@@ -481,3 +481,252 @@ test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () 
     ratioMessage
   );
 });
+
+// ===================================================================
+// FUNCTION CLUSTERING / ORDERING TESTS
+// ===================================================================
+
+test('SemanticCodeGenerator clusters choice target functions with their parent dialog', () => {
+  const sourceCode = `
+instance DIA_Test_Choices(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_Choices_Condition;
+\tinformation\t= DIA_Test_Choices_Info;
+\tdescription\t= "Choices";
+};
+
+func int DIA_Test_Choices_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_Choices_Info()
+{
+\tAI_Output(other, self, "DIA_Test_Choices_15_00");
+\tInfo_AddChoice(DIA_Test_Choices, "Option A", DIA_Test_Choices_A);
+\tInfo_AddChoice(DIA_Test_Choices, "Option B", DIA_Test_Choices_B);
+};
+
+func void DIA_Test_Choices_A()
+{
+\tAI_Output(self, other, "DIA_Test_Choices_A_01");
+};
+
+func void DIA_Test_Choices_B()
+{
+\tAI_Output(self, other, "DIA_Test_Choices_B_01");
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  // All functions should exist
+  const instanceIdx = generatedCode.indexOf('instance DIA_Test_Choices(C_INFO)');
+  const conditionIdx = generatedCode.indexOf('func int DIA_Test_Choices_Condition()');
+  const infoIdx = generatedCode.indexOf('func void DIA_Test_Choices_Info()');
+  const choiceAIdx = generatedCode.indexOf('func void DIA_Test_Choices_A()');
+  const choiceBIdx = generatedCode.indexOf('func void DIA_Test_Choices_B()');
+
+  assert.ok(instanceIdx >= 0, 'instance should exist');
+  assert.ok(conditionIdx >= 0, 'condition function should exist');
+  assert.ok(infoIdx >= 0, 'info function should exist');
+  assert.ok(choiceAIdx >= 0, 'choice A function should exist');
+  assert.ok(choiceBIdx >= 0, 'choice B function should exist');
+
+  // Verify ordering: instance < condition < info < choiceA < choiceB
+  assert.ok(instanceIdx < conditionIdx, 'instance should come before condition');
+  assert.ok(conditionIdx < infoIdx, 'condition should come before info');
+  assert.ok(infoIdx < choiceAIdx, 'info should come before choice A');
+  assert.ok(choiceAIdx < choiceBIdx, 'choice A should come before choice B');
+});
+
+test('SemanticCodeGenerator clusters functions even when source order is scattered', () => {
+  // Simulate a model where choice functions were declared far from their dialog
+  const sourceCode = `
+func void DIA_Test_Scattered_B()
+{
+\tAI_Output(self, other, "DIA_Test_Scattered_B_01");
+};
+
+func void DIA_Test_Scattered_A()
+{
+\tAI_Output(self, other, "DIA_Test_Scattered_A_01");
+};
+
+instance DIA_Test_Scattered(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_Scattered_Condition;
+\tinformation\t= DIA_Test_Scattered_Info;
+\tdescription\t= "Scattered";
+};
+
+func int DIA_Test_Scattered_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_Scattered_Info()
+{
+\tAI_Output(other, self, "DIA_Test_Scattered_15_00");
+\tInfo_AddChoice(DIA_Test_Scattered, "A", DIA_Test_Scattered_A);
+\tInfo_AddChoice(DIA_Test_Scattered, "B", DIA_Test_Scattered_B);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  const instanceIdx = generatedCode.indexOf('instance DIA_Test_Scattered(C_INFO)');
+  const conditionIdx = generatedCode.indexOf('func int DIA_Test_Scattered_Condition()');
+  const infoIdx = generatedCode.indexOf('func void DIA_Test_Scattered_Info()');
+  const choiceAIdx = generatedCode.indexOf('func void DIA_Test_Scattered_A()');
+  const choiceBIdx = generatedCode.indexOf('func void DIA_Test_Scattered_B()');
+
+  assert.ok(instanceIdx >= 0, 'instance should exist');
+
+  // All associated functions should follow the dialog instance, clustered together
+  assert.ok(instanceIdx < conditionIdx, 'condition should follow its dialog instance');
+  assert.ok(conditionIdx < infoIdx, 'info should follow condition');
+  assert.ok(infoIdx < choiceAIdx, 'choice A should follow info');
+  assert.ok(infoIdx < choiceBIdx, 'choice B should follow info');
+});
+
+test('SemanticCodeGenerator keeps non-dialog helper functions in relative position', () => {
+  const sourceCode = `
+func void Helper_Before()
+{
+\tAI_Output(self, other, "H_01");
+};
+
+instance DIA_Test_Helpers(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_Helpers_Condition;
+\tinformation\t= DIA_Test_Helpers_Info;
+\tdescription\t= "Helpers";
+};
+
+func int DIA_Test_Helpers_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_Helpers_Info()
+{
+\tAI_Output(other, self, "DIA_Test_Helpers_15_00");
+};
+
+func void Helper_After()
+{
+\tAI_Output(self, other, "H_02");
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  const helperBeforeIdx = generatedCode.indexOf('func void Helper_Before()');
+  const instanceIdx = generatedCode.indexOf('instance DIA_Test_Helpers(C_INFO)');
+  const helperAfterIdx = generatedCode.indexOf('func void Helper_After()');
+
+  assert.ok(helperBeforeIdx >= 0, 'Helper_Before should exist');
+  assert.ok(instanceIdx >= 0, 'instance should exist');
+  assert.ok(helperAfterIdx >= 0, 'Helper_After should exist');
+
+  // Helper functions should stay in their relative positions
+  assert.ok(helperBeforeIdx < instanceIdx, 'Helper_Before should remain before the dialog');
+  assert.ok(instanceIdx < helperAfterIdx, 'Helper_After should remain after the dialog');
+});
+
+test('SemanticCodeGenerator clusters multiple dialog instances with their own functions', () => {
+  const sourceCode = `
+instance DIA_First(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_First_Condition;
+\tinformation\t= DIA_First_Info;
+\tdescription\t= "First";
+};
+
+func int DIA_First_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_First_Info()
+{
+\tAI_Output(other, self, "DIA_First_01");
+\tInfo_AddChoice(DIA_First, "Sub", DIA_First_Sub);
+};
+
+func void DIA_First_Sub()
+{
+\tAI_Output(self, other, "DIA_First_Sub_01");
+};
+
+instance DIA_Second(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 2;
+\tcondition\t= DIA_Second_Condition;
+\tinformation\t= DIA_Second_Info;
+\tdescription\t= "Second";
+};
+
+func int DIA_Second_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Second_Info()
+{
+\tAI_Output(other, self, "DIA_Second_01");
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  const firstIdx = generatedCode.indexOf('instance DIA_First(C_INFO)');
+  const firstCondIdx = generatedCode.indexOf('func int DIA_First_Condition()');
+  const firstInfoIdx = generatedCode.indexOf('func void DIA_First_Info()');
+  const firstSubIdx = generatedCode.indexOf('func void DIA_First_Sub()');
+  const secondIdx = generatedCode.indexOf('instance DIA_Second(C_INFO)');
+  const secondCondIdx = generatedCode.indexOf('func int DIA_Second_Condition()');
+  const secondInfoIdx = generatedCode.indexOf('func void DIA_Second_Info()');
+
+  // First dialog cluster is complete before second dialog starts
+  assert.ok(firstIdx < firstCondIdx, 'First instance before its condition');
+  assert.ok(firstCondIdx < firstInfoIdx, 'First condition before its info');
+  assert.ok(firstInfoIdx < firstSubIdx, 'First info before its choice sub-function');
+  assert.ok(firstSubIdx < secondIdx, 'First dialog cluster complete before second dialog');
+  assert.ok(secondIdx < secondCondIdx, 'Second instance before its condition');
+  assert.ok(secondCondIdx < secondInfoIdx, 'Second condition before its info');
+});
