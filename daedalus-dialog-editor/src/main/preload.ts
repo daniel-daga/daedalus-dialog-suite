@@ -31,4 +31,15 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // Settings API
   getRecentProjects: () => ipcRenderer.invoke('settings:getRecentProjects'),
   addRecentProject: (projectPath: string, projectName: string) => ipcRenderer.invoke('settings:addRecentProject', projectPath, projectName),
+
+  // File Watcher API
+  startFileWatcher: (projectPath: string) => ipcRenderer.invoke('fileWatcher:start', projectPath),
+  stopFileWatcher: () => ipcRenderer.invoke('fileWatcher:stop'),
+  notifySelfWrite: (filePath: string) => ipcRenderer.invoke('fileWatcher:notifySelfWrite', filePath),
+  onFileChanged: (callback: (event: { type: string; filePath: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { type: string; filePath: string }) => callback(data);
+    ipcRenderer.on('fileWatcher:changed', listener);
+    // Return unsubscribe function
+    return () => { ipcRenderer.removeListener('fileWatcher:changed', listener); };
+  },
 });

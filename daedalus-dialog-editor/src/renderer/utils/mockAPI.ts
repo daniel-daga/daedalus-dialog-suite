@@ -486,6 +486,12 @@ export const mockEditorAPI: EditorAPI = {
     const newRecent = [{ path: projectPath, name: projectName, lastOpened: Date.now() }, ...recent.filter(p => p.path !== projectPath)].slice(0, 10);
     localStorage.setItem('recent_projects', JSON.stringify(newRecent));
   },
+
+  // File Watcher API (no-op in mock/browser mode)
+  async startFileWatcher(): Promise<void> {},
+  async stopFileWatcher(): Promise<void> {},
+  async notifySelfWrite(): Promise<void> {},
+  onFileChanged(): () => void { return () => {}; },
 };
 
 // Helper for tests to reset mock file system

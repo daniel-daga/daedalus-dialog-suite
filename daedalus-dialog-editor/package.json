@@ -71,6 +71,7 @@
     "@tanstack/react-query": "^5.28.4",
     "@types/dagre": "^0.7.53",
     "chardet": "^2.1.1",
+    "chokidar": "^4.0.3",
     "daedalus-parser": "workspace:*",
     "dagre": "^0.8.5",
     "iconv-lite": "^0.7.0",
@@ -119,11 +120,3 @@
     "wait-on": "^9.0.1"
   }
 }
-
-
-
-
-
-
-
-
