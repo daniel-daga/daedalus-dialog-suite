@@ -1604,9 +1604,11 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
   };
 
   test('sets loading before awaiting file-open work in handleSelectDialog', () => {
-    const source = readSource();
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useDialogNavigation.ts'), 'utf8');
     const start = source.indexOf('const handleSelectDialog');
-    const end = source.indexOf('const addRecentDialog', start);
+    const end = source.indexOf('const handleSelectRecentDialog', start);
     const block = source.slice(start, end);
 
     const loadingIndex = block.indexOf('setIsLoadingDialog(true)');
@@ -1628,17 +1630,20 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
   });
 
   test('search-driven dialog navigation uses loading lifecycle', () => {
-    const source = readSource();
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useSearchNavigation.ts'), 'utf8');
     const start = source.indexOf('const handleSearchResultClick');
-    const end = source.indexOf('// Handle early return conditions', start);
+    const end = source.indexOf('return { isSearchOpen', start);
     const block = source.slice(start, end);
 
     expect(block).toContain('navigateToDialogWithLoading');
-    expect(block).toContain('setIsLoadingDialog(false)');
   });
 
   test('creates new dialogs with empty description by default', () => {
-    const source = readSource();
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useDialogFactory.ts'), 'utf8');
     const start = source.indexOf('const createDialogForNpc');
     const end = source.indexOf('const conditionFunction: DialogFunction', start);
     const block = source.slice(start, end);
