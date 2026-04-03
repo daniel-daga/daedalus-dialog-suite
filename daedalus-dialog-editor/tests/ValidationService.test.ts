@@ -718,7 +718,7 @@ describe('ValidationService', () => {
       expect(result.errors).toContainEqual(
         expect.objectContaining({
           type: 'missing_required_property',
-          message: expect.stringContaining('LogEntry')
+          message: expect.stringContaining('Log Entry')
         })
       );
     });
