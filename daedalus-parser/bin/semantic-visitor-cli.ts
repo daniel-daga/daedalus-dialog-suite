@@ -24,9 +24,7 @@ function main() {
     process.exit(1);
   }
 
-  const filename = args[0];
-
-  if (filename === '--help' || filename === '-h') {
+  if (args.includes('--help') || args.includes('-h')) {
     console.log('Daedalus Semantic Visitor CLI');
     console.log('');
     console.log('Usage: npm run semantic -- <file.d>');
@@ -40,6 +38,8 @@ function main() {
     console.log('  - Object linking verification');
     process.exit(0);
   }
+
+  const filename = args.find(a => !a.startsWith('-')) ?? args[args.length - 1];
 
   try {
     validateDaedalusFile(filename);
