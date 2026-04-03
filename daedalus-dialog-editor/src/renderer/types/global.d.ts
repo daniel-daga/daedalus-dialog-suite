@@ -105,6 +105,9 @@ export interface EditorAPI {
   // Settings API
   getRecentProjects: () => Promise<RecentProject[]>;
   addRecentProject: (projectPath: string, projectName: string) => Promise<void>;
+
+  // App info
+  getAppVersion: () => Promise<string>;
 }
 
 declare global {
