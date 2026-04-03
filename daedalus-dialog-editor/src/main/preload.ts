@@ -31,4 +31,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // Settings API
   getRecentProjects: () => ipcRenderer.invoke('settings:getRecentProjects'),
   addRecentProject: (projectPath: string, projectName: string) => ipcRenderer.invoke('settings:addRecentProject', projectPath, projectName),
+
+  // App info
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 });

@@ -323,4 +323,7 @@ function setupIpcHandlers() {
       throw new Error(`Failed to add recent project: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
+
+  // App info
+  ipcMain.handle('app:getVersion', () => app.getVersion());
 }
