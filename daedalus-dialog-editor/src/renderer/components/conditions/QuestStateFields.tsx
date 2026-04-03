@@ -1,4 +1,3 @@
-import React from 'react';
 import { Box, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';

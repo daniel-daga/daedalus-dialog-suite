@@ -486,6 +486,10 @@ export const mockEditorAPI: EditorAPI = {
     const newRecent = [{ path: projectPath, name: projectName, lastOpened: Date.now() }, ...recent.filter(p => p.path !== projectPath)].slice(0, 10);
     localStorage.setItem('recent_projects', JSON.stringify(newRecent));
   },
+
+  async getAppVersion(): Promise<string> {
+    return '0.0.0-mock';
+  },
 };
 
 // Helper for tests to reset mock file system

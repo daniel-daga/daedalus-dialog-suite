@@ -1,4 +1,3 @@
-import React from 'react';
 import { Box, Typography } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
