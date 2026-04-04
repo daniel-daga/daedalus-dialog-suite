@@ -4,13 +4,19 @@ import {
   Typography,
   Stack,
   Button,
+  IconButton,
+  Tooltip,
   Snackbar,
   Alert,
 } from '@mui/material';
 import {
-  Code as CodeIcon
+  Code as CodeIcon,
+  Undo as UndoIcon,
+  Redo as RedoIcon,
 } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
+import { useHistoryStore } from '../store/historyStore';
+import * as historyActions from '../store/historyActions';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ValidationErrorDialog from './ValidationErrorDialog';
 import DialogSourceViewDialog from './DialogSourceViewDialog';
@@ -30,7 +36,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   onNavigateToFunction,
   semanticModel: passedSemanticModel
 }) => {
-  const { openFiles, saveFile, updateFunction } = useEditorStore();
+  const { openFiles, saveFile } = useEditorStore();
   const fileState = filePath ? openFiles.get(filePath) : null;
   const semanticModel = fileState?.semanticModel || passedSemanticModel;
 
@@ -42,6 +48,10 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const currentFunction = currentFunctionName
     ? semanticModel?.functions?.[currentFunctionName] || null
     : null;
+
+  const canUndo = useHistoryStore((state) => filePath ? state.canUndo(filePath) : false);
+  const canRedo = useHistoryStore((state) => filePath ? state.canRedo(filePath) : false);
+  const { undo, redo } = useHistoryStore();
 
   const uiState = useDialogEditorUIState();
   const { registerActionRef, focusAction, trimRefs } = useFocusNavigation();
@@ -61,7 +71,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     currentFunction,
     semanticModel,
     saveFile,
-    updateFunction,
     focusAction,
     setIsSaving: uiState.setIsSaving,
     setIsResetting: uiState.setIsResetting,
@@ -83,7 +92,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     semanticModel,
     onUpdateSemanticModel: (functionNameToUpdate, updatedFunction) => {
       if (filePath) {
-        updateFunction(filePath, functionNameToUpdate, updatedFunction);
+        historyActions.updateFunction(filePath, functionNameToUpdate, updatedFunction);
       }
     },
     contextName: dialogName,
@@ -105,7 +114,31 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="h5">{dialogName}</Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Tooltip title="Undo (Ctrl+Z)">
+            <span>
+              <IconButton
+                size="small"
+                disabled={!canUndo}
+                onClick={() => filePath && undo(filePath)}
+                aria-label="Undo"
+              >
+                <UndoIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Redo (Ctrl+Y)">
+            <span>
+              <IconButton
+                size="small"
+                disabled={!canRedo}
+                onClick={() => filePath && redo(filePath)}
+                aria-label="Redo"
+              >
+                <RedoIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
           <Button
             variant="outlined"
             onClick={() => uiState.setSourceViewOpen(true)}

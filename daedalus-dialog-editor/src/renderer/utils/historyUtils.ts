@@ -22,6 +22,19 @@ export interface QuestHistoryState {
   future: QuestHistorySnapshot[];
 }
 
+/**
+ * Extended snapshot used by the unified edit history (dialog + quest surfaces).
+ * Includes a timestamp for coalescing rapid edits into a single undo step.
+ */
+export interface EditSnapshot extends QuestHistorySnapshot {
+  timestamp: number;
+}
+
+export interface EditHistoryState {
+  past: EditSnapshot[];
+  future: EditSnapshot[];
+}
+
 export interface QuestBatchHistoryState {
   past: string[][];
   future: string[][];
