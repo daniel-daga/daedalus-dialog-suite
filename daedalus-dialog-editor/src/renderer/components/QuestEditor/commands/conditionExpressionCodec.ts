@@ -4,6 +4,7 @@ type ParseSuccess = {
   ok: true;
   conditions: DialogCondition[];
   mode: 'structured' | 'generic-expression';
+  conditionOperator?: 'AND' | 'OR';
 };
 
 type ParseFailure = {
@@ -175,6 +176,16 @@ export const parseConditionExpressionToConditions = (expression: string): Condit
     return orSplit;
   }
   if (orSplit.segments.length > 1) {
+    const parsedOrConditions = orSplit.segments.map((segment) => parseSimpleClause(segment));
+    const allOrSegmentsStructured = parsedOrConditions.every((c): c is DialogCondition => c !== null);
+    if (allOrSegmentsStructured) {
+      return {
+        ok: true,
+        mode: 'structured',
+        conditions: parsedOrConditions,
+        conditionOperator: 'OR'
+      };
+    }
     return {
       ok: true,
       mode: 'generic-expression',

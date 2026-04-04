@@ -382,7 +382,7 @@ export class SemanticCodeGenerator {
       });
     } else if (func.conditions.length > 0) {
       // Generate condition function body
-      this.generateConditionBody(func.conditions, lines, indent);
+      this.generateConditionBody(func.conditions, lines, indent, func.conditionOperator);
     } else if (func.actions.length > 0) {
       // Generate body from semantic actions
       func.actions.forEach(action => {
@@ -418,7 +418,7 @@ export class SemanticCodeGenerator {
   /**
    * Generate condition function body with if statement(s)
    */
-  private generateConditionBody(conditions: DialogCondition[], lines: string[], indent: string): void {
+  private generateConditionBody(conditions: DialogCondition[], lines: string[], indent: string, conditionOperator: 'AND' | 'OR' = 'AND'): void {
     if (conditions.length === 0) {
       lines.push(`${indent}return TRUE;`);
       return;
@@ -432,11 +432,12 @@ export class SemanticCodeGenerator {
       lines.push(`${indent}${indent}return TRUE;`);
       lines.push(`${indent}};`);
     } else {
-      // Multiple conditions - generate single if with && operators (matching Gothic style)
+      // Multiple conditions - generate single if with && or || operators (matching Gothic style)
+      const joiner = conditionOperator === 'OR' ? '|| ' : '&& ';
       const condCodes = conditions.map(c => this.generateCondition(c));
       lines.push(`${indent}if (${condCodes[0]}`);
       for (let i = 1; i < condCodes.length; i++) {
-        lines.push(`${indent}&& ${condCodes[i]}`);
+        lines.push(`${indent}${joiner}${condCodes[i]}`);
       }
       lines.push(`${indent})`);
       lines.push(`${indent}{`);

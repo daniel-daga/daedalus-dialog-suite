@@ -648,3 +648,155 @@ test('QuestStateCondition generates code with LOG_SUCCESS', () => {
   const code = condition.generateCode({});
   assert.strictEqual(code, 'MIS_TestQuest == LOG_SUCCESS');
 });
+
+test('Should parse OR conditions and set conditionOperator to OR', () => {
+  const source = `
+instance DIA_Test_OR(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_OR_Condition;
+	information	= DIA_Test_OR_Info;
+	description = "Test OR";
+};
+
+func int DIA_Test_OR_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_First)
+	|| Npc_KnowsInfo(other, DIA_Second))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_OR_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_OR'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse 2 conditions from OR expression');
+  assert.ok(conditionFunc.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(conditionFunc.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
+  assert.strictEqual(conditionFunc.conditionOperator, 'OR', 'conditionOperator should be OR');
+});
+
+test('Should default conditionOperator to AND for AND conditions', () => {
+  const source = `
+instance DIA_Test_AND(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_AND_Condition;
+	information	= DIA_Test_AND_Info;
+	description = "Test AND";
+};
+
+func int DIA_Test_AND_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_First)
+	&& Npc_KnowsInfo(other, DIA_Second))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_AND_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_AND'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse 2 conditions from AND expression');
+  // conditionOperator should be 'AND' or undefined (defaults to AND)
+  assert.ok(
+    conditionFunc.conditionOperator === 'AND' || conditionFunc.conditionOperator === undefined,
+    'conditionOperator should be AND or undefined for AND conditions'
+  );
+});
+
+test('Should round-trip OR conditions with || in generated code', () => {
+  const source = `
+instance DIA_Test_OR_Roundtrip(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_OR_Roundtrip_Condition;
+	information	= DIA_Test_OR_Roundtrip_Info;
+	description = "Test OR Roundtrip";
+};
+
+func int DIA_Test_OR_Roundtrip_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_First)
+	|| Npc_KnowsInfo(other, DIA_Second))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_OR_Roundtrip_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(model);
+
+  assert.ok(generatedCode.includes('|| Npc_KnowsInfo(other, DIA_Second)'),
+    'Generated code should use || for OR conditions');
+  assert.ok(!generatedCode.includes('&& Npc_KnowsInfo(other, DIA_Second)'),
+    'Generated code should not use && for OR conditions');
+
+  // Parse again and verify
+  const model2 = parseAndBuildModel(generatedCode);
+  const conditionFunc2 = model2.dialogs['DIA_Test_OR_Roundtrip'].properties.condition;
+  assert.strictEqual(conditionFunc2.conditions.length, 2, 'Re-parsed should have 2 conditions');
+  assert.strictEqual(conditionFunc2.conditionOperator, 'OR', 'Re-parsed should have OR operator');
+});
+
+test('Should fall back to raw mode for mixed AND/OR at top level', () => {
+  const source = `
+instance DIA_Test_Mixed(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Mixed_Condition;
+	information	= DIA_Test_Mixed_Info;
+	description = "Test Mixed";
+};
+
+func int DIA_Test_Mixed_Condition()
+{
+	if (FlagA && FlagB || FlagC)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Mixed_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_Mixed'].properties.condition;
+
+  // Mixed operators should fall back to raw mode (actions, not structured conditions)
+  // OR produce a single generic Condition
+  const totalStructured = conditionFunc.conditions.length;
+  const totalRaw = conditionFunc.actions.length;
+  assert.ok(
+    totalStructured <= 1 || totalRaw > 0,
+    'Mixed AND/OR should either fall back to raw mode or produce at most 1 generic condition'
+  );
+});

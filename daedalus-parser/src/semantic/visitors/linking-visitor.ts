@@ -73,6 +73,10 @@ export class LinkingVisitor {
 
     this.enterDeclarationContext(type, node);
 
+    if (type === 'if_statement') {
+      this.maybeSetConditionOperator(node);
+    }
+
     const skipChildren = this.shouldSkipChildren(type, node);
 
     if (!skipChildren) {
@@ -218,6 +222,61 @@ export class LinkingVisitor {
     if (isAllowed) {
       this.processCondition(node);
     }
+  }
+
+  private maybeSetConditionOperator(ifNode: TreeSitterNode): void {
+    if (!this.isCurrentConditionFunction() || !this.currentFunction) return;
+    const condNode = ifNode.childForFieldName('condition');
+    if (!condNode) return;
+    const detectedOp = this.detectTopLevelConditionOperator(condNode);
+    if (detectedOp === 'OR') {
+      this.currentFunction.conditionOperator = 'OR';
+    }
+    // null (mixed) case: we leave it as AND (the raw fallback will apply later)
+  }
+
+  /**
+   * Detect the top-level logical operator used in the if statement condition.
+   * Returns 'OR' if pure-OR, 'AND' if pure-AND or single condition, null if mixed.
+   */
+  private detectTopLevelConditionOperator(ifConditionNode: TreeSitterNode): 'AND' | 'OR' | null {
+    if (ifConditionNode.type !== 'binary_expression') {
+      return 'AND'; // single condition, default to AND
+    }
+    const operator = getBinaryOperator(ifConditionNode);
+    if (!isLogicalOperator(operator)) {
+      return 'AND'; // comparison, default to AND
+    }
+
+    const leftNode = ifConditionNode.childForFieldName('left');
+    const rightNode = ifConditionNode.childForFieldName('right');
+
+    const leftOp = this.getTopLevelLogicalOperator(leftNode);
+    const rightOp = this.getTopLevelLogicalOperator(rightNode);
+
+    if (operator === '||') {
+      // All parts must be non-&& (i.e., no && in same level)
+      if ((leftOp === null || leftOp === '||') && (rightOp === null || rightOp === '||')) {
+        return 'OR';
+      }
+      return null; // mixed
+    }
+
+    if (operator === '&&') {
+      if ((leftOp === null || leftOp === '&&') && (rightOp === null || rightOp === '&&')) {
+        return 'AND';
+      }
+      return null; // mixed
+    }
+
+    return null;
+  }
+
+  private getTopLevelLogicalOperator(node: TreeSitterNode | null): '&&' | '||' | null {
+    if (!node || node.type !== 'binary_expression') return null;
+    const op = getBinaryOperator(node);
+    if (op === '&&' || op === '||') return op;
+    return null;
   }
 
   /**
