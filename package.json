@@ -5,6 +5,11 @@
     "daedalus-dialog-editor",
     "daedalus-parser"
   ],
+  "pnpm": {
+    "overrides": {
+      "@types/react": "^18.3.0"
+    }
+  },
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",

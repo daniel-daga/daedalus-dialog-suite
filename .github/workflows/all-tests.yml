@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck editor main process
+        run: pnpm --filter daedalus-dialog-editor run build:main
+
       - name: Typecheck editor renderer
         run: pnpm --filter daedalus-dialog-editor run typecheck:renderer
       - name: Build editor renderer (warning guard)
@@ -112,6 +115,12 @@ jobs:
 
       - name: Run parser tests
         run: pnpm --filter daedalus-parser test
+
+      - name: Lint parser
+        run: pnpm --filter daedalus-parser run lint
+
+      - name: Typecheck parser
+        run: pnpm --filter daedalus-parser run typecheck
 
   roundtrip-corpus:
     runs-on: ubuntu-latest
