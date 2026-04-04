@@ -8,6 +8,7 @@ import ProjectService from './services/ProjectService';
 import { PathValidationService, PathValidationError } from './services/PathValidationService';
 import { SettingsService } from './services/SettingsService';
 import { FileWatcherService } from './services/FileWatcherService';
+import { UpdaterService } from './services/UpdaterService';
 
 let mainWindow: BrowserWindow | null = null;
 const fileService = new FileService();
@@ -17,6 +18,7 @@ const validationService = new ValidationService(parserService, codeGeneratorServ
 const projectService = new ProjectService();
 const settingsService = new SettingsService();
 const fileWatcherService = new FileWatcherService();
+const updaterService = new UpdaterService(settingsService);
 // Path validator starts empty - paths are added when user opens files/projects via dialogs
 const pathValidator = new PathValidationService([]);
 
@@ -355,4 +357,37 @@ function setupIpcHandlers() {
 
   // App info
   ipcMain.handle('app:getVersion', () => app.getVersion());
+
+  // Updater handlers
+  ipcMain.handle('updater:checkForUpdate', async () => {
+    try {
+      return await updaterService.checkForUpdate();
+    } catch (error) {
+      console.error('[IPC] updater:checkForUpdate error:', error);
+      throw new Error(`Failed to check for update: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('updater:downloadUpdate', async (_event, url: string) => {
+    try {
+      const installerPath = await updaterService.downloadUpdate(url, (percent) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('updater:downloadProgress', percent);
+        }
+      });
+      return installerPath;
+    } catch (error) {
+      console.error('[IPC] updater:downloadUpdate error:', error);
+      throw new Error(`Failed to download update: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('updater:installUpdate', (_event, installerPath: string) => {
+    try {
+      updaterService.installUpdate(installerPath);
+    } catch (error) {
+      console.error('[IPC] updater:installUpdate error:', error);
+      throw new Error(`Failed to install update: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
 }

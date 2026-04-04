@@ -115,6 +115,15 @@ jobs:
         }
         Copy-Item $installer.FullName "daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe" -Force
 
+    - name: Generate update metadata
+      shell: pwsh
+      run: |
+        @{
+          version = "${{ steps.version.outputs.BUILD_VERSION }}"
+          baseVersion = "${{ steps.version.outputs.BASE_VERSION }}"
+          buildNumber = [int]${{ github.run_number }}
+        } | ConvertTo-Json | Set-Content "daedalus-dialog-editor/dist/update-meta.json" -Encoding UTF8
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -135,5 +144,7 @@ jobs:
 
           Download `daedalus-dialog-editor-windows-latest.exe` from this release.
         prerelease: true
-        files: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
+        files: |
+          daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
+          daedalus-dialog-editor/dist/update-meta.json
         make_latest: false

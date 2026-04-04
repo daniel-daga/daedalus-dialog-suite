@@ -496,6 +496,18 @@ export const mockEditorAPI: EditorAPI = {
   async getAppVersion(): Promise<string> {
     return '0.0.0-mock';
   },
+
+  // Updater API (no-op in mock/browser mode)
+  async checkForUpdate() {
+    return { updateAvailable: false, currentVersion: '0.0.0-mock' };
+  },
+  async downloadUpdate(_url: string): Promise<string> {
+    return '';
+  },
+  async installUpdate(_installerPath: string): Promise<void> {},
+  onDownloadProgress(_callback: (percent: number) => void): () => void {
+    return () => {};
+  },
 };
 
 // Helper for tests to reset mock file system
