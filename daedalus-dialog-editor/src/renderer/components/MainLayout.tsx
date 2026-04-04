@@ -3,6 +3,7 @@ import { Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip,
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
 import { useEditorStore } from '../store/editorStore';
+import { useHistoryStore } from '../store/historyStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
 import { isWritableQuestEditorEnabled } from '../config/features';
@@ -50,6 +51,29 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
       loadQuestData();
     }
   }, [view, isProjectMode, loadQuestData]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isUndo = (e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey;
+      const isRedo = (e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey));
+
+      if (!isUndo && !isRedo) return;
+
+      // Let Monaco's built-in undo/redo handle events when the source editor is focused
+      const activeElement = document.activeElement;
+      if (activeElement?.closest('.monaco-editor')) return;
+
+      const activeFilePath = useEditorStore.getState().activeFile;
+      if (!activeFilePath) return;
+
+      e.preventDefault();
+      if (isUndo) useHistoryStore.getState().undo(activeFilePath);
+      if (isRedo) useHistoryStore.getState().redo(activeFilePath);
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   return (
     <Box sx={{ display: 'flex', height: '100%', width: '100%' }}>

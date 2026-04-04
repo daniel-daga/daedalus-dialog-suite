@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useEditorStore } from '../../store/editorStore';
+import * as historyActions from '../../store/historyActions';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
 import { createAction, createDialogLineId } from '../actionFactory';
 import type { ActionTypeId } from '../actionTypes';
@@ -25,7 +26,6 @@ interface UseDialogEditorCommandsParams {
     success: boolean;
     validationResult?: ValidationResult;
   }>;
-  updateFunction: (filePath: string, functionName: string, func: DialogFunction) => void;
   focusAction: (path: ActionPath, scrollIntoView?: boolean) => void;
   setIsSaving: (value: boolean) => void;
   setIsResetting: (value: boolean) => void;
@@ -40,19 +40,19 @@ export function useDialogEditorCommands({
   currentFunction,
   semanticModel,
   saveFile,
-  updateFunction,
   focusAction,
   setIsSaving,
   setIsResetting,
   setSnackbar,
   setValidationDialog
 }: UseDialogEditorCommandsParams) {
+  const updateFunction = historyActions.updateFunction;
   const openFile = useEditorStore((state) => state.openFile);
-  const renameFunction = useEditorStore((state) => state.renameFunction);
-  const updateDialogWithNormalizedProperties = useEditorStore((state) => state.updateDialogWithNormalizedProperties);
-  const updateFunctionWithUpdater = useEditorStore((state) => state.updateFunctionWithUpdater);
-  const updateDialogConditionFunction = useEditorStore((state) => state.updateDialogConditionFunction);
-  const replaceDialogConditionFunction = useEditorStore((state) => state.replaceDialogConditionFunction);
+  const renameFunction = historyActions.renameFunction;
+  const updateDialogWithNormalizedProperties = historyActions.updateDialogWithNormalizedProperties;
+  const updateFunctionWithUpdater = historyActions.updateFunctionWithUpdater;
+  const updateDialogConditionFunction = historyActions.updateDialogConditionFunction;
+  const replaceDialogConditionFunction = historyActions.replaceDialogConditionFunction;
 
   const setFunction = useCallback((updatedFunctionOrUpdater: FunctionUpdater) => {
     if (!currentFunctionName || !filePath) {

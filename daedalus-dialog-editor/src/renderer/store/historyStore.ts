@@ -13,13 +13,26 @@ import type {
   QuestNodePositionMap,
   QuestHistoryState,
   QuestBatchHistoryState,
+  EditSnapshot,
+  EditHistoryState,
 } from '../utils/historyUtils';
 import type { SemanticModel } from '../types/global';
+
+const MAX_HISTORY_SIZE = 50;
+const COALESCE_MS = 300;
 
 // Enable Map/Set support in Immer
 enableMapSet();
 
 interface HistoryStore {
+  // Unified edit history (dialog + quest surfaces share one stack per file)
+  editHistory: Map<string, EditHistoryState>;
+  pushSnapshot: (filePath: string) => void;
+  undo: (filePath: string) => void;
+  redo: (filePath: string) => void;
+  canUndo: (filePath: string) => boolean;
+  canRedo: (filePath: string) => boolean;
+
   questHistory: Map<string, QuestHistoryState>;
   questBatchHistory: QuestBatchHistoryState;
   questNodePositions: Map<string, Map<string, QuestNodePositionMap>>;
@@ -138,9 +151,99 @@ const applyRedoForFile = (
 };
 
 export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
+  editHistory: new Map(),
   questHistory: new Map(),
   questBatchHistory: { past: [], future: [] },
   questNodePositions: new Map(),
+
+  pushSnapshot: (filePath: string) => {
+    const fileState = useFileStore.getState().openFiles.get(filePath);
+    if (!fileState) return;
+
+    const now = Date.now();
+    const history = get().editHistory.get(filePath);
+    const lastTimestamp = history?.past[history.past.length - 1]?.timestamp ?? 0;
+
+    if (now - lastTimestamp < COALESCE_MS) {
+      // Coalesce: within burst window — clear future to commit this new edit branch
+      set((state) => {
+        const h = state.editHistory.get(filePath);
+        if (h) h.future = [];
+      });
+      return;
+    }
+
+    const snapshot: EditSnapshot = {
+      model: cloneSemanticModel(fileState.semanticModel),
+      nodePositions: cloneQuestNodePositionsForFile(get().questNodePositions.get(filePath)),
+      timestamp: now,
+    };
+
+    set((state) => {
+      const h: EditHistoryState = state.editHistory.get(filePath) ?? { past: [], future: [] };
+      h.past.push(snapshot);
+      if (h.past.length > MAX_HISTORY_SIZE) h.past.shift();
+      h.future = [];
+      state.editHistory.set(filePath, h);
+    });
+  },
+
+  undo: (filePath: string) => {
+    set((state) => {
+      const fileState = useFileStore.getState().openFiles.get(filePath);
+      const history = state.editHistory.get(filePath);
+      if (!fileState || !history || history.past.length === 0) return;
+
+      const previousSnapshot = history.past[history.past.length - 1];
+      const currentSnapshot: EditSnapshot = {
+        model: cloneSemanticModel(fileState.semanticModel),
+        nodePositions: cloneQuestNodePositionsForFile(state.questNodePositions.get(filePath)),
+        timestamp: Date.now(),
+      };
+
+      history.future = [currentSnapshot, ...history.future];
+      history.past = history.past.slice(0, history.past.length - 1);
+
+      useFileStore.getState()._applyHistoryModelUpdate(
+        filePath,
+        cloneSemanticModel(previousSnapshot.model)
+      );
+    });
+  },
+
+  redo: (filePath: string) => {
+    set((state) => {
+      const fileState = useFileStore.getState().openFiles.get(filePath);
+      const history = state.editHistory.get(filePath);
+      if (!fileState || !history || history.future.length === 0) return;
+
+      const nextSnapshot = history.future[0];
+      const currentSnapshot: EditSnapshot = {
+        model: cloneSemanticModel(fileState.semanticModel),
+        nodePositions: cloneQuestNodePositionsForFile(state.questNodePositions.get(filePath)),
+        timestamp: Date.now(),
+      };
+
+      history.past = [...history.past, currentSnapshot];
+      if (history.past.length > MAX_HISTORY_SIZE) history.past.shift();
+      history.future = history.future.slice(1);
+
+      useFileStore.getState()._applyHistoryModelUpdate(
+        filePath,
+        cloneSemanticModel(nextSnapshot.model)
+      );
+    });
+  },
+
+  canUndo: (filePath: string) => {
+    const history = get().editHistory.get(filePath);
+    return !!history && history.past.length > 0;
+  },
+
+  canRedo: (filePath: string) => {
+    const history = get().editHistory.get(filePath);
+    return !!history && history.future.length > 0;
+  },
 
   applyQuestModelWithHistory: (filePath: string, model: SemanticModel) => {
     const fileState = useFileStore.getState().openFiles.get(filePath);
@@ -363,6 +466,7 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
 
   clearHistoryForFile: (filePath: string) => {
     set((state) => {
+      state.editHistory.delete(filePath);
       state.questHistory.delete(filePath);
       state.questNodePositions.delete(filePath);
       state.questBatchHistory.past = state.questBatchHistory.past.filter(
@@ -376,6 +480,7 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
 
   resetHistory: () => {
     set((state) => {
+      state.editHistory.clear();
       state.questHistory.clear();
       state.questNodePositions.clear();
       state.questBatchHistory = { past: [], future: [] };
