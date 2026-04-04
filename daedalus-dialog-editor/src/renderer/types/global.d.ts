@@ -6,6 +6,12 @@
 
 // Re-export all shared types
 export type {
+  UpdateMetadata,
+  UpdateCheckResult,
+  UpdaterSettings,
+} from '../../shared/updater-types';
+
+export type {
   DialogMetadata,
   ProjectIndex,
   CodeGenerationSettings,
@@ -69,6 +75,8 @@ import type {
   RecentProject
 } from '../../shared/types';
 
+import type { UpdateCheckResult } from '../../shared/updater-types';
+
 // ============================================================================
 // Editor API (renderer-specific)
 // ============================================================================
@@ -114,6 +122,12 @@ export interface EditorAPI {
 
   // App info
   getAppVersion: () => Promise<string>;
+
+  // Updater API
+  checkForUpdate: () => Promise<UpdateCheckResult>;
+  downloadUpdate: (url: string) => Promise<string>;
+  installUpdate: (installerPath: string) => Promise<void>;
+  onDownloadProgress: (callback: (percent: number) => void) => () => void;
 }
 
 export interface FileChangeEvent {

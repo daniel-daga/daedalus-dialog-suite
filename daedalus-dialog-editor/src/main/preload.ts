@@ -45,4 +45,14 @@ contextBridge.exposeInMainWorld('editorAPI', {
 
   // App info
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+  // Updater API
+  checkForUpdate: () => ipcRenderer.invoke('updater:checkForUpdate'),
+  downloadUpdate: (url: string) => ipcRenderer.invoke('updater:downloadUpdate', url),
+  installUpdate: (installerPath: string) => ipcRenderer.invoke('updater:installUpdate', installerPath),
+  onDownloadProgress: (callback: (percent: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, percent: number) => callback(percent);
+    ipcRenderer.on('updater:downloadProgress', listener);
+    return () => { ipcRenderer.removeListener('updater:downloadProgress', listener); };
+  },
 });

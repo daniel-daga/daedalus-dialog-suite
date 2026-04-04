@@ -24,6 +24,7 @@ import MainLayout from './components/MainLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
+import UpdateNotification from './components/UpdateNotification';
 import { RecentProject } from './types/global';
 import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
@@ -53,6 +54,7 @@ const App: React.FC = () => {
   const [appError, setAppError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isProjectOpening, setIsProjectOpening] = useState(false);
+  const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
   const { mode, setMode } = useThemeMode();
 
   const ingestionProgress = useMemo(() => {
@@ -80,6 +82,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     window.editorAPI.getAppVersion().then(setAppVersion);
+  }, []);
+
+  // Trigger update check ~5s after mount to avoid slowing perceived startup
+  useEffect(() => {
+    const timer = setTimeout(() => setTriggerUpdateCheck(true), 5000);
+    return () => clearTimeout(timer);
   }, []);
 
   const formatLastSaved = (date: Date | null): string => {
@@ -393,6 +401,7 @@ const App: React.FC = () => {
             bgcolor: 'background.paper',
           }}
         >
+          <UpdateNotification triggerCheck={triggerUpdateCheck} />
           <Typography variant="caption" color="text.disabled">
             v{appVersion}
           </Typography>
