@@ -137,7 +137,7 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ triggerCheck })
       <Dialog open={dialogOpen} onClose={handleDismiss} maxWidth="sm" fullWidth>
         <DialogTitle>Software Update</DialogTitle>
         <DialogContent>
-          {(state.kind === 'update-available' || state.kind === 'downloading' || state.kind === 'ready-to-install' || state.kind === 'installing') && (
+          {(state.kind === 'update-available' || state.kind === 'downloading' || state.kind === 'ready-to-install') && (
             <>
               <Box sx={{ mb: 2 }}>
                 <Typography variant="body2" color="text.secondary" gutterBottom>
