@@ -352,4 +352,7 @@ function setupIpcHandlers() {
   ipcMain.handle('fileWatcher:notifySelfWrite', (_event, filePath: string) => {
     fileWatcherService.notifySelfWrite(filePath);
   });
+
+  // App info
+  ipcMain.handle('app:getVersion', () => app.getVersion());
 }

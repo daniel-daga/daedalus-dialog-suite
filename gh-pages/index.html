@@ -381,7 +381,9 @@
             windowsAsset.updated_at ||
             release.updated_at ||
             release.published_at;
-          statusEl.innerHTML = `<span class="dot"></span> Updated: ${new Date(updatedAt).toLocaleString()}`;
+          const versionMatch = release.name && release.name.match(/\(([^)]+)\)$/);
+          const versionLabel = versionMatch ? ` &nbsp;·&nbsp; ${versionMatch[1]}` : '';
+          statusEl.innerHTML = `<span class="dot"></span> Updated: ${new Date(updatedAt).toLocaleString()}${versionLabel}`;
         } catch (error) {
           linkEl.textContent = 'Build unavailable';
           statusEl.textContent = `Could not fetch latest build: ${error.message}`;

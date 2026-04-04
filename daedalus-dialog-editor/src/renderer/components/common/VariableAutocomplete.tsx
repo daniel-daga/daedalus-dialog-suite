@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import { OpenInNew as OpenInNewIcon, Add as AddIcon } from '@mui/icons-material';
 import { SemanticModel } from '../../types/global';

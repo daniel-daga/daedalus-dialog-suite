@@ -36,6 +36,10 @@ const mockProjectState = {
   setIngestedFilesOpen: jest.fn()
 };
 
+jest.mock('../src/renderer/store/storeSync', () => ({
+  initStoreSync: jest.fn(() => jest.fn())
+}));
+
 jest.mock('../src/renderer/store/editorStore', () => ({
   useEditorStore: () => mockEditorState
 }));

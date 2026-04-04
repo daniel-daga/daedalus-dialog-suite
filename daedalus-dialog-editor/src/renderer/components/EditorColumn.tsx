@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import { forwardRef } from 'react';
 import EditorPane from './EditorPane';
 import type { SemanticModel, Dialog, DialogFunction } from '../types/global';
 import type { RecentDialogTab } from './hooks/useRecentDialogTabs';

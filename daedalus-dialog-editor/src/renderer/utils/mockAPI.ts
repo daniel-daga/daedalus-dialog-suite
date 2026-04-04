@@ -492,6 +492,10 @@ export const mockEditorAPI: EditorAPI = {
   async stopFileWatcher(): Promise<void> {},
   async notifySelfWrite(): Promise<void> {},
   onFileChanged(): () => void { return () => {}; },
+
+  async getAppVersion(): Promise<string> {
+    return '0.0.0-mock';
+  },
 };
 
 // Helper for tests to reset mock file system

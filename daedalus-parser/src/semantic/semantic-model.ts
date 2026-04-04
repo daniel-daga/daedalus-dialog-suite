@@ -293,7 +293,8 @@ export class Action implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `${this.action};`;
+    const trimmed = this.action.trimEnd();
+    return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
   }
 
   toDisplayString(): string {

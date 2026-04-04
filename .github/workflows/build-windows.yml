@@ -13,6 +13,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Compute build version
+      id: version
+      shell: pwsh
+      run: |
+        $pkg = Get-Content "daedalus-dialog-editor/package.json" -Raw | ConvertFrom-Json
+        $base = $pkg.version
+        $buildNum = $env:GITHUB_RUN_NUMBER
+        $buildVersion = "${base}-build.${buildNum}"
+        "BASE_VERSION=$base" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "BUILD_VERSION=$buildVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        Write-Host "Build version: $buildVersion"
+
     - name: Setup pnpm
       uses: pnpm/action-setup@v4
       with:
@@ -26,6 +38,16 @@ jobs:
 
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
+
+    - name: Stamp build version into package.json
+      shell: pwsh
+      run: |
+        $buildVersion = "${{ steps.version.outputs.BUILD_VERSION }}"
+        $pkgPath = "daedalus-dialog-editor/package.json"
+        $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+        $pkg.version = $buildVersion
+        $pkg | ConvertTo-Json -Depth 10 | Set-Content $pkgPath -Encoding UTF8
+        Write-Host "Stamped version $buildVersion into package.json"
 
     - name: Clean previous build outputs
       shell: pwsh
@@ -96,16 +118,21 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: daedalus-dialog-editor-windows
+        name: daedalus-dialog-editor-${{ steps.version.outputs.BUILD_VERSION }}
         path: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
 
     - name: Publish rolling release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: windows-latest
-        name: Latest Windows Build
+        name: Latest Windows Build (${{ steps.version.outputs.BUILD_VERSION }})
         body: |
           Automated rolling Windows build from GitHub Actions.
+
+          **Version:** `${{ steps.version.outputs.BUILD_VERSION }}`
+          **Base version:** `${{ steps.version.outputs.BASE_VERSION }}`
+          **Build number:** #${{ github.run_number }}
+
           Download `daedalus-dialog-editor-windows-latest.exe` from this release.
         prerelease: true
         files: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe

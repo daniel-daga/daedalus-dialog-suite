@@ -51,6 +51,7 @@ const App: React.FC = () => {
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [appError, setAppError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isProjectOpening, setIsProjectOpening] = useState(false);
   const { mode, setMode } = useThemeMode();
 
@@ -76,6 +77,10 @@ const App: React.FC = () => {
     };
     fetchRecent();
   }, [projectPath]);
+
+  useEffect(() => {
+    window.editorAPI.getAppVersion().then(setAppVersion);
+  }, []);
 
   const formatLastSaved = (date: Date | null): string => {
     if (!date) return '';
@@ -373,6 +378,26 @@ const App: React.FC = () => {
           )}
         </ErrorBoundary>
       </Box>
+
+      {appVersion && (
+        <Box
+          component="footer"
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            px: 1.5,
+            py: 0.25,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+          }}
+        >
+          <Typography variant="caption" color="text.disabled">
+            v{appVersion}
+          </Typography>
+        </Box>
+      )}
 
       <ProjectOpeningOverlay
         open={showProjectOpeningOverlay}

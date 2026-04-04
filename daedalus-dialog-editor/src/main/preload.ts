@@ -42,4 +42,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
     // Return unsubscribe function
     return () => { ipcRenderer.removeListener('fileWatcher:changed', listener); };
   },
+
+  // App info
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 });
