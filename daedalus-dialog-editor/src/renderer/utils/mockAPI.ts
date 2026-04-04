@@ -487,6 +487,12 @@ export const mockEditorAPI: EditorAPI = {
     localStorage.setItem('recent_projects', JSON.stringify(newRecent));
   },
 
+  // File Watcher API (no-op in mock/browser mode)
+  async startFileWatcher(): Promise<void> {},
+  async stopFileWatcher(): Promise<void> {},
+  async notifySelfWrite(): Promise<void> {},
+  onFileChanged(): () => void { return () => {}; },
+
   async getAppVersion(): Promise<string> {
     return '0.0.0-mock';
   },

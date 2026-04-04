@@ -470,6 +470,10 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     }
 
     try {
+      // Notify the file watcher that we're about to write this file
+      // so the change event is suppressed (not an external change)
+      window.editorAPI.notifySelfWrite(filePath);
+
       const result = await window.editorAPI.saveFile(
         filePath,
         fileState.semanticModel,
@@ -539,6 +543,8 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     }
 
     try {
+      // Notify the file watcher that we're writing this file ourselves
+      window.editorAPI.notifySelfWrite(filePath);
       await window.editorAPI.writeFile(filePath, code);
       const processedModel = await parseSourceWithIds(code);
 

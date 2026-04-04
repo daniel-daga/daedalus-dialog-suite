@@ -106,8 +106,19 @@ export interface EditorAPI {
   getRecentProjects: () => Promise<RecentProject[]>;
   addRecentProject: (projectPath: string, projectName: string) => Promise<void>;
 
+  // File Watcher API
+  startFileWatcher: (projectPath: string) => Promise<void>;
+  stopFileWatcher: () => Promise<void>;
+  notifySelfWrite: (filePath: string) => Promise<void>;
+  onFileChanged: (callback: (event: FileChangeEvent) => void) => () => void;
+
   // App info
   getAppVersion: () => Promise<string>;
+}
+
+export interface FileChangeEvent {
+  type: 'change' | 'add' | 'unlink';
+  filePath: string;
 }
 
 declare global {

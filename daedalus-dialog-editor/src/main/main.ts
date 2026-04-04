@@ -7,6 +7,7 @@ import { ValidationService } from './services/ValidationService';
 import ProjectService from './services/ProjectService';
 import { PathValidationService, PathValidationError } from './services/PathValidationService';
 import { SettingsService } from './services/SettingsService';
+import { FileWatcherService } from './services/FileWatcherService';
 
 let mainWindow: BrowserWindow | null = null;
 const fileService = new FileService();
@@ -15,6 +16,7 @@ const codeGeneratorService = new CodeGeneratorService();
 const validationService = new ValidationService(parserService, codeGeneratorService);
 const projectService = new ProjectService();
 const settingsService = new SettingsService();
+const fileWatcherService = new FileWatcherService();
 // Path validator starts empty - paths are added when user opens files/projects via dialogs
 const pathValidator = new PathValidationService([]);
 
@@ -36,7 +38,11 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
+  // Register window with file watcher so it can send events to renderer
+  fileWatcherService.setWindow(mainWindow);
+
   mainWindow.on('closed', () => {
+    fileWatcherService.stopWatching();
     mainWindow = null;
   });
 }
@@ -322,6 +328,29 @@ function setupIpcHandlers() {
       console.error('[IPC] settings:addRecentProject error:', error);
       throw new Error(`Failed to add recent project: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  });
+
+  // File watcher handlers
+  ipcMain.handle('fileWatcher:start', async (_event, projectPath: string) => {
+    try {
+      await fileWatcherService.startWatching(projectPath);
+    } catch (error) {
+      console.error('[IPC] fileWatcher:start error:', error);
+      throw new Error(`Failed to start file watcher: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('fileWatcher:stop', async () => {
+    try {
+      await fileWatcherService.stopWatching();
+    } catch (error) {
+      console.error('[IPC] fileWatcher:stop error:', error);
+      throw new Error(`Failed to stop file watcher: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('fileWatcher:notifySelfWrite', (_event, filePath: string) => {
+    fileWatcherService.notifySelfWrite(filePath);
   });
 
   // App info

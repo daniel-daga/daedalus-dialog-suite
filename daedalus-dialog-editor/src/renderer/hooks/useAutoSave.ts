@@ -48,6 +48,8 @@ export function useAutoSave(): AutoSaveStatus {
           const fileState = state.openFiles.get(filePath);
           if (fileState) {
             try {
+              // Notify file watcher this is a self-originated write
+              window.editorAPI.notifySelfWrite(filePath);
               const result = await window.editorAPI.saveFile(
                 filePath,
                 fileState.semanticModel,

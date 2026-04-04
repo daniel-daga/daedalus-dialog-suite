@@ -158,6 +158,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   ): Promise<SemanticModel> => {
     const content = await window.editorAPI.readFile(filePath);
     const newContent = await mutatorFn(content);
+    // Notify file watcher this is a self-originated write
+    window.editorAPI.notifySelfWrite(filePath);
     await window.editorAPI.writeFile(filePath, newContent);
     invalidateCacheForFile(filePath);
     return get().getSemanticModel(filePath);

@@ -19,6 +19,7 @@ import {
 import { useEditorStore } from './store/editorStore';
 import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
+import { useFileWatcher } from './hooks/useFileWatcher';
 import MainLayout from './components/MainLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
@@ -43,6 +44,7 @@ const App: React.FC = () => {
   const { openFile, activeFile, openFiles, resetEditorSession } = useEditorStore();
   const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore();
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
+  useFileWatcher();
 
   const activeFileState = activeFile ? openFiles.get(activeFile) : null;
   const autoSaveError = activeFileState?.autoSaveError;
