@@ -231,8 +231,23 @@ export class LinkingVisitor {
     const detectedOp = this.detectTopLevelConditionOperator(condNode);
     if (detectedOp === 'OR') {
       this.currentFunction.conditionOperator = 'OR';
+    } else if (detectedOp === null) {
+      // Mixed operators — fall back to raw mode immediately
+      this.triggerConditionRawMode(ifNode);
     }
-    // null (mixed) case: we leave it as AND (the raw fallback will apply later)
+  }
+
+  /**
+   * Unwrap parenthesized_expression nodes to get the inner node.
+   */
+  private unwrapParens(node: TreeSitterNode): TreeSitterNode {
+    let current = node;
+    while (current.type === 'parenthesized_expression' && current.namedChildren.length === 1) {
+      const inner = current.namedChildren[0];
+      if (!inner) break;
+      current = inner;
+    }
+    return current;
   }
 
   /**
@@ -240,16 +255,18 @@ export class LinkingVisitor {
    * Returns 'OR' if pure-OR, 'AND' if pure-AND or single condition, null if mixed.
    */
   private detectTopLevelConditionOperator(ifConditionNode: TreeSitterNode): 'AND' | 'OR' | null {
-    if (ifConditionNode.type !== 'binary_expression') {
+    const node = this.unwrapParens(ifConditionNode);
+    if (node.type !== 'binary_expression') {
       return 'AND'; // single condition, default to AND
     }
-    const operator = getBinaryOperator(ifConditionNode);
+    const operator = getBinaryOperator(node);
     if (!isLogicalOperator(operator)) {
       return 'AND'; // comparison, default to AND
     }
 
-    const leftNode = ifConditionNode.childForFieldName('left');
-    const rightNode = ifConditionNode.childForFieldName('right');
+    // binary_expression children: child(0)=left, child(1)=operator, child(2)=right
+    const leftNode = node.childCount >= 1 ? node.child(0) : null;
+    const rightNode = node.childCount >= 3 ? node.child(2) : null;
 
     const leftOp = this.getTopLevelLogicalOperator(leftNode);
     const rightOp = this.getTopLevelLogicalOperator(rightNode);
