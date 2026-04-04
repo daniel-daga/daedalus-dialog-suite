@@ -9,6 +9,7 @@ import {
   DialogCondition,
   CodeGeneratable
 } from '../semantic/semantic-model';
+import { Choice } from '../semantic/dialogActions';
 
 export interface CodeGeneratorOptions {
   indentSize?: number;
@@ -69,10 +70,14 @@ export class SemanticCodeGenerator {
     const emittedDialogs = new Set<string>();
     const emittedFunctions = new Set<string>();
 
+    // Pre-compute which functions belong to which dialog so we can cluster them.
+    const functionToDialog = this.buildFunctionToDialogMap(model);
+
     for (const declaration of model.declarationOrder || []) {
       if (declaration.type === 'dialog') {
         const dialog = model.dialogs[declaration.name];
         if (dialog && !emittedDialogs.has(dialog.name)) {
+          // Emit section header / leading comments
           const leading = this.renderLeadingComments(dialog.leadingComments);
           if (leading) {
             sections.push(leading);
@@ -81,10 +86,28 @@ export class SemanticCodeGenerator {
           }
           sections.push(this.generateDialog(dialog));
           emittedDialogs.add(dialog.name);
+
+          // Cluster: immediately emit all associated functions in canonical order
+          const associatedFuncs = this.getAssociatedFunctions(dialog, model);
+          for (const func of associatedFuncs) {
+            if (!emittedFunctions.has(func.name)) {
+              const funcLeading = this.renderLeadingComments(func.leadingComments);
+              if (funcLeading) {
+                sections.push(funcLeading);
+              }
+              sections.push(this.generateFunction(func));
+              emittedFunctions.add(func.name);
+            }
+          }
         }
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
         if (func && !emittedFunctions.has(func.name)) {
+          // If this function belongs to a dialog that hasn't been emitted yet,
+          // skip it here — it will be pulled in when the dialog is emitted.
+          if (functionToDialog.has(func.name) && !emittedDialogs.has(functionToDialog.get(func.name)!)) {
+            continue;
+          }
           const leading = this.renderLeadingComments(func.leadingComments);
           if (leading) {
             sections.push(leading);
@@ -106,6 +129,20 @@ export class SemanticCodeGenerator {
           sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
         }
         sections.push(this.generateDialog(dialog));
+        emittedDialogs.add(dialogName);
+
+        // Also cluster associated functions for fallback dialogs
+        const associatedFuncs = this.getAssociatedFunctions(dialog, model);
+        for (const func of associatedFuncs) {
+          if (!emittedFunctions.has(func.name)) {
+            const funcLeading = this.renderLeadingComments(func.leadingComments);
+            if (funcLeading) {
+              sections.push(funcLeading);
+            }
+            sections.push(this.generateFunction(func));
+            emittedFunctions.add(func.name);
+          }
+        }
       }
     }
     for (const funcName in model.functions) {
@@ -120,6 +157,23 @@ export class SemanticCodeGenerator {
     }
 
     return sections.join('\n');
+  }
+
+  /**
+   * Build a reverse map from function name → owning dialog name.
+   * Used by generateByDeclarationOrder to defer function emission until
+   * its parent dialog is encountered.
+   */
+  private buildFunctionToDialogMap(model: SemanticModel): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const dialogName in model.dialogs) {
+      const dialog = model.dialogs[dialogName];
+      const associated = this.getAssociatedFunctions(dialog, model);
+      for (const func of associated) {
+        map.set(func.name, dialogName);
+      }
+    }
+    return map;
   }
 
   /**
@@ -181,16 +235,41 @@ export class SemanticCodeGenerator {
   }
 
   /**
-   * Get functions associated with a dialog (condition, information)
+   * Get all functions associated with a dialog, ordered for readability:
+   *   1. Condition function
+   *   2. Information function
+   *   3. Choice target functions (sub-dialog branches)
+   *
+   * Choice target functions are discovered by inspecting Choice actions
+   * inside the information function.
    */
   private getAssociatedFunctions(dialog: Dialog, model: SemanticModel): DialogFunction[] {
     const funcs: DialogFunction[] = [];
+    const seen = new Set<string>();
 
     if (dialog.properties.condition instanceof DialogFunction) {
       funcs.push(dialog.properties.condition);
+      seen.add(dialog.properties.condition.name);
     }
+
+    let infoFunc: DialogFunction | undefined;
     if (dialog.properties.information instanceof DialogFunction) {
-      funcs.push(dialog.properties.information);
+      infoFunc = dialog.properties.information;
+      funcs.push(infoFunc);
+      seen.add(infoFunc.name);
+    }
+
+    // Collect choice target functions from the information function's actions
+    if (infoFunc) {
+      for (const action of infoFunc.actions) {
+        if (action instanceof Choice && action.targetFunction) {
+          const targetFunc = model.functions[action.targetFunction];
+          if (targetFunc && !seen.has(targetFunc.name)) {
+            funcs.push(targetFunc);
+            seen.add(targetFunc.name);
+          }
+        }
+      }
     }
 
     return funcs;
