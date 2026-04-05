@@ -212,34 +212,29 @@ This can be used by both remove and rename operations to detect broken reference
 ### Phase 1: Core Store Operations (no UI)
 
 1. Add `findDialogReferences` / `findFunctionReferences` utility in daedalus-parser
-2. Add `isModelEmpty()` utility (E2)
-3. Add `removeDialog` to fileStore + historyActions (including `declarationOrder` cleanup — E6)
-4. Add `renameDialog` to fileStore + historyActions (including `declarationOrder` update — E6)
-5. Write unit tests for all four, including edge cases E3 (orphaned functions) and E7 (collisions)
+2. Add `removeDialog` to fileStore + historyActions (including `declarationOrder` cleanup — E6)
+3. Add `renameDialog` to fileStore + historyActions (including `declarationOrder` update — E6)
+4. Write unit tests for all three, including edge cases E3 (orphaned functions) and E7 (collisions)
 
 ### Phase 2: Remove UI
 
-6. Add context menu to `DialogTreeItem.tsx`
-7. Add `DeleteDialogConfirmDialog.tsx` with reference analysis
-8. Wire context menu → confirm dialog → `removeDialog` store action
-9. Handle post-deletion selection state (E5 — NPC disappears)
-10. Add "empty file" detection + `deleteFile` IPC handler (E1)
-11. Add `EmptyFileConfirmDialog.tsx` — prompt to delete empty file after removal
-12. Handle undo history cleanup on file deletion (E8)
-13. Verify FileWatcher `unlink` idempotency (E10)
+5. Add context menu to `DialogTreeItem.tsx`
+6. Add `DeleteDialogConfirmDialog.tsx` with reference analysis
+7. Wire context menu → confirm dialog → `removeDialog` store action
+8. Handle post-deletion selection state (E5 — empty NPC)
 
 ### Phase 3: Rename UI
 
-14. Add inline rename editing to `DialogTreeItem.tsx`
-15. Add name validation logic with same-file hard block + cross-file soft warning (E7)
-16. Add `RenameDialogConfirmDialog.tsx` for cascade preview
-17. Wire inline edit → (optional confirm) → `renameDialog` store action
+9. Add inline rename editing to `DialogTreeItem.tsx`
+10. Add name validation logic with same-file hard block + cross-file soft warning (E7)
+11. Add `RenameDialogConfirmDialog.tsx` for cascade preview
+12. Wire inline edit → (optional confirm) → `renameDialog` store action
 
 ### Phase 4: Polish
 
-18. Keyboard shortcuts: `Delete` key on selected dialog, `F2` for rename
-19. Update dialog tree filter/search after rename
-20. Edge case testing: multi-file dialog removal (E4), auto-save interactions (E9), removing last dialog for an NPC (E5), undo/redo cycles across removal + file deletion boundary (E8)
+13. Keyboard shortcuts: `Delete` key on selected dialog, `F2` for rename
+14. Update dialog tree filter/search after rename
+15. Edge case testing: multi-file dialog removal (E4), auto-save interactions (E8), removing last dialog for an NPC (E5), undo/redo cycles
 
 ---
 
@@ -248,16 +243,11 @@ This can be used by both remove and rename operations to detect broken reference
 | File | Changes |
 |------|---------|
 | `daedalus-parser/src/semantic/cross-references.ts` | New — reference analysis utility |
-| `daedalus-dialog-editor/src/renderer/store/fileStore.ts` | Add `removeDialog`, `renameDialog`, `deleteFile` |
+| `daedalus-dialog-editor/src/renderer/store/fileStore.ts` | Add `removeDialog`, `renameDialog` |
 | `daedalus-dialog-editor/src/renderer/store/historyActions.ts` | Wrap new actions with `withHistory` |
-| `daedalus-dialog-editor/src/renderer/store/uiSelectionStore.ts` | Handle post-delete selection clearing (dialog + NPC) |
-| `daedalus-dialog-editor/src/renderer/store/projectStore.ts` | Refresh `dialogIndex`/`npcList` after file deletion |
-| `daedalus-dialog-editor/src/renderer/store/historyStore.ts` | Clear undo history for deleted files |
-| `daedalus-dialog-editor/src/main/main.ts` | New IPC handler: `file:delete` (fs.unlink) |
-| `daedalus-dialog-editor/src/main/preload.ts` | Expose `deleteFile` to renderer |
+| `daedalus-dialog-editor/src/renderer/store/uiSelectionStore.ts` | Handle post-delete selection clearing |
 | `daedalus-dialog-editor/src/renderer/components/DialogTreeItem.tsx` | Context menu, inline rename |
 | `daedalus-dialog-editor/src/renderer/components/DeleteDialogConfirmDialog.tsx` | New — deletion confirmation |
-| `daedalus-dialog-editor/src/renderer/components/EmptyFileConfirmDialog.tsx` | New — prompt to delete empty file |
 | `daedalus-dialog-editor/src/renderer/components/RenameDialogConfirmDialog.tsx` | New — rename cascade preview |
 | `daedalus-dialog-editor/src/renderer/components/DialogTreeColumn.tsx` | Pass new callbacks down |
 | `daedalus-dialog-editor/src/renderer/components/ThreeColumnLayout.tsx` | Wire new operations |
@@ -268,37 +258,7 @@ This can be used by both remove and rename operations to detect broken reference
 
 ### E1: Empty File After Removal
 
-When all dialogs and functions are removed from a `.d` file, the generated output would be an empty string (the code generator iterates `model.dialogs` and `model.functions` — if both are empty, `sections` is empty).
-
-**Decision required**: What to do with an empty file?
-
-- **Option A — Keep the empty file**: Save produces a blank or whitespace-only `.d` file. The file remains in the project and on disk. Simple, fully reversible via undo.
-- **Option B — Offer to delete the file** (recommended): After removal, if `Object.keys(model.dialogs).length === 0 && Object.keys(model.functions).length === 0` and the model has no remaining constants/variables/instances/npcs, show a secondary prompt: _"The file `DIA_Farim.d` is now empty. Delete the file from disk?"_ with [Keep Empty File] / [Delete File].
-  - If deleted: call a new `deleteFile` IPC handler (fs.unlink + close the file in fileStore + remove from projectStore)
-  - The `FileWatcherService` already handles `unlink` events, so external tooling stays in sync
-  - Undo cannot restore a deleted file — warn in the confirmation dialog: _"File deletion cannot be undone."_
-- **Option C — Prevent removal of the last dialog**: Disable the "Delete Dialog" context menu item when it's the only dialog in the file. Too restrictive — the user may genuinely want to clear the file.
-
-**Recommendation**: Option B. Prompt after the semantic removal is saved. Keep the file deletion as a separate, explicit step from the dialog removal so undo still works for the semantic change.
-
-### E2: File Contains Non-Dialog Content
-
-A `.d` file's `SemanticModel` can contain `constants`, `variables`, `instances`, `npcs`, `items`, and `animations` in addition to dialogs and functions. Removing the last dialog should **not** trigger the "empty file" prompt if other content remains. The emptiness check must verify all model dictionaries, not just `dialogs`:
-
-```typescript
-function isModelEmpty(model: SemanticModel): boolean {
-  return (
-    Object.keys(model.dialogs).length === 0 &&
-    Object.keys(model.functions).length === 0 &&
-    Object.keys(model.constants ?? {}).length === 0 &&
-    Object.keys(model.variables ?? {}).length === 0 &&
-    Object.keys(model.instances ?? {}).length === 0 &&
-    Object.keys(model.npcs ?? {}).length === 0 &&
-    Object.keys(model.items ?? {}).length === 0 &&
-    Object.keys(model.animations ?? {}).length === 0
-  );
-}
-```
+When all dialogs and functions are removed from a `.d` file, the generated output would be an empty string (the code generator iterates `model.dialogs` and `model.functions` — if both are empty, `sections` is empty). The file remains on disk as an empty `.d` file. This is acceptable — the user can delete it manually outside the editor if desired. No file deletion logic is needed in the editor for this plan.
 
 ### E3: Orphaned Functions After Removal
 
@@ -313,12 +273,9 @@ In project mode, `projectStore` merges semantic models from multiple files into 
 2. Only delete functions from their owning file
 3. If the dialog and its functions span multiple files, warn the user and only remove what's in the dialog's file — leave cross-file functions for manual cleanup
 
-### E5: NPC Disappears From NPC List
+### E5: NPC With No Remaining Dialogs
 
-When the last dialog for an NPC is removed, `projectStore.dialogIndex` will have an empty array for that NPC. Two sub-cases:
-
-- **NPC instance defined in a separate `NPC_*.d` file**: The NPC remains in `npcList` because the instance definition still exists. The dialog tree column shows empty state. This is correct.
-- **NPC instance was auto-created by `useDialogFactory` in the same file**: If the NPC instance is also in the file and the file is deleted (E1 Option B), the NPC disappears from the project. The `npcList` should be refreshed after file deletion. If the deleted NPC was selected, clear `selectedNPC` in `uiSelectionStore`.
+When the last dialog for an NPC is removed, `projectStore.dialogIndex` will have an empty array for that NPC. The NPC still exists in `npcList` (its instance definition lives in a separate `NPC_*.d` file or in the same file as a non-dialog entry). The dialog tree column shows an empty state. This is correct — the NPC is still valid, it just has no dialogs. No special NPC cleanup needed.
 
 ### E6: `declarationOrder` Consistency
 
@@ -339,21 +296,9 @@ Renaming `DIA_Farim_Hallo` → `DIA_Farim_Trade` must check for collisions again
 
 Show inline validation error for same-file collisions (hard block). Show a warning for cross-file collisions (soft — user can proceed).
 
-### E8: Undo After File Deletion
+### E8: Auto-Save After Removal
 
-If the user removes a dialog (undo-able), then deletes the now-empty file (not undo-able), and then hits Ctrl+Z:
-- The file is gone from disk and from `fileStore.openFiles`
-- Undo has no target file to restore into
-
-**Mitigation**: When deleting a file after dialog removal, also clear the undo history for that file path. The confirmation dialog already warns that file deletion can't be undone.
-
-### E9: Auto-Save Race Condition
-
-If auto-save is enabled and fires between the dialog removal and the user confirming file deletion, the empty/reduced file will be written to disk. This is acceptable — the semantic model is the source of truth, and the file reflects the current state. No special handling needed, but worth noting.
-
-### E10: FileWatcher Reacts to Our Own Deletion
-
-When we delete a file via IPC, the `FileWatcherService` will fire an `unlink` event. The existing `useFileWatcher` hook calls `fileStore.closeFile()` on `unlink`. If we've already closed the file in our deletion flow, the second close is a no-op (`openFiles.delete` on a missing key). Verify this is safe — it should be, but add a guard if needed.
+If auto-save is enabled and fires after a dialog removal, the reduced file will be written to disk. This is correct — the semantic model is the source of truth, and the file reflects the current state. No special handling needed.
 
 ---
 
