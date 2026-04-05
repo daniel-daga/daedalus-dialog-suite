@@ -60,7 +60,6 @@ jobs:
 
   editor-e2e-tests:
     runs-on: ubuntu-latest
-    if: false
     steps:
       - uses: actions/checkout@v4
 
