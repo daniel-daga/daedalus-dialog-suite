@@ -16,3 +16,5 @@ mdk/
 /todos.txt
 
 .claude/
+!.claude/skills/
+!.claude/skills/**
