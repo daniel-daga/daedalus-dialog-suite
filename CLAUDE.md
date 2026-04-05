@@ -181,6 +181,8 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 ### Development Rules
 
 1. **TDD required**: add or update a failing test before implementing.
+   - For new or changed **UI workflows** (user-facing flows in the Electron app), write a failing **Playwright E2E test** (`test/e2e/`) first, then implement.
+   - For logic, store, or component-level changes without a new end-to-end flow, a Jest test is sufficient.
 2. Run focused tests during iteration; run full workspace checks before completion.
 3. When changing node editor UI, do a smoke pass:
    - Start with `npm run dev:node-editor`
