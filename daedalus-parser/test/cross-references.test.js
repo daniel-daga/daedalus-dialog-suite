@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const {
   findDialogReferences,
   findFunctionReferences,
-  collectReachableFunctions,
+  collectReachableFunctions
 } = require('../dist/semantic/cross-references');
 
 // ---------------------------------------------------------------------------
@@ -20,8 +20,12 @@ function makeFunc(name, { actions = [], conditions = [] } = {}) {
 
 function makeDialog(name, { information, condition, npc = 'Test_Npc' } = {}) {
   const properties = { npc };
-  if (information !== undefined) properties.information = information;
-  if (condition !== undefined) properties.condition = condition;
+  if (information !== undefined) {
+    properties.information = information;
+  }
+  if (condition !== undefined) {
+    properties.condition = condition;
+  }
   return { name, parent: 'C_INFO', properties, actions: [] };
 }
 
@@ -41,10 +45,10 @@ test('findDialogReferences: finds NpcKnowsInfoCondition references', () => {
   const model = makeModel({
     functions: {
       DIA_Npc_Other_Condition: makeFunc('DIA_Npc_Other_Condition', {
-        conditions: [makeKnowsInfo('self', 'DIA_Npc_Hello')],
-      }),
+        conditions: [makeKnowsInfo('self', 'DIA_Npc_Hello')]
+      })
     },
-    dialogs: {},
+    dialogs: {}
   });
 
   const refs = findDialogReferences(model, 'DIA_Npc_Hello');
@@ -58,9 +62,9 @@ test('findDialogReferences: returns empty when no references exist', () => {
   const model = makeModel({
     functions: {
       DIA_Npc_Cond: makeFunc('DIA_Npc_Cond', {
-        conditions: [makeKnowsInfo('self', 'DIA_Npc_Other')],
-      }),
-    },
+        conditions: [makeKnowsInfo('self', 'DIA_Npc_Other')]
+      })
+    }
   });
 
   const refs = findDialogReferences(model, 'DIA_Npc_Hello');
@@ -71,8 +75,8 @@ test('findDialogReferences: finds multiple references across functions', () => {
   const model = makeModel({
     functions: {
       Func1: makeFunc('Func1', { conditions: [makeKnowsInfo('self', 'DIA_Target')] }),
-      Func2: makeFunc('Func2', { conditions: [makeKnowsInfo('other', 'DIA_Target')] }),
-    },
+      Func2: makeFunc('Func2', { conditions: [makeKnowsInfo('other', 'DIA_Target')] })
+    }
   });
 
   const refs = findDialogReferences(model, 'DIA_Target');
@@ -88,10 +92,10 @@ test('findFunctionReferences: finds dialog-info and dialog-condition property re
     dialogs: {
       DIA_Test: makeDialog('DIA_Test', {
         information: 'DIA_Test_Info',
-        condition: 'DIA_Test_Condition',
-      }),
+        condition: 'DIA_Test_Condition'
+      })
     },
-    functions: {},
+    functions: {}
   });
 
   const infoRefs = findFunctionReferences(model, 'DIA_Test_Info');
@@ -110,9 +114,9 @@ test('findFunctionReferences: finds Choice targetFunction refs', () => {
     dialogs: {},
     functions: {
       DIA_Test_Info: makeFunc('DIA_Test_Info', {
-        actions: [makeChoice('DIA_Test', 'DIA_Test_Choice1')],
-      }),
-    },
+        actions: [makeChoice('DIA_Test', 'DIA_Test_Choice1')]
+      })
+    }
   });
 
   const refs = findFunctionReferences(model, 'DIA_Test_Choice1');
@@ -135,10 +139,10 @@ test('collectReachableFunctions: includes start function and choice targets', ()
   const model = makeModel({
     functions: {
       DIA_Test_Info: makeFunc('DIA_Test_Info', {
-        actions: [makeChoice('DIA_Test', 'DIA_Test_Choice1')],
+        actions: [makeChoice('DIA_Test', 'DIA_Test_Choice1')]
       }),
-      DIA_Test_Choice1: makeFunc('DIA_Test_Choice1'),
-    },
+      DIA_Test_Choice1: makeFunc('DIA_Test_Choice1')
+    }
   });
 
   const reachable = collectReachableFunctions(model, 'DIA_Test_Info');
@@ -151,8 +155,8 @@ test('collectReachableFunctions: handles cycles without infinite loop', () => {
   const model = makeModel({
     functions: {
       A: makeFunc('A', { actions: [makeChoice('DIA', 'B')] }),
-      B: makeFunc('B', { actions: [makeChoice('DIA', 'A')] }),
-    },
+      B: makeFunc('B', { actions: [makeChoice('DIA', 'A')] })
+    }
   });
 
   const reachable = collectReachableFunctions(model, 'A');
@@ -165,9 +169,9 @@ test('collectReachableFunctions: skips dangling function references', () => {
   const model = makeModel({
     functions: {
       DIA_Test_Info: makeFunc('DIA_Test_Info', {
-        actions: [makeChoice('DIA_Test', 'DIA_Test_Missing')],
-      }),
-    },
+        actions: [makeChoice('DIA_Test', 'DIA_Test_Missing')]
+      })
+    }
   });
 
   const reachable = collectReachableFunctions(model, 'DIA_Test_Info');
