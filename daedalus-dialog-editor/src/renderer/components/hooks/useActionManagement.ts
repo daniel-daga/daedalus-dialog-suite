@@ -160,7 +160,7 @@ export function useActionManagement(config: ActionManagementConfig) {
 
       let updatedActions = updateNestedActionAtPath(actions, path, nextAction);
 
-      // Sync next sibling LogEntry topic when CreateTopic topic changes
+      // Sync following LogSetTopicStatus and LogEntry topics when CreateTopic topic changes
       if (
         updatedAction.type === 'CreateTopic' &&
         previousAction?.type === 'CreateTopic' &&
@@ -168,13 +168,21 @@ export function useActionManagement(config: ActionManagementConfig) {
       ) {
         const lastIndex = path[path.length - 1];
         if (typeof lastIndex === 'number') {
-          const nextPath: ActionPath = [...path.slice(0, -1), lastIndex + 1];
-          const nextSibling = getActionAtPath(updatedActions, nextPath);
-          if (nextSibling?.type === 'LogEntry' && nextSibling.topic === previousAction.topic) {
-            updatedActions = updateNestedActionAtPath(updatedActions, nextPath, {
-              ...nextSibling,
-              topic: updatedAction.topic
-            });
+          const parentPath = path.slice(0, -1);
+          for (let offset = 1; offset <= 2; offset++) {
+            const siblingPath: ActionPath = [...parentPath, lastIndex + offset];
+            const sibling = getActionAtPath(updatedActions, siblingPath);
+            if (
+              sibling &&
+              (sibling.type === 'LogSetTopicStatus' || sibling.type === 'LogEntry') &&
+              'topic' in sibling &&
+              sibling.topic === previousAction.topic
+            ) {
+              updatedActions = updateNestedActionAtPath(updatedActions, siblingPath, {
+                ...sibling,
+                topic: updatedAction.topic
+              });
+            }
           }
         }
       }
@@ -300,8 +308,21 @@ export function useActionManagement(config: ActionManagementConfig) {
         const createTopicPath = findInsertedPath(newActions, path);
 
         if (actionType === 'createTopic' && createTopicPath) {
+          const createTopicTopic = newAction.type === 'CreateTopic' ? newAction.topic : 'TOPIC_';
+          const logSetStatusAction = createAction('logSetTopicStatus', { dialogName: contextName, currentAction: undefined });
+          newActions = insertActionAfterPath(newActions, createTopicPath, {
+            ...logSetStatusAction,
+            topic: createTopicTopic,
+            status: 'LOG_RUNNING',
+          } as DialogAction);
+          const logSetStatusPath = findInsertedPath(newActions, createTopicPath);
           const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined });
-          newActions = insertActionAfterPath(newActions, createTopicPath, logEntryAction);
+          if (logSetStatusPath) {
+            newActions = insertActionAfterPath(newActions, logSetStatusPath, {
+              ...logEntryAction,
+              topic: createTopicTopic,
+            } as DialogAction);
+          }
           nextPath = createTopicPath;
         } else {
           nextPath = createTopicPath;
