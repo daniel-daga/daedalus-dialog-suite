@@ -73,4 +73,6 @@ export interface DialogTreeProps {
   onToggleChoiceExpand: (choiceKey: string) => void;
   buildFunctionTree: (funcName: string, ancestorPath?: string[]) => FunctionTreeNode | null;
   onAddDialog?: (dialogName: string) => Promise<void> | void;
+  onDeleteDialog?: (dialogName: string) => void;
+  onRenameDialog?: (dialogName: string) => void;
 }

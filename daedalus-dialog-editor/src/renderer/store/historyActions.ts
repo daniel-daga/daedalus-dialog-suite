@@ -72,3 +72,11 @@ export const updateDialogConditionFunction = withHistory<[string, string, (exist
 export const replaceDialogConditionFunction = withHistory<[string, string, DialogFunction]>(
   () => useFileStore.getState().replaceDialogConditionFunction
 );
+
+export const removeDialog = withHistory<[string, string]>(
+  () => useFileStore.getState().removeDialog
+);
+
+export const renameDialog = withHistory<[string, string, string, boolean?]>(
+  () => useFileStore.getState().renameDialog
+);

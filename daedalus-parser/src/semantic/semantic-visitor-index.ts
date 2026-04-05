@@ -17,3 +17,7 @@ export { SemanticCodeGenerator, CodeGeneratorOptions } from '../codegen/generato
 
 // Export parser utilities
 export { createDaedalusParser, parseDaedalusSource, parseSemanticModel, validateDaedalusFile } from '../utils/parser-utils';
+
+// Export cross-reference analysis utilities
+export { findDialogReferences, findFunctionReferences, collectReachableFunctions } from './cross-references';
+export type { DialogReference, FunctionReference } from './cross-references';
