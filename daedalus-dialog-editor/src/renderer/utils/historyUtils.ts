@@ -60,7 +60,12 @@ export function cloneQuestNodePositionsForFile(
 }
 
 export function cloneSemanticModel(model: SemanticModel): SemanticModel {
-  if (typeof structuredClone === 'function') return structuredClone(model);
+  try {
+    if (typeof structuredClone === 'function') return structuredClone(model);
+  } catch {
+    // structuredClone fails on Immer proxy objects (e.g. when called inside a
+    // historyStore.set() callback); fall through to the JSON-based clone.
+  }
   return JSON.parse(JSON.stringify(model)) as SemanticModel;
 }
 

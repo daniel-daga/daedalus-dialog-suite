@@ -125,6 +125,12 @@ const SearchResults: React.FC<SearchResultsProps> = ({
 }) => {
   const { searchQuery, searchResults, isSearching } = useSearchStore();
 
+  // useMemo must be called unconditionally (Rules of Hooks) — before any early returns
+  const itemData = useMemo(() => ({
+    searchResults,
+    onResultClick
+  }), [searchResults, onResultClick]);
+
   if (!searchQuery.trim()) {
     return null;
   }
@@ -169,11 +175,6 @@ const SearchResults: React.FC<SearchResultsProps> = ({
   const availableListHeight = maxH - HEADER_HEIGHT;
   const listHeight = Math.min(availableListHeight, totalContentHeight);
   const containerHeight = Math.min(maxH, HEADER_HEIGHT + listHeight);
-
-  const itemData = useMemo(() => ({
-    searchResults,
-    onResultClick
-  }), [searchResults, onResultClick]);
 
   return (
     <Paper sx={(theme) => ({ ...searchablePaneShellSx(theme), height: containerHeight, overflow: 'hidden', display: 'flex', flexDirection: 'column' })}>
