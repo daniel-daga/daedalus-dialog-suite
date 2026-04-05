@@ -14,10 +14,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? 1 : undefined,
 
-  // Reporter to use. In CI each shard emits a blob report; a merge job combines them into HTML.
-  reporter: process.env.CI ? 'blob' : 'html',
+  // Reporter to use
+  reporter: 'html',
 
   use: {
     // Base URL for the dev server

@@ -87,7 +87,8 @@ jobs:
         run: pnpm --filter daedalus-dialog-editor exec playwright install --with-deps chromium
 
       - name: Run editor E2E tests (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
-        run: pnpm --filter daedalus-dialog-editor run test:e2e -- --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+        working-directory: daedalus-dialog-editor
+        run: pnpm exec playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }} --reporter=blob
 
       - name: Upload blob report
         if: always()
