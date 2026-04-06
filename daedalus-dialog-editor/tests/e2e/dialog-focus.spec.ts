@@ -98,10 +98,11 @@ test.describe('Dialog Line Focus', () => {
   test('clicking "Add Line" button should focus the new line', async ({ page }) => {
     // Initial count
     await expect(page.getByLabel('Text')).toHaveCount(1);
-    
-    // Click "Add Line" button
-    await page.getByRole('button', { name: /Add Line/i }).click();
-    
+
+    // Open "Add action" menu and select "Dialog Line"
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
+
     // Wait for the new line to appear
     const textFields = page.getByLabel('Text');
     await expect(textFields).toHaveCount(2);
@@ -112,8 +113,9 @@ test.describe('Dialog Line Focus', () => {
   });
 
   test('clicking "+" button between actions should focus the new line', async ({ page }) => {
-    // Add a second line first
-    await page.getByRole('button', { name: /Add Line/i }).click();
+    // Add a second line first via the "Add action" menu
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
     await expect(page.getByLabel('Text')).toHaveCount(2);
     
     // Find the first action card and its "+" button

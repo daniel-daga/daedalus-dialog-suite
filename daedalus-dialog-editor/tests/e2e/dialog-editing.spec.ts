@@ -201,7 +201,7 @@ test.describe('Dialog Line Editing', () => {
     await page.waitForTimeout(500);
 
     let currentCount = await page.locator('textarea').count();
-    expect(currentCount).toBe(initialCount);
+    await expect(page.locator('textarea')).toHaveCount(initialCount);
     console.log(`After edit 1: ${currentCount} textareas`);
 
     // Edit second action
@@ -211,7 +211,7 @@ test.describe('Dialog Line Editing', () => {
     await page.waitForTimeout(500);
 
     currentCount = await page.locator('textarea').count();
-    expect(currentCount).toBe(initialCount);
+    await expect(page.locator('textarea')).toHaveCount(initialCount);
     console.log(`After edit 2: ${currentCount} textareas`);
 
     // Edit third action
@@ -221,7 +221,7 @@ test.describe('Dialog Line Editing', () => {
     await page.waitForTimeout(500);
 
     currentCount = await page.locator('textarea').count();
-    expect(currentCount).toBe(initialCount);
+    await expect(page.locator('textarea')).toHaveCount(initialCount);
     console.log(`After edit 3: ${currentCount} textareas`);
 
     // Take final screenshot

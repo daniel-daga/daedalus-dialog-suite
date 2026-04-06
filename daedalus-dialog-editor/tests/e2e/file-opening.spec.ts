@@ -157,11 +157,10 @@ test.describe('Mock API Integration', () => {
     // Navigate to app
     await page.goto('/');
 
-    // Wait a bit for console messages
-    await page.waitForTimeout(1000);
-
-    // Verify browser mode was detected
-    expect(logs.some(log => log.includes('[Browser Mode] Using mock EditorAPI'))).toBeTruthy();
+    // Wait for the browser-mode console message to appear
+    await expect(async () => {
+      expect(logs.some(log => log.includes('[Browser Mode] Using mock EditorAPI'))).toBeTruthy();
+    }).toPass({ timeout: 5000 });
   });
 
   test('should have window.editorAPI available', async ({ page }) => {
