@@ -28,7 +28,7 @@ test.describe('File Opening and Dialog Selection', () => {
     // Verify welcome screen elements
     await expect(page.getByRole('heading', { name: 'Welcome to Dandelion' })).toBeVisible();
     await expect(page.getByText('Gothic 2 Dialog Editor')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Open Dialog File/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Open Single File/i })).toBeVisible();
     await expect(page.getByText('Have fun modding!')).toBeVisible();
   });
 
@@ -39,8 +39,8 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    // Click the "Open Dialog File" button
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    // Click the "Open Single File" button
+    await page.getByRole('button', { name: /Open Single File/i }).click();
 
     // Wait for the three-column layout to appear
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
@@ -56,7 +56,7 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    await page.getByRole('button', { name: /Open Single File/i }).click();
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
 
     // Click on the NPC
@@ -75,7 +75,7 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    await page.getByRole('button', { name: /Open Single File/i }).click();
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
 
     // Click NPC
@@ -104,7 +104,7 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    await page.getByRole('button', { name: /Open Single File/i }).click();
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to dialog

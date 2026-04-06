@@ -29,7 +29,7 @@ test.describe('Dialog Line Editing', () => {
     });
 
     // Open file
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    await page.getByRole('button', { name: /Open Single File/i }).click();
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to dialog
