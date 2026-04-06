@@ -55,12 +55,14 @@ test.describe('Dialog Line Editing', () => {
     // Wait for actions to be visible
     await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
 
-    // Count initial textarea count (3 AI_Output lines)
-    const initialCount = await page.locator('textarea').count();
-    console.log(`Initial textarea count: ${initialCount}`);
+    // Count Dialog Line text fields (getByLabel('Text') is specific to these,
+    // unlike page.locator('textarea') which also matches unrelated inputs)
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
+    console.log(`Initial dialog-line field count: ${initialCount}`);
 
-    // Find the first textarea (dialog line input)
-    const firstTextarea = page.locator('textarea').first();
+    // Find the first dialog line text field
+    const firstTextarea = dialogLineFields.first();
     await expect(firstTextarea).toBeVisible();
 
     // Take screenshot before typing
@@ -81,9 +83,9 @@ test.describe('Dialog Line Editing', () => {
     // Take screenshot after typing
     await page.screenshot({ path: 'test-results/after-typing.png', fullPage: true });
 
-    // BUG CHECK: Actions should NOT disappear — textarea count must stay the same
-    const afterCount = await page.locator('textarea').count();
-    console.log(`Textarea count after typing: ${afterCount}`);
+    // BUG CHECK: Actions should NOT disappear — field count must stay the same
+    const afterCount = await dialogLineFields.count();
+    console.log(`Dialog-line field count after typing: ${afterCount}`);
     expect(afterCount).toBe(initialCount);
 
     // The OTHER action IDs (not the one we edited) should still be visible
@@ -91,93 +93,87 @@ test.describe('Dialog Line Editing', () => {
   });
 
   test('should add a new dialog line when clicking Add Line button', async ({ page }) => {
-    // Count initial actions
-    const initialCount = await page.locator('textarea').count();
-    console.log(`Initial textarea count: ${initialCount}`);
+    // Use getByLabel('Text') to count only Dialog Line text fields, not all
+    // textareas on the page (condition editor, properties, custom actions, etc.)
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
+    console.log(`Initial dialog-line field count: ${initialCount}`);
 
     // Open "Add action" menu and choose "Dialog Line"
     await page.getByRole('button', { name: 'Add action' }).click();
     await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
 
     // Wait for new action to appear
-    await expect(page.locator('textarea')).toHaveCount(initialCount + 1);
-
-    // Count actions after adding
-    const afterCount = await page.locator('textarea').count();
-    console.log(`Textarea count after adding: ${afterCount}`);
-
-    // Should have one more action
-    expect(afterCount).toBe(initialCount + 1);
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
 
     // Take screenshot
     await page.screenshot({ path: 'test-results/after-add-line.png', fullPage: true });
   });
 
   test('should type in newly added dialog line', async ({ page }) => {
-    // Count initial actions
-    const initialCount = await page.locator('textarea').count();
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
 
     // Open "Add action" menu and choose "Dialog Line"
     await page.getByRole('button', { name: 'Add action' }).click();
     await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
-    await expect(page.locator('textarea')).toHaveCount(initialCount + 1);
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
 
-    // Find the last textarea (newly added)
-    const lastTextarea = page.locator('textarea').last();
-    await expect(lastTextarea).toBeVisible();
+    // Find the last dialog-line text field (newly added)
+    const lastField = dialogLineFields.last();
+    await expect(lastField).toBeVisible();
 
-    // Type in the new textarea
-    await lastTextarea.click();
-    await lastTextarea.fill('This is a new dialog line');
+    // Type in the new field
+    await lastField.click();
+    await lastField.fill('This is a new dialog line');
 
     // Wait for state updates
     await page.waitForTimeout(500);
 
-    // Check all actions are still visible
-    const finalCount = await page.locator('textarea').count();
-    console.log(`Final textarea count: ${finalCount}`);
-
-    // Should have the same count (initial + 1)
-    expect(finalCount).toBe(initialCount + 1);
+    // Count should be stable
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
 
     // Verify the typed text is preserved
-    await expect(lastTextarea).toHaveValue('This is a new dialog line');
+    await expect(lastField).toHaveValue('This is a new dialog line');
 
     // Take screenshot
     await page.screenshot({ path: 'test-results/after-typing-new-line.png', fullPage: true });
   });
 
   test('should preserve text when typing character by character', async ({ page }) => {
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
+
     // Add new line via "Add action" menu
-    const initialCount = await page.locator('textarea').count();
     await page.getByRole('button', { name: 'Add action' }).click();
     await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
-    await expect(page.locator('textarea')).toHaveCount(initialCount + 1);
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
 
-    const lastTextarea = page.locator('textarea').last();
-    await lastTextarea.click();
+    const lastField = dialogLineFields.last();
+    await lastField.click();
 
     // Type character by character with delays
     const textToType = 'Hello World';
     for (const char of textToType) {
-      await lastTextarea.type(char);
+      await lastField.type(char);
       await page.waitForTimeout(100); // Wait between characters
 
-      // Check actions still exist after each character
-      const count = await page.locator('textarea').count();
-      console.log(`After typing '${char}': ${count} textareas`);
+      // Dialog line field count should not change while typing
+      const count = await dialogLineFields.count();
+      console.log(`After typing '${char}': ${count} dialog-line fields`);
     }
 
     // Final check
-    await expect(lastTextarea).toHaveValue(textToType);
+    await expect(lastField).toHaveValue(textToType);
 
     // Verify all original actions are still visible
     await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
   });
 
   test('should preserve edited text and keep other actions visible', async ({ page }) => {
-    // Wait for all 3 dialog lines to be rendered
-    const textareas = page.locator('textarea');
+    // Use getByLabel('Text') — specific to Dialog Line text fields.
+    // The fixture has 3 AI_Output lines so there are 3 such fields.
+    const textareas = page.getByLabel('Text');
     await expect(textareas).toHaveCount(3);
 
     // Edit the first textarea
