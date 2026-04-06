@@ -28,7 +28,7 @@ test.describe('File Opening and Dialog Selection', () => {
     // Verify welcome screen elements
     await expect(page.getByRole('heading', { name: 'Welcome to Dandelion' })).toBeVisible();
     await expect(page.getByText('Gothic 2 Dialog Editor')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Open Dialog File/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Open Single File/i })).toBeVisible();
     await expect(page.getByText('Have fun modding!')).toBeVisible();
   });
 
@@ -39,8 +39,8 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    // Click the "Open Dialog File" button
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    // Click the "Open Single File" button
+    await page.getByRole('button', { name: /Open Single File/i }).click();
 
     // Wait for the three-column layout to appear
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
@@ -56,7 +56,7 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    await page.getByRole('button', { name: /Open Single File/i }).click();
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
 
     // Click on the NPC
@@ -75,7 +75,7 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    await page.getByRole('button', { name: /Open Single File/i }).click();
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
 
     // Click NPC
@@ -90,9 +90,8 @@ test.describe('File Opening and Dialog Selection', () => {
     // Verify Properties section
     await expect(page.getByText('Properties')).toBeVisible();
 
-    // Verify action buttons are present
-    await expect(page.getByRole('button', { name: /Add Line/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Add Choice/i })).toBeVisible();
+    // Verify action button is present (opens a menu to add any action type)
+    await expect(page.getByRole('button', { name: 'Add action' })).toBeVisible();
 
     // Auto-save is enabled, so there is no explicit Save button in the editor toolbar
     await expect(page.getByRole('button', { name: /Save/i })).toHaveCount(0);
@@ -104,7 +103,7 @@ test.describe('File Opening and Dialog Selection', () => {
       await dialog.accept('test-dialog.d');
     });
 
-    await page.getByRole('button', { name: /Open Dialog File/i }).click();
+    await page.getByRole('button', { name: /Open Single File/i }).click();
     await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
 
     // Navigate to dialog
@@ -147,22 +146,14 @@ test.describe('File Opening and Dialog Selection', () => {
 
 test.describe('Mock API Integration', () => {
   test('should detect browser mode and use mock API', async ({ page }) => {
-    // Set up console listener BEFORE navigating
-    const logs: string[] = [];
-    page.on('console', msg => {
-      if (msg.type() === 'log') {
-        logs.push(msg.text());
-      }
-    });
-
-    // Navigate to app
     await page.goto('/');
 
-    // Wait a bit for console messages
-    await page.waitForTimeout(1000);
-
-    // Verify browser mode was detected
-    expect(logs.some(log => log.includes('[Browser Mode] Using mock EditorAPI'))).toBeTruthy();
+    // In browser mode, main.tsx injects mockEditorAPI into window.editorAPI
+    // (there is no console.log — check the injected object directly)
+    await expect(async () => {
+      const editorAPIType = await page.evaluate(() => typeof window.editorAPI);
+      expect(editorAPIType).toBe('object');
+    }).toPass({ timeout: 5000 });
   });
 
   test('should have window.editorAPI available', async ({ page }) => {

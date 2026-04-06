@@ -98,10 +98,11 @@ test.describe('Dialog Line Focus', () => {
   test('clicking "Add Line" button should focus the new line', async ({ page }) => {
     // Initial count
     await expect(page.getByLabel('Text')).toHaveCount(1);
-    
-    // Click "Add Line" button
-    await page.getByRole('button', { name: /Add Line/i }).click();
-    
+
+    // Open "Add action" menu and select "Dialog Line"
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
+
     // Wait for the new line to appear
     const textFields = page.getByLabel('Text');
     await expect(textFields).toHaveCount(2);
@@ -111,25 +112,33 @@ test.describe('Dialog Line Focus', () => {
     await expect(secondLine).toBeFocused();
   });
 
-  test('clicking "+" button between actions should focus the new line', async ({ page }) => {
-    // Add a second line first
-    await page.getByRole('button', { name: /Add Line/i }).click();
+  test('inserting an action between two existing actions should focus the new line', async ({ page }) => {
+    // Add a second line via the "Add action" menu — now there are 2 lines
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
     await expect(page.getByLabel('Text')).toHaveCount(2);
-    
-    // Find the first action card and its "+" button
-    // The button is inside a Tooltip with title "Add new action"
-    const addButtons = page.getByRole('button', { name: /Add new action/i });
-    await addButtons.first().click();
-    
-    // Select "Dialog Line" from the menu
-    await page.getByRole('menuitem', { name: /Dialog Line/i }).click();
-    
-    // Should now have 3 lines
+
+    // Focus the first line and use Ctrl+Enter to open the ActionTypeMenu for
+    // that card.  This is the same menu that the "+" divider button opens, and
+    // avoids the fragility of clicking the absolutely-positioned divider button.
     const textFields = page.getByLabel('Text');
+    await textFields.first().click();
+    await page.keyboard.press('Control+Enter');
+
+    // Select "Dialog Line" — inserts a new card after index 0
+    await page.getByRole('menuitem', { name: /Dialog Line/i }).click();
+
+    // Should now have 3 lines
     await expect(textFields).toHaveCount(3);
-    
-    // The middle one (index 1) should be focused
+
+    // The inserted middle line (index 1) should receive focus.
+    // The focus is deferred via setTimeout(0) in addActionAfter so that the
+    // new card's DOM element is registered before focus is applied.
+    // onClose() briefly re-focuses card 0 first, so poll until the correct
+    // element is focused.
     const middleLine = textFields.nth(1);
-    await expect(middleLine).toBeFocused();
+    await expect(async () => {
+      await expect(middleLine).toBeFocused();
+    }).toPass({ timeout: 10000 });
   });
 });

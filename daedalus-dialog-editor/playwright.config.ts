@@ -10,14 +10,16 @@ export default defineConfig({
   // Maximum time one test can run
   timeout: 30 * 1000,
 
+  // Default timeout for expect() assertions (raised from 5 s to handle slow CI runners)
+  expect: { timeout: 10 * 1000 },
   // Test execution settings
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? 1 : undefined,
 
-  // Reporter to use. In CI each shard emits a blob report; a merge job combines them into HTML.
-  reporter: process.env.CI ? 'blob' : 'html',
+  // Reporter to use
+  reporter: 'html',
 
   use: {
     // Base URL for the dev server

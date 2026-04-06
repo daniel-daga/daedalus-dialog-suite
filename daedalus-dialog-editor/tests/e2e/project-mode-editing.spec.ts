@@ -71,10 +71,9 @@ test.describe('Project Mode Editing', () => {
     const initialTextareas = await page.getByLabel('Text').count();
     console.log(`Initial actions count: ${initialTextareas}`);
     
-    // 5. Click "Add Line" button
-    const addLineButton = page.getByRole('button', { name: /Add Line/i });
-    await expect(addLineButton).toBeVisible();
-    await addLineButton.click();
+    // 5. Open "Add action" menu and select "Dialog Line"
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
 
     // 6. Verify new line added
     await expect(async () => {
