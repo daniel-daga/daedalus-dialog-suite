@@ -146,20 +146,13 @@ test.describe('File Opening and Dialog Selection', () => {
 
 test.describe('Mock API Integration', () => {
   test('should detect browser mode and use mock API', async ({ page }) => {
-    // Set up console listener BEFORE navigating
-    const logs: string[] = [];
-    page.on('console', msg => {
-      if (msg.type() === 'log') {
-        logs.push(msg.text());
-      }
-    });
-
-    // Navigate to app
     await page.goto('/');
 
-    // Wait for the browser-mode console message to appear
+    // In browser mode, main.tsx injects mockEditorAPI into window.editorAPI
+    // (there is no console.log — check the injected object directly)
     await expect(async () => {
-      expect(logs.some(log => log.includes('[Browser Mode] Using mock EditorAPI'))).toBeTruthy();
+      const editorAPIType = await page.evaluate(() => typeof window.editorAPI);
+      expect(editorAPIType).toBe('object');
     }).toPass({ timeout: 5000 });
   });
 

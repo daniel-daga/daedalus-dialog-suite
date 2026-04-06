@@ -190,7 +190,8 @@ test.describe('Dialog Line Editing', () => {
   });
 
   test('should maintain action count across multiple edits', async ({ page }) => {
-    // Count initial actions
+    // Wait for all action textareas to be fully rendered before taking baseline
+    await expect(page.locator('textarea').first()).toBeVisible();
     const initialCount = await page.locator('textarea').count();
     console.log(`Starting with ${initialCount} textareas`);
 

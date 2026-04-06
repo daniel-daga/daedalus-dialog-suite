@@ -130,8 +130,12 @@ test.describe('Dialog Line Focus', () => {
     const textFields = page.getByLabel('Text');
     await expect(textFields).toHaveCount(3);
     
-    // The middle one (index 1) should be focused
+    // The middle one (index 1) should be focused.
+    // Focus is set synchronously before the DOM update, so poll until the
+    // new element renders and receives focus.
     const middleLine = textFields.nth(1);
-    await expect(middleLine).toBeFocused();
+    await expect(async () => {
+      await expect(middleLine).toBeFocused();
+    }).toPass({ timeout: 5000 });
   });
 });
