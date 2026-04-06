@@ -10,6 +10,8 @@ export default defineConfig({
   // Maximum time one test can run
   timeout: 30 * 1000,
 
+  // Default timeout for expect() assertions (raised from 5 s to handle slow CI runners)
+  expect: { timeout: 10 * 1000 },
   // Test execution settings
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

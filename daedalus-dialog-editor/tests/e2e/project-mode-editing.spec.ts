@@ -62,10 +62,10 @@ test.describe('Project Mode Editing', () => {
     await page.getByRole('button', { name: /DIA_Project_Test/ }).click();
 
     // 3. Verify editor loaded
-    await expect(page.getByRole('heading', { name: 'DIA_Project_Test', exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'DIA_Project_Test', exact: true })).toBeVisible();
     const firstLine = page.getByLabel('Text').first();
-    await expect(firstLine).toBeVisible({ timeout: 10000 });
-    await expect(firstLine).toHaveValue('DIA_Project_Test_15_00', { timeout: 10000 });
+    await expect(firstLine).toBeVisible();
+    await expect(firstLine).toHaveValue('DIA_Project_Test_15_00');
 
     // 4. Count initial actions (should be 1)
     const initialTextareas = await page.getByLabel('Text').count();
