@@ -112,29 +112,30 @@ test.describe('Dialog Line Focus', () => {
     await expect(secondLine).toBeFocused();
   });
 
-  test('clicking "+" button between actions should focus the new line', async ({ page }) => {
-    // Add a second line first via the "Add action" menu
+  test('inserting an action between two existing actions should focus the new line', async ({ page }) => {
+    // Add a second line via the "Add action" menu — now there are 2 lines
     await page.getByRole('button', { name: 'Add action' }).click();
     await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
     await expect(page.getByLabel('Text')).toHaveCount(2);
-    
-    // Click the "+" button between the two action cards.
-    // It is position:absolute at bottom:-16px and may be partially covered by
-    // the card below, so force:true bypasses Playwright's coverage check.
-    const addButtons = page.locator('[aria-label="Add new action"]');
-    await addButtons.first().click({ force: true });
 
-    // Select "Dialog Line" from the menu
+    // Focus the first line and use Ctrl+Enter to open the ActionTypeMenu for
+    // that card.  This is the same menu that the "+" divider button opens, and
+    // avoids the fragility of clicking the absolutely-positioned divider button.
+    const textFields = page.getByLabel('Text');
+    await textFields.first().click();
+    await page.keyboard.press('Control+Enter');
+
+    // Select "Dialog Line" — inserts a new card after index 0
     await page.getByRole('menuitem', { name: /Dialog Line/i }).click();
 
     // Should now have 3 lines
-    const textFields = page.getByLabel('Text');
     await expect(textFields).toHaveCount(3);
 
     // The inserted middle line (index 1) should receive focus.
-    // addActionAfterPath queues a pendingFocusRequest that is applied when the
-    // new card mounts, but onClose() briefly re-focuses card 0 first — poll
-    // until the pending focus lands on the correct element.
+    // The focus is deferred via setTimeout(0) in addActionAfter so that the
+    // new card's DOM element is registered before focus is applied.
+    // onClose() briefly re-focuses card 0 first, so poll until the correct
+    // element is focused.
     const middleLine = textFields.nth(1);
     await expect(async () => {
       await expect(middleLine).toBeFocused();
