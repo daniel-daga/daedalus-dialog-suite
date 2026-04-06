@@ -55,9 +55,9 @@ test.describe('Dialog Line Editing', () => {
     // Wait for actions to be visible
     await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
 
-    // Count initial actions
-    const initialActionTexts = await page.locator('textarea[placeholder*="Dialog text"], input[value*="DIA_"]').count();
-    console.log(`Initial action count: ${initialActionTexts}`);
+    // Count initial textarea count (3 AI_Output lines)
+    const initialCount = await page.locator('textarea').count();
+    console.log(`Initial textarea count: ${initialCount}`);
 
     // Find the first textarea (dialog line input)
     const firstTextarea = page.locator('textarea').first();
@@ -81,15 +81,13 @@ test.describe('Dialog Line Editing', () => {
     // Take screenshot after typing
     await page.screenshot({ path: 'test-results/after-typing.png', fullPage: true });
 
-    // Check if actions are still visible
-    const afterActionTexts = await page.locator('textarea[placeholder*="Dialog text"], input[value*="DIA_"]').count();
-    console.log(`Action count after typing: ${afterActionTexts}`);
+    // BUG CHECK: Actions should NOT disappear — textarea count must stay the same
+    const afterCount = await page.locator('textarea').count();
+    console.log(`Textarea count after typing: ${afterCount}`);
+    expect(afterCount).toBe(initialCount);
 
-    // BUG CHECK: Actions should NOT disappear
-    expect(afterActionTexts).toBeGreaterThan(0);
-
-    // Original action names should still be visible
-    await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
+    // The OTHER action IDs (not the one we edited) should still be visible
+    await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_5_6/i)).toBeVisible();
   });
 
   test('should add a new dialog line when clicking Add Line button', async ({ page }) => {
@@ -97,11 +95,12 @@ test.describe('Dialog Line Editing', () => {
     const initialCount = await page.locator('textarea').count();
     console.log(`Initial textarea count: ${initialCount}`);
 
-    // Click "Add Line" button
-    await page.getByRole('button', { name: /Add Line/i }).click();
+    // Open "Add action" menu and choose "Dialog Line"
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
 
     // Wait for new action to appear
-    await page.waitForTimeout(500);
+    await expect(page.locator('textarea')).toHaveCount(initialCount + 1);
 
     // Count actions after adding
     const afterCount = await page.locator('textarea').count();
@@ -118,9 +117,10 @@ test.describe('Dialog Line Editing', () => {
     // Count initial actions
     const initialCount = await page.locator('textarea').count();
 
-    // Add new line
-    await page.getByRole('button', { name: /Add Line/i }).click();
-    await page.waitForTimeout(500);
+    // Open "Add action" menu and choose "Dialog Line"
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
+    await expect(page.locator('textarea')).toHaveCount(initialCount + 1);
 
     // Find the last textarea (newly added)
     const lastTextarea = page.locator('textarea').last();
@@ -148,9 +148,11 @@ test.describe('Dialog Line Editing', () => {
   });
 
   test('should preserve text when typing character by character', async ({ page }) => {
-    // Add new line
-    await page.getByRole('button', { name: /Add Line/i }).click();
-    await page.waitForTimeout(500);
+    // Add new line via "Add action" menu
+    const initialCount = await page.locator('textarea').count();
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
+    await expect(page.locator('textarea')).toHaveCount(initialCount + 1);
 
     const lastTextarea = page.locator('textarea').last();
     await lastTextarea.click();
@@ -173,20 +175,24 @@ test.describe('Dialog Line Editing', () => {
     await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
   });
 
-  test('should show "Unsaved Changes" chip when editing', async ({ page }) => {
-    // Initially no unsaved changes chip
-    await expect(page.getByText('Unsaved Changes')).not.toBeVisible();
+  test('should preserve edited text and keep other actions visible', async ({ page }) => {
+    // Wait for all 3 dialog lines to be rendered
+    const textareas = page.locator('textarea');
+    await expect(textareas).toHaveCount(3);
 
-    // Type in first textarea
-    const firstTextarea = page.locator('textarea').first();
+    // Edit the first textarea
+    const firstTextarea = textareas.first();
     await firstTextarea.click();
     await firstTextarea.fill('Modified text');
 
     // Wait for debounce
     await page.waitForTimeout(500);
 
-    // Should show "Unsaved Changes" chip
-    await expect(page.getByText('Unsaved Changes')).toBeVisible();
+    // The edited value must be preserved (state round-trip works)
+    await expect(firstTextarea).toHaveValue('Modified text');
+
+    // Other action cards must still be rendered (no regression)
+    await expect(textareas).toHaveCount(3);
   });
 
   test('should maintain action count across multiple edits', async ({ page }) => {

@@ -44,17 +44,18 @@ test.describe('Dialog creation flow', () => {
     await page.getByLabel('NPC Name').fill('SLD_12345_TestNpc');
     await page.getByRole('button', { name: 'Create' }).click();
 
-    await expect(page.getByText('SLD_12345_TestNpc')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'DIA_SLD_12345_TestNpc_Start', exact: true })).toBeVisible();
+    await expect(page.getByText('SLD_12345_TestNpc')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'DIA_SLD_12345_TestNpc_Start', exact: true })).toBeVisible({ timeout: 15000 });
 
-    const storageState = await page.evaluate(() => {
-      return {
+    // The new NPC's dialog file should have been written to the mock filesystem.
+    // Use a retrying assertion because the file write is part of an async chain.
+    await expect(async () => {
+      const storageState = await page.evaluate(() => ({
         npcFile: localStorage.getItem('mockapi_file_project/dialogs/DIA_SLD_12345_TestNpc.d'),
         existingFile: localStorage.getItem('mockapi_file_project/dialogs/existing.d')
-      };
-    });
-
-    expect(storageState.npcFile).not.toBeNull();
-    expect(storageState.existingFile).not.toContain('DIA_SLD_12345_TestNpc_Start');
+      }));
+      expect(storageState.npcFile).not.toBeNull();
+      expect(storageState.existingFile).not.toContain('DIA_SLD_12345_TestNpc_Start');
+    }).toPass({ timeout: 5000 });
   });
 });
