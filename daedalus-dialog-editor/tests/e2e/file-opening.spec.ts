@@ -90,9 +90,8 @@ test.describe('File Opening and Dialog Selection', () => {
     // Verify Properties section
     await expect(page.getByText('Properties')).toBeVisible();
 
-    // Verify action buttons are present
-    await expect(page.getByRole('button', { name: /Add Line/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Add Choice/i })).toBeVisible();
+    // Verify action button is present (opens a menu to add any action type)
+    await expect(page.getByRole('button', { name: 'Add action' })).toBeVisible();
 
     // Auto-save is enabled, so there is no explicit Save button in the editor toolbar
     await expect(page.getByRole('button', { name: /Save/i })).toHaveCount(0);
