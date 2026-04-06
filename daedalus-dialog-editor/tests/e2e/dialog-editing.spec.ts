@@ -190,42 +190,22 @@ test.describe('Dialog Line Editing', () => {
   });
 
   test('should maintain action count across multiple edits', async ({ page }) => {
-    // Wait for all action textareas to be fully rendered before taking baseline
-    await expect(page.locator('textarea').first()).toBeVisible();
-    const initialCount = await page.locator('textarea').count();
-    console.log(`Starting with ${initialCount} textareas`);
+    // Use getByLabel('Text') — the semantic locator for dialog line fields — and
+    // wait for all 3 to be present before taking the baseline.  The ActionsList
+    // component does a progressive-rendering reset on contextId change, so a raw
+    // textarea.first().toBeVisible() can fire before all rows finish rendering.
+    const textFields = page.getByLabel('Text');
+    await expect(textFields).toHaveCount(3); // DIA_Arog_EntscheidungKillAlchemist has 3 AI_Output lines
 
-    // Edit first action
-    const firstTextarea = page.locator('textarea').first();
-    await firstTextarea.click();
-    await firstTextarea.fill('Edit 1');
-    await page.waitForTimeout(500);
+    // Edit each field and assert the count stays stable after every edit
+    for (let i = 0; i < 3; i++) {
+      await textFields.nth(i).click();
+      await textFields.nth(i).fill(`Edit ${i + 1}`);
+      await page.waitForTimeout(300);
+      await expect(textFields).toHaveCount(3);
+      console.log(`After edit ${i + 1}: count still 3`);
+    }
 
-    let currentCount = await page.locator('textarea').count();
-    await expect(page.locator('textarea')).toHaveCount(initialCount);
-    console.log(`After edit 1: ${currentCount} textareas`);
-
-    // Edit second action
-    const secondTextarea = page.locator('textarea').nth(1);
-    await secondTextarea.click();
-    await secondTextarea.fill('Edit 2');
-    await page.waitForTimeout(500);
-
-    currentCount = await page.locator('textarea').count();
-    await expect(page.locator('textarea')).toHaveCount(initialCount);
-    console.log(`After edit 2: ${currentCount} textareas`);
-
-    // Edit third action
-    const thirdTextarea = page.locator('textarea').nth(2);
-    await thirdTextarea.click();
-    await thirdTextarea.fill('Edit 3');
-    await page.waitForTimeout(500);
-
-    currentCount = await page.locator('textarea').count();
-    await expect(page.locator('textarea')).toHaveCount(initialCount);
-    console.log(`After edit 3: ${currentCount} textareas`);
-
-    // Take final screenshot
     await page.screenshot({ path: 'test-results/after-multiple-edits.png', fullPage: true });
   });
 });

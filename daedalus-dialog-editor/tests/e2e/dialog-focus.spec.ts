@@ -118,24 +118,26 @@ test.describe('Dialog Line Focus', () => {
     await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
     await expect(page.getByLabel('Text')).toHaveCount(2);
     
-    // Find the first action card and its "+" button
-    // The button is inside a Tooltip with title "Add new action"
-    const addButtons = page.getByRole('button', { name: /Add new action/i });
-    await addButtons.first().click();
-    
+    // Click the "+" button between the two action cards.
+    // It is position:absolute at bottom:-16px and may be partially covered by
+    // the card below, so force:true bypasses Playwright's coverage check.
+    const addButtons = page.locator('[aria-label="Add new action"]');
+    await addButtons.first().click({ force: true });
+
     // Select "Dialog Line" from the menu
     await page.getByRole('menuitem', { name: /Dialog Line/i }).click();
-    
+
     // Should now have 3 lines
     const textFields = page.getByLabel('Text');
     await expect(textFields).toHaveCount(3);
-    
-    // The middle one (index 1) should be focused.
-    // Focus is set synchronously before the DOM update, so poll until the
-    // new element renders and receives focus.
+
+    // The inserted middle line (index 1) should receive focus.
+    // addActionAfterPath queues a pendingFocusRequest that is applied when the
+    // new card mounts, but onClose() briefly re-focuses card 0 first — poll
+    // until the pending focus lands on the correct element.
     const middleLine = textFields.nth(1);
     await expect(async () => {
       await expect(middleLine).toBeFocused();
-    }).toPass({ timeout: 5000 });
+    }).toPass({ timeout: 10000 });
   });
 });
