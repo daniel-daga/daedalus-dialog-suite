@@ -231,7 +231,11 @@ export function useActionManagement(config: ActionManagementConfig) {
     });
 
     if (nextPath) {
-      focusAction(nextPath, true);
+      const pathToFocus = nextPath;
+      // Defer focus past the current render so the new card's DOM element is
+      // registered before we attempt to focus it (handles mid-list insertions
+      // where an old element already occupies the target path key).
+      setTimeout(() => focusAction(pathToFocus, true), 0);
     }
   }, [setFunction, focusAction, buildDialogLineAction]);
 
@@ -312,7 +316,8 @@ export function useActionManagement(config: ActionManagementConfig) {
     }
 
     if (nextPath) {
-      focusAction(nextPath, true);
+      const pathToFocus = nextPath;
+      setTimeout(() => focusAction(pathToFocus, true), 0);
     }
   }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, getAllDialogLineActions]);
 
