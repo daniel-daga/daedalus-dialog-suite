@@ -322,6 +322,7 @@ export interface DialogFunction {
   filePath?: string;
   actions: DialogAction[];
   conditions: DialogCondition[];
+  conditionOperator?: 'AND' | 'OR';
   calls: string[];
 }
 

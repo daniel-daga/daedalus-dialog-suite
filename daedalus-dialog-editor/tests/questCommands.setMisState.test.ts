@@ -691,9 +691,31 @@ describe('setConditionExpression command', () => {
     ]);
   });
 
-  it('stores complex but valid expressions as generic condition entries', () => {
+  it('parses OR expressions into structured conditions with OR operator', () => {
     const model = createModel();
     const expression = '(MIS_TEST == LOG_RUNNING) || (MIS_TEST == LOG_SUCCESS)';
+    const result = executeQuestGraphCommand(
+      { questName: 'TOPIC_TEST', model },
+      {
+        type: 'setConditionExpression',
+        targetFunctionName: 'DIA_Target_Info',
+        expression
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.updatedModel.functions.DIA_Target_Info.conditions).toEqual([
+      { type: 'VariableCondition', variableName: 'MIS_TEST', negated: false, operator: '==', value: 'LOG_RUNNING' },
+      { type: 'VariableCondition', variableName: 'MIS_TEST', negated: false, operator: '==', value: 'LOG_SUCCESS' }
+    ]);
+    expect(result.updatedModel.functions.DIA_Target_Info.conditionOperator).toBe('OR');
+  });
+
+  it('stores truly unstructured OR expressions as generic condition entries', () => {
+    const model = createModel();
+    // An OR expression where the segments cannot be parsed as structured conditions
+    const expression = 'SomeUnknownFunc(x) || OtherUnknownFunc(y)';
     const result = executeQuestGraphCommand(
       { questName: 'TOPIC_TEST', model },
       {

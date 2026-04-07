@@ -10,6 +10,7 @@ interface ConditionCardProps {
   condition: ConditionEditorCondition;
   index: number;
   totalConditions: number;
+  operator?: 'AND' | 'OR';
   updateCondition: (index: number, updated: ConditionEditorCondition) => void;
   deleteCondition: (index: number) => void;
   focusCondition: (index: number) => void;
@@ -20,6 +21,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   condition,
   index,
   totalConditions,
+  operator = 'AND',
   updateCondition,
   deleteCondition,
   focusCondition: _focusCondition,
@@ -65,9 +67,9 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
         />
         {index < totalConditions - 1 && (
           <Chip
-            label="AND"
+            label={operator}
             size="small"
-            color="primary"
+            color={operator === 'OR' ? 'secondary' : 'primary'}
             sx={{ fontSize: '0.65rem', height: '20px' }}
           />
         )}

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
 import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
+import { ToggleButton, ToggleButtonGroup } from '@mui/material';
 import ConditionCard from './ConditionCard';
 import type { DialogCondition, DialogFunction, SemanticModel } from '../types/global';
 import type { ConditionEditorCondition, FunctionUpdater } from './dialogTypes';
@@ -271,9 +272,27 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
         <>
           <Box sx={{ mb: 2 }}>
             {(localFunction.conditions || []).length > 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                {(localFunction.conditions || []).length} condition(s) - ALL must be true
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography variant="caption" color="text.secondary">
+                  {(localFunction.conditions || []).length} condition(s) -{' '}
+                  {(localFunction.conditionOperator ?? 'AND') === 'OR' ? 'ANY must be true' : 'ALL must be true'}
+                </Typography>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={localFunction.conditionOperator ?? 'AND'}
+                  onChange={(_e, val) => {
+                    if (val === null) return;
+                    onUpdateFunction((f) => f ? { ...f, conditionOperator: val as 'AND' | 'OR' } : f);
+                  }}
+                  aria-label="condition operator"
+                  sx={{ ml: 1 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ToggleButton value="AND" sx={{ py: 0, px: 1, fontSize: '0.65rem', lineHeight: 1.5 }}>AND</ToggleButton>
+                  <ToggleButton value="OR" sx={{ py: 0, px: 1, fontSize: '0.65rem', lineHeight: 1.5 }}>OR</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
             ) : rawConditionActions.length > 0 ? (
               <Typography variant="caption" color="warning.main">
                 Raw condition mode: unsupported condition structure is preserved verbatim
@@ -348,6 +367,7 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
                     condition={condition}
                     index={idx}
                     totalConditions={localFunction.conditions.length}
+                    operator={localFunction.conditionOperator ?? 'AND'}
                     updateCondition={updateCondition}
                     deleteCondition={deleteCondition}
                     focusCondition={focusCondition}

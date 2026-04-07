@@ -30,6 +30,7 @@ export const executeSetConditionExpressionCommand = (
 
   const updatedModel = cloneModel(context.model);
   updatedModel.functions[command.targetFunctionName].conditions = parseResult.conditions;
+  updatedModel.functions[command.targetFunctionName].conditionOperator = parseResult.conditionOperator ?? 'AND';
 
   return {
     ok: true,

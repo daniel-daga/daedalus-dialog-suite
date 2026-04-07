@@ -656,6 +656,8 @@ export class DialogFunction {
   })
   public conditions: DialogCondition[];
 
+  public conditionOperator: 'AND' | 'OR';
+
   constructor(name: string, returnType: string) {
     this.name = name;
     this.returnType = returnType;
@@ -663,6 +665,7 @@ export class DialogFunction {
     this.calls = [];
     this.actions = [];
     this.conditions = [];
+    this.conditionOperator = 'AND';
   }
 }
 
