@@ -115,21 +115,31 @@ export function useDialogEditorCommands({
       }
     }
 
-    const logEntryAction = actionType === 'createTopic'
-      ? createAction('logEntry', { dialogName, currentAction: undefined })
-      : null;
-
-    setFunction((previousFunction) => {
-      const existingActions = previousFunction.actions || [];
-      if (logEntryAction) {
-        const newActions = [...existingActions, newAction, logEntryAction];
-        focusAction([newActions.length - 2], true);
+    if (actionType === 'createTopic') {
+      const createTopicTopic = newAction.type === 'CreateTopic' ? newAction.topic : 'TOPIC_';
+      const logSetStatusAction = {
+        ...createAction('logSetTopicStatus', { dialogName, currentAction: undefined }),
+        topic: createTopicTopic,
+        status: 'LOG_RUNNING',
+      };
+      const logEntryAction = {
+        ...createAction('logEntry', { dialogName, currentAction: undefined }),
+        topic: createTopicTopic,
+      };
+      setFunction((previousFunction) => {
+        const existingActions = previousFunction.actions || [];
+        const newActions = [...existingActions, newAction, logSetStatusAction, logEntryAction];
+        focusAction([newActions.length - 3], true);
         return { ...previousFunction, actions: newActions };
-      }
-      const newActions = [...existingActions, newAction];
-      focusAction([newActions.length - 1], true);
-      return { ...previousFunction, actions: newActions };
-    });
+      });
+    } else {
+      setFunction((previousFunction) => {
+        const existingActions = previousFunction.actions || [];
+        const newActions = [...existingActions, newAction];
+        focusAction([newActions.length - 1], true);
+        return { ...previousFunction, actions: newActions };
+      });
+    }
   }, [currentFunction, filePath, dialogName, semanticModel, updateFunction, setFunction, focusAction]);
 
   const handleDialogPropertyChange = useCallback((updater: DialogUpdater) => {
