@@ -143,6 +143,58 @@ test('deserializeSemanticModel should handle various action types', () => {
   assert.equal(actions[1].text, 'Option 1');
 });
 
+test('deserializeSemanticModel should preserve conditionOperator OR through deserialization and code generation', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+
+  const plainJson = {
+    functions: {
+      DIA_Test_OR_Condition: {
+        name: 'DIA_Test_OR_Condition',
+        returnType: 'int',
+        actions: [],
+        conditions: [
+          { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_First' },
+          { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Second' }
+        ],
+        conditionOperator: 'OR',
+        calls: []
+      }
+    },
+    dialogs: {
+      DIA_Test_OR: {
+        name: 'DIA_Test_OR',
+        parent: 'C_INFO',
+        properties: {
+          npc: 'TestNpc',
+          nr: 1,
+          condition: { name: 'DIA_Test_OR_Condition', returnType: 'int' },
+          information: 'DIA_Test_OR_Info'
+        }
+      }
+    }
+  };
+
+  const model = deserializeSemanticModel(plainJson);
+
+  assert.strictEqual(
+    model.functions['DIA_Test_OR_Condition'].conditionOperator,
+    'OR',
+    'conditionOperator should survive deserialization as OR'
+  );
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const code = generator.generateSemanticModel(model);
+
+  assert.ok(
+    code.includes('||'),
+    `Generated code should use || for OR conditions, got:\n${code}`
+  );
+  assert.ok(
+    !code.includes('&&'),
+    `Generated code should not use && for OR conditions, got:\n${code}`
+  );
+});
+
 test('deserializeSemanticModel should handle global constants and variables', () => {
   const plainJson = {
     functions: {},

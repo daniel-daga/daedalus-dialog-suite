@@ -187,9 +187,9 @@ export function useDialogFactory(config: DialogFactoryConfig) {
         actions: [
           {
             type: 'DialogLine',
-            speaker: 'self',
+            speaker: 'other',
             text: '',
-            id: createDialogLineId({ dialogName, speaker: 'self', actions: [] })
+            id: createDialogLineId({ dialogName, speaker: 'other', actions: [] })
           }
         ],
         conditions: [],

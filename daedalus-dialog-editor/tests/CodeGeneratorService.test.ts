@@ -421,6 +421,38 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
       expect(result).toContain('QuestActive');
       expect(result).toContain('hero.guild == GIL_NONE');
     });
+
+    test('should use || when conditionOperator is OR', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          DIA_Test_Condition: {
+            name: 'DIA_Test_Condition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditionOperator: 'OR',
+            conditions: [
+              { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_First' },
+              { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Second' }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: false,
+        sectionHeaders: false,
+        uppercaseKeywords: false
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toContain('||');
+      expect(result).not.toContain('&&');
+    });
   });
 
   describe('Style preservation', () => {
