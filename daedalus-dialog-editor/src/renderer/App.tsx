@@ -14,9 +14,12 @@ import {
   Refresh as RefreshIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
-  AutoAwesome as AutoAwesomeIcon
+  AutoAwesome as AutoAwesomeIcon,
+  Undo as UndoIcon,
+  Redo as RedoIcon
 } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
+import { useHistoryStore } from './store/historyStore';
 import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
 import { useFileWatcher } from './hooks/useFileWatcher';
@@ -44,6 +47,10 @@ const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }
 const App: React.FC = () => {
   const { openFile, activeFile, openFiles, resetEditorSession } = useEditorStore();
   const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore();
+  const editHistory = useHistoryStore(state => state.editHistory);
+  const { undo, redo } = useHistoryStore.getState();
+  const canUndo = activeFile ? (editHistory.get(activeFile)?.past.length ?? 0) > 0 : false;
+  const canRedo = activeFile ? (editHistory.get(activeFile)?.future.length ?? 0) > 0 : false;
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   useFileWatcher();
 
@@ -89,18 +96,6 @@ const App: React.FC = () => {
     const timer = setTimeout(() => setTriggerUpdateCheck(true), 5000);
     return () => clearTimeout(timer);
   }, []);
-
-  const formatLastSaved = (date: Date | null): string => {
-    if (!date) return '';
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffSecs = Math.floor(diffMs / 1000);
-    if (diffSecs < 60) return 'Just now';
-    const diffMins = Math.floor(diffSecs / 60);
-    if (diffMins === 1) return '1 min ago';
-    if (diffMins < 60) return `${diffMins} mins ago`;
-    return date.toLocaleTimeString();
-  };
 
   const confirmDiscardChanges = (context: string): boolean => {
     if (!hasUnsavedChanges) {
@@ -180,45 +175,58 @@ const App: React.FC = () => {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             Dandelion
           </Typography>
-          {autoSaveError && (
-            <Tooltip title={
-              <Box>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                  Validation errors prevented auto-save:
-                </Typography>
-                {autoSaveError.errors.map((err, i) => (
-                  <Typography key={i} variant="caption" sx={{ display: 'block' }}>
-                    - {err.message}
-                  </Typography>
-                ))}
-              </Box>
-            }>
-              <Chip
-                icon={<ErrorIcon sx={{ color: 'white !important' }} />}
-                label="Auto-save Paused"
-                size="small"
-                color="error"
-                sx={{ mr: 2, color: 'white' }}
-              />
-            </Tooltip>
-          )}
-          {isAutoSaving && (
-            <Chip
-              icon={<SaveIcon />}
-              label="Saving..."
-              size="small"
-              sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
-            />
-          )}
-          {!isAutoSaving && lastAutoSaveTime && (
-            <Tooltip title={`Last auto-saved: ${lastAutoSaveTime.toLocaleTimeString()}`}>
-              <Chip
-                icon={<SaveIcon />}
-                label={formatLastSaved(lastAutoSaveTime)}
-                size="small"
-                sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
-              />
-            </Tooltip>
+          {activeFile && (
+            <>
+              <Tooltip title="Undo (Ctrl+Z)">
+                <span>
+                  <IconButton
+                    color="inherit"
+                    aria-label="Undo"
+                    disabled={!canUndo}
+                    onClick={() => undo(activeFile)}
+                  >
+                    <UndoIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Redo (Ctrl+Y)">
+                <span>
+                  <IconButton
+                    color="inherit"
+                    aria-label="Redo"
+                    disabled={!canRedo}
+                    onClick={() => redo(activeFile)}
+                    sx={{ mr: 1 }}
+                  >
+                    <RedoIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              {autoSaveError ? (
+                <Tooltip title={
+                  <Box>
+                    <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                      Validation errors prevented auto-save:
+                    </Typography>
+                    {autoSaveError.errors.map((err, i) => (
+                      <Typography key={i} variant="caption" sx={{ display: 'block' }}>
+                        - {err.message}
+                      </Typography>
+                    ))}
+                  </Box>
+                }>
+                  <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />
+                </Tooltip>
+              ) : isAutoSaving ? (
+                <Tooltip title="Saving...">
+                  <SaveIcon sx={{ color: 'rgba(255,255,255,0.7)', mr: 1 }} />
+                </Tooltip>
+              ) : lastAutoSaveTime ? (
+                <Tooltip title={`Last saved: ${lastAutoSaveTime.toLocaleTimeString()}`}>
+                  <SaveIcon sx={{ color: 'rgba(255,255,255,0.4)', mr: 1 }} />
+                </Tooltip>
+              ) : null}
+            </>
           )}
           {projectName && (
             <Chip
@@ -288,18 +296,18 @@ const App: React.FC = () => {
           <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
             Open Project
           </Button>
-          <Button
-            color="inherit"
-            onClick={() => void handleReload()}
-            disabled={!projectPath && !activeFile}
-            startIcon={<RefreshIcon />}
-            sx={{ mr: 1 }}
-          >
-            Neu laden
-          </Button>
-          <Button color="inherit" onClick={handleOpenFile}>
-            Open File
-          </Button>
+          <Tooltip title="Reload">
+            <span>
+              <IconButton
+                color="inherit"
+                aria-label="Reload"
+                onClick={() => void handleReload()}
+                disabled={!projectPath && !activeFile}
+              >
+                <RefreshIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 
