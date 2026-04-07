@@ -487,8 +487,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         onSelectDialog={handleSelectDialog}
         onToggleDialogExpand={handleToggleDialogExpand}
         onAddDialog={handleAddDialog}
-        onDeleteDialog={handleDeleteDialogRequest}
-        onRenameDialog={handleRenameDialogRequest}
         dialogIndex={dialogIndex}
         parsedFiles={parsedFiles}
         setIngestedFilesOpen={setIngestedFilesOpen}
@@ -537,6 +535,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         onSelectRecentDialog={handleSelectRecentDialog}
         onCloseRecentDialog={handleCloseRecentDialog}
         onNavigateToFunction={handleNavigateToFunction}
+        onDeleteDialog={handleDeleteDialogRequest}
+        onRenameDialog={handleRenameDialogRequest}
       />
     </Box>
   );

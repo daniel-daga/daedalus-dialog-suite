@@ -16,6 +16,8 @@ interface EditorColumnProps {
   onSelectRecentDialog: (dialogName: string, functionName: string | null, npcName: string) => void;
   onCloseRecentDialog: (dialogName: string, npcName: string) => void;
   onNavigateToFunction: (functionName: string) => void;
+  onDeleteDialog?: (dialogName: string) => void;
+  onRenameDialog?: (dialogName: string) => void;
 }
 
 const EditorColumn = forwardRef<HTMLDivElement, EditorColumnProps>((props, ref) => {

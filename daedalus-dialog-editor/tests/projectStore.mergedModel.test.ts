@@ -3,8 +3,11 @@ import { useProjectStore } from '../src/renderer/store/projectStore';
 import { SemanticModel } from '../src/renderer/types/global';
 
 // Helper to create a dummy semantic model
-const createModel = (vars: string[]): SemanticModel => ({
-  dialogs: {},
+const createModel = (vars: string[], dialogs: { name: string; npc: string }[] = []): SemanticModel => ({
+  dialogs: dialogs.reduce((acc, d) => ({
+    ...acc,
+    [d.name]: { name: d.name, properties: { npc: d.npc, description: d.name, nr: 0 }, actions: [], conditions: [] }
+  }), {}),
   functions: {},
   constants: {},
   variables: vars.reduce((acc, v) => ({ ...acc, [v]: { name: v, type: 'int' } }), {}),
@@ -74,6 +77,84 @@ describe('ProjectStore - mergedSemanticModel', () => {
         filePath: '/dialogs/new-npc.d'
       }
     ]);
+  });
+
+  test('updateFileModel updates dialogIndex when a dialog is renamed', () => {
+    const npcFile = '/path/to/DIA_NPC.d';
+    const npcName = 'NPC_Hero';
+
+    useProjectStore.setState({
+      projectPath: '/project',
+      allDialogFiles: [npcFile],
+      dialogIndex: new Map([
+        [npcName, [{ dialogName: 'DIA_OldName', npc: npcName, filePath: npcFile }]]
+      ]),
+      parsedFiles: new Map([
+        [npcFile, { filePath: npcFile, semanticModel: createModel([], [{ name: 'DIA_OldName', npc: npcName }]), lastParsed: new Date() }]
+      ]),
+      selectedNpc: null
+    });
+
+    // Simulate rename: new model has DIA_NewName, not DIA_OldName
+    const newModel = createModel([], [{ name: 'DIA_NewName', npc: npcName }]);
+    useProjectStore.getState().updateFileModel(npcFile, newModel);
+
+    const state = useProjectStore.getState();
+    const entries = state.dialogIndex.get(npcName) || [];
+    expect(entries.map(e => e.dialogName)).not.toContain('DIA_OldName');
+    expect(entries.map(e => e.dialogName)).toContain('DIA_NewName');
+  });
+
+  test('updateFileModel removes dialogIndex entry when a dialog is deleted', () => {
+    const npcFile = '/path/to/DIA_NPC.d';
+    const npcName = 'NPC_Hero';
+
+    useProjectStore.setState({
+      projectPath: '/project',
+      allDialogFiles: [npcFile],
+      dialogIndex: new Map([
+        [npcName, [{ dialogName: 'DIA_ToDelete', npc: npcName, filePath: npcFile }]]
+      ]),
+      parsedFiles: new Map([
+        [npcFile, { filePath: npcFile, semanticModel: createModel([], [{ name: 'DIA_ToDelete', npc: npcName }]), lastParsed: new Date() }]
+      ]),
+      selectedNpc: null
+    });
+
+    // Simulate delete: new model has no dialogs
+    const newModel = createModel([], []);
+    useProjectStore.getState().updateFileModel(npcFile, newModel);
+
+    const state = useProjectStore.getState();
+    const entries = state.dialogIndex.get(npcName) || [];
+    expect(entries.map(e => e.dialogName)).not.toContain('DIA_ToDelete');
+  });
+
+  test('updateFileModel re-merges semanticModel when selectedNpc is set', () => {
+    const npcFile = '/path/to/DIA_NPC.d';
+    const npcName = 'NPC_Hero';
+
+    useProjectStore.setState({
+      projectPath: '/project',
+      allDialogFiles: [npcFile],
+      dialogIndex: new Map([
+        [npcName, [{ dialogName: 'DIA_Start', npc: npcName, filePath: npcFile }]]
+      ]),
+      parsedFiles: new Map([
+        [npcFile, { filePath: npcFile, semanticModel: createModel(['VAR_OLD'], [{ name: 'DIA_Start', npc: npcName }]), lastParsed: new Date() }]
+      ]),
+      selectedNpc: npcName,
+      mergedSemanticModel: {
+        dialogs: {}, functions: {}, constants: {}, variables: {}, instances: {}, hasErrors: false, errors: []
+      }
+    });
+
+    const newModel = createModel(['VAR_NEW'], [{ name: 'DIA_Start', npc: npcName }]);
+    useProjectStore.getState().updateFileModel(npcFile, newModel);
+
+    const merged = useProjectStore.getState().mergedSemanticModel;
+    expect(merged.variables).toHaveProperty('VAR_NEW');
+    expect(merged.variables).not.toHaveProperty('VAR_OLD');
   });
 
   test('addDialogToIndex does not duplicate existing dialog metadata', () => {

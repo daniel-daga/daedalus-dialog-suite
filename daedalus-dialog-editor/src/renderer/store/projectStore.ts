@@ -626,8 +626,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   },
 
   updateFileModel: (filePath: string, model: SemanticModel) => {
-    const { parsedFiles } = get();
-    
+    const { parsedFiles, dialogIndex } = get();
+
     if (!(parsedFiles instanceof Map)) return;
 
     const newCache = new Map(parsedFiles);
@@ -636,8 +636,31 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       semanticModel: model,
       lastParsed: new Date()
     });
-    
-    set({ parsedFiles: newCache });
+
+    // Rebuild dialogIndex entries for this file from the updated model so that
+    // rename and delete operations are reflected in the dialog list immediately.
+    const newDialogIndex = new Map(dialogIndex);
+    for (const [npc, dialogs] of newDialogIndex.entries()) {
+      const filtered = dialogs.filter(d => d.filePath !== filePath);
+      if (filtered.length !== dialogs.length) {
+        if (filtered.length === 0) newDialogIndex.delete(npc);
+        else newDialogIndex.set(npc, filtered);
+      }
+    }
+    for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
+      const npcName = (dialog.properties?.npc as string) || 'Unknown NPC';
+      const existing = newDialogIndex.get(npcName) || [];
+      newDialogIndex.set(npcName, [...existing, { dialogName, npc: npcName, filePath }]);
+    }
+
+    set({ parsedFiles: newCache, dialogIndex: newDialogIndex });
+
+    // Re-merge the semantic model for the currently selected NPC so that
+    // description changes, renames, and deletes are reflected immediately.
+    const { selectedNpc } = get();
+    if (selectedNpc) {
+      get().loadAndMergeNpcModels(selectedNpc);
+    }
   },
 
   addDialogToIndex: (metadata: DialogMetadata) => {

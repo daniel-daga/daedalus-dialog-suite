@@ -50,6 +50,8 @@ export interface DialogDetailsEditorProps {
   functionName?: string; // Optional: if editing a choice function instead of the info function
   onNavigateToFunction?: (functionName: string) => void;
   semanticModel?: SemanticModel; // Optional: if provided, use this instead of reading from store
+  onDeleteDialog?: (dialogName: string) => void;
+  onRenameDialog?: (dialogName: string) => void;
 }
 
 export interface NPCListProps {
@@ -73,6 +75,4 @@ export interface DialogTreeProps {
   onToggleChoiceExpand: (choiceKey: string) => void;
   buildFunctionTree: (funcName: string, ancestorPath?: string[]) => FunctionTreeNode | null;
   onAddDialog?: (dialogName: string) => Promise<void> | void;
-  onDeleteDialog?: (dialogName: string) => void;
-  onRenameDialog?: (dialogName: string) => void;
 }

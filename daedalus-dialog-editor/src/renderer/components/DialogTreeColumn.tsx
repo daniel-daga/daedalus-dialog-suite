@@ -17,8 +17,6 @@ interface DialogTreeColumnProps {
   onSelectDialog: (dialogName: string, functionName: string | null) => void;
   onToggleDialogExpand: (dialogName: string) => void;
   onAddDialog: (dialogName: string) => Promise<void>;
-  onDeleteDialog?: (dialogName: string) => void;
-  onRenameDialog?: (dialogName: string) => void;
   dialogIndex: Map<string, DialogMetadata[]>;
   parsedFiles: Map<string, ParsedFileCache>;
   setIngestedFilesOpen: (open: boolean) => void;
@@ -36,8 +34,6 @@ const DialogTreeColumn: React.FC<DialogTreeColumnProps> = ({
   onSelectDialog,
   onToggleDialogExpand,
   onAddDialog,
-  onDeleteDialog,
-  onRenameDialog,
   dialogIndex,
   parsedFiles,
   setIngestedFilesOpen,
@@ -106,8 +102,6 @@ const DialogTreeColumn: React.FC<DialogTreeColumnProps> = ({
         onToggleChoiceExpand={handleToggleChoiceExpand}
         buildFunctionTree={buildFunctionTree}
         onAddDialog={onAddDialog}
-        onDeleteDialog={onDeleteDialog}
-        onRenameDialog={onRenameDialog}
       />
     </Box>
   );

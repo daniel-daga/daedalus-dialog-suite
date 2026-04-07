@@ -13,6 +13,8 @@ import {
   Code as CodeIcon,
   Undo as UndoIcon,
   Redo as RedoIcon,
+  Delete as DeleteIcon,
+  DriveFileRenameOutline as RenameIcon,
 } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import { useHistoryStore } from '../store/historyStore';
@@ -34,7 +36,9 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   filePath,
   functionName,
   onNavigateToFunction,
-  semanticModel: passedSemanticModel
+  semanticModel: passedSemanticModel,
+  onDeleteDialog,
+  onRenameDialog,
 }) => {
   const { openFiles, saveFile } = useEditorStore();
   const fileState = filePath ? openFiles.get(filePath) : null;
@@ -139,6 +143,20 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               </IconButton>
             </span>
           </Tooltip>
+          {onRenameDialog && (
+            <Tooltip title="Rename Dialog">
+              <IconButton size="small" onClick={() => onRenameDialog(dialogName)} aria-label="Rename dialog">
+                <RenameIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {onDeleteDialog && (
+            <Tooltip title="Delete Dialog">
+              <IconButton size="small" onClick={() => onDeleteDialog(dialogName)} aria-label="Delete dialog" sx={{ color: 'error.main' }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           <Button
             variant="outlined"
             onClick={() => uiState.setSourceViewOpen(true)}

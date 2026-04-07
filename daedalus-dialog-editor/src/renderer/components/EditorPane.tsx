@@ -23,6 +23,8 @@ interface EditorPaneProps {
   onSelectRecentDialog: (dialogName: string, functionName: string | null, npcName: string) => void;
   onCloseRecentDialog: (dialogName: string, npcName: string) => void;
   onNavigateToFunction: (functionName: string) => void;
+  onDeleteDialog?: (dialogName: string) => void;
+  onRenameDialog?: (dialogName: string) => void;
 }
 
 const TABS_HEIGHT = 40;
@@ -51,7 +53,7 @@ const editorPaneContentStyles = {
 /**
  * The right-most pane that displays the dialog editor or placeholder content
  */
-const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({ 
+const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
   selectedDialog,
   dialogData,
   currentFunctionName,
@@ -63,7 +65,9 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
   recentDialogs,
   onSelectRecentDialog,
   onCloseRecentDialog,
-  onNavigateToFunction
+  onNavigateToFunction,
+  onDeleteDialog,
+  onRenameDialog,
 }, ref) => {
   const activeNpcName = dialogData?.properties?.npc || null;
   const selectedTabIndex = selectedDialog
@@ -176,6 +180,8 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
           functionName={selectedFunctionName || undefined}
           onNavigateToFunction={onNavigateToFunction}
           semanticModel={semanticModel}
+          onDeleteDialog={onDeleteDialog}
+          onRenameDialog={onRenameDialog}
         />
       </Box>
     </Box>
