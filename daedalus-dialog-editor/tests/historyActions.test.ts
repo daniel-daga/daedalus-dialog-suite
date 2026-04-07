@@ -255,3 +255,160 @@ describe('historyActions – snapshot isolation', () => {
     expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'modified' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// removeDialog
+// ---------------------------------------------------------------------------
+
+describe('historyActions – removeDialog', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot and removes the dialog and its function', () => {
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Test_Info']).toBeUndefined();
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('allows undoing the removal', () => {
+    historyActions.removeDialog(filePath, 'DIA_Test');
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.dialogs['DIA_Test']).toBeDefined();
+    expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
+  });
+
+  it('does not delete a function shared by another dialog', () => {
+    // Set up model where DIA_Test2 also uses DIA_Test_Info
+    useFileStore.setState({
+      openFiles: new Map([
+        [filePath, {
+          filePath,
+          semanticModel: {
+            dialogs: {
+              DIA_Test: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+              DIA_Test2: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+            },
+            functions: {
+              DIA_Test_Info: { name: 'DIA_Test_Info', returnType: 'VOID', actions: [], conditions: [], calls: [] },
+            },
+            constants: {},
+            variables: {},
+            instances: {},
+            hasErrors: false,
+            errors: [],
+          },
+          isDirty: false,
+          lastSaved: new Date(),
+          originalCode: '',
+          workingCode: '',
+          hasErrors: false,
+          errors: [],
+        }]
+      ]),
+      activeFile: filePath,
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    // DIA_Test_Info is still referenced by DIA_Test2, so it should NOT be deleted
+    expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
+    expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
+    expect(getModel()?.dialogs['DIA_Test2']).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renameDialog
+// ---------------------------------------------------------------------------
+
+describe('historyActions – renameDialog', () => {
+  beforeEach(() => {
+    useFileStore.setState({
+      openFiles: new Map([
+        [filePath, {
+          filePath,
+          semanticModel: {
+            dialogs: {
+              DIA_Npc_Hello: {
+                name: 'DIA_Npc_Hello',
+                parent: 'C_INFO',
+                properties: {
+                  npc: 'NPC_Npc',
+                  information: 'DIA_Npc_Hello_Info',
+                  condition: 'DIA_Npc_Hello_Condition',
+                },
+              },
+            },
+            functions: {
+              DIA_Npc_Hello_Info: {
+                name: 'DIA_Npc_Hello_Info',
+                returnType: 'VOID',
+                actions: [],
+                conditions: [],
+                calls: [],
+              },
+              DIA_Npc_Hello_Condition: {
+                name: 'DIA_Npc_Hello_Condition',
+                returnType: 'int',
+                actions: [],
+                conditions: [],
+                calls: [],
+              },
+            },
+            constants: {},
+            variables: {},
+            instances: {},
+            hasErrors: false,
+            errors: [],
+          },
+          isDirty: false,
+          lastSaved: new Date(),
+          originalCode: '',
+          workingCode: '',
+          hasErrors: false,
+          errors: [],
+        }]
+      ]),
+      activeFile: filePath,
+    });
+
+    useHistoryStore.setState({
+      editHistory: new Map(),
+      questHistory: new Map(),
+      questBatchHistory: { past: [], future: [] },
+      questNodePositions: new Map(),
+    });
+  });
+
+  it('pushes a snapshot and renames the dialog and cascade functions', () => {
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    expect(getModel()?.dialogs['DIA_Npc_Hello']).toBeUndefined();
+    expect(getModel()?.dialogs['DIA_Npc_Greeting']).toBeDefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Info']).toBeDefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Condition']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Condition']).toBeDefined();
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('updates the dialog property references to renamed functions', () => {
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    const renamedDialog = getModel()?.dialogs['DIA_Npc_Greeting'];
+    expect(renamedDialog?.properties?.information).toBe('DIA_Npc_Greeting_Info');
+    expect(renamedDialog?.properties?.condition).toBe('DIA_Npc_Greeting_Condition');
+  });
+
+  it('allows undoing the rename', () => {
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.dialogs['DIA_Npc_Hello']).toBeDefined();
+    expect(getModel()?.dialogs['DIA_Npc_Greeting']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeDefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Info']).toBeUndefined();
+  });
+});

@@ -43,6 +43,8 @@ interface ItemData {
   onSelectDialog: (dialogName: string, functionName: string | null) => void;
   onToggleDialogExpand: (dialogName: string) => void;
   onToggleChoiceExpand: (choiceKey: string) => void;
+  onDeleteDialog?: (dialogName: string) => void;
+  onRenameDialog?: (dialogName: string) => void;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => {
@@ -53,7 +55,9 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => 
     selectedFunctionName,
     onSelectDialog,
     onToggleDialogExpand,
-    onToggleChoiceExpand
+    onToggleChoiceExpand,
+    onDeleteDialog,
+    onRenameDialog,
   } = data;
 
   const item = flatItems[index];
@@ -72,6 +76,8 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => 
         onToggleDialogExpand={onToggleDialogExpand}
         hasChildren={item.hasChildren}
         style={style}
+        onDeleteDialog={onDeleteDialog}
+        onRenameDialog={onRenameDialog}
       />
     );
   }
@@ -106,7 +112,9 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   onToggleDialogExpand,
   onToggleChoiceExpand,
   buildFunctionTree,
-  onAddDialog
+  onAddDialog,
+  onDeleteDialog,
+  onRenameDialog,
 }) => {
   const { dialogFilter, setDialogFilter, filterDialogs } = useSearchStore();
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
@@ -149,7 +157,9 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     selectedFunctionName,
     onSelectDialog,
     onToggleDialogExpand,
-    onToggleChoiceExpand
+    onToggleChoiceExpand,
+    onDeleteDialog,
+    onRenameDialog,
   }), [
     flatItems,
     semanticModel,
@@ -157,7 +167,9 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     selectedFunctionName,
     onSelectDialog,
     onToggleDialogExpand,
-    onToggleChoiceExpand
+    onToggleChoiceExpand,
+    onDeleteDialog,
+    onRenameDialog,
   ]);
 
   const handleOpenCreateDialog = () => {

@@ -14,8 +14,12 @@ import DialogTreeColumn from './DialogTreeColumn';
 import EditorColumn from './EditorColumn';
 import SyntaxErrorsDisplay from './SyntaxErrorsDisplay';
 import SearchPanel from './SearchPanel';
+import DeleteDialogConfirmDialog from './DeleteDialogConfirmDialog';
+import RenameDialogConfirmDialog from './RenameDialogConfirmDialog';
+import type { FunctionRenameEntry } from './RenameDialogConfirmDialog';
 import type { SemanticModel } from '../types/global';
 import { extractFunctionName } from '../utils/pathAndIdentifierUtils';
+import * as historyActions from '../store/historyActions';
 
 interface ThreeColumnLayoutProps {
   filePath: string | null;
@@ -184,6 +188,217 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   }, [selectedNPC, createDialogForNpc]);
 
+  // -------------------------------------------------------------------------
+  // Delete dialog state
+  // -------------------------------------------------------------------------
+  const [deleteDialogTarget, setDeleteDialogTarget] = useState<string | null>(null);
+
+  const deleteDialogInfo = useMemo(() => {
+    if (!deleteDialogTarget) return null;
+    const model = semanticModel;
+    const dialog = model.dialogs?.[deleteDialogTarget];
+    if (!dialog) return null;
+
+    // Compute functions to delete (same logic as fileStore.removeDialog)
+    const infoRef = dialog.properties?.information;
+    const infoFuncName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
+    const condRef = dialog.properties?.condition;
+    const condFuncName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
+
+    const candidates = new Set<string>();
+    if (infoFuncName) {
+      const q: string[] = [infoFuncName];
+      while (q.length > 0) {
+        const n = q.pop()!;
+        if (candidates.has(n)) continue;
+        const f = model.functions?.[n];
+        if (!f) continue;
+        candidates.add(n);
+        for (const action of (f.actions || []) as any[]) {
+          if (action.type === 'Choice' && typeof action.targetFunction === 'string') {
+            if (!candidates.has(action.targetFunction)) q.push(action.targetFunction);
+          }
+        }
+      }
+    }
+    if (condFuncName) candidates.add(condFuncName);
+
+    const remainingDialogs = Object.entries(model.dialogs || {})
+      .filter(([n]) => n !== deleteDialogTarget)
+      .map(([, d]) => d);
+    const stillReferenced = new Set<string>();
+    for (const d of remainingDialogs) {
+      const iRef = d.properties?.information;
+      const iName = typeof iRef === 'string' ? iRef : (iRef as any)?.name;
+      if (iName) {
+        const q: string[] = [iName];
+        while (q.length > 0) {
+          const n = q.pop()!;
+          if (stillReferenced.has(n)) continue;
+          const f = model.functions?.[n];
+          if (!f) continue;
+          stillReferenced.add(n);
+          for (const action of (f.actions || []) as any[]) {
+            if (action.type === 'Choice' && typeof action.targetFunction === 'string') {
+              if (!stillReferenced.has(action.targetFunction)) q.push(action.targetFunction);
+            }
+          }
+        }
+      }
+      const cRef = d.properties?.condition;
+      const cName = typeof cRef === 'string' ? cRef : (cRef as any)?.name;
+      if (cName) stillReferenced.add(cName);
+    }
+
+    const functionsToDelete = [...candidates].filter((n) => !stillReferenced.has(n));
+
+    // Find broken NpcKnowsInfo references
+    const brokenRefs: Array<{ functionName: string }> = [];
+    for (const [funcName, func] of Object.entries(model.functions || {})) {
+      for (const cond of (func.conditions || []) as any[]) {
+        if (cond.type === 'NpcKnowsInfoCondition' && cond.dialogRef === deleteDialogTarget) {
+          brokenRefs.push({ functionName: funcName });
+          break;
+        }
+      }
+    }
+
+    return {
+      description: typeof dialog.properties?.description === 'string' ? dialog.properties.description : undefined,
+      functionsToDelete,
+      brokenReferences: brokenRefs,
+    };
+  }, [deleteDialogTarget, semanticModel]);
+
+  const handleDeleteDialogRequest = useCallback((dialogName: string) => {
+    setDeleteDialogTarget(dialogName);
+  }, []);
+
+  const handleDeleteDialogConfirm = useCallback(() => {
+    if (!deleteDialogTarget) return;
+    const targetFilePath = filePath || activeFile;
+    if (!targetFilePath) return;
+
+    historyActions.removeDialog(targetFilePath, deleteDialogTarget);
+
+    // Clear selection if the deleted dialog was selected
+    const { selectedDialog: selDialog, setSelectedDialog, setSelectedFunctionName } = useUISelectionStore.getState();
+    if (selDialog === deleteDialogTarget) {
+      setSelectedDialog(null);
+      setSelectedFunctionName(null);
+    }
+
+    setDeleteDialogTarget(null);
+  }, [deleteDialogTarget, filePath, activeFile]);
+
+  const handleDeleteDialogCancel = useCallback(() => {
+    setDeleteDialogTarget(null);
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Rename dialog state
+  // -------------------------------------------------------------------------
+  const [renameDialogTarget, setRenameDialogTarget] = useState<string | null>(null);
+  const [renameNewName, setRenameNewName] = useState('');
+  const [renameValidationError, setRenameValidationError] = useState<string | null>(null);
+
+  const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  const validateRenameNewName = useCallback((oldName: string, newName: string): string | null => {
+    if (!newName.trim()) return 'Name cannot be empty';
+    if (!IDENTIFIER_PATTERN.test(newName.trim())) {
+      return 'Name must be a valid identifier (letters, digits, underscores; cannot start with a digit)';
+    }
+    if (newName.trim() === oldName) return null;
+    if (semanticModel.dialogs?.[newName.trim()]) {
+      return `A dialog named "${newName.trim()}" already exists`;
+    }
+    if (semanticModel.functions?.[newName.trim()]) {
+      return `A function named "${newName.trim()}" already exists`;
+    }
+    return null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [semanticModel.dialogs, semanticModel.functions]);
+
+  const renameFunctionEntries = useMemo((): FunctionRenameEntry[] => {
+    if (!renameDialogTarget || !renameNewName.trim()) return [];
+    const newName = renameNewName.trim();
+    if (newName === renameDialogTarget) return [];
+    const model = semanticModel;
+    const dialog = model.dialogs?.[renameDialogTarget];
+    if (!dialog) return [];
+
+    const infoRef = dialog.properties?.information;
+    const infoFuncName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
+    const condRef = dialog.properties?.condition;
+    const condFuncName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
+
+    const reachable = new Set<string>();
+    if (infoFuncName) {
+      const q: string[] = [infoFuncName];
+      while (q.length > 0) {
+        const n = q.pop()!;
+        if (reachable.has(n)) continue;
+        const f = model.functions?.[n];
+        if (!f) continue;
+        reachable.add(n);
+        for (const action of (f.actions || []) as any[]) {
+          if (action.type === 'Choice' && typeof action.targetFunction === 'string') {
+            if (!reachable.has(action.targetFunction)) q.push(action.targetFunction);
+          }
+        }
+      }
+    }
+    if (condFuncName) reachable.add(condFuncName);
+
+    const entries: FunctionRenameEntry[] = [];
+    for (const name of reachable) {
+      if (name.startsWith(renameDialogTarget)) {
+        const suffix = name.slice(renameDialogTarget.length);
+        entries.push({ oldName: name, newName: newName + suffix });
+      }
+    }
+    return entries;
+  }, [renameDialogTarget, renameNewName, semanticModel]);
+
+  const handleRenameDialogRequest = useCallback((dialogName: string) => {
+    setRenameDialogTarget(dialogName);
+    setRenameNewName(dialogName);
+    setRenameValidationError(null);
+  }, []);
+
+  const handleRenameNewNameChange = useCallback((name: string) => {
+    setRenameNewName(name);
+    if (renameDialogTarget) {
+      setRenameValidationError(validateRenameNewName(renameDialogTarget, name));
+    }
+  }, [renameDialogTarget, validateRenameNewName]);
+
+  const handleRenameDialogConfirm = useCallback(() => {
+    if (!renameDialogTarget) return;
+    const newName = renameNewName.trim();
+    const err = validateRenameNewName(renameDialogTarget, newName);
+    if (err) { setRenameValidationError(err); return; }
+    if (newName === renameDialogTarget) { setRenameDialogTarget(null); return; }
+
+    const targetFilePath = filePath || activeFile;
+    if (!targetFilePath) return;
+
+    historyActions.renameDialog(targetFilePath, renameDialogTarget, newName, true);
+
+    // Update selection to new name if the renamed dialog was selected
+    const { selectedDialog: selDialog, setSelectedDialog } = useUISelectionStore.getState();
+    if (selDialog === renameDialogTarget) {
+      setSelectedDialog(newName);
+    }
+
+    setRenameDialogTarget(null);
+  }, [renameDialogTarget, renameNewName, validateRenameNewName, filePath, activeFile]);
+
+  const handleRenameDialogCancel = useCallback(() => {
+    setRenameDialogTarget(null);
+  }, []);
+
   useEffect(() => {
     if (!selectedDialog) return;
 
@@ -272,10 +487,40 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         onSelectDialog={handleSelectDialog}
         onToggleDialogExpand={handleToggleDialogExpand}
         onAddDialog={handleAddDialog}
+        onDeleteDialog={handleDeleteDialogRequest}
+        onRenameDialog={handleRenameDialogRequest}
         dialogIndex={dialogIndex}
         parsedFiles={parsedFiles}
         setIngestedFilesOpen={setIngestedFilesOpen}
       />
+
+      {/* Delete dialog confirmation */}
+      {deleteDialogTarget && deleteDialogInfo && (
+        <DeleteDialogConfirmDialog
+          open={true}
+          dialogName={deleteDialogTarget}
+          description={deleteDialogInfo.description}
+          functionsToDelete={deleteDialogInfo.functionsToDelete}
+          brokenReferences={deleteDialogInfo.brokenReferences}
+          onConfirm={handleDeleteDialogConfirm}
+          onCancel={handleDeleteDialogCancel}
+        />
+      )}
+
+      {/* Rename dialog confirmation */}
+      {renameDialogTarget && (
+        <RenameDialogConfirmDialog
+          open={true}
+          oldDialogName={renameDialogTarget}
+          newDialogName={renameNewName}
+          validationError={renameValidationError ?? undefined}
+          functionRenames={renameFunctionEntries}
+          crossFileWarnings={[]}
+          onConfirm={handleRenameDialogConfirm}
+          onCancel={handleRenameDialogCancel}
+          onNewNameChange={handleRenameNewNameChange}
+        />
+      )}
 
       {/* Column 3: Function Action Editor */}
       <EditorColumn

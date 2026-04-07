@@ -180,6 +180,8 @@ export interface FileStore {
     updater: (existingFunction: DialogFunction) => DialogFunction | null
   ) => void;
   renameFunction: (filePath: string, oldFunctionName: string, newFunctionName: string) => void;
+  removeDialog: (filePath: string, dialogName: string) => void;
+  renameDialog: (filePath: string, oldDialogName: string, newDialogName: string, renameFunctions?: boolean) => void;
   updateDialogConditionFunction: (
     filePath: string,
     dialogName: string,
@@ -395,6 +397,253 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       updatedFunctions[newFunctionName] = { ...existingFunction, name: newFunctionName };
 
       fileState.semanticModel.functions = updatedFunctions;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
+    });
+  },
+
+  removeDialog: (filePath: string, dialogName: string) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) return;
+
+      const model = fileState.semanticModel;
+      const dialog = model.dialogs[dialogName];
+      if (!dialog) return;
+
+      // Resolve condition and information function names
+      const infoRef = dialog.properties?.information;
+      const infoFuncName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
+      const condRef = dialog.properties?.condition;
+      const condFuncName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
+
+      // Collect all functions reachable from the info function (the full subtree)
+      const candidatesToDelete = new Set<string>();
+      if (infoFuncName) {
+        // BFS from info function via Choice.targetFunction
+        const queue: string[] = [infoFuncName];
+        while (queue.length > 0) {
+          const name = queue.pop()!;
+          if (candidatesToDelete.has(name)) continue;
+          const func = model.functions[name];
+          if (!func) continue;
+          candidatesToDelete.add(name);
+          for (const action of func.actions || []) {
+            const a = action as any;
+            if (a.type === 'Choice' && typeof a.targetFunction === 'string') {
+              if (!candidatesToDelete.has(a.targetFunction)) {
+                queue.push(a.targetFunction);
+              }
+            }
+          }
+        }
+      }
+      if (condFuncName) {
+        candidatesToDelete.add(condFuncName);
+      }
+
+      // Build remaining dialogs (excluding the one being removed) to check shared functions
+      const remainingDialogs = (Object.entries(model.dialogs) as [string, Dialog][])
+        .filter(([name]) => name !== dialogName)
+        .map(([, d]) => d);
+
+      // Collect all function names still referenced by remaining dialogs
+      const stillReferenced = new Set<string>();
+      for (const d of remainingDialogs) {
+        const iRef = d.properties?.information;
+        const iName = typeof iRef === 'string' ? iRef : (iRef as any)?.name;
+        if (iName) {
+          // BFS from each remaining info function
+          const q: string[] = [iName];
+          while (q.length > 0) {
+            const n = q.pop()!;
+            if (stillReferenced.has(n)) continue;
+            const f = model.functions[n];
+            if (!f) continue;
+            stillReferenced.add(n);
+            for (const action of f.actions || []) {
+              const a = action as any;
+              if (a.type === 'Choice' && typeof a.targetFunction === 'string') {
+                if (!stillReferenced.has(a.targetFunction)) q.push(a.targetFunction);
+              }
+            }
+          }
+        }
+        const cRef = d.properties?.condition;
+        const cName = typeof cRef === 'string' ? cRef : (cRef as any)?.name;
+        if (cName) stillReferenced.add(cName);
+      }
+
+      // Only delete functions that are not referenced by any remaining dialog
+      const functionsToDelete = new Set<string>();
+      for (const name of candidatesToDelete) {
+        if (!stillReferenced.has(name)) {
+          functionsToDelete.add(name);
+        }
+      }
+
+      // Apply deletions
+      const updatedDialogs = { ...model.dialogs };
+      delete updatedDialogs[dialogName];
+
+      const updatedFunctions = { ...model.functions };
+      for (const name of functionsToDelete) {
+        delete updatedFunctions[name];
+      }
+
+      // Update declarationOrder
+      const deletedNames = new Set([dialogName, ...functionsToDelete]);
+      const updatedOrder = (model.declarationOrder || []).filter(
+        (entry) => !deletedNames.has(entry.name)
+      );
+
+      fileState.semanticModel = {
+        ...model,
+        dialogs: updatedDialogs,
+        functions: updatedFunctions,
+        declarationOrder: updatedOrder,
+      };
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
+      fileState.hasErrors = false;
+    });
+  },
+
+  renameDialog: (filePath: string, oldDialogName: string, newDialogName: string, renameFunctions = true) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) return;
+
+      const model = fileState.semanticModel;
+      const dialog = model.dialogs[oldDialogName];
+      if (!dialog) return;
+
+      // Build new dialog with updated name
+      const updatedDialog = { ...dialog, name: newDialogName };
+
+      // Resolve old info/condition function names
+      const infoRef = dialog.properties?.information;
+      const oldInfoName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
+      const condRef = dialog.properties?.condition;
+      const oldCondName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
+
+      const updatedFunctions: { [key: string]: DialogFunction } = { ...model.functions };
+      const updatedDialogs = { ...model.dialogs };
+      delete updatedDialogs[oldDialogName];
+
+      // Build a rename map: oldFuncName → newFuncName
+      const renameMap = new Map<string, string>();
+
+      if (renameFunctions) {
+        // Collect all functions reachable from the info function
+        const reachable = new Set<string>();
+        if (oldInfoName) {
+          const q: string[] = [oldInfoName];
+          while (q.length > 0) {
+            const n = q.pop()!;
+            if (reachable.has(n)) continue;
+            const f = model.functions[n];
+            if (!f) continue;
+            reachable.add(n);
+            for (const action of f.actions || []) {
+              const a = action as any;
+              if (a.type === 'Choice' && typeof a.targetFunction === 'string') {
+                if (!reachable.has(a.targetFunction)) q.push(a.targetFunction);
+              }
+            }
+          }
+        }
+        if (oldCondName) reachable.add(oldCondName);
+
+        // Compute new names for functions that follow the old dialog name prefix
+        for (const name of reachable) {
+          if (name.startsWith(oldDialogName)) {
+            const suffix = name.slice(oldDialogName.length);
+            const newName = newDialogName + suffix;
+            renameMap.set(name, newName);
+          }
+        }
+      }
+
+      // Apply function renames
+      for (const [oldName, func] of Object.entries(model.functions) as [string, DialogFunction][]) {
+        if (renameMap.has(oldName)) {
+          const newName = renameMap.get(oldName)!;
+          // Also update Choice.targetFunction references within this function
+          const updatedActions = ((func as any).actions || []).map((action: any) => {
+            if (action.type === 'Choice' && renameMap.has(action.targetFunction)) {
+              return { ...action, targetFunction: renameMap.get(action.targetFunction) };
+            }
+            return action;
+          });
+          delete updatedFunctions[oldName];
+          updatedFunctions[newName] = { ...func, name: newName, actions: updatedActions };
+        } else {
+          // Update Choice.targetFunction references in non-renamed functions too
+          let changed = false;
+          const updatedActions = ((func as any).actions || []).map((action: any) => {
+            if (action.type === 'Choice' && renameMap.has(action.targetFunction)) {
+              changed = true;
+              return { ...action, targetFunction: renameMap.get(action.targetFunction) };
+            }
+            return action;
+          });
+          if (changed) {
+            updatedFunctions[oldName] = { ...func, conditions: (func as any).conditions, actions: updatedActions };
+          }
+        }
+      }
+
+      // Update the dialog's own property references to functions
+      const newInfoName = oldInfoName && renameMap.has(oldInfoName) ? renameMap.get(oldInfoName)! : oldInfoName;
+      const newCondName = oldCondName && renameMap.has(oldCondName) ? renameMap.get(oldCondName)! : oldCondName;
+
+      const newProperties: Record<string, any> = { ...updatedDialog.properties };
+      if (newInfoName !== undefined) {
+        newProperties.information = newInfoName;
+      }
+      if (newCondName !== undefined) {
+        newProperties.condition = newCondName;
+      }
+      updatedDialog.properties = newProperties;
+
+      updatedDialogs[newDialogName] = updatedDialog;
+
+      // Update NpcKnowsInfoCondition.dialogRef references in same file
+      for (const [funcName, func] of Object.entries(updatedFunctions) as [string, DialogFunction][]) {
+        let changed = false;
+        const updatedConditions = ((func as any).conditions || []).map((cond: any) => {
+          if (cond.type === 'NpcKnowsInfoCondition' && cond.dialogRef === oldDialogName) {
+            changed = true;
+            return { ...cond, dialogRef: newDialogName };
+          }
+          return cond;
+        });
+        if (changed) {
+          updatedFunctions[funcName] = { ...func, conditions: updatedConditions };
+        }
+      }
+
+      // Update declarationOrder: rename entries for moved dialog and functions
+      const updatedOrder = (model.declarationOrder || []).map((entry) => {
+        if (entry.type === 'dialog' && entry.name === oldDialogName) {
+          return { ...entry, name: newDialogName };
+        }
+        if (entry.type === 'function' && renameMap.has(entry.name)) {
+          return { ...entry, name: renameMap.get(entry.name)! };
+        }
+        return entry;
+      });
+
+      fileState.semanticModel = {
+        ...model,
+        dialogs: updatedDialogs,
+        functions: updatedFunctions,
+        declarationOrder: updatedOrder,
+      };
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
