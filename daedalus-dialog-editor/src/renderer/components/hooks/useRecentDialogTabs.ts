@@ -21,6 +21,8 @@ export interface UseRecentDialogTabsResult {
     activeDialogName: string | null,
     activeNpcName: string | null
   ) => RecentDialogTab | null;
+  /** Rename a tab in-place, preserving its position. */
+  renameRecentDialog: (oldDialogName: string, npcName: string, newDialogName: string) => void;
 }
 
 /**
@@ -94,5 +96,20 @@ export function useRecentDialogTabs(): UseRecentDialogTabsResult {
     []
   );
 
-  return { recentDialogs, addRecentDialog, closeRecentDialog };
+  const renameRecentDialog = useCallback(
+    (oldDialogName: string, npcName: string, newDialogName: string) => {
+      setRecentDialogs((prev) => {
+        const index = prev.findIndex(
+          (tab) => tab.dialogName === oldDialogName && tab.npcName === npcName
+        );
+        if (index < 0) return prev;
+        const next = [...prev];
+        next[index] = { ...next[index], dialogName: newDialogName, functionName: null };
+        return next;
+      });
+    },
+    []
+  );
+
+  return { recentDialogs, addRecentDialog, closeRecentDialog, renameRecentDialog };
 }

@@ -65,7 +65,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
   const [operationError, setOperationError] = useState<string | null>(null);
-  const { recentDialogs, addRecentDialog, closeRecentDialog } = useRecentDialogTabs();
+  const { recentDialogs, addRecentDialog, closeRecentDialog, renameRecentDialog } = useRecentDialogTabs();
 
   const isProjectMode = !!projectPath;
   const semanticModel: SemanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel ?? EMPTY_SEMANTIC_MODEL);
@@ -281,15 +281,21 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
     historyActions.removeDialog(targetFilePath, deleteDialogTarget);
 
-    // Clear selection if the deleted dialog was selected
+    // Remove from recent tabs (and navigate to fallback tab if it was active)
+    const deletedNpcName =
+      semanticModel.dialogs?.[deleteDialogTarget]?.properties?.npc || selectedNPC || 'Unknown NPC';
+    const nextTab = closeRecentDialog(deleteDialogTarget, deletedNpcName, selectedDialog, activeNpcName);
+
     const { selectedDialog: selDialog, setSelectedDialog, setSelectedFunctionName } = useUISelectionStore.getState();
-    if (selDialog === deleteDialogTarget) {
+    if (nextTab) {
+      void handleSelectRecentDialog(nextTab.dialogName, nextTab.functionName, nextTab.npcName);
+    } else if (selDialog === deleteDialogTarget) {
       setSelectedDialog(null);
       setSelectedFunctionName(null);
     }
 
     setDeleteDialogTarget(null);
-  }, [deleteDialogTarget, filePath, activeFile]);
+  }, [deleteDialogTarget, filePath, activeFile, semanticModel.dialogs, selectedNPC, selectedDialog, activeNpcName, closeRecentDialog, handleSelectRecentDialog]);
 
   const handleDeleteDialogCancel = useCallback(() => {
     setDeleteDialogTarget(null);
@@ -386,14 +392,17 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
 
     historyActions.renameDialog(targetFilePath, renameDialogTarget, newName, true);
 
-    // Update selection to new name if the renamed dialog was selected
-    const { selectedDialog: selDialog, setSelectedDialog } = useUISelectionStore.getState();
-    if (selDialog === renameDialogTarget) {
-      setSelectedDialog(newName);
-    }
+    // Update the recent tab in-place with the new name
+    const renamedNpcName =
+      semanticModel.dialogs?.[renameDialogTarget]?.properties?.npc || selectedNPC || 'Unknown NPC';
+    renameRecentDialog(renameDialogTarget, renamedNpcName, newName);
+
+    // Switch to the renamed dialog; pass null so the editor derives the info function
+    // from the dialog's updated properties (the old function names no longer exist).
+    finalizeDialogSelection(newName, null);
 
     setRenameDialogTarget(null);
-  }, [renameDialogTarget, renameNewName, validateRenameNewName, filePath, activeFile]);
+  }, [renameDialogTarget, renameNewName, validateRenameNewName, filePath, activeFile, semanticModel.dialogs, selectedNPC, renameRecentDialog, finalizeDialogSelection]);
 
   const handleRenameDialogCancel = useCallback(() => {
     setRenameDialogTarget(null);
