@@ -101,20 +101,17 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
             }))}
             size="small"
           />
-          <VariableAutocomplete
+          <TextField
             fullWidth
             label="Description"
             value={dialog.properties?.description || ''}
-            onChange={(value) => onDialogPropertyChange((existingDialog) => ({
+            onChange={(event) => onDialogPropertyChange((existingDialog) => ({
               ...existingDialog,
-              properties: { ...existingDialog.properties, description: value }
+              properties: { ...existingDialog.properties, description: event.target.value }
             }))}
-            {...AUTOCOMPLETE_POLICIES.dialogProperties.description}
-            textFieldProps={{
-              multiline: true,
-              rows: 2
-            }}
-            semanticModel={semanticModel}
+            multiline
+            rows={2}
+            size="small"
           />
           <Stack direction="row" spacing={2}>
             <FormControlLabel
