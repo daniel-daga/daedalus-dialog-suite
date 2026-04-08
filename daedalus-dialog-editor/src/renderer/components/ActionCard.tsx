@@ -50,7 +50,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   // Expose the ref to parent
   React.useImperativeHandle(ref, () => mainFieldRef.current!);
 
-  React.useEffect(() => {
+  // useLayoutEffect so ref registration (and any pending focus) is applied
+  // synchronously during the commit phase, before the first paint.
+  React.useLayoutEffect(() => {
     registerActionRef(path, mainFieldRef.current);
     return () => registerActionRef(path, null);
   }, [path, registerActionRef]);

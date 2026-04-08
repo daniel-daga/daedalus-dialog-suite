@@ -93,6 +93,13 @@ const ActionsList = React.memo<ActionsListProps>(({
       // If we're below the threshold, we handle it in the effect above immediately
       if (actions.length <= IMMEDIATE_RENDER_THRESHOLD) return;
 
+      // One new item was added to an otherwise-fully-rendered large list — update
+      // renderedCount synchronously (no delay) so we don't re-render unnecessarily.
+      if (renderedCount >= actions.length - 1) {
+        setRenderedCount(actions.length);
+        return;
+      }
+
       const timer = setTimeout(() => {
         setRenderedCount(prev => Math.min(prev + 10, actions.length));
       }, BATCH_DELAY_MS);
@@ -108,7 +115,11 @@ const ActionsList = React.memo<ActionsListProps>(({
     moveAction(pathPrefix, result.source.index, result.destination.index);
   }, [moveAction, pathPrefix]);
 
-  const visibleActions = actions.slice(0, Math.max(renderedCount, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0));
+  // For newly added items on large lists (renderedCount one behind), show the new
+  // item immediately in the same render rather than waiting for the useEffect to
+  // fire and increment renderedCount.
+  const effectiveRendered = renderedCount >= actions.length - 1 ? actions.length : renderedCount;
+  const visibleActions = actions.slice(0, Math.max(effectiveRendered, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0));
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>

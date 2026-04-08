@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -34,6 +34,12 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
   onToggleExpanded,
   onDialogPropertyChange
 }) => {
+  const [localDescription, setLocalDescription] = useState(dialog.properties?.description || '');
+
+  useEffect(() => {
+    setLocalDescription(dialog.properties?.description || '');
+  }, [dialog.properties?.description]);
+
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
       <Box
@@ -104,11 +110,16 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
           <TextField
             fullWidth
             label="Description"
-            value={dialog.properties?.description || ''}
-            onChange={(event) => onDialogPropertyChange((existingDialog) => ({
-              ...existingDialog,
-              properties: { ...existingDialog.properties, description: event.target.value }
-            }))}
+            value={localDescription}
+            onChange={(event) => setLocalDescription(event.target.value)}
+            onBlur={() => {
+              if (localDescription !== (dialog.properties?.description || '')) {
+                onDialogPropertyChange((existingDialog) => ({
+                  ...existingDialog,
+                  properties: { ...existingDialog.properties, description: localDescription }
+                }));
+              }
+            }}
             multiline
             rows={2}
             size="small"

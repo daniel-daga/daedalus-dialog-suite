@@ -43,15 +43,19 @@ export function useFocusNavigation() {
 
   /**
    * Focus a specific action by index
-   * @param index - The index of the action to focus
+   * @param path - The path of the action to focus
    * @param scrollIntoView - Whether to scroll the element into view smoothly
+   *
+   * Always stores a pending request so that if the element at this path is
+   * replaced by a newly inserted element (mid-list insertion), the new element
+   * receives focus once it registers its ref.
    */
   const focusAction = useCallback((path: ActionPath, scrollIntoView = false) => {
     const key = actionPathToKey(path);
-    const focused = focusRegisteredAction(key, scrollIntoView);
-    if (!focused) {
-      pendingFocusRequests.current[key] = { scrollIntoView };
-    }
+    // Always store pending — ensures a newly inserted element at this key gets
+    // focus when it registers, even if an old element was transiently focused.
+    pendingFocusRequests.current[key] = { scrollIntoView };
+    focusRegisteredAction(key, scrollIntoView);
   }, [focusRegisteredAction]);
 
   /**
