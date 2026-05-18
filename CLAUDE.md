@@ -24,7 +24,8 @@ daedalus-dialog-suite/
 ├── docs/                     Canonical documentation
 │   ├── architecture/         Durable design decisions
 │   ├── reference/            Behavior references
-│   └── plans/                Active implementation plans only
+│   ├── plans/                Active implementation plans only
+│   └── refactoring-targets.md  Known god-component and concern-split targets
 ├── doc/                      Internal artifacts (non-canonical)
 ├── gh-pages/                 GitHub Pages landing page
 ├── .github/workflows/        CI pipelines
@@ -67,18 +68,22 @@ High-performance Tree-sitter parser for the Gothic 2 Daedalus scripting language
 | `src/core/parser.js` | Main parser entry point |
 | `src/semantic/semantic-model.ts` | Core model classes (`Dialog`, `DialogFunction`, etc.) |
 | `src/semantic/semantic-visitor.ts` | Visitor orchestrator |
+| `src/semantic/semantic-visitor-index.ts` | Visitor re-exports |
 | `src/semantic/semanticModelInterfaces.ts` | Type definitions |
 | `src/semantic/dialogActions.ts` | `DialogLine`, `Choice` action types |
 | `src/semantic/inventoryActions.ts` | Inventory action types |
 | `src/semantic/npcActions.ts` | NPC behavior action types |
 | `src/semantic/conditionTypes.ts` | Condition type definitions |
+| `src/semantic/cross-references.ts` | Cross-reference resolution helpers |
 | `src/semantic/parsers/` | AST extraction helpers |
+| `src/semantic/visitors/` | `declaration-visitor.ts`, `linking-visitor.ts`, `error-visitor.ts` |
 | `src/codegen/generator.ts` | `SemanticCodeGenerator` class |
 | `test/` | 21 test files covering all subsystems |
 
 ### Exported Subpaths
 
 - `.` — Main parser (`daedalus-parser`)
+- `./types` — TypeScript type declarations only
 - `./semantic-visitor` — `SemanticModelBuilderVisitor`
 - `./semantic-model` — Model classes and types
 - `./semantic-code-generator` — `SemanticCodeGenerator`
@@ -150,7 +155,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 - **MUI (Material UI)** — component library and theming
 - **Reactflow** — node graph visualization
 - **Monaco Editor** — code editing
-- **Playwright** — E2E tests (currently disabled in CI)
+- **Playwright** — E2E tests (active in CI, sharded across 4 workers)
 - **Jest** — unit/integration tests
 
 ### Key Source Paths
@@ -158,13 +163,20 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | Path | Role |
 |---|---|
 | `src/shared/types.ts` | Shared types: `DialogMetadata`, `ProjectIndex`, etc. |
+| `src/shared/updater-types.ts` | In-app updater type contracts |
 | `src/renderer/store/` | Zustand stores (editor, file, history, project, search, UI) |
 | `src/renderer/components/` | React UI components |
 | `src/renderer/components/hooks/` | Custom hooks for editor logic |
 | `src/renderer/components/conditions/` | Condition field components per condition type |
+| `src/renderer/components/actionRenderers/` | Per-action-type render components |
+| `src/renderer/components/common/` | Shared UI primitives (`VariableAutocomplete`, `autocompletePolicies.ts`, etc.) |
 | `src/renderer/components/QuestEditor/` | Quest graph editor (Nodes, Inspector, commands) |
-| `src/quest/domain/` | Pure quest logic |
-| `src/quest/application/` | Orchestration layer |
+| `src/renderer/quest/domain/` | Pure quest logic (graph model, commands, guardrails) |
+| `src/renderer/quest/application/` | Orchestration layer (`QuestEditingService.ts`) |
+| `src/renderer/types/questGraph.ts` | Quest graph type definitions |
+| `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
+| `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`) |
+| `tests/e2e/` | 19 Playwright E2E spec files |
 
 ### State Management Stores
 
@@ -173,15 +185,41 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `editorStore.ts` | Active dialog/function editing state |
 | `fileStore.ts` | File I/O and project loading |
 | `historyStore.ts` | Undo/redo management |
+| `historyActions.ts` | History action creators |
 | `projectStore.ts` | Project-level index and metadata |
 | `searchStore.ts` | Search state |
 | `uiSelectionStore.ts` | UI selection state |
 | `storeSync.ts` | Cross-store synchronization |
 
+### Main-Process Services
+
+| Service | Responsibility |
+|---|---|
+| `FileService.ts` | File read/write, encoding |
+| `ParserService.ts` | Daedalus parsing, semantic model |
+| `ProjectService.ts` | Project folder loading and indexing |
+| `CodeGeneratorService.ts` | Code generation from semantic model |
+| `FileWatcherService.ts` | File-change watching (chokidar) |
+| `MetadataWorkerPool.ts` | Parallel metadata extraction |
+| `ValidationService.ts` | Dialog/script validation |
+| `PathValidationService.ts` | File path validation |
+| `SettingsService.ts` | App settings persistence |
+| `UpdaterService.ts` | In-app update checking and download |
+
+### Quest Editor Architecture
+
+The quest editor follows a strict three-layer boundary (see `docs/architecture/quest-editor.md`):
+
+1. `src/renderer/quest/domain/` — pure logic: graph model transforms, command validation, guardrails. No React/MUI/Electron imports.
+2. `src/renderer/quest/application/` — orchestration: store adapters, history wiring, apply/cancel flow.
+3. `src/renderer/components/QuestEditor/` — UI: `QuestFlow`, node renderers (`Nodes/`), inspector (`Inspector/`), commands (`commands/`).
+
+Import direction is one-way: UI → application → domain.
+
 ### Development Rules
 
 1. **TDD required**: add or update a failing test before implementing.
-   - For new or changed **UI workflows** (user-facing flows in the Electron app), write a failing **Playwright E2E test** (`test/e2e/`) first, then implement.
+   - For new or changed **UI workflows** (user-facing flows in the Electron app), write a failing **Playwright E2E test** (`tests/e2e/`) first, then implement.
    - For logic, store, or component-level changes without a new end-to-end flow, a Jest test is sufficient.
 2. Run focused tests during iteration; run full workspace checks before completion.
 3. When changing node editor UI, do a smoke pass:
@@ -197,11 +235,14 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `npm run dev` | Full dev environment (main + renderer) |
 | `npm run dev:node-editor` | Node editor playground (Vite only) |
 | `npm run build` | Compile main + renderer |
+| `npm run build:main` | Compile main process only |
+| `npm run typecheck:renderer` | TypeScript check renderer only |
 | `npm test` | Jest unit/integration tests |
 | `npm run test:mocked` | Jest with mocks |
 | `npm run test:stable:windows` | Recommended local Windows baseline |
 | `npm run test:matrix:windows` | Repro matrix for intermittent `3221226505` exits |
 | `npm run test:e2e` | Playwright E2E tests |
+| `npm run test:e2e:ui` | Playwright with interactive UI |
 | `npm run package` | Electron builder packaging |
 | `npm run start` | Run Electron app |
 
@@ -219,14 +260,28 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 
 | Workflow | Jobs |
 |---|---|
-| `all-tests.yml` | `editor-tests` (typecheck + Jest), `parser-tests` (tests + lint + typecheck) |
+| `all-tests.yml` | `editor-tests` (typecheck + Jest + renderer build), `editor-e2e-tests` (Playwright, sharded 4×), `editor-e2e-merge-reports`, `parser-tests` (tests + lint + typecheck) |
 | `build-windows.yml` | Windows Electron build + installer |
 | `deploy-pages.yml` | GitHub Pages deployment |
 
 Notes:
-- `editor-e2e-tests` and `roundtrip-corpus` jobs are currently disabled (`if: false`) in CI
+- `editor-e2e-tests` runs in CI as 4 parallel shards; blob reports are merged into a single HTML artifact
+- `roundtrip-corpus` job is disabled (`if: false`) in CI
 - Editor CI typechecks both main process and renderer separately
-- Editor CI build is guarded against chunk-size and `eval` warnings
+- Editor CI build is guarded against chunk-size and `eval` warnings (litegraph.js eval is whitelisted)
+
+---
+
+## Active Plans (`docs/plans/`)
+
+| Plan | Scope | Status |
+|---|---|---|
+| `daedalus-parser-stabilization.md` | Parser API alignment, lint recovery, CLI reliability, doc sync | In progress |
+| `dialog-or-conditions.md` | OR-grouped conditions in parser + editor + quest graph | Draft |
+| `in-app-updater.md` | Custom lightweight updater via GitHub Releases API | In progress |
+| `playwright-e2e-tests.md` | Gap analysis and coverage expansion for E2E tests | Draft |
+
+When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 
 ---
 
@@ -239,6 +294,7 @@ Notes:
 - Do not create new files unless strictly required; prefer editing existing ones.
 - After any change, verify with workspace-level commands (`npm test`, `npm run lint`, `npm run typecheck`) before claiming completion.
 - Active implementation plans belong in `docs/plans/`; completed plans are deleted after extracting durable outcomes.
+- Known god-component and concern-split refactoring targets are tracked in `docs/refactoring-targets.md`.
 
 ---
 
