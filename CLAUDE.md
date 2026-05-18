@@ -293,6 +293,8 @@ When a plan is complete, extract durable decisions into canonical docs and delet
 - Validate at system boundaries only (user input, external APIs).
 - Do not create new files unless strictly required; prefer editing existing ones.
 - After any change, verify with workspace-level commands (`npm test`, `npm run lint`, `npm run typecheck`) before claiming completion.
+- At the end of every session, run `pnpm test` across all workspaces and `npm run lint` + `npm run typecheck` in `daedalus-parser/`. Report any failures before finishing.
+- A `SessionStart` hook (`.claude/hooks/session-start.sh`) runs `pnpm install` asynchronously at the start of every remote session so dependencies are ready. Do not manually install dependencies unless the hook has not yet run.
 - Active implementation plans belong in `docs/plans/`; completed plans are deleted after extracting durable outcomes.
 - Known god-component and concern-split refactoring targets are tracked in `docs/refactoring-targets.md`.
 
