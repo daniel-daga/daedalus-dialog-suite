@@ -32,13 +32,14 @@ test.describe('Undo / Redo', () => {
   });
 
   test('Undo and Redo buttons are disabled before any edits', async ({ page }) => {
-    await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
+    const appBar = page.getByRole('banner');
+    await expect(appBar.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    await expect(appBar.getByRole('button', { name: 'Redo' })).toBeDisabled();
   });
 
   test('Undo button becomes enabled after editing a dialog line', async ({ page }) => {
+    const appBar = page.getByRole('banner');
     const firstTextField = page.getByLabel('Text').first();
-    const originalValue = await firstTextField.inputValue();
 
     await firstTextField.click();
     await firstTextField.fill('Modified text for undo test');
@@ -46,11 +47,12 @@ test.describe('Undo / Redo', () => {
     await page.keyboard.press('Tab');
 
     await expect(async () => {
-      await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+      await expect(appBar.getByRole('button', { name: 'Undo' })).toBeEnabled();
     }).toPass({ timeout: 5000 });
   });
 
   test('clicking Undo reverts the last edit', async ({ page }) => {
+    const appBar = page.getByRole('banner');
     const firstTextField = page.getByLabel('Text').first();
     const originalValue = await firstTextField.inputValue();
 
@@ -60,10 +62,10 @@ test.describe('Undo / Redo', () => {
 
     // Wait for undo to become available
     await expect(async () => {
-      await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+      await expect(appBar.getByRole('button', { name: 'Undo' })).toBeEnabled();
     }).toPass({ timeout: 5000 });
 
-    await page.getByRole('button', { name: 'Undo' }).click();
+    await appBar.getByRole('button', { name: 'Undo' }).click();
 
     // After undo, the text should revert to original
     await expect(async () => {
@@ -72,6 +74,7 @@ test.describe('Undo / Redo', () => {
   });
 
   test('clicking Redo re-applies an undone edit', async ({ page }) => {
+    const appBar = page.getByRole('banner');
     const firstTextField = page.getByLabel('Text').first();
 
     await firstTextField.click();
@@ -79,17 +82,17 @@ test.describe('Undo / Redo', () => {
     await page.keyboard.press('Tab');
 
     await expect(async () => {
-      await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+      await expect(appBar.getByRole('button', { name: 'Undo' })).toBeEnabled();
     }).toPass({ timeout: 5000 });
 
-    await page.getByRole('button', { name: 'Undo' }).click();
+    await appBar.getByRole('button', { name: 'Undo' }).click();
 
     // Redo should become available after undo
     await expect(async () => {
-      await expect(page.getByRole('button', { name: 'Redo' })).toBeEnabled();
+      await expect(appBar.getByRole('button', { name: 'Redo' })).toBeEnabled();
     }).toPass({ timeout: 5000 });
 
-    await page.getByRole('button', { name: 'Redo' }).click();
+    await appBar.getByRole('button', { name: 'Redo' }).click();
 
     await expect(async () => {
       await expect(page.getByLabel('Text').first()).toHaveValue('Modified for redo');
@@ -97,6 +100,7 @@ test.describe('Undo / Redo', () => {
   });
 
   test('Ctrl+Z triggers undo', async ({ page }) => {
+    const appBar = page.getByRole('banner');
     const firstTextField = page.getByLabel('Text').first();
     const originalValue = await firstTextField.inputValue();
 
@@ -105,7 +109,7 @@ test.describe('Undo / Redo', () => {
     await page.keyboard.press('Tab');
 
     await expect(async () => {
-      await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+      await expect(appBar.getByRole('button', { name: 'Undo' })).toBeEnabled();
     }).toPass({ timeout: 5000 });
 
     await page.keyboard.press('Control+z');
@@ -116,6 +120,7 @@ test.describe('Undo / Redo', () => {
   });
 
   test('Ctrl+Y triggers redo', async ({ page }) => {
+    const appBar = page.getByRole('banner');
     const firstTextField = page.getByLabel('Text').first();
 
     await firstTextField.click();
@@ -123,13 +128,13 @@ test.describe('Undo / Redo', () => {
     await page.keyboard.press('Tab');
 
     await expect(async () => {
-      await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+      await expect(appBar.getByRole('button', { name: 'Undo' })).toBeEnabled();
     }).toPass({ timeout: 5000 });
 
     await page.keyboard.press('Control+z');
 
     await expect(async () => {
-      await expect(page.getByRole('button', { name: 'Redo' })).toBeEnabled();
+      await expect(appBar.getByRole('button', { name: 'Redo' })).toBeEnabled();
     }).toPass({ timeout: 5000 });
 
     await page.keyboard.press('Control+y');

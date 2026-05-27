@@ -71,28 +71,32 @@ test.describe('Dialog Line Focus', () => {
     
     // The second text field should be focused
     const secondLine = textFields.nth(1);
-    await expect(secondLine).toBeFocused();
+    await expect(async () => {
+      await expect(secondLine).toBeFocused();
+    }).toPass({ timeout: 10000 });
   });
 
   test('pressing Shift+Enter in a dialog line should focus the new line', async ({ page }) => {
     // Find the first dialog line text field
     const firstLine = page.getByLabel('Text').first();
     await expect(firstLine).toBeVisible();
-    
+
     // Focus and type
     await firstLine.click();
     await firstLine.fill('Hello');
-    
+
     // Press Shift+Enter
     await page.keyboard.press('Shift+Enter');
-    
+
     // Wait for the new line to appear
     const textFields = page.getByLabel('Text');
     await expect(textFields).toHaveCount(2);
-    
+
     // The second text field should be focused
     const secondLine = textFields.nth(1);
-    await expect(secondLine).toBeFocused();
+    await expect(async () => {
+      await expect(secondLine).toBeFocused();
+    }).toPass({ timeout: 10000 });
   });
 
   test('clicking "Add Line" button should focus the new line', async ({ page }) => {

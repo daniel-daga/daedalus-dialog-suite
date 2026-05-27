@@ -336,7 +336,10 @@ export function useActionManagement(config: ActionManagementConfig) {
     }
 
     if (nextPath) {
-      focusAction(nextPath, true);
+      // Defer past MUI menu's async focus-restoration (runs in useEffect after
+      // paint) so the new element wins the focus race after menu close.
+      const pathToFocus = nextPath;
+      setTimeout(() => focusAction(pathToFocus, true), 0);
     }
   }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, getAllDialogLineActions]);
 

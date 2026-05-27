@@ -57,7 +57,7 @@ test.describe('View Switching', () => {
   test('switching to Variable Manager view shows Variable Manager heading', async ({ page }) => {
     await page.getByRole('button', { name: 'Variable Manager' }).click();
 
-    await expect(page.getByText('Variable Manager')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'Variable Manager' })).toBeVisible({ timeout: 10000 });
     // The Variable Manager shows search input and Add Variable button
     await expect(page.getByRole('button', { name: /Add Variable/i })).toBeVisible({ timeout: 10000 });
   });
@@ -80,7 +80,7 @@ test.describe('View Switching', () => {
   test('switching back to Dialog Editor restores the NPC list', async ({ page }) => {
     // Switch away from dialog view
     await page.getByRole('button', { name: 'Variable Manager' }).click();
-    await expect(page.getByText('Variable Manager')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'Variable Manager' })).toBeVisible({ timeout: 10000 });
 
     // Switch back
     await page.getByRole('button', { name: 'Dialog Editor' }).click();

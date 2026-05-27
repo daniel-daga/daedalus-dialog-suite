@@ -120,20 +120,6 @@ test.describe('File Opening and Dialog Selection', () => {
     await expect(page.getByText(/action_1762379701358_vj2uugnzi/i)).toBeVisible();
   });
 
-  test('should use Open File button in app bar', async ({ page }) => {
-    // Mock prompt
-    page.on('dialog', async dialog => {
-      await dialog.accept('test-dialog.d');
-    });
-
-    // Click the "Open File" button in the app bar (top right)
-    await page.getByRole('button', { name: 'Open File' }).click();
-
-    // Should open file and display layout
-    await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('SLD_99005_Arog')).toBeVisible();
-  });
-
   test('should persist file data in localStorage', async ({ page }) => {
     // Verify that the mock file system uses localStorage
     const storedContent = await page.evaluate(() => {

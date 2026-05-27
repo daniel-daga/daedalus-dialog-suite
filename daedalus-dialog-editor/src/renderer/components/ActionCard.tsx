@@ -15,6 +15,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const menuSelectionMadeRef = useRef(false);
   const [hasFocus, setHasFocus] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -131,6 +132,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, [deleteActionAndFocusPrevAtPath, path]);
 
   const handleAddActionAfter = useCallback((actionType: ActionTypeId) => {
+    menuSelectionMadeRef.current = true;
     addActionAfterPath(path, actionType);
   }, [addActionAfterPath, path]);
 
@@ -308,8 +310,12 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       <ActionTypeMenu
         anchorEl={menuAnchor}
         onClose={() => {
+          const wasSelection = menuSelectionMadeRef.current;
+          menuSelectionMadeRef.current = false;
           setMenuAnchor(null);
-          mainFieldRef.current?.focus();
+          if (!wasSelection) {
+            mainFieldRef.current?.focus();
+          }
         }}
         onSelect={handleAddActionAfter}
       />

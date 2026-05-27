@@ -115,6 +115,11 @@ export function useDialogEditorCommands({
       }
     }
 
+    // Compute focus index before the state update so focusAction can be called
+    // outside the updater (updaters must be pure) and deferred past MUI's async
+    // focus-restoration that fires when a menu closes (useEffect after paint).
+    const existingCount = (currentFunction.actions || []).length;
+
     if (actionType === 'createTopic') {
       const createTopicTopic = newAction.type === 'CreateTopic' ? newAction.topic : 'TOPIC_';
       const logSetStatusAction = {
@@ -129,16 +134,16 @@ export function useDialogEditorCommands({
       setFunction((previousFunction) => {
         const existingActions = previousFunction.actions || [];
         const newActions = [...existingActions, newAction, logSetStatusAction, logEntryAction];
-        focusAction([newActions.length - 3], true);
         return { ...previousFunction, actions: newActions };
       });
+      setTimeout(() => focusAction([existingCount], true), 0);
     } else {
       setFunction((previousFunction) => {
         const existingActions = previousFunction.actions || [];
         const newActions = [...existingActions, newAction];
-        focusAction([newActions.length - 1], true);
         return { ...previousFunction, actions: newActions };
       });
+      setTimeout(() => focusAction([existingCount], true), 0);
     }
   }, [currentFunction, filePath, dialogName, semanticModel, updateFunction, setFunction, focusAction]);
 
