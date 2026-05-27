@@ -12,6 +12,13 @@ jest.mock('../src/renderer/store/projectStore', () => ({
 const navigateToSymbol = jest.fn();
 const navigateToDialog = jest.fn();
 
+// useVariableOptions reads projectStore via per-field selectors, so the mock
+// must apply the selector (returning the whole state when called without one).
+const mockStore = (state: Record<string, unknown>) =>
+  (useProjectStore as jest.Mock).mockImplementation(
+    (selector?: (s: Record<string, unknown>) => unknown) => (selector ? selector(state) : state)
+  );
+
 // Mock navigation
 jest.mock('../src/renderer/hooks/useNavigation', () => ({
   useNavigation: () => ({
@@ -39,7 +46,7 @@ describe('VariableAutocomplete', () => {
   beforeEach(() => {
     navigateToSymbol.mockClear();
     navigateToDialog.mockClear();
-    (useProjectStore as jest.Mock).mockReturnValue({
+    mockStore({
       mergedSemanticModel: {
         variables: mockVariables,
         constants: mockConstants,
@@ -199,7 +206,7 @@ describe('VariableAutocomplete', () => {
       bigVariables[name] = { name, type: 'int' };
     }
 
-    (useProjectStore as jest.Mock).mockReturnValue({
+    mockStore({
       mergedSemanticModel: {
         variables: bigVariables,
         constants: {},
@@ -278,7 +285,7 @@ describe('VariableAutocomplete', () => {
     expect(navigateToSymbol).toHaveBeenCalledWith('MIS_Quest1', { kind: 'variable' });
   });
   test('falls back to project npcList for C_NPC suggestions when instances are missing', async () => {
-    (useProjectStore as jest.Mock).mockReturnValue({
+    mockStore({
       mergedSemanticModel: {
         variables: {},
         constants: {},

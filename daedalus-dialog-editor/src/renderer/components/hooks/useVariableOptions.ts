@@ -46,7 +46,13 @@ export function useVariableOptions({
   showFunctions = false,
   showRoutines = false
 }: UseVariableOptionsConfig): VariableOption[] {
-  const { mergedSemanticModel, dialogIndex, npcList, routineList } = useProjectStore();
+  // Subscribe to each field individually so autocomplete consumers only
+  // re-render when one of these actually changes, not on every projectStore
+  // mutation (e.g. ingestion progress, selection changes).
+  const mergedSemanticModel = useProjectStore((s) => s.mergedSemanticModel);
+  const dialogIndex = useProjectStore((s) => s.dialogIndex);
+  const npcList = useProjectStore((s) => s.npcList);
+  const routineList = useProjectStore((s) => s.routineList);
 
   return useMemo(() => {
     const opts: VariableOption[] = [];

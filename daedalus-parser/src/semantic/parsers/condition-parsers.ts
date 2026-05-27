@@ -22,20 +22,21 @@ export class ConditionParsers {
    * Parse a semantic condition based on node type
    */
   static parseSemanticCondition(node: TreeSitterNode, functionName?: string): DialogCondition | null {
-    // For call expressions, check function name
+    // For call expressions, check function name. Daedalus identifiers are
+    // case-insensitive, so dispatch on a normalized key.
     if (functionName) {
-      switch (functionName) {
-        case 'Npc_KnowsInfo':
+      switch (functionName.toLowerCase()) {
+        case 'npc_knowsinfo':
           return ConditionParsers.parseNpcKnowsInfoCall(node);
-        case 'Npc_HasItems':
+        case 'npc_hasitems':
           return ConditionParsers.parseNpcHasItemsCall(node);
-        case 'Npc_IsInState':
+        case 'npc_isinstate':
           return ConditionParsers.parseNpcIsInStateCall(node);
-        case 'Npc_IsDead':
+        case 'npc_isdead':
           return ConditionParsers.parseNpcIsDeadCall(node);
-        case 'Npc_GetDistToWP':
+        case 'npc_getdisttowp':
           return ConditionParsers.parseNpcGetDistToWpCall(node);
-        case 'Npc_GetTalentSkill':
+        case 'npc_gettalentskill':
           return ConditionParsers.parseNpcGetTalentSkillCall(node);
         default:
           return ConditionParsers.parseGenericCondition(node);

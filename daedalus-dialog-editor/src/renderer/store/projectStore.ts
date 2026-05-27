@@ -657,9 +657,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     // Re-merge the semantic model for the currently selected NPC so that
     // description changes, renames, and deletes are reflected immediately.
+    // Skip the (full) re-merge when the changed file does not participate in
+    // the selected NPC's merged model — i.e. it is neither one of that NPC's
+    // dialog files nor a global (dialog-less) file. This avoids rebuilding the
+    // merged model on background file-watcher updates to unrelated NPC files.
     const { selectedNpc } = get();
     if (selectedNpc) {
-      get().loadAndMergeNpcModels(selectedNpc);
+      const selectedNpcFiles = new Set(
+        (newDialogIndex.get(selectedNpc) || []).map(d => d.filePath)
+      );
+      const filesWithDialogs = new Set<string>();
+      for (const dialogs of newDialogIndex.values()) {
+        for (const d of dialogs) filesWithDialogs.add(d.filePath);
+      }
+      const isGlobalFile = !filesWithDialogs.has(filePath);
+      if (selectedNpcFiles.has(filePath) || isGlobalFile) {
+        get().loadAndMergeNpcModels(selectedNpc);
+      }
     }
   },
 

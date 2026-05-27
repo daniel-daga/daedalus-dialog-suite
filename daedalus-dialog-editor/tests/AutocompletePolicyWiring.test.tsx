@@ -74,7 +74,7 @@ describe('Autocomplete policy wiring', () => {
     expect(itemProps.typeFilter).toBe('C_ITEM');
   });
 
-  test('DialogPropertiesSection uses expected NPC and description policies', () => {
+  test('DialogPropertiesSection uses NPC autocomplete policy and a plain Description field', () => {
     render(
       <DialogPropertiesSection
         dialog={{
@@ -90,12 +90,12 @@ describe('Autocomplete policy wiring', () => {
     );
 
     const npcProps = capturedAutocompleteProps.find((p) => p.label === 'NPC');
-    const descriptionProps = capturedAutocompleteProps.find((p) => p.label === 'Description');
-
     expect(npcProps.showInstances).toBe(true);
     expect(npcProps.typeFilter).toBe('C_NPC');
-    expect(descriptionProps.typeFilter).toBe('string');
-    expect(descriptionProps.namePrefix).toBe('DIALOG_');
+
+    // Description is a plain free-text field, not a VariableAutocomplete.
+    expect(capturedAutocompleteProps.find((p) => p.label === 'Description')).toBeUndefined();
+    expect(screen.getByLabelText('Description')).toBeInTheDocument();
   });
 
   test('CreateTopicRenderer uses TOPIC_ string policy', () => {

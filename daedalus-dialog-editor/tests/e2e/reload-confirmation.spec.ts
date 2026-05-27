@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * E2E tests for the "Neu laden" (Reload) button with unsaved changes confirmation.
+ * E2E tests for the "Reload" button with unsaved changes confirmation.
  * Covers the browser confirm dialog shown when reloading with unsaved changes.
  */
 
@@ -44,22 +44,22 @@ test.describe('Reload with Unsaved Changes', () => {
     await expect(page.getByLabel('Text').first()).toBeVisible();
   });
 
-  test('"Neu laden" button is visible in the app bar', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /Neu laden/i })).toBeVisible();
+  test('"Reload" button is visible in the app bar', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Reload', exact: true })).toBeVisible();
   });
 
-  test('"Neu laden" is disabled when no file is open', async ({ page }) => {
+  test('"Reload" is disabled when no file is open', async ({ page }) => {
     // This test checks the disabled state at app start (before opening a file)
     await page.goto('/');
-    const reloadBtn = page.getByRole('button', { name: /Neu laden/i });
+    const reloadBtn = page.getByRole('button', { name: 'Reload', exact: true });
     await expect(reloadBtn).toBeDisabled();
   });
 
-  test('"Neu laden" is enabled after opening a file', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /Neu laden/i })).toBeEnabled();
+  test('"Reload" is enabled after opening a file', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Reload', exact: true })).toBeEnabled();
   });
 
-  test('clicking "Neu laden" with no unsaved changes reloads without confirmation', async ({ page }) => {
+  test('clicking "Reload" with no unsaved changes reloads without confirmation', async ({ page }) => {
     let confirmDialogShown = false;
     page.on('dialog', async (d) => {
       if (d.type() === 'confirm') {
@@ -70,13 +70,13 @@ test.describe('Reload with Unsaved Changes', () => {
       }
     });
 
-    await page.getByRole('button', { name: /Neu laden/i }).click();
+    await page.getByRole('button', { name: 'Reload', exact: true }).click();
     await page.waitForTimeout(1000);
     // No unsaved changes → no confirmation prompt
     expect(confirmDialogShown).toBe(false);
   });
 
-  test('clicking "Neu laden" with unsaved changes shows a confirmation dialog', async ({ page }) => {
+  test('clicking "Reload" with unsaved changes shows a confirmation dialog', async ({ page }) => {
     // Make an unsaved change
     const textField = page.getByLabel('Text').first();
     await textField.click();
@@ -93,7 +93,7 @@ test.describe('Reload with Unsaved Changes', () => {
       }
     });
 
-    await page.getByRole('button', { name: /Neu laden/i }).click();
+    await page.getByRole('button', { name: 'Reload', exact: true }).click();
 
     await expect(async () => {
       expect(confirmMessage).toContain('unsaved changes');
@@ -113,7 +113,7 @@ test.describe('Reload with Unsaved Changes', () => {
       }
     });
 
-    await page.getByRole('button', { name: /Neu laden/i }).click();
+    await page.getByRole('button', { name: 'Reload', exact: true }).click();
     await page.waitForTimeout(500);
 
     // Dialog should still be visible (reload was cancelled)

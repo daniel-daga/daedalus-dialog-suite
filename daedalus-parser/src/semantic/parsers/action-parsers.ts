@@ -33,52 +33,56 @@ export class ActionParsers {
    * Parse a semantic action based on function name
    */
   static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction | null {
-    if (functionName.startsWith('B_Teach')) {
+    // Daedalus identifiers are case-insensitive, so dispatch on a normalized
+    // key while passing the original `functionName` to sub-parsers that need to
+    // preserve the source casing in the model.
+    const dispatchKey = functionName.toLowerCase();
+
+    if (dispatchKey.startsWith('b_teach')) {
       return ActionParsers.parseTeachCall(node, functionName);
     }
 
-    switch (functionName) {
-      case 'AI_Output':
+    switch (dispatchKey) {
+      case 'ai_output':
         return ActionParsers.parseAIOutputCall(node);
-      case 'Info_AddChoice':
+      case 'info_addchoice':
         return ActionParsers.parseInfoAddChoiceCall(node);
-      case 'Log_CreateTopic':
+      case 'log_createtopic':
         return ActionParsers.parseCreateTopicCall(node);
-      case 'B_LogEntry':
-      case 'Log_AddEntry':
+      case 'b_logentry':
+      case 'log_addentry':
         return ActionParsers.parseLogEntryCall(node);
-      case 'Log_SetTopicStatus':
+      case 'log_settopicstatus':
         return ActionParsers.parseLogSetTopicStatusCall(node);
-      case 'CreateInvItems':
+      case 'createinvitems':
         return ActionParsers.parseCreateInventoryItemsCall(node);
-      case 'B_GiveInvItems':
+      case 'b_giveinvitems':
         return ActionParsers.parseGiveInventoryItemsCall(node);
-      case 'B_Attack':
+      case 'b_attack':
         return ActionParsers.parseAttackCall(node);
-      case 'B_SetAttitude':
+      case 'b_setattitude':
         return ActionParsers.parseSetAttitudeCall(node);
-      case 'Npc_ExchangeRoutine':
+      case 'npc_exchangeroutine':
         return ActionParsers.parseExchangeRoutineCall(node);
-      case 'B_Kapitelwechsel':
+      case 'b_kapitelwechsel':
         return ActionParsers.parseChapterTransitionCall(node);
-      case 'AI_StopProcessInfos':
+      case 'ai_stopprocessinfos':
         return ActionParsers.parseStopProcessInfosCall(node);
-      case 'AI_PlayAni':
+      case 'ai_playani':
         return ActionParsers.parsePlayAniCall(node);
-      case 'B_GivePlayerXP':
+      case 'b_giveplayerxp':
         return ActionParsers.parseGivePlayerXPCall(node);
-      case 'C_Beklauen':
-      case 'B_Beklauen':
+      case 'c_beklauen':
+      case 'b_beklauen':
         return ActionParsers.parsePickpocketCall(node, functionName);
-      case 'B_StartOtherRoutine':
-      case 'B_StartotherRoutine':
+      case 'b_startotherroutine':
         return ActionParsers.parseStartOtherRoutineCall(node, functionName);
-      case 'B_GiveTradeInv':
+      case 'b_givetradeinv':
         return ActionParsers.parseGiveTradeInventoryCall(node);
-      case 'Npc_RemoveInvItems':
-      case 'Npc_RemoveInvItem':
+      case 'npc_removeinvitems':
+      case 'npc_removeinvitem':
         return ActionParsers.parseRemoveInventoryItemsCall(node, functionName);
-      case 'Wld_InsertNpc':
+      case 'wld_insertnpc':
         return ActionParsers.parseInsertNpcCall(node);
       default:
         return ActionParsers.parseGenericAction(node);

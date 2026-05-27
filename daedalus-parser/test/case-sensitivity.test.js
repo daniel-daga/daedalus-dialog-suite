@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { createParser } = require('./helpers');
-const { SemanticModelBuilderVisitor } = require('../dist/semantic/semantic-visitor-index');
+const { SemanticModelBuilderVisitor, parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
 
 const parser = createParser();
 
@@ -59,4 +59,59 @@ func int DIA_Test_Condition()
   assert.ok(func, 'Condition function should exist');
   assert.ok(func.conditions.length > 0, 'Condition function should be parsed as conditions, not raw actions');
   assert.strictEqual(func.actions.length, 0, 'Condition function should not be treated as non-condition due to case mismatch');
+});
+
+test('action dispatch is case-insensitive: lowercase ai_output parses as DialogLine', () => {
+  const source = `
+  func void DIA_Test_Info()
+  {
+    ai_output(other, self, "DIA_Test_01");
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Test_Info;
+  assert.ok(func, 'Function should be parsed');
+
+  const dialogLine = func.actions.find((a) => a.constructor.name === 'DialogLine');
+  assert.ok(dialogLine, 'lowercase ai_output should still be dispatched to the DialogLine parser');
+  assert.strictEqual(dialogLine.listener, 'self', 'Listener argument should be preserved');
+});
+
+test('action dispatch is case-insensitive: mixed-case Info_AddChoice parses as Choice', () => {
+  const source = `
+  func void DIA_Test_Info()
+  {
+    INFO_ADDCHOICE(DIA_Test, "Continue", DIA_Test_Next);
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Test_Info;
+  const choice = func.actions.find((a) => a.constructor.name === 'Choice');
+  assert.ok(choice, 'mixed-case Info_AddChoice should be dispatched to the Choice parser');
+});
+
+test('condition dispatch is case-insensitive: lowercase npc_knowsinfo parses as NpcKnowsInfoCondition', () => {
+  const source = `
+  instance DIA_Test(C_Info)
+  {
+    condition = DIA_Test_Condition;
+  };
+
+  func int DIA_Test_Condition()
+  {
+    if (npc_knowsinfo(other, DIA_Test))
+    {
+      return TRUE;
+    };
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Test_Condition;
+  assert.ok(func, 'Condition function should exist');
+
+  const cond = func.conditions.find((c) => c.constructor.name === 'NpcKnowsInfoCondition');
+  assert.ok(cond, 'lowercase npc_knowsinfo should be dispatched to the NpcKnowsInfo condition parser');
 });

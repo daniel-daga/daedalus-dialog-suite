@@ -159,3 +159,45 @@ test('Multiple syntax errors should all be collected', () => {
   // Should have multiple errors (exact count depends on parser behavior)
   assert.ok(model.errors.length >= 1, 'Should collect multiple errors');
 });
+
+test('error position points at the offending token and descends past a clean sibling', () => {
+  // Function A is syntactically valid; the error lives on line 6 inside B, so
+  // the error visitor must descend past A's clean subtree to find it.
+  const source = [
+    'func void A() {',                  // line 1
+    '  AI_Output(self, other, "X");',   // line 2
+    '};',                               // line 3
+    '',                                 // line 4
+    'func void B() {',                  // line 5
+    '  var int x = ;',                  // line 6 (missing value)
+    '};'                                // line 7
+  ].join('\n');
+
+  const model = parseSemanticModel(source);
+
+  assert.ok(model.hasErrors, 'Should have errors');
+  const syntaxError = model.errors.find((e) => e.type === 'syntax_error');
+  assert.ok(syntaxError, 'Should collect a syntax_error');
+  assert.strictEqual(syntaxError.position.row, 6, 'Row should be the 1-based line of the error');
+  assert.strictEqual(syntaxError.position.column, 13, 'Column should be the 1-based column of the offending token');
+  assert.strictEqual(syntaxError.text, '=', 'Error text should be the offending source slice');
+});
+
+test('finds errors nested inside deeper blocks', () => {
+  const source = [
+    'func void A() {',          // line 1
+    '  if (TRUE) {',            // line 2
+    '    var int x = ;',        // line 3 (error nested two levels deep)
+    '  };',                     // line 4
+    '};'                        // line 5
+  ].join('\n');
+
+  const model = parseSemanticModel(source);
+
+  assert.ok(model.hasErrors, 'Should detect an error nested inside an if-block');
+  assert.ok(model.errors.length > 0, 'Should collect the nested error');
+  assert.ok(
+    model.errors.some((e) => e.position.row === 3),
+    'Reported error should point at the nested line'
+  );
+});
