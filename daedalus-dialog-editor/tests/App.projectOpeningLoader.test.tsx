@@ -152,7 +152,7 @@ describe('App project opening loader', () => {
     render(<App />);
     expect(screen.getByTestId('main-layout')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Neu laden' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('project-opening-overlay')).toBeInTheDocument();
