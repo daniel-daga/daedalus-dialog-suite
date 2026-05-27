@@ -107,7 +107,7 @@ interface SemanticModel {
 
 ### Development Rules
 
-1. **TDD required**: write a failing test first, then implement the minimal fix.
+1. **TDD required**: write a failing test first, then implement the minimal fix. Tests must genuinely exercise the feature — do not write tests that pass trivially or exist only to satisfy coverage. A test that can pass without the feature being correctly implemented is not acceptable.
 2. Do not use temporary test files; add meaningful tests to `test/*.test.js`.
 3. Keep generation logic string-template and semantic-model driven.
 4. When `grammar.js` changes: run `npm run build` to regenerate the parser, then `npm test`.
@@ -218,9 +218,10 @@ Import direction is one-way: UI → application → domain.
 
 ### Development Rules
 
-1. **TDD required**: add or update a failing test before implementing.
+1. **TDD required**: add or update a failing test before implementing. Tests must genuinely exercise the feature — do not write tests that pass trivially or exist only to satisfy coverage. A test that can pass without the feature being correctly implemented is not acceptable.
    - For new or changed **UI workflows** (user-facing flows in the Electron app), write a failing **Playwright E2E test** (`tests/e2e/`) first, then implement.
    - For logic, store, or component-level changes without a new end-to-end flow, a Jest test is sufficient.
+   - **Playwright tests must be verified**: after writing and running a Playwright E2E test, manually confirm it exercises the actual UI behavior — not just that it passes. A green Playwright test that doesn't interact with the real feature is not acceptable.
 2. Run focused tests during iteration; run full workspace checks before completion.
 3. When changing node editor UI, do a smoke pass:
    - Start with `npm run dev:node-editor`
@@ -287,7 +288,8 @@ When a plan is complete, extract durable decisions into canonical docs and delet
 
 ## General Conventions
 
-- **TDD everywhere**: failing test → minimal implementation → green.
+- **TDD everywhere**: failing test → minimal implementation → green. Tests must genuinely exercise the feature — a test that passes without the feature being correctly implemented is not acceptable. For Playwright E2E tests, manually verify the test interacts with the real UI behavior, not just that it passes.
+- **A feature is not done until tests and linter pass**: after implementing any feature, run the full test suite and linter for the affected workspace. A clean codebase (`npm test` + `npm run lint`) is a prerequisite for declaring the feature complete — not an optional follow-up.
 - Keep changes focused and minimal; no unnecessary docs, scaffolding, or helper abstractions.
 - Do not add error handling for scenarios that cannot happen; trust framework guarantees.
 - Validate at system boundaries only (user input, external APIs).
@@ -301,3 +303,67 @@ When a plan is complete, extract durable decisions into canonical docs and delet
 ## Sandbox Notes
 
 In Codex sandbox environments, `npm run build --workspace daedalus-dialog-editor` may fail during Vite startup with `Error: spawn EPERM` (from `esbuild` process spawn). Rerun with elevated permissions; the build succeeds outside the sandbox.
+
+---
+
+## Behavioral Guidelines (Karpathy)
+
+Behavioral guidelines to reduce common LLM coding mistakes.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+### 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
