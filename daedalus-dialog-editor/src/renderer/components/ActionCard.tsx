@@ -97,6 +97,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, []); // Empty deps - cleanup function only created once, uses refs for latest values
 
   const handleDelete = useCallback(() => {
+    // Sync action ref so the unmount cleanup does not re-add via stale debounce diff
+    actionRef.current = localActionRef.current;
     deleteActionAtPath(path);
   }, [deleteActionAtPath, path]);
 
@@ -123,6 +125,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, [addDialogLineAfterPath, path]);
 
   const handleDeleteAndFocusPrev = useCallback(() => {
+    // Sync action ref so the unmount cleanup does not re-add via stale debounce diff
+    actionRef.current = localActionRef.current;
     deleteActionAndFocusPrevAtPath(path);
   }, [deleteActionAndFocusPrevAtPath, path]);
 
