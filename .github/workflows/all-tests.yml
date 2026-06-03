@@ -97,6 +97,7 @@ jobs:
           name: playwright-blob-${{ matrix.shardIndex }}
           path: daedalus-dialog-editor/blob-report
           if-no-files-found: ignore
+          retention-days: 1
 
   editor-e2e-merge-reports:
     name: E2E Tests (merge reports)
@@ -137,6 +138,7 @@ jobs:
           name: playwright-report
           path: daedalus-dialog-editor/playwright-report
           if-no-files-found: ignore
+          retention-days: 7
 
   parser-tests:
     runs-on: ubuntu-latest

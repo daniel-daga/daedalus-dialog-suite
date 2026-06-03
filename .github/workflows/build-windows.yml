@@ -129,6 +129,7 @@ jobs:
       with:
         name: daedalus-dialog-editor-${{ steps.version.outputs.BUILD_VERSION }}
         path: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
+        retention-days: 7
 
     - name: Publish rolling release
       uses: softprops/action-gh-release@v2
