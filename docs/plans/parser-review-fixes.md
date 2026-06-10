@@ -32,9 +32,9 @@ needs a deliberate scope decision, not a drive-by fix.
 | # | Finding | Status |
 |---|---------|--------|
 | F7 | **Declaration-order dependence for condition functions.** `conditionFunctions` is built during pass 2 from instance assignments; a condition function declared *before* its instance is analyzed before it is known to be one and gets misclassified (body parsed as actions, conditions empty). | ✅ |
-| F8 | **Cross-references miss nested Choices.** `findFunctionReferences` and `collectReachableFunctions` scan only top-level actions; `Choice` actions inside `ConditionalAction.thenActions/elseActions` are invisible to rename/remove cascades and reachability. | 🔲 |
+| F8 | **Cross-references miss nested Choices.** `findFunctionReferences` and `collectReachableFunctions` scan only top-level actions; `Choice` actions inside `ConditionalAction.thenActions/elseActions` are invisible to rename/remove cascades and reachability. | ✅ |
 | F9 | **String escaping asymmetry.** `normalizeArgumentText` strips outer quotes without unescaping; `Choice.generateCode` escapes `\` and `"` on emit (double-escape on roundtrip of `\"`); `DialogLine`/`LogEntry` quote without escaping. Original Daedalus has no string escape sequences at all, so the right fix needs a language-semantics decision (probably: never escape/unescape, validate embedded quotes at the editor input boundary) plus corpus validation. | 🚫 |
-| F10 | **`DialogLine.generateCode` ignores stored `listener`**, recomputing it from the speaker. `AI_Output(self, hero, …)` regenerates as `AI_Output(self, other, …)`. The existing listener test passed only by coincidence (speaker `other` → recomputed `self`). | 🔲 |
+| F10 | **`DialogLine.generateCode` ignores stored `listener`**, recomputing it from the speaker. `AI_Output(self, hero, …)` regenerates as `AI_Output(self, other, …)`. The existing listener test passed only by coincidence (speaker `other` → recomputed `self`). | ✅ |
 | F11 | **Error-position inconsistency.** `DaedalusParser.collectErrors` (parser.js) reports 0-based tree-sitter positions; `ErrorVisitor` reports 1-based. The editor's `ValidationService` passes `parseResult.errors[].position` straight through, so normalizing is a coordinated parser+editor contract change. | 🚫 |
 
 ## P3 — Hygiene
