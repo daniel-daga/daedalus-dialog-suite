@@ -131,6 +131,7 @@ module.exports = grammar({
       $.expression_statement,
       $.if_statement,
       $.return_statement,
+      $.variable_declaration,
     ),
 
     assignment_statement: $ => seq(

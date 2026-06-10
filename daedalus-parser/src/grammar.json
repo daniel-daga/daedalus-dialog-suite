@@ -621,6 +621,10 @@
         {
           "type": "SYMBOL",
           "name": "return_statement"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "variable_declaration"
         }
       ]
     },

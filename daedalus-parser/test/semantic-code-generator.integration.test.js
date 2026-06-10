@@ -730,3 +730,83 @@ func void DIA_Second_Info()
   assert.ok(secondIdx < secondCondIdx, 'Second instance before its condition');
   assert.ok(secondCondIdx < secondInfoIdx, 'Second condition before its info');
 });
+
+// ===================================================================
+// LOCAL VARIABLE DECLARATIONS (review finding F4)
+// ===================================================================
+
+test('Local var declarations in function bodies are preserved on roundtrip', () => {
+  const sourceCode = `
+func void DIA_Local_Helper()
+{
+	var int x;
+	x = 5;
+	AI_StopProcessInfos(self);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const func = visitor.semanticModel.functions.DIA_Local_Helper;
+  assert.ok(func, 'Function should be in the model');
+  assert.equal(func.actions.length, 3, 'Declaration, assignment and call should each be one action');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(generatedCode.includes('var int x;'), `Generated code should keep the local declaration. Got:\n${generatedCode}`);
+  assert.ok(generatedCode.includes('x = 5;'), 'Generated code should keep the assignment');
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+});
+
+test('Local var declaration with initializer does not create spurious actions', () => {
+  const sourceCode = `
+func void DIA_Local_Init()
+{
+	var int x = Hlp_GetInstanceID(self);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const func = visitor.semanticModel.functions.DIA_Local_Init;
+  assert.ok(func, 'Function should be in the model');
+  assert.equal(func.actions.length, 1, 'Initializer call must not become a separate action');
+  assert.equal(func.actions[0].constructor.name, 'Action', 'Declaration should be preserved as raw Action');
+  assert.equal(func.actions[0].action, 'var int x = Hlp_GetInstanceID(self);');
+});
+
+test('Local var declaration inside an if block is preserved on roundtrip', () => {
+  const sourceCode = `
+func void DIA_Local_Nested()
+{
+	if (Kapitel == 2)
+	{
+		var int x;
+		B_GivePlayerXP(100);
+	};
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const func = visitor.semanticModel.functions.DIA_Local_Nested;
+  assert.ok(func, 'Function should be in the model');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(generatedCode.includes('var int x;'), `Generated code should keep the nested local declaration. Got:\n${generatedCode}`);
+  assert.match(generatedCode, /B_GivePlayerXP\s*\(100\)/, 'Generated code should keep the sibling call');
+});

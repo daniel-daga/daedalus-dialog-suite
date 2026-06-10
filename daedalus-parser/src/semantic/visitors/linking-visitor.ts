@@ -177,6 +177,17 @@ export class LinkingVisitor {
       }
     }
 
+    if (type === 'variable_declaration' && this.currentFunction) {
+      // Local declarations are preserved textually; skipping children keeps
+      // initializer expressions from being misread as standalone actions.
+      if (isConditionFunc) {
+        this.triggerConditionRawMode(node);
+      } else {
+        this.preserveUnsupportedStatement(node);
+      }
+      return true;
+    }
+
     if (this.currentFunction && !isConditionFunc && isConditionModeBlockingStatement(type)) {
       if (type === 'if_statement') {
         const conditionalAction = this.parseConditionalAction(node);
@@ -498,7 +509,7 @@ export class LinkingVisitor {
   }
 
   private isTopLevelStatement(node: TreeSitterNode): boolean {
-    if (!node.type.endsWith('_statement')) {
+    if (!node.type.endsWith('_statement') && node.type !== 'variable_declaration') {
       return false;
     }
     const parent = node.parent;
@@ -749,6 +760,10 @@ export class LinkingVisitor {
 
     if (node.type === 'if_statement') {
       return this.parseConditionalAction(node);
+    }
+
+    if (node.type === 'variable_declaration') {
+      return new Action(node.text.trim());
     }
 
     return null;

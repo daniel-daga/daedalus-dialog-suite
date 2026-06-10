@@ -188,3 +188,35 @@ test('legacy if/else-if condition fallback does not introduce extra closing brac
   const reparsed = parseSemanticModel(generated);
   assert.equal(reparsed.errors?.length || 0, 0, 'Generated output should be syntactically valid');
 });
+
+test('condition function with local var declaration falls back to raw preservation', () => {
+  const source = `
+  func int DIA_Test_VarCond()
+  {
+    var int stateTime;
+    stateTime = Npc_GetStateTime(self);
+    if (stateTime > 5)
+    {
+      return TRUE;
+    };
+  };
+
+  instance DIA_TestVar(C_INFO)
+  {
+    condition = DIA_Test_VarCond;
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Test_VarCond;
+  assert.ok(func, 'Function should be parsed');
+  assert.equal(func.conditions.length, 0, 'Raw mode should not keep structured conditions');
+
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  assert.ok(generated.includes('var int stateTime;'), `Local declaration should be preserved. Got:\n${generated}`);
+  assert.ok(generated.includes('stateTime = Npc_GetStateTime(self);'), 'Assignment should be preserved');
+  assert.ok(generated.includes('if (stateTime > 5)'), 'If statement should be preserved');
+
+  const reparsed = parseSemanticModel(generated);
+  assert.equal(reparsed.errors?.length || 0, 0, 'Generated function should parse without syntax errors');
+});
