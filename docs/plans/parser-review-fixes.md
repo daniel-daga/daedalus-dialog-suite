@@ -41,12 +41,12 @@ needs a deliberate scope decision, not a drive-by fix.
 
 | # | Finding | Status |
 |---|---------|--------|
-| F12 | `deserializeCondition` silently returns `new Condition('')` for unknown types while `deserializeAction` warns — quiet data loss. | 🔲 |
-| F13 | `grammar.js` has a duplicate `conflicts` key (second silently wins); grammar.js is not linted, so `no-dupe-keys` never fired. | 🔲 |
+| F12 | `deserializeCondition` silently returns `new Condition('')` for unknown types while `deserializeAction` warns — quiet data loss. | ✅ |
+| F13 | `grammar.js` has a duplicate `conflicts` key (second silently wins); grammar.js is not linted, so `no-dupe-keys` never fired. | ✅ |
 | F14 | Lint covers only three JS files; all TypeScript sources (~4k lines, where F1–F3 live) are unlinted — no typescript-eslint. Lint-pipeline scope is already tracked in `daedalus-parser-stabilization.md` Phase 2; extend it to TS sources there. | 🚫 |
-| F15 | `generateDialog` hardcodes `(C_INFO)` instead of the stored `dialog.parent` casing — style churn vs the `preserveSourceStyle` goal. | 🔲 |
-| F16 | Minor: `alignProperty(propertyName)` ignores its parameter; `ErrorVisitor` has a redundant `if (node.hasError)` after the early return. | 🔲 |
-| F17 | `CLAUDE.md` `SemanticModel` shape drifted (omits `npcs`/`animations`; `declarationOrder` element type). | 🔲 |
+| F15 | `generateDialog` hardcodes `(C_INFO)` instead of the stored `dialog.parent` casing — style churn vs the `preserveSourceStyle` goal. | ✅ |
+| F16 | Minor: `alignProperty(propertyName)` ignores its parameter; `ErrorVisitor` has a redundant `if (node.hasError)` after the early return. | ✅ |
+| F17 | `CLAUDE.md` `SemanticModel` shape drifted (omits `npcs`/`animations`; `declarationOrder` element type). | ✅ |
 
 ## Notes on deferred items
 

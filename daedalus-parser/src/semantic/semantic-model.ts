@@ -646,6 +646,9 @@ export function deserializeCondition(json: any): DialogCondition {
     if (subType) {
       return plainToInstance(subType.value as ClassConstructor<any>, json);
     }
+    // Unknown type: warn instead of silently swallowing the data (mirrors
+    // deserializeAction). Add the missing type to CONDITION_DISCRIMINATOR.subTypes.
+    console.warn(`[deserializeCondition] Unrecognised condition type "${json.type}" — falling back to empty Condition. Add it to CONDITION_DISCRIMINATOR.subTypes.`);
   }
 
   // Fallback

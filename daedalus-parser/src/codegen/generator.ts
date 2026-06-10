@@ -285,9 +285,10 @@ export class SemanticCodeGenerator {
     const indent = this.indent();
     const instanceKeyword = this.resolveKeyword('instance', dialog.keyword);
     const spaceBeforeParen = this.options.preserveSourceStyle && dialog.spaceBeforeParen ? ' ' : '';
+    const parent = dialog.parent || 'C_INFO';
     const lines: string[] = [];
 
-    lines.push(`${instanceKeyword} ${dialog.name}${spaceBeforeParen}(C_INFO)`);
+    lines.push(`${instanceKeyword} ${dialog.name}${spaceBeforeParen}(${parent})`);
     lines.push('{');
 
     // Preserve original property insertion order to minimize style churn.
@@ -303,19 +304,12 @@ export class SemanticCodeGenerator {
     return lines.join('\n');
   }
 
-  /**
-   * Generate alignment spacing for property assignment
-   */
-  private alignProperty(propertyName: string): string {
-    // Align property assignments using single tab spacing (Gothic convention)
-    return '\t';
-  }
-
   private resolvePropertySpacing(dialog: Dialog, propertyName: string): { beforeEquals: string; afterEquals: string } {
     if (this.options.preserveSourceStyle && dialog.propertyFormatting && dialog.propertyFormatting[propertyName]) {
       return dialog.propertyFormatting[propertyName];
     }
-    return { beforeEquals: this.alignProperty(propertyName), afterEquals: ' ' };
+    // Align property assignments using single tab spacing (Gothic convention)
+    return { beforeEquals: '\t', afterEquals: ' ' };
   }
 
   /**

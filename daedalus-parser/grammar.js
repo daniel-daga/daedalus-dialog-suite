@@ -10,10 +10,6 @@ module.exports = grammar({
     [$.if_statement],
   ],
 
-  conflicts: $ => [
-    [$.if_statement],
-  ],
-
   rules: {
     program: $ => repeat($._declaration),
 

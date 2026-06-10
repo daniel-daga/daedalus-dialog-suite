@@ -140,6 +140,34 @@ module.exports = [
     }
   },
   {
+    // Tree-sitter grammar: lint with the recommended rules only (catches e.g.
+    // duplicate object keys) using the grammar DSL globals. The stylistic rule
+    // block above does not apply (its `files` does not match grammar.js).
+    files: ['grammar.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: {
+        module: 'writable',
+        require: 'readonly',
+        grammar: 'readonly',
+        seq: 'readonly',
+        choice: 'readonly',
+        repeat: 'readonly',
+        repeat1: 'readonly',
+        optional: 'readonly',
+        field: 'readonly',
+        alias: 'readonly',
+        prec: 'readonly',
+        token: 'readonly',
+        sym: 'readonly'
+      }
+    },
+    rules: {
+      'no-unused-vars': ['error', { args: 'none' }]
+    }
+  },
+  {
     // Specific overrides for test files
     files: ['test/**/*.js'],
     rules: {
