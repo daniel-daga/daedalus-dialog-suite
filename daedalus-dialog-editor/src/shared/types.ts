@@ -361,6 +361,8 @@ export interface GlobalConstant {
   name: string;
   type: string;
   value: string | number | boolean;
+  sourceText?: string;
+  leadingComments?: string[];
   filePath?: string;
   position?: {
     startLine: number;
@@ -377,6 +379,8 @@ export interface GlobalConstant {
 export interface GlobalVariable {
   name: string;
   type: string;
+  sourceText?: string;
+  leadingComments?: string[];
   filePath?: string;
   position?: {
     startLine: number;
@@ -395,6 +399,8 @@ export interface GlobalInstance {
   parent: string;
   displayName?: string;
   dailyRoutine?: string;
+  sourceText?: string;
+  leadingComments?: string[];
   filePath?: string;
   position?: {
     startLine: number;
@@ -411,7 +417,7 @@ export interface GlobalInstance {
 export interface SemanticModel {
   dialogs: Record<string, Dialog>;
   functions: Record<string, DialogFunction>;
-  declarationOrder?: Array<{ type: 'dialog' | 'function'; name: string }>;
+  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance'; name: string }>;
   constants?: Record<string, GlobalConstant>;
   variables?: Record<string, GlobalVariable>;
   instances?: Record<string, GlobalInstance>;

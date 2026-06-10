@@ -861,3 +861,87 @@ func int CalcDamage(VAR INT base)
   const reparsed = parser.parse(generatedCode);
   assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
 });
+
+// ===================================================================
+// GLOBAL DECLARATIONS IN CODEGEN (review finding F6)
+// ===================================================================
+
+test('Globals are emitted in declaration order on roundtrip', () => {
+  const sourceCode = `const string TOPIC_TestQuest = "Test Quest";
+const int TOPIC_END = 2;
+
+func void StartQuest()
+{
+	Log_CreateTopic(TOPIC_TestQuest, LOG_MISSION);
+};
+
+var int MIS_TestQuest;
+
+instance ItWr_TestNote(C_Item)
+{
+	name = "Note";
+	mainflag = ITEM_KAT_DOCS;
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('const string TOPIC_TestQuest = "Test Quest";'),
+    `Constant should be emitted verbatim. Got:\n${generatedCode}`
+  );
+  assert.ok(generatedCode.includes('var int MIS_TestQuest;'), 'Variable should be emitted');
+  assert.ok(generatedCode.includes('mainflag = ITEM_KAT_DOCS;'), 'Instance body should be emitted verbatim');
+
+  const topicIdx = generatedCode.indexOf('const string TOPIC_TestQuest');
+  const endIdx = generatedCode.indexOf('const int TOPIC_END');
+  const funcIdx = generatedCode.indexOf('func void StartQuest()');
+  const varIdx = generatedCode.indexOf('var int MIS_TestQuest;');
+  const instIdx = generatedCode.indexOf('instance ItWr_TestNote(C_Item)');
+
+  assert.ok(topicIdx >= 0 && topicIdx < endIdx, 'First constant before second');
+  assert.ok(endIdx < funcIdx, 'Constants before the function');
+  assert.ok(funcIdx < varIdx, 'Variable stays after the function');
+  assert.ok(varIdx < instIdx, 'Instance stays last');
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+
+  const visitor2 = new SemanticModelBuilderVisitor();
+  visitor2.pass1_createObjects(reparsed.rootNode);
+  visitor2.pass2_analyzeAndLink(reparsed.rootNode);
+  assert.equal(Object.keys(visitor2.semanticModel.constants).length, 2, 'Constants survive reparse');
+  assert.equal(Object.keys(visitor2.semanticModel.variables).length, 1, 'Variable survives reparse');
+  assert.equal(Object.keys(visitor2.semanticModel.instances).length, 1, 'Instance survives reparse');
+});
+
+test('Const arrays and leading comments roundtrip via source text', () => {
+  const sourceCode = `// Spell name table
+const string TXT_Spells[2] =
+{
+	"Light",
+	"Firebolt"
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(generatedCode.includes('// Spell name table'), `Leading comment should be preserved. Got:\n${generatedCode}`);
+  assert.ok(generatedCode.includes('const string TXT_Spells[2] ='), 'Array declaration head should be preserved');
+  assert.ok(generatedCode.includes('"Firebolt"'), 'Array initializer should be preserved');
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+});

@@ -321,3 +321,47 @@ instance Dia_Lower (c_Info)
   assert.ok(code.includes('instance Dia_Lower (c_Info)'),
     `parent casing should roundtrip, got:\n${code}`);
 });
+
+test('Hand-built models emit canonical globals without sourceText', () => {
+  const generator = new SemanticCodeGenerator();
+  const model = {
+    dialogs: {},
+    functions: {},
+    declarationOrder: [
+      { type: 'constant', name: 'MAX_GOLD' },
+      { type: 'variable', name: 'CurrentLevel' }
+    ],
+    constants: {
+      MAX_GOLD: { name: 'MAX_GOLD', type: 'int', value: 1000 }
+    },
+    variables: {
+      CurrentLevel: { name: 'CurrentLevel', type: 'string' }
+    }
+  };
+
+  const generated = generator.generateSemanticModel(model);
+  assert.ok(generated.includes('const int MAX_GOLD = 1000;'), `Should emit canonical constant. Got:\n${generated}`);
+  assert.ok(generated.includes('var string CurrentLevel;'), 'Should emit canonical variable');
+});
+
+test('Globals missing from declarationOrder are still emitted', () => {
+  const { DialogFunction } = require('../dist/semantic/semantic-visitor-index');
+  const generator = new SemanticCodeGenerator();
+  const model = {
+    dialogs: {},
+    functions: {
+      Helper: Object.assign(new DialogFunction('Helper', 'void'), { actions: [], conditions: [] })
+    },
+    declarationOrder: [{ type: 'function', name: 'Helper' }],
+    constants: {
+      MAX_GOLD: { name: 'MAX_GOLD', type: 'int', value: 1000 }
+    }
+  };
+
+  const generated = generator.generateSemanticModel(model);
+  const constIdx = generated.indexOf('const int MAX_GOLD = 1000;');
+  const funcIdx = generated.indexOf('func void Helper');
+  assert.ok(constIdx >= 0, `Constant should not be dropped. Got:\n${generated}`);
+  assert.ok(funcIdx >= 0, 'Function should be emitted');
+  assert.ok(constIdx < funcIdx, 'Leftover constants lead the file (declare-before-use)');
+});

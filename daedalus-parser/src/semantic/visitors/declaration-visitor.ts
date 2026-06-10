@@ -98,6 +98,8 @@ export class DeclarationVisitor {
           this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
         } else {
           const instance = new GlobalInstance(nameNode.text, parentType);
+          instance.sourceText = node.text;
+          instance.leadingComments = [...this.pendingLeadingComments];
           instance.position = {
             startLine: node.startPosition.row + 1,
             startColumn: node.startPosition.column + 1,
@@ -113,6 +115,7 @@ export class DeclarationVisitor {
             this.semanticModel.instances = {};
           }
           this.semanticModel.instances[instance.name] = instance;
+          this.semanticModel.declarationOrder?.push({ type: 'instance', name: instance.name });
 
           const upperParent = parentType.toUpperCase();
           if (upperParent === 'C_ITEM' || upperParent === 'C_NPC') {
@@ -252,6 +255,8 @@ export class DeclarationVisitor {
       }
 
       const constant = new GlobalConstant(name, type, value);
+      constant.sourceText = node.text;
+      constant.leadingComments = [...this.pendingLeadingComments];
       constant.position = {
         startLine: node.startPosition.row + 1,
         startColumn: node.startPosition.column + 1,
@@ -267,9 +272,12 @@ export class DeclarationVisitor {
         this.semanticModel.constants = {};
       }
       this.semanticModel.constants[name] = constant;
+      this.semanticModel.declarationOrder?.push({ type: 'constant', name });
 
     } else if (keyword === 'var') {
       const variable = new GlobalVariable(name, type);
+      variable.sourceText = node.text;
+      variable.leadingComments = [...this.pendingLeadingComments];
       variable.position = {
         startLine: node.startPosition.row + 1,
         startColumn: node.startPosition.column + 1,
@@ -285,6 +293,7 @@ export class DeclarationVisitor {
         this.semanticModel.variables = {};
       }
       this.semanticModel.variables[name] = variable;
+      this.semanticModel.declarationOrder?.push({ type: 'variable', name });
     }
   }
 }
