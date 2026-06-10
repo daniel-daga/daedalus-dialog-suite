@@ -225,3 +225,30 @@ test('deserializeSemanticModel should handle global constants and variables', ()
   assert.equal(model.variables['MIS_Test'].name, 'MIS_Test');
   assert.equal(model.variables['MIS_Test'].type, 'int');
 });
+
+test('deserializeSemanticModel should preserve function parameters', () => {
+  const plainJson = {
+    functions: {
+      B_Say: {
+        name: 'B_Say',
+        returnType: 'void',
+        parameters: [
+          { keyword: 'var', type: 'C_NPC', name: 'slf' },
+          { keyword: 'var', type: 'string', name: 'msg' }
+        ],
+        actions: [],
+        conditions: [],
+        calls: []
+      }
+    },
+    dialogs: {}
+  };
+
+  const model = deserializeSemanticModel(JSON.parse(JSON.stringify(plainJson)));
+  const func = model.functions.B_Say;
+  assert.ok(func instanceof DialogFunction, 'Should reconstruct DialogFunction');
+  assert.deepEqual(func.parameters, [
+    { keyword: 'var', type: 'C_NPC', name: 'slf' },
+    { keyword: 'var', type: 'string', name: 'msg' }
+  ], 'Parameters should survive serialization roundtrip');
+});

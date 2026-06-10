@@ -810,3 +810,54 @@ func void DIA_Local_Nested()
   assert.ok(generatedCode.includes('var int x;'), `Generated code should keep the nested local declaration. Got:\n${generatedCode}`);
   assert.match(generatedCode, /B_GivePlayerXP\s*\(100\)/, 'Generated code should keep the sibling call');
 });
+
+// ===================================================================
+// FUNCTION PARAMETERS (review finding F5)
+// ===================================================================
+
+test('Function parameters are modeled and preserved on roundtrip', () => {
+  const sourceCode = `
+func void B_Say(var C_NPC slf, var string msg)
+{
+	AI_StopProcessInfos(self);
+};
+
+func int CalcDamage(VAR INT base)
+{
+	return TRUE;
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const bSay = visitor.semanticModel.functions.B_Say;
+  assert.ok(bSay, 'B_Say should be in the model');
+  assert.deepEqual(bSay.parameters, [
+    { keyword: 'var', type: 'C_NPC', name: 'slf' },
+    { keyword: 'var', type: 'string', name: 'msg' }
+  ], 'Parameters should be modeled with source casing');
+
+  const calcDamage = visitor.semanticModel.functions.CalcDamage;
+  assert.ok(calcDamage, 'CalcDamage should be in the model');
+  assert.deepEqual(calcDamage.parameters, [
+    { keyword: 'VAR', type: 'INT', name: 'base' }
+  ], 'Uppercase keyword and type casing should be preserved');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('func void B_Say(var C_NPC slf, var string msg)'),
+    `Generated code should keep the parameter list. Got:\n${generatedCode}`
+  );
+  assert.ok(
+    generatedCode.includes('func int CalcDamage(VAR INT base)'),
+    'Generated code should keep parameter casing'
+  );
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+});

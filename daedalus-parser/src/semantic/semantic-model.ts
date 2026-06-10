@@ -659,6 +659,13 @@ export function deserializeCondition(json: any): DialogCondition {
 // DIALOG FUNCTION CLASS
 // ===================================================================
 
+export interface FunctionParameter {
+  /** Parameter keyword as written in source (`var`/`const`), if present. */
+  keyword?: string;
+  type: string;
+  name: string;
+}
+
 export class DialogFunction {
   public name: string;
   public returnType: string;
@@ -666,6 +673,7 @@ export class DialogFunction {
   public spaceBeforeParen?: boolean;
   public leadingComments?: string[];
   public hasExplicitBodyContent?: boolean;
+  public parameters?: FunctionParameter[];
   public calls: string[];
 
   @Type(() => Object, {

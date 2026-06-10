@@ -3,6 +3,7 @@ import {
   TreeCursor,
   Dialog,
   DialogFunction,
+  FunctionParameter,
   SemanticModel,
   GlobalConstant,
   GlobalVariable,
@@ -67,6 +68,10 @@ export class DeclarationVisitor {
           func.keyword = keywordNode.text;
         }
         func.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
+        const parameters = this.extractFunctionParameters(node);
+        if (parameters.length > 0) {
+          func.parameters = parameters;
+        }
         func.leadingComments = [...this.pendingLeadingComments];
         this.semanticModel.functions[func.name] = func;
         this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
@@ -152,6 +157,34 @@ export class DeclarationVisitor {
 
     // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
     // so we don't need to recurse.
+  }
+
+  private extractFunctionParameters(functionNode: TreeSitterNode): FunctionParameter[] {
+    const parametersNode = functionNode.childForFieldName('parameters');
+    if (!parametersNode) {
+      return [];
+    }
+
+    const parameters: FunctionParameter[] = [];
+    for (const child of parametersNode.namedChildren) {
+      if (child.type !== 'parameter') {
+        continue;
+      }
+      const typeNode = child.childForFieldName('type');
+      const nameNode = child.childForFieldName('name');
+      if (!typeNode || !nameNode) {
+        continue;
+      }
+      const parameter: FunctionParameter = { type: typeNode.text, name: nameNode.text };
+      // The var/const keyword token is not exposed as a child node; recover it
+      // from the text preceding the type within the parameter span.
+      const keyword = child.text.slice(0, typeNode.startIndex - child.startIndex).trim();
+      if (keyword) {
+        parameter.keyword = keyword;
+      }
+      parameters.push(parameter);
+    }
+    return parameters;
   }
 
   private extractInstanceDisplayName(instanceNode: TreeSitterNode): string | undefined {

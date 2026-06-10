@@ -316,10 +316,17 @@ export type DialogCondition =
 // Semantic Model Types - Functions and Dialogs
 // ============================================================================
 
+export interface FunctionParameter {
+  keyword?: string;
+  type: string;
+  name: string;
+}
+
 export interface DialogFunction {
   name: string;
   returnType: 'VOID' | 'INT' | 'STRING';
   filePath?: string;
+  parameters?: FunctionParameter[];
   actions: DialogAction[];
   conditions: DialogCondition[];
   conditionOperator?: 'AND' | 'OR';

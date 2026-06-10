@@ -367,7 +367,10 @@ export class SemanticCodeGenerator {
     const returnTypeLower = func.returnType.toLowerCase();
     const lines: string[] = [];
 
-    lines.push(`${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}()`);
+    const parameters = (func.parameters || [])
+      .map(p => [p.keyword, p.type, p.name].filter(Boolean).join(' '))
+      .join(', ');
+    lines.push(`${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}(${parameters})`);
     lines.push('{');
 
     // Use preserved body if provided
