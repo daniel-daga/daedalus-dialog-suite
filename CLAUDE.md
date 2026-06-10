@@ -95,13 +95,15 @@ High-performance Tree-sitter parser for the Gothic 2 Daedalus scripting language
 interface SemanticModel {
   dialogs: { [name: string]: Dialog };
   functions: { [name: string]: DialogFunction };
-  declarationOrder?: Declaration[];
+  declarationOrder?: Array<{ type: 'dialog' | 'function'; name: string }>;
   constants?: { [name: string]: GlobalConstant };
   variables?: { [name: string]: GlobalVariable };
   instances?: { [name: string]: GlobalInstance };
-  items?: { [name: string]: any };
-  hasErrors?: boolean;
+  items?: { [name: string]: GlobalInstance };
+  npcs?: { [name: string]: GlobalInstance };
+  animations?: { [name: string]: GlobalInstance };
   errors?: SyntaxError[];
+  hasErrors?: boolean;
 }
 ```
 

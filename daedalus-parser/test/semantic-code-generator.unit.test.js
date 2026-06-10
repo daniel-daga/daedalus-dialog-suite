@@ -304,3 +304,20 @@ test('HeroFollowsAction toDisplayString should include routine name', () => {
   const action = new HeroFollowsAction('RTN_SZMYK_15_GUIDEMITTE');
   assert.ok(action.toDisplayString().includes('RTN_SZMYK_15_GUIDEMITTE'));
 });
+
+// F15 (docs/plans/parser-review-fixes.md): preserve the source casing of the
+// dialog parent instead of hardcoding C_INFO.
+test('generateDialog preserves the source casing of the C_INFO parent', () => {
+  const { parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
+  const source = `
+instance Dia_Lower (c_Info)
+{
+    nr = 1;
+};
+`;
+  const model = parseSemanticModel(source);
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const code = generator.generateDialog(model.dialogs.Dia_Lower);
+  assert.ok(code.includes('instance Dia_Lower (c_Info)'),
+    `parent casing should roundtrip, got:\n${code}`);
+});

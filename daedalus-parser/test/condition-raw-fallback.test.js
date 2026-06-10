@@ -37,7 +37,12 @@ test('condition function with else falls back to raw Action', () => {
   assert.equal(reparsed.errors?.length || 0, 0, 'Generated raw function should parse without syntax errors');
 });
 
-test('condition function with unsupported call falls back to raw Action', () => {
+// Note: this previously asserted raw-Action fallback, but only because the
+// function preceded its instance and condition mode was never entered (review
+// finding F7). Instance-first ordering already produced structured conditions;
+// both orders now behave identically: unsupported calls inside the if condition
+// become generic Condition entries whose raw text roundtrips unchanged.
+test('condition function with unsupported call keeps it as a generic condition', () => {
   const source = `
   func int DIA_Test_Cond()
   {
@@ -57,10 +62,41 @@ test('condition function with unsupported call falls back to raw Action', () => 
   const func = model.functions.DIA_Test_Cond;
   assert.ok(func, 'Function should be parsed');
 
-  assert.equal(func.conditions.length, 0, 'Should not keep parsed conditions');
+  assert.equal(func.conditions.length, 2, 'Both operands should be captured as conditions');
+  assert.equal(func.conditions[0].constructor.name, 'NpcKnowsInfoCondition');
+  assert.equal(func.conditions[1].constructor.name, 'Condition', 'Unsupported call should become a generic condition');
+  assert.ok(func.conditions[1].condition.includes('AI_Output(self, other, "DIA_Test_01")'));
+  assert.equal(func.actions.length, 0, 'No raw actions should be produced');
+
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  assert.ok(generated.includes('AI_Output(self, other, "DIA_Test_01")'), 'Generated condition should preserve the call text');
+});
+
+test('condition function with a top-level statement call falls back to raw Action', () => {
+  const source = `
+  instance DIA_Raw(C_INFO)
+  {
+    condition = DIA_Raw_Cond;
+  };
+
+  func int DIA_Raw_Cond()
+  {
+    B_SomeSideEffect(self);
+    if (Npc_KnowsInfo(other, DIA_Test))
+    {
+      return TRUE;
+    };
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Raw_Cond;
+  assert.ok(func, 'Function should be parsed');
+
+  assert.equal(func.conditions.length, 0, 'Raw mode should clear parsed conditions');
   assert.ok(func.actions.length > 0, 'Should preserve raw actions');
   assert.equal(func.actions[0].constructor.name, 'Action', 'Should store raw Action');
-  assert.ok(func.actions[0].action.includes('AI_Output(self, other, "DIA_Test_01")'), 'Action should contain unsupported call');
+  assert.ok(func.actions[0].action.includes('B_SomeSideEffect(self);'), 'Raw action should contain the statement call');
 });
 
 test('condition function with supported expressions parses conditions', () => {

@@ -15,6 +15,12 @@ export function getBinaryOperator(node: { childCount: number; child(index: numbe
   return node.childCount >= 2 ? node.child(1).text : null;
 }
 
+// assignment_statement children: [left, operator token, right, ';'].
+// The grammar assigns no field name to the operator, so extract it positionally.
+export function getAssignmentOperator(node: { childCount: number; child(index: number): { text: string } }): string {
+  return node.childCount >= 2 ? node.child(1).text : '=';
+}
+
 export function isConditionModeBlockingStatement(nodeType: string): boolean {
   return CONDITION_MODE_BLOCKING_STATEMENTS.has(nodeType);
 }

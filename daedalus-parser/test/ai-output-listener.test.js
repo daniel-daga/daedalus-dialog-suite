@@ -38,3 +38,25 @@ test('does not synthesize AI_Output comment when source has none', () => {
   assert.ok(code.includes('AI_Output (other, self, "DIA_Test_01");'));
   assert.ok(!code.includes('//DIA_Test_01'), 'Should not add synthetic inline comment');
 });
+
+// F10 (docs/plans/parser-review-fixes.md): a non-default listener must be
+// preserved — generateCode previously recomputed the listener from the speaker,
+// so the original test only passed because (other -> self) matched the default.
+test('preserves non-default AI_Output listener during parse and generation', () => {
+  const source = `
+  func void DIA_Test_Info()
+  {
+    AI_Output(self, hero, "DIA_Test_02");
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Test_Info;
+  const dialogLine = func.actions.find(a => a.constructor.name === 'DialogLine');
+  assert.equal(dialogLine.listener, 'hero');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false });
+  const code = generator.generateFunction(func);
+  assert.ok(code.includes('AI_Output (self, hero, "DIA_Test_02");'),
+    `Generated code should keep the stored listener, got:\n${code}`);
+});

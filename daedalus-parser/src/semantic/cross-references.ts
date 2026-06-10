@@ -6,6 +6,7 @@
  */
 
 import type { SemanticModel } from './semantic-model';
+import { getDialogProperty } from './semantic-model';
 
 export interface DialogReference {
   /** The function name that contains the reference */
@@ -23,8 +24,35 @@ export interface FunctionReference {
   dialogName?: string;
   /** Name of the function containing the choice action (if choice-target) */
   functionName?: string;
-  /** Index of the choice action within the function's actions array */
+  /**
+   * Index of the top-level action (within the function's actions array) that
+   * contains the choice — the choice itself may be nested inside a
+   * ConditionalAction branch at that index.
+   */
   actionIndex?: number;
+}
+
+/**
+ * Invokes `visit` for every Choice action reachable from `actions`, including
+ * choices nested inside ConditionalAction then/else branches. `topLevelIndex`
+ * is the index of the containing top-level action.
+ */
+function forEachChoice(
+  actions: any[],
+  visit: (choice: any, topLevelIndex: number) => void
+): void {
+  const walk = (action: any, topLevelIndex: number): void => {
+    if (!action) return;
+    if (action.type === 'Choice') {
+      visit(action, topLevelIndex);
+      return;
+    }
+    if (action.type === 'ConditionalAction') {
+      for (const nested of action.thenActions || []) walk(nested, topLevelIndex);
+      for (const nested of action.elseActions || []) walk(nested, topLevelIndex);
+    }
+  };
+  actions.forEach((action, idx) => walk(action, idx));
 }
 
 /**
@@ -59,26 +87,25 @@ export function findFunctionReferences(
 ): FunctionReference[] {
   const refs: FunctionReference[] = [];
 
-  // Check dialog property references
+  // Check dialog property references (property names are case-insensitive in Daedalus)
   for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
-    const info = dialog.properties?.information;
+    const info = getDialogProperty(dialog.properties, 'information');
     const infoName = typeof info === 'string' ? info : (info as any)?.name;
     if (infoName === functionName) {
       refs.push({ sourceKind: 'dialog-info', dialogName });
     }
 
-    const cond = dialog.properties?.condition;
+    const cond = getDialogProperty(dialog.properties, 'condition');
     const condName = typeof cond === 'string' ? cond : (cond as any)?.name;
     if (condName === functionName) {
       refs.push({ sourceKind: 'dialog-condition', dialogName });
     }
   }
 
-  // Check choice action targetFunction references
+  // Check choice action targetFunction references (including nested choices)
   for (const [funcName, func] of Object.entries(model.functions || {})) {
-    const actions = func.actions || [];
-    actions.forEach((action: any, idx: number) => {
-      if (action.type === 'Choice' && action.targetFunction === functionName) {
+    forEachChoice(func.actions || [], (choice, idx) => {
+      if (choice.targetFunction === functionName) {
         refs.push({ sourceKind: 'choice-target', functionName: funcName, actionIndex: idx });
       }
     });
@@ -108,14 +135,11 @@ export function collectReachableFunctions(
     if (!func) continue;
     visited.add(name);
 
-    for (const action of func.actions || []) {
-      const a = action as any;
-      if (a.type === 'Choice' && typeof a.targetFunction === 'string') {
-        if (!visited.has(a.targetFunction)) {
-          queue.push(a.targetFunction);
-        }
+    forEachChoice(func.actions || [], (choice) => {
+      if (typeof choice.targetFunction === 'string' && !visited.has(choice.targetFunction)) {
+        queue.push(choice.targetFunction);
       }
-    }
+    });
   }
 
   return visited;

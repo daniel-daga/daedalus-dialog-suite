@@ -27,9 +27,7 @@ export class ErrorVisitor {
       return;
     }
 
-    if (node.hasError) {
-      this.semanticModel.hasErrors = true;
-    }
+    this.semanticModel.hasErrors = true;
 
     if (node.type === 'ERROR') {
       if (!this.semanticModel.errors) {

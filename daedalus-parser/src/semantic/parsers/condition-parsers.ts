@@ -179,14 +179,16 @@ export class ConditionParsers {
         return null;
       }
 
-      if (fnName === 'Npc_IsDead') {
+      // Daedalus identifiers are case-insensitive.
+      const dispatchKey = fnName.toLowerCase();
+      if (dispatchKey === 'npc_isdead') {
         const parsed = ConditionParsers.parseNpcIsDeadCall(operand);
         if (!parsed) return null;
         parsed.negated = true;
         return parsed;
       }
 
-      if (fnName === 'Npc_IsInState') {
+      if (dispatchKey === 'npc_isinstate') {
         const parsed = ConditionParsers.parseNpcIsInStateCall(operand);
         if (!parsed) return null;
         parsed.negated = true;
@@ -224,24 +226,25 @@ export class ConditionParsers {
     const args = ConditionParsers.parseRawCallArguments(callNode);
     const value = ConditionParsers.parseBinaryValue(otherNode);
 
-    switch (fnName) {
-      case 'Npc_HasItems':
+    // Daedalus identifiers are case-insensitive, so dispatch on a normalized key.
+    switch (fnName.toLowerCase()) {
+      case 'npc_hasitems':
         if (args.length < 2) return null;
         return new NpcHasItemsCondition(args[0], args[1], operator, value);
-      case 'Npc_GetDistToWP':
+      case 'npc_getdisttowp':
         if (args.length < 2) return null;
         return new NpcGetDistToWpCondition(args[0], args[1], operator, value);
-      case 'Npc_GetTalentSkill':
+      case 'npc_gettalentskill':
         if (args.length < 2) return null;
         return new NpcGetTalentSkillCondition(args[0], args[1], operator, value);
-      case 'Npc_IsDead':
+      case 'npc_isdead':
         if (args.length < 1) return null;
         return ConditionParsers.parseBoolLikeComparisonAsNegation(
           new NpcIsDeadCondition(args[0], false),
           operator,
           value
         );
-      case 'Npc_IsInState':
+      case 'npc_isinstate':
         if (args.length < 2) return null;
         return ConditionParsers.parseBoolLikeComparisonAsNegation(
           new NpcIsInStateCondition(args[0], args[1], false),

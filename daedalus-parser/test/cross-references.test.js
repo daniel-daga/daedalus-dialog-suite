@@ -179,3 +179,57 @@ test('collectReachableFunctions: skips dangling function references', () => {
   assert.ok(!reachable.has('DIA_Test_Missing'));
   assert.equal(reachable.size, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Review fixes (docs/plans/parser-review-fixes.md)
+// ---------------------------------------------------------------------------
+
+function makeConditional(thenActions = [], elseActions = []) {
+  return { type: 'ConditionalAction', condition: 'X > 0', thenActions, elseActions };
+}
+
+// F8: choices nested inside ConditionalAction branches must be visible.
+test('findFunctionReferences: finds Choice targets nested in conditional branches', () => {
+  const model = makeModel({
+    functions: {
+      DIA_Npc_Info: makeFunc('DIA_Npc_Info', {
+        actions: [makeConditional([makeChoice('DIA_Npc', 'DIA_Npc_Target')], [])]
+      })
+    }
+  });
+
+  const refs = findFunctionReferences(model, 'DIA_Npc_Target');
+  assert.equal(refs.length, 1);
+  assert.equal(refs[0].sourceKind, 'choice-target');
+  assert.equal(refs[0].functionName, 'DIA_Npc_Info');
+  assert.equal(refs[0].actionIndex, 0, 'actionIndex should point at the top-level containing action');
+});
+
+test('collectReachableFunctions: follows Choice targets nested in conditional branches', () => {
+  const model = makeModel({
+    functions: {
+      DIA_Npc_Info: makeFunc('DIA_Npc_Info', {
+        actions: [makeConditional([], [makeChoice('DIA_Npc', 'DIA_Npc_Deep')])]
+      }),
+      DIA_Npc_Deep: makeFunc('DIA_Npc_Deep')
+    }
+  });
+
+  const reachable = collectReachableFunctions(model, 'DIA_Npc_Info');
+  assert.ok(reachable.has('DIA_Npc_Deep'), 'nested choice target should be reachable');
+});
+
+// F3: dialog property lookups must be case-insensitive.
+test('findFunctionReferences: matches capitalized Information/Condition property keys', () => {
+  const dialog = makeDialog('DIA_Caps');
+  dialog.properties = { npc: 'Test_Npc', Information: 'DIA_Caps_Info', Condition: 'DIA_Caps_Cond' };
+  const model = makeModel({ dialogs: { DIA_Caps: dialog } });
+
+  const infoRefs = findFunctionReferences(model, 'DIA_Caps_Info');
+  assert.equal(infoRefs.length, 1);
+  assert.equal(infoRefs[0].sourceKind, 'dialog-info');
+
+  const condRefs = findFunctionReferences(model, 'DIA_Caps_Cond');
+  assert.equal(condRefs.length, 1);
+  assert.equal(condRefs[0].sourceKind, 'dialog-condition');
+});
