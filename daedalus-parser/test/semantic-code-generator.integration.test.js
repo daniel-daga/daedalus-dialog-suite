@@ -730,3 +730,218 @@ func void DIA_Second_Info()
   assert.ok(secondIdx < secondCondIdx, 'Second instance before its condition');
   assert.ok(secondCondIdx < secondInfoIdx, 'Second condition before its info');
 });
+
+// ===================================================================
+// LOCAL VARIABLE DECLARATIONS (review finding F4)
+// ===================================================================
+
+test('Local var declarations in function bodies are preserved on roundtrip', () => {
+  const sourceCode = `
+func void DIA_Local_Helper()
+{
+	var int x;
+	x = 5;
+	AI_StopProcessInfos(self);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const func = visitor.semanticModel.functions.DIA_Local_Helper;
+  assert.ok(func, 'Function should be in the model');
+  assert.equal(func.actions.length, 3, 'Declaration, assignment and call should each be one action');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(generatedCode.includes('var int x;'), `Generated code should keep the local declaration. Got:\n${generatedCode}`);
+  assert.ok(generatedCode.includes('x = 5;'), 'Generated code should keep the assignment');
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+});
+
+test('Local var declaration with initializer does not create spurious actions', () => {
+  const sourceCode = `
+func void DIA_Local_Init()
+{
+	var int x = Hlp_GetInstanceID(self);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const func = visitor.semanticModel.functions.DIA_Local_Init;
+  assert.ok(func, 'Function should be in the model');
+  assert.equal(func.actions.length, 1, 'Initializer call must not become a separate action');
+  assert.equal(func.actions[0].constructor.name, 'Action', 'Declaration should be preserved as raw Action');
+  assert.equal(func.actions[0].action, 'var int x = Hlp_GetInstanceID(self);');
+});
+
+test('Local var declaration inside an if block is preserved on roundtrip', () => {
+  const sourceCode = `
+func void DIA_Local_Nested()
+{
+	if (Kapitel == 2)
+	{
+		var int x;
+		B_GivePlayerXP(100);
+	};
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const func = visitor.semanticModel.functions.DIA_Local_Nested;
+  assert.ok(func, 'Function should be in the model');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(generatedCode.includes('var int x;'), `Generated code should keep the nested local declaration. Got:\n${generatedCode}`);
+  assert.match(generatedCode, /B_GivePlayerXP\s*\(100\)/, 'Generated code should keep the sibling call');
+});
+
+// ===================================================================
+// FUNCTION PARAMETERS (review finding F5)
+// ===================================================================
+
+test('Function parameters are modeled and preserved on roundtrip', () => {
+  const sourceCode = `
+func void B_Say(var C_NPC slf, var string msg)
+{
+	AI_StopProcessInfos(self);
+};
+
+func int CalcDamage(VAR INT base)
+{
+	return TRUE;
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const bSay = visitor.semanticModel.functions.B_Say;
+  assert.ok(bSay, 'B_Say should be in the model');
+  assert.deepEqual(bSay.parameters, [
+    { keyword: 'var', type: 'C_NPC', name: 'slf' },
+    { keyword: 'var', type: 'string', name: 'msg' }
+  ], 'Parameters should be modeled with source casing');
+
+  const calcDamage = visitor.semanticModel.functions.CalcDamage;
+  assert.ok(calcDamage, 'CalcDamage should be in the model');
+  assert.deepEqual(calcDamage.parameters, [
+    { keyword: 'VAR', type: 'INT', name: 'base' }
+  ], 'Uppercase keyword and type casing should be preserved');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('func void B_Say(var C_NPC slf, var string msg)'),
+    `Generated code should keep the parameter list. Got:\n${generatedCode}`
+  );
+  assert.ok(
+    generatedCode.includes('func int CalcDamage(VAR INT base)'),
+    'Generated code should keep parameter casing'
+  );
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+});
+
+// ===================================================================
+// GLOBAL DECLARATIONS IN CODEGEN (review finding F6)
+// ===================================================================
+
+test('Globals are emitted in declaration order on roundtrip', () => {
+  const sourceCode = `const string TOPIC_TestQuest = "Test Quest";
+const int TOPIC_END = 2;
+
+func void StartQuest()
+{
+	Log_CreateTopic(TOPIC_TestQuest, LOG_MISSION);
+};
+
+var int MIS_TestQuest;
+
+instance ItWr_TestNote(C_Item)
+{
+	name = "Note";
+	mainflag = ITEM_KAT_DOCS;
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('const string TOPIC_TestQuest = "Test Quest";'),
+    `Constant should be emitted verbatim. Got:\n${generatedCode}`
+  );
+  assert.ok(generatedCode.includes('var int MIS_TestQuest;'), 'Variable should be emitted');
+  assert.ok(generatedCode.includes('mainflag = ITEM_KAT_DOCS;'), 'Instance body should be emitted verbatim');
+
+  const topicIdx = generatedCode.indexOf('const string TOPIC_TestQuest');
+  const endIdx = generatedCode.indexOf('const int TOPIC_END');
+  const funcIdx = generatedCode.indexOf('func void StartQuest()');
+  const varIdx = generatedCode.indexOf('var int MIS_TestQuest;');
+  const instIdx = generatedCode.indexOf('instance ItWr_TestNote(C_Item)');
+
+  assert.ok(topicIdx >= 0 && topicIdx < endIdx, 'First constant before second');
+  assert.ok(endIdx < funcIdx, 'Constants before the function');
+  assert.ok(funcIdx < varIdx, 'Variable stays after the function');
+  assert.ok(varIdx < instIdx, 'Instance stays last');
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+
+  const visitor2 = new SemanticModelBuilderVisitor();
+  visitor2.pass1_createObjects(reparsed.rootNode);
+  visitor2.pass2_analyzeAndLink(reparsed.rootNode);
+  assert.equal(Object.keys(visitor2.semanticModel.constants).length, 2, 'Constants survive reparse');
+  assert.equal(Object.keys(visitor2.semanticModel.variables).length, 1, 'Variable survives reparse');
+  assert.equal(Object.keys(visitor2.semanticModel.instances).length, 1, 'Instance survives reparse');
+});
+
+test('Const arrays and leading comments roundtrip via source text', () => {
+  const sourceCode = `// Spell name table
+const string TXT_Spells[2] =
+{
+	"Light",
+	"Firebolt"
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const generator = new SemanticCodeGenerator({ sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(generatedCode.includes('// Spell name table'), `Leading comment should be preserved. Got:\n${generatedCode}`);
+  assert.ok(generatedCode.includes('const string TXT_Spells[2] ='), 'Array declaration head should be preserved');
+  assert.ok(generatedCode.includes('"Firebolt"'), 'Array initializer should be preserved');
+
+  const reparsed = parser.parse(generatedCode);
+  assert.equal(reparsed.rootNode.hasError, false, 'Generated code should parse cleanly');
+});

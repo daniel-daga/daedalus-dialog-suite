@@ -343,6 +343,10 @@
         {
           "type": "return_statement",
           "named": true
+        },
+        {
+          "type": "variable_declaration",
+          "named": true
         }
       ]
     }

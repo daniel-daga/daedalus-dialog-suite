@@ -225,3 +225,52 @@ test('deserializeSemanticModel should handle global constants and variables', ()
   assert.equal(model.variables['MIS_Test'].name, 'MIS_Test');
   assert.equal(model.variables['MIS_Test'].type, 'int');
 });
+
+test('deserializeSemanticModel should preserve function parameters', () => {
+  const plainJson = {
+    functions: {
+      B_Say: {
+        name: 'B_Say',
+        returnType: 'void',
+        parameters: [
+          { keyword: 'var', type: 'C_NPC', name: 'slf' },
+          { keyword: 'var', type: 'string', name: 'msg' }
+        ],
+        actions: [],
+        conditions: [],
+        calls: []
+      }
+    },
+    dialogs: {}
+  };
+
+  const model = deserializeSemanticModel(JSON.parse(JSON.stringify(plainJson)));
+  const func = model.functions.B_Say;
+  assert.ok(func instanceof DialogFunction, 'Should reconstruct DialogFunction');
+  assert.deepEqual(func.parameters, [
+    { keyword: 'var', type: 'C_NPC', name: 'slf' },
+    { keyword: 'var', type: 'string', name: 'msg' }
+  ], 'Parameters should survive serialization roundtrip');
+});
+
+test('deserializeSemanticModel should preserve global order entries and source text', () => {
+  const plainJson = {
+    functions: {},
+    dialogs: {},
+    declarationOrder: [
+      { type: 'constant', name: 'MAX_GOLD' },
+      { type: 'instance', name: 'ItFo_Apple' }
+    ],
+    constants: {
+      MAX_GOLD: { name: 'MAX_GOLD', type: 'int', value: 1000, sourceText: 'const int MAX_GOLD = 1000;' }
+    },
+    instances: {
+      ItFo_Apple: { name: 'ItFo_Apple', parent: 'C_Item', sourceText: 'instance ItFo_Apple(C_Item)\n{\n\tname = "Apple";\n};' }
+    }
+  };
+
+  const model = deserializeSemanticModel(JSON.parse(JSON.stringify(plainJson)));
+  assert.deepEqual(model.declarationOrder, plainJson.declarationOrder, 'Order entries should pass through');
+  assert.equal(model.constants.MAX_GOLD.sourceText, 'const int MAX_GOLD = 1000;');
+  assert.ok(model.instances.ItFo_Apple.sourceText.includes('name = "Apple";'));
+});

@@ -3,6 +3,7 @@ import {
   TreeCursor,
   Dialog,
   DialogFunction,
+  FunctionParameter,
   SemanticModel,
   GlobalConstant,
   GlobalVariable,
@@ -67,6 +68,10 @@ export class DeclarationVisitor {
           func.keyword = keywordNode.text;
         }
         func.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
+        const parameters = this.extractFunctionParameters(node);
+        if (parameters.length > 0) {
+          func.parameters = parameters;
+        }
         func.leadingComments = [...this.pendingLeadingComments];
         this.semanticModel.functions[func.name] = func;
         this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
@@ -93,6 +98,8 @@ export class DeclarationVisitor {
           this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
         } else {
           const instance = new GlobalInstance(nameNode.text, parentType);
+          instance.sourceText = node.text;
+          instance.leadingComments = [...this.pendingLeadingComments];
           instance.position = {
             startLine: node.startPosition.row + 1,
             startColumn: node.startPosition.column + 1,
@@ -108,6 +115,7 @@ export class DeclarationVisitor {
             this.semanticModel.instances = {};
           }
           this.semanticModel.instances[instance.name] = instance;
+          this.semanticModel.declarationOrder?.push({ type: 'instance', name: instance.name });
 
           const upperParent = parentType.toUpperCase();
           if (upperParent === 'C_ITEM' || upperParent === 'C_NPC') {
@@ -152,6 +160,34 @@ export class DeclarationVisitor {
 
     // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
     // so we don't need to recurse.
+  }
+
+  private extractFunctionParameters(functionNode: TreeSitterNode): FunctionParameter[] {
+    const parametersNode = functionNode.childForFieldName('parameters');
+    if (!parametersNode) {
+      return [];
+    }
+
+    const parameters: FunctionParameter[] = [];
+    for (const child of parametersNode.namedChildren) {
+      if (child.type !== 'parameter') {
+        continue;
+      }
+      const typeNode = child.childForFieldName('type');
+      const nameNode = child.childForFieldName('name');
+      if (!typeNode || !nameNode) {
+        continue;
+      }
+      const parameter: FunctionParameter = { type: typeNode.text, name: nameNode.text };
+      // The var/const keyword token is not exposed as a child node; recover it
+      // from the text preceding the type within the parameter span.
+      const keyword = child.text.slice(0, typeNode.startIndex - child.startIndex).trim();
+      if (keyword) {
+        parameter.keyword = keyword;
+      }
+      parameters.push(parameter);
+    }
+    return parameters;
   }
 
   private extractInstanceDisplayName(instanceNode: TreeSitterNode): string | undefined {
@@ -219,6 +255,8 @@ export class DeclarationVisitor {
       }
 
       const constant = new GlobalConstant(name, type, value);
+      constant.sourceText = node.text;
+      constant.leadingComments = [...this.pendingLeadingComments];
       constant.position = {
         startLine: node.startPosition.row + 1,
         startColumn: node.startPosition.column + 1,
@@ -234,9 +272,12 @@ export class DeclarationVisitor {
         this.semanticModel.constants = {};
       }
       this.semanticModel.constants[name] = constant;
+      this.semanticModel.declarationOrder?.push({ type: 'constant', name });
 
     } else if (keyword === 'var') {
       const variable = new GlobalVariable(name, type);
+      variable.sourceText = node.text;
+      variable.leadingComments = [...this.pendingLeadingComments];
       variable.position = {
         startLine: node.startPosition.row + 1,
         startColumn: node.startPosition.column + 1,
@@ -252,6 +293,7 @@ export class DeclarationVisitor {
         this.semanticModel.variables = {};
       }
       this.semanticModel.variables[name] = variable;
+      this.semanticModel.declarationOrder?.push({ type: 'variable', name });
     }
   }
 }

@@ -163,6 +163,7 @@ Represents a function declaration.
 class DialogFunction {
   name: string;              // Function name
   returnType: string;        // Return type (int, void, etc.)
+  parameters?: FunctionParameter[]; // Declared parameters ({ keyword?, type, name }), if any
   calls: string[];           // List of function calls made
   actions: DialogAction[];   // Semantic actions extracted
 }

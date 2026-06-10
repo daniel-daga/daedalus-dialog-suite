@@ -126,3 +126,37 @@ test('should parse non-dialog instances into semantic model instances', () => {
   assert.equal(model.animations['HUMANS_MDS'].parent, 'C_MDS');
   assert.equal(model.animations['SLD_200_DIEGO'], undefined, 'Non-animation instances should not be in animations map');
 });
+
+test('globals are recorded in declarationOrder with their source text', () => {
+  const source = `const int MAX_GOLD = 1000;
+var int MIS_Test;
+
+func void TestFunc()
+{
+	AI_StopProcessInfos(self);
+};
+
+instance ItFo_TestApple(C_Item)
+{
+	name = "Apple";
+	value = 5;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.deepEqual(model.declarationOrder, [
+    { type: 'constant', name: 'MAX_GOLD' },
+    { type: 'variable', name: 'MIS_Test' },
+    { type: 'function', name: 'TestFunc' },
+    { type: 'instance', name: 'ItFo_TestApple' }
+  ], 'Order should include globals interleaved with functions');
+
+  assert.equal(model.constants.MAX_GOLD.sourceText, 'const int MAX_GOLD = 1000;');
+  assert.equal(model.variables.MIS_Test.sourceText, 'var int MIS_Test;');
+  assert.ok(
+    model.instances.ItFo_TestApple.sourceText.includes('name = "Apple";'),
+    'Instance source text should include its body'
+  );
+});

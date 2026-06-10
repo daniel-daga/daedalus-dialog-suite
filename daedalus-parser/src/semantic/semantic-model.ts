@@ -134,6 +134,9 @@ export class GlobalConstant {
   public name: string;
   public type: string;
   public value: string | number | boolean;
+  /** Verbatim declaration text, used for faithful re-emission (arrays etc.). */
+  public sourceText?: string;
+  public leadingComments?: string[];
   public filePath?: string;
   public position?: {
     startLine: number;
@@ -156,6 +159,9 @@ export class GlobalConstant {
 export class GlobalVariable {
   public name: string;
   public type: string;
+  /** Verbatim declaration text, used for faithful re-emission. */
+  public sourceText?: string;
+  public leadingComments?: string[];
   public filePath?: string;
   public position?: {
     startLine: number;
@@ -179,6 +185,9 @@ export class GlobalInstance {
   public parent: string;
   public displayName?: string;
   public dailyRoutine?: string;
+  /** Verbatim declaration text (including body), used for faithful re-emission. */
+  public sourceText?: string;
+  public leadingComments?: string[];
   public filePath?: string;
   public position?: {
     startLine: number;
@@ -659,6 +668,13 @@ export function deserializeCondition(json: any): DialogCondition {
 // DIALOG FUNCTION CLASS
 // ===================================================================
 
+export interface FunctionParameter {
+  /** Parameter keyword as written in source (`var`/`const`), if present. */
+  keyword?: string;
+  type: string;
+  name: string;
+}
+
 export class DialogFunction {
   public name: string;
   public returnType: string;
@@ -666,6 +682,7 @@ export class DialogFunction {
   public spaceBeforeParen?: boolean;
   public leadingComments?: string[];
   public hasExplicitBodyContent?: boolean;
+  public parameters?: FunctionParameter[];
   public calls: string[];
 
   @Type(() => Object, {
@@ -795,7 +812,7 @@ export interface SyntaxError {
 export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
-  declarationOrder?: Array<{ type: 'dialog' | 'function'; name: string }>;
+  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance'; name: string }>;
   constants?: { [key: string]: GlobalConstant };
   variables?: { [key: string]: GlobalVariable };
   instances?: { [key: string]: GlobalInstance };

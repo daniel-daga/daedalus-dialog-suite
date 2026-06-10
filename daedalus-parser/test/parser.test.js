@@ -447,4 +447,31 @@ Prototype SpecialWeapon(BasicItem)
     const result = parser.parse(source);
     assert.equal(result.hasErrors, false, 'Should parse comparison binary expressions without errors');
   });
+
+  test('should parse local variable declarations as variable_declaration nodes', () => {
+    const source = `func void TestLocals()
+{
+    var int x;
+    x = 5;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse without errors');
+
+    const declarations = [];
+
+    function traverse(node) {
+      if (node.type === 'variable_declaration') {
+        declarations.push(node);
+      }
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+
+    traverse(result.rootNode);
+
+    assert.equal(declarations.length, 1, 'Local var declaration should parse as variable_declaration');
+    assert.equal(declarations[0].childForFieldName('name').text, 'x');
+  });
 });

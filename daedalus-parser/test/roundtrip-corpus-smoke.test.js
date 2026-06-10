@@ -47,6 +47,30 @@ func void DIA_Test_Smoke_Next()
 
   fs.writeFileSync(fixtureFile, fixtureSource, 'utf8');
 
+  // Second fixture covers the F4-F6 roundtrip scope: globals, function
+  // parameters and local variable declarations.
+  const scopeFixtureFile = path.join(corpusDir, 'DIA_Test_Scope.d');
+  const scopeFixtureSource = `// Quest bookkeeping
+const string TOPIC_SmokeQuest = "Smoke Quest";
+const int LOG_SMOKE_RUNNING = 1;
+var int MIS_SmokeQuest;
+
+func void B_Smoke_GiveReward(var C_NPC slf, var int amount)
+{
+\tvar int reward;
+\treward = amount;
+\tCreateInvItems(slf, ItMi_Gold, reward);
+};
+
+instance ItWr_SmokeNote(C_Item)
+{
+\tname\t\t= "Note";
+\tmainflag\t= ITEM_KAT_DOCS;
+\tvalue\t\t= 0;
+};
+`;
+  fs.writeFileSync(scopeFixtureFile, scopeFixtureSource, 'utf8');
+
   const scriptPath = path.resolve(__dirname, '..', 'scripts', 'roundtrip-corpus.js');
   execFileSync(process.execPath, [
     scriptPath,
@@ -58,7 +82,7 @@ func void DIA_Test_Smoke_Next()
 
   const summaryPath = path.join(reportDir, 'smoke-roundtrip-corpus-summary.json');
   const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-  assert.equal(summary.scanned, 1, 'Should scan exactly one fixture file');
+  assert.equal(summary.scanned, 2, 'Should scan both fixture files');
   assert.equal(summary.driftFiles, 0, 'Fixture should not produce structural drift');
   assert.equal(summary.generatedSyntaxErrors, 0, 'Generated code should parse cleanly');
   assert.equal(summary.choiceTargetIncreases, 0, 'Should not create new missing choice targets');
