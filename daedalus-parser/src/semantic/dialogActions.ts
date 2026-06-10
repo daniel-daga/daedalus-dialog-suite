@@ -57,8 +57,8 @@ export class Choice implements CodeGeneratable {
     if (this.textIsExpression) {
       return `Info_AddChoice (${this.dialogRef}, ${this.text}, ${this.targetFunction});`;
     }
-    const escaped = this.text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `Info_AddChoice (${this.dialogRef}, "${escaped}", ${this.targetFunction});`;
+    // Daedalus strings have no escape sequences: emit content verbatim.
+    return `Info_AddChoice (${this.dialogRef}, "${this.text}", ${this.targetFunction});`;
   }
 
   toDisplayString(): string {
