@@ -42,6 +42,10 @@ Tasks:
 Done criteria:
 - `npm run lint` passes without suppressing meaningful source checks.
 
+Status: complete, including the TS extension from review fix F14 — `src/**/*.ts` is
+linted via typescript-eslint (recommended, non-type-checked; `no-explicit-any` off
+pending typed serialization paths).
+
 ### Phase 3: CLI Script Reliability (P2)
 
 Goal: Remove fragile runtime dependency on network-installed tools.

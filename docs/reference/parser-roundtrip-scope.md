@@ -16,6 +16,24 @@ Established with review fixes F4–F6 (see git history of `docs/plans/parser-rev
 | Unsupported statements | Preserved textually as raw `Action` entries | Verbatim |
 | `class` / `prototype` declarations | **Not modeled, not emitted** — out of scope | Lost on regeneration |
 
+## String semantics
+
+Daedalus has **no string escape sequences** (ZenGin treats everything between the outer
+quotes as raw text; an embedded `"` cannot be represented). The pipeline therefore never
+escapes or unescapes string content: parsing strips only the outer quotes
+(`normalizeArgumentText`), and codegen emits the stored text verbatim inside quotes.
+Strings containing backslashes roundtrip byte-identically (review fix F9).
+
+The impossibility of embedded quotes is enforced at the editor boundary: the editor's
+`ValidationService` rejects models whose quoted-string fields (choice text, log-entry
+text) contain `"` before any code is generated or saved.
+
+## Error positions
+
+Both error reporters — `DaedalusParser.validate()`/`parse()` and the semantic
+`ErrorVisitor` — emit **1-based** `position.row`/`position.column` (review fix F11),
+matching the human-readable message text and Monaco's marker coordinates.
+
 ## Ordering
 
 `SemanticModel.declarationOrder` records every top-level declaration as

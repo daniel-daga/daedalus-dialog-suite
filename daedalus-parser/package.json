@@ -12,8 +12,8 @@
     "parse": "node bin/daedalus-parse.js",
     "semantic": "ts-node bin/semantic-visitor-cli.ts",
     "format": "ts-node bin/semantic-code-generator-cli.ts",
-    "lint": "eslint grammar.js src/**/*.js test/**/*.js bin/daedalus-parse.js --max-warnings 0",
-    "lint:fix": "eslint src/**/*.js test/**/*.js bin/daedalus-parse.js --fix",
+    "lint": "eslint grammar.js \"src/**/*.js\" \"src/**/*.ts\" \"test/**/*.js\" bin/daedalus-parse.js --max-warnings 0",
+    "lint:fix": "eslint \"src/**/*.js\" \"src/**/*.ts\" \"test/**/*.js\" bin/daedalus-parse.js --fix",
     "typecheck": "tsc --noEmit",
     "install": "node-gyp-build",
     "postinstall": "npm run build && npm run build:ts",
@@ -102,8 +102,9 @@
     "node-addon-api": "^8.5.0",
     "prebuildify": "^6.0.0",
     "tree-sitter-cli": "^0.25.10",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.2",
-    "ts-node": "^10.9.2"
+    "typescript-eslint": "^8.61.0"
   },
   "tree-sitter": [
     {

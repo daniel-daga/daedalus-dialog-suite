@@ -10,7 +10,8 @@ export type ValidationErrorType =
   | 'duplicate_dialog'
   | 'missing_function'
   | 'missing_required_property'
-  | 'circular_dependency';
+  | 'circular_dependency'
+  | 'invalid_string_content';
 
 /**
  * A single validation error
@@ -86,6 +87,17 @@ const ACTION_DISPLAY_NAMES: Readonly<Partial<Record<string, string>>> = {
   GiveTradeInventoryAction: 'Give Trade Inventory',
   RemoveInventoryItemsAction: 'Remove Inventory Items',
   InsertNpcAction:          'Insert NPC',
+};
+
+/**
+ * Action fields that are emitted as quoted string content. Daedalus has no
+ * escape sequences, so an embedded double quote cannot be represented and
+ * would corrupt the generated code. Returns the text to check, or undefined
+ * when the field is not emitted as a string literal.
+ */
+const QUOTED_STRING_FIELDS: Readonly<Partial<Record<string, (action: any) => string | undefined>>> = {
+  Choice:   (a) => (a.textIsExpression ? undefined : a.text),
+  LogEntry: (a) => a.text,
 };
 
 /**
@@ -190,6 +202,10 @@ export class ValidationService {
     // Step 7: Comprehensive action validation
     const actionErrors = this.validateActions(semanticModel);
     errors.push(...actionErrors);
+
+    // Step 8: Quoted string content validation
+    const stringErrors = this.validateStringContent(semanticModel);
+    errors.push(...stringErrors);
 
     return {
       isValid: errors.length === 0,
@@ -417,6 +433,35 @@ export class ValidationService {
     }
 
     return this.resolveFunctionName(infoFuncName, functionNames, functionNameMap) !== null;
+  }
+
+  /**
+   * Reject double quotes in fields emitted as Daedalus string literals.
+   * Daedalus strings have no escape sequences, so embedded quotes cannot
+   * be represented in generated code.
+   */
+  private validateStringContent(model: any): ValidationError[] {
+    const errors: ValidationError[] = [];
+
+    for (const funcName in model.functions) {
+      const func = model.functions[funcName];
+      const actions = func.actions || [];
+
+      actions.forEach((action: any, index: number) => {
+        const getText = QUOTED_STRING_FIELDS[action.type];
+        const text = getText?.(action);
+        if (typeof text === 'string' && text.includes('"')) {
+          const displayName = ACTION_DISPLAY_NAMES[action.type] ?? action.type;
+          errors.push({
+            type: 'invalid_string_content',
+            message: `${displayName} action ${index + 1} in function '${funcName}' contains a double quote (") — Daedalus strings cannot contain quotes`,
+            functionName: funcName
+          });
+        }
+      });
+    }
+
+    return errors;
   }
 
   /**

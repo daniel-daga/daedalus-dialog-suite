@@ -86,6 +86,30 @@ func void InitHero()
     assert.ok(invalidResult.errors.length > 0, 'Should report errors for invalid syntax');
   });
 
+  test('validate() reports 1-based error positions matching the message', () => {
+    // Error sits on line 3 (1-based): stray token after valid declarations.
+    const source = `instance Good (Base)
+{
+}; !!!`;
+
+    const result = parser.validate(source);
+
+    assert.equal(result.isValid, false, 'Source should fail validation');
+    assert.ok(result.errors.length > 0, 'Should report errors');
+
+    for (const error of result.errors) {
+      const match = error.message.match(/line (\d+), column (\d+)/);
+      assert.ok(match, `Message should state a position: ${error.message}`);
+      assert.equal(error.position.row, Number(match[1]),
+        'position.row must be 1-based, matching the message');
+      assert.equal(error.position.column, Number(match[2]),
+        'position.column must be 1-based, matching the message');
+    }
+
+    const [first] = result.errors;
+    assert.equal(first.position.row, 3, 'Error is on line 3 (1-based)');
+  });
+
   test('should parse example files', () => {
     const exampleFiles = [
       'examples/DEV_2130_Szmyk.d',

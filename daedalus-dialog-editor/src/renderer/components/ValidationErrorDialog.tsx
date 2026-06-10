@@ -34,7 +34,8 @@ const getErrorTypeLabel = (type: string): string => {
     duplicate_dialog: 'Duplicate Dialog',
     missing_function: 'Missing Function',
     missing_required_property: 'Missing Property',
-    circular_dependency: 'Circular Dependency'
+    circular_dependency: 'Circular Dependency',
+    invalid_string_content: 'Invalid Text'
   };
   return labels[type] || type;
 };
@@ -45,7 +46,8 @@ const getErrorTypeColor = (type: string): 'error' | 'warning' | 'info' => {
     duplicate_dialog: 'error',
     missing_function: 'warning',
     missing_required_property: 'warning',
-    circular_dependency: 'error'
+    circular_dependency: 'error',
+    invalid_string_content: 'error'
   };
   return colors[type] || 'error';
 };
@@ -107,7 +109,7 @@ const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
                     }
                     secondary={
                       error.position
-                        ? `Line ${error.position.row + 1}, Column ${error.position.column + 1}`
+                        ? `Line ${error.position.row}, Column ${error.position.column}`
                         : error.dialogName
                           ? `Dialog: ${error.dialogName}`
                           : error.functionName

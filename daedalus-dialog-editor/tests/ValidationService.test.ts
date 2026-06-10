@@ -892,4 +892,87 @@ describe('ValidationService', () => {
       );
     });
   });
+
+  describe('String Content Validation (Daedalus has no escape sequences)', () => {
+    const modelWithAction = (action: any) => ({
+      dialogs: {},
+      functions: {
+        DIA_Test_Info: {
+          name: 'DIA_Test_Info',
+          returnType: 'VOID',
+          actions: [action],
+          conditions: [],
+          calls: []
+        }
+      },
+      hasErrors: false,
+      errors: []
+    });
+
+    test('should reject choice text containing a double quote', async () => {
+      const model = modelWithAction({
+        type: 'Choice',
+        dialogRef: 'DIA_Test',
+        text: 'Say "hello" to him',
+        targetFunction: 'DIA_Test_Info'
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'invalid_string_content',
+          functionName: 'DIA_Test_Info',
+          message: expect.stringContaining('quote')
+        })
+      );
+    });
+
+    test('should reject log entry text containing a double quote', async () => {
+      const model = modelWithAction({
+        type: 'LogEntry',
+        topic: 'TOPIC_Test',
+        text: 'He said "no"'
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({ type: 'invalid_string_content' })
+      );
+    });
+
+    test('should allow quotes in expression-valued choice text', async () => {
+      const model = modelWithAction({
+        type: 'Choice',
+        dialogRef: 'DIA_Test',
+        text: 'B_BuildLearnString("Schmieden lernen", 10)',
+        textIsExpression: true,
+        targetFunction: 'DIA_Test_Info'
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.errors).not.toContainEqual(
+        expect.objectContaining({ type: 'invalid_string_content' })
+      );
+    });
+
+    test('should allow backslashes and plain text', async () => {
+      const model = modelWithAction({
+        type: 'Choice',
+        dialogRef: 'DIA_Test',
+        text: 'Pfad C:\\test (50% \\ mehr)',
+        targetFunction: 'DIA_Test_Info'
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.errors).not.toContainEqual(
+        expect.objectContaining({ type: 'invalid_string_content' })
+      );
+    });
+  });
 });

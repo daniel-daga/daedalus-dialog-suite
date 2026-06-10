@@ -269,6 +269,50 @@ func void DIA_Test_Choice_Info()
   assert.ok(!reparsed.rootNode.hasError, 'Generated code should parse without syntax errors');
 });
 
+test('Choice text roundtrips verbatim — Daedalus strings have no escape sequences', () => {
+  const sourceCode = `
+instance DIA_Test_Raw(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_Raw_Condition;
+\tinformation\t= DIA_Test_Raw_Info;
+\tdescription\t= "Choice";
+};
+
+func int DIA_Test_Raw_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_Raw_Info()
+{
+\tInfo_AddChoice(DIA_Test_Raw, "Pfad C:\\test (50% \\ mehr)", DIA_Test_Raw_Next);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const dialog = visitor.semanticModel.dialogs.DIA_Test_Raw;
+  const choice = dialog.actions.find((a) => a.constructor.name === 'Choice');
+  assert.ok(choice, 'Choice should be in the model');
+  assert.equal(choice.text, 'Pfad C:\\test (50% \\ mehr)', 'Model text is the raw string content');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  assert.ok(
+    generatedCode.includes('Info_AddChoice (DIA_Test_Raw, "Pfad C:\\test (50% \\ mehr)", DIA_Test_Raw_Next);'),
+    `Backslashes must not be escaped on emit. Got:\n${generatedCode}`
+  );
+
+  const reparsed = parser.parse(generatedCode);
+  assert.ok(!reparsed.rootNode.hasError, 'Generated code should parse without syntax errors');
+});
+
 test('SemanticCodeGenerator should preserve expression-valued dialog properties', () => {
   const sourceCode = `
 instance DIA_Test_PropertyExpr(C_INFO)
