@@ -49,9 +49,12 @@ roundtrip scope boundary is documented in `../reference/parser-roundtrip-scope.m
 
 ## Notes on deferred items
 
-- **F9** — decide whether Daedalus string escapes exist for this toolchain (engine
-  semantics say no). Then make parse/emit symmetric and validate at the editor boundary.
-- **F11** — pick one convention (1-based matches `ErrorVisitor` and editor display),
-  change `parser.js`, `index.d.ts`, and `ValidationService` together.
-- **F14** — fold into stabilization plan Phase 2: add typescript-eslint, lint `src/**/*.ts`
-  and `grammar.js` (grammar.js now linted as of F13).
+Scope decisions for F9/F11/F14 are resolved; the implementation plan is
+`parser-review-fixes-deferred.md` (same directory).
+
+- **F9** — decided: Daedalus has no string escape sequences. Never escape/unescape;
+  validate embedded quotes at the editor boundary.
+- **F11** — decided: 1-based rows/columns everywhere. Change `parser.js`, `index.d.ts`,
+  and the editor consumers together.
+- **F14** — folded out of stabilization plan Phase 2: add typescript-eslint, lint
+  `src/**/*.ts` (grammar.js already linted as of F13).
