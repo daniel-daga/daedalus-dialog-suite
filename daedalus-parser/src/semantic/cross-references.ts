@@ -6,6 +6,7 @@
  */
 
 import type { SemanticModel } from './semantic-model';
+import { getDialogProperty } from './semantic-model';
 
 export interface DialogReference {
   /** The function name that contains the reference */
@@ -59,15 +60,15 @@ export function findFunctionReferences(
 ): FunctionReference[] {
   const refs: FunctionReference[] = [];
 
-  // Check dialog property references
+  // Check dialog property references (property names are case-insensitive in Daedalus)
   for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
-    const info = dialog.properties?.information;
+    const info = getDialogProperty(dialog.properties, 'information');
     const infoName = typeof info === 'string' ? info : (info as any)?.name;
     if (infoName === functionName) {
       refs.push({ sourceKind: 'dialog-info', dialogName });
     }
 
-    const cond = dialog.properties?.condition;
+    const cond = getDialogProperty(dialog.properties, 'condition');
     const condName = typeof cond === 'string' ? cond : (cond as any)?.name;
     if (condName === functionName) {
       refs.push({ sourceKind: 'dialog-condition', dialogName });

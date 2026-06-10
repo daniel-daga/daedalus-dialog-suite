@@ -7,7 +7,8 @@ import {
   DialogFunction,
   DialogAction,
   DialogCondition,
-  CodeGeneratable
+  CodeGeneratable,
+  getDialogProperty
 } from '../semantic/semantic-model';
 import { Choice } from '../semantic/dialogActions';
 
@@ -247,14 +248,16 @@ export class SemanticCodeGenerator {
     const funcs: DialogFunction[] = [];
     const seen = new Set<string>();
 
-    if (dialog.properties.condition instanceof DialogFunction) {
-      funcs.push(dialog.properties.condition);
-      seen.add(dialog.properties.condition.name);
+    const condProp = getDialogProperty(dialog.properties, 'condition');
+    if (condProp instanceof DialogFunction) {
+      funcs.push(condProp);
+      seen.add(condProp.name);
     }
 
     let infoFunc: DialogFunction | undefined;
-    if (dialog.properties.information instanceof DialogFunction) {
-      infoFunc = dialog.properties.information;
+    const infoProp = getDialogProperty(dialog.properties, 'information');
+    if (infoProp instanceof DialogFunction) {
+      infoFunc = infoProp;
       funcs.push(infoFunc);
       seen.add(infoFunc.name);
     }

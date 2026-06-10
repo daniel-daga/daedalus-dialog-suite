@@ -7,12 +7,14 @@ import {
   SetVariableAction,
   Action,
   DialogAction,
-  ConditionalAction
+  ConditionalAction,
+  getDialogProperty
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
 import {
   getBinaryOperator,
+  getAssignmentOperator,
   isComparisonOperator,
   isLogicalOperator,
   isConditionModeBlockingStatement,
@@ -52,6 +54,10 @@ export class LinkingVisitor {
     const currentNode = cursor.currentNode;
 
     if (currentNode.type === 'program' || currentNode.type === 'source_file') {
+      // Pre-scan instance bodies for condition-function assignments so condition
+      // functions are recognized regardless of declaration order (a function
+      // declared before its instance must still be analyzed in condition mode).
+      this.collectConditionFunctionNames(currentNode);
       if (cursor.gotoFirstChild()) {
         do {
           const child = cursor.currentNode;
@@ -65,6 +71,23 @@ export class LinkingVisitor {
     }
 
     this.analyzeNodeRecursively(cursor);
+  }
+
+  private collectConditionFunctionNames(root: TreeSitterNode): void {
+    for (const child of root.namedChildren) {
+      if (child.type !== 'instance_declaration') continue;
+      const body = child.childForFieldName('body');
+      if (!body) continue;
+      for (const stmt of body.namedChildren) {
+        if (stmt.type !== 'assignment_statement') continue;
+        const left = stmt.childForFieldName('left');
+        const right = stmt.childForFieldName('right');
+        if (!left || !right || right.type !== 'identifier') continue;
+        if (left.text.toLowerCase() !== 'condition') continue;
+        const originalName = this.functionNameMap.get(right.text.toLowerCase());
+        this.conditionFunctions.add(originalName || right.text);
+      }
+    }
   }
 
   private analyzeNodeRecursively(cursor: TreeCursor): void {
@@ -305,6 +328,8 @@ export class LinkingVisitor {
 
     if (leftNode && rightNode && this.currentInstance) {
       const propertyName = leftNode.text;
+      // Daedalus identifiers (including property names) are case-insensitive.
+      const propertyKey = propertyName.toLowerCase();
       let value: string | number | boolean | DialogFunction;
       this.capturePropertyFormatting(node, propertyName);
 
@@ -312,13 +337,13 @@ export class LinkingVisitor {
         const originalName = this.functionNameMap.get(rightNode.text.toLowerCase());
         const functionName = originalName || rightNode.text;
 
-        if (propertyName === 'condition') {
+        if (propertyKey === 'condition') {
           this.conditionFunctions.add(functionName);
         }
 
         if (this.functions[functionName]) {
           value = this.functions[functionName];
-          if (propertyName === 'information') {
+          if (propertyKey === 'information') {
             this.functionToDialog.set(functionName, this.currentInstance);
             this.syncDialogActionsForFunction(functionName, this.currentInstance);
           }
@@ -385,11 +410,10 @@ export class LinkingVisitor {
 
     const leftNode = node.childForFieldName('left');
     const rightNode = node.childForFieldName('right');
-    const operatorNode = node.childForFieldName('operator');
 
     if (leftNode && rightNode) {
       const variableName = leftNode.text;
-      const operator = operatorNode ? operatorNode.text : '=';
+      const operator = getAssignmentOperator(node);
       const value = parseLiteralOrIdentifier(rightNode);
 
       const action = new SetVariableAction(variableName, operator, value);
@@ -624,7 +648,8 @@ export class LinkingVisitor {
   }
 
   private isNegatedCallHandledByUnaryCondition(node: TreeSitterNode, functionName: string): boolean {
-    if (functionName !== 'Npc_IsDead' && functionName !== 'Npc_IsInState') {
+    const dispatchKey = functionName.toLowerCase();
+    if (dispatchKey !== 'npc_isdead' && dispatchKey !== 'npc_isinstate') {
       return false;
     }
 
@@ -710,7 +735,6 @@ export class LinkingVisitor {
     if (node.type === 'assignment_statement') {
       const leftNode = node.childForFieldName('left');
       const rightNode = node.childForFieldName('right');
-      const operatorNode = node.childForFieldName('operator');
 
       if (!leftNode || !rightNode) {
         return null;
@@ -718,7 +742,7 @@ export class LinkingVisitor {
 
       return new SetVariableAction(
         leftNode.text,
-        operatorNode ? operatorNode.text : '=',
+        getAssignmentOperator(node),
         parseLiteralOrIdentifier(rightNode)
       );
     }
@@ -763,7 +787,7 @@ export class LinkingVisitor {
     }
 
     for (const dialog of Object.values(this.dialogs)) {
-      const information = dialog.properties?.information;
+      const information = getDialogProperty(dialog.properties, 'information');
       const informationName = typeof information === 'string'
         ? information
         : (information && typeof information === 'object' && 'name' in information

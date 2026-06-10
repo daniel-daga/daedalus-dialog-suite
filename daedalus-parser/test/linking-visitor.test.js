@@ -89,3 +89,87 @@ test('leaves dangling property references as plain strings without raising synta
   assert.strictEqual(dialog.properties.condition, 'DIA_Does_Not_Exist');
   assert.ok(!model.hasErrors, 'an unresolved reference is not a syntax error');
 });
+
+// ---------------------------------------------------------------------------
+// Review fixes (docs/plans/parser-review-fixes.md)
+// ---------------------------------------------------------------------------
+
+// F1: compound assignment operators must survive the parse → model → codegen roundtrip.
+test('preserves compound assignment operators in function bodies', () => {
+  const source = `
+    instance DIA_Kap(C_INFO) { information = DIA_Kap_Info; };
+    func void DIA_Kap_Info() {
+      Kapitel += 1;
+      Gold -= 50;
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+  const { actions } = model.functions.DIA_Kap_Info;
+
+  assert.strictEqual(actions[0].variableName, 'Kapitel');
+  assert.strictEqual(actions[0].operator, '+=');
+  assert.strictEqual(actions[0].value, 1);
+  assert.strictEqual(actions[1].operator, '-=');
+});
+
+// F1: same for assignments nested inside if-blocks (ConditionalAction branch parsing).
+test('preserves compound assignment operators inside conditional actions', () => {
+  const source = `
+    instance DIA_Kap2(C_INFO) { information = DIA_Kap2_Info; };
+    func void DIA_Kap2_Info() {
+      if (Gold > 0)
+      {
+        Gold -= 10;
+      };
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+  const conditional = model.functions.DIA_Kap2_Info.actions
+    .find((a) => a.constructor.name === 'ConditionalAction');
+  assert.ok(conditional, 'if-block should parse as ConditionalAction');
+  assert.strictEqual(conditional.thenActions[0].operator, '-=');
+});
+
+// F3: Daedalus property names are case-insensitive; capitalized Condition/Information
+// must link exactly like the lowercase spellings.
+test('links capitalized Condition/Information properties (case-insensitive)', () => {
+  const source = `
+    instance DIA_Caps(C_INFO) {
+      Information = DIA_Caps_Info;
+      Condition = DIA_Caps_Cond;
+    };
+    func int DIA_Caps_Cond() { if (Npc_KnowsInfo(other, DIA_Other)) { return TRUE; }; };
+    func void DIA_Caps_Info() { AI_Output(self, other, "DIA_Caps_01"); };
+  `;
+
+  const model = parseSemanticModel(source);
+  const dialog = model.dialogs.DIA_Caps;
+
+  assert.strictEqual(dialog.properties.Information, model.functions.DIA_Caps_Info,
+    'Information should link to the live function object');
+  assert.strictEqual(model.functions.DIA_Caps_Cond.conditions.length, 1,
+    'Condition function should be recognized and its conditions extracted');
+  assert.strictEqual(model.functions.DIA_Caps_Cond.conditions[0].type, 'NpcKnowsInfoCondition');
+  assert.strictEqual(dialog.actions.length, 1, 'info-function actions should sync onto the dialog');
+});
+
+// F7: a condition function declared before its instance must still be analyzed
+// as a condition function (no declaration-order dependence).
+test('extracts conditions when the condition function precedes its instance', () => {
+  const source = `
+    func int DIA_Early_Cond() { if (Npc_KnowsInfo(other, DIA_Other)) { return TRUE; }; };
+    instance DIA_Early(C_INFO) {
+      condition = DIA_Early_Cond;
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+  const cond = model.functions.DIA_Early_Cond;
+
+  assert.strictEqual(cond.conditions.length, 1,
+    'conditions should be extracted even when the function precedes the instance');
+  assert.strictEqual(cond.conditions[0].type, 'NpcKnowsInfoCondition');
+  assert.strictEqual(cond.actions.length, 0, 'body must not be misparsed as actions');
+});

@@ -115,3 +115,48 @@ test('condition dispatch is case-insensitive: lowercase npc_knowsinfo parses as 
   const cond = func.conditions.find((c) => c.constructor.name === 'NpcKnowsInfoCondition');
   assert.ok(cond, 'lowercase npc_knowsinfo should be dispatched to the NpcKnowsInfo condition parser');
 });
+
+// ---------------------------------------------------------------------------
+// Review fixes (docs/plans/parser-review-fixes.md)
+// ---------------------------------------------------------------------------
+
+// F2: negated builtin condition calls must keep their negation regardless of casing.
+test('preserves negation for lowercase !npc_isdead in condition functions', () => {
+  const source = `
+instance DIA_Dead (C_INFO) { condition = DIA_Dead_Cond; };
+func int DIA_Dead_Cond() { if (!npc_isdead(self)) { return TRUE; }; };
+`;
+
+  const model = parseSemanticModel(source);
+  const { conditions } = model.functions.DIA_Dead_Cond;
+  assert.strictEqual(conditions.length, 1);
+  assert.strictEqual(conditions[0].type, 'NpcIsDeadCondition');
+  assert.strictEqual(conditions[0].negated, true, 'negation must not be lost for lowercase calls');
+});
+
+test('preserves negation for lowercase npc_isinstate == FALSE comparisons', () => {
+  const source = `
+instance DIA_State (C_INFO) { condition = DIA_State_Cond; };
+func int DIA_State_Cond() { if (npc_isinstate(self, ZS_Smalltalk) == FALSE) { return TRUE; }; };
+`;
+
+  const model = parseSemanticModel(source);
+  const { conditions } = model.functions.DIA_State_Cond;
+  assert.strictEqual(conditions.length, 1);
+  assert.strictEqual(conditions[0].type, 'NpcIsInStateCondition');
+  assert.strictEqual(conditions[0].negated, true);
+});
+
+test('parses lowercase npc_hasitems comparisons into structured conditions', () => {
+  const source = `
+instance DIA_Items (C_INFO) { condition = DIA_Items_Cond; };
+func int DIA_Items_Cond() { if (npc_hasitems(other, ItMi_Gold) >= 100) { return TRUE; }; };
+`;
+
+  const model = parseSemanticModel(source);
+  const { conditions } = model.functions.DIA_Items_Cond;
+  assert.strictEqual(conditions.length, 1);
+  assert.strictEqual(conditions[0].type, 'NpcHasItemsCondition', 'lowercase call should still map to NpcHasItemsCondition');
+  assert.strictEqual(conditions[0].operator, '>=');
+  assert.strictEqual(conditions[0].value, 100);
+});

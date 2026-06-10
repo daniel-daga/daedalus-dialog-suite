@@ -201,6 +201,25 @@ export interface DialogProperties {
   [key: string]: string | number | boolean | DialogFunction;
 }
 
+/**
+ * Case-insensitive dialog property lookup. Daedalus identifiers — including
+ * C_INFO property names like `condition`/`information` — are case-insensitive,
+ * but `DialogProperties` preserves the source spelling as the key.
+ */
+export function getDialogProperty(
+  properties: DialogProperties | undefined,
+  name: string
+): string | number | boolean | DialogFunction | undefined {
+  if (!properties) return undefined;
+  const target = name.toLowerCase();
+  for (const key in properties) {
+    if (key.toLowerCase() === target) {
+      return properties[key];
+    }
+  }
+  return undefined;
+}
+
 export interface PropertyFormatting {
   [key: string]: {
     beforeEquals: string;

@@ -9,9 +9,9 @@ Status legend: ✅ fixed (test-first, verified) · 🔲 open · 🚫 deferred (n
 
 | # | Finding | Status |
 |---|---------|--------|
-| F1 | **Compound assignments silently rewritten to `=`.** `Kapitel += 1;` → `SetVariableAction{operator:"="}` → regenerates `Kapitel = 1;`. `linking-visitor.ts` reads `childForFieldName('operator')` but the grammar declares no `operator` field on `assignment_statement`, so it is always `null`. | 🔲 |
-| F2 | **Negation lost for non-canonical casing.** `!npc_isdead(self)` in a condition function parses as `NpcIsDeadCondition{negated:false}` — inverted semantics on regeneration. Case-sensitive name checks in `isNegatedCallHandledByUnaryCondition` (linking-visitor), `parseUnaryExpression` and `parseSupportedCallComparisonWithCall` (condition-parsers), while main dispatch is case-insensitive. Affects `Npc_IsDead` and `Npc_IsInState`. | 🔲 |
-| F3 | **Mixed-case `Condition =` / `Information =` properties break linking.** Exact-string property checks in `linking-visitor.ts` (`processAssignment`, `findDialogForFunction`), `cross-references.ts`, and `generator.ts` (`getAssociatedFunctions`). Condition extraction and dialog-action sync silently no-op for capitalized property names (legal Daedalus). | 🔲 |
+| F1 | **Compound assignments silently rewritten to `=`.** `Kapitel += 1;` → `SetVariableAction{operator:"="}` → regenerates `Kapitel = 1;`. `linking-visitor.ts` reads `childForFieldName('operator')` but the grammar declares no `operator` field on `assignment_statement`, so it is always `null`. | ✅ |
+| F2 | **Negation lost for non-canonical casing.** `!npc_isdead(self)` in a condition function parses as `NpcIsDeadCondition{negated:false}` — inverted semantics on regeneration. Case-sensitive name checks in `isNegatedCallHandledByUnaryCondition` (linking-visitor), `parseUnaryExpression` and `parseSupportedCallComparisonWithCall` (condition-parsers), while main dispatch is case-insensitive. Affects `Npc_IsDead` and `Npc_IsInState`. | ✅ |
+| F3 | **Mixed-case `Condition =` / `Information =` properties break linking.** Exact-string property checks in `linking-visitor.ts` (`processAssignment`, `findDialogForFunction`), `cross-references.ts`, and `generator.ts` (`getAssociatedFunctions`). Condition extraction and dialog-action sync silently no-op for capitalized property names (legal Daedalus). | ✅ |
 
 ## P1 — Roundtrip scope gaps (reproduced; need scope decision)
 
@@ -31,7 +31,7 @@ needs a deliberate scope decision, not a drive-by fix.
 
 | # | Finding | Status |
 |---|---------|--------|
-| F7 | **Declaration-order dependence for condition functions.** `conditionFunctions` is built during pass 2 from instance assignments; a condition function declared *before* its instance is analyzed before it is known to be one and gets misclassified (body parsed as actions, conditions empty). | 🔲 |
+| F7 | **Declaration-order dependence for condition functions.** `conditionFunctions` is built during pass 2 from instance assignments; a condition function declared *before* its instance is analyzed before it is known to be one and gets misclassified (body parsed as actions, conditions empty). | ✅ |
 | F8 | **Cross-references miss nested Choices.** `findFunctionReferences` and `collectReachableFunctions` scan only top-level actions; `Choice` actions inside `ConditionalAction.thenActions/elseActions` are invisible to rename/remove cascades and reachability. | 🔲 |
 | F9 | **String escaping asymmetry.** `normalizeArgumentText` strips outer quotes without unescaping; `Choice.generateCode` escapes `\` and `"` on emit (double-escape on roundtrip of `\"`); `DialogLine`/`LogEntry` quote without escaping. Original Daedalus has no string escape sequences at all, so the right fix needs a language-semantics decision (probably: never escape/unescape, validate embedded quotes at the editor input boundary) plus corpus validation. | 🚫 |
 | F10 | **`DialogLine.generateCode` ignores stored `listener`**, recomputing it from the speaker. `AI_Output(self, hero, …)` regenerates as `AI_Output(self, other, …)`. The existing listener test passed only by coincidence (speaker `other` → recomputed `self`). | 🔲 |
