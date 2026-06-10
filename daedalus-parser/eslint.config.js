@@ -1,4 +1,5 @@
 const js = require('@eslint/js');
+const tseslint = require('typescript-eslint');
 
 module.exports = [
   {
@@ -173,6 +174,23 @@ module.exports = [
     rules: {
       'max-len': ['error', { code: 150 }], // Allow longer lines in tests
       'no-unused-expressions': 'off' // Allow assert expressions
+    }
+  },
+  // TypeScript sources: typescript-eslint recommended (non-type-checked)
+  ...tseslint.configs.recommended.map((config) => ({
+    ...config,
+    files: ['src/**/*.ts']
+  })),
+  {
+    files: ['src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_'
+      }],
+      // TODO: ~30 deliberate `any`s in serialization/deserialization paths
+      // (semantic-model.ts and friends). Re-enable once those are typed.
+      '@typescript-eslint/no-explicit-any': 'off'
     }
   }
 ];
