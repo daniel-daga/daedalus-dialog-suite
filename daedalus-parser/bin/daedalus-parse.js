@@ -125,7 +125,7 @@ function main() {
       if (result.hasErrors) {
         console.log(`\nErrors: ${result.errors.length}`);
         result.errors.forEach((error, i) => {
-          console.log(`  ${i + 1}. ${error.message} at line ${error.position.row + 1}`);
+          console.log(`  ${i + 1}. ${error.message} at line ${error.position.row}`);
         });
       }
     } else {
@@ -160,7 +160,7 @@ function main() {
       if (result.hasErrors) {
         console.log('\nSyntax Errors:');
         result.errors.forEach((error, i) => {
-          console.log(`  ${i + 1}. ${error.message} at line ${error.position.row + 1}`);
+          console.log(`  ${i + 1}. ${error.message} at line ${error.position.row}`);
         });
       }
 

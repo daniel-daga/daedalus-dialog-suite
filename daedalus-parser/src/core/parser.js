@@ -230,11 +230,17 @@ class DaedalusParser {
    * @private
    */
   collectErrors(node, sourceCode, errors) {
+    // Positions are 1-based, matching ErrorVisitor and the message text.
+    const position = {
+      row: node.startPosition.row + 1,
+      column: node.startPosition.column + 1
+    };
+
     if (node.type === 'ERROR') {
       errors.push({
         type: 'syntax_error',
-        message: `Syntax error at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
-        position: node.startPosition,
+        message: `Syntax error at line ${position.row}, column ${position.column}`,
+        position,
         text: sourceCode.slice(node.startIndex, node.endIndex)
       });
     }
@@ -242,8 +248,8 @@ class DaedalusParser {
     if (node.isMissing) {
       errors.push({
         type: 'missing_token',
-        message: `Missing ${node.type} at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
-        position: node.startPosition,
+        message: `Missing ${node.type} at line ${position.row}, column ${position.column}`,
+        position,
         text: ''
       });
     }

@@ -4,6 +4,7 @@ import { Box, CircularProgress, Typography, Paper, Fab, Tooltip } from '@mui/mat
 import { Save as SaveIcon } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import type { ParseError } from '../types/global';
+import { toMonacoMarkers } from './sourceEditorMarkers';
 
 interface SourceCodeEditorProps {
   filePath: string;
@@ -89,20 +90,11 @@ const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({ filePath }) => {
   const updateMarkers = (monaco: any, model: any, errors: ParseError[]) => {
     if (!monaco || !model) return;
 
-    const markers = errors.map(err => {
-      const row = err.position ? err.position.row + 1 : 1;
-      const col = err.position ? err.position.column + 1 : 1;
-      return {
-        severity: monaco.MarkerSeverity.Error,
-        message: err.message,
-        startLineNumber: row,
-        startColumn: col,
-        endLineNumber: row,
-        endColumn: col + (err.text?.length || 1),
-      };
-    });
-
-    monaco.editor.setModelMarkers(model, 'daedalus', markers);
+    monaco.editor.setModelMarkers(
+      model,
+      'daedalus',
+      toMonacoMarkers(errors, monaco.MarkerSeverity.Error)
+    );
   };
 
   // Debounced store update

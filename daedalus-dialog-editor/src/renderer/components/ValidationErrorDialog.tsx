@@ -107,7 +107,7 @@ const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
                     }
                     secondary={
                       error.position
-                        ? `Line ${error.position.row + 1}, Column ${error.position.column + 1}`
+                        ? `Line ${error.position.row}, Column ${error.position.column}`
                         : error.dialogName
                           ? `Dialog: ${error.dialogName}`
                           : error.functionName

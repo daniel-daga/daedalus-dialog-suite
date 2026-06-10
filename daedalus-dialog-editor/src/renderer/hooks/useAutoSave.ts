@@ -98,9 +98,9 @@ export function useAutoSave(): AutoSaveStatus {
               hasErrors: !validationResult.isValid,
               autoSaveError: validationResult,
               errors: validationResult.errors.filter((e: any) => e.type === 'syntax_error').map((e: any) => ({
+                type: e.type,
                 message: e.message,
-                line: e.position?.row,
-                column: e.position?.column
+                position: e.position
               })),
             });
           }

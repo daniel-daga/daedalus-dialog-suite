@@ -1,3 +1,4 @@
+/** Source position. `row` and `column` are 1-based. */
 interface Position {
   row: number;
   column: number;
