@@ -54,6 +54,7 @@ needs a deliberate scope decision, not a drive-by fix.
   `variable_declaration` to `_statement` in the grammar, model parameters on
   `DialogFunction`, include globals in `declarationOrder`, and emit all of them in
   codegen. Each needs corpus roundtrip validation; do as its own planned change.
+  Planned in `parser-roundtrip-scope-f4-f5-f6.md`.
 - **F9** — decide whether Daedalus string escapes exist for this toolchain (engine
   semantics say no). Then make parse/emit symmetric and validate at the editor boundary.
 - **F11** — pick one convention (1-based matches `ErrorVisitor` and editor display),
