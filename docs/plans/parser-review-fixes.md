@@ -17,15 +17,14 @@ Status legend: ✅ fixed (test-first, verified) · 🔲 open · 🚫 deferred (n
 
 | # | Finding | Status |
 |---|---------|--------|
-| F4 | **Local `var` declarations silently destroyed.** Grammar `_statement` lacks `variable_declaration`; `var int x;` inside a function parses *without errors* as bare identifier expression-statements and vanishes on regeneration → generated code references undeclared locals. | 🚫 |
-| F5 | **Function parameters never modeled.** `DialogFunction` has no parameter list; codegen always emits `()`. `func void Baz(var int n)` regenerates as `func void Baz()`. | 🚫 |
-| F6 | **Codegen drops globals.** Constants/variables/instances are parsed into the model but `declarationOrder` records only dialogs+functions and `generateSemanticModel` emits only those — `const int MAX = 5;` disappears from output. | 🚫 |
+| F4 | **Local `var` declarations silently destroyed.** Grammar `_statement` lacks `variable_declaration`; `var int x;` inside a function parses *without errors* as bare identifier expression-statements and vanishes on regeneration → generated code references undeclared locals. | ✅ |
+| F5 | **Function parameters never modeled.** `DialogFunction` has no parameter list; codegen always emits `()`. `func void Baz(var int n)` regenerates as `func void Baz()`. | ✅ |
+| F6 | **Codegen drops globals.** Constants/variables/instances are parsed into the model but `declarationOrder` records only dialogs+functions and `generateSemanticModel` emits only those — `const int MAX = 5;` disappears from output. | ✅ |
 
-F4–F6 share one decision: the safe roundtrip scope is "conventionally-shaped dialog files
-only", but nothing enforces or flags that boundary. Either model these constructs or make
-parse/codegen fail loudly when they are present. Rejecting them outright may regress editor
-workflows on real mod files (helper functions with params, LOG_Constants files), so this
-needs a deliberate scope decision, not a drive-by fix.
+F4–F6 shared one scope decision — resolved as "model these constructs": locals are
+preserved as raw `Action`s, parameters are modeled on `DialogFunction`, and globals are
+recorded in `declarationOrder` and re-emitted from captured `sourceText`. The resulting
+roundtrip scope boundary is documented in `../reference/parser-roundtrip-scope.md`.
 
 ## P2 — Robustness / fidelity
 
@@ -50,11 +49,6 @@ needs a deliberate scope decision, not a drive-by fix.
 
 ## Notes on deferred items
 
-- **F4/F5/F6** — one scope decision, three symptoms. Recommended direction: add
-  `variable_declaration` to `_statement` in the grammar, model parameters on
-  `DialogFunction`, include globals in `declarationOrder`, and emit all of them in
-  codegen. Each needs corpus roundtrip validation; do as its own planned change.
-  Planned in `parser-roundtrip-scope-f4-f5-f6.md`.
 - **F9** — decide whether Daedalus string escapes exist for this toolchain (engine
   semantics say no). Then make parse/emit symmetric and validate at the editor boundary.
 - **F11** — pick one convention (1-based matches `ErrorVisitor` and editor display),
