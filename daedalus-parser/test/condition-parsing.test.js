@@ -649,6 +649,20 @@ test('QuestStateCondition generates code with LOG_SUCCESS', () => {
   assert.strictEqual(code, 'MIS_TestQuest == LOG_SUCCESS');
 });
 
+// Issue #174: a TOPIC_ constant is a string and cannot be compared to a log
+// state; the quest state check must use the corresponding MIS_ int variable.
+test('QuestStateCondition normalizes TOPIC_ prefix to MIS_', () => {
+  const condition = new QuestStateCondition('TOPIC_GefaehrlicheJagt', 'LOG_RUNNING');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_GefaehrlicheJagt == LOG_RUNNING');
+});
+
+test('QuestStateCondition normalizes Topic_ prefix case-insensitively', () => {
+  const condition = new QuestStateCondition('Topic_TestQuest', 'LOG_SUCCESS');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_TestQuest == LOG_SUCCESS');
+});
+
 test('Should parse OR conditions and set conditionOperator to OR', () => {
   const source = `
 instance DIA_Test_OR(C_INFO)
