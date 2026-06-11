@@ -51,7 +51,6 @@ const resetStores = () => {
 
   useHistoryStore.setState({
     editHistory: new Map(),
-    questHistory: new Map(),
     questBatchHistory: { past: [], future: [] },
     questNodePositions: new Map(),
   });
@@ -441,7 +440,6 @@ describe('historyActions – renameDialog', () => {
 
     useHistoryStore.setState({
       editHistory: new Map(),
-      questHistory: new Map(),
       questBatchHistory: { past: [], future: [] },
       questNodePositions: new Map(),
     });

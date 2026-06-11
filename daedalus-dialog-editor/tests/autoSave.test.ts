@@ -447,7 +447,6 @@ describe('useAutoSave hook', () => {
       activeFile: filePath1
     });
     useHistoryStore.setState({
-      questHistory: new Map(),
       questBatchHistory: { past: [], future: [] },
     });
 
@@ -507,7 +506,6 @@ describe('useAutoSave hook', () => {
       activeFile: filePath
     });
     useHistoryStore.setState({
-      questHistory: new Map(),
       questBatchHistory: { past: [], future: [] },
     });
 
