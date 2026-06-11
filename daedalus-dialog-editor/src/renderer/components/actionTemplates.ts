@@ -78,7 +78,7 @@ export const ACTION_TEMPLATES = {
     quantity
   }),
 
-  attackAction: (attacker: string = 'self', target: string = 'hero', attackReason: string = 'ATTACK_REASON_KILL', damage: number = 0): AttackAction => ({
+  attackAction: (attacker: string = 'self', target: string = 'other', attackReason: string = 'AR_NONE', damage: number = 1): AttackAction => ({
     type: 'AttackAction',
     attacker,
     target,
