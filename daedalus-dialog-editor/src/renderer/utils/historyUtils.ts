@@ -16,6 +16,8 @@ export type QuestNodePositionMap = Map<string, QuestNodePosition>;
  * Snapshot used by the unified edit history (dialog + quest surfaces).
  * The timestamp coalesces rapid edits into a single undo step; quest-surface
  * snapshots use timestamp 0 so later edits never coalesce into them.
+ * The model is held by reference (structurally shared with Immer-frozen
+ * fileStore state), not deep-cloned.
  */
 export interface EditSnapshot {
   model: SemanticModel;
@@ -50,14 +52,4 @@ export function cloneQuestNodePositionsForFile(
     cloned.set(questName, nextNodeMap);
   });
   return cloned;
-}
-
-export function cloneSemanticModel(model: SemanticModel): SemanticModel {
-  try {
-    if (typeof structuredClone === 'function') return structuredClone(model);
-  } catch {
-    // structuredClone fails on Immer proxy objects (e.g. when called inside a
-    // historyStore.set() callback); fall through to the JSON-based clone.
-  }
-  return JSON.parse(JSON.stringify(model)) as SemanticModel;
 }

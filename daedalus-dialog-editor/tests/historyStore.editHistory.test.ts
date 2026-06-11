@@ -1,6 +1,6 @@
 import { useFileStore } from '../src/renderer/store/fileStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
-import type { SemanticModel } from '../src/renderer/types/global';
+import type { Dialog, SemanticModel } from '../src/renderer/types/global';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -262,6 +262,50 @@ describe('historyStore – undo and redo', () => {
 
   it('does nothing on undo for a file that is not open', () => {
     expect(() => useHistoryStore.getState().undo('nonexistent.d')).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Structural sharing: snapshots reference Immer-frozen models, no deep clones
+// ---------------------------------------------------------------------------
+
+describe('historyStore – snapshot structural sharing', () => {
+  beforeEach(resetStores);
+
+  it('pushSnapshot stores the current model by reference instead of deep-cloning', () => {
+    const liveModel = useFileStore.getState().getFileState(filePath)!.semanticModel;
+
+    useHistoryStore.getState().pushSnapshot(filePath);
+
+    const snapshot = useHistoryStore.getState().editHistory.get(filePath)!.past[0];
+    expect(snapshot.model).toBe(liveModel);
+  });
+
+  it('undo restores the snapshot model by reference instead of a clone', () => {
+    const initialModel = useFileStore.getState().getFileState(filePath)!.semanticModel;
+    useHistoryStore.getState().pushSnapshot(filePath);
+    useFileStore.getState()._applyHistoryModelUpdate(filePath, makeModel('modified'));
+
+    useHistoryStore.getState().undo(filePath);
+
+    expect(useFileStore.getState().getFileState(filePath)!.semanticModel).toBe(initialModel);
+  });
+
+  it('a fileStore edit after pushSnapshot does not leak into the shared snapshot', () => {
+    useHistoryStore.getState().pushSnapshot(filePath);
+
+    // updateDialog goes through fileStore's Immer produce: copy-on-write must
+    // leave the snapshot's model untouched although it is shared by reference
+    useFileStore.getState().updateDialog(filePath, 'DIA_Test', {
+      properties: { npc: 'edited', information: 'DIA_Test_Info' }
+    } as Dialog);
+    expect(currentNpc()).toBe('edited');
+
+    const snapshot = useHistoryStore.getState().editHistory.get(filePath)!.past[0];
+    expect(snapshot.model.dialogs?.DIA_Test?.properties?.npc).toBe('initial');
+
+    useHistoryStore.getState().undo(filePath);
+    expect(currentNpc()).toBe('initial');
   });
 });
 
