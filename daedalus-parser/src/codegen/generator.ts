@@ -414,6 +414,7 @@ export class SemanticCodeGenerator {
     // Preserve original property insertion order to minimize style churn.
     for (const key in dialog.properties) {
       const value = dialog.properties[key];
+      if (value === undefined) continue;
       const spacing = this.resolvePropertySpacing(dialog, key);
       lines.push(`${indent}${key}${spacing.beforeEquals}=${spacing.afterEquals}${this.formatDialogPropertyValue(dialog, key, value)};`);
     }

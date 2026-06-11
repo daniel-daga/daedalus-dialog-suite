@@ -59,7 +59,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => 
   const item = flatItems[index];
 
   if (item.type === 'dialog') {
-    const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information as any;
+    const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information;
     const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
 
     return (

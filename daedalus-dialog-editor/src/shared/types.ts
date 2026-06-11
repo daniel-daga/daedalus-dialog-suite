@@ -333,11 +333,18 @@ export interface DialogFunction {
   calls: string[];
 }
 
+/**
+ * A dialog property value referencing a C_INFO function: either the bare
+ * function name or the linked `DialogFunction` object (mirrors the parser's
+ * `DialogFunctionRef`).
+ */
+export type DialogFunctionRef = string | DialogFunction;
+
 export interface DialogProperties {
   npc?: string;
   nr?: number;
-  condition?: string | DialogFunction;
-  information?: string | DialogFunction;
+  condition?: DialogFunctionRef;
+  information?: DialogFunctionRef;
   description?: string;
   important?: boolean;
   permanent?: boolean;

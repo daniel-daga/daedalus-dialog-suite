@@ -90,13 +90,13 @@ export function findFunctionReferences(
   // Check dialog property references (property names are case-insensitive in Daedalus)
   for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
     const info = getDialogProperty(dialog.properties, 'information');
-    const infoName = typeof info === 'string' ? info : (info as any)?.name;
+    const infoName = typeof info === 'string' ? info : typeof info === 'object' ? info.name : undefined;
     if (infoName === functionName) {
       refs.push({ sourceKind: 'dialog-info', dialogName });
     }
 
     const cond = getDialogProperty(dialog.properties, 'condition');
-    const condName = typeof cond === 'string' ? cond : (cond as any)?.name;
+    const condName = typeof cond === 'string' ? cond : typeof cond === 'object' ? cond.name : undefined;
     if (condName === functionName) {
       refs.push({ sourceKind: 'dialog-condition', dialogName });
     }

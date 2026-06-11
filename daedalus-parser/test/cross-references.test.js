@@ -219,6 +219,29 @@ test('collectReachableFunctions: follows Choice targets nested in conditional br
   assert.ok(reachable.has('DIA_Npc_Deep'), 'nested choice target should be reachable');
 });
 
+// D3 (docs/plans/frontend-editor-review-fixes.md): information/condition hold a
+// string-vs-DialogFunction union; the linked-object branch must resolve by name.
+test('findFunctionReferences: matches linked DialogFunction object refs', () => {
+  const infoFunc = makeFunc('DIA_Obj_Info');
+  const condFunc = makeFunc('DIA_Obj_Cond');
+  const model = makeModel({
+    dialogs: {
+      DIA_Obj: makeDialog('DIA_Obj', { information: infoFunc, condition: condFunc })
+    },
+    functions: { DIA_Obj_Info: infoFunc, DIA_Obj_Cond: condFunc }
+  });
+
+  const infoRefs = findFunctionReferences(model, 'DIA_Obj_Info');
+  assert.equal(infoRefs.length, 1);
+  assert.equal(infoRefs[0].sourceKind, 'dialog-info');
+  assert.equal(infoRefs[0].dialogName, 'DIA_Obj');
+
+  const condRefs = findFunctionReferences(model, 'DIA_Obj_Cond');
+  assert.equal(condRefs.length, 1);
+  assert.equal(condRefs[0].sourceKind, 'dialog-condition');
+  assert.equal(condRefs[0].dialogName, 'DIA_Obj');
+});
+
 // F3: dialog property lookups must be case-insensitive.
 test('findFunctionReferences: matches capitalized Information/Condition property keys', () => {
   const dialog = makeDialog('DIA_Caps');
