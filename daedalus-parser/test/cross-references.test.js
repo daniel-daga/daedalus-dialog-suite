@@ -219,8 +219,8 @@ test('collectReachableFunctions: follows Choice targets nested in conditional br
   assert.ok(reachable.has('DIA_Npc_Deep'), 'nested choice target should be reachable');
 });
 
-// D3 (docs/plans/frontend-editor-review-fixes.md): information/condition hold a
-// string-vs-DialogFunction union; the linked-object branch must resolve by name.
+// information/condition hold a string-vs-DialogFunction union (DialogFunctionRef);
+// the linked-object branch must resolve by name.
 test('findFunctionReferences: matches linked DialogFunction object refs', () => {
   const infoFunc = makeFunc('DIA_Obj_Info');
   const condFunc = makeFunc('DIA_Obj_Cond');
