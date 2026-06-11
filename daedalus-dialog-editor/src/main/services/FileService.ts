@@ -31,26 +31,27 @@ const fileEncodingCache = new Map<string, string>();
 const fileLocks = new Map<string, Promise<any>>();
 
 /**
- * Acquires a lock for a file operation
- * Ensures only one operation per file can proceed at a time
+ * Acquires a lock for a file operation.
+ * Operations on the same path run strictly one after another by chaining onto
+ * the previous operation's promise, forming a per-path queue. (The previous
+ * implementation awaited the in-flight lock and then started immediately, so
+ * three or more concurrent callers could overlap once the first settled.)
  */
-async function acquireLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
-  // Wait for any existing operation on this file to complete
-  const existingLock = fileLocks.get(filePath);
-  if (existingLock) {
-    await existingLock.catch(() => {}); // Ignore errors from previous operations
-  }
+export async function acquireLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
+  // Chain this operation after whatever is currently queued for the path.
+  const previous = fileLocks.get(filePath) ?? Promise.resolve();
+  const run = previous.then(() => operation(), () => operation());
 
-  // Create a new lock for this operation
-  const lockPromise = operation();
-  fileLocks.set(filePath, lockPromise);
+  // Store a never-rejecting tail so the next caller chains after this one
+  // without inheriting its rejection.
+  const tail = run.then(() => undefined, () => undefined);
+  fileLocks.set(filePath, tail);
 
   try {
-    const result = await lockPromise;
-    return result;
+    return await run;
   } finally {
-    // Only delete if this is still the current lock
-    if (fileLocks.get(filePath) === lockPromise) {
+    // Only delete if no newer operation has queued behind us.
+    if (fileLocks.get(filePath) === tail) {
       fileLocks.delete(filePath);
     }
   }
@@ -183,8 +184,10 @@ export class FileService {
   async writeFile(filePath: string, content: string): Promise<{ success: boolean; encoding?: string }> {
     return acquireLock(filePath, async () => {
       try {
-        // Use the cached encoding if available, otherwise default to utf8
-        const encoding = fileEncodingCache.get(filePath) || 'utf8';
+        // Use the cached encoding if available. For files the editor never
+        // read (e.g. freshly created scripts) default to windows-1252, the
+        // encoding Gothic 2 tooling expects — not utf8.
+        const encoding = fileEncodingCache.get(filePath) || 'windows-1252';
 
         // Encode the content using the appropriate encoding
         const buffer = iconv.encode(content, encoding);

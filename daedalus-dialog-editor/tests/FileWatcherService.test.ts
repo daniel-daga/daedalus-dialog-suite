@@ -187,6 +187,47 @@ describe('FileWatcherService', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Ignore predicate
+  // -------------------------------------------------------------------------
+
+  describe('ignored predicate', () => {
+    const getIgnored = async (projectPath: string) => {
+      await service.startWatching(projectPath);
+      const chokidar = require('chokidar');
+      const opts = (chokidar.watch as jest.Mock).mock.calls.at(-1)![1] as {
+        ignored: (p: string, stats?: { isFile(): boolean; isDirectory(): boolean }) => boolean;
+      };
+      return opts.ignored;
+    };
+
+    const fileStats = { isFile: () => true, isDirectory: () => false };
+    const dirStats = { isFile: () => false, isDirectory: () => true };
+
+    it('ignores non-.d files', async () => {
+      const ignored = await getIgnored('/project');
+      expect(ignored('/project/readme.txt', fileStats)).toBe(true);
+    });
+
+    it('does not ignore .d files', async () => {
+      const ignored = await getIgnored('/project');
+      expect(ignored('/project/DIA_Test.d', fileStats)).toBe(false);
+    });
+
+    it('never ignores directories, even with a dot in the name', async () => {
+      const ignored = await getIgnored('/project');
+      // A directory like "Mod.bak/" must be traversed so its .d files are seen
+      expect(ignored('/project/Mod.bak', dirStats)).toBe(false);
+    });
+
+    it('does not ignore a dotted directory on Windows-style backslash paths', async () => {
+      const ignored = await getIgnored('C:\\project');
+      // Without stats we cannot tell a dotted directory from a file, so the
+      // path must be traversed rather than wrongly skipped
+      expect(ignored('C:\\project\\Mod.bak', undefined)).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Self-write suppression
   // -------------------------------------------------------------------------
 
@@ -226,6 +267,19 @@ describe('FileWatcherService', () => {
         type: 'change',
         filePath: '/project/DIA_Other.d',
       });
+    });
+
+    it('suppresses self-writes regardless of path separator', async () => {
+      const win = makeMockWindow();
+      service.setWindow(win as any);
+      await service.startWatching('/project');
+
+      // The notifier may use backslashes while the watcher reports forward
+      // slashes (common on Windows) — suppression must still match.
+      service.notifySelfWrite('C:\\Project\\DIA_Test.d');
+      mockWatcher._emit('change', 'C:/Project/DIA_Test.d');
+
+      expect(win.webContents.send).not.toHaveBeenCalled();
     });
 
     it('stopWatching clears the self-written paths set', async () => {

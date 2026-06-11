@@ -12,21 +12,14 @@ export interface QuestNodePosition {
 
 export type QuestNodePositionMap = Map<string, QuestNodePosition>;
 
-export interface QuestHistorySnapshot {
+/**
+ * Snapshot used by the unified edit history (dialog + quest surfaces).
+ * The timestamp coalesces rapid edits into a single undo step; quest-surface
+ * snapshots use timestamp 0 so later edits never coalesce into them.
+ */
+export interface EditSnapshot {
   model: SemanticModel;
   nodePositions: Map<string, QuestNodePositionMap>;
-}
-
-export interface QuestHistoryState {
-  past: QuestHistorySnapshot[];
-  future: QuestHistorySnapshot[];
-}
-
-/**
- * Extended snapshot used by the unified edit history (dialog + quest surfaces).
- * Includes a timestamp for coalescing rapid edits into a single undo step.
- */
-export interface EditSnapshot extends QuestHistorySnapshot {
   timestamp: number;
 }
 
@@ -67,14 +60,4 @@ export function cloneSemanticModel(model: SemanticModel): SemanticModel {
     // historyStore.set() callback); fall through to the JSON-based clone.
   }
   return JSON.parse(JSON.stringify(model)) as SemanticModel;
-}
-
-export function createQuestHistorySnapshot(
-  model: SemanticModel,
-  fileQuestPositions: Map<string, QuestNodePositionMap> | undefined
-): QuestHistorySnapshot {
-  return {
-    model: cloneSemanticModel(model),
-    nodePositions: cloneQuestNodePositionsForFile(fileQuestPositions)
-  };
 }

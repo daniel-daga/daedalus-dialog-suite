@@ -137,6 +137,8 @@ function setupIpcHandlers() {
         // Use pre-generated code from validation if available
         if (validationResult.generatedCode) {
           const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode);
+          // Arm self-write suppression only after an actual write succeeds
+          fileWatcherService.notifySelfWrite(filePath);
           return {
             ...writeResult,
             validationResult
@@ -167,7 +169,10 @@ function setupIpcHandlers() {
           };
       }
 
-      return fileService.writeFile(filePath, code);
+      const writeResult = await fileService.writeFile(filePath, code);
+      // Arm self-write suppression only after an actual write succeeds
+      fileWatcherService.notifySelfWrite(filePath);
+      return writeResult;
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] generator:saveFile - Path validation failed:', error.message);
@@ -200,7 +205,10 @@ function setupIpcHandlers() {
       // Validate path before writing
       pathValidator.validatePath(filePath);
 
-      return fileService.writeFile(filePath, content);
+      const writeResult = await fileService.writeFile(filePath, content);
+      // Arm self-write suppression only after an actual write succeeds
+      fileWatcherService.notifySelfWrite(filePath);
+      return writeResult;
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] file:write - Path validation failed:', error.message);
@@ -304,7 +312,17 @@ function setupIpcHandlers() {
 
   ipcMain.handle('project:addAllowedPath', async (_event, folderPath: string) => {
     try {
-      pathValidator.addAllowedPath(folderPath);
+      // Security: the renderer may only re-whitelist a path the user has
+      // already opened (persisted in recent projects). Brand-new folders are
+      // whitelisted by the main-process folder dialog and addRecentProject —
+      // not by the renderer — so unknown paths are silently ignored here.
+      // This prevents a compromised renderer from whitelisting arbitrary
+      // directories and defeating PathValidationService.
+      if (await settingsService.isKnownRecentProject(folderPath)) {
+        pathValidator.addAllowedPath(folderPath);
+      } else {
+        console.warn('[IPC] project:addAllowedPath - ignoring unknown path:', folderPath);
+      }
     } catch (error) {
       console.error('[IPC] project:addAllowedPath error:', error);
       throw new Error(`Failed to add allowed path: ${error instanceof Error ? error.message : 'Unknown error'}`);

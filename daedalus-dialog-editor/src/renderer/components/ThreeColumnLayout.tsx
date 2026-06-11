@@ -6,6 +6,7 @@ import { useDialogTransition } from './hooks/useDialogTransition';
 import { useDialogNavigation } from './hooks/useDialogNavigation';
 import { useSearchNavigation } from './hooks/useSearchNavigation';
 import { Box, Typography, Alert } from '@mui/material';
+import { shallow } from 'zustand/shallow';
 import { useEditorStore } from '../store/editorStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
@@ -19,6 +20,7 @@ import RenameDialogConfirmDialog from './RenameDialogConfirmDialog';
 import type { FunctionRenameEntry } from './RenameDialogConfirmDialog';
 import type { SemanticModel } from '../types/global';
 import { extractFunctionName } from '../utils/pathAndIdentifierUtils';
+import { collectDialogOwnedFunctions, computeDialogDeletionSet } from './dialogUtils';
 import * as historyActions from '../store/historyActions';
 
 interface ThreeColumnLayoutProps {
@@ -39,14 +41,26 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     updateModel,
     getFileState,
     activeFile,
-  } = useEditorStore();
+  } = useEditorStore((state) => ({
+    openFiles: state.openFiles,
+    openFile: state.openFile,
+    updateModel: state.updateModel,
+    getFileState: state.getFileState,
+    activeFile: state.activeFile,
+  }), shallow);
   const {
     selectedNPC,
     selectedDialog,
     selectedFunctionName,
     setSelectedNPC,
     setSelectedFunctionName,
-  } = useUISelectionStore();
+  } = useUISelectionStore((state) => ({
+    selectedNPC: state.selectedNPC,
+    selectedDialog: state.selectedDialog,
+    selectedFunctionName: state.selectedFunctionName,
+    setSelectedNPC: state.setSelectedNPC,
+    setSelectedFunctionName: state.setSelectedFunctionName,
+  }), shallow);
   const {
     projectPath,
     npcList: projectNpcs,
@@ -60,7 +74,20 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     setIngestedFilesOpen,
     parsedFiles,
     allDialogFiles
-  } = useProjectStore();
+  } = useProjectStore((state) => ({
+    projectPath: state.projectPath,
+    npcList: state.npcList,
+    dialogIndex: state.dialogIndex,
+    selectNpc: state.selectNpc,
+    getSemanticModel: state.getSemanticModel,
+    mergedSemanticModel: state.mergedSemanticModel,
+    loadAndMergeNpcModels: state.loadAndMergeNpcModels,
+    addDialogToIndex: state.addDialogToIndex,
+    addProjectFile: state.addProjectFile,
+    setIngestedFilesOpen: state.setIngestedFilesOpen,
+    parsedFiles: state.parsedFiles,
+    allDialogFiles: state.allDialogFiles,
+  }), shallow);
   const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
@@ -199,58 +226,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     const dialog = model.dialogs?.[deleteDialogTarget];
     if (!dialog) return null;
 
-    // Compute functions to delete (same logic as fileStore.removeDialog)
-    const infoRef = dialog.properties?.information;
-    const infoFuncName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
-    const condRef = dialog.properties?.condition;
-    const condFuncName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
-
-    const candidates = new Set<string>();
-    if (infoFuncName) {
-      const q: string[] = [infoFuncName];
-      while (q.length > 0) {
-        const n = q.pop()!;
-        if (candidates.has(n)) continue;
-        const f = model.functions?.[n];
-        if (!f) continue;
-        candidates.add(n);
-        for (const action of (f.actions || []) as any[]) {
-          if (action.type === 'Choice' && typeof action.targetFunction === 'string') {
-            if (!candidates.has(action.targetFunction)) q.push(action.targetFunction);
-          }
-        }
-      }
-    }
-    if (condFuncName) candidates.add(condFuncName);
-
-    const remainingDialogs = Object.entries(model.dialogs || {})
-      .filter(([n]) => n !== deleteDialogTarget)
-      .map(([, d]) => d);
-    const stillReferenced = new Set<string>();
-    for (const d of remainingDialogs) {
-      const iRef = d.properties?.information;
-      const iName = typeof iRef === 'string' ? iRef : (iRef as any)?.name;
-      if (iName) {
-        const q: string[] = [iName];
-        while (q.length > 0) {
-          const n = q.pop()!;
-          if (stillReferenced.has(n)) continue;
-          const f = model.functions?.[n];
-          if (!f) continue;
-          stillReferenced.add(n);
-          for (const action of (f.actions || []) as any[]) {
-            if (action.type === 'Choice' && typeof action.targetFunction === 'string') {
-              if (!stillReferenced.has(action.targetFunction)) q.push(action.targetFunction);
-            }
-          }
-        }
-      }
-      const cRef = d.properties?.condition;
-      const cName = typeof cRef === 'string' ? cRef : (cRef as any)?.name;
-      if (cName) stillReferenced.add(cName);
-    }
-
-    const functionsToDelete = [...candidates].filter((n) => !stillReferenced.has(n));
+    // Same traversal as fileStore.removeDialog (shared helper)
+    const functionsToDelete = [...computeDialogDeletionSet(model, deleteDialogTarget)];
 
     // Find broken NpcKnowsInfo references
     const brokenRefs: Array<{ functionName: string }> = [];
@@ -334,28 +311,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     const dialog = model.dialogs?.[renameDialogTarget];
     if (!dialog) return [];
 
-    const infoRef = dialog.properties?.information;
-    const infoFuncName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
-    const condRef = dialog.properties?.condition;
-    const condFuncName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
-
-    const reachable = new Set<string>();
-    if (infoFuncName) {
-      const q: string[] = [infoFuncName];
-      while (q.length > 0) {
-        const n = q.pop()!;
-        if (reachable.has(n)) continue;
-        const f = model.functions?.[n];
-        if (!f) continue;
-        reachable.add(n);
-        for (const action of (f.actions || []) as any[]) {
-          if (action.type === 'Choice' && typeof action.targetFunction === 'string') {
-            if (!reachable.has(action.targetFunction)) q.push(action.targetFunction);
-          }
-        }
-      }
-    }
-    if (condFuncName) reachable.add(condFuncName);
+    // Same traversal as fileStore.renameDialog (shared helper)
+    const reachable = collectDialogOwnedFunctions(model, dialog);
 
     const entries: FunctionRenameEntry[] = [];
     for (const name of reachable) {

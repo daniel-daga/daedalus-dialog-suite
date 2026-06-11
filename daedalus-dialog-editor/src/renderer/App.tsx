@@ -32,6 +32,7 @@ import { RecentProject } from './types/global';
 import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
 import { initStoreSync } from './store/storeSync';
+import { shallow } from 'zustand/shallow';
 
 // Wire up the cross-store model sync once at module load.
 // editorStore pushes semantic model changes to projectStore's parsed-files
@@ -45,8 +46,22 @@ const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }
 ];
 
 const App: React.FC = () => {
-  const { openFile, activeFile, openFiles, resetEditorSession } = useEditorStore();
-  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore();
+  const { openFile, activeFile, openFiles, resetEditorSession } = useEditorStore((state) => ({
+    openFile: state.openFile,
+    activeFile: state.activeFile,
+    openFiles: state.openFiles,
+    resetEditorSession: state.resetEditorSession,
+  }), shallow);
+  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
+    openProject: state.openProject,
+    projectPath: state.projectPath,
+    projectName: state.projectName,
+    isIngesting: state.isIngesting,
+    allDialogFiles: state.allDialogFiles,
+    parsedFiles: state.parsedFiles,
+    isIngestedFilesOpen: state.isIngestedFilesOpen,
+    setIngestedFilesOpen: state.setIngestedFilesOpen,
+  }), shallow);
   const editHistory = useHistoryStore(state => state.editHistory);
   const { undo, redo } = useHistoryStore.getState();
   const canUndo = activeFile ? (editHistory.get(activeFile)?.past.length ?? 0) > 0 : false;

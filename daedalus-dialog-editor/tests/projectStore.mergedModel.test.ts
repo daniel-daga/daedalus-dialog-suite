@@ -157,6 +157,81 @@ describe('ProjectStore - mergedSemanticModel', () => {
     expect(merged.variables).not.toHaveProperty('VAR_OLD');
   });
 
+  test('deleteVariable removes the deleted symbol from mergedSemanticModel', async () => {
+    const questFile = '/path/to/Quests.d';
+    const source = 'var int VAR_KEEP;\nvar int VAR_DELETE;\n';
+
+    const withFilePath = (model: SemanticModel): SemanticModel => ({
+      ...model,
+      variables: Object.fromEntries(
+        Object.entries(model.variables || {}).map(([name, v]) => [
+          name,
+          { ...v, filePath: questFile }
+        ])
+      )
+    });
+
+    useProjectStore.setState({
+      allDialogFiles: [questFile],
+      questFiles: [questFile],
+      parsedFiles: new Map([
+        [questFile, { filePath: questFile, semanticModel: withFilePath(createModel(['VAR_KEEP', 'VAR_DELETE'])), lastParsed: new Date() }]
+      ]),
+      mergedSemanticModel: withFilePath(createModel(['VAR_KEEP', 'VAR_DELETE']))
+    });
+
+    const readFileSpy = jest.spyOn(window.editorAPI, 'readFile').mockResolvedValue(source);
+    const writeFileSpy = jest.spyOn(window.editorAPI, 'writeFile').mockResolvedValue({ success: true });
+    const parseSpy = jest.spyOn(window.editorAPI, 'parseDialogFile')
+      .mockResolvedValue(createModel(['VAR_KEEP']));
+
+    try {
+      await useProjectStore.getState().deleteVariable(questFile, {
+        startIndex: source.indexOf('var int VAR_DELETE'),
+        endIndex: source.indexOf('VAR_DELETE;') + 'VAR_DELETE;'.length
+      });
+
+      const merged = useProjectStore.getState().mergedSemanticModel;
+      expect(merged.variables).toHaveProperty('VAR_KEEP');
+      expect(merged.variables).not.toHaveProperty('VAR_DELETE');
+    } finally {
+      readFileSpy.mockRestore();
+      writeFileSpy.mockRestore();
+      parseSpy.mockRestore();
+    }
+  });
+
+  test('updateGlobalConstant handles string values containing semicolons', async () => {
+    const questFile = '/path/to/Topics.d';
+    const source = 'const string TOPIC_Test = "Old; with semicolon";\nvar int MIS_Test;\n';
+
+    useProjectStore.setState({
+      mergedSemanticModel: {
+        ...createModel([]),
+        constants: {
+          TOPIC_Test: { name: 'TOPIC_Test', type: 'string', value: 'Old; with semicolon', filePath: questFile }
+        }
+      }
+    });
+
+    const readFileSpy = jest.spyOn(window.editorAPI, 'readFile').mockResolvedValue(source);
+    const writeFileSpy = jest.spyOn(window.editorAPI, 'writeFile').mockResolvedValue({ success: true });
+    const parseSpy = jest.spyOn(window.editorAPI, 'parseDialogFile').mockResolvedValue(createModel([]));
+
+    try {
+      await useProjectStore.getState().updateGlobalConstant('TOPIC_Test', 'New; still one statement', questFile);
+
+      expect(writeFileSpy).toHaveBeenCalledWith(
+        questFile,
+        'const string TOPIC_Test = "New; still one statement";\nvar int MIS_Test;\n'
+      );
+    } finally {
+      readFileSpy.mockRestore();
+      writeFileSpy.mockRestore();
+      parseSpy.mockRestore();
+    }
+  });
+
   test('addDialogToIndex does not duplicate existing dialog metadata', () => {
     const store = useProjectStore.getState();
     const metadata = {

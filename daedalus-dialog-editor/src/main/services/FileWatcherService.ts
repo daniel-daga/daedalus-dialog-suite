@@ -10,7 +10,23 @@
  */
 
 import { watch, type FSWatcher } from 'chokidar';
+import * as path from 'path';
 import type { BrowserWindow } from 'electron';
+
+interface PathStats {
+  isFile(): boolean;
+  isDirectory(): boolean;
+}
+
+/**
+ * Normalize a path for self-write suppression matching. The notifier and the
+ * watcher may disagree on separators (and casing on Windows), so we compare on
+ * a canonical key: forward slashes everywhere, lowercased on win32.
+ */
+function selfWriteKey(filePath: string): string {
+  const unified = path.normalize(filePath).replace(/\\/g, '/');
+  return process.platform === 'win32' ? unified.toLowerCase() : unified;
+}
 
 export type FileChangeType = 'change' | 'add' | 'unlink';
 
@@ -43,9 +59,10 @@ export class FileWatcherService {
    * event for it is suppressed. The mark expires after 2 seconds.
    */
   notifySelfWrite(filePath: string): void {
-    this.selfWrittenPaths.add(filePath);
+    const key = selfWriteKey(filePath);
+    this.selfWrittenPaths.add(key);
     setTimeout(() => {
-      this.selfWrittenPaths.delete(filePath);
+      this.selfWrittenPaths.delete(key);
     }, 2000);
   }
 
@@ -59,17 +76,15 @@ export class FileWatcherService {
     this.watchedPath = projectPath;
 
     this.watcher = watch(projectPath, {
-      // Only watch .d files (Daedalus source files)
-      ignored: (path: string) => {
-        // Allow directories (so we can recurse into them)
-        // and .d files; ignore everything else
-        if (path === projectPath) return false;
-        // If it doesn't end in .d or .D and has no separator after projectPath
-        // we need to let directories through
-        const lowerPath = path.toLowerCase();
-        const hasExtension = lowerPath.lastIndexOf('.') > lowerPath.lastIndexOf('/');
-        if (hasExtension && !lowerPath.endsWith('.d')) return true;
-        return false;
+      // Only watch .d files (Daedalus source files); always recurse into
+      // directories so their .d files are seen.
+      ignored: (filePath: string, stats?: PathStats) => {
+        if (filePath === projectPath) return false;
+        // Directories must be traversed. Without stats we cannot tell a
+        // dotted directory (e.g. "Mod.bak/") from a file, so we do NOT ignore
+        // — chokidar will re-evaluate with stats on the next pass.
+        if (!stats || stats.isDirectory()) return false;
+        return !filePath.toLowerCase().endsWith('.d');
       },
       persistent: true,
       ignoreInitial: true,
@@ -110,8 +125,9 @@ export class FileWatcherService {
 
   private handleEvent(type: FileChangeType, filePath: string): void {
     // Skip events triggered by the editor's own writes
-    if (this.selfWrittenPaths.has(filePath)) {
-      this.selfWrittenPaths.delete(filePath);
+    const key = selfWriteKey(filePath);
+    if (this.selfWrittenPaths.has(key)) {
+      this.selfWrittenPaths.delete(key);
       return;
     }
 

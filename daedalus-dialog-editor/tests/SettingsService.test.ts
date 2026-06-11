@@ -67,4 +67,27 @@ describe('SettingsService', () => {
     expect(projects).toHaveLength(10);
     expect(projects[0].name).toBe('Proj14');
   });
+
+  describe('isKnownRecentProject', () => {
+    it('returns true for a persisted recent project (normalized)', async () => {
+      await settingsService.addRecentProject('/projects/my-mod', 'My Mod');
+
+      expect(await settingsService.isKnownRecentProject('/projects/my-mod')).toBe(true);
+      // Normalization: redundant segments resolve to the same path
+      expect(await settingsService.isKnownRecentProject('/projects/sub/../my-mod')).toBe(true);
+    });
+
+    it('returns false for a path that was never opened', async () => {
+      await settingsService.addRecentProject('/projects/my-mod', 'My Mod');
+
+      expect(await settingsService.isKnownRecentProject('/etc')).toBe(false);
+      expect(await settingsService.isKnownRecentProject('/projects/other-mod')).toBe(false);
+    });
+
+    it('returns false for empty or non-string input', async () => {
+      expect(await settingsService.isKnownRecentProject('')).toBe(false);
+      // @ts-expect-error testing defensive runtime guard
+      expect(await settingsService.isKnownRecentProject(undefined)).toBe(false);
+    });
+  });
 });

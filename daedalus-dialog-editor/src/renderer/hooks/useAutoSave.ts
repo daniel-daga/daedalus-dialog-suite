@@ -38,8 +38,9 @@ export function useAutoSave(): AutoSaveStatus {
     setIsAutoSaving(true);
 
     try {
-      // Save all dirty files
-      const successfulSaves: string[] = [];
+      // Save all dirty files; remember which model reference was written so
+      // edits that land while a save is in flight are not marked clean
+      const successfulSaves = new Map<string, unknown>();
       const failedSaves = new Map<string, any>();
       const errors: unknown[] = [];
 
@@ -47,17 +48,18 @@ export function useAutoSave(): AutoSaveStatus {
         filesToSave.map(async (filePath) => {
           const fileState = state.openFiles.get(filePath);
           if (fileState) {
+            const savedModel = fileState.semanticModel;
             try {
-              // Notify file watcher this is a self-originated write
-              window.editorAPI.notifySelfWrite(filePath);
+              // The main process arms file-watcher self-write suppression
+              // after the actual write succeeds.
               const result = await window.editorAPI.saveFile(
                 filePath,
-                fileState.semanticModel,
+                savedModel,
                 state.codeSettings
               );
-              
+
               if (result.success) {
-                successfulSaves.push(filePath);
+                successfulSaves.set(filePath, savedModel);
               } else if (result.validationResult) {
                 failedSaves.set(filePath, result.validationResult);
               }
@@ -68,13 +70,25 @@ export function useAutoSave(): AutoSaveStatus {
         })
       );
 
+      // Only files whose model reference is unchanged may be marked clean —
+      // edits that landed while the save was in flight are not on disk yet.
+      // (Compared outside setState: the immer middleware hands the updater
+      // draft proxies, which would never be reference-equal.)
+      const latestFiles = useEditorStore.getState().openFiles;
+      const cleanableFiles = new Set<string>();
+      successfulSaves.forEach((savedModel, filePath) => {
+        if (latestFiles.get(filePath)?.semanticModel === savedModel) {
+          cleanableFiles.add(filePath);
+        }
+      });
+
       // Update store with results
       useEditorStore.setState((currentState) => {
         const newOpenFiles = new Map(currentState.openFiles);
         const now = new Date();
 
         // Mark successful saves as clean
-        successfulSaves.forEach((filePath) => {
+        cleanableFiles.forEach((filePath) => {
           const currentFileState = newOpenFiles.get(filePath);
           if (currentFileState) {
             newOpenFiles.set(filePath, {
@@ -109,7 +123,7 @@ export function useAutoSave(): AutoSaveStatus {
         return { openFiles: newOpenFiles };
       });
 
-      if (successfulSaves.length > 0) {
+      if (successfulSaves.size > 0) {
         setLastAutoSaveTime(new Date());
       }
 

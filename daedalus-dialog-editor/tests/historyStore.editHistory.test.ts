@@ -50,7 +50,6 @@ const resetStores = (initialModel: SemanticModel = makeModel('initial')) => {
 
   useHistoryStore.setState({
     editHistory: new Map(),
-    questHistory: new Map(),
     questBatchHistory: { past: [], future: [] },
     questNodePositions: new Map(),
   });

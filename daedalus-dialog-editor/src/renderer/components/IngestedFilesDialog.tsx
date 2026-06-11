@@ -16,6 +16,7 @@ import {
   Tooltip
 } from '@mui/material';
 import { Close as CloseIcon, CheckCircle as CheckCircleIcon, Error as ErrorIcon } from '@mui/icons-material';
+import { shallow } from 'zustand/shallow';
 import { useProjectStore } from '../store/projectStore';
 
 interface IngestedFilesDialogProps {
@@ -28,7 +29,7 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
     parsedFiles: state.parsedFiles,
     allDialogFiles: state.allDialogFiles,
     isIngesting: state.isIngesting
-  }));
+  }), shallow);
 
   if (!open || !allDialogFiles || !parsedFiles) {
     return null;

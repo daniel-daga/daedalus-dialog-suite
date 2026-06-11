@@ -11,6 +11,7 @@ import { Undo as UndoIcon, Redo as RedoIcon } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import type { QuestGraphBuildOptions, QuestGraphEdge, QuestGraphNode } from '../types/questGraph';
 import { useNavigation } from '../hooks/useNavigation';
+import { shallow } from 'zustand/shallow';
 import { useFileStore } from '../store/fileStore';
 import { useHistoryStore } from '../store/historyStore';
 import { useProjectStore } from '../store/projectStore';
@@ -70,13 +71,13 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   const { projectPath, parsedFiles } = useProjectStore((state) => ({
     projectPath: state.projectPath,
     parsedFiles: state.parsedFiles
-  }));
+  }), shallow);
   const { activeFile, getFileState, openFile, codeSettings } = useFileStore((state) => ({
     activeFile: state.activeFile,
     getFileState: state.getFileState,
     openFile: state.openFile,
     codeSettings: state.codeSettings
-  }));
+  }), shallow);
   const {
     applyQuestModelsWithHistory,
     applyQuestNodePositionWithHistory,
@@ -93,7 +94,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     redoLastQuestBatch: state.redoLastQuestBatch,
     canUndoLastQuestBatch: state.canUndoLastQuestBatch,
     canRedoLastQuestBatch: state.canRedoLastQuestBatch,
-  }));
+  }), shallow);
 
   const [nodes, setNodes] = useState<QuestGraphNode[]>([]);
   const [edges, setEdges] = useState<QuestGraphEdge[]>([]);

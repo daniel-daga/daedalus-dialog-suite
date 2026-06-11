@@ -158,11 +158,37 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   ): Promise<SemanticModel> => {
     const content = await window.editorAPI.readFile(filePath);
     const newContent = await mutatorFn(content);
-    // Notify file watcher this is a self-originated write
-    window.editorAPI.notifySelfWrite(filePath);
+    // The main process arms file-watcher self-write suppression after the
+    // actual write succeeds.
     await window.editorAPI.writeFile(filePath, newContent);
     invalidateCacheForFile(filePath);
     return get().getSemanticModel(filePath);
+  };
+
+  /**
+   * Fold freshly-parsed quest file models into the merged model. Constants
+   * and variables previously contributed by these files are dropped first so
+   * that deletions are reflected (merging is otherwise purely additive).
+   */
+  const mergeUpdatedQuestFileModels = (
+    updates: Array<{ filePath: string; model: SemanticModel }>
+  ) => {
+    const merged = get().mergedSemanticModel;
+    const updatedPaths = new Set(updates.map((u) => u.filePath));
+    const dropFromUpdatedFiles = <T extends { filePath?: string }>(
+      entries: { [name: string]: T } | undefined
+    ): { [name: string]: T } => Object.fromEntries(
+      Object.entries(entries || {}).filter(
+        ([, entry]) => !entry.filePath || !updatedPaths.has(entry.filePath)
+      )
+    );
+
+    const base: SemanticModel = {
+      ...merged,
+      constants: dropFromUpdatedFiles(merged.constants),
+      variables: dropFromUpdatedFiles(merged.variables),
+    };
+    get().mergeSemanticModels([base, ...updates.map((u) => u.model)]);
   };
 
   return {
@@ -475,14 +501,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (!c.endsWith('\n')) c += '\n';
           return c + questBlock;
         });
-        get().mergeSemanticModels([get().mergedSemanticModel, combinedModel]);
+        mergeUpdatedQuestFileModels([{ filePath: topicFilePath, model: combinedModel }]);
       } else {
         const constLine = `\nconst string TOPIC_${internalName} = "${title}";\n`;
         const topicModel = await mutateQuestFile(topicFilePath, (c) => {
           if (!c.endsWith('\n')) c += '\n';
           return c + constLine;
         });
-        const modelsToMerge = [get().mergedSemanticModel, topicModel];
+        const updates = [{ filePath: topicFilePath, model: topicModel }];
 
         if (hasVariable) {
           const varLine = `\nvar int MIS_${internalName};\n`;
@@ -490,10 +516,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             if (!c.endsWith('\n')) c += '\n';
             return c + varLine;
           });
-          modelsToMerge.push(variableModel);
+          updates.push({ filePath: variableFilePath, model: variableModel });
         }
 
-        get().mergeSemanticModels(modelsToMerge);
+        mergeUpdatedQuestFileModels(updates);
       }
 
       set({ isLoading: false });
@@ -523,7 +549,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return c + varLine;
       });
 
-      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+      mergeUpdatedQuestFileModels([{ filePath, model: updatedModel }]);
       set({ isLoading: false });
 
     } catch (error) {
@@ -543,7 +569,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const newValue = isString ? `"${value}"` : value;
 
       // Matches: const <type> <name> = <value>;
-      const regex = new RegExp(`(const\\s+\\w+\\s+${name}\\s*=\\s*)([^;]+)(;)`);
+      // Quoted string values are matched as a whole so semicolons inside them
+      // don't terminate the value early.
+      const regex = new RegExp(`(const\\s+\\w+\\s+${name}\\s*=\\s*)("[^"]*"|[^;]+)(;)`);
 
       const updatedModel = await mutateQuestFile(filePath, (content) => {
         const match = content.match(regex);
@@ -553,7 +581,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return content.replace(regex, `$1${newValue}$3`);
       });
 
-      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+      mergeUpdatedQuestFileModels([{ filePath, model: updatedModel }]);
       set({ isLoading: false });
 
     } catch (error) {
@@ -575,7 +603,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return content.slice(0, range.startIndex) + content.slice(end);
       });
 
-      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+      mergeUpdatedQuestFileModels([{ filePath, model: updatedModel }]);
       set({ isLoading: false });
 
     } catch (error) {
@@ -637,23 +665,46 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       lastParsed: new Date()
     });
 
-    // Rebuild dialogIndex entries for this file from the updated model so that
-    // rename and delete operations are reflected in the dialog list immediately.
-    const newDialogIndex = new Map(dialogIndex);
-    for (const [npc, dialogs] of newDialogIndex.entries()) {
-      const filtered = dialogs.filter(d => d.filePath !== filePath);
-      if (filtered.length !== dialogs.length) {
-        if (filtered.length === 0) newDialogIndex.delete(npc);
-        else newDialogIndex.set(npc, filtered);
+    // The dialog index only depends on each dialog's name + owning NPC. Action
+    // and condition edits (the common keystroke case) leave that set unchanged,
+    // so rebuilding the whole index every edit is pure O(project) waste. Only
+    // rebuild when the file's (dialogName, npc) set actually changed.
+    const nextFileEntries = Object.entries(model.dialogs || {}).map(([dialogName, dialog]) => ({
+      dialogName,
+      npc: (dialog.properties?.npc as string) || 'Unknown NPC',
+      filePath
+    }));
+    const prevFileEntries: Array<{ dialogName: string; npc: string }> = [];
+    for (const dialogs of dialogIndex.values()) {
+      for (const d of dialogs) {
+        if (d.filePath === filePath) prevFileEntries.push({ dialogName: d.dialogName, npc: d.npc });
       }
     }
-    for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
-      const npcName = (dialog.properties?.npc as string) || 'Unknown NPC';
-      const existing = newDialogIndex.get(npcName) || [];
-      newDialogIndex.set(npcName, [...existing, { dialogName, npc: npcName, filePath }]);
+    const entryKey = (e: { dialogName: string; npc: string }) => `${e.npc} ${e.dialogName}`;
+    const prevKeys = new Set(prevFileEntries.map(entryKey));
+    const nextKeys = new Set(nextFileEntries.map(entryKey));
+    const dialogSetChanged =
+      prevKeys.size !== nextKeys.size || [...nextKeys].some((k) => !prevKeys.has(k));
+
+    let newDialogIndex = dialogIndex;
+    if (dialogSetChanged) {
+      newDialogIndex = new Map(dialogIndex);
+      for (const [npc, dialogs] of newDialogIndex.entries()) {
+        const filtered = dialogs.filter(d => d.filePath !== filePath);
+        if (filtered.length !== dialogs.length) {
+          if (filtered.length === 0) newDialogIndex.delete(npc);
+          else newDialogIndex.set(npc, filtered);
+        }
+      }
+      for (const entry of nextFileEntries) {
+        const existing = newDialogIndex.get(entry.npc) || [];
+        newDialogIndex.set(entry.npc, [...existing, entry]);
+      }
     }
 
-    set({ parsedFiles: newCache, dialogIndex: newDialogIndex });
+    set(dialogSetChanged
+      ? { parsedFiles: newCache, dialogIndex: newDialogIndex }
+      : { parsedFiles: newCache });
 
     // Re-merge the semantic model for the currently selected NPC so that
     // description changes, renames, and deletes are reflected immediately.

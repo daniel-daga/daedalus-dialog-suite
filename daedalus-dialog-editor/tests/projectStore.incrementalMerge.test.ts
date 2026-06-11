@@ -79,4 +79,33 @@ describe('projectStore.updateFileModel incremental re-merge', () => {
     expect(after).not.toBe(before);
     expect(after.variables).toHaveProperty('VAR_GLOBAL_NEW');
   });
+
+  test('does not rebuild dialogIndex when only action content changes (no dialog set change)', () => {
+    const before = useProjectStore.getState().dialogIndex;
+
+    // Same dialog name + npc, but a different model object (e.g. an edited
+    // action body) — the dialog index must not be rebuilt.
+    const edited = createModel(['VAR_A'], [{ name: 'DIA_1', npc: 'NPC_1' }]);
+    edited.functions = { DIA_1_Info: { name: 'DIA_1_Info', returnType: 'VOID', actions: [{ type: 'DialogLine', text: 'changed', speaker: 'self', id: 'x' }], conditions: [], calls: [] } } as never;
+
+    useProjectStore.getState().updateFileModel(NPC_FILE, edited);
+
+    const after = useProjectStore.getState().dialogIndex;
+    expect(after).toBe(before);
+  });
+
+  test('rebuilds dialogIndex when a dialog is added to the file', () => {
+    const before = useProjectStore.getState().dialogIndex;
+
+    useProjectStore.getState().updateFileModel(
+      NPC_FILE,
+      createModel(['VAR_A'], [{ name: 'DIA_1', npc: 'NPC_1' }, { name: 'DIA_1b', npc: 'NPC_1' }])
+    );
+
+    const after = useProjectStore.getState().dialogIndex;
+    expect(after).not.toBe(before);
+    expect((after.get('NPC_1') || []).map((d) => d.dialogName)).toEqual(
+      expect.arrayContaining(['DIA_1', 'DIA_1b'])
+    );
+  });
 });

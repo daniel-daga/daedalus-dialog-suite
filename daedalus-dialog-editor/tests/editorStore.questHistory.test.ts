@@ -41,7 +41,6 @@ describe('historyStore quest history', () => {
       activeFile: filePath
     });
     useHistoryStore.setState({
-      questHistory: new Map(),
       questBatchHistory: { past: [], future: [] },
       questNodePositions: new Map(),
     });
@@ -170,5 +169,83 @@ describe('historyStore quest history', () => {
     expect(useFileStore.getState().getFileState(secondPath)?.semanticModel.functions.DIA_Test_Info.actions[0]).toMatchObject({
       value: 'LOG_FAILED'
     });
+  });
+});
+
+describe('historyStore – unified cross-surface history', () => {
+  const filePath = 'C:/tmp/test.d';
+
+  beforeEach(() => {
+    useFileStore.setState({
+      openFiles: new Map([
+        [filePath, {
+          filePath,
+          semanticModel: createModel('initial'),
+          isDirty: false,
+          lastSaved: new Date()
+        }]
+      ]),
+      activeFile: filePath
+    });
+    useHistoryStore.getState().resetHistory();
+  });
+
+  const currentValue = () =>
+    (useFileStore.getState().getFileState(filePath)?.semanticModel.functions
+      .DIA_Test_Info.actions[0] as { value?: string }).value;
+
+  it('toolbar undo after a quest apply reverts the quest edit, not an older dialog edit', () => {
+    // Dialog-surface edit (snapshot of 'initial', then apply)
+    useHistoryStore.getState().pushSnapshot(filePath);
+    useFileStore.getState()._applyHistoryModelUpdate(filePath, createModel('dialog-edit'));
+
+    // Quest-surface edit on the same file
+    useHistoryStore.getState().applyQuestModelWithHistory(filePath, createModel('quest-edit'));
+    expect(currentValue()).toBe('quest-edit');
+
+    // Toolbar undo must revert the most recent change (the quest edit) —
+    // not silently drop it by restoring the pre-dialog-edit snapshot
+    useHistoryStore.getState().undo(filePath);
+    expect(currentValue()).toBe('dialog-edit');
+
+    // And redo must bring the quest edit back
+    useHistoryStore.getState().redo(filePath);
+    expect(currentValue()).toBe('quest-edit');
+
+    // A second undo walks back to the dialog edit, a third to initial
+    useHistoryStore.getState().undo(filePath);
+    expect(currentValue()).toBe('dialog-edit');
+    useHistoryStore.getState().undo(filePath);
+    expect(currentValue()).toBe('initial');
+  });
+
+  it('quest batch undo after a dialog edit reverts the most recent state of that file', () => {
+    useHistoryStore.getState().applyQuestModelWithHistory(filePath, createModel('quest-edit'));
+    useHistoryStore.getState().pushSnapshot(filePath);
+    useFileStore.getState()._applyHistoryModelUpdate(filePath, createModel('dialog-edit'));
+
+    // Batch undo pops the latest change for the file on the shared timeline
+    useHistoryStore.getState().undoLastQuestBatch();
+    expect(currentValue()).toBe('quest-edit');
+  });
+
+  it('toolbar undo restores node positions captured in snapshots', () => {
+    useHistoryStore.getState().applyQuestNodePositionWithHistory(
+      filePath, 'TOPIC_TEST', 'DIA_Test_Info', { x: 50, y: 60 }
+    );
+    expect(
+      useHistoryStore.getState().getQuestNodePositions(filePath, 'TOPIC_TEST').get('DIA_Test_Info')
+    ).toEqual({ x: 50, y: 60 });
+
+    // Unified toolbar undo (not undoQuestModel) must restore positions too
+    useHistoryStore.getState().undo(filePath);
+    expect(
+      useHistoryStore.getState().getQuestNodePositions(filePath, 'TOPIC_TEST').get('DIA_Test_Info')
+    ).toBeUndefined();
+
+    useHistoryStore.getState().redo(filePath);
+    expect(
+      useHistoryStore.getState().getQuestNodePositions(filePath, 'TOPIC_TEST').get('DIA_Test_Info')
+    ).toEqual({ x: 50, y: 60 });
   });
 });

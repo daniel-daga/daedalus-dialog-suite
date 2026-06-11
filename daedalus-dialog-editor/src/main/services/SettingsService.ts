@@ -51,6 +51,22 @@ export class SettingsService {
     return settings.recentProjects || [];
   }
 
+  /**
+   * Whether `folderPath` matches a persisted recent project (compared as
+   * normalized paths). Used to gate renderer-initiated path whitelisting so a
+   * compromised renderer cannot whitelist arbitrary directories.
+   */
+  async isKnownRecentProject(folderPath: string): Promise<boolean> {
+    if (typeof folderPath !== 'string' || folderPath.trim() === '') {
+      return false;
+    }
+    const recentProjects = await this.getRecentProjects();
+    const normalizedTarget = path.normalize(folderPath);
+    return recentProjects.some(
+      (project) => path.normalize(project.path) === normalizedTarget
+    );
+  }
+
   async addRecentProject(projectPath: string, projectName: string): Promise<void> {
     const settings = await this.readSettings();
     const recentProjects: RecentProject[] = settings.recentProjects || [];
