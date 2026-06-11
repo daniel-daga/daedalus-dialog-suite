@@ -2,7 +2,12 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import { createDialogLineId } from '../components/actionFactory';
-import { collectDialogLineActions } from '../components/nestedActionUtils';
+import { collectDialogLineActions, mapChoiceTargetFunctions } from '../components/nestedActionUtils';
+import {
+  collectReachableChoiceFunctions,
+  computeDialogDeletionSet,
+  resolveFunctionRef
+} from '../components/dialogUtils';
 import { useUISelectionStore } from './uiSelectionStore';
 import type {
   SemanticModel,
@@ -413,76 +418,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const dialog = model.dialogs[dialogName];
       if (!dialog) return;
 
-      // Resolve condition and information function names
-      const infoRef = dialog.properties?.information;
-      const infoFuncName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
-      const condRef = dialog.properties?.condition;
-      const condFuncName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
-
-      // Collect all functions reachable from the info function (the full subtree)
-      const candidatesToDelete = new Set<string>();
-      if (infoFuncName) {
-        // BFS from info function via Choice.targetFunction
-        const queue: string[] = [infoFuncName];
-        while (queue.length > 0) {
-          const name = queue.pop()!;
-          if (candidatesToDelete.has(name)) continue;
-          const func = model.functions[name];
-          if (!func) continue;
-          candidatesToDelete.add(name);
-          for (const action of func.actions || []) {
-            const a = action as any;
-            if (a.type === 'Choice' && typeof a.targetFunction === 'string') {
-              if (!candidatesToDelete.has(a.targetFunction)) {
-                queue.push(a.targetFunction);
-              }
-            }
-          }
-        }
-      }
-      if (condFuncName) {
-        candidatesToDelete.add(condFuncName);
-      }
-
-      // Build remaining dialogs (excluding the one being removed) to check shared functions
-      const remainingDialogs = (Object.entries(model.dialogs) as [string, Dialog][])
-        .filter(([name]) => name !== dialogName)
-        .map(([, d]) => d);
-
-      // Collect all function names still referenced by remaining dialogs
-      const stillReferenced = new Set<string>();
-      for (const d of remainingDialogs) {
-        const iRef = d.properties?.information;
-        const iName = typeof iRef === 'string' ? iRef : (iRef as any)?.name;
-        if (iName) {
-          // BFS from each remaining info function
-          const q: string[] = [iName];
-          while (q.length > 0) {
-            const n = q.pop()!;
-            if (stillReferenced.has(n)) continue;
-            const f = model.functions[n];
-            if (!f) continue;
-            stillReferenced.add(n);
-            for (const action of f.actions || []) {
-              const a = action as any;
-              if (a.type === 'Choice' && typeof a.targetFunction === 'string') {
-                if (!stillReferenced.has(a.targetFunction)) q.push(a.targetFunction);
-              }
-            }
-          }
-        }
-        const cRef = d.properties?.condition;
-        const cName = typeof cRef === 'string' ? cRef : (cRef as any)?.name;
-        if (cName) stillReferenced.add(cName);
-      }
-
-      // Only delete functions that are not referenced by any remaining dialog
-      const functionsToDelete = new Set<string>();
-      for (const name of candidatesToDelete) {
-        if (!stillReferenced.has(name)) {
-          functionsToDelete.add(name);
-        }
-      }
+      // Functions owned by this dialog and not referenced by any remaining
+      // dialog (traverses choices nested in conditional branches too)
+      const functionsToDelete = computeDialogDeletionSet(model, dialogName);
 
       // Apply deletions
       const updatedDialogs = { ...model.dialogs };
@@ -525,10 +463,8 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const updatedDialog = { ...dialog, name: newDialogName };
 
       // Resolve old info/condition function names
-      const infoRef = dialog.properties?.information;
-      const oldInfoName = typeof infoRef === 'string' ? infoRef : (infoRef as any)?.name;
-      const condRef = dialog.properties?.condition;
-      const oldCondName = typeof condRef === 'string' ? condRef : (condRef as any)?.name;
+      const oldInfoName = resolveFunctionRef(dialog.properties?.information);
+      const oldCondName = resolveFunctionRef(dialog.properties?.condition);
 
       const updatedFunctions: { [key: string]: DialogFunction } = { ...model.functions };
       const updatedDialogs = { ...model.dialogs };
@@ -538,24 +474,8 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const renameMap = new Map<string, string>();
 
       if (renameFunctions) {
-        // Collect all functions reachable from the info function
-        const reachable = new Set<string>();
-        if (oldInfoName) {
-          const q: string[] = [oldInfoName];
-          while (q.length > 0) {
-            const n = q.pop()!;
-            if (reachable.has(n)) continue;
-            const f = model.functions[n];
-            if (!f) continue;
-            reachable.add(n);
-            for (const action of f.actions || []) {
-              const a = action as any;
-              if (a.type === 'Choice' && typeof a.targetFunction === 'string') {
-                if (!reachable.has(a.targetFunction)) q.push(a.targetFunction);
-              }
-            }
-          }
-        }
+        // Functions reachable from the info function via (possibly nested) choices
+        const reachable = collectReachableChoiceFunctions(model.functions, oldInfoName);
         if (oldCondName) reachable.add(oldCondName);
 
         // Compute new names for functions that follow the old dialog name prefix
@@ -568,32 +488,21 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         }
       }
 
-      // Apply function renames
+      // Apply function renames and rewrite Choice.targetFunction references
+      // (including choices nested in conditional branches)
+      const mapTarget = (target: string) => renameMap.get(target);
       for (const [oldName, func] of Object.entries(model.functions) as [string, DialogFunction][]) {
+        const { actions: updatedActions, changed } = mapChoiceTargetFunctions(
+          (func as any).actions || [],
+          mapTarget
+        );
+
         if (renameMap.has(oldName)) {
           const newName = renameMap.get(oldName)!;
-          // Also update Choice.targetFunction references within this function
-          const updatedActions = ((func as any).actions || []).map((action: any) => {
-            if (action.type === 'Choice' && renameMap.has(action.targetFunction)) {
-              return { ...action, targetFunction: renameMap.get(action.targetFunction) };
-            }
-            return action;
-          });
           delete updatedFunctions[oldName];
           updatedFunctions[newName] = { ...func, name: newName, actions: updatedActions };
-        } else {
-          // Update Choice.targetFunction references in non-renamed functions too
-          let changed = false;
-          const updatedActions = ((func as any).actions || []).map((action: any) => {
-            if (action.type === 'Choice' && renameMap.has(action.targetFunction)) {
-              changed = true;
-              return { ...action, targetFunction: renameMap.get(action.targetFunction) };
-            }
-            return action;
-          });
-          if (changed) {
-            updatedFunctions[oldName] = { ...func, conditions: (func as any).conditions, actions: updatedActions };
-          }
+        } else if (changed) {
+          updatedFunctions[oldName] = { ...func, actions: updatedActions };
         }
       }
 

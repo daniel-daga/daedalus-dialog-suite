@@ -317,6 +317,71 @@ describe('historyActions – removeDialog', () => {
     expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
     expect(getModel()?.dialogs['DIA_Test2']).toBeDefined();
   });
+
+  it('deletes choice target functions referenced only via choices nested in conditionals', () => {
+    const emptyFunc = (name: string) => ({ name, returnType: 'VOID', actions: [], conditions: [], calls: [] });
+    useFileStore.setState({
+      openFiles: new Map([
+        [filePath, {
+          filePath,
+          semanticModel: {
+            dialogs: {
+              DIA_Test: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+              DIA_Other: { properties: { npc: 'NPC', information: 'DIA_Other_Info' } },
+            },
+            functions: {
+              DIA_Test_Info: {
+                ...emptyFunc('DIA_Test_Info'),
+                actions: [{
+                  type: 'ConditionalAction',
+                  condition: 'MIS_Quest == LOG_RUNNING',
+                  thenActions: [
+                    { type: 'Choice', text: 'nested', targetFunction: 'DIA_Test_NestedChoice' }
+                  ],
+                  elseActions: [
+                    { type: 'Choice', text: 'shared', targetFunction: 'DIA_Shared_Target' }
+                  ],
+                }],
+              },
+              DIA_Test_NestedChoice: emptyFunc('DIA_Test_NestedChoice'),
+              DIA_Shared_Target: emptyFunc('DIA_Shared_Target'),
+              DIA_Other_Info: {
+                ...emptyFunc('DIA_Other_Info'),
+                actions: [{
+                  type: 'ConditionalAction',
+                  condition: 'TRUE',
+                  thenActions: [
+                    { type: 'Choice', text: 'also shared', targetFunction: 'DIA_Shared_Target' }
+                  ],
+                  elseActions: [],
+                }],
+              },
+            },
+            constants: {},
+            variables: {},
+            instances: {},
+            hasErrors: false,
+            errors: [],
+          },
+          isDirty: false,
+          lastSaved: new Date(),
+          originalCode: '',
+          workingCode: '',
+          hasErrors: false,
+          errors: [],
+        }]
+      ]),
+      activeFile: filePath,
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    // Nested choice target only used by the deleted dialog must be removed
+    expect(getModel()?.functions['DIA_Test_NestedChoice']).toBeUndefined();
+    // Nested choice target still referenced (also via a nested choice) by another dialog must stay
+    expect(getModel()?.functions['DIA_Shared_Target']).toBeDefined();
+    expect(getModel()?.functions['DIA_Other_Info']).toBeDefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -410,5 +475,45 @@ describe('historyActions – renameDialog', () => {
     expect(getModel()?.dialogs['DIA_Npc_Greeting']).toBeUndefined();
     expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeDefined();
     expect(getModel()?.functions['DIA_Npc_Greeting_Info']).toBeUndefined();
+  });
+
+  it('renames choice targets nested inside conditional branches', () => {
+    const model = getModel()!;
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...model,
+        functions: {
+          ...model.functions,
+          DIA_Npc_Hello_Info: {
+            ...model.functions['DIA_Npc_Hello_Info'],
+            actions: [{
+              type: 'ConditionalAction',
+              condition: 'MIS_Quest == LOG_RUNNING',
+              thenActions: [
+                { type: 'Choice', text: 'nested', targetFunction: 'DIA_Npc_Hello_Option1' }
+              ],
+              elseActions: [],
+            }],
+          },
+          DIA_Npc_Hello_Option1: {
+            name: 'DIA_Npc_Hello_Option1',
+            returnType: 'VOID',
+            actions: [],
+            conditions: [],
+            calls: [],
+          },
+        },
+      } as any;
+    });
+
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    // The nested choice target function must be renamed...
+    expect(getModel()?.functions['DIA_Npc_Hello_Option1']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Option1']).toBeDefined();
+    // ...and the nested Choice reference updated to the new name
+    const infoActions = getModel()?.functions['DIA_Npc_Greeting_Info']?.actions as any[];
+    expect(infoActions[0].thenActions[0].targetFunction).toBe('DIA_Npc_Greeting_Option1');
   });
 });

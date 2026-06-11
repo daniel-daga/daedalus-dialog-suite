@@ -3,7 +3,9 @@ import {
   updateActionAtPath,
   insertActionAfterPath,
   deleteActionAtPath,
-  flattenActionPaths
+  flattenActionPaths,
+  collectChoiceActions,
+  mapChoiceTargetFunctions
 } from '../src/renderer/components/nestedActionUtils';
 
 describe('nestedActionUtils', () => {
@@ -87,5 +89,56 @@ describe('nestedActionUtils', () => {
       [1, 'then', 0],
       [1, 'else', 0]
     ]);
+  });
+
+  const createChoiceModel = () => ([
+    { type: 'Choice', text: 'top choice', targetFunction: 'DIA_Test_Top' },
+    {
+      type: 'ConditionalAction',
+      condition: 'MIS_Quest == LOG_RUNNING',
+      thenActions: [
+        { type: 'Choice', text: 'nested then', targetFunction: 'DIA_Test_Then' },
+        {
+          type: 'ConditionalAction',
+          condition: 'Npc_HasItems(other, ItMi_Gold) > 0',
+          thenActions: [
+            { type: 'Choice', text: 'deep', targetFunction: 'DIA_Test_Deep' }
+          ],
+          elseActions: []
+        }
+      ],
+      elseActions: [
+        { type: 'Choice', text: 'nested else', targetFunction: 'DIA_Test_Else' },
+        { type: 'DialogLine', speaker: 'self', text: 'line', id: 'DIA_Test_08_00' }
+      ]
+    }
+  ]) as any[];
+
+  test('collectChoiceActions finds choices nested in conditional branches', () => {
+    const targets = collectChoiceActions(createChoiceModel()).map((c: any) => c.targetFunction);
+    expect(targets).toEqual(['DIA_Test_Top', 'DIA_Test_Then', 'DIA_Test_Deep', 'DIA_Test_Else']);
+  });
+
+  test('mapChoiceTargetFunctions rewrites nested targets without mutating input', () => {
+    const actions = createChoiceModel();
+    const rename = (target: string) =>
+      target === 'DIA_Test_Deep' ? 'DIA_Renamed_Deep' : undefined;
+
+    const { actions: updated, changed } = mapChoiceTargetFunctions(actions, rename);
+
+    expect(changed).toBe(true);
+    expect((updated[1] as any).thenActions[1].thenActions[0].targetFunction).toBe('DIA_Renamed_Deep');
+    // original untouched
+    expect((actions[1] as any).thenActions[1].thenActions[0].targetFunction).toBe('DIA_Test_Deep');
+    // untouched subtrees keep reference identity
+    expect((updated[1] as any).elseActions).toBe((actions[1] as any).elseActions);
+  });
+
+  test('mapChoiceTargetFunctions reports unchanged when no target matches', () => {
+    const actions = createChoiceModel();
+    const { actions: updated, changed } = mapChoiceTargetFunctions(actions, () => undefined);
+
+    expect(changed).toBe(false);
+    expect(updated).toBe(actions);
   });
 });

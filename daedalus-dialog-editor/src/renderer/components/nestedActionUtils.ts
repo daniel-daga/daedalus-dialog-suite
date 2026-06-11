@@ -198,6 +198,72 @@ export function actionPathToKey(path: ActionPath): string {
   return path.join('.');
 }
 
+/**
+ * Collect all Choice actions, including those nested inside ConditionalAction
+ * branches, in visible order.
+ */
+export function collectChoiceActions(actions: DialogAction[]): DialogAction[] {
+  const collected: DialogAction[] = [];
+
+  actions.forEach((action) => {
+    if (action.type === 'Choice') {
+      collected.push(action);
+      return;
+    }
+
+    if (isConditionalAction(action)) {
+      collected.push(...collectChoiceActions(action.thenActions));
+      collected.push(...collectChoiceActions(action.elseActions));
+    }
+  });
+
+  return collected;
+}
+
+/**
+ * Rewrite `Choice.targetFunction` references anywhere in the action tree
+ * (including ConditionalAction branches). `mapTarget` returns the new target
+ * name, or undefined to leave a choice unchanged. Unchanged subtrees keep
+ * reference identity; if nothing changed the input array is returned as-is.
+ */
+export function mapChoiceTargetFunctions(
+  actions: DialogAction[],
+  mapTarget: (target: string) => string | undefined
+): { actions: DialogAction[]; changed: boolean } {
+  let changed = false;
+
+  const nextActions = actions.map((action) => {
+    if (action.type === 'Choice') {
+      const target = (action as DialogAction & { targetFunction?: unknown }).targetFunction;
+      if (typeof target === 'string') {
+        const newTarget = mapTarget(target);
+        if (newTarget !== undefined && newTarget !== target) {
+          changed = true;
+          return { ...action, targetFunction: newTarget };
+        }
+      }
+      return action;
+    }
+
+    if (isConditionalAction(action)) {
+      const thenResult = mapChoiceTargetFunctions(action.thenActions, mapTarget);
+      const elseResult = mapChoiceTargetFunctions(action.elseActions, mapTarget);
+      if (thenResult.changed || elseResult.changed) {
+        changed = true;
+        return {
+          ...action,
+          thenActions: thenResult.actions,
+          elseActions: elseResult.actions
+        };
+      }
+    }
+
+    return action;
+  });
+
+  return changed ? { actions: nextActions, changed } : { actions, changed };
+}
+
 export function collectDialogLineActions(actions: DialogAction[]): DialogAction[] {
   const collected: DialogAction[] = [];
 
