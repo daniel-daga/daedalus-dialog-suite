@@ -241,11 +241,15 @@ export const getConditionSummaryForFunction = (
     ? 'generic-expression'
     : 'structured';
 
+  const joinOperator = effectiveConditions.every(
+    ({ ownerFunctionName }) => semanticModel.functions?.[ownerFunctionName]?.conditionOperator === 'OR'
+  ) ? ' || ' : ' && ';
+
   const conditionExpression = conditionMode === 'generic-expression'
     ? (effectiveConditions.length === 1 && 'condition' in effectiveConditions[0].condition
       ? String((effectiveConditions[0].condition as { condition?: unknown }).condition || '').trim()
-      : expressions.join(' && '))
-    : expressions.join(' && ');
+      : expressions.join(joinOperator))
+    : expressions.join(joinOperator);
 
   return {
     conditionExpression,

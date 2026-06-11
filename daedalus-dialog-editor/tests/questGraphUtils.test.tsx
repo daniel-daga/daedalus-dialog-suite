@@ -326,6 +326,41 @@ describe('questGraphUtils', () => {
         expect(negatedCondition?.data.negated).toBe(true);
     });
 
+    it('joins dialog-level condition expression with || when conditionOperator is OR', () => {
+        const questName = 'TOPIC_OR';
+        const functions = [
+            {
+                name: 'DIA_Start_Info',
+                actions: [
+                    { type: 'CreateTopic', topic: questName, topicType: 'LOG_MISSION' }
+                ]
+            },
+            {
+                name: 'DIA_Either_Info',
+                conditionOperator: 'OR',
+                conditions: [
+                    { type: 'VariableCondition', variableName: 'MIS_OR_A', operator: '==', value: 1 },
+                    { type: 'VariableCondition', variableName: 'MIS_OR_B', operator: '==', value: 1 }
+                ],
+                actions: [
+                    { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' }
+                ]
+            }
+        ];
+
+        const dialogs = [
+            { name: 'DIA_Start', properties: { information: 'DIA_Start_Info', npc: 'NPC_Start' } },
+            { name: 'DIA_Either', properties: { information: 'DIA_Either_Info', npc: 'NPC_Either' } },
+        ];
+
+        const model = createMockModel(functions, dialogs);
+        const { nodes } = buildQuestGraph(model, questName);
+
+        const dialogNode = nodes.find((node) => node.id === 'DIA_Either_Info');
+        expect(dialogNode).toBeDefined();
+        expect((dialogNode as any)?.data?.conditionExpression).toBe('MIS_OR_A == 1 || MIS_OR_B == 1');
+    });
+
     it('uses semantic conditions from linked condition functions', () => {
         const questName = 'TOPIC_Addon_BanditsTower';
         const infoFunction = 'DIA_Addon_Henry_Owen_Info';
