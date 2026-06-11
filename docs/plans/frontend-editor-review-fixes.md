@@ -31,8 +31,8 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 
 | ID | Finding | Files | Status |
 |----|---------|-------|--------|
-| F8 | `quest/domain/*` are re-export shims into `components/QuestEditor/*`, and the pipeline transitively imports reactflow — inverts the documented layering. Doc updated to describe the actual shim layout; physical move tracked in `docs/refactoring-targets.md`. | `docs/architecture/quest-editor.md`, `docs/refactoring-targets.md` | todo |
-| F9 | Dead reactflow node renderers (`QuestEditor/Nodes/*.tsx`) unreferenced since the litegraph migration. | `components/QuestEditor/Nodes/` | todo |
+| F8 | `quest/domain/*` are re-export shims into `components/QuestEditor/*`, and the pipeline transitively imports reactflow — inverts the documented layering. Doc updated to describe the actual shim layout; physical move tracked in `docs/refactoring-targets.md`. | `docs/architecture/quest-editor.md`, `docs/refactoring-targets.md` | done |
+| F9 | Dead reactflow node renderers (`QuestEditor/Nodes/*.tsx`) unreferenced since the litegraph migration. | `components/QuestEditor/Nodes/` | done |
 
 ## Low priority
 
@@ -41,7 +41,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 | F10 | File-watcher hardening: chokidar `ignored` predicate broke on Windows backslash paths with dotted directory names; self-write suppression registered even when a save later failed validation (now registered by the main process at actual write time); paths compared case-sensitively on Windows. | `main/services/FileWatcherService.ts`, `main/main.ts`, renderer call sites | done |
 | F11 | `FileService` lock released all waiters concurrently instead of queueing; files never read before writing defaulted to utf8 instead of windows-1252. | `main/services/FileService.ts` | done |
 | F12 | `updateGlobalConstant` regex `[^;]+` breaks on string constants containing `;`. | `store/projectStore.ts` | done |
-| F13 | `renameDialog` redundant `conditions` spread (no-op). | `store/fileStore.ts` | todo |
+| F13 | `renameDialog` redundant `conditions` spread (no-op). | `store/fileStore.ts` | done |
 | F14 | Unbounded redirect recursion in updater `httpsGet`/`downloadUpdate`. | `main/services/UpdaterService.ts` | done |
 
 ## Deferred

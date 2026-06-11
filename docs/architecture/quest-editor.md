@@ -34,6 +34,31 @@ The quest editor stays inside the monorepo with strict internal layers:
 - Quest editor UI code stays under `daedalus-dialog-editor/src/renderer/components/QuestEditor/*`.
 - Import direction is one-way: UI -> application -> domain.
 
+### Current Implementation Status (shim layer)
+
+The `quest/domain/*` and `quest/application/*` modules currently act as a
+**stable public boundary** rather than the physical home of the logic. They
+re-export the pure implementation, which still lives under
+`components/QuestEditor/*` (graph build pipeline, command executors,
+guardrails, analysis):
+
+- `quest/domain/{graph,commands,guardrails,analysis}.ts` re-export from
+  `components/QuestEditor/{questGraphUtils,commands,questGuardrails,questAnalysis}`.
+- `quest/application/QuestEditingService.ts` is a thin wrapper over the domain
+  command executor.
+
+UI (`QuestFlow.tsx`) imports only through `quest/domain` and
+`quest/application`, so the one-way import contract holds at the boundary the UI
+sees. Two known gaps remain before the layering is physically true:
+
+1. The graph types in `types/questGraph.ts` (and `MarkerType` in
+   `questEdgeBuilding.ts`) still depend on `reactflow`, so the re-exported
+   "domain" transitively references a UI library.
+2. The pure logic has not yet been physically moved out of
+   `components/QuestEditor/*`.
+
+Both are tracked as a deferred refactor in `docs/refactoring-targets.md`.
+
 ## Implemented Outcomes (Consolidated)
 
 From completed quest planning tracks, the implemented baseline is:
