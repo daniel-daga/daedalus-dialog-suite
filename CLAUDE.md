@@ -155,7 +155,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 - **Vite** — bundler for renderer
 - **Zustand + Immer** — state management (`src/renderer/store/`)
 - **MUI (Material UI)** — component library and theming
-- **Reactflow** — node graph visualization
+- **litegraph.js** — node graph visualization
 - **Monaco Editor** — code editing
 - **Playwright** — E2E tests (active in CI, sharded across 4 workers)
 - **Jest** — unit/integration tests
@@ -172,7 +172,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/components/conditions/` | Condition field components per condition type |
 | `src/renderer/components/actionRenderers/` | Per-action-type render components |
 | `src/renderer/components/common/` | Shared UI primitives (`VariableAutocomplete`, `autocompletePolicies.ts`, etc.) |
-| `src/renderer/components/QuestEditor/` | Quest graph editor (Nodes, Inspector, commands) |
+| `src/renderer/components/QuestEditor/` | Quest graph editor UI (litegraph canvas, Inspector) |
 | `src/renderer/quest/domain/` | Pure quest logic (graph model, commands, guardrails) |
 | `src/renderer/quest/application/` | Orchestration layer (`QuestEditingService.ts`) |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
@@ -214,7 +214,7 @@ The quest editor follows a strict three-layer boundary (see `docs/architecture/q
 
 1. `src/renderer/quest/domain/` — pure logic: graph model transforms, command validation, guardrails. No React/MUI/Electron imports.
 2. `src/renderer/quest/application/` — orchestration: store adapters, history wiring, apply/cancel flow.
-3. `src/renderer/components/QuestEditor/` — UI: `QuestFlow`, node renderers (`Nodes/`), inspector (`Inspector/`), commands (`commands/`).
+3. `src/renderer/components/QuestEditor/` — UI: `QuestFlow`, litegraph canvas, inspector (`Inspector/`).
 
 Import direction is one-way: UI → application → domain.
 

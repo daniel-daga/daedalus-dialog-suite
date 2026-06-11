@@ -83,7 +83,6 @@
     "react-router-dom": "^6.22.3",
     "react-virtualized-auto-sizer": "^1.0.24",
     "react-window": "^1.8.10",
-    "reactflow": "^11.11.1",
     "safe-buffer": "^5.2.1",
     "safer-buffer": "^2.1.2",
     "tree-sitter": "^0.21.1",

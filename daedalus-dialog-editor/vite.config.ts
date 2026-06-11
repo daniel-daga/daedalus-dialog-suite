@@ -24,7 +24,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules/litegraph.js')) return 'quest-litegraph';
-          if (id.includes('node_modules/reactflow') || id.includes('node_modules/dagre')) return 'quest-graph';
+          if (id.includes('node_modules/dagre')) return 'quest-graph';
           if (id.includes('node_modules/@mui/icons-material')) return 'mui-icons';
           return undefined;
         },

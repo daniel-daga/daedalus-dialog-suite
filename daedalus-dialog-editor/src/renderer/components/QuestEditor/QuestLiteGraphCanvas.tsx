@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
 import { LGraph, LGraphCanvas, LGraphNode } from 'litegraph.js';
 import type { QuestGraphConditionType, QuestGraphEdge, QuestGraphNode } from '../../types/questGraph';
-import { validateConditionExpressionSyntax } from './commands/conditionExpressionCodec';
+import { validateConditionExpressionSyntax } from '../../quest/domain/commands/conditionExpressionCodec';
 
 interface QuestLiteGraphCanvasProps {
   nodes: QuestGraphNode[];

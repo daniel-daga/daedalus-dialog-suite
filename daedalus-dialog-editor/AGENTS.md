@@ -5,7 +5,7 @@ Instructions for agents working in `daedalus-dialog-editor/`.
 ## Stack and Purpose
 
 - Electron main process + React renderer
-- TypeScript, Vite, Zustand, MUI, Reactflow
+- TypeScript, Vite, Zustand, MUI, litegraph.js
 - Goal: visual editing, validation, and generation of Daedalus dialog/quest content
 
 ## Workflow Expectations

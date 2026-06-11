@@ -34,6 +34,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 |----|---------|-------|--------|
 | F8 | `quest/domain/*` are re-export shims into `components/QuestEditor/*`, and the pipeline transitively imports reactflow — inverts the documented layering. Doc updated to describe the actual shim layout; physical move tracked in `docs/refactoring-targets.md`. | `docs/architecture/quest-editor.md`, `docs/refactoring-targets.md` | done |
 | F9 | Dead reactflow node renderers (`QuestEditor/Nodes/*.tsx`) unreferenced since the litegraph migration. | `components/QuestEditor/Nodes/` | done |
+| D2 | Pure quest logic physically moved from `components/QuestEditor/*` into `quest/domain/` (pipeline, commands, guardrails, analysis); graph node/edge types are now editor-owned and the `reactflow` dependency was removed entirely. Boundary enforced by `tests/questDomainBoundary.test.ts`. | `quest/domain/*`, `types/questGraph.ts`, `components/QuestEditor/*` | done |
 
 ## Low priority
 
@@ -49,5 +50,4 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 
 | ID | Finding | Reason |
 |----|---------|--------|
-| D2 | Physically move pure quest logic from `components/QuestEditor/*` into `quest/domain/` and remove the reactflow type dependency. | Large import-churn refactor; tracked in `docs/refactoring-targets.md` |
 | D3 | `properties.information`/`condition` string-vs-object union should be encoded once in the model types instead of `as any` casts at call sites. | Type-model change touching parser + editor |

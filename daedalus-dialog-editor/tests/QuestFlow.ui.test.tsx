@@ -3,12 +3,6 @@ import { render, screen } from '@testing-library/react';
 import QuestFlow from '../src/renderer/components/QuestFlow';
 import type { SemanticModel } from '../src/renderer/types/global';
 
-jest.mock('reactflow', () => ({
-  __esModule: true,
-  useNodesState: () => [[], jest.fn(), jest.fn()],
-  useEdgesState: () => [[], jest.fn(), jest.fn()]
-}));
-
 jest.mock('../src/renderer/components/QuestEditor/QuestLiteGraphCanvas', () => ({
   __esModule: true,
   default: () => <div data-testid="quest-litegraph-canvas" />

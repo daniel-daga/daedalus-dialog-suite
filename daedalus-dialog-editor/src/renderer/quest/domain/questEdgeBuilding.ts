@@ -5,7 +5,6 @@
  * `buildQuestEdges` pass that walks the node map and emits all edges.
  */
 
-import { MarkerType } from 'reactflow';
 import type { DialogAction, SemanticModel } from '../../types/global';
 import type { QuestGraphConditionType, QuestGraphEdge, QuestGraphProvenance } from '../../types/questGraph';
 import {
@@ -14,7 +13,7 @@ import {
   ENTRY_EDGE_COLOR,
   KNOWS_EDGE_COLOR,
   VARIABLE_EDGE_COLOR,
-} from './constants/questGraphConstants';
+} from './questGraphConstants';
 import type { EdgeBuildResult, InternalNodeData, ProducerMap } from './questGraphInternalTypes';
 import {
   buildGeneratedConditionNodeId,
@@ -48,7 +47,7 @@ export const buildChoiceEdge = (
   targetHandle,
   label: actionText,
   type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed },
+  markerEnd: { type: 'arrowclosed' },
   style: { stroke: CHOICE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '5,5' },
   labelStyle: { fill: CHOICE_EDGE_COLOR, fontSize: 10 },
   data: { kind: 'transitions', choiceIndex: actionIndex, inferred: false, provenance }
@@ -72,7 +71,7 @@ export const buildConditionEdge = (
   targetHandle: `in-condition-${conditionPosition}`,
   label: `requires ${shortenExpression(expression || conditionLabel, 40)}`,
   type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed },
+  markerEnd: { type: 'arrowclosed' },
   style: { stroke: CONDITION_EDGE_COLOR, strokeWidth: 2 },
   labelStyle: { fill: CONDITION_EDGE_COLOR, fontSize: 10 },
   data: {
@@ -100,7 +99,7 @@ export const buildKnowsEdge = (
   targetHandle: `in-condition-${conditionPosition}`,
   label: `requires knows ${producerDialogName}`,
   type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed },
+  markerEnd: { type: 'arrowclosed' },
   style: { stroke: KNOWS_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '3,3' },
   labelStyle: { fill: KNOWS_EDGE_COLOR, fontSize: 10 },
   data: {
@@ -130,7 +129,7 @@ export const buildVariableEdge = (
   label: `requires ${variableName} == ${rawValue}`,
   type: 'smoothstep',
   animated: true,
-  markerEnd: { type: MarkerType.ArrowClosed },
+  markerEnd: { type: 'arrowclosed' },
   style: { stroke: VARIABLE_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '3,3' },
   labelStyle: { fill: VARIABLE_EDGE_COLOR, fontSize: 10 },
   data: {
@@ -155,7 +154,7 @@ export const buildExternalEntryEdge = (
   targetHandle: 'in-condition-0',
   label: 'requires entry trigger',
   type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed },
+  markerEnd: { type: 'arrowclosed' },
   style: { stroke: ENTRY_EDGE_COLOR, strokeWidth: 2, strokeDasharray: '3,3' },
   labelStyle: { fill: ENTRY_EDGE_COLOR, fontSize: 10 },
   data: {

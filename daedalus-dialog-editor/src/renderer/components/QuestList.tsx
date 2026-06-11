@@ -32,7 +32,7 @@ import { FixedSizeList as VirtualizedList, ListChildComponentProps, areEqual } f
 import type { SemanticModel, GlobalConstant } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest, getUsedQuestTopics, QuestAnalysis } from './QuestEditor/questAnalysis';
+import { analyzeQuest, getUsedQuestTopics, QuestAnalysis } from '../quest/domain';
 import {
   DEFAULT_QUEST_TOPIC_FILTER_POLICY,
   getCanonicalQuestKey,
