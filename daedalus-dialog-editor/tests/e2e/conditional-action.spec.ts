@@ -79,6 +79,25 @@ test.describe('Conditional action (If / Else block)', () => {
     await expect(page.getByText('No actions in this branch.')).toHaveCount(1);
   });
 
+  test('inserts a "knows info" condition from the template menu (#145)', async ({ page }) => {
+    await addConditionalBlock(page);
+
+    await page.getByRole('button', { name: 'Insert condition template' }).click();
+    await page.getByRole('menuitem', { name: 'NPC Knows Dialog' }).click();
+
+    const condition = page.getByRole('textbox', { name: 'Condition' });
+    await expect(condition).toHaveValue('Npc_KnowsInfo(other, DIA_)');
+
+    // A second template is appended with && instead of replacing.
+    await page.getByRole('button', { name: 'Insert condition template' }).click();
+    await page.getByRole('menuitem', { name: 'Quest State' }).click();
+    await expect(condition).toHaveValue('Npc_KnowsInfo(other, DIA_) && MIS_ == LOG_RUNNING');
+
+    // The inserted condition persists past the debounce window.
+    await page.waitForTimeout(400);
+    await expect(condition).toHaveValue('Npc_KnowsInfo(other, DIA_) && MIS_ == LOG_RUNNING');
+  });
+
   test('adds an action into the "else" branch via the action menu', async ({ page }) => {
     await addConditionalBlock(page);
 
