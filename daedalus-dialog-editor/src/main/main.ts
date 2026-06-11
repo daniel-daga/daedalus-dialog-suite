@@ -304,7 +304,17 @@ function setupIpcHandlers() {
 
   ipcMain.handle('project:addAllowedPath', async (_event, folderPath: string) => {
     try {
-      pathValidator.addAllowedPath(folderPath);
+      // Security: the renderer may only re-whitelist a path the user has
+      // already opened (persisted in recent projects). Brand-new folders are
+      // whitelisted by the main-process folder dialog and addRecentProject —
+      // not by the renderer — so unknown paths are silently ignored here.
+      // This prevents a compromised renderer from whitelisting arbitrary
+      // directories and defeating PathValidationService.
+      if (await settingsService.isKnownRecentProject(folderPath)) {
+        pathValidator.addAllowedPath(folderPath);
+      } else {
+        console.warn('[IPC] project:addAllowedPath - ignoring unknown path:', folderPath);
+      }
     } catch (error) {
       console.error('[IPC] project:addAllowedPath error:', error);
       throw new Error(`Failed to add allowed path: ${error instanceof Error ? error.message : 'Unknown error'}`);

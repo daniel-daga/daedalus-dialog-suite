@@ -217,4 +217,86 @@ describe('UpdaterService.installUpdate security', () => {
     const service = new UpdaterService(mockSettingsService);
     expect(() => service.installUpdate('/etc/passwd')).toThrow('outside temp directory');
   });
+
+  it('throws when installer path is not the last downloaded installer', () => {
+    const service = new UpdaterService(mockSettingsService);
+    // Inside the temp dir, but never produced by downloadUpdate
+    expect(() => service.installUpdate('/tmp/evil.exe')).toThrow('not the downloaded installer');
+  });
+});
+
+describe('UpdaterService.downloadUpdate security', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSetUpdaterLastCheckTimestamp.mockResolvedValue(undefined);
+  });
+
+  it('rejects a download URL that was not offered by checkForUpdate', async () => {
+    const service = new UpdaterService(mockSettingsService);
+    await expect(
+      service.downloadUpdate('https://attacker.example/installer.exe', () => {})
+    ).rejects.toThrow('not offered by the last update check');
+  });
+
+  it('accepts the URL offered by the last checkForUpdate', async () => {
+    const { app } = require('electron');
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+
+    const service = new UpdaterService(mockSettingsService);
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20);
+    setupHttpsMock([{ body: release }, { body: meta }]);
+
+    const result = await service.checkForUpdate();
+    expect(result.downloadUrl).toBe('https://example.com/installer.exe');
+
+    // The offered URL must pass the pinning check (the mocked https response
+    // is not a valid download stream, so only assert it gets past the guard).
+    const https = require('https');
+    (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
+      const mockRes = {
+        statusCode: 404,
+        headers: {},
+        on: jest.fn().mockReturnThis(),
+        pipe: jest.fn(),
+      };
+      callback(mockRes);
+      return { on: jest.fn() };
+    });
+
+    await expect(
+      service.downloadUpdate(result.downloadUrl!, () => {})
+    ).rejects.toThrow('HTTP 404');
+  });
+});
+
+describe('UpdaterService redirect handling', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSetUpdaterLastCheckTimestamp.mockResolvedValue(undefined);
+  });
+
+  it('gives up after a bounded number of redirects instead of recursing forever', async () => {
+    const { app } = require('electron');
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+
+    const https = require('https');
+    (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
+      const mockRes = {
+        statusCode: 302,
+        headers: { location: 'https://example.com/loop' },
+        on: jest.fn().mockReturnThis(),
+      };
+      callback(mockRes);
+      return { on: jest.fn() };
+    });
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+
+    expect(result.updateAvailable).toBe(false);
+    // 1 initial request + at most 5 redirects
+    expect((https.get as jest.Mock).mock.calls.length).toBeLessThanOrEqual(6);
+  });
 });

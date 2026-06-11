@@ -16,8 +16,8 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 
 | ID | Finding | Files | Status |
 |----|---------|-------|--------|
-| F4a | `project:addAllowedPath` IPC lets the renderer whitelist arbitrary directories, defeating `PathValidationService`. Now only accepts paths already persisted as recent projects. | `main/main.ts` | todo |
-| F4b | `updater:downloadUpdate` accepted an arbitrary renderer-supplied URL; `updater:installUpdate` executed any file in temp. Download URL is now pinned in the main process by `checkForUpdate`; install path must match the last download. | `main/services/UpdaterService.ts`, `main/main.ts` | todo |
+| F4a | `project:addAllowedPath` IPC lets the renderer whitelist arbitrary directories, defeating `PathValidationService`. Now only accepts paths already persisted as recent projects. | `main/main.ts` | done |
+| F4b | `updater:downloadUpdate` accepted an arbitrary renderer-supplied URL; `updater:installUpdate` executed any file in temp. Download URL is now pinned in the main process by `checkForUpdate`; install path must match the last download. | `main/services/UpdaterService.ts`, `main/main.ts` | done |
 
 ## Medium — correctness & performance
 
@@ -42,7 +42,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 | F11 | `FileService` lock released all waiters concurrently instead of queueing; files never read before writing defaulted to utf8 instead of windows-1252. | `main/services/FileService.ts` | todo |
 | F12 | `updateGlobalConstant` regex `[^;]+` breaks on string constants containing `;`. | `store/projectStore.ts` | done |
 | F13 | `renameDialog` redundant `conditions` spread (no-op). | `store/fileStore.ts` | todo |
-| F14 | Unbounded redirect recursion in updater `httpsGet`/`downloadUpdate`. | `main/services/UpdaterService.ts` | todo |
+| F14 | Unbounded redirect recursion in updater `httpsGet`/`downloadUpdate`. | `main/services/UpdaterService.ts` | done |
 
 ## Deferred
 

@@ -31,7 +31,9 @@ export function isNewerVersion(remote: string, local: string): boolean {
   return false;
 }
 
-function httpsGet(url: string): Promise<string> {
+const MAX_REDIRECTS = 5;
+
+function httpsGet(url: string, redirectsLeft: number = MAX_REDIRECTS): Promise<string> {
   return new Promise((resolve, reject) => {
     const options = {
       headers: {
@@ -41,10 +43,12 @@ function httpsGet(url: string): Promise<string> {
     };
     https.get(url, options, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
-        if (res.headers.location) {
-          resolve(httpsGet(res.headers.location));
+        if (res.headers.location && redirectsLeft > 0) {
+          resolve(httpsGet(res.headers.location, redirectsLeft - 1));
           return;
         }
+        reject(new Error(`HTTP ${res.statusCode}: too many redirects`));
+        return;
       }
       if (res.statusCode !== 200) {
         reject(new Error(`HTTP ${res.statusCode}`));
@@ -60,6 +64,20 @@ function httpsGet(url: string): Promise<string> {
 
 export class UpdaterService {
   private settingsService: SettingsService;
+
+  /**
+   * The installer download URL offered by the most recent checkForUpdate.
+   * downloadUpdate only accepts this exact URL so a compromised renderer
+   * cannot drive a download from an arbitrary host.
+   */
+  private offeredDownloadUrl: string | null = null;
+
+  /**
+   * The path of the last successfully downloaded installer. installUpdate
+   * only executes this exact path so the renderer cannot run an arbitrary
+   * file that happens to sit in the temp directory.
+   */
+  private downloadedInstallerPath: string | null = null;
 
   constructor(settingsService: SettingsService) {
     this.settingsService = settingsService;
@@ -115,6 +133,9 @@ export class UpdaterService {
 
     const updateAvailable = isNewerVersion(meta.version, currentVersion);
 
+    // Pin the installer URL so downloadUpdate can only fetch what we offered.
+    this.offeredDownloadUrl = updateAvailable ? installerAsset.browser_download_url : null;
+
     return {
       updateAvailable,
       currentVersion,
@@ -126,21 +147,28 @@ export class UpdaterService {
   }
 
   async downloadUpdate(url: string, onProgress: (percent: number) => void): Promise<string> {
+    // Only download the installer URL offered by the most recent check.
+    if (!this.offeredDownloadUrl || url !== this.offeredDownloadUrl) {
+      throw new Error('downloadUpdate: URL not offered by the last update check');
+    }
+
     const currentVersion = app.getVersion();
     const tempDir = app.getPath('temp');
     const destPath = path.join(tempDir, `daedalus-update-${currentVersion}.exe`);
 
-    return new Promise((resolve, reject) => {
-      const doRequest = (requestUrl: string) => {
+    return new Promise<string>((resolve, reject) => {
+      const doRequest = (requestUrl: string, redirectsLeft: number) => {
         const options = {
           headers: { 'User-Agent': 'daedalus-dialog-editor' }
         };
         https.get(requestUrl, options, (res) => {
           if (res.statusCode === 301 || res.statusCode === 302) {
-            if (res.headers.location) {
-              doRequest(res.headers.location);
+            if (res.headers.location && redirectsLeft > 0) {
+              doRequest(res.headers.location, redirectsLeft - 1);
               return;
             }
+            reject(new Error(`Download failed with HTTP ${res.statusCode}: too many redirects`));
+            return;
           }
           if (res.statusCode !== 200) {
             reject(new Error(`Download failed with HTTP ${res.statusCode}`));
@@ -161,6 +189,8 @@ export class UpdaterService {
           res.pipe(fileStream);
           fileStream.on('finish', () => {
             fileStream.close();
+            // Record the exact path so installUpdate can verify it later.
+            this.downloadedInstallerPath = path.normalize(destPath);
             resolve(destPath);
           });
           fileStream.on('error', (err) => {
@@ -173,7 +203,7 @@ export class UpdaterService {
           });
         }).on('error', reject);
       };
-      doRequest(url);
+      doRequest(url, MAX_REDIRECTS);
     });
   }
 
@@ -183,6 +213,12 @@ export class UpdaterService {
     const normalizedInstaller = path.normalize(installerPath);
     if (!normalizedInstaller.startsWith(tempDir + path.sep) && normalizedInstaller !== tempDir) {
       throw new Error(`installUpdate: path outside temp directory is not allowed: ${installerPath}`);
+    }
+
+    // Security: only run the installer we actually downloaded, not any file
+    // the renderer points us at.
+    if (!this.downloadedInstallerPath || normalizedInstaller !== this.downloadedInstallerPath) {
+      throw new Error(`installUpdate: path is not the downloaded installer: ${installerPath}`);
     }
 
     const { spawn } = require('child_process');
