@@ -6,6 +6,7 @@ import { useDialogTransition } from './hooks/useDialogTransition';
 import { useDialogNavigation } from './hooks/useDialogNavigation';
 import { useSearchNavigation } from './hooks/useSearchNavigation';
 import { Box, Typography, Alert } from '@mui/material';
+import { shallow } from 'zustand/shallow';
 import { useEditorStore } from '../store/editorStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
@@ -40,14 +41,26 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     updateModel,
     getFileState,
     activeFile,
-  } = useEditorStore();
+  } = useEditorStore((state) => ({
+    openFiles: state.openFiles,
+    openFile: state.openFile,
+    updateModel: state.updateModel,
+    getFileState: state.getFileState,
+    activeFile: state.activeFile,
+  }), shallow);
   const {
     selectedNPC,
     selectedDialog,
     selectedFunctionName,
     setSelectedNPC,
     setSelectedFunctionName,
-  } = useUISelectionStore();
+  } = useUISelectionStore((state) => ({
+    selectedNPC: state.selectedNPC,
+    selectedDialog: state.selectedDialog,
+    selectedFunctionName: state.selectedFunctionName,
+    setSelectedNPC: state.setSelectedNPC,
+    setSelectedFunctionName: state.setSelectedFunctionName,
+  }), shallow);
   const {
     projectPath,
     npcList: projectNpcs,
@@ -61,7 +74,20 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     setIngestedFilesOpen,
     parsedFiles,
     allDialogFiles
-  } = useProjectStore();
+  } = useProjectStore((state) => ({
+    projectPath: state.projectPath,
+    npcList: state.npcList,
+    dialogIndex: state.dialogIndex,
+    selectNpc: state.selectNpc,
+    getSemanticModel: state.getSemanticModel,
+    mergedSemanticModel: state.mergedSemanticModel,
+    loadAndMergeNpcModels: state.loadAndMergeNpcModels,
+    addDialogToIndex: state.addDialogToIndex,
+    addProjectFile: state.addProjectFile,
+    setIngestedFilesOpen: state.setIngestedFilesOpen,
+    parsedFiles: state.parsedFiles,
+    allDialogFiles: state.allDialogFiles,
+  }), shallow);
   const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());

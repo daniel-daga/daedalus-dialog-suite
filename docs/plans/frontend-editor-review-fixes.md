@@ -25,7 +25,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 |----|---------|-------|--------|
 | F5 | `deleteVariable` merges the old merged model additively, so deleted constants/variables stay visible in `mergedSemanticModel` (VariableManager) until an unrelated re-merge. | `store/projectStore.ts`, `components/VariableManager.tsx` | done |
 | F6 | Every model edit triggers a full dialog-index rebuild + `loadAndMergeNpcModels` re-merge (O(project) per keystroke) via `storeSync` → `updateFileModel`. Re-merge now debounced. | `store/projectStore.ts` | todo |
-| F7 | Zustand object-literal selectors without shallow equality re-render on every store change (`QuestFlow`, `QuestEditor`, `IngestedFilesDialog`); `App`/`ThreeColumnLayout` subscribe to whole stores. | renderer components | todo |
+| F7 | Zustand object-literal selectors without shallow equality re-render on every store change (`QuestFlow`, `QuestEditor`, `IngestedFilesDialog`); `App`/`ThreeColumnLayout` subscribe to whole stores. | renderer components | done |
 
 ## Architecture drift & dead code
 

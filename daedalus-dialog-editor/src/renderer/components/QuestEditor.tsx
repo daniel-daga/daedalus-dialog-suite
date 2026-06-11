@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
 import { Box, ToggleButton, ToggleButtonGroup, Paper, Alert, LinearProgress, CircularProgress, Typography } from '@mui/material';
 import { FormatListBulleted, AccountTree } from '@mui/icons-material';
+import { shallow } from 'zustand/shallow';
 import QuestList from './QuestList';
 import QuestDetails from './QuestDetails';
 import { useProjectStore } from '../store/projectStore';
@@ -22,11 +23,11 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnable
       isIngesting: state.isIngesting,
       parsedFiles: state.parsedFiles,
       projectPath: state.projectPath
-  }));
+  }), shallow);
   const { selectedQuest, setSelectedQuest } = useUISelectionStore((state) => ({
     selectedQuest: state.selectedQuest,
     setSelectedQuest: state.setSelectedQuest
-  }));
+  }), shallow);
 
   const isProjectMode = !!projectPath;
 
