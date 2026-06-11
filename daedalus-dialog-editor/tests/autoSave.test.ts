@@ -372,6 +372,50 @@ describe('useAutoSave hook', () => {
     expect(mockSaveFile).not.toHaveBeenCalled();
   });
 
+  test('keeps a file dirty when it is edited while a save is in flight', async () => {
+    const filePath = 'test.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+    });
+
+    let resolveSave!: (value: { success: boolean }) => void;
+    mockSaveFile.mockImplementationOnce(
+      () => new Promise<{ success: boolean }>((resolve) => { resolveSave = resolve; }) as any
+    );
+
+    renderHook(() => useAutoSave());
+
+    // Trigger the debounced save; it stays pending
+    await act(async () => {
+      jest.advanceTimersByTime(2500);
+    });
+    expect(mockSaveFile).toHaveBeenCalledTimes(1);
+
+    // Edit the file while the save is still in flight
+    act(() => {
+      useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
+        properties: { npc: 'EditedDuringSave' },
+      });
+    });
+
+    // Complete the in-flight save
+    await act(async () => {
+      resolveSave({ success: true });
+    });
+
+    // The mid-flight edit is NOT on disk — the file must stay dirty
+    expect(useEditorStore.getState().getFileState(filePath)?.isDirty).toBe(true);
+  });
+
   test('should return auto-save status', () => {
     const { result } = renderHook(() => useAutoSave());
 

@@ -9,7 +9,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 | ID | Finding | Files | Status |
 |----|---------|-------|--------|
 | F1 | Dialog rename/delete BFS only scans top-level actions for `Choice`; misses Choices nested in `ConditionalAction` branches → dangling `targetFunction` refs after rename, wrong delete sets. Logic also duplicated in `ThreeColumnLayout` previews. | `store/fileStore.ts`, `components/ThreeColumnLayout.tsx`, `components/nestedActionUtils.ts` | done |
-| F2 | Auto-save race: edits made while a save is in flight are marked clean (`isDirty: false`) although disk has pre-edit content. | `hooks/useAutoSave.ts` | todo |
+| F2 | Auto-save race: edits made while a save is in flight are marked clean (`isDirty: false`) although disk has pre-edit content. | `hooks/useAutoSave.ts` | done |
 | F3 | Two independent undo systems (`editHistory` vs `questHistory`/`questBatchHistory`) restore full-model snapshots of the same file → undo on one surface silently reverts the other surface's edits. Also `editHistory.undo/redo` captured but never restored `nodePositions`. | `store/historyStore.ts` | todo |
 
 ## Medium — security hardening
