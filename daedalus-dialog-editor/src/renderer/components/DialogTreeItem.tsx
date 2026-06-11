@@ -40,14 +40,14 @@ const DialogTreeItem = memo(({
 
   if (!dialog) return null;
 
-  const infoFunc = dialog.properties?.information as any;
+  const infoFunc = dialog.properties?.information;
   const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
 
   return (
     <Box style={style}>
       <ListItemButton
         selected={isSelected}
-        onClick={() => onSelectDialog(dialogName, infoFuncName)}
+        onClick={() => onSelectDialog(dialogName, infoFuncName ?? null)}
         sx={(theme) => ({ ...searchablePaneRowButtonSx(theme), pr: 1, height: '100%' })}
       >
         {hasChildren ? (
@@ -93,8 +93,8 @@ const DialogTreeItem = memo(({
     const nextInfo = nextDialog.properties?.information;
 
     if (prevInfo !== nextInfo) {
-      const prevName = typeof prevInfo === 'object' ? (prevInfo as any)?.name : prevInfo;
-      const nextName = typeof nextInfo === 'object' ? (nextInfo as any)?.name : nextInfo;
+      const prevName = typeof prevInfo === 'object' ? prevInfo.name : prevInfo;
+      const nextName = typeof nextInfo === 'object' ? nextInfo.name : nextInfo;
       if (prevName !== nextName) return false;
     }
   }

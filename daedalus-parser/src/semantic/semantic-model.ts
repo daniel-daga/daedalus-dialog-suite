@@ -206,8 +206,17 @@ export class GlobalInstance {
   }
 }
 
+/**
+ * A dialog property value referencing a C_INFO function: either the bare
+ * function name, or the live `DialogFunction` instance once linking has
+ * resolved it (pass 2 / `Dialog.fromJSON`).
+ */
+export type DialogFunctionRef = string | DialogFunction;
+
 export interface DialogProperties {
-  [key: string]: string | number | boolean | DialogFunction;
+  information?: DialogFunctionRef;
+  condition?: DialogFunctionRef;
+  [key: string]: string | number | boolean | DialogFunction | undefined;
 }
 
 /**

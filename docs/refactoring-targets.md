@@ -18,23 +18,3 @@ Audit of god components, muddled concerns, and maintainability red flags.
 **File:** `daedalus-dialog-editor/src/renderer/components/ThreeColumnLayout.tsx`
 
 - Sub-components for NPC column, dialog-tree column, and editor column
-
----
-
-### 3. History snapshots — avoid full deep clones
-**File:** `daedalus-dialog-editor/src/renderer/store/historyStore.ts`,
-`.../utils/historyUtils.ts`
-
-Each edit deep-clones the entire semantic model (up to `MAX_HISTORY_SIZE` = 50
-per file). Since models are treated as immutable, structural sharing (storing
-references instead of clones) would cut memory and CPU, but needs a dedicated
-test pass for aliasing safety.
-
----
-
-### 4. `properties.information`/`condition` string-vs-object union
-**Files:** parser model types + `daedalus-dialog-editor/src/renderer/**`
-
-The dialog property references are sometimes a plain string and sometimes a
-`{ name }` object, forcing `as any` / `resolveFunctionRef` casts at many call
-sites. Encode the union once in the model types (parser + editor) instead.

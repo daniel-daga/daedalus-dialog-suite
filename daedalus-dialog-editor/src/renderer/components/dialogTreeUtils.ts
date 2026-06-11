@@ -36,7 +36,7 @@ export const flattenDialogs = (
     if (!dialog) continue;
 
     const isExpanded = expandedDialogs.has(dialogName);
-    const infoFunc = dialog.properties?.information as any;
+    const infoFunc = dialog.properties?.information;
     const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
     const infoFuncData = infoFuncName ? semanticModel.functions?.[infoFuncName] : null;
 

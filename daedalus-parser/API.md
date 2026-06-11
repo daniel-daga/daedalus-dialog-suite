@@ -132,11 +132,14 @@ class Dialog {
   actions: DialogAction[];         // Extracted semantic actions
 }
 
+// Function reference: bare name string, or the live DialogFunction once linked
+type DialogFunctionRef = string | DialogFunction;
+
 interface DialogProperties {
   npc?: string;                    // NPC identifier
   nr?: number;                     // Dialog priority number
-  condition?: DialogFunction;      // Condition function (linked object)
-  information?: DialogFunction;    // Information function (linked object)
+  condition?: DialogFunctionRef;   // Condition function (name or linked object)
+  information?: DialogFunctionRef; // Information function (name or linked object)
   permanent?: boolean;             // Permanent flag
   important?: boolean;             // Important flag
   description?: string;            // Dialog text shown to player
