@@ -13,6 +13,11 @@ export default defineConfig({
   plugins: [react()],
   root: path.join(__dirname, 'src/renderer'),
   base: './',
+  optimizeDeps: {
+    include: [
+      'zustand/shallow',
+    ],
+  },
   build: {
     outDir: path.join(__dirname, 'dist/renderer'),
     emptyOutDir: true,
