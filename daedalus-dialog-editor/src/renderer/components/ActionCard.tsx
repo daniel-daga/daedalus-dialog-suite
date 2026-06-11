@@ -70,16 +70,20 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   const handleUpdate = useCallback((updated: typeof localAction) => {
     // Update local state immediately for responsive UI
     setLocalAction(updated);
+    localActionRef.current = updated;
 
     // Debounce parent updates - only sync after user stops typing
     if (updateTimerRef.current) {
       clearTimeout(updateTimerRef.current);
     }
     updateTimerRef.current = setTimeout(() => {
-      updateActionAtPath(path, updated);
+      // Resolve path/action via refs at fire time: the card's path may have
+      // shifted while the debounce was pending (insertion above, undo, drag),
+      // and a lexically captured path would write the text onto a sibling.
+      updateActionRef.current(pathRef.current, localActionRef.current);
       updateTimerRef.current = null;
     }, 300); // 300ms debounce
-  }, [updateActionAtPath, path]);
+  }, []);
 
   // Cleanup timer on unmount - use refs to avoid stale closures
   React.useEffect(() => {
