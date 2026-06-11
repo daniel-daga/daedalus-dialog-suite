@@ -165,6 +165,32 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     return get().getSemanticModel(filePath);
   };
 
+  /**
+   * Fold freshly-parsed quest file models into the merged model. Constants
+   * and variables previously contributed by these files are dropped first so
+   * that deletions are reflected (merging is otherwise purely additive).
+   */
+  const mergeUpdatedQuestFileModels = (
+    updates: Array<{ filePath: string; model: SemanticModel }>
+  ) => {
+    const merged = get().mergedSemanticModel;
+    const updatedPaths = new Set(updates.map((u) => u.filePath));
+    const dropFromUpdatedFiles = <T extends { filePath?: string }>(
+      entries: { [name: string]: T } | undefined
+    ): { [name: string]: T } => Object.fromEntries(
+      Object.entries(entries || {}).filter(
+        ([, entry]) => !entry.filePath || !updatedPaths.has(entry.filePath)
+      )
+    );
+
+    const base: SemanticModel = {
+      ...merged,
+      constants: dropFromUpdatedFiles(merged.constants),
+      variables: dropFromUpdatedFiles(merged.variables),
+    };
+    get().mergeSemanticModels([base, ...updates.map((u) => u.model)]);
+  };
+
   return {
   // Initial state
   projectPath: null,
@@ -475,14 +501,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (!c.endsWith('\n')) c += '\n';
           return c + questBlock;
         });
-        get().mergeSemanticModels([get().mergedSemanticModel, combinedModel]);
+        mergeUpdatedQuestFileModels([{ filePath: topicFilePath, model: combinedModel }]);
       } else {
         const constLine = `\nconst string TOPIC_${internalName} = "${title}";\n`;
         const topicModel = await mutateQuestFile(topicFilePath, (c) => {
           if (!c.endsWith('\n')) c += '\n';
           return c + constLine;
         });
-        const modelsToMerge = [get().mergedSemanticModel, topicModel];
+        const updates = [{ filePath: topicFilePath, model: topicModel }];
 
         if (hasVariable) {
           const varLine = `\nvar int MIS_${internalName};\n`;
@@ -490,10 +516,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             if (!c.endsWith('\n')) c += '\n';
             return c + varLine;
           });
-          modelsToMerge.push(variableModel);
+          updates.push({ filePath: variableFilePath, model: variableModel });
         }
 
-        get().mergeSemanticModels(modelsToMerge);
+        mergeUpdatedQuestFileModels(updates);
       }
 
       set({ isLoading: false });
@@ -523,7 +549,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return c + varLine;
       });
 
-      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+      mergeUpdatedQuestFileModels([{ filePath, model: updatedModel }]);
       set({ isLoading: false });
 
     } catch (error) {
@@ -543,7 +569,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const newValue = isString ? `"${value}"` : value;
 
       // Matches: const <type> <name> = <value>;
-      const regex = new RegExp(`(const\\s+\\w+\\s+${name}\\s*=\\s*)([^;]+)(;)`);
+      // Quoted string values are matched as a whole so semicolons inside them
+      // don't terminate the value early.
+      const regex = new RegExp(`(const\\s+\\w+\\s+${name}\\s*=\\s*)("[^"]*"|[^;]+)(;)`);
 
       const updatedModel = await mutateQuestFile(filePath, (content) => {
         const match = content.match(regex);
@@ -553,7 +581,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return content.replace(regex, `$1${newValue}$3`);
       });
 
-      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+      mergeUpdatedQuestFileModels([{ filePath, model: updatedModel }]);
       set({ isLoading: false });
 
     } catch (error) {
@@ -575,7 +603,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return content.slice(0, range.startIndex) + content.slice(end);
       });
 
-      get().mergeSemanticModels([get().mergedSemanticModel, updatedModel]);
+      mergeUpdatedQuestFileModels([{ filePath, model: updatedModel }]);
       set({ isLoading: false });
 
     } catch (error) {

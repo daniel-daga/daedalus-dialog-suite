@@ -23,7 +23,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 
 | ID | Finding | Files | Status |
 |----|---------|-------|--------|
-| F5 | `deleteVariable` merges the old merged model additively, so deleted constants/variables stay visible in `mergedSemanticModel` (VariableManager) until an unrelated re-merge. | `store/projectStore.ts`, `components/VariableManager.tsx` | todo |
+| F5 | `deleteVariable` merges the old merged model additively, so deleted constants/variables stay visible in `mergedSemanticModel` (VariableManager) until an unrelated re-merge. | `store/projectStore.ts`, `components/VariableManager.tsx` | done |
 | F6 | Every model edit triggers a full dialog-index rebuild + `loadAndMergeNpcModels` re-merge (O(project) per keystroke) via `storeSync` → `updateFileModel`. Re-merge now debounced. | `store/projectStore.ts` | todo |
 | F7 | Zustand object-literal selectors without shallow equality re-render on every store change (`QuestFlow`, `QuestEditor`, `IngestedFilesDialog`); `App`/`ThreeColumnLayout` subscribe to whole stores. | renderer components | todo |
 
@@ -40,7 +40,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 |----|---------|-------|--------|
 | F10 | File-watcher hardening: chokidar `ignored` predicate broke on Windows backslash paths with dotted directory names; self-write suppression registered even when a save later failed validation (now registered by the main process at actual write time); paths compared case-sensitively on Windows. | `main/services/FileWatcherService.ts`, `main/main.ts`, renderer call sites | todo |
 | F11 | `FileService` lock released all waiters concurrently instead of queueing; files never read before writing defaulted to utf8 instead of windows-1252. | `main/services/FileService.ts` | todo |
-| F12 | `updateGlobalConstant` regex `[^;]+` breaks on string constants containing `;`. | `store/projectStore.ts` | todo |
+| F12 | `updateGlobalConstant` regex `[^;]+` breaks on string constants containing `;`. | `store/projectStore.ts` | done |
 | F13 | `renameDialog` redundant `conditions` spread (no-op). | `store/fileStore.ts` | todo |
 | F14 | Unbounded redirect recursion in updater `httpsGet`/`downloadUpdate`. | `main/services/UpdaterService.ts` | todo |
 
