@@ -277,12 +277,7 @@ Notes:
 
 ## Active Plans (`docs/plans/`)
 
-| Plan | Scope | Status |
-|---|---|---|
-| `daedalus-parser-stabilization.md` | Parser API alignment, lint recovery, CLI reliability, doc sync | In progress |
-| `dialog-or-conditions.md` | OR-grouped conditions in parser + editor + quest graph | Draft |
-| `in-app-updater.md` | Custom lightweight updater via GitHub Releases API | In progress |
-| `playwright-e2e-tests.md` | Gap analysis and coverage expansion for E2E tests | Draft |
+No active plans.
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 
