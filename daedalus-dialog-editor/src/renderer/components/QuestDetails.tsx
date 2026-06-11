@@ -27,7 +27,7 @@ import {
 } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest, getQuestReferences } from './QuestEditor/questAnalysis';
+import { analyzeQuest, getQuestReferences } from '../quest/domain';
 import { useProjectStore } from '../store/projectStore';
 
 interface QuestDetailsProps {

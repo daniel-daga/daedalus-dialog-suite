@@ -1,4 +1,3 @@
-import type { Edge, Node } from 'reactflow';
 import type { DialogCondition } from './global';
 
 export type QuestGraphNodeKind =
@@ -85,8 +84,31 @@ export interface QuestGraphBuildOptions {
   showEntrySurfacesOnly?: boolean;
 }
 
-export type QuestGraphNode = Node<QuestGraphNodeData>;
-export type QuestGraphEdge = Edge<QuestGraphEdgeData>;
+// Editor-owned graph element types; decoupled from any rendering library.
+export interface QuestGraphNode {
+  id: string;
+  position: { x: number; y: number };
+  data: QuestGraphNodeData;
+  type?: string;
+  style?: Record<string, string | number>;
+  selectable?: boolean;
+  draggable?: boolean;
+}
+
+export interface QuestGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  type?: string;
+  label?: string;
+  animated?: boolean;
+  markerEnd?: { type: string };
+  style?: Record<string, string | number>;
+  labelStyle?: Record<string, string | number>;
+  data?: QuestGraphEdgeData;
+}
 
 export interface QuestGraphData {
   nodes: QuestGraphNode[];

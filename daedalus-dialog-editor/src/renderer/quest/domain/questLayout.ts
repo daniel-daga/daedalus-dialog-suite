@@ -4,7 +4,7 @@
  * Owns two responsibilities:
  * - `filterGraph`: prunes nodes/edges according to display options before layout
  * - `calculateDagreLayout`: runs the Dagre algorithm and converts internal node
- *   data to the `QuestGraphNode` array expected by React Flow
+ *   data to the `QuestGraphNode` array consumed by the canvas
  */
 
 import dagre from 'dagre';
@@ -14,7 +14,7 @@ import {
   DAGRE_LAYOUT,
   NODE_HEIGHT,
   NODE_WIDTH,
-} from './constants/questGraphConstants';
+} from './questGraphConstants';
 import type { InternalNodeData } from './questGraphInternalTypes';
 import { isStateNode } from './questGraphSharedHelpers';
 

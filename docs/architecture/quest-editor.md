@@ -34,30 +34,26 @@ The quest editor stays inside the monorepo with strict internal layers:
 - Quest editor UI code stays under `daedalus-dialog-editor/src/renderer/components/QuestEditor/*`.
 - Import direction is one-way: UI -> application -> domain.
 
-### Current Implementation Status (shim layer)
+### Physical Layout
 
-The `quest/domain/*` and `quest/application/*` modules currently act as a
-**stable public boundary** rather than the physical home of the logic. They
-re-export the pure implementation, which still lives under
-`components/QuestEditor/*` (graph build pipeline, command executors,
-guardrails, analysis):
+The pure quest logic physically lives under `quest/domain/*`:
 
-- `quest/domain/{graph,commands,guardrails,analysis}.ts` re-export from
-  `components/QuestEditor/{questGraphUtils,commands,questGuardrails,questAnalysis}`.
+- `graph.ts` — `buildQuestGraph` pipeline entry; stages live in
+  `questNodeIdentification.ts`, `questEdgeBuilding.ts`, `questLayout.ts`, with
+  `questGraphSharedHelpers.ts`, `questGraphInternalTypes.ts`, and
+  `questGraphConstants.ts` as shared internals.
+- `commands/` — command types, per-command executors, and the condition
+  expression codec.
+- `analysis.ts` / `guardrails.ts` — quest analysis and guardrail checks.
 - `quest/application/QuestEditingService.ts` is a thin wrapper over the domain
   command executor.
 
-UI (`QuestFlow.tsx`) imports only through `quest/domain` and
-`quest/application`, so the one-way import contract holds at the boundary the UI
-sees. Two known gaps remain before the layering is physically true:
-
-1. The graph types in `types/questGraph.ts` (and `MarkerType` in
-   `questEdgeBuilding.ts`) still depend on `reactflow`, so the re-exported
-   "domain" transitively references a UI library.
-2. The pure logic has not yet been physically moved out of
-   `components/QuestEditor/*`.
-
-Both are tracked as a deferred refactor in `docs/refactoring-targets.md`.
+The graph node/edge types in `types/questGraph.ts` are editor-owned and carry
+no rendering-library dependency (`reactflow` was removed entirely). The domain
+imports only model types (`types/global`, `types/questGraph`), `dagre`, and the
+pure `components/actionTypes` module. The boundary is enforced by
+`tests/questDomainBoundary.test.ts`, which fails on any UI-library or
+`components/QuestEditor` import from the domain.
 
 ## Implemented Outcomes (Consolidated)
 
