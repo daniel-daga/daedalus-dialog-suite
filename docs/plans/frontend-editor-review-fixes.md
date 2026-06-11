@@ -26,6 +26,7 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 | F5 | `deleteVariable` merges the old merged model additively, so deleted constants/variables stay visible in `mergedSemanticModel` (VariableManager) until an unrelated re-merge. | `store/projectStore.ts`, `components/VariableManager.tsx` | done |
 | F6 | Every model edit rebuilt the whole dialog index (O(project) per keystroke) via `storeSync` → `updateFileModel`, even for action edits that do not change the dialog set. The index rebuild is now skipped unless the file's (dialogName, npc) set changed; the merged-model re-merge stays synchronous (it feeds live edits) and already skips unrelated files. | `store/projectStore.ts` | done |
 | F7 | Zustand object-literal selectors without shallow equality re-render on every store change (`QuestFlow`, `QuestEditor`, `IngestedFilesDialog`); `App`/`ThreeColumnLayout` subscribe to whole stores. | renderer components | done |
+| D1 | History snapshots deep-cloned the entire semantic model (up to 50× per file, on push and on restore). Snapshots now hold the model by reference — safe because fileStore state is Immer-produced (copy-on-write, auto-frozen). Undo/redo restructured into plan (plain state) / commit (draft) / apply phases so no Immer draft proxy reaches fileStore. | `store/historyStore.ts`, `utils/historyUtils.ts` | done |
 
 ## Architecture drift & dead code
 
@@ -48,6 +49,5 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 
 | ID | Finding | Reason |
 |----|---------|--------|
-| D1 | History snapshots deep-clone the entire semantic model (up to 50× per file). Structural sharing is possible (immer freezes state) but aliasing risks need a dedicated change with its own test pass. | Needs focused follow-up |
 | D2 | Physically move pure quest logic from `components/QuestEditor/*` into `quest/domain/` and remove the reactflow type dependency. | Large import-churn refactor; tracked in `docs/refactoring-targets.md` |
 | D3 | `properties.information`/`condition` string-vs-object union should be encoded once in the model types instead of `as any` casts at call sites. | Type-model change touching parser + editor |
