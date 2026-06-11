@@ -137,6 +137,8 @@ function setupIpcHandlers() {
         // Use pre-generated code from validation if available
         if (validationResult.generatedCode) {
           const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode);
+          // Arm self-write suppression only after an actual write succeeds
+          fileWatcherService.notifySelfWrite(filePath);
           return {
             ...writeResult,
             validationResult
@@ -167,7 +169,10 @@ function setupIpcHandlers() {
           };
       }
 
-      return fileService.writeFile(filePath, code);
+      const writeResult = await fileService.writeFile(filePath, code);
+      // Arm self-write suppression only after an actual write succeeds
+      fileWatcherService.notifySelfWrite(filePath);
+      return writeResult;
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] generator:saveFile - Path validation failed:', error.message);
@@ -200,7 +205,10 @@ function setupIpcHandlers() {
       // Validate path before writing
       pathValidator.validatePath(filePath);
 
-      return fileService.writeFile(filePath, content);
+      const writeResult = await fileService.writeFile(filePath, content);
+      // Arm self-write suppression only after an actual write succeeds
+      fileWatcherService.notifySelfWrite(filePath);
+      return writeResult;
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] file:write - Path validation failed:', error.message);

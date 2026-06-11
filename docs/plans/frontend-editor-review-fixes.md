@@ -38,8 +38,8 @@ Each item is fixed TDD-style: failing test → minimal fix → green. Status val
 
 | ID | Finding | Files | Status |
 |----|---------|-------|--------|
-| F10 | File-watcher hardening: chokidar `ignored` predicate broke on Windows backslash paths with dotted directory names; self-write suppression registered even when a save later failed validation (now registered by the main process at actual write time); paths compared case-sensitively on Windows. | `main/services/FileWatcherService.ts`, `main/main.ts`, renderer call sites | todo |
-| F11 | `FileService` lock released all waiters concurrently instead of queueing; files never read before writing defaulted to utf8 instead of windows-1252. | `main/services/FileService.ts` | todo |
+| F10 | File-watcher hardening: chokidar `ignored` predicate broke on Windows backslash paths with dotted directory names; self-write suppression registered even when a save later failed validation (now registered by the main process at actual write time); paths compared case-sensitively on Windows. | `main/services/FileWatcherService.ts`, `main/main.ts`, renderer call sites | done |
+| F11 | `FileService` lock released all waiters concurrently instead of queueing; files never read before writing defaulted to utf8 instead of windows-1252. | `main/services/FileService.ts` | done |
 | F12 | `updateGlobalConstant` regex `[^;]+` breaks on string constants containing `;`. | `store/projectStore.ts` | done |
 | F13 | `renameDialog` redundant `conditions` spread (no-op). | `store/fileStore.ts` | todo |
 | F14 | Unbounded redirect recursion in updater `httpsGet`/`downloadUpdate`. | `main/services/UpdaterService.ts` | done |

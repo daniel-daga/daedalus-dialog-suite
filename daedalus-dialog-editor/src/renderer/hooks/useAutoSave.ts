@@ -50,8 +50,8 @@ export function useAutoSave(): AutoSaveStatus {
           if (fileState) {
             const savedModel = fileState.semanticModel;
             try {
-              // Notify file watcher this is a self-originated write
-              window.editorAPI.notifySelfWrite(filePath);
+              // The main process arms file-watcher self-write suppression
+              // after the actual write succeeds.
               const result = await window.editorAPI.saveFile(
                 filePath,
                 savedModel,
