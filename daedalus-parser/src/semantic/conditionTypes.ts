@@ -297,7 +297,9 @@ export class QuestStateCondition implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `${this.questVariable} == ${this.state}`;
+    // TOPIC_ constants are strings; the state check must use the MIS_ int variable.
+    const misVariable = this.questVariable.replace(/^topic_/i, 'MIS_');
+    return `${misVariable} == ${this.state}`;
   }
 
   toDisplayString(): string {
