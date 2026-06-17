@@ -1651,6 +1651,21 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
     expect(block).toContain("description: ''");
     expect(block).not.toContain('description: dialogName');
   });
+
+  test("first line of a new dialog defaults to Hero (other) speaker (issue #126)", () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useDialogFactory.ts'), 'utf8');
+    const start = source.indexOf('const informationFunction: DialogFunction');
+    const end = source.indexOf('const existingInstances', start);
+    const block = source.slice(start, end);
+
+    // The seeded first DialogLine must belong to the Hero (other), not the NPC (self):
+    // almost every dialog opens with a line from the Hero.
+    expect(block).toContain("speaker: 'other'");
+    expect(block).not.toContain("speaker: 'self'");
+    expect(block).toContain("speaker: 'other', actions: []");
+  });
 });
 
 

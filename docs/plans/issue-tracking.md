@@ -15,7 +15,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | #116 | B_Attack emits `hero` (unknown identifier) | ✅ done |
 | #145 | If/else block: text deleted on "Add Line", missing "knows info" option | ✅ done |
 | #117 | Added choice not accessible until user re-clicks NPC | ✅ done |
-| #126 | New dialog line defaults to NPC speaker, should default to Hero | ⬜ not started |
+| #126 | New dialog line defaults to NPC speaker, should default to Hero | ✅ done |
 
 ## P2 — Small QOL / UX
 
@@ -61,3 +61,19 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 - **Regression test:** `tests/e2e/choice-editing.spec.ts` →
   `Choice accessibility after creation in project mode (issue #117)` (2 tests).
   Verified to fail when the re-merge path is disabled and pass with it enabled.
+
+## #126 — resolution notes
+
+- **Request:** almost every dialog opens with a line from the Hero, so a newly
+  created dialog should seed its first `DialogLine` with the Hero (`other`) as
+  speaker rather than the NPC (`self`).
+- **Fix (already in `master`):** `useDialogFactory.createDialogForNpc` seeds the
+  new info function's first line with `speaker: 'other'` (`f92edf9`, 2026-04-07).
+  The action factory already defaulted standalone new dialog lines to `other`
+  (`actionFactory.createAction` → `getOppositeSpeaker`/`'other'` fallback).
+- **Gap closed:** the `f92edf9` commit shipped the one-line factory change with
+  no dedicated test (its tests covered an unrelated `conditionOperator` change).
+- **Regression test:** `tests/ThreeColumnLayout.test.tsx` →
+  `first line of a new dialog defaults to Hero (other) speaker (issue #126)`.
+  Guards the seeded `informationFunction` block in `useDialogFactory.ts`;
+  verified to fail when the speaker is reverted to `self` and pass with `other`.
