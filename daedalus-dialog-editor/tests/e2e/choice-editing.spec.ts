@@ -25,6 +25,94 @@ FUNC VOID DIA_Choice_Test_Info()
 };
 `;
 
+const PROJECT_DIALOG_FILE = `INSTANCE DIA_ChoiceProj_Test(C_INFO)
+{
+\tnpc = SLD_55555_ChoiceProj;
+\tnr = 1;
+\tcondition = DIA_ChoiceProj_Test_Condition;
+\tinformation = DIA_ChoiceProj_Test_Info;
+\timportant = FALSE;
+};
+
+FUNC INT DIA_ChoiceProj_Test_Condition()
+{
+\treturn TRUE;
+};
+
+FUNC VOID DIA_ChoiceProj_Test_Info()
+{
+\tAI_Output(self, other, "DIA_ChoiceProj_Test_15_00"); //Hello, what do you want?
+};
+`;
+
+/**
+ * Issue #117: after adding a Choice, the new choice sub-dialog had to be
+ * "unlocked" by re-clicking the NPC in the left panel (which forces a
+ * re-merge of the project semantic model). The choice must be accessible
+ * immediately after creation.
+ */
+test.describe('Choice accessibility after creation in project mode (issue #117)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate((content) => {
+      localStorage.setItem('mockapi_file_project/choice-proj.d', content);
+    }, PROJECT_DIALOG_FILE);
+
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) {
+        await dialog.accept('project');
+      } else {
+        await dialog.dismiss();
+      }
+    });
+
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('SLD_55555_ChoiceProj')).toBeVisible({ timeout: 15000 });
+
+    await page.getByText('SLD_55555_ChoiceProj').click();
+    await page.getByRole('button', { name: /DIA_ChoiceProj_Test/ }).click();
+    await expect(
+      page.getByRole('heading', { name: 'DIA_ChoiceProj_Test', exact: true })
+    ).toBeVisible();
+    await expect(page.getByLabel('Text').first()).toBeVisible();
+  });
+
+  test('added choice is immediately accessible without re-clicking the NPC', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await expect(page.getByLabel('Choice Text')).toBeVisible();
+
+    // The choice card must immediately offer navigation into the new sub-dialog
+    const editChoiceButton = page.getByRole('button', { name: 'Edit choice actions' });
+    await expect(editChoiceButton).toBeVisible();
+
+    // The dialog tree must immediately show the new choice as a child
+    await page.getByRole('button', { name: 'Expand dialog', exact: true }).click();
+    await expect(page.getByText('DIA_ChoiceProj_Test_Choice_1')).toBeVisible();
+
+    // Navigating into the choice must open its (empty) sub-dialog editor
+    await editChoiceButton.click();
+    await expect(
+      page.getByRole('heading', { name: 'DIA_ChoiceProj_Test_Choice_1' })
+    ).toBeVisible();
+    await expect(page.getByText('No actions yet')).toBeVisible();
+  });
+
+  test('added choice can be opened from the dialog tree without re-clicking the NPC', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await expect(page.getByLabel('Choice Text')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Expand dialog', exact: true }).click();
+    await page.getByText('DIA_ChoiceProj_Test_Choice_1').click();
+
+    await expect(
+      page.getByRole('heading', { name: 'DIA_ChoiceProj_Test_Choice_1' })
+    ).toBeVisible();
+    await expect(page.getByText('No actions yet')).toBeVisible();
+  });
+});
+
 test.describe('Choice / Branch Creation and Editing', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
