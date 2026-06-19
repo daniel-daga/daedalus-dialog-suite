@@ -21,7 +21,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 
 | Issue | Title | Status |
 |---|---|---|
-| #182 | "Add Dialog Line" ignores nesting level; delete button broken in dropdown | ⬜ not started |
+| #182 | "Add Dialog Line" ignores nesting level; delete button broken in dropdown | ✅ done |
 | #181 | Auto-insert dialog line with same text when adding a Choice | ⬜ not started |
 | #140 | "Create Topic" should also insert a "Log Set Status" action | ✅ done |
 | #123 | New action: Info_ClearChoices | ✅ done |
@@ -61,6 +61,37 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 - **Regression test:** `tests/e2e/choice-editing.spec.ts` →
   `Choice accessibility after creation in project mode (issue #117)` (2 tests).
   Verified to fail when the re-merge path is disabled and pass with it enabled.
+
+## #182 — resolution notes
+
+- **Request:** two bugs when working inside a dropdown-expanded sub-dialog (the
+  choice accordion): (1) "Add Dialog Line" inserted into the top-level hierarchy
+  instead of the current nesting level, and (2) the trash icon for a line shown
+  inside the dropdown did nothing (user had to fall back to the sidebar tree).
+- **Already implemented:** the `InlineChoiceEditor` accordion (`6ef4e25`,
+  2026-03-16, post-dating the issue) renders the choice's sub-dialog with its
+  own `useActionManagement` instance whose `setFunction` targets the choice's
+  function (`updateFunctionWithUpdater(filePath, targetFunctionName, …)`). Every
+  add/delete inside the expanded choice — the per-line "+" menu and the
+  `DialogLineRenderer` trash icon — therefore operates on the choice's function
+  at the correct nesting level, not the parent dialog.
+- **Gap closed:** no test exercised the real add/delete wiring inside the
+  dropdown — `tests/InlineChoiceEditor.test.tsx` mocks `ActionsList`. An E2E was
+  not viable: the browser mock parser (`mockAPI.ts`) only understands
+  `AI_Output`, so a choice cannot be seeded from source, and creating one via
+  the UI then navigating in/out to populate the dropdown is fragile. Per the
+  TDD rule's component-level exception, the regression test renders the **real**
+  `ActionsList` / `ActionCard` / renderers instead.
+- **Regression test:** `tests/InlineChoiceEditor.nesting.test.tsx` (2 tests) —
+  clicking the inline "+" → "Dialog Line" and the line's trash icon must update
+  the choice sub-function (`DIA_Test_Yes`), appending / removing a line.
+  Verified discriminating: temporarily routing `setFunction` to a wrong function
+  name makes both fail.
+- **Collateral fix:** `tests/e2e/choice-editing.spec.ts` used
+  `getByRole('menuitem', { name: 'Choice' })`, which became ambiguous once #123
+  added the "Clear Choices" action (Playwright matches accessible names by
+  substring). Added `exact: true` to the seven occurrences; the 6-test spec
+  passes again.
 
 ## #119 / #123 — resolution notes (new actions)
 

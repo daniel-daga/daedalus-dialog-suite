@@ -79,7 +79,7 @@ test.describe('Choice accessibility after creation in project mode (issue #117)'
 
   test('added choice is immediately accessible without re-clicking the NPC', async ({ page }) => {
     await page.getByRole('button', { name: 'Add action' }).click();
-    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
     await expect(page.getByLabel('Choice Text')).toBeVisible();
 
     // The choice card must immediately offer navigation into the new sub-dialog
@@ -100,7 +100,7 @@ test.describe('Choice accessibility after creation in project mode (issue #117)'
 
   test('added choice can be opened from the dialog tree without re-clicking the NPC', async ({ page }) => {
     await page.getByRole('button', { name: 'Add action' }).click();
-    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
     await expect(page.getByLabel('Choice Text')).toBeVisible();
 
     await page.getByRole('button', { name: 'Expand dialog', exact: true }).click();
@@ -134,7 +134,7 @@ test.describe('Choice / Branch Creation and Editing', () => {
 
   test('adding a Choice action renders Choice Text and Function fields', async ({ page }) => {
     await page.getByRole('button', { name: 'Add action' }).click();
-    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
 
     // ChoiceRenderer renders "Choice Text" and "Function" labels
     await expect(page.getByLabel('Choice Text')).toBeVisible({ timeout: 5000 });
@@ -143,7 +143,7 @@ test.describe('Choice / Branch Creation and Editing', () => {
 
   test('can type in the Choice Text field', async ({ page }) => {
     await page.getByRole('button', { name: 'Add action' }).click();
-    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
 
     const choiceTextField = page.getByLabel('Choice Text');
     await expect(choiceTextField).toBeVisible({ timeout: 5000 });
@@ -153,7 +153,7 @@ test.describe('Choice / Branch Creation and Editing', () => {
 
   test('can type a function name in the Function field', async ({ page }) => {
     await page.getByRole('button', { name: 'Add action' }).click();
-    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
 
     const functionField = page.getByLabel('Function');
     await expect(functionField).toBeVisible({ timeout: 5000 });
@@ -164,13 +164,13 @@ test.describe('Choice / Branch Creation and Editing', () => {
   test('can add multiple choice branches', async ({ page }) => {
     // Add first choice
     await page.getByRole('button', { name: 'Add action' }).click();
-    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
     await expect(page.getByLabel('Choice Text').first()).toBeVisible({ timeout: 5000 });
 
     // Add second choice using the "+" between actions
     const addButtons = page.getByRole('button', { name: 'Add new action' });
     await addButtons.last().click();
-    await page.getByRole('menuitem', { name: 'Choice' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
 
     // Should now have two Choice Text fields
     await expect(async () => {
