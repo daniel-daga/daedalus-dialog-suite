@@ -101,6 +101,29 @@ export class StopProcessInfosAction implements CodeGeneratable {
   }
 }
 
+export class SetRefuseTalkAction implements CodeGeneratable {
+  public readonly type = 'SetRefuseTalkAction';
+  public target: string;
+  public seconds: number;
+
+  constructor(target: string = 'self', seconds: number = 300) {
+    this.target = target;
+    this.seconds = seconds;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `Npc_SetRefuseTalk (${this.target}, ${this.seconds});`;
+  }
+
+  toDisplayString(): string {
+    return `[SetRefuseTalk: ${this.target} for ${this.seconds}s]`;
+  }
+
+  getTypeName(): string {
+    return 'SetRefuseTalkAction';
+  }
+}
+
 export class PlayAniAction implements CodeGeneratable {
   public readonly type = 'PlayAniAction';
   public target: string;

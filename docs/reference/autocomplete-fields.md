@@ -67,6 +67,7 @@ Autocomplete-enabled action fields:
 - `LogSetTopicStatusRenderer`: topic `string` with prefix `TOPIC_`.
 - `PlayAniActionRenderer`: NPC `C_NPC`.
 - `SetAttitudeActionRenderer`: NPC `C_NPC`, attitude `int`.
+- `SetRefuseTalkActionRenderer`: NPC `C_NPC` (symbol-table suggestions only); seconds is plain numeric input.
 - `SetVariableActionRenderer`: variable `int|string|float`.
 - `StopProcessInfosActionRenderer`: NPC `C_NPC` (symbol-table suggestions only).
 

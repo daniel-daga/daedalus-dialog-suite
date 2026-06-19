@@ -94,6 +94,17 @@ export interface PlayAniAction {
   animationName: string;
 }
 
+export interface SetRefuseTalkAction {
+  type: 'SetRefuseTalkAction';
+  target: string;
+  seconds: number;
+}
+
+export interface ClearChoicesAction {
+  type: 'ClearChoicesAction';
+  dialog: string;
+}
+
 export interface Action {
   type: 'Action';
   action: string;
@@ -178,6 +189,8 @@ export type ActionType =
   | SetVariableAction
   | StopProcessInfosAction
   | PlayAniAction
+  | SetRefuseTalkAction
+  | ClearChoicesAction
   | GivePlayerXPAction
   | PickpocketAction
   | StartOtherRoutineAction
@@ -208,6 +221,8 @@ export type ActionTypeId =
   | 'setVariableAction'
   | 'stopProcessInfosAction'
   | 'playAniAction'
+  | 'setRefuseTalkAction'
+  | 'clearChoicesAction'
   | 'givePlayerXPAction'
   | 'pickpocketAction'
   | 'startOtherRoutineAction'
@@ -242,6 +257,8 @@ const TYPE_TO_ID: Record<string, ActionTypeId> = {
   'SetVariableAction': 'setVariableAction',
   'StopProcessInfosAction': 'stopProcessInfosAction',
   'PlayAniAction': 'playAniAction',
+  'SetRefuseTalkAction': 'setRefuseTalkAction',
+  'ClearChoicesAction': 'clearChoicesAction',
   'GivePlayerXPAction': 'givePlayerXPAction',
   'PickpocketAction': 'pickpocketAction',
   'StartOtherRoutineAction': 'startOtherRoutineAction',

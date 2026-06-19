@@ -9,6 +9,7 @@ import {
   LogSetTopicStatus,
   Action,
   Choice,
+  ClearChoicesAction,
   CreateInventoryItems,
   GiveInventoryItems,
   AttackAction,
@@ -16,6 +17,7 @@ import {
   ExchangeRoutineAction,
   ChapterTransitionAction,
   StopProcessInfosAction,
+  SetRefuseTalkAction,
   PlayAniAction,
   GivePlayerXPAction,
   PickpocketAction,
@@ -47,6 +49,8 @@ export class ActionParsers {
         return ActionParsers.parseAIOutputCall(node);
       case 'info_addchoice':
         return ActionParsers.parseInfoAddChoiceCall(node);
+      case 'info_clearchoices':
+        return ActionParsers.parseClearChoicesCall(node);
       case 'log_createtopic':
         return ActionParsers.parseCreateTopicCall(node);
       case 'b_logentry':
@@ -68,6 +72,8 @@ export class ActionParsers {
         return ActionParsers.parseChapterTransitionCall(node);
       case 'ai_stopprocessinfos':
         return ActionParsers.parseStopProcessInfosCall(node);
+      case 'npc_setrefusetalk':
+        return ActionParsers.parseSetRefuseTalkCall(node);
       case 'ai_playani':
         return ActionParsers.parsePlayAniCall(node);
       case 'b_giveplayerxp':
@@ -146,6 +152,15 @@ export class ActionParsers {
     const textNode = argsNode.namedChildren?.[1];
     choice.textIsExpression = textNode ? textNode.type !== 'string' : false;
     return choice;
+  }
+
+  /**
+   * Parse Info_ClearChoices function call
+   */
+  static parseClearChoicesCall(node: TreeSitterNode): ClearChoicesAction | null {
+    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
+      new ClearChoicesAction(args[0])
+    );
   }
 
   /**
@@ -235,6 +250,15 @@ export class ActionParsers {
   static parseStopProcessInfosCall(node: TreeSitterNode): StopProcessInfosAction | null {
     return ActionParsers.parseActionWithArgs(node, 1, (args) =>
       new StopProcessInfosAction(args[0])
+    );
+  }
+
+  /**
+   * Parse Npc_SetRefuseTalk function call
+   */
+  static parseSetRefuseTalkCall(node: TreeSitterNode): SetRefuseTalkAction | null {
+    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
+      new SetRefuseTalkAction(args[0], parseInt(args[1]) || 300)
     );
   }
 

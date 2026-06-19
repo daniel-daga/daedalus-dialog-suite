@@ -69,3 +69,24 @@ export class Choice implements CodeGeneratable {
     return 'Choice';
   }
 }
+
+export class ClearChoicesAction implements CodeGeneratable {
+  public readonly type = 'ClearChoicesAction';
+  public dialog: string;
+
+  constructor(dialog: string) {
+    this.dialog = dialog;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `Info_ClearChoices (${this.dialog});`;
+  }
+
+  toDisplayString(): string {
+    return `[ClearChoices: ${this.dialog}]`;
+  }
+
+  getTypeName(): string {
+    return 'ClearChoicesAction';
+  }
+}

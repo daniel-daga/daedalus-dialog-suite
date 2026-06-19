@@ -18,6 +18,8 @@ import type {
   SetVariableAction,
   StopProcessInfosAction,
   PlayAniAction,
+  SetRefuseTalkAction,
+  ClearChoicesAction,
   GivePlayerXPAction,
   PickpocketAction,
   StartOtherRoutineAction,
@@ -120,6 +122,17 @@ export const ACTION_TEMPLATES = {
     type: 'PlayAniAction',
     target,
     animationName
+  }),
+
+  setRefuseTalkAction: (target: string = 'self', seconds: number = 300): SetRefuseTalkAction => ({
+    type: 'SetRefuseTalkAction',
+    target,
+    seconds
+  }),
+
+  clearChoicesAction: (dialog: string = ''): ClearChoicesAction => ({
+    type: 'ClearChoicesAction',
+    dialog
   }),
 
   givePlayerXPAction: (xpAmount: string = 'XP_Ambient'): GivePlayerXPAction => ({

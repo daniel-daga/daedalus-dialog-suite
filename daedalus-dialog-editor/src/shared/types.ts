@@ -133,6 +133,17 @@ export interface PlayAniAction {
   animationName: string;
 }
 
+export interface SetRefuseTalkAction {
+  type: 'SetRefuseTalkAction';
+  target: string;
+  seconds: number;
+}
+
+export interface ClearChoicesAction {
+  type: 'ClearChoicesAction';
+  dialog: string;
+}
+
 export interface GivePlayerXPActionType {
   type: 'GivePlayerXPAction';
   xpAmount: string;
@@ -217,6 +228,8 @@ export type DialogAction =
   | SetVariableAction
   | StopProcessInfosAction
   | PlayAniAction
+  | SetRefuseTalkAction
+  | ClearChoicesAction
   | GivePlayerXPActionType
   | PickpocketActionType
   | StartOtherRoutineActionType

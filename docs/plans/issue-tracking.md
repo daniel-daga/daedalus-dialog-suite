@@ -23,9 +23,9 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 |---|---|---|
 | #182 | "Add Dialog Line" ignores nesting level; delete button broken in dropdown | ⬜ not started |
 | #181 | Auto-insert dialog line with same text when adding a Choice | ⬜ not started |
-| #140 | "Create Topic" should also insert a "Log Set Status" action | ⬜ not started |
-| #123 | New action: Info_ClearChoices | ⬜ not started |
-| #119 | New action: Npc_SetRefuseTalk | ⬜ not started |
+| #140 | "Create Topic" should also insert a "Log Set Status" action | ✅ done |
+| #123 | New action: Info_ClearChoices | ✅ done |
+| #119 | New action: Npc_SetRefuseTalk | ✅ done |
 | #183 (item 3) | Tab key doesn't navigate Giver → Receiver → Item field | ⬜ not started |
 | #118 | Tab key to jump into choice sub-editor | ⬜ not started |
 
@@ -61,6 +61,48 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 - **Regression test:** `tests/e2e/choice-editing.spec.ts` →
   `Choice accessibility after creation in project mode (issue #117)` (2 tests).
   Verified to fail when the re-merge path is disabled and pass with it enabled.
+
+## #119 / #123 — resolution notes (new actions)
+
+- **Request:** add two new dialog actions — `Npc_SetRefuseTalk(self, <seconds>)`
+  with an editable seconds field (default 300, #119) and
+  `Info_ClearChoices(DIA_...)` with the dialog instance auto-filled from the
+  current dialog context (#123).
+- **Parser (`daedalus-parser`):** new model classes `SetRefuseTalkAction`
+  (`npcActions.ts`, emits `Npc_SetRefuseTalk (target, seconds);`) and
+  `ClearChoicesAction` (`dialogActions.ts`, emits `Info_ClearChoices (dialog);`).
+  Wired into the `DialogAction` union, `ACTION_DISCRIMINATOR`, the legacy
+  `ensureActionType` fallback, and `action-parsers.ts` dispatch
+  (`npc_setrefusetalk`, `info_clearchoices`).
+- **Editor (`daedalus-dialog-editor`):** added interfaces to `shared/types.ts`
+  (+ re-export via `types/global.d.ts`), `actionTypes.ts` (union, `ActionTypeId`,
+  `TYPE_TO_ID`), `actionTemplates.ts`, `actionFactory.ts` (clearChoices seeds the
+  dialog instance from `dialogName`), the `ActionTypeMenu`, the renderer registry
+  + labels, and two new renderers (`SetRefuseTalkActionRenderer`,
+  `ClearChoicesActionRenderer`).
+- **Tests:**
+  - Parser: `test/actions-refusetalk-clearchoices.test.js` — parse + codegen
+    round-trip for both (5 tests).
+  - Editor Jest: `tests/refuseTalkAndClearChoices.test.tsx` — factory shape,
+    type detection, renderer registration, and end-to-end codegen via
+    `CodeGeneratorService` (5 tests).
+  - Editor E2E: `tests/e2e/action-content-types.spec.ts` — added both to the
+    insertion matrix plus behavior tests (Seconds defaults to 300 and edits;
+    Clear Choices auto-fills `DIA_<dialog>`).
+
+## #140 — resolution notes
+
+- **Request:** invoking "Create Topic" should automatically append a "Log Set
+  Status" action directly below it, preset to `LOG_RUNNING`.
+- **Already implemented:** `useActionManagement.addActionAfter` auto-inserts a
+  `LogSetTopicStatus` (status `LOG_RUNNING`, topic copied from the new
+  `CreateTopic`) followed by a `LogEntry` whenever a `createTopic` action is
+  added (`useActionManagement.ts:313-329`). `updateAction` keeps the sibling
+  `LogSetTopicStatus`/`LogEntry` topics in sync when the `CreateTopic` topic is
+  edited (`useActionManagement.ts:163-188`). This shipped alongside the #111
+  comment item "auto-insert Log Entry after Create Topic".
+- **Regression test:** `tests/createTopicAutoAppend.test.ts` (3 tests, passing).
+  Covers the auto-append order, topic matching, and topic-sync on edit.
 
 ## #126 — resolution notes
 

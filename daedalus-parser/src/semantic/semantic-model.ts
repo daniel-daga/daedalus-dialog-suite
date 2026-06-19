@@ -14,8 +14,8 @@ import type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces'
 // DOMAIN ACTION CLASSES (imported + re-exported for backward compatibility)
 // ===================================================================
 
-import { DialogLine, Choice } from './dialogActions';
-export { DialogLine, Choice } from './dialogActions';
+import { DialogLine, Choice, ClearChoicesAction } from './dialogActions';
+export { DialogLine, Choice, ClearChoicesAction } from './dialogActions';
 
 import {
   CreateInventoryItems,
@@ -38,6 +38,7 @@ import {
   PickpocketAction,
   PlayAniAction,
   SetAttitudeAction,
+  SetRefuseTalkAction,
   StartOtherRoutineAction,
   StopProcessInfosAction,
   TeachAction,
@@ -50,6 +51,7 @@ export {
   PickpocketAction,
   PlayAniAction,
   SetAttitudeAction,
+  SetRefuseTalkAction,
   StartOtherRoutineAction,
   StopProcessInfosAction,
   TeachAction,
@@ -487,6 +489,7 @@ export type DialogAction =
   | Action
   | ConditionalAction
   | Choice
+  | ClearChoicesAction
   | CreateInventoryItems
   | GiveInventoryItems
   | AttackAction
@@ -503,7 +506,8 @@ export type DialogAction =
   | GiveTradeInventoryAction
   | RemoveInventoryItemsAction
   | InsertNpcAction
-  | HeroFollowsAction;
+  | HeroFollowsAction
+  | SetRefuseTalkAction;
 
 /**
  * Discriminator table shape used by class-transformer's polymorphic @Type() decorator.
@@ -525,6 +529,7 @@ const ACTION_DISCRIMINATOR: DiscriminatorConfig = {
     { value: Action, name: 'Action' },
     { value: ConditionalAction, name: 'ConditionalAction' },
     { value: Choice, name: 'Choice' },
+    { value: ClearChoicesAction, name: 'ClearChoicesAction' },
     { value: CreateInventoryItems, name: 'CreateInventoryItems' },
     { value: GiveInventoryItems, name: 'GiveInventoryItems' },
     { value: AttackAction, name: 'AttackAction' },
@@ -542,6 +547,7 @@ const ACTION_DISCRIMINATOR: DiscriminatorConfig = {
     { value: RemoveInventoryItemsAction, name: 'RemoveInventoryItemsAction' },
     { value: InsertNpcAction, name: 'InsertNpcAction' },
     { value: HeroFollowsAction, name: 'HeroFollowsAction' },
+    { value: SetRefuseTalkAction, name: 'SetRefuseTalkAction' },
   ],
 };
 
@@ -552,7 +558,8 @@ const ACTION_DISCRIMINATOR: DiscriminatorConfig = {
 // before less-specific ones to avoid misclassification:
 //   - 'CreateTopic'  (topic + topicType) before 'LogEntry' (topic + text): both have 'topic'
 //   - 'CreateInventoryItems' (target + item + quantity, no giver) before 'GiveInventoryItems'
-//   - 'PlayAniAction' (target + animationName) before 'StopProcessInfosAction' (only target)
+//   - 'PlayAniAction' (target + animationName) and 'SetRefuseTalkAction' (target + seconds)
+//     before 'StopProcessInfosAction' (only target)
 //   - 'StartOtherRoutineAction' (routineFunctionName + routineNpc + routineName) before
 //     'ExchangeRoutineAction' (routine)
 //
@@ -566,6 +573,7 @@ function ensureActionType(json: any): void {
     else if ('topic' in json && 'status' in json) json.type = 'LogSetTopicStatus';
     else if ('condition' in json && 'thenActions' in json && 'elseActions' in json) json.type = 'ConditionalAction';
     else if ('dialogRef' in json && 'targetFunction' in json) json.type = 'Choice';
+    else if ('dialog' in json) json.type = 'ClearChoicesAction';
     else if ('target' in json && 'item' in json && 'quantity' in json && !('giver' in json)) json.type = 'CreateInventoryItems';
     else if ('giver' in json && 'receiver' in json) json.type = 'GiveInventoryItems';
     else if ('attacker' in json && 'attackReason' in json) json.type = 'AttackAction';
@@ -574,6 +582,7 @@ function ensureActionType(json: any): void {
     else if ('chapter' in json && 'world' in json) json.type = 'ChapterTransitionAction';
     else if ('variableName' in json && 'operator' in json && 'value' in json) json.type = 'SetVariableAction';
     else if ('target' in json && 'animationName' in json) json.type = 'PlayAniAction';
+    else if ('target' in json && 'seconds' in json) json.type = 'SetRefuseTalkAction';
     else if ('target' in json && Object.keys(json).length === 1) json.type = 'StopProcessInfosAction';
     else if ('xpAmount' in json) json.type = 'GivePlayerXPAction';
     else if ('pickpocketMode' in json) json.type = 'PickpocketAction';

@@ -238,6 +238,8 @@ class LogEntry {
 - `SetAttitudeAction` - B_SetAttitude calls
 - `ExchangeRoutineAction` - Npc_ExchangeRoutine calls
 - `ChapterTransitionAction` - B_Kapitelwechsel calls
+- `SetRefuseTalkAction` - Npc_SetRefuseTalk calls
+- `ClearChoicesAction` - Info_ClearChoices calls
 - `Action` - Generic action (any other function call)
 
 ## Code Generation API

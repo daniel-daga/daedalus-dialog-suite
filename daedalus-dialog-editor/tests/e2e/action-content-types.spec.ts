@@ -68,7 +68,9 @@ test.describe('Action type content insertion', () => {
     { menuLabel: 'Give Trade Inventory', signatureLabel: 'Trade Target' },
     { menuLabel: 'Remove Inventory Items', signatureLabel: 'Item' },
     { menuLabel: 'Insert NPC', signatureLabel: 'NPC Instance' },
-    { menuLabel: 'Hero Follows NPC', signatureLabel: 'Guide Routine' }
+    { menuLabel: 'Hero Follows NPC', signatureLabel: 'Guide Routine' },
+    { menuLabel: 'Refuse Talk', signatureLabel: 'Seconds' },
+    { menuLabel: 'Clear Choices', signatureLabel: 'Dialog Instance' }
   ];
 
   for (const { menuLabel, signatureLabel } of ACTION_MATRIX) {
@@ -129,5 +131,26 @@ test.describe('Action content editing persists in session', () => {
     await xp.blur();
     await page.waitForTimeout(400);
     await expect(xp).toHaveValue('250');
+  });
+
+  // Issue #119: Npc_SetRefuseTalk with an editable seconds field (default 300).
+  test('Refuse Talk: Seconds defaults to 300 and is editable', async ({ page }) => {
+    await addActionFromMenu(page, 'Refuse Talk');
+    const seconds = page.getByLabel('Seconds');
+    await expect(seconds).toBeVisible();
+    await expect(seconds).toHaveValue('300');
+    await seconds.click();
+    await seconds.fill('120');
+    await seconds.blur();
+    await page.waitForTimeout(400);
+    await expect(seconds).toHaveValue('120');
+  });
+
+  // Issue #123: Info_ClearChoices auto-fills the dialog instance from context.
+  test('Clear Choices: Dialog Instance auto-fills from the current dialog', async ({ page }) => {
+    await addActionFromMenu(page, 'Clear Choices');
+    const dialogField = page.getByLabel('Dialog Instance');
+    await expect(dialogField).toBeVisible();
+    await expect(dialogField).toHaveValue('DIA_Arog_EntscheidungKillAlchemist');
   });
 });

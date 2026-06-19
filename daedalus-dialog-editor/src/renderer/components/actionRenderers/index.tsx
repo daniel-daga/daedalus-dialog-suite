@@ -21,6 +21,8 @@ import ChapterTransitionRenderer from './ChapterTransitionRenderer';
 import ExchangeRoutineRenderer from './ExchangeRoutineRenderer';
 import SetVariableActionRenderer from './SetVariableActionRenderer';
 import StopProcessInfosActionRenderer from './StopProcessInfosActionRenderer';
+import SetRefuseTalkActionRenderer from './SetRefuseTalkActionRenderer';
+import ClearChoicesActionRenderer from './ClearChoicesActionRenderer';
 import PlayAniActionRenderer from './PlayAniActionRenderer';
 import GivePlayerXPActionRenderer from './GivePlayerXPActionRenderer';
 import PickpocketActionRenderer from './PickpocketActionRenderer';
@@ -51,6 +53,8 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   exchangeRoutine: ExchangeRoutineRenderer,
   setVariableAction: SetVariableActionRenderer,
   stopProcessInfosAction: StopProcessInfosActionRenderer,
+  setRefuseTalkAction: SetRefuseTalkActionRenderer,
+  clearChoicesAction: ClearChoicesActionRenderer,
   playAniAction: PlayAniActionRenderer,
   givePlayerXPAction: GivePlayerXPActionRenderer,
   pickpocketAction: PickpocketActionRenderer,
@@ -89,6 +93,8 @@ export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
   exchangeRoutine: 'Exchange Routine',
   setVariableAction: 'Set Variable',
   stopProcessInfosAction: 'End Dialog',
+  setRefuseTalkAction: 'Refuse Talk',
+  clearChoicesAction: 'Clear Choices',
   playAniAction: 'Play Animation',
   givePlayerXPAction: 'Give XP',
   pickpocketAction: 'Pickpocket',

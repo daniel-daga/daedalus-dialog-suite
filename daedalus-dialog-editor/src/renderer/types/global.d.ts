@@ -26,6 +26,8 @@ export type {
   SetAttitudeActionType,
   ChapterTransitionAction,
   ExchangeRoutineAction,
+  SetRefuseTalkAction,
+  ClearChoicesAction,
   GivePlayerXPActionType,
   PickpocketActionType,
   StartOtherRoutineActionType,

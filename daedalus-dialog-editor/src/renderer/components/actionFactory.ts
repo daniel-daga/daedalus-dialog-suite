@@ -170,6 +170,9 @@ export function createAction(
     action = ACTION_TEMPLATES.dialogLine(speaker, '');
   } else if (actionType === 'choice') {
     action = ACTION_TEMPLATES.choice(dialogName || '', '', '');
+  } else if (actionType === 'clearChoicesAction') {
+    // Auto-fill the dialog instance from the current dialog context (issue #123).
+    action = ACTION_TEMPLATES.clearChoicesAction(dialogName || '');
   } else {
     // All other action types use default arguments
     const templateFn = ACTION_TEMPLATES[actionType];
