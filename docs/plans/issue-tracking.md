@@ -5,6 +5,22 @@ Source of detail for each issue is `github-issues.md`; this file tracks status o
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started
 
+## Workflow when an issue is resolved
+
+Marking an issue ✅ here is not the end. For every resolved issue:
+
+1. **Check its live state on GitHub** with `gh` (e.g.
+   `gh issue view <n> --json number,state,title`). The status in this file can
+   drift from GitHub — an issue fixed in code is often still `OPEN` upstream.
+2. **If it is still open, close it with a comment** that tells the original
+   reporter what actually happened, in plain terms:
+   - what was fixed (and whether it was already on `master` vs. newly done),
+   - the commit(s) that carry the fix,
+   - the regression test that now guards it.
+   Use `gh issue close <n> --comment "..."`. Never close silently — the person
+   who opened the ticket should be able to understand the resolution without
+   reading the code.
+
 ---
 
 ## P1 — Bugs
