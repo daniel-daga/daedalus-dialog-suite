@@ -105,6 +105,11 @@ export function useActionManagement(config: ActionManagementConfig) {
   }), [contextName, getAllDialogLineActions]);
 
   const updateAction = useCallback((path: ActionPath, updatedAction: DialogAction) => {
+    // Issue #181: when a Choice's text changes, mirror it into the first line of
+    // its sub-dialog. Captured here and applied after setFunction because the
+    // target is a different function than the one being edited.
+    let choiceTextSync: { targetFunction: string; previousText: string; newText: string } | null = null;
+
     setFunction((prev) => {
       if (!prev) return prev;
       const actions = prev.actions || [];
@@ -187,9 +192,36 @@ export function useActionManagement(config: ActionManagementConfig) {
         }
       }
 
+      if (
+        updatedAction.type === 'Choice' &&
+        previousAction?.type === 'Choice' &&
+        updatedAction.text !== previousAction.text &&
+        updatedAction.targetFunction
+      ) {
+        choiceTextSync = {
+          targetFunction: updatedAction.targetFunction,
+          previousText: previousAction.text,
+          newText: updatedAction.text,
+        };
+      }
+
       return { ...prev, actions: updatedActions };
     });
-  }, [setFunction, contextName, getAllDialogLineActions]);
+
+    if (choiceTextSync && semanticModel && onUpdateSemanticModel) {
+      const { targetFunction, previousText, newText } = choiceTextSync;
+      const targetFn = semanticModel.functions?.[targetFunction];
+      const firstLine = targetFn?.actions?.[0];
+      // Only mirror while the seeded line still matches the old choice text — if
+      // the user edited it themselves, leave their line alone.
+      if (targetFn && firstLine?.type === 'DialogLine' && firstLine.text === previousText) {
+        onUpdateSemanticModel(targetFunction, {
+          ...targetFn,
+          actions: targetFn.actions!.map((a, i) => (i === 0 ? { ...a, text: newText } : a)),
+        });
+      }
+    }
+  }, [setFunction, contextName, getAllDialogLineActions, semanticModel, onUpdateSemanticModel]);
 
   /**
    * Delete an action at a specific index
@@ -257,11 +289,18 @@ export function useActionManagement(config: ActionManagementConfig) {
       // Choice creation: generate a fresh target function before inserting the action
       const newFunctionName = generateUniqueChoiceFunctionName(contextName, semanticModel);
       const newFunction = createEmptyFunction(newFunctionName);
-      onUpdateSemanticModel?.(newFunctionName, newFunction);
 
       setFunction((prev) => {
         if (!prev) return prev;
         const actions = prev.actions || [];
+        // Issue #181: seed the choice's sub-dialog with a Hero line so the dropdown
+        // is never empty. Its text mirrors the (initially empty) Choice Text and is
+        // kept in sync by updateAction until the user edits the line themselves.
+        // The line id is generated against every line in the dialog so it stays unique.
+        newFunction.actions = [createAction('dialogLine', {
+          dialogName: contextName,
+          actions: getAllDialogLineActions(actions)
+        })];
         const newAction = {
           ...createAction('choice', { dialogName: contextName }),
           targetFunction: newFunctionName
@@ -270,6 +309,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         nextPath = findInsertedPath(newActions, path);
         return { ...prev, actions: newActions };
       });
+      onUpdateSemanticModel?.(newFunctionName, newFunction);
     } else {
       // All other action types: use the factory
       setFunction((prev) => {

@@ -38,7 +38,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 | Issue | Title | Status |
 |---|---|---|
 | #182 | "Add Dialog Line" ignores nesting level; delete button broken in dropdown | ✅ done |
-| #181 | Auto-insert dialog line with same text when adding a Choice | ⬜ not started |
+| #181 | Auto-insert dialog line with same text when adding a Choice | ✅ done |
 | #140 | "Create Topic" should also insert a "Log Set Status" action | ✅ done |
 | #123 | New action: Info_ClearChoices | ✅ done |
 | #119 | New action: Npc_SetRefuseTalk | ✅ done |
@@ -150,6 +150,41 @@ Marking an issue ✅ here is not the end. For every resolved issue:
   comment item "auto-insert Log Entry after Create Topic".
 - **Regression test:** `tests/createTopicAutoAppend.test.ts` (3 tests, passing).
   Covers the auto-append order, topic matching, and topic-sync on edit.
+
+## #181 — resolution notes
+
+- **Request:** when a Choice is inserted, the first dialog line under that choice
+  should be pre-populated with the same text as the "Choice Text" field — in
+  Gothic the choice text is only the menu label, the spoken line has to be
+  repeated in the sub-dialog. Side benefit: the choice's dropdown is no longer
+  empty right after creation.
+- **Two creation paths seeded:** choices are created in two places, both now seed
+  the target function with one Hero (`other`) `DialogLine` instead of leaving it
+  empty:
+  - `useDialogEditorCommands.addActionToEnd` (the toolbar "Add action" button),
+  - `useActionManagement.addActionAfter` (the inline "+" between actions).
+  The seeded line's id is generated against **every** dialog line in the dialog
+  (`collectAllDialogLineActionsFromModel` + the live function actions /
+  `getAllDialogLineActions`), so it does not collide with the parent line's id —
+  a naïve empty-list id reused `DIA_…_15_00` and would have emitted duplicate
+  `AI_Output` sound names.
+- **Mirror on edit:** `useActionManagement.updateAction` detects a `Choice` text
+  change and mirrors the new text into the first line of the choice's
+  `targetFunction` (via `onUpdateSemanticModel`), but only while that line still
+  matches the *previous* choice text — once the user edits the spoken line
+  themselves it is left alone. Same guard pattern as the #140 CreateTopic →
+  LogSetTopicStatus topic sync.
+- **Tests:**
+  - Jest: `tests/choiceAutoSeedLine.test.ts` (3 tests) — seeding shape + unique
+    id, mirror-while-matching, and no-clobber-after-manual-edit. Verified
+    discriminating (2 of 3 fail before the implementation; the no-clobber test
+    guards the match check).
+  - E2E: `tests/e2e/choice-editing.spec.ts` — the two #117 navigation tests now
+    assert the seeded line is present (not "No actions yet"), plus a new test
+    `Choice Text is mirrored into the seeded sub-dialog line (issue #181)` that
+    types a Choice Text, navigates into the sub-dialog and asserts the line
+    carries the same text. Confirmed against the real project-mode merged-model
+    path (a temporary store dump showed the seed reaching `mergedSemanticModel`).
 
 ## #126 — resolution notes
 

@@ -109,6 +109,16 @@ export function useDialogEditorCommands({
 
       const newFunctionName = generateUniqueChoiceFunctionName(dialogName, modelForUniqueness);
       const newFunction = createEmptyFunction(newFunctionName);
+      // Issue #181: seed the choice's sub-dialog with a Hero line so the dropdown
+      // is never empty; updateAction keeps its text mirrored to the Choice Text.
+      // Compute the line id against every line in the dialog so it stays unique.
+      const dialogLineActions = semanticModel
+        ? [
+            ...collectAllDialogLineActionsFromModel(semanticModel, dialogName, currentFunctionName),
+            ...collectDialogLineActions(currentFunction.actions || [])
+          ]
+        : collectDialogLineActions(currentFunction.actions || []);
+      newFunction.actions = [createAction('dialogLine', { dialogName, actions: dialogLineActions })];
       updateFunction(filePath, newFunctionName, newFunction);
       if (newAction.type === 'Choice') {
         newAction = { ...newAction, targetFunction: newFunctionName };

@@ -90,12 +90,14 @@ test.describe('Choice accessibility after creation in project mode (issue #117)'
     await page.getByRole('button', { name: 'Expand dialog', exact: true }).click();
     await expect(page.getByText('DIA_ChoiceProj_Test_Choice_1')).toBeVisible();
 
-    // Navigating into the choice must open its (empty) sub-dialog editor
+    // Navigating into the choice must open its sub-dialog, pre-seeded with a
+    // Hero dialog line (issue #181) so the dropdown is never empty.
     await editChoiceButton.click();
     await expect(
       page.getByRole('heading', { name: 'DIA_ChoiceProj_Test_Choice_1' })
     ).toBeVisible();
-    await expect(page.getByText('No actions yet')).toBeVisible();
+    await expect(page.getByText('No actions yet')).toBeHidden();
+    await expect(page.getByLabel('Text').first()).toBeVisible();
   });
 
   test('added choice can be opened from the dialog tree without re-clicking the NPC', async ({ page }) => {
@@ -109,7 +111,25 @@ test.describe('Choice accessibility after creation in project mode (issue #117)'
     await expect(
       page.getByRole('heading', { name: 'DIA_ChoiceProj_Test_Choice_1' })
     ).toBeVisible();
-    await expect(page.getByText('No actions yet')).toBeVisible();
+    await expect(page.getByText('No actions yet')).toBeHidden();
+    await expect(page.getByLabel('Text').first()).toBeVisible();
+  });
+
+  test('Choice Text is mirrored into the seeded sub-dialog line (issue #181)', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
+
+    const choiceText = page.getByLabel('Choice Text');
+    await expect(choiceText).toBeVisible();
+    await choiceText.fill('Where can I find the smith?');
+
+    // Navigating in flushes the pending edit; the seeded Hero line must carry
+    // the same text the user typed as the Choice Text.
+    await page.getByRole('button', { name: 'Edit choice actions' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'DIA_ChoiceProj_Test_Choice_1' })
+    ).toBeVisible();
+    await expect(page.getByLabel('Text').first()).toHaveValue('Where can I find the smith?');
   });
 });
 
