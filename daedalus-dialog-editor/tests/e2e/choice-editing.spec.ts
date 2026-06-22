@@ -149,6 +149,39 @@ test.describe('Choice accessibility after creation in project mode (issue #117)'
     ).toBeVisible();
     await expect(page.getByLabel('Text').first()).toHaveValue('Where can I find the smith?');
   });
+
+  /**
+   * Issue #111: choices used to be shown in isolation (a bare link into the
+   * sub-function). Expanding a choice inline (the accordion chevron, not the
+   * navigate button) must keep the preceding dialog visible while the choice's
+   * sub-dialog is displayed at the same time.
+   */
+  test('expanding a choice inline keeps the preceding dialog visible (issue #111)', async ({ page }) => {
+    // The dialog opens with one preceding line; capture it before adding a choice.
+    const precedingLine = page.getByLabel('Text', { exact: true }).first();
+    await expect(precedingLine).toHaveValue('DIA_ChoiceProj_Test_15_00');
+
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
+    await expect(page.getByLabel('Choice Text')).toBeVisible();
+
+    // Expand the choice INLINE via the accordion chevron (not the navigate
+    // button), so the parent dialog context must remain on screen.
+    await page.getByRole('button', { name: 'Expand choice actions' }).click();
+
+    // The choice's sub-dialog is shown inline (its function divider appears)...
+    await expect(page.getByText('DIA_ChoiceProj_Test_Choice_1')).toBeVisible();
+    // ...without navigating away: the parent dialog heading is unchanged...
+    await expect(
+      page.getByRole('heading', { name: 'DIA_ChoiceProj_Test', exact: true })
+    ).toBeVisible();
+    // ...and the preceding dialog line stays visible at the same time as the
+    // seeded sub-dialog line — the two Text fields coexist (a navigate-only view
+    // would replace the parent and show just the sub-function's single line).
+    await expect(precedingLine).toHaveValue('DIA_ChoiceProj_Test_15_00');
+    await expect(page.getByLabel('Text', { exact: true })).toHaveCount(2);
+    await expect(page.getByLabel('Text', { exact: true }).nth(1)).toBeVisible();
+  });
 });
 
 test.describe('Choice / Branch Creation and Editing', () => {

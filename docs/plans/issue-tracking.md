@@ -50,7 +50,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 | Issue | Title | Status |
 |---|---|---|
 | #183 (items 1–2) | Give Inventory Item: swap hero/self button + auto-fill from condition | ✅ done |
-| #111 | Choices: show preceding dialog context (accordion / split-screen) | ⬜ not started |
+| #111 | Choices: show preceding dialog context (accordion / split-screen) | ✅ done |
 
 ## P4 — Larger features
 
@@ -303,6 +303,41 @@ Marking an issue ✅ here is not the end. For every resolved issue:
     (`getByLabel('Text', { exact: true }).nth(1)`) holds focus. Verified
     discriminating — reverting the Choice Text `onKeyDown` back to `handleKeyDown`
     makes the expand assertion fail (the sub-editor never opens).
+
+## #111 — resolution notes (accordion-style choice context)
+
+- **Request:** choices were shown in isolation (a bare link into the sub-dialog
+  function). The reporter asked that the preceding dialog stay visible while a
+  choice is viewed — preferred approach an accordion that expands the choice's
+  sub-dialog in place; split-screen named as the fallback alternative. The
+  comment thread bundled several Create Topic / Log Entry QOL items plus
+  drag-and-drop line reordering.
+- **Already implemented (verified, not newly built):** the accordion is the
+  `InlineChoiceEditor` rendered by `ChoiceRenderer` behind the expand chevron
+  (`6ef4e25`, 2026-03-16 — post-dating the issue, shipped alongside #182).
+  Expanding a choice keeps every preceding action card rendered above it and
+  shows the choice's target function indented below, so the preceding dialog and
+  the sub-dialog are on screen at the same time. Nesting is recursive (a choice
+  inside a sub-dialog expands the same way), which covers arbitrary depth without
+  a split-screen. The bundled comment items were also already done elsewhere:
+  - drag-and-drop reordering of dialog lines — `react-beautiful-dnd` in
+    `ActionsList`/`ActionCard` (`dragHandleProps`, `DragIndicatorIcon`);
+  - `TOPIC_` auto-prefix + spaces→underscores — `CreateTopicRenderer`
+    `normalizeTopicName`;
+  - auto-insert Log Entry + Log Set Status after Create Topic — see the #140
+    notes (`useActionManagement.addActionAfter`).
+- **Gap closed:** no test locked in the *context-preserving* property of the
+  accordion — that expanding a choice inline keeps the preceding dialog visible
+  without navigating away.
+- **Regression test:** `tests/e2e/choice-editing.spec.ts` →
+  `expanding a choice inline keeps the preceding dialog visible (issue #111)`
+  (project mode). Adds a Choice, expands it via the chevron (not the navigate
+  button), and asserts the sub-dialog divider (`DIA_ChoiceProj_Test_Choice_1`)
+  appears inline, the parent dialog heading is unchanged (no navigation), the
+  preceding line keeps its value, and exactly two `Text` fields coexist (parent
+  line + seeded sub-dialog line). Verified discriminating — forcing the
+  `ChoiceRenderer` `Collapse` closed (`in={false}`) makes it fail (the inline
+  sub-dialog never renders).
 
 ## #126 — resolution notes
 
