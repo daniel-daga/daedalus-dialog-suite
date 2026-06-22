@@ -153,4 +153,25 @@ test.describe('Action content editing persists in session', () => {
     await expect(dialogField).toBeVisible();
     await expect(dialogField).toHaveValue('DIA_Arog_EntscheidungKillAlchemist');
   });
+
+  // Issue #183 (item 3): Tab must move between the fields in the same Give
+  // Inventory Item row (Giver -> Receiver -> Item) instead of jumping to the
+  // next action card.
+  test('Give Inventory Items: Tab moves Giver -> Receiver -> Item', async ({ page }) => {
+    await addActionFromMenu(page, 'Give Inventory Items');
+
+    const giver = page.getByLabel('Giver');
+    const receiver = page.getByLabel('Receiver');
+    const item = page.getByLabel('Item', { exact: true });
+    await expect(giver).toBeVisible();
+
+    await giver.focus();
+    await expect(giver).toBeFocused();
+
+    await page.keyboard.press('Tab');
+    await expect(receiver).toBeFocused();
+
+    await page.keyboard.press('Tab');
+    await expect(item).toBeFocused();
+  });
 });

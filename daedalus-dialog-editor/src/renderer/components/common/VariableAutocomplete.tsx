@@ -257,6 +257,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
                           size="small"
                           onClick={handleNavigate}
                           edge="end"
+                          tabIndex={-1} // Mouse affordance only; keep it out of the field tab order (#183)
                           onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking icon
                         >
                           <OpenInNewIcon fontSize="small" />

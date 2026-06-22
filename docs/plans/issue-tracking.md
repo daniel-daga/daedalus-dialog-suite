@@ -42,7 +42,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 | #140 | "Create Topic" should also insert a "Log Set Status" action | ✅ done |
 | #123 | New action: Info_ClearChoices | ✅ done |
 | #119 | New action: Npc_SetRefuseTalk | ✅ done |
-| #183 (item 3) | Tab key doesn't navigate Giver → Receiver → Item field | ⬜ not started |
+| #183 (item 3) | Tab key doesn't navigate Giver → Receiver → Item field | ✅ done |
 | #118 | Tab key to jump into choice sub-editor | ⬜ not started |
 
 ## P3 — Medium features
@@ -185,6 +185,42 @@ Marking an issue ✅ here is not the end. For every resolved issue:
     types a Choice Text, navigates into the sub-dialog and asserts the line
     carries the same text. Confirmed against the real project-mode merged-model
     path (a temporary store dump showed the seed reaching `mergedSemanticModel`).
+
+## #183 (item 3) — resolution notes (Tab order in Give Inventory Item)
+
+- **Request:** in the "Give Inventory Item" action, Tab from Giver should move to
+  Receiver, then to Item, in the *same* row. Instead it jumped to the next
+  action card (or nowhere if none followed).
+- **Root cause:** `ActionCard.handleKeyDown` (`ActionCard.tsx:158`)
+  `preventDefault`s **Tab** and focuses the next/previous *action card* — correct
+  for a single-field dialog line, wrong for a multi-field action where Tab should
+  first walk the fields in the row. Every field in `GiveInventoryItemsRenderer`
+  was wired straight to `handleKeyDown`, so the very first Tab hijacked focus.
+- **Fix:** new pure helper `actionRenderers/rowTabNavigation.ts` →
+  `createRowTabHandlers(cardKeyDown, fieldCount)` returns one keydown handler per
+  field. Tab/Shift+Tab in the middle of the row are left to native browser focus
+  order; only Tab on the **last** field and Shift+Tab on the **first** field fall
+  back to `handleKeyDown` for card-to-card navigation. All non-Tab keys still
+  delegate, so Enter/Escape/Ctrl+Enter are unchanged. Wired into the four
+  `GiveInventoryItemsRenderer` fields (Giver/Receiver/Item/Quantity).
+- **Supporting fix:** the "Follow reference" `IconButton` in `VariableAutocomplete`
+  was focusable and would interpose between fields when a value resolved to a
+  known symbol; marked `tabIndex={-1}` (mouse-only affordance). MUI's own
+  clear/popup indicators already carry `tabIndex={-1}`, so the row now tabs
+  cleanly field-to-field.
+- **Scope:** only Give Inventory Item is wired up (the issue's item 3). The same
+  helper can be adopted by the other multi-field renderers (Attack, Exchange,
+  Remove Inventory, …) if the same complaint surfaces.
+- **Tests:**
+  - Jest: `tests/rowTabNavigation.test.ts` (5 tests) — boundary logic: middle
+    Tab/Shift+Tab do **not** delegate (native focus proceeds), first/last edges
+    do, non-Tab keys always do.
+  - E2E: `tests/e2e/action-content-types.spec.ts` →
+    `Give Inventory Items: Tab moves Giver -> Receiver -> Item`. Verified
+    discriminating — reverting the renderer wiring to `handleKeyDown` makes the
+    Receiver-focus assertion fail (focus leaves the row).
+- **GitHub:** #183 stays **open** — items 1–2 (swap button + auto-fill from
+  condition, P3) are not done yet. Close only once all three are resolved.
 
 ## #126 — resolution notes
 
