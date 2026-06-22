@@ -1,4 +1,6 @@
 import React from 'react';
+import { IconButton, Tooltip } from '@mui/material';
+import { SwapHoriz as SwapHorizIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
 import type { GiveInventoryItemsAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
@@ -35,6 +37,19 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         {...AUTOCOMPLETE_POLICIES.actions.npc}
         semanticModel={semanticModel}
       />
+      {/* Issue #183 (item 1): swap Giver <-> Receiver. tabIndex=-1 keeps it a
+          mouse-only affordance so the in-row Tab order (item 3) is unaffected. */}
+      <Tooltip title="Swap giver and receiver" arrow>
+        <IconButton
+          size="small"
+          tabIndex={-1}
+          aria-label="Swap giver and receiver"
+          onClick={() => handleUpdate({ ...typedAction, giver: typedAction.receiver, receiver: typedAction.giver })}
+          sx={{ flexShrink: 0, alignSelf: 'center' }}
+        >
+          <SwapHorizIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
       <VariableAutocomplete
         label="Receiver"
         value={typedAction.receiver || ''}

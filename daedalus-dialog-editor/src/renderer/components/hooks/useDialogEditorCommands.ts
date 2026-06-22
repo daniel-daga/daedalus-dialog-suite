@@ -82,7 +82,8 @@ export function useDialogEditorCommands({
 
     let newAction = createAction(actionType, {
       dialogName,
-      currentAction: undefined
+      currentAction: undefined,
+      semanticModel
     });
     if (newAction.type === 'DialogLine') {
       newAction = {

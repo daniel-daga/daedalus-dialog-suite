@@ -49,7 +49,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 
 | Issue | Title | Status |
 |---|---|---|
-| #183 (items 1–2) | Give Inventory Item: swap hero/self button + auto-fill from condition | ⬜ not started |
+| #183 (items 1–2) | Give Inventory Item: swap hero/self button + auto-fill from condition | ✅ done |
 | #111 | Choices: show preceding dialog context (accordion / split-screen) | ⬜ not started |
 
 ## P4 — Larger features
@@ -219,8 +219,47 @@ Marking an issue ✅ here is not the end. For every resolved issue:
     `Give Inventory Items: Tab moves Giver -> Receiver -> Item`. Verified
     discriminating — reverting the renderer wiring to `handleKeyDown` makes the
     Receiver-focus assertion fail (focus leaves the row).
-- **GitHub:** #183 stays **open** — items 1–2 (swap button + auto-fill from
-  condition, P3) are not done yet. Close only once all three are resolved.
+- **GitHub:** all three items are now done (see the #183 items 1–2 notes below);
+  the issue was closed once items 1–2 shipped.
+
+## #183 (items 1–2) — resolution notes (swap button + auto-fill from condition)
+
+- **Request:** two more "Give Inventory Item" QOL items: (1) a small button to
+  swap Giver ↔ Receiver, and (2) when the same dialog instance gates on an
+  "NPC has item" condition, pre-populate the Item field with that item.
+- **Item 1 — swap button:** `GiveInventoryItemsRenderer` now renders a
+  `SwapHoriz` `IconButton` between the Giver and Receiver fields. Clicking it
+  calls `handleUpdate({ ...action, giver: receiver, receiver: giver })`; since
+  the renderer's `value` flows back through `VariableAutocomplete`, both fields
+  update in place. The button is `tabIndex={-1}` (mouse-only) so it stays out of
+  the in-row Tab order added for item 3 — the Giver → Receiver → Item Tab E2E
+  still passes.
+- **Item 2 — auto-fill Item from condition:** seeding happens in the action
+  factory. `actionFactory.createAction` gained a `giveInventoryItems` branch that
+  calls a new `findHasItemConditionItem(semanticModel, dialogName)` helper:
+  resolve the dialog instance (`semanticModel.dialogs[dialogName]`, tolerating a
+  stray `_Info` suffix), read its condition function name from
+  `properties.condition`, and return the `item` of the first
+  `NpcHasItemsCondition` on that function. When found, the Item is seeded and the
+  giver/receiver template defaults are kept; otherwise the plain default template
+  (`ItMi_Gold`) is used. `semanticModel` is now threaded through both creation
+  paths — `createActionAfterIndex` (inline "+", via `useActionManagement`) gained
+  an optional `semanticModel` arg, and `useDialogEditorCommands.addActionToEnd`
+  passes it in its context.
+- **Tests:**
+  - Jest `tests/giveInventoryItems.test.tsx` (5 tests): swap button swaps
+    giver/receiver and is `tabIndex=-1`; factory seeds the Item from an
+    `NpcHasItemsCondition`, and falls back to `ItMi_Gold` when there is no such
+    condition / no dialog context. Verified discriminating (3 fail before the
+    implementation; the two fallback cases pass on the pre-existing template).
+  - E2E `tests/e2e/action-content-types.spec.ts` →
+    `Give Inventory Items: swap button flips Giver and Receiver` (clicks the real
+    button and asserts the inputs swap). The existing item-3 Tab test and the new
+    swap test use `getByLabel('Giver'/'Receiver', { exact: true })` so the swap
+    button's accessible name (which contains "giver"/"receiver") is excluded.
+  - Item 2 has no E2E: the browser mock parser only understands `AI_Output`, so
+    an `Npc_HasItems` condition cannot be seeded from source — the factory Jest
+    test is the discriminating check (same constraint noted for #182).
 
 ## #118 — resolution notes (Tab into choice sub-editor)
 

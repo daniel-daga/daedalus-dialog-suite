@@ -152,13 +152,51 @@ export interface ActionCreationContext {
 }
 
 /**
+ * Find the item name from the first "NPC has item" condition
+ * (NpcHasItemsCondition) on the dialog instance's condition function, or null.
+ * Used to pre-fill the Item of a new "Give Inventory Item" action (issue #183
+ * item 2): a dialog that gates on the hero owning item X almost always wants to
+ * give / hand back that same item X.
+ */
+function findHasItemConditionItem(
+  semanticModel: SemanticModel | undefined,
+  dialogName: string | undefined
+): string | null {
+  if (!semanticModel?.dialogs || !dialogName) {
+    return null;
+  }
+
+  const dialog =
+    semanticModel.dialogs[dialogName] ||
+    (dialogName.endsWith('_Info') ? semanticModel.dialogs[dialogName.slice(0, -5)] : undefined);
+
+  const conditionRef = dialog?.properties?.condition;
+  const conditionName = typeof conditionRef === 'string' ? conditionRef : conditionRef?.name;
+  if (!conditionName) {
+    return null;
+  }
+
+  const conditions = semanticModel.functions?.[conditionName]?.conditions || [];
+  for (const condition of conditions) {
+    if (condition && condition.type === 'NpcHasItemsCondition') {
+      const item = (condition as { item?: string }).item;
+      if (item) {
+        return item;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Create a new action based on type and context
  */
 export function createAction(
   actionType: ActionTypeId,
   context: ActionCreationContext = {}
 ): DialogAction {
-  const { dialogName, currentAction, actions } = context;
+  const { dialogName, currentAction, actions, semanticModel } = context;
 
   let action: DialogAction;
 
@@ -173,6 +211,13 @@ export function createAction(
   } else if (actionType === 'clearChoicesAction') {
     // Auto-fill the dialog instance from the current dialog context (issue #123).
     action = ACTION_TEMPLATES.clearChoicesAction(dialogName || '');
+  } else if (actionType === 'giveInventoryItems') {
+    // Pre-fill the Item from an "NPC has item" condition on the same dialog
+    // instance, keeping the giver/receiver template defaults (issue #183 item 2).
+    const seededItem = findHasItemConditionItem(semanticModel, dialogName);
+    action = seededItem
+      ? ACTION_TEMPLATES.giveInventoryItems(undefined, undefined, seededItem)
+      : ACTION_TEMPLATES.giveInventoryItems();
   } else {
     // All other action types use default arguments
     const templateFn = ACTION_TEMPLATES[actionType];
@@ -206,12 +251,14 @@ export function createActionAfterIndex(
   actionType: ActionTypeId,
   index: number,
   actions: DialogAction[],
-  dialogName?: string
+  dialogName?: string,
+  semanticModel?: SemanticModel
 ): DialogAction {
   const currentAction = actions[index];
   return createAction(actionType, {
     dialogName,
     currentAction,
-    actions
+    actions,
+    semanticModel
   });
 }

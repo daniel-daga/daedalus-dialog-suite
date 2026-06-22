@@ -334,7 +334,8 @@ export function useActionManagement(config: ActionManagementConfig) {
           actionType,
           parentIndex,
           siblingActions,
-          contextName
+          contextName,
+          semanticModel
         );
         if (newAction.type === 'DialogLine') {
           newAction = {

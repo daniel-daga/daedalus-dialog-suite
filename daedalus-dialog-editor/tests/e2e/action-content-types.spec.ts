@@ -154,14 +154,31 @@ test.describe('Action content editing persists in session', () => {
     await expect(dialogField).toHaveValue('DIA_Arog_EntscheidungKillAlchemist');
   });
 
+  // Issue #183 (item 1): a swap button flips Giver <-> Receiver in place.
+  test('Give Inventory Items: swap button flips Giver and Receiver', async ({ page }) => {
+    await addActionFromMenu(page, 'Give Inventory Items');
+
+    // exact: true so the "Swap giver and receiver" button (whose name contains
+    // "giver"/"receiver") is excluded from the field locators.
+    const giver = page.getByLabel('Giver', { exact: true });
+    const receiver = page.getByLabel('Receiver', { exact: true });
+    await expect(giver).toHaveValue('self');
+    await expect(receiver).toHaveValue('hero');
+
+    await page.getByLabel('Swap giver and receiver').click();
+
+    await expect(giver).toHaveValue('hero');
+    await expect(receiver).toHaveValue('self');
+  });
+
   // Issue #183 (item 3): Tab must move between the fields in the same Give
   // Inventory Item row (Giver -> Receiver -> Item) instead of jumping to the
   // next action card.
   test('Give Inventory Items: Tab moves Giver -> Receiver -> Item', async ({ page }) => {
     await addActionFromMenu(page, 'Give Inventory Items');
 
-    const giver = page.getByLabel('Giver');
-    const receiver = page.getByLabel('Receiver');
+    const giver = page.getByLabel('Giver', { exact: true });
+    const receiver = page.getByLabel('Receiver', { exact: true });
     const item = page.getByLabel('Item', { exact: true });
     await expect(giver).toBeVisible();
 
