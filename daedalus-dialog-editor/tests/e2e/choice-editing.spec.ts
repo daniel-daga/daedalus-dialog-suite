@@ -115,6 +115,24 @@ test.describe('Choice accessibility after creation in project mode (issue #117)'
     await expect(page.getByLabel('Text').first()).toBeVisible();
   });
 
+  test('Tab from Choice Text dives into the choice sub-dialog (issue #118)', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
+
+    const choiceText = page.getByLabel('Choice Text');
+    await expect(choiceText).toBeVisible();
+
+    // Tab from the Choice Text field must expand the inline sub-editor and move
+    // focus into it, instead of skipping to the next action card.
+    await choiceText.focus();
+    await choiceText.press('Tab');
+
+    await expect(page.getByLabel('Collapse choice actions')).toBeVisible();
+    // exact: true so "Choice Text" is excluded; nth(0) is the parent line,
+    // nth(1) is the seeded sub-dialog line that should now hold focus.
+    await expect(page.getByLabel('Text', { exact: true }).nth(1)).toBeFocused();
+  });
+
   test('Choice Text is mirrored into the seeded sub-dialog line (issue #181)', async ({ page }) => {
     await page.getByRole('button', { name: 'Add action' }).click();
     await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();

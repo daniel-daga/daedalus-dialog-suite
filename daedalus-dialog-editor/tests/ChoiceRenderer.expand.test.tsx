@@ -3,11 +3,14 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ChoiceRenderer from '../src/renderer/components/actionRenderers/ChoiceRenderer';
 
-// Mock InlineChoiceEditor to avoid deep dependency chain
+// Mock InlineChoiceEditor to avoid deep dependency chain. Expose the
+// focus-request nonce so tests can assert the dive-into-sub-editor wiring.
 jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
   __esModule: true,
-  default: ({ targetFunctionName }: any) => (
-    <div data-testid="inline-editor">{targetFunctionName}</div>
+  default: ({ targetFunctionName, focusFirstActionNonce }: any) => (
+    <div data-testid="inline-editor" data-focus-nonce={focusFirstActionNonce ?? 0}>
+      {targetFunctionName}
+    </div>
   )
 }));
 
@@ -92,6 +95,62 @@ describe('ChoiceRenderer expand/collapse', () => {
     fireEvent.click(screen.getByLabelText('Collapse choice actions'));
     await waitFor(() => {
       expect(screen.queryByTestId('inline-editor')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Tab dives into the choice sub-editor (issue #118)', () => {
+    beforeEach(() => {
+      baseProps.handleKeyDown.mockClear();
+    });
+
+    test('Tab on the Choice Text field expands the sub-editor instead of leaving the row', () => {
+      render(<ChoiceRenderer {...baseProps} />);
+      const choiceText = screen.getByLabelText('Choice Text');
+      choiceText.focus();
+      fireEvent.keyDown(choiceText, { key: 'Tab' });
+
+      expect(screen.getByTestId('inline-editor')).toHaveTextContent('DIA_Test_GoLeft');
+      // Forward Tab is consumed here, not delegated to card-to-card navigation.
+      expect(baseProps.handleKeyDown).not.toHaveBeenCalled();
+    });
+
+    test('Tab on the Choice Text field requests focus into the sub-editor', () => {
+      render(<ChoiceRenderer {...baseProps} />);
+      const choiceText = screen.getByLabelText('Choice Text');
+      fireEvent.keyDown(choiceText, { key: 'Tab' });
+
+      const nonce = Number(screen.getByTestId('inline-editor').getAttribute('data-focus-nonce'));
+      expect(nonce).toBeGreaterThan(0);
+    });
+
+    test('mouse-expanding the sub-editor never requests inner focus', () => {
+      render(<ChoiceRenderer {...baseProps} />);
+      fireEvent.click(screen.getByLabelText('Expand choice actions'));
+
+      const nonce = Number(screen.getByTestId('inline-editor').getAttribute('data-focus-nonce'));
+      expect(nonce).toBe(0);
+    });
+
+    test('Shift+Tab on the Choice Text field is left to card navigation', () => {
+      render(<ChoiceRenderer {...baseProps} />);
+      const choiceText = screen.getByLabelText('Choice Text');
+      fireEvent.keyDown(choiceText, { key: 'Tab', shiftKey: true });
+
+      expect(screen.queryByTestId('inline-editor')).not.toBeInTheDocument();
+      expect(baseProps.handleKeyDown).toHaveBeenCalled();
+    });
+
+    test('Tab falls back to card navigation when the target function does not exist yet', () => {
+      const propsNoFunc = {
+        ...baseProps,
+        semanticModel: { dialogs: {}, functions: {}, hasErrors: false, errors: [] } as any,
+      };
+      render(<ChoiceRenderer {...propsNoFunc} />);
+      const choiceText = screen.getByLabelText('Choice Text');
+      fireEvent.keyDown(choiceText, { key: 'Tab' });
+
+      expect(screen.queryByTestId('inline-editor')).not.toBeInTheDocument();
+      expect(baseProps.handleKeyDown).toHaveBeenCalled();
     });
   });
 });

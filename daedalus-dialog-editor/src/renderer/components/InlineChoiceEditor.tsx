@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { Box, Divider, Typography } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import ActionsList from './ActionsList';
@@ -14,6 +14,13 @@ interface InlineChoiceEditorProps {
   filePath: string | null;
   semanticModel?: SemanticModel;
   npcName: string;
+  /**
+   * Each increment requests that focus move to the first line of the sub-dialog
+   * (issue #118: Tab from the Choice Text field dives into the sub-editor). The
+   * default 0 means "do not steal focus" — used when the editor is expanded by
+   * mouse.
+   */
+  focusFirstActionNonce?: number;
 }
 
 const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
@@ -22,6 +29,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
   filePath,
   semanticModel,
   npcName,
+  focusFirstActionNonce = 0,
 }) => {
   const updateFunction = useEditorStore((s) => s.updateFunction);
   const updateFunctionWithUpdater = useEditorStore((s) => s.updateFunctionWithUpdater);
@@ -62,6 +70,18 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     if (!filePath) return;
     renameFunction(filePath, oldName, newName);
   }, [filePath, renameFunction]);
+
+  const hasActions = (targetFunction?.actions?.length ?? 0) > 0;
+
+  // Move focus to the first sub-dialog line whenever a fresh focus request
+  // arrives (issue #118). focusAction queues the request, so it still lands if
+  // the first card has not registered its ref yet.
+  useEffect(() => {
+    if (focusFirstActionNonce > 0 && hasActions) {
+      focusAction([0]);
+    }
+    // Only re-run on a new request; focusAction is stable.
+  }, [focusFirstActionNonce, hasActions, focusAction]);
 
   if (!targetFunction) {
     return (

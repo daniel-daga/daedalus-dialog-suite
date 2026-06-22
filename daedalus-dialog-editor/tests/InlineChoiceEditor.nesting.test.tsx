@@ -107,3 +107,49 @@ describe('InlineChoiceEditor add/delete operate on the choice sub-dialog (issue 
     expect(next.actions).toHaveLength(0);
   });
 });
+
+/**
+ * Issue #118: pressing Tab in the Choice Text field should dive into the
+ * choice's sub-dialog. ChoiceRenderer drives that by expanding this editor and
+ * bumping `focusFirstActionNonce`; the editor must then move focus to the first
+ * line of the sub-dialog so the user can type straight away.
+ */
+describe('InlineChoiceEditor focuses the first sub-dialog line on request (issue #118)', () => {
+  beforeEach(() => {
+    updateFunction.mockClear();
+    updateFunctionWithUpdater.mockClear();
+    renameFunction.mockClear();
+  });
+
+  test('a positive focusFirstActionNonce focuses the first line of the sub-dialog', () => {
+    const subFunction = makeSubFunction();
+    render(
+      <InlineChoiceEditor
+        targetFunctionName={SUB_FUNCTION_NAME}
+        dialogName="DIA_Test"
+        filePath={FILE_PATH}
+        semanticModel={makeModel(subFunction)}
+        npcName="TestNPC"
+        focusFirstActionNonce={1}
+      />
+    );
+
+    expect(screen.getByLabelText('Text')).toHaveFocus();
+  });
+
+  test('a zero nonce (mouse expand) leaves focus untouched', () => {
+    const subFunction = makeSubFunction();
+    render(
+      <InlineChoiceEditor
+        targetFunctionName={SUB_FUNCTION_NAME}
+        dialogName="DIA_Test"
+        filePath={FILE_PATH}
+        semanticModel={makeModel(subFunction)}
+        npcName="TestNPC"
+        focusFirstActionNonce={0}
+      />
+    );
+
+    expect(screen.getByLabelText('Text')).not.toHaveFocus();
+  });
+});

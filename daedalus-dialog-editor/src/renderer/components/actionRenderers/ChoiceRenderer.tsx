@@ -29,6 +29,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   const originalFunctionNameRef = React.useRef<string | null>(null);
   const [localTargetFunction, setLocalTargetFunction] = React.useState(typedAction.targetFunction || '');
   const [expanded, setExpanded] = React.useState(false);
+  const [focusInnerNonce, setFocusInnerNonce] = React.useState(0);
   const [functionNameError, setFunctionNameError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -42,6 +43,27 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
     semanticModel.functions[typedAction.targetFunction]
   );
 
+  // Mouse toggling the sub-editor must never steal focus into it (issue #118).
+  const handleToggleExpand = () => {
+    setExpanded((prev) => !prev);
+    setFocusInnerNonce(0);
+  };
+
+  // Forward Tab on the Choice Text field dives into the choice's sub-dialog
+  // (issue #118) instead of skipping to the next action card. Everything else —
+  // Shift+Tab, Enter, Escape, and Tab when there is no sub-dialog yet — falls
+  // back to the card-level handler.
+  const handleChoiceTextKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab' && !e.shiftKey && targetFunctionExists) {
+      e.preventDefault();
+      flushUpdate();
+      setExpanded(true);
+      setFocusInnerNonce((n) => n + 1);
+      return;
+    }
+    handleKeyDown(e);
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -50,7 +72,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
           <Tooltip title={expanded ? 'Collapse choice actions' : 'Expand choice actions'} arrow>
             <IconButton
               size="small"
-              onClick={() => setExpanded((prev) => !prev)}
+              onClick={handleToggleExpand}
               aria-label={expanded ? 'Collapse choice actions' : 'Expand choice actions'}
               sx={{ flexShrink: 0 }}
             >
@@ -65,7 +87,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
           size="small"
           inputRef={mainFieldRef}
           onBlur={flushUpdate}
-          onKeyDown={handleKeyDown}
+          onKeyDown={handleChoiceTextKeyDown}
           sx={{ flex: '1 1 40%', minWidth: 150 }}
         />
         <TextField
@@ -142,6 +164,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
           filePath={filePath || null}
           semanticModel={semanticModel}
           npcName={npcName || ''}
+          focusFirstActionNonce={focusInnerNonce}
         />
       </Collapse>
     </Box>

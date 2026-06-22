@@ -43,7 +43,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 | #123 | New action: Info_ClearChoices | ✅ done |
 | #119 | New action: Npc_SetRefuseTalk | ✅ done |
 | #183 (item 3) | Tab key doesn't navigate Giver → Receiver → Item field | ✅ done |
-| #118 | Tab key to jump into choice sub-editor | ⬜ not started |
+| #118 | Tab key to jump into choice sub-editor | ✅ done |
 
 ## P3 — Medium features
 
@@ -221,6 +221,49 @@ Marking an issue ✅ here is not the end. For every resolved issue:
     Receiver-focus assertion fail (focus leaves the row).
 - **GitHub:** #183 stays **open** — items 1–2 (swap button + auto-fill from
   condition, P3) are not done yet. Close only once all three are resolved.
+
+## #118 — resolution notes (Tab into choice sub-editor)
+
+- **Request:** after inserting a Choice, pressing Tab should dive straight into
+  the choice's sub-dialog for editing instead of forcing a mouse trip through
+  the sidebar / navigate button.
+- **Behaviour added:** forward **Tab** while the "Choice Text" field is focused
+  now (a) expands the inline `InlineChoiceEditor` accordion and (b) moves focus
+  to the first line of the sub-dialog — which is the Hero line auto-seeded by
+  #181, so there is always something to land on. Since the new Choice already
+  auto-focuses its Choice Text field on creation
+  (`useActionManagement` → `focusAction`), one Tab takes the user from "just
+  created a choice" to "typing the first sub-dialog line".
+- **Implementation:**
+  - `ChoiceRenderer.tsx` — the Choice Text field used to delegate every key to
+    the card-level `handleKeyDown` (which `preventDefault`s Tab and jumps to the
+    next action card). It now uses `handleChoiceTextKeyDown`: forward Tab (no
+    Shift) with an existing target function is consumed to `setExpanded(true)`
+    and bump a `focusInnerNonce`; Shift+Tab, Enter/Escape, and Tab when the
+    sub-function does not exist yet still fall back to `handleKeyDown`. Mouse
+    toggling the chevron (`handleToggleExpand`) resets the nonce to 0 so a
+    click-expand never steals focus.
+  - `InlineChoiceEditor.tsx` — new optional prop `focusFirstActionNonce`
+    (default 0). A `useEffect` keyed on the nonce calls `focusAction([0])` on
+    its own `useFocusNavigation` instance whenever the nonce is positive and the
+    sub-function has at least one action. `focusAction` queues the request, so
+    it still lands once the first inner `ActionCard` registers its ref. A nonce
+    of 0 (mouse expand) leaves focus untouched.
+- **Tests:**
+  - Jest `tests/ChoiceRenderer.expand.test.tsx` — Tab on Choice Text expands the
+    (mocked) editor and is *not* delegated to the card handler; the focus nonce
+    goes positive; mouse-expand keeps the nonce at 0; Shift+Tab and Tab-without-
+    a-target-function still delegate to card navigation (5 new tests).
+  - Jest `tests/InlineChoiceEditor.nesting.test.tsx` — with the **real**
+    ActionsList/ActionCard renderers, a positive `focusFirstActionNonce` focuses
+    the first sub-dialog line; a zero nonce leaves focus alone (2 new tests).
+  - E2E `tests/e2e/choice-editing.spec.ts` →
+    `Tab from Choice Text dives into the choice sub-dialog (issue #118)`. Creates
+    a choice in project mode, focuses Choice Text, presses Tab, and asserts the
+    chevron flips to "Collapse choice actions" and the seeded sub-dialog line
+    (`getByLabel('Text', { exact: true }).nth(1)`) holds focus. Verified
+    discriminating — reverting the Choice Text `onKeyDown` back to `handleKeyDown`
+    makes the expand assertion fail (the sub-editor never opens).
 
 ## #126 — resolution notes
 
