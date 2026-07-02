@@ -2,7 +2,33 @@
 
 Durable design decisions for `daedalus-dialog-editor/` outside the quest
 editor (see `quest-editor.md` for quest-specific layering). Consolidated from
-the June 2026 editor review.
+the March and June 2026 editor reviews.
+
+## Action System Conventions
+
+Established by the March 2026 review (see git history of
+`REVIEW-dialog-editor.md` for the full findings and fix log):
+
+- Action type detection uses the `type` discriminant field via the
+  `TYPE_TO_ID` lookup in `actionTypes.ts`; property-sniffing exists only as a
+  fallback for legacy actions without a `type` field. A new action must set
+  `type` and register in the map — never extend the sniffing chain.
+- `createAction` is template-lookup driven (`ACTION_TEMPLATES[actionType]()`),
+  with explicit special cases only for dialog lines (speaker toggle) and
+  choices (`dialogRef`). Factory and utility signatures are fully typed
+  (`DialogAction` / `SemanticModel`) — no `any`.
+- The action-type menu (`ActionTypeMenu`) and renderer registry are the single
+  source of truth for action labels/items; components must not carry local
+  copies of the menu list.
+- Deferred focus goes through `useFocusNavigation`'s `pendingFocusRequests`
+  queue (applied when the target registers its ref) — never
+  `setTimeout(..., 0)`.
+- `ActionCard` guards its unmount flush by comparing the local action against
+  the last parent-synced value (`shallowEqual`); this prevents stale writes
+  when drag-and-drop reorder unmounts/remounts cards.
+- Escape on an action opens a delete confirmation (`DeleteConfirmDialog`,
+  confirm auto-focused); it never deletes immediately.
+- Action IDs come from `crypto.randomUUID()`.
 
 ## Undo/Redo History
 
