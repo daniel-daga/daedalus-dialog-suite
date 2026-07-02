@@ -47,6 +47,16 @@ Established by the March 2026 review (see git history of
   **plan** (built from plain, non-draft store state) → **commit** (stack moves
   inside the Immer draft) → **apply** (restore the planned snapshot into
   fileStore outside the draft).
+- Because autosave writes every dirty file after a 2-second debounce, disk
+  state is never a recovery point: history lives in memory at the
+  semantic-model level, and undo simply restores the model and re-triggers
+  autosave (disk always reflects the current in-memory state). History for a
+  file is cleared when it is externally changed or replaced from a source
+  save.
+- Bounds: `MAX_HISTORY_SIZE = 50` snapshots per file; edits within
+  `COALESCE_MS = 300` ms merge into one undo step (`historyStore.ts`).
+- The global Ctrl+Z / Ctrl+Y handler (`MainLayout.tsx`) yields to Monaco's
+  built-in undo/redo whenever focus is inside a `.monaco-editor` element.
 
 ## Main-Process Security Boundaries
 
