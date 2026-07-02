@@ -73,7 +73,10 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         </Tooltip>
       )}
       <ActionDeleteButton onClick={handleDelete} />
-      {isProjectMode && (
+      {/* Mounted only while open: the dialog subscribes to the project store
+          and scans the merged model for file suggestions, and one instance is
+          hosted per Create Topic action card. */}
+      {isProjectMode && isRegisterOpen && (
         <RegisterTopicDialog
           open={isRegisterOpen}
           onClose={() => setIsRegisterOpen(false)}

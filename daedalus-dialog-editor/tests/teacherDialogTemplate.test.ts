@@ -84,6 +84,36 @@ describe('createTeacherDialogTemplate', () => {
     expect(bowSource).toContain('Bogenmeister_Merke_BOW = other.HitChance[NPC_TALENT_BOW];');
   });
 
+  test('sanitizes quotes and newlines in the description', () => {
+    // Daedalus string literals have no escape sequences: a raw quote would
+    // terminate the description literal, a newline would break the comment.
+    const quoted = createTeacherDialogTemplate({
+      npcInstanceName: 'VLK_438_Alrik',
+      dialogName: 'DIA_Alrik_Teach',
+      skillId: '1H',
+      maxLevel: 30,
+      description: 'Zeig mir den "echten"\nKampf!'
+    });
+
+    expect(quoted).toContain("description\t= \"Zeig mir den 'echten' Kampf!\";");
+    expect(quoted).toContain("//Zeig mir den 'echten' Kampf!");
+  });
+
+  test('remember variable follows the collision-suffixed dialog name', () => {
+    // A second teacher dialog (name collision resolved to DIA_..._1H) must
+    // not redeclare the first dialog's global remember variable.
+    const suffixed = createTeacherDialogTemplate({
+      npcInstanceName: 'VLK_438_Alrik',
+      dialogName: 'DIA_Alrik_Teach_1H',
+      skillId: '1H',
+      maxLevel: 30,
+      description: 'Trainier mich im Schwertkampf!'
+    });
+
+    expect(suffixed).toContain('var int Alrik_Merke_1H_1H;');
+    expect(suffixed).not.toContain('var int Alrik_Merke_1H;');
+  });
+
   test('parses with the real Daedalus parser into the full teach dialog', () => {
     // Same constraint as npcExitDialog.test.ts: the native tree-sitter
     // binding cannot be loaded into more than one Jest module registry per

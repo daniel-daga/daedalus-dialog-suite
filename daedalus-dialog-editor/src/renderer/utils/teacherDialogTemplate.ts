@@ -10,6 +10,7 @@
  */
 
 import { deriveNpcShortName } from './npcExitDialog';
+import { sanitizeDaedalusString } from './pathAndIdentifierUtils';
 
 export type TeacherSkillId = '1H' | '2H' | 'BOW' | 'CROSSBOW';
 
@@ -104,10 +105,18 @@ export function createTeacherDialogTemplate(options: {
   maxLevel: number;
   description: string;
 }): string {
-  const { npcInstanceName, dialogName, skillId, maxLevel, description } = options;
+  const { npcInstanceName, dialogName, skillId, maxLevel } = options;
+  const description = sanitizeDaedalusString(options.description);
   const skill = getTeacherSkill(skillId);
   const shortName = deriveNpcShortName(npcInstanceName);
-  const merkeVar = `${shortName}_Merke_${skill.id}`;
+  // The remember variable is global, so it must be unique per dialog: carry
+  // any collision suffix of the dialog name (a second teach dialog for the
+  // same skill, or two NPCs sharing a short name, must not redeclare it).
+  const baseDialogName = `DIA_${shortName}_Teach`;
+  const uniqueSuffix = dialogName.toUpperCase().startsWith(baseDialogName.toUpperCase())
+    ? dialogName.slice(baseDialogName.length)
+    : `_${dialogName}`;
+  const merkeVar = `${shortName}_Merke_${skill.id}${uniqueSuffix}`;
   const backName = `${dialogName}_Back`;
 
   return [

@@ -36,13 +36,14 @@ export async function createTeacherDialogForNpc(
 
   // Unique dialog name: DIA_<Short>_Teach, with the skill id appended when a
   // teacher dialog already exists (an NPC can teach several skills).
+  // Daedalus identifiers are case-insensitive, so compare uppercased.
   const existingDialogNames = new Set<string>();
   for (const dialogs of dialogIndex.values()) {
-    for (const meta of dialogs) existingDialogNames.add(meta.dialogName);
+    for (const meta of dialogs) existingDialogNames.add(meta.dialogName.toUpperCase());
   }
   const shortName = deriveNpcShortName(npcName);
   let dialogName = `DIA_${shortName}_Teach`;
-  if (existingDialogNames.has(dialogName)) {
+  if (existingDialogNames.has(dialogName.toUpperCase())) {
     dialogName = makeUniqueName(`${dialogName}_${config.skillId}`, existingDialogNames);
   }
 

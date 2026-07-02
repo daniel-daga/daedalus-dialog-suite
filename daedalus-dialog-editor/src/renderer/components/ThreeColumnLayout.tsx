@@ -181,8 +181,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     getFileState,
     updateModel,
     addDialogToIndex,
-    addProjectFile,
-    getSemanticModel,
     selectNpc,
     loadAndMergeNpcModels,
     setSelectedNPC,

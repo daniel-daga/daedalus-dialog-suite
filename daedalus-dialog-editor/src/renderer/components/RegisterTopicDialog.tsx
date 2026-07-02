@@ -32,7 +32,12 @@ interface RegisterTopicDialogProps {
  * function.
  */
 const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose, topicName }) => {
-  const { mergedSemanticModel, parsedFiles, registerTopicInLogFiles, isLoading } = useProjectStore();
+  // Granular selectors: the merged model is large and recreated frequently,
+  // and one instance of this dialog is hosted per Create Topic action card.
+  const mergedSemanticModel = useProjectStore((s) => s.mergedSemanticModel);
+  const parsedFiles = useProjectStore((s) => s.parsedFiles);
+  const registerTopicInLogFiles = useProjectStore((s) => s.registerTopicInLogFiles);
+  const isLoading = useProjectStore((s) => s.isLoading);
 
   const [title, setTitle] = useState('');
   const [chapterStart, setChapterStart] = useState('0');

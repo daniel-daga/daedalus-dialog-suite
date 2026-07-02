@@ -1657,7 +1657,7 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
     const path = require('path');
     const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useDialogFactory.ts'), 'utf8');
     const start = source.indexOf('const informationFunction: DialogFunction');
-    const end = source.indexOf('const existingInstances', start);
+    const end = source.indexOf('const updatedModel: SemanticModel', start);
     const block = source.slice(start, end);
 
     // The seeded first DialogLine must belong to the Hero (other), not the NPC (self):
