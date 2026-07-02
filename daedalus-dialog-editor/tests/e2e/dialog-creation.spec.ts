@@ -20,8 +20,11 @@ FUNC VOID DIA_Existing_Greeting_Info()
 };
 `;
 
-test.describe('Dialog creation flow', () => {
-  test('creates a dedicated file when adding a new NPC in project mode', async ({ page }) => {
+test.describe('NPC list in project mode', () => {
+  // Issue #141: the "+ Add NPC" button created NPCs with incorrect parameters
+  // and was removed. NPCs are now added by dropping an NPC .d file into the
+  // project folder (the editor auto-creates the EXIT dialog file for them).
+  test('does not offer an Add NPC button', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
 
@@ -42,25 +45,8 @@ test.describe('Dialog creation flow', () => {
     // strict mode if the name also appears elsewhere in the UI
     await expect(page.getByText('SLD_11111_Existing').first()).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: 'Add NPC' }).click();
-    await page.getByLabel('NPC Name').fill('SLD_12345_TestNpc');
-    await page.getByRole('button', { name: 'Create' }).click();
-
-    // The new NPC should appear in the NPC list (left panel, body1 span comes first
-    // in DOM order; other occurrences are in chips / breadcrumbs / speaker selects)
-    await expect(page.getByText('SLD_12345_TestNpc').first()).toBeVisible({ timeout: 15000 });
-    // The editor should have auto-navigated to the new dialog
-    await expect(page.getByRole('heading', { name: 'DIA_SLD_12345_TestNpc_Start', exact: true })).toBeVisible({ timeout: 15000 });
-
-    // The new NPC's dialog file should have been written to the mock filesystem.
-    // Use a retrying assertion because the file write is part of an async chain.
-    await expect(async () => {
-      const storageState = await page.evaluate(() => ({
-        npcFile: localStorage.getItem('mockapi_file_project/dialogs/DIA_SLD_12345_TestNpc.d'),
-        existingFile: localStorage.getItem('mockapi_file_project/dialogs/existing.d')
-      }));
-      expect(storageState.npcFile).not.toBeNull();
-      expect(storageState.existingFile).not.toContain('DIA_SLD_12345_TestNpc_Start');
-    }).toPass({ timeout: 5000 });
+    // The NPC pane header is present, but the Add NPC affordance is gone
+    await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add NPC' })).toHaveCount(0);
   });
 });

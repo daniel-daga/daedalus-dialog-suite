@@ -59,7 +59,6 @@ export interface NPCListProps {
   npcMap: Map<string, string[]>;
   selectedNPC: string | null;
   onSelectNPC: (npc: string) => void;
-  onAddNpc?: (npcName: string) => Promise<void> | void;
 }
 
 export interface DialogTreeProps {
@@ -75,4 +74,5 @@ export interface DialogTreeProps {
   onToggleChoiceExpand: (choiceKey: string) => void;
   buildFunctionTree: (funcName: string, ancestorPath?: string[]) => FunctionTreeNode | null;
   onAddDialog?: (dialogName: string) => Promise<void> | void;
+  onCreateTeacherDialog?: (config: import('../utils/teacherDialogTemplate').TeacherDialogConfig) => Promise<void> | void;
 }

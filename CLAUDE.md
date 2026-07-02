@@ -26,7 +26,6 @@ daedalus-dialog-suite/
 │   ├── reference/            Behavior references
 │   ├── plans/                Active implementation plans only
 │   └── refactoring-targets.md  Known god-component and concern-split targets
-├── doc/                      Internal artifacts (non-canonical)
 ├── gh-pages/                 GitHub Pages landing page
 ├── .github/workflows/        CI pipelines
 ├── AGENTS.md                 Root agent instructions

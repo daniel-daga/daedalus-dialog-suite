@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { useFileStore } from '../store/fileStore';
-import type { FileChangeEvent } from '../types/global';
+import { planExitDialogsForAddedFile } from '../utils/npcExitDialog';
+import type { FileChangeEvent, SemanticModel } from '../types/global';
 
 /**
  * Hook that watches the project directory for external file changes.
@@ -141,8 +142,50 @@ async function handleFileAdded(
         }
       }
     }
+
+    // If the file introduces NPCs that have no dialogs yet, auto-create their
+    // EXIT dialog file (issue #141)
+    await autoCreateExitDialogFiles(filePath, semanticModel);
   } catch (err) {
     console.error('[FileWatcher] Failed to parse new file:', filePath, err);
+  }
+}
+
+/**
+ * Issue #141: a new NPC .d file dropped into the project should automatically
+ * get a DIA_<NPC>.d file with the standard EXIT dialog. The editor's own
+ * writes are suppressed by the file watcher, so each generated file is fed
+ * back through handleFileAdded to parse and index it immediately.
+ */
+async function autoCreateExitDialogFiles(
+  addedFilePath: string,
+  model: SemanticModel
+): Promise<void> {
+  const projectStore = useProjectStore.getState();
+  const plans = planExitDialogsForAddedFile({
+    model,
+    addedFilePath,
+    npcPrototypes: projectStore.npcPrototypes,
+    dialogIndex: projectStore.dialogIndex,
+  });
+
+  for (const plan of plans) {
+    // Never overwrite an EXIT dialog file that already exists on disk
+    const existing = await window.editorAPI.readFile(plan.filePath).catch(() => null);
+    if (typeof existing === 'string' && existing.length > 0) continue;
+
+    try {
+      const result = await window.editorAPI.writeFile(plan.filePath, plan.content);
+      if (!result?.success) {
+        console.error('[FileWatcher] Failed to create EXIT dialog file:', plan.filePath);
+        continue;
+      }
+    } catch (err) {
+      console.error('[FileWatcher] Failed to create EXIT dialog file:', plan.filePath, err);
+      continue;
+    }
+
+    await handleFileAdded(plan.filePath, useProjectStore.getState());
   }
 }
 

@@ -11,17 +11,20 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button
+  Button,
+  MenuItem
 } from '@mui/material';
 import {
   FilterList as FilterListIcon,
   Clear as ClearIcon,
-  Add as AddIcon
+  Add as AddIcon,
+  School as SchoolIcon
 } from '@mui/icons-material';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { DialogTreeProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
+import { TEACHER_SKILLS, getTeacherSkill, type TeacherSkillId } from '../utils/teacherDialogTemplate';
 import DialogTreeItem from './DialogTreeItem';
 import ChoiceTreeItem from './ChoiceTreeItem';
 import { flattenDialogs } from './dialogTreeUtils';
@@ -107,12 +110,22 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   onToggleChoiceExpand,
   buildFunctionTree,
   onAddDialog,
+  onCreateTeacherDialog,
 }) => {
   const { dialogFilter, setDialogFilter, filterDialogs } = useSearchStore();
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [newDialogName, setNewDialogName] = React.useState('');
   const [isCreating, setIsCreating] = React.useState(false);
   const [createError, setCreateError] = React.useState<string | null>(null);
+
+  // Teacher dialog form state (issue #147)
+  const [isTeacherOpen, setIsTeacherOpen] = React.useState(false);
+  const [teacherSkillId, setTeacherSkillId] = React.useState<TeacherSkillId>('1H');
+  const [teacherMaxLevel, setTeacherMaxLevel] = React.useState('30');
+  const [teacherDescription, setTeacherDescription] = React.useState('');
+  const [isTeacherDescriptionEdited, setIsTeacherDescriptionEdited] = React.useState(false);
+  const [isCreatingTeacher, setIsCreatingTeacher] = React.useState(false);
+  const [teacherError, setTeacherError] = React.useState<string | null>(null);
 
   const sortedDialogs = useMemo(() => {
     return [...dialogsForNPC].sort((a, b) => {
@@ -185,6 +198,44 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     }
   };
 
+  const handleOpenTeacherDialog = () => {
+    setTeacherSkillId('1H');
+    setTeacherMaxLevel('30');
+    setTeacherDescription(getTeacherSkill('1H').defaultDescription);
+    setIsTeacherDescriptionEdited(false);
+    setTeacherError(null);
+    setIsTeacherOpen(true);
+  };
+
+  const handleTeacherSkillChange = (skillId: TeacherSkillId) => {
+    setTeacherSkillId(skillId);
+    if (!isTeacherDescriptionEdited) {
+      setTeacherDescription(getTeacherSkill(skillId).defaultDescription);
+    }
+  };
+
+  const handleCreateTeacherDialog = async () => {
+    const maxLevel = parseInt(teacherMaxLevel, 10);
+    if (!onCreateTeacherDialog || !Number.isFinite(maxLevel) || maxLevel <= 0 || !teacherDescription.trim()) {
+      return;
+    }
+
+    setIsCreatingTeacher(true);
+    setTeacherError(null);
+    try {
+      await onCreateTeacherDialog({
+        skillId: teacherSkillId,
+        maxLevel,
+        description: teacherDescription.trim()
+      });
+      setIsTeacherOpen(false);
+    } catch (error) {
+      setTeacherError(error instanceof Error ? error.message : 'Failed to create teacher dialog.');
+    } finally {
+      setIsCreatingTeacher(false);
+    }
+  };
+
   return (
     <Paper
       data-ui-pattern={SEARCHABLE_PANE_PATTERN}
@@ -194,18 +245,32 @@ const DialogTree: React.FC<DialogTreeProps> = ({
       <Box sx={searchablePaneHeaderSx}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant='h6'>Dialogs</Typography>
-          <Tooltip title={selectedNPC ? 'Add Dialog' : 'Select an NPC first'}>
-            <span>
-              <IconButton
-                size='small'
-                aria-label='Add Dialog'
-                onClick={handleOpenCreateDialog}
-                disabled={!selectedNPC || !onAddDialog}
-              >
-                <AddIcon fontSize='small' />
-              </IconButton>
-            </span>
-          </Tooltip>
+          <Box>
+            <Tooltip title={selectedNPC ? 'Create Teacher Dialog' : 'Select an NPC first'}>
+              <span>
+                <IconButton
+                  size='small'
+                  aria-label='Create Teacher Dialog'
+                  onClick={handleOpenTeacherDialog}
+                  disabled={!selectedNPC || !onCreateTeacherDialog}
+                >
+                  <SchoolIcon fontSize='small' />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title={selectedNPC ? 'Add Dialog' : 'Select an NPC first'}>
+              <span>
+                <IconButton
+                  size='small'
+                  aria-label='Add Dialog'
+                  onClick={handleOpenCreateDialog}
+                  disabled={!selectedNPC || !onAddDialog}
+                >
+                  <AddIcon fontSize='small' />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
         </Box>
         {selectedNPC && (
           <Typography variant='caption' color='text.secondary'>
@@ -276,6 +341,67 @@ const DialogTree: React.FC<DialogTreeProps> = ({
             onClick={() => void handleCreateDialog()}
             variant='contained'
             disabled={!newDialogName.trim() || isCreating}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={isTeacherOpen} onClose={() => !isCreatingTeacher && setIsTeacherOpen(false)} fullWidth maxWidth='sm'>
+        <DialogTitle>Create Teacher Dialog</DialogTitle>
+        <DialogContent>
+          <TextField
+            select
+            autoFocus
+            margin='dense'
+            fullWidth
+            label='Skill'
+            value={teacherSkillId}
+            onChange={(e) => handleTeacherSkillChange(e.target.value as TeacherSkillId)}
+            disabled={isCreatingTeacher}
+          >
+            {TEACHER_SKILLS.map((skill) => (
+              <MenuItem key={skill.id} value={skill.id}>{skill.label}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            margin='dense'
+            fullWidth
+            label='Max Level'
+            type='number'
+            value={teacherMaxLevel}
+            onChange={(e) => setTeacherMaxLevel(e.target.value)}
+            disabled={isCreatingTeacher}
+            helperText='Highest skill value this teacher can train to'
+          />
+          <TextField
+            margin='dense'
+            fullWidth
+            label='Description'
+            value={teacherDescription}
+            onChange={(e) => {
+              setTeacherDescription(e.target.value);
+              setIsTeacherDescriptionEdited(true);
+            }}
+            disabled={isCreatingTeacher}
+            helperText='Shown in the dialog menu and spoken by the hero'
+          />
+          {teacherError && (
+            <Typography variant='caption' color='error' sx={{ mt: 1, display: 'block' }}>
+              {teacherError}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsTeacherOpen(false)} disabled={isCreatingTeacher}>Cancel</Button>
+          <Button
+            onClick={() => void handleCreateTeacherDialog()}
+            variant='contained'
+            disabled={
+              isCreatingTeacher ||
+              !teacherDescription.trim() ||
+              !(parseInt(teacherMaxLevel, 10) > 0)
+            }
           >
             Create
           </Button>

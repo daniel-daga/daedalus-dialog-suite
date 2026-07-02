@@ -20,6 +20,8 @@ import RenameDialogConfirmDialog from './RenameDialogConfirmDialog';
 import type { FunctionRenameEntry } from './RenameDialogConfirmDialog';
 import type { SemanticModel } from '../types/global';
 import { extractFunctionName } from '../utils/pathAndIdentifierUtils';
+import { createTeacherDialogForNpc } from '../utils/teacherDialogFactory';
+import type { TeacherDialogConfig } from '../utils/teacherDialogTemplate';
 import { collectDialogOwnedFunctions, computeDialogDeletionSet } from './dialogUtils';
 import * as historyActions from '../store/historyActions';
 
@@ -190,17 +192,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   });
 
-  const handleAddNpc = useCallback(async (npcName: string) => {
-    setOperationError(null);
-    try {
-      await createDialogForNpc(npcName);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setOperationError(`Failed to create NPC "${npcName}": ${message}`);
-      throw error;
-    }
-  }, [createDialogForNpc]);
-
   const handleAddDialog = useCallback(async (dialogName: string) => {
     setOperationError(null);
     if (!selectedNPC) {
@@ -214,6 +205,45 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       throw error;
     }
   }, [selectedNPC, createDialogForNpc]);
+
+  // Issue #147: generate the full teacher (Lehrer) dialog boilerplate
+  const handleCreateTeacherDialog = useCallback(async (config: TeacherDialogConfig) => {
+    setOperationError(null);
+    if (!selectedNPC) {
+      throw new Error('Select an NPC first.');
+    }
+    try {
+      const { dialogName, infoFunctionName } = await createTeacherDialogForNpc(selectedNPC, config, {
+        dialogIndex,
+        projectPath,
+        readFile: (path) => window.editorAPI.readFile(path),
+        writeFile: (path, content) => window.editorAPI.writeFile(path, content),
+        addProjectFile,
+        getSemanticModel,
+        addDialogToIndex,
+        selectNpc,
+        loadAndMergeNpcModels,
+      });
+      setSelectedNPC(selectedNPC);
+      setExpandedDialogs((prev) => new Set([...prev, dialogName]));
+      finalizeDialogSelection(dialogName, infoFunctionName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setOperationError(`Failed to create teacher dialog: ${message}`);
+      throw error;
+    }
+  }, [
+    selectedNPC,
+    dialogIndex,
+    projectPath,
+    addProjectFile,
+    getSemanticModel,
+    addDialogToIndex,
+    selectNpc,
+    loadAndMergeNpcModels,
+    setSelectedNPC,
+    finalizeDialogSelection,
+  ]);
 
   // -------------------------------------------------------------------------
   // Delete dialog state
@@ -437,7 +467,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         semanticModelDialogs={semanticModel.dialogs}
         selectedNPC={selectedNPC}
         onSelectNPC={handleSelectNPC}
-        onAddNpc={handleAddNpc}
       />
 
       {/* Column 2: Dialog Tree with Nested Choices */}
@@ -453,6 +482,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         onSelectDialog={handleSelectDialog}
         onToggleDialogExpand={handleToggleDialogExpand}
         onAddDialog={handleAddDialog}
+        onCreateTeacherDialog={isProjectMode ? handleCreateTeacherDialog : undefined}
         dialogIndex={dialogIndex}
         parsedFiles={parsedFiles}
         setIngestedFilesOpen={setIngestedFilesOpen}
