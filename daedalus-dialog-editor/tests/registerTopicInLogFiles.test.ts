@@ -21,6 +21,8 @@ const mockWriteFile = jest.spyOn(window.editorAPI, 'writeFile');
 const mockParseDialogFile = jest.spyOn(window.editorAPI, 'parseDialogFile');
 
 describe('projectStore.registerTopicInLogFiles', () => {
+  let files: Record<string, string>;
+
   beforeEach(() => {
     useProjectStore.setState({
       projectPath: 'C:/project',
@@ -32,7 +34,7 @@ describe('projectStore.registerTopicInLogFiles', () => {
       } as any
     });
 
-    const files: Record<string, string> = {
+    files = {
       [CONSTANTS_FILE]: CONSTANTS_CONTENT,
       [CLOSE_TOPICS_FILE]: CLOSE_TOPICS_CONTENT
     };
@@ -99,5 +101,44 @@ describe('projectStore.registerTopicInLogFiles', () => {
     ).rejects.toThrow(/already/i);
 
     expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  test('leaves the constants file untouched when the close-topics target is invalid', async () => {
+    // A failure inserting the close call must not leave the quest
+    // half-registered (declarations written, no B_CloseTopic call) — the
+    // duplicate guard would then block every retry.
+    files['C:/project/Story/NotCloseTopics.d'] = 'FUNC VOID Unrelated() { return; };\n';
+
+    await expect(
+      useProjectStore.getState().registerTopicInLogFiles({
+        topicName: 'TOPIC_Dalvins',
+        title: 'Dalvins Spitzhacken',
+        chapterStart: 0,
+        chapterEnd: 2,
+        constantsFilePath: CONSTANTS_FILE,
+        closeTopicsFilePath: 'C:/project/Story/NotCloseTopics.d'
+      })
+    ).rejects.toThrow(/B_CloseTopics/);
+
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  test('a commented-out declaration or a mere usage does not block registration', async () => {
+    files[CONSTANTS_FILE] =
+      '// const string TOPIC_Dalvins = "Alte Version";\n' +
+      'const string TOPIC_Old = "Old Quest";\nvar int MIS_Old;\n' +
+      'Log_SetTopicStatus (TOPIC_Dalvins, LOG_RUNNING);\n';
+
+    await useProjectStore.getState().registerTopicInLogFiles({
+      topicName: 'TOPIC_Dalvins',
+      title: 'Dalvins Spitzhacken',
+      chapterStart: 0,
+      chapterEnd: 2,
+      constantsFilePath: CONSTANTS_FILE,
+      closeTopicsFilePath: CLOSE_TOPICS_FILE
+    });
+
+    const constantsWrite = mockWriteFile.mock.calls.find(([p]) => p === CONSTANTS_FILE);
+    expect(constantsWrite![1]).toContain('const string TOPIC_Dalvins = "Dalvins Spitzhacken";');
   });
 });

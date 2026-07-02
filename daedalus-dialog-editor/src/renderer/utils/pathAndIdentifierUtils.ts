@@ -19,18 +19,30 @@ export function normalizeIdentifier(value: string, fallback: string): string {
 }
 
 export function makeUniqueName(baseName: string, existing: Set<string>): string {
-  if (!existing.has(baseName)) {
+  // Daedalus identifiers are case-insensitive
+  const taken = new Set(Array.from(existing, (name) => name.toUpperCase()));
+  if (!taken.has(baseName.toUpperCase())) {
     return baseName;
   }
 
   let suffix = 1;
   let candidate = `${baseName}_${suffix}`;
-  while (existing.has(candidate)) {
+  while (taken.has(candidate.toUpperCase())) {
     suffix += 1;
     candidate = `${baseName}_${suffix}`;
   }
 
   return candidate;
+}
+
+/**
+ * Make a user-typed value safe to embed in generated Daedalus source:
+ * Daedalus string literals have no escape sequences, so a raw quote would
+ * terminate the literal and a newline would break the line (or a trailing
+ * // comment).
+ */
+export function sanitizeDaedalusString(value: string): string {
+  return value.replace(/"/g, "'").replace(/\s*[\r\n]+\s*/g, ' ');
 }
 
 export function normalizePath(pathValue: string): string {
@@ -68,14 +80,4 @@ export function extractFunctionName(
   if (!ref) return undefined;
   if (typeof ref === 'string') return ref || undefined;
   return ref.name || undefined;
-}
-
-export function createNpcInstanceTemplate(npcName: string): string {
-  return [
-    `INSTANCE ${npcName} (C_NPC)`,
-    '{',
-    `\tname = "${npcName}";`,
-    '};',
-    ''
-  ].join('\n');
 }

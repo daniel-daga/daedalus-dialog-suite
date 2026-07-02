@@ -559,18 +559,29 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     try {
       set({ isLoading: true });
 
-      // Guard against duplicate declarations before touching any file
-      const constantsContent = await window.editorAPI.readFile(constantsFilePath);
-      if (new RegExp(`\\bTOPIC_${escapeRegExp(base)}\\b`, 'i').test(constantsContent)) {
-        throw new Error(`TOPIC_${base} is already declared in ${constantsFilePath}`);
-      }
+      const closeTopicLine = buildCloseTopicLine(topicName, chapterStart, chapterEnd);
+
+      // Validate the close-topics insert before any write: a bad target
+      // (wrong path, no B_CloseTopics function) must not leave the quest
+      // half-registered with only the declarations appended — the duplicate
+      // guard below would then block every retry.
+      insertIntoCloseTopicsFunction(
+        await window.editorAPI.readFile(closeTopicsFilePath),
+        closeTopicLine
+      );
 
       const constantsModel = await mutateQuestFile(constantsFilePath, (c) => {
+        // Guard against duplicate declarations before writing; anchored on
+        // the declaration itself so commented-out lines or mere usages of
+        // the constant don't count.
+        if (new RegExp(`^\\s*const\\s+string\\s+TOPIC_${escapeRegExp(base)}\\b`, 'im').test(c)) {
+          throw new Error(`TOPIC_${base} is already declared in ${constantsFilePath}`);
+        }
         if (!c.endsWith('\n')) c += '\n';
         return c + buildTopicDeclarationBlock(topicName, title);
       });
       const closeTopicsModel = await mutateQuestFile(closeTopicsFilePath, (c) =>
-        insertIntoCloseTopicsFunction(c, buildCloseTopicLine(topicName, chapterStart, chapterEnd))
+        insertIntoCloseTopicsFunction(c, closeTopicLine)
       );
 
       mergeUpdatedQuestFileModels([

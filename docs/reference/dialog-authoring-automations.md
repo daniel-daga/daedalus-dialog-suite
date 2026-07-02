@@ -70,7 +70,9 @@ regression tests live next to the cited modules in
 
 - There is deliberately **no** "Add NPC" button — it created NPC instances
   with incorrect parameters (#141). NPCs enter a project by placing an NPC
-  `.d` file in the project folder.
+  `.d` file in the project folder. "Add Dialog" likewise never generates an
+  NPC instance file: creating a dialog for an NPC without a parsed `C_NPC`
+  instance only creates the dialog.
 - When the file watcher sees a new file whose instances are NPCs (direct
   `C_NPC` parent or a prototype whose chain reaches `C_NPC` —
   `ProjectIndex.npcPrototypes`, computed by `ProjectService`), and the NPC has

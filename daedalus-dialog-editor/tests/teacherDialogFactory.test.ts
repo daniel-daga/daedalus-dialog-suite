@@ -72,6 +72,17 @@ describe('createTeacherDialogForNpc', () => {
     expect(deps.writeFile.mock.calls[0][1]).toContain('INSTANCE DIA_Alrik_Teach_1H (C_INFO)');
   });
 
+  test('detects name collisions case-insensitively (Daedalus identifiers)', async () => {
+    const deps = makeDeps({
+      dialogIndex: indexWith([
+        { dialogName: 'DIA_ALRIK_TEACH', npc: 'VLK_438_Alrik', filePath: 'C:/project/Dialoge/DIA_Alrik.d' }
+      ])
+    });
+
+    const result = await createTeacherDialogForNpc('VLK_438_Alrik', CONFIG, deps as any);
+    expect(result.dialogName).toBe('DIA_Alrik_Teach_1H');
+  });
+
   test('falls back to the project dialog directory for NPCs without dialogs', async () => {
     const deps = makeDeps();
     const result = await createTeacherDialogForNpc('SLD_800_Sergio', CONFIG, deps as any);

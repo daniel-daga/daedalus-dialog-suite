@@ -54,6 +54,33 @@ describe('insertIntoCloseTopicsFunction', () => {
       insertIntoCloseTopicsFunction('FUNC VOID Unrelated() { return; };', 'B_CloseTopic (TOPIC_X, MIS_X, 0, 2);')
     ).toThrow(/B_CloseTopics/);
   });
+
+  test('handles a closing brace that shares its line with body content', () => {
+    const oneLine = 'FUNC VOID B_CloseTopics() { };\n';
+    const line = '\tB_CloseTopic (TOPIC_X, MIS_X, 0, 2);';
+    const result = insertIntoCloseTopicsFunction(oneLine, line);
+
+    // The call must land inside the braces, not above the function
+    const inserted = result.indexOf('TOPIC_X');
+    expect(inserted).toBeGreaterThan(result.indexOf('{'));
+    expect(inserted).toBeLessThan(result.indexOf('}'));
+  });
+
+  test('ignores braces inside string literals and comments', () => {
+    const content = `FUNC VOID B_CloseTopics()
+{
+\tPrintDebug ("closing }");
+\t// } end marker
+\tB_CloseTopic (TOPIC_Old, MIS_Old, 0, 2);
+};
+`;
+    const line = '\tB_CloseTopic (TOPIC_New, MIS_New, 0, 2);';
+    const result = insertIntoCloseTopicsFunction(content, line);
+
+    const inserted = result.indexOf('TOPIC_New');
+    expect(inserted).toBeGreaterThan(result.indexOf('TOPIC_Old'));
+    expect(inserted).toBeLessThan(result.indexOf('};'));
+  });
 });
 
 describe('declaration builders', () => {
@@ -61,6 +88,14 @@ describe('declaration builders', () => {
     const block = buildTopicDeclarationBlock('TOPIC_DalvinsSpitzhacken', 'Dalvins Spitzhacken');
     expect(block).toContain('const string TOPIC_DalvinsSpitzhacken = "Dalvins Spitzhacken";');
     expect(block).toContain('var int MIS_DalvinsSpitzhacken;');
+  });
+
+  test('quotes and newlines in the title cannot break the generated literal', () => {
+    // Daedalus string literals have no escape sequences: a raw quote would
+    // terminate the literal and corrupt the constants file.
+    const block = buildTopicDeclarationBlock('TOPIC_X', 'Der "Boss"\nQuest');
+    expect(block).toContain("const string TOPIC_X = \"Der 'Boss' Quest\";");
+    expect(block).toContain("// Quest: Der 'Boss' Quest");
   });
 
   test('buildCloseTopicLine emits the chapter-gated close call', () => {

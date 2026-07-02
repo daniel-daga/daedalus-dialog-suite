@@ -5,15 +5,12 @@ import {
   makeUniqueName,
   normalizePath,
   getDirectoryName,
-  joinPath,
-  escapeRegExp,
-  createNpcInstanceTemplate
+  joinPath
 } from '../../utils/pathAndIdentifierUtils';
 import type {
   SemanticModel,
   Dialog,
   DialogFunction,
-  GlobalInstance,
   DialogMetadata
 } from '../../types/global';
 
@@ -31,8 +28,6 @@ export interface DialogFactoryConfig {
   getFileState: (filePath: string) => { semanticModel: SemanticModel; hasErrors?: boolean } | null | undefined;
   updateModel: (filePath: string, model: SemanticModel) => void;
   addDialogToIndex: (metadata: DialogMetadata) => void;
-  addProjectFile: (filePath: string) => void;
-  getSemanticModel: (filePath: string) => Promise<SemanticModel>;
   selectNpc: (npcId: string) => void;
   loadAndMergeNpcModels: (npcId: string) => void;
   setSelectedNPC: (npc: string) => void;
@@ -54,8 +49,6 @@ export function useDialogFactory(config: DialogFactoryConfig) {
     getFileState,
     updateModel,
     addDialogToIndex,
-    addProjectFile,
-    getSemanticModel,
     selectNpc,
     loadAndMergeNpcModels,
     setSelectedNPC,
@@ -98,8 +91,11 @@ export function useDialogFactory(config: DialogFactoryConfig) {
   );
 
   /**
-   * Create a new dialog (and associated info/condition functions, plus an NPC
-   * instance file if the NPC doesn't exist yet) for `rawNpcName`.
+   * Create a new dialog (and associated info/condition functions) for
+   * `rawNpcName`. NPC instances are never generated here: the removed
+   * "Add NPC" flow (issue #141) produced instances with incorrect
+   * parameters, so instance files are authored manually and picked up by
+   * the file watcher.
    */
   const createDialogForNpc = useCallback(
     async (rawNpcName: string, requestedDialogName?: string) => {
@@ -196,64 +192,6 @@ export function useDialogFactory(config: DialogFactoryConfig) {
         calls: []
       };
 
-      const existingInstances = latestModel.instances || {};
-      const existingNpcs = latestModel.npcs || {};
-      const hasNpcInstance = Boolean(
-        uniquenessModel.instances?.[npcName] ||
-          uniquenessModel.npcs?.[npcName] ||
-          existingInstances[npcName] ||
-          existingNpcs[npcName]
-      );
-
-      let npcInstanceFilePath = targetFilePath;
-      if (!hasNpcInstance) {
-        const npcDirectory =
-          getDirectoryName(targetFilePath) || (projectPath ? normalizePath(projectPath) : '');
-        if (npcDirectory) {
-          const npcFilePath = joinPath(npcDirectory, `NPC_${npcToken}.d`);
-          const instanceTemplate = createNpcInstanceTemplate(npcName);
-          const instanceRegex = new RegExp(`\\bINSTANCE\\s+${escapeRegExp(npcName)}\\s*\\(`, 'i');
-
-          let existingNpcContent: string | null = null;
-          try {
-            existingNpcContent = await window.editorAPI.readFile(npcFilePath);
-          } catch {
-            existingNpcContent = null;
-          }
-
-          if (existingNpcContent === null) {
-            const createResult = await window.editorAPI.writeFile(npcFilePath, instanceTemplate);
-            if (!createResult?.success) {
-              throw new Error(`Could not create NPC instance file: ${npcFilePath}`);
-            }
-          } else if (!instanceRegex.test(existingNpcContent)) {
-            const separator = existingNpcContent.endsWith('\n') ? '' : '\n';
-            const appendResult = await window.editorAPI.writeFile(
-              npcFilePath,
-              `${existingNpcContent}${separator}\n${instanceTemplate}`
-            );
-            if (!appendResult?.success) {
-              throw new Error(`Could not update NPC instance file: ${npcFilePath}`);
-            }
-          }
-
-          npcInstanceFilePath = npcFilePath;
-          addProjectFile(npcFilePath);
-
-          try {
-            await getSemanticModel(npcFilePath);
-          } catch (error) {
-            console.warn(`Failed to parse NPC instance file ${npcFilePath}:`, error);
-          }
-        }
-      }
-
-      const npcInstance: GlobalInstance = {
-        name: npcName,
-        parent: 'C_NPC',
-        filePath: npcInstanceFilePath
-      };
-
       const updatedModel: SemanticModel = {
         ...latestModel,
         dialogs: { ...(latestModel.dialogs || {}), [dialogName]: newDialog },
@@ -262,10 +200,6 @@ export function useDialogFactory(config: DialogFactoryConfig) {
           [conditionFunctionName]: conditionFunction,
           [infoFunctionName]: informationFunction
         },
-        instances: hasNpcInstance
-          ? existingInstances
-          : { ...existingInstances, [npcName]: npcInstance },
-        npcs: hasNpcInstance ? existingNpcs : { ...existingNpcs, [npcName]: npcInstance },
         hasErrors: false,
         errors: latestModel.errors || []
       };
@@ -291,9 +225,6 @@ export function useDialogFactory(config: DialogFactoryConfig) {
       getFileState,
       updateModel,
       addDialogToIndex,
-      addProjectFile,
-      projectPath,
-      getSemanticModel,
       selectNpc,
       loadAndMergeNpcModels,
       setSelectedNPC,

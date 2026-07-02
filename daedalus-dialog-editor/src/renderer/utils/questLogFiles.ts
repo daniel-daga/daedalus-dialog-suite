@@ -6,6 +6,7 @@
 
 import type { SemanticModel } from '../types/global';
 import type { ParsedFileCache } from '../store/projectStore';
+import { sanitizeDaedalusString } from './pathAndIdentifierUtils';
 
 /** `TOPIC_DalvinsSpitzhacken` → `DalvinsSpitzhacken` */
 export function topicBaseName(topicName: string): string {
@@ -14,7 +15,8 @@ export function topicBaseName(topicName: string): string {
 
 export function buildTopicDeclarationBlock(topicName: string, title: string): string {
   const base = topicBaseName(topicName);
-  return `\n// Quest: ${title}\nconst string TOPIC_${base} = "${title}";\nvar int MIS_${base};\n`;
+  const safeTitle = sanitizeDaedalusString(title);
+  return `\n// Quest: ${safeTitle}\nconst string TOPIC_${base} = "${safeTitle}";\nvar int MIS_${base};\n`;
 }
 
 export function buildCloseTopicLine(topicName: string, chapterStart: number, chapterEnd: number): string {
@@ -41,13 +43,30 @@ export function insertIntoCloseTopicsFunction(content: string, callLine: string)
   let depth = 0;
   for (let i = bodyStart; i < content.length; i++) {
     const char = content[i];
-    if (char === '{') depth++;
+    // Braces inside string literals and comments don't count
+    if (char === '"') {
+      const close = content.indexOf('"', i + 1);
+      if (close < 0) break;
+      i = close;
+    } else if (char === '/' && content[i + 1] === '/') {
+      const eol = content.indexOf('\n', i);
+      if (eol < 0) break;
+      i = eol;
+    } else if (char === '/' && content[i + 1] === '*') {
+      const end = content.indexOf('*/', i + 2);
+      if (end < 0) break;
+      i = end + 1;
+    } else if (char === '{') depth++;
     else if (char === '}') {
       depth--;
       if (depth === 0) {
-        // Insert before the line that carries the closing brace
         const lineStart = content.lastIndexOf('\n', i) + 1;
-        return `${content.slice(0, lineStart)}${callLine}\n${content.slice(lineStart)}`;
+        if (/^\s*$/.test(content.slice(lineStart, i))) {
+          // Closing brace on its own line: insert the call above it
+          return `${content.slice(0, lineStart)}${callLine}\n${content.slice(lineStart)}`;
+        }
+        // Closing brace shares its line with body content: insert before it
+        return `${content.slice(0, i)}\n${callLine}\n${content.slice(i)}`;
       }
     }
   }
