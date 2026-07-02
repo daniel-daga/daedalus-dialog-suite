@@ -33,13 +33,11 @@ describe('NPCList', () => {
     ['Lester', ['Dialog4']],
   ]);
   const mockOnSelectNPC = jest.fn();
-  const mockOnAddNpc = jest.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockNpcFilter = '';
     mockSetNpcFilter.mockClear();
-    mockOnAddNpc.mockClear();
   });
 
   it('renders filter input', () => {
@@ -120,24 +118,16 @@ describe('NPCList', () => {
     expect(screen.queryByLabelText('Clear filter')).not.toBeInTheDocument();
   });
 
-  it('creates a new npc using add dialog', async () => {
-    const user = userEvent.setup();
+  it('does not render an Add NPC button (issue #141)', () => {
     render(
       <NPCList
         npcs={mockNpcs}
         npcMap={mockNpcMap}
         selectedNPC={null}
         onSelectNPC={mockOnSelectNPC}
-        onAddNpc={mockOnAddNpc}
       />
     );
 
-    await user.click(screen.getByRole('button', { name: 'Add NPC' }));
-    const input = screen.getByLabelText('NPC Name');
-    await user.clear(input);
-    await user.type(input, 'SLD_12345_TestNpc');
-    await user.click(screen.getByRole('button', { name: 'Create' }));
-
-    expect(mockOnAddNpc).toHaveBeenCalledWith('SLD_12345_TestNpc');
+    expect(screen.queryByRole('button', { name: 'Add NPC' })).not.toBeInTheDocument();
   });
 });

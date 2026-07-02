@@ -9,7 +9,6 @@ interface NpcColumnProps {
   semanticModelDialogs: SemanticModel['dialogs'];
   selectedNPC: string | null;
   onSelectNPC: (npc: string) => void;
-  onAddNpc: (npcName: string) => Promise<void>;
 }
 
 const NpcColumn: React.FC<NpcColumnProps> = ({
@@ -19,7 +18,6 @@ const NpcColumn: React.FC<NpcColumnProps> = ({
   semanticModelDialogs,
   selectedNPC,
   onSelectNPC,
-  onAddNpc,
 }) => {
   const { npcMap, npcs } = useMemo(() => {
     if (isProjectMode) {
@@ -51,7 +49,6 @@ const NpcColumn: React.FC<NpcColumnProps> = ({
       npcMap={npcMap}
       selectedNPC={selectedNPC}
       onSelectNPC={onSelectNPC}
-      onAddNpc={onAddNpc}
     />
   );
 };

@@ -343,6 +343,35 @@ INSTANCE VLK_99064_Schurfer (Npc_Default)
       expect(index.allFiles).toContain(path.join(npcDir, 'VLK_99064_Schurfer.d'));
     });
 
+    it('exposes prototypes deriving from C_NPC as npcPrototypes (issue #141)', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      fs.writeFileSync(path.join(storyDir, 'Prototypes.d'), `
+PROTOTYPE Npc_Default(C_NPC)
+{
+    name = "";
+};
+
+PROTOTYPE Mst_Default(Npc_Default)
+{
+    name = "";
+};
+
+PROTOTYPE Item_Default(C_ITEM)
+{
+    value = 0;
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcPrototypes).toContain('NPC_DEFAULT');
+      expect(index.npcPrototypes).toContain('MST_DEFAULT');
+      expect(index.npcPrototypes).not.toContain('ITEM_DEFAULT');
+    });
+
     it('should detect quest files containing TOPIC_ constants or MIS_ variables', async () => {
       const storyDir = path.join(tempDir, 'Story');
       fs.mkdirSync(storyDir, { recursive: true });

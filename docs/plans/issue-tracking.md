@@ -56,7 +56,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 
 | Issue | Title | Status |
 |---|---|---|
-| #141 | Disable "Add NPC"; auto-create EXIT dialog when NPC file appears | ⬜ not started |
+| #141 | Disable "Add NPC"; auto-create EXIT dialog when NPC file appears | ✅ done |
 | #147 | Teacher dialog template (Lehrer anlegen) | ⬜ not started |
 | #114 | "Create Topic" writes to external log/quest files | ⬜ not started |
 
@@ -338,6 +338,58 @@ Marking an issue ✅ here is not the end. For every resolved issue:
   line + seeded sub-dialog line). Verified discriminating — forcing the
   `ChoiceRenderer` `Collapse` closed (`in={false}`) makes it fail (the inline
   sub-dialog never renders).
+
+## #141 — resolution notes (Add NPC removed, EXIT dialog auto-created)
+
+- **Request:** two parts: (1) disable the "+ Add NPC" button — it created NPC
+  instances with incorrect parameters (`createNpcInstanceTemplate` emitted a
+  bare `C_NPC` instance with only a `name`), and (2) when a new NPC `.d` file
+  is manually dropped into the project's NPC folder, auto-create a
+  `DIA_<NPC>.d` file with the standard EXIT dialog boilerplate every NPC needs.
+- **Part 1 — button removed:** `NPCList` no longer renders the Add NPC
+  `IconButton` / "Create NPC" dialog; the `onAddNpc` plumbing was removed from
+  `dialogTypes.NPCListProps`, `NpcColumn`, and `ThreeColumnLayout`
+  (`handleAddNpc`). `useDialogFactory.createDialogForNpc` stays — it still
+  backs the "Add Dialog" flow for existing NPCs.
+- **Part 2 — EXIT dialog auto-creation:**
+  - NPC classification needs prototype chains (`VLK_…(Npc_Default)`, not
+    `C_NPC` directly), which only the project scan can resolve:
+    `ProjectService.buildProjectIndex` now also returns `npcPrototypes` (the
+    normalized-uppercase prototype names whose parent chain reaches `C_NPC`),
+    stored on `projectStore`.
+  - New `src/renderer/utils/npcExitDialog.ts` (pure, no I/O):
+    `deriveExitDialogName` (`VLK_99099_Robert` → `DIA_Robert_EXIT`, full-name
+    fallback on collision or non-standard names), `createExitDialogTemplate`
+    (the exact boilerplate from the issue: `nr = 999`, `description = "ENDE"`,
+    `permanent = TRUE`, `AI_StopProcessInfos (self)`), and
+    `planExitDialogsForAddedFile` (qualifies instances by parent ∈
+    {C_NPC} ∪ npcPrototypes, skips NPCs that already have dialogs, targets the
+    directory where most indexed dialog files live, else the NPC file's own
+    directory).
+  - `useFileWatcher.handleFileAdded` runs the plan after indexing a new file:
+    skips plans whose target file already exists on disk, writes the template,
+    and feeds the generated file back through `handleFileAdded` (editor
+    self-writes are suppressed by the watcher), which parses + indexes it — so
+    the NPC appears in the NPC list with its EXIT dialog immediately.
+- **Tests:**
+  - Jest `tests/npcExitDialog.test.ts` (10) — naming, template content,
+    template validity against the **real** parser, and planning rules.
+    The parser check runs in a child process: the native tree-sitter binding
+    cannot be loaded into two Jest module registries in the same worker
+    process (whichever of `ProjectService.test.ts` / this suite ran second in
+    a shared worker failed with `tree.rootNode` undefined).
+  - Jest `tests/useFileWatcher.test.ts` (+3) — add-event writes the EXIT file
+    into the dialog directory and indexes it; existing file is never
+    overwritten; NPCs with dialogs are skipped. Verified discriminating —
+    disabling the `autoCreateExitDialogFiles` call fails the positive test.
+  - Jest `tests/ProjectService.test.ts` (+1) — `npcPrototypes` contains
+    transitive C_NPC prototypes and excludes item prototypes.
+  - Jest `tests/NPCList.test.tsx` — Add NPC button is gone.
+  - E2E `tests/e2e/dialog-creation.spec.ts` repurposed — project mode renders
+    the NPC pane without an Add NPC button. A watcher-flow E2E is not viable
+    in the browser harness: `mockAPI.onFileChanged` is a no-op (same
+    constraint noted for #182/#183), so the Jest watcher tests carry the
+    wiring coverage.
 
 ## #126 — resolution notes
 

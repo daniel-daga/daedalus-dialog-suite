@@ -59,7 +59,6 @@ export interface NPCListProps {
   npcMap: Map<string, string[]>;
   selectedNPC: string | null;
   onSelectNPC: (npc: string) => void;
-  onAddNpc?: (npcName: string) => Promise<void> | void;
 }
 
 export interface DialogTreeProps {

@@ -453,7 +453,8 @@ export const mockEditorAPI: EditorAPI = {
     return {
       npcs: Array.from(npcs).sort(),
       dialogsByNpc, // Return as object, projectStore handles conversion
-      allFiles: files
+      allFiles: files,
+      npcPrototypes: []
     };
   },
 

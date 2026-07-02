@@ -18,6 +18,8 @@ export interface ProjectIndex {
   allFiles: string[];
   questFiles: string[];
   routines: string[];
+  /** Prototype names (normalized uppercase) whose parent chain reaches C_NPC */
+  npcPrototypes: string[];
 }
 
 export interface RecentProject {

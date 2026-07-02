@@ -190,17 +190,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
   });
 
-  const handleAddNpc = useCallback(async (npcName: string) => {
-    setOperationError(null);
-    try {
-      await createDialogForNpc(npcName);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setOperationError(`Failed to create NPC "${npcName}": ${message}`);
-      throw error;
-    }
-  }, [createDialogForNpc]);
-
   const handleAddDialog = useCallback(async (dialogName: string) => {
     setOperationError(null);
     if (!selectedNPC) {
@@ -437,7 +426,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         semanticModelDialogs={semanticModel.dialogs}
         selectedNPC={selectedNPC}
         onSelectNPC={handleSelectNPC}
-        onAddNpc={handleAddNpc}
       />
 
       {/* Column 2: Dialog Tree with Nested Choices */}

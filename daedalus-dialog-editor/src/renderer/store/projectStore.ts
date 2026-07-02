@@ -50,6 +50,8 @@ interface ProjectState {
   dialogIndex: Map<string, DialogMetadata[]>; // NPC ID → dialogs
   allDialogFiles: string[];
   questFiles: string[];
+  // Prototype names (normalized uppercase) whose parent chain reaches C_NPC
+  npcPrototypes: string[];
 
   // Cached parsed files (full semantic models)
   parsedFiles: Map<string, ParsedFileCache>;
@@ -200,6 +202,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   dialogIndex: new Map(),
   allDialogFiles: [],
   questFiles: [],
+  npcPrototypes: [],
   parsedFiles: new Map(),
   mergedSemanticModel: createEmptySemanticModel(),
   selectedNpc: null,
@@ -238,6 +241,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         dialogIndex: dialogsByNpc,
         allDialogFiles: rawIndex.allFiles || [],
         questFiles: rawIndex.questFiles || [],
+        npcPrototypes: rawIndex.npcPrototypes || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
         selectedNpc: null
@@ -375,6 +379,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       routineList: [],
       dialogIndex: new Map(),
       allDialogFiles: [],
+      npcPrototypes: [],
       parsedFiles: new Map(),
       mergedSemanticModel: createEmptySemanticModel(),
       selectedNpc: null,

@@ -60,6 +60,7 @@ const mockStartFileWatcher = jest.spyOn(window.editorAPI, 'startFileWatcher');
 const mockStopFileWatcher = jest.spyOn(window.editorAPI, 'stopFileWatcher');
 const mockParseDialogFile = jest.spyOn(window.editorAPI, 'parseDialogFile');
 const mockReadFile = jest.spyOn(window.editorAPI, 'readFile');
+const mockWriteFile = jest.spyOn(window.editorAPI, 'writeFile');
 
 // Capture the callback registered by the hook so we can fire test events
 jest.spyOn(window.editorAPI, 'onFileChanged').mockImplementation((cb) => {
@@ -73,6 +74,7 @@ beforeEach(() => {
   mockStopFileWatcher.mockClear().mockResolvedValue(undefined as any);
   mockParseDialogFile.mockClear().mockResolvedValue(PARSED_MODEL as any);
   mockReadFile.mockClear().mockResolvedValue('// reloaded source' as any);
+  mockWriteFile.mockClear().mockResolvedValue({ success: true } as any);
 
   // Reset stores to a clean state
   useProjectStore.setState({
@@ -82,6 +84,7 @@ beforeEach(() => {
     allDialogFiles: [],
     dialogIndex: new Map(),
     npcList: [],
+    npcPrototypes: [],
     routineList: [],
     questFiles: [],
     selectedNpc: null,
@@ -241,6 +244,96 @@ describe('useFileWatcher — add event', () => {
     const entries = dialogIndex.get('TestNPC');
     expect(entries).toBeDefined();
     expect(entries!.some((m) => m.dialogName === 'DIA_Test')).toBe(true);
+    unmount();
+  });
+});
+
+describe('useFileWatcher — add event auto-creates EXIT dialog (issue #141)', () => {
+  const NPC_FILE = 'C:/project/NPC/VLK_99099_Robert.d';
+  const EXISTING_DIALOG_FILE = 'C:/project/Dialoge/DIA_Alrik.d';
+  const EXIT_FILE = 'C:/project/Dialoge/DIA_VLK_99099_Robert.d';
+
+  const NPC_MODEL = {
+    ...EMPTY_MODEL,
+    instances: { VLK_99099_Robert: { name: 'VLK_99099_Robert', parent: 'Npc_Default' } },
+  };
+
+  const EXIT_MODEL = {
+    ...EMPTY_MODEL,
+    dialogs: {
+      DIA_Robert_EXIT: {
+        name: 'DIA_Robert_EXIT',
+        properties: { npc: 'VLK_99099_Robert', information: 'DIA_Robert_EXIT_Info' },
+      },
+    },
+  };
+
+  beforeEach(() => {
+    useProjectStore.setState({
+      npcPrototypes: ['NPC_DEFAULT'],
+      npcList: ['VLK_438_Alrik'],
+      dialogIndex: new Map([
+        ['VLK_438_Alrik', [{ dialogName: 'DIA_Alrik_Hello', npc: 'VLK_438_Alrik', filePath: EXISTING_DIALOG_FILE }]],
+      ]),
+    });
+    mockParseDialogFile.mockImplementation(async (filePath: string) =>
+      (filePath === NPC_FILE ? NPC_MODEL : EXIT_MODEL) as any
+    );
+    // The EXIT dialog file does not exist yet
+    mockReadFile.mockRejectedValue(new Error('File not found'));
+  });
+
+  async function flushAsync(): Promise<void> {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  test('writes the EXIT dialog into the project dialog directory and indexes it', async () => {
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'add', filePath: NPC_FILE });
+
+    await waitFor(() => expect(mockWriteFile).toHaveBeenCalled());
+    const [writtenPath, content] = mockWriteFile.mock.calls[0] as [string, string];
+    expect(writtenPath).toBe(EXIT_FILE);
+    expect(content).toContain('INSTANCE DIA_Robert_EXIT (C_INFO)');
+    expect(content).toContain('npc\t\t\t= VLK_99099_Robert;');
+    expect(content).toContain('AI_StopProcessInfos (self);');
+
+    // The generated file is parsed and indexed → the NPC shows up in the
+    // NPC list with its EXIT dialog without re-opening the project.
+    await waitFor(() => {
+      const entries = useProjectStore.getState().dialogIndex.get('VLK_99099_Robert');
+      expect(entries?.some((m) => m.dialogName === 'DIA_Robert_EXIT')).toBe(true);
+    });
+    expect(useProjectStore.getState().npcList).toContain('VLK_99099_Robert');
+    unmount();
+  });
+
+  test('does not overwrite an existing EXIT dialog file', async () => {
+    mockReadFile.mockResolvedValue('// EXIT dialog already present' as any);
+
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'add', filePath: NPC_FILE });
+    await flushAsync();
+    await flushAsync();
+
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  test('does not create an EXIT dialog when the NPC already has dialogs', async () => {
+    mockParseDialogFile.mockResolvedValue({
+      ...EMPTY_MODEL,
+      instances: { VLK_438_Alrik: { name: 'VLK_438_Alrik', parent: 'Npc_Default' } },
+    } as any);
+
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'add', filePath: 'C:/project/NPC/VLK_438_Alrik.d' });
+    await flushAsync();
+    await flushAsync();
+
+    expect(mockWriteFile).not.toHaveBeenCalled();
     unmount();
   });
 });

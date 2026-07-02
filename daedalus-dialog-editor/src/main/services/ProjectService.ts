@@ -73,6 +73,7 @@ class ProjectService {
     const allNpcs = new Set<string>();
     const questFiles: string[] = [];
     const allRoutines = new Set<string>();
+    let npcPrototypes: string[] = [];
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
@@ -108,6 +109,10 @@ class ProjectService {
 
         return false;
       };
+
+      npcPrototypes = Array.from(parentByType.keys())
+        .filter((prototypeName) => isNpcParent(prototypeName))
+        .sort();
 
       // Process results
       for (let i = 0; i < allFiles.length; i++) {
@@ -157,7 +162,8 @@ class ProjectService {
       dialogsByNpc,
       allFiles,
       questFiles,
-      routines: Array.from(allRoutines).sort()
+      routines: Array.from(allRoutines).sort(),
+      npcPrototypes
     };
   }
 
