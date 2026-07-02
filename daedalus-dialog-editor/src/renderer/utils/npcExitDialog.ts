@@ -19,14 +19,21 @@ export interface ExitDialogPlan {
 }
 
 /**
- * Derive the EXIT dialog instance name from an NPC instance name.
- * Gothic NPC instances follow GUILD_ID_NAME (`VLK_99099_Robert`); the EXIT
+ * The name part of a Gothic NPC instance name, which follows GUILD_ID_NAME
+ * (`VLK_99099_Robert` → `Robert`). Falls back to the full name when the
+ * instance does not follow the convention.
+ */
+export function deriveNpcShortName(npcInstanceName: string): string {
+  const match = npcInstanceName.match(/^.*_\d+_(.+)$/);
+  return match ? match[1] : npcInstanceName;
+}
+
+/**
+ * Derive the EXIT dialog instance name from an NPC instance name; the EXIT
  * dialog conventionally uses just the name part (`DIA_Robert_EXIT`).
  */
 export function deriveExitDialogName(npcInstanceName: string): string {
-  const match = npcInstanceName.match(/^.*_\d+_(.+)$/);
-  const shortName = match ? match[1] : npcInstanceName;
-  return `DIA_${shortName}_EXIT`;
+  return `DIA_${deriveNpcShortName(npcInstanceName)}_EXIT`;
 }
 
 /**
@@ -67,9 +74,9 @@ export function createExitDialogTemplate(
 /**
  * The directory where the project's dialog files live: the most common
  * directory among all indexed dialog files, falling back to the directory of
- * the file that triggered the planning.
+ * the given fallback path.
  */
-function resolveDialogDirectory(
+export function resolveDialogDirectory(
   dialogIndex: Map<string, DialogMetadata[]>,
   addedFilePath: string
 ): string {

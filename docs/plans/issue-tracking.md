@@ -57,7 +57,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 | Issue | Title | Status |
 |---|---|---|
 | #141 | Disable "Add NPC"; auto-create EXIT dialog when NPC file appears | ✅ done |
-| #147 | Teacher dialog template (Lehrer anlegen) | ⬜ not started |
+| #147 | Teacher dialog template (Lehrer anlegen) | ✅ done |
 | #114 | "Create Topic" writes to external log/quest files | ⬜ not started |
 
 ---
@@ -390,6 +390,54 @@ Marking an issue ✅ here is not the end. For every resolved issue:
     in the browser harness: `mockAPI.onFileChanged` is a no-op (same
     constraint noted for #182/#183), so the Jest watcher tests carry the
     wiring coverage.
+
+## #147 — resolution notes (teacher dialog template)
+
+- **Request:** scaffold a complete Gothic teacher ("Lehrer") dialog from a few
+  inputs — the skill being taught, its max level, and gold costs — following
+  the canonical `DIA_Alrik_Teach` example in the issue.
+- **Scope:** the four fight talents the example fully specifies (1H, 2H, Bow,
+  Crossbow via `B_TeachFightTalentPercent` / `other.HitChance[…]`). Costs use
+  `B_GetLearnCostTalent` exactly as in the example (engine-standard costs)
+  rather than a manual gold field. Other skill categories (attributes,
+  hunting, alchemy, …) use different teach builtins and can be added to the
+  same `TEACHER_SKILLS` table later.
+- **UI:** a new School-icon button "Create Teacher Dialog" in the Dialogs pane
+  header (project mode only, next to Add Dialog). The form asks for Skill
+  (select), Max Level (default 30), and Description (auto-filled per skill,
+  e.g. "Trainier mich im Schwertkampf!", editable). The description doubles as
+  the hero's opening line comment.
+- **Generation** (`src/renderer/utils/teacherDialogTemplate.ts`, pure string
+  template following the issue example):
+  - `var int <Short>_Merke_<SKILL>;` + permanent `C_INFO` instance
+    `DIA_<Short>_Teach` (skill id appended when the name is taken — an NPC can
+    teach several skills).
+  - Info function: hero line, remember `other.HitChance[<talent>]`,
+    `Info_ClearChoices` + `Info_AddChoice` for DIALOG_BACK and the +1/+5 learn
+    entries via `B_BuildLearnString(PRINT_Learn…, B_GetLearnCostTalent(…))`.
+  - Back function: "kein Anfaenger mehr" at `>= maxLevel`, "schon besser
+    geworden" when above the remembered value; per-step teach functions pass
+    maxLevel as the `B_TeachFightTalentPercent` cap. The condition returns
+    TRUE (the example's `<NPC>_Teach1H` gate references a mod-specific
+    variable that would not compile in isolation).
+- **Wiring** (`src/renderer/utils/teacherDialogFactory.ts`, deps injected):
+  writes `DIA_<Short>_Teach.d` next to the NPC's existing dialog files (else
+  the project's dominant dialog directory), refuses to overwrite, then
+  registers the file + dialog in `projectStore` and navigates to it —
+  same tail as `useDialogFactory`. `ThreeColumnLayout.handleCreateTeacherDialog`
+  supplies the real deps; the button is only wired in project mode.
+- **Tests:**
+  - Jest `tests/teacherDialogTemplate.test.ts` (7) — skill table, instance/
+    choices/back/teach-step content, per-skill constants, and full-template
+    validity against the **real** parser (child process, same native-binding
+    constraint as #141) including extraction of all five functions.
+  - Jest `tests/teacherDialogFactory.test.ts` (4) — file placement next to
+    NPC dialogs, name collision → `_1H` suffix, dominant-directory fallback,
+    refuse-to-overwrite.
+  - E2E `tests/e2e/teacher-dialog.spec.ts` — full UI flow in project mode:
+    open form, default description for 1H, set Max Level 60, create; asserts
+    the dialog appears in the tree and the generated file carries the
+    boilerplate with the configured cap.
 
 ## #126 — resolution notes
 

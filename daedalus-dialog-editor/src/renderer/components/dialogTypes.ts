@@ -74,4 +74,5 @@ export interface DialogTreeProps {
   onToggleChoiceExpand: (choiceKey: string) => void;
   buildFunctionTree: (funcName: string, ancestorPath?: string[]) => FunctionTreeNode | null;
   onAddDialog?: (dialogName: string) => Promise<void> | void;
+  onCreateTeacherDialog?: (config: import('../utils/teacherDialogTemplate').TeacherDialogConfig) => Promise<void> | void;
 }
