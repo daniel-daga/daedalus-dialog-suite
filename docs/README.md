@@ -16,9 +16,11 @@ This directory is the canonical home for repository-level documentation.
 
 ## Current Canonical Docs
 
+- [architecture/dialog-editor.md](architecture/dialog-editor.md)
 - [architecture/quest-editor.md](architecture/quest-editor.md)
 - [reference/autocomplete-fields.md](reference/autocomplete-fields.md)
-- [plans/daedalus-parser-stabilization.md](plans/daedalus-parser-stabilization.md)
+- [reference/dialog-authoring-automations.md](reference/dialog-authoring-automations.md)
+- [reference/parser-roundtrip-scope.md](reference/parser-roundtrip-scope.md)
 
 ## Workspace Entry Points
 
