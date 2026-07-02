@@ -62,7 +62,11 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
       setCloseTopicsFile(closeTopicsSuggestions[0] || '');
       setError(null);
     }
-  }, [open, topicName, constantsSuggestions, closeTopicsSuggestions]);
+    // Initialize only when the dialog opens: the suggestion lists keep
+    // updating while background ingestion parses files, and re-running this
+    // effect on those updates would clobber the user's input mid-form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, topicName]);
 
   const handleSubmit = async () => {
     const base = topicBaseName(topicName);

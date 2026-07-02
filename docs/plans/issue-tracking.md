@@ -487,6 +487,12 @@ Marking an issue ✅ here is not the end. For every resolved issue:
     files' new content and that the close call landed inside the function
     body. (File pickers are typed manually in the test — the browser mock
     parser extracts no constants, so the suggestion lists are empty there.)
+  - Jest `tests/RegisterTopicDialog.test.tsx` — regression for a bug the
+    full E2E run surfaced: the form's init effect depended on the suggestion
+    memos, so a background-ingestion `parsedFiles` flush landing while the
+    form was open re-initialized it and wiped the user's input. The effect
+    now initializes only on open. Verified discriminating (fails with the
+    suggestion lists back in the dependency array).
 
 ## #126 — resolution notes
 
