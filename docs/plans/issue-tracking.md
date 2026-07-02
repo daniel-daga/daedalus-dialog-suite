@@ -58,7 +58,7 @@ Marking an issue ✅ here is not the end. For every resolved issue:
 |---|---|---|
 | #141 | Disable "Add NPC"; auto-create EXIT dialog when NPC file appears | ✅ done |
 | #147 | Teacher dialog template (Lehrer anlegen) | ✅ done |
-| #114 | "Create Topic" writes to external log/quest files | ⬜ not started |
+| #114 | "Create Topic" writes to external log/quest files | ✅ done |
 
 ---
 
@@ -438,6 +438,55 @@ Marking an issue ✅ here is not the end. For every resolved issue:
     open form, default description for 1H, set Max Level 60, create; asserts
     the dialog appears in the tree and the generated file carries the
     boilerplate with the configured cap.
+
+## #114 — resolution notes (Create Topic → external log files)
+
+- **Request:** when "Create Topic" is used, also register the quest in the
+  project-level log files: `const string TOPIC_X = "…"; var int MIS_X;` in
+  `LOG_Constants_<project>.d` and `B_CloseTopic (TOPIC_X, MIS_X, <start>,
+  <end>);` in `B_CloseTopics<project>.d`, with editable chapter numbers
+  (defaults 0 and 2). The triage note flagged a dependency on knowing which
+  project files to target.
+- **UX:** the Create Topic action card gained a book-icon button "Register
+  quest in log files" (project mode, enabled once the topic is named,
+  `tabIndex=-1` so the in-row Tab order is untouched). It opens a form with
+  Quest Title (defaulted from the topic name, underscores → spaces), Chapter
+  Start (0) / Chapter End (2), and the two target files. Registering is an
+  explicit action rather than a side effect of inserting the action, because
+  the topic name is usually typed *after* insertion.
+- **No settings mechanism needed:** target files are suggested from live
+  project data — the constants file by ranking files by their number of
+  `TOPIC_` constants (same heuristic as `CreateQuestDialog`), the close-topics
+  file by scanning parsed files for a `B_CloseTopics…` function or
+  `B_CloseTopic` calls. Both fields are free-text (`Autocomplete freeSolo`)
+  with the top suggestion pre-selected, so unusual layouts still work.
+- **Implementation:**
+  - `src/renderer/utils/questLogFiles.ts` (pure): declaration/close-call
+    builders, the file suggestions, and `insertIntoCloseTopicsFunction` —
+    a brace-matching insert that places the call at the end of the
+    `B_CloseTopics…` function body (nested blocks handled), throwing when the
+    file has no such function.
+  - `projectStore.registerTopicInLogFiles` reuses the `mutateQuestFile` →
+    `mergeUpdatedQuestFileModels` pipeline from `createQuest` (read → mutate →
+    write with self-write suppression → re-parse → fold into the merged
+    model), with an up-front duplicate-declaration guard so no file is touched
+    when `TOPIC_X` already exists.
+  - `RegisterTopicDialog.tsx` renders the form; `CreateTopicRenderer` hosts
+    the button.
+- **Tests:**
+  - Jest `tests/questLogFiles.test.ts` (5) — brace-aware insert (with a
+    nested `if` block and a trailing unrelated function), missing-function
+    error, declaration builders, both suggestion heuristics.
+  - Jest `tests/registerTopicInLogFiles.test.ts` (2) — the store action
+    writes both files (existing content preserved, close call inside the
+    function) and folds the re-parsed models into `mergedSemanticModel`;
+    duplicate topic rejects before any write.
+  - E2E `tests/e2e/register-topic.spec.ts` — full UI flow in project mode:
+    insert Create Topic, name the topic, open the form, adjust the title,
+    point at the seeded LOG/B_CloseTopics files, register; asserts both
+    files' new content and that the close call landed inside the function
+    body. (File pickers are typed manually in the test — the browser mock
+    parser extracts no constants, so the suggestion lists are empty there.)
 
 ## #126 — resolution notes
 

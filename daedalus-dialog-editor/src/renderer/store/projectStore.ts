@@ -13,6 +13,13 @@ import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
+import { escapeRegExp } from '../utils/pathAndIdentifierUtils';
+import {
+  buildCloseTopicLine,
+  buildTopicDeclarationBlock,
+  insertIntoCloseTopicsFunction,
+  topicBaseName
+} from '../utils/questLogFiles';
 
 // Enable Map/Set support in Immer
 enableMapSet();
@@ -107,6 +114,16 @@ interface ProjectActions {
 
   // Create a new quest
   createQuest: (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => Promise<void>;
+
+  // Register a Create Topic quest in the external log files (issue #114)
+  registerTopicInLogFiles: (options: {
+    topicName: string;
+    title: string;
+    chapterStart: number;
+    chapterEnd: number;
+    constantsFilePath: string;
+    closeTopicsFilePath: string;
+  }) => Promise<void>;
 
   // Add a new global variable or constant
   addVariable: (name: string, type: string, value: string | number | boolean | undefined, filePath: string, isConstant: boolean) => Promise<void>;
@@ -532,6 +549,39 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     } catch (error) {
       set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to create quest' });
       throw error; // Re-throw so UI can handle it
+    }
+  },
+
+  registerTopicInLogFiles: async (options) => {
+    const { topicName, title, chapterStart, chapterEnd, constantsFilePath, closeTopicsFilePath } = options;
+    const base = topicBaseName(topicName);
+
+    try {
+      set({ isLoading: true });
+
+      // Guard against duplicate declarations before touching any file
+      const constantsContent = await window.editorAPI.readFile(constantsFilePath);
+      if (new RegExp(`\\bTOPIC_${escapeRegExp(base)}\\b`, 'i').test(constantsContent)) {
+        throw new Error(`TOPIC_${base} is already declared in ${constantsFilePath}`);
+      }
+
+      const constantsModel = await mutateQuestFile(constantsFilePath, (c) => {
+        if (!c.endsWith('\n')) c += '\n';
+        return c + buildTopicDeclarationBlock(topicName, title);
+      });
+      const closeTopicsModel = await mutateQuestFile(closeTopicsFilePath, (c) =>
+        insertIntoCloseTopicsFunction(c, buildCloseTopicLine(topicName, chapterStart, chapterEnd))
+      );
+
+      mergeUpdatedQuestFileModels([
+        { filePath: constantsFilePath, model: constantsModel },
+        { filePath: closeTopicsFilePath, model: closeTopicsModel }
+      ]);
+
+      set({ isLoading: false });
+    } catch (error) {
+      set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to register topic' });
+      throw error;
     }
   },
 
