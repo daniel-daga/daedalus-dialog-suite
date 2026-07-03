@@ -18,11 +18,14 @@ for (let i = 0; i < 1000; i++) {
 }
 
 jest.mock('../src/renderer/store/searchStore', () => ({
-  useSearchStore: jest.fn(() => ({
-    searchQuery: 'test',
-    searchResults: mockSearchResults,
-    isSearching: false,
-  })),
+  useSearchStore: jest.fn((selector?: (s: any) => any) => {
+    const state = {
+      searchQuery: 'test',
+      searchResults: mockSearchResults,
+      isSearching: false,
+    };
+    return selector ? selector(state) : state;
+  }),
 }));
 
 // Mock react-virtualized-auto-sizer

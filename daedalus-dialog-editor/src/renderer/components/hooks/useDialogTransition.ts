@@ -27,8 +27,6 @@ export function useDialogTransition(): UseDialogTransitionResult {
   const dialogTransitionIdRef = useRef(0);
   const editorScrollRef = useRef<HTMLDivElement>(null);
 
-  const { setSelectedDialog, setSelectedFunctionName } = useUISelectionStore();
-
   // Cleanup RAF callbacks on unmount (Bug #1 fix)
   useEffect(() => {
     return () => {
@@ -60,6 +58,7 @@ export function useDialogTransition(): UseDialogTransitionResult {
 
     // Use startTransition to keep UI responsive when switching to dialogs with many actions
     startTransition(() => {
+      const { setSelectedDialog, setSelectedFunctionName } = useUISelectionStore.getState();
       setSelectedDialog(dialogName);
       setSelectedFunctionName(functionName);
 
@@ -82,7 +81,7 @@ export function useDialogTransition(): UseDialogTransitionResult {
         });
       });
     });
-  }, [setSelectedDialog, setSelectedFunctionName]);
+  }, []);
 
   return { isLoadingDialog, setIsLoadingDialog, finalizeDialogSelection, editorScrollRef };
 }

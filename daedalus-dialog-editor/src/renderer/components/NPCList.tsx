@@ -50,7 +50,9 @@ const Row = ({ index, style, data }: ListChildComponentProps) => {
 };
 
 const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC }) => {
-  const { npcFilter, setNpcFilter, filterNpcs } = useSearchStore();
+  const npcFilter = useSearchStore((s) => s.npcFilter);
+  const setNpcFilter = useSearchStore((s) => s.setNpcFilter);
+  const filterNpcs = useSearchStore((s) => s.filterNpcs);
 
   const filteredNpcs = useMemo(() => {
     return filterNpcs(npcs);

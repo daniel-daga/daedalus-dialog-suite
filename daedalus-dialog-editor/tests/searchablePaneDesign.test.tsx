@@ -38,7 +38,7 @@ const projectStoreState = {
 };
 
 jest.mock('../src/renderer/store/searchStore', () => ({
-  useSearchStore: () => mockSearchStore,
+  useSearchStore: (selector?: (s: any) => any) => selector ? selector(mockSearchStore) : mockSearchStore,
 }));
 
 jest.mock('../src/renderer/hooks/useNavigation', () => ({

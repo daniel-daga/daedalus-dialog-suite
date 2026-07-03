@@ -112,7 +112,9 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   onAddDialog,
   onCreateTeacherDialog,
 }) => {
-  const { dialogFilter, setDialogFilter, filterDialogs } = useSearchStore();
+  const dialogFilter = useSearchStore((s) => s.dialogFilter);
+  const setDialogFilter = useSearchStore((s) => s.setDialogFilter);
+  const filterDialogs = useSearchStore((s) => s.filterDialogs);
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [newDialogName, setNewDialogName] = React.useState('');
   const [isCreating, setIsCreating] = React.useState(false);

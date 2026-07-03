@@ -123,7 +123,9 @@ const SearchResults: React.FC<SearchResultsProps> = ({
   onResultClick,
   maxHeight = 400
 }) => {
-  const { searchQuery, searchResults, isSearching } = useSearchStore();
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+  const searchResults = useSearchStore((s) => s.searchResults);
+  const isSearching = useSearchStore((s) => s.isSearching);
 
   // useMemo must be called unconditionally (Rules of Hooks) — before any early returns
   const itemData = useMemo(() => ({

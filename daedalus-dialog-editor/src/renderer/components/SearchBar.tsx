@@ -23,7 +23,9 @@ const SearchBar: React.FC<SearchBarProps> = ({
   debounceMs = 300
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { searchQuery, setSearchQuery, clearSearch } = useSearchStore();
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+  const setSearchQuery = useSearchStore((s) => s.setSearchQuery);
+  const clearSearch = useSearchStore((s) => s.clearSearch);
 
   const debouncedOnSearch = useMemo(
     () => onSearch ? debounce(onSearch, debounceMs) : null,

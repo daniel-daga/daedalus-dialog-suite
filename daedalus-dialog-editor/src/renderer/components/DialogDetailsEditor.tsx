@@ -40,8 +40,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   onDeleteDialog,
   onRenameDialog,
 }) => {
-  const { openFiles, saveFile } = useEditorStore();
-  const fileState = filePath ? openFiles.get(filePath) : null;
+  const fileState = useEditorStore((s) => (filePath ? s.openFiles.get(filePath) ?? null : null));
+  const saveFile = useEditorStore((s) => s.saveFile);
   const semanticModel = fileState?.semanticModel || passedSemanticModel;
 
   const dialog = semanticModel?.dialogs?.[dialogName];
@@ -55,7 +55,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
 
   const canUndo = useHistoryStore((state) => filePath ? state.canUndo(filePath) : false);
   const canRedo = useHistoryStore((state) => filePath ? state.canRedo(filePath) : false);
-  const { undo, redo } = useHistoryStore();
+  const undo = useHistoryStore((s) => s.undo);
+  const redo = useHistoryStore((s) => s.redo);
 
   const uiState = useDialogEditorUIState();
   const { registerActionRef, focusAction, trimRefs } = useFocusNavigation();

@@ -50,12 +50,12 @@ export function useDialogNavigation({
   setOperationError,
   closeRecentDialog,
 }: UseDialogNavigationProps): UseDialogNavigationResult {
-  const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels } = useProjectStore();
-  const { activeFile, openFile } = useEditorStore();
-  const { setSelectedNPC, setSelectedDialog, setSelectedFunctionName } = useUISelectionStore();
   const { navigateToDialog } = useNavigation();
 
   const handleSelectNPC = useCallback(async (npc: string) => {
+    const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels } = useProjectStore.getState();
+    const { setSelectedNPC, setSelectedDialog, setSelectedFunctionName } = useUISelectionStore.getState();
+
     setOperationError(null);
     setSelectedDialog(null);
     setSelectedFunctionName(null);
@@ -81,17 +81,7 @@ export function useDialogNavigation({
       setOperationError(`Failed to load NPC "${npc}": ${message}`);
       throw error;
     }
-  }, [
-    isProjectMode,
-    dialogIndex,
-    selectNpc,
-    getSemanticModel,
-    loadAndMergeNpcModels,
-    setSelectedNPC,
-    setSelectedDialog,
-    setSelectedFunctionName,
-    setOperationError,
-  ]);
+  }, [isProjectMode, setOperationError]);
 
   const navigateToDialogWithLoading = useCallback(async (dialogName: string, functionName?: string | null) => {
     setIsLoadingDialog(true);
@@ -125,6 +115,8 @@ export function useDialogNavigation({
       // In project mode, ensure the file containing this dialog is opened in editorStore
       // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
       if (isProjectMode && selectedNPC) {
+        const { dialogIndex } = useProjectStore.getState();
+        const { activeFile, openFile } = useEditorStore.getState();
         const npcDialogs = dialogIndex.get(selectedNPC);
         const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
         if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
@@ -141,9 +133,6 @@ export function useDialogNavigation({
   }, [
     isProjectMode,
     selectedNPC,
-    dialogIndex,
-    activeFile,
-    openFile,
     finalizeDialogSelection,
     setIsLoadingDialog,
     setOperationError,
@@ -155,17 +144,19 @@ export function useDialogNavigation({
 
     try {
       if (isProjectMode) {
+        const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels } = useProjectStore.getState();
         const dialogMetadata = dialogIndex.get(npcName) || [];
         const metadata = dialogMetadata.find((entry) => entry.dialogName === dialogName);
 
         if (metadata) {
           selectNpc(npcName);
-          setSelectedNPC(npcName);
+          useUISelectionStore.getState().setSelectedNPC(npcName);
 
           const uniqueFilePaths = [...new Set(dialogMetadata.map((entry) => entry.filePath))];
           await Promise.all(uniqueFilePaths.map((path) => getSemanticModel(path)));
           loadAndMergeNpcModels(npcName);
 
+          const { activeFile, openFile } = useEditorStore.getState();
           if (activeFile !== metadata.filePath) {
             await openFile(metadata.filePath);
           }
@@ -187,13 +178,6 @@ export function useDialogNavigation({
     }
   }, [
     isProjectMode,
-    dialogIndex,
-    selectNpc,
-    setSelectedNPC,
-    getSemanticModel,
-    loadAndMergeNpcModels,
-    activeFile,
-    openFile,
     finalizeDialogSelection,
     navigateToDialogWithLoading,
     setIsLoadingDialog,
@@ -209,6 +193,7 @@ export function useDialogNavigation({
     }
 
     if (selectedDialog === dialogName && activeNpcName === npcName) {
+      const { setSelectedDialog, setSelectedFunctionName } = useUISelectionStore.getState();
       setSelectedDialog(null);
       setSelectedFunctionName(null);
       setIsLoadingDialog(false);
@@ -218,8 +203,6 @@ export function useDialogNavigation({
     selectedDialog,
     activeNpcName,
     handleSelectRecentDialog,
-    setSelectedDialog,
-    setSelectedFunctionName,
     setIsLoadingDialog,
   ]);
 

@@ -11,11 +11,14 @@ const mockSetNpcFilter = jest.fn((val) => {
 });
 
 jest.mock('../src/renderer/store/searchStore', () => ({
-  useSearchStore: () => ({
-    npcFilter: mockNpcFilter,
-    setNpcFilter: mockSetNpcFilter,
-    filterNpcs: (npcs: string[]) => npcs.filter(n => n.toLowerCase().includes(mockNpcFilter.toLowerCase())),
-  }),
+  useSearchStore: (selector?: (s: any) => any) => {
+    const state = {
+      npcFilter: mockNpcFilter,
+      setNpcFilter: mockSetNpcFilter,
+      filterNpcs: (npcs: string[]) => npcs.filter(n => n.toLowerCase().includes(mockNpcFilter.toLowerCase())),
+    };
+    return selector ? selector(state) : state;
+  },
 }));
 
 // Mock react-virtualized-auto-sizer

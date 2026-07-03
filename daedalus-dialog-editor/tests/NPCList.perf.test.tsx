@@ -7,11 +7,14 @@ import '@testing-library/jest-dom';
 jest.mock('../src/renderer/store/searchStore', () => {
     let filter = '';
     return {
-        useSearchStore: jest.fn(() => ({
-            npcFilter: filter,
-            setNpcFilter: (f: string) => { filter = f; },
-            filterNpcs: (npcs: string[]) => npcs.filter(n => n.toLowerCase().includes(filter.toLowerCase())),
-        })),
+        useSearchStore: jest.fn((selector?: (s: any) => any) => {
+            const state = {
+                npcFilter: filter,
+                setNpcFilter: (f: string) => { filter = f; },
+                filterNpcs: (npcs: string[]) => npcs.filter(n => n.toLowerCase().includes(filter.toLowerCase())),
+            };
+            return selector ? selector(state) : state;
+        }),
     };
 });
 
