@@ -6,7 +6,11 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent } from '../types/global';
+
+// Captured file-change callback (see onFileChanged). Lets E2E tests inject
+// external change/unlink events through the `__mockEmitFileChange` window hook.
+let mockFileChangeListener: ((event: FileChangeEvent) => void) | null = null;
 
 // Sample semantic model for testing
 const SAMPLE_MODEL = {
@@ -488,11 +492,19 @@ export const mockEditorAPI: EditorAPI = {
     localStorage.setItem('recent_projects', JSON.stringify(newRecent));
   },
 
-  // File Watcher API (no-op in mock/browser mode)
+  // File Watcher API (no-op in mock/browser mode). The change callback is
+  // captured so E2E tests can inject external file-change events via the
+  // `__mockEmitFileChange` window hook (there is no real watcher in the mock).
   async startFileWatcher(): Promise<void> {},
   async stopFileWatcher(): Promise<void> {},
   async notifySelfWrite(): Promise<void> {},
-  onFileChanged(): () => void { return () => {}; },
+  onFileChanged(callback): () => void {
+    mockFileChangeListener = callback;
+    if (typeof window !== 'undefined') {
+      (window as any).__mockEmitFileChange = (event: any) => mockFileChangeListener?.(event);
+    }
+    return () => { mockFileChangeListener = null; };
+  },
 
   async getAppVersion(): Promise<string> {
     return '0.0.0-mock';

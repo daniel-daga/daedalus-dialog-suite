@@ -24,6 +24,7 @@ import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
 import { useFileWatcher } from './hooks/useFileWatcher';
 import MainLayout from './components/MainLayout';
+import ExternalChangeConflictDialog from './components/ExternalChangeConflictDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
@@ -92,10 +93,22 @@ const App: React.FC = () => {
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   useFileWatcher();
 
+  const setActiveFile = useEditorStore((state) => state.setActiveFile);
+
   const activeFileState = activeFile ? openFiles.get(activeFile) : null;
   const autoSaveError = activeFileState?.autoSaveError;
   const saveError = activeFileState?.saveError;
   const activeSourceDirty = activeFileState ? isSourceDirty(activeFileState) : false;
+
+  // Files in external conflict that are not the active file: the active file's
+  // conflict opens the modal dialog; background conflicts surface as an app-bar
+  // chip so they are not lost (E4).
+  const backgroundConflicts = useMemo(
+    () => Array.from(openFiles.values()).filter(
+      (fileState) => fileState.externalConflict && fileState.filePath !== activeFile
+    ),
+    [openFiles, activeFile]
+  );
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [appError, setAppError] = useState<string | null>(null);
@@ -283,6 +296,31 @@ const App: React.FC = () => {
               ) : null}
             </>
           )}
+          {backgroundConflicts.length > 0 && (
+            <Tooltip
+              title={
+                <Box>
+                  <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                    Files changed on disk with unsaved changes:
+                  </Typography>
+                  {backgroundConflicts.map((fileState) => (
+                    <Typography key={fileState.filePath} variant="caption" sx={{ display: 'block' }}>
+                      - {fileState.filePath}
+                    </Typography>
+                  ))}
+                </Box>
+              }
+            >
+              <Chip
+                icon={<ErrorIcon />}
+                color="error"
+                label={`Conflicts: ${backgroundConflicts.length}`}
+                onClick={() => setActiveFile(backgroundConflicts[0].filePath)}
+                sx={{ mr: 2, cursor: 'pointer' }}
+                data-testid="background-conflict-chip"
+              />
+            </Tooltip>
+          )}
           {projectName && (
             <Chip
               icon={<FolderIcon />}
@@ -372,6 +410,8 @@ const App: React.FC = () => {
         open={isIngestedFilesOpen}
         onClose={() => setIngestedFilesOpen(false)}
       />
+
+      <ExternalChangeConflictDialog />
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
         <ErrorBoundary>

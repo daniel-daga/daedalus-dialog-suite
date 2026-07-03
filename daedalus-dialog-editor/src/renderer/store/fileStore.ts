@@ -253,12 +253,16 @@ export interface FileStore {
     updatedFunction: DialogFunction
   ) => void;
   validateFile: (filePath: string) => Promise<ValidationResult>;
-  saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<SaveFileResult>;
+  saveFile: (filePath: string, options?: { forceOnErrors?: boolean; overwriteExternal?: boolean }) => Promise<SaveFileResult>;
   clearPendingValidation: () => void;
   generateCode: (filePath: string) => Promise<string>;
   setWorkingCode: (filePath: string, code: string | undefined) => void;
   adoptWorkingCode: (filePath: string) => Promise<{ ok: boolean; errors?: ParseError[] }>;
   saveSource: (filePath: string, code: string) => Promise<void>;
+  reloadFile: (filePath: string) => Promise<void>;
+  markExternalConflict: (filePath: string, opts?: { fileMissing?: boolean }) => void;
+  resolveExternalConflict: (filePath: string, resolution: 'keepMine' | 'reloadTheirs') => Promise<void>;
+  setActiveFile: (filePath: string) => void;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   setAutoSaveInterval: (interval: number) => void;
@@ -699,11 +703,18 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     return validationResult;
   },
 
-  saveFile: async (filePath: string, options?: { forceOnErrors?: boolean }) => {
+  saveFile: async (filePath: string, options?: { forceOnErrors?: boolean; overwriteExternal?: boolean }) => {
     const state = get();
     const fileState = state.openFiles.get(filePath);
     if (!fileState) {
       throw new Error('File not open');
+    }
+
+    // A file in external conflict must not be silently overwritten (E4). The
+    // save only proceeds with explicit consent (`overwriteExternal`), which the
+    // conflict dialog supplies via `resolveExternalConflict('keepMine')`.
+    if (fileState.externalConflict && !options?.overwriteExternal) {
+      return { success: false };
     }
 
     // Capture the exact model reference being written so edits landing during
@@ -720,7 +731,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         filePath,
         savedModel,
         state.codeSettings,
-        { forceOnErrors: options?.forceOnErrors }
+        { forceOnErrors: options?.forceOnErrors, overwriteExternal: options?.overwriteExternal }
       );
 
       const stillCurrent = get().openFiles.get(filePath)?.semanticModel === savedModel;
@@ -746,6 +757,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         if (currentFileState) {
           currentFileState.lastValidationResult = result.validationResult;
           currentFileState.saveError = undefined;
+          // A successful write reconciles disk with the editor — any external
+          // conflict is now resolved in favour of the editor's content (E4).
+          currentFileState.externalConflict = undefined;
           // Only mark clean if the written model is still the current one;
           // an edit that landed mid-save is not on disk yet.
           if (stillCurrent) {
@@ -761,7 +775,12 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       // Record a classifiable worker failure so the manual-save path surfaces
       // it the same way auto-save does. isDirty is never cleared on failure.
       const saveError = classifySaveError(error);
-      if (saveError) {
+      if (saveError?.kind === 'external-conflict') {
+        // The main-process mtime precondition (E4 phase 2) caught a change that
+        // the watcher had not yet reported. Route it into the same conflict
+        // dialog instead of the generic save-error chip.
+        get().markExternalConflict(filePath);
+      } else if (saveError) {
         set((state) => {
           const currentFileState = state.openFiles.get(filePath);
           if (currentFileState) {
@@ -887,6 +906,93 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       console.error('Failed to save source:', error);
       throw error;
     }
+  },
+
+  /**
+   * Reload a file from disk into its existing FileState slot (E4/N3). Unlike
+   * `openFile`, this never touches `activeFile` and reuses the slot, so an
+   * external change to a background file does not steal the user's focus. Any
+   * external conflict is cleared — the editor now matches disk.
+   */
+  reloadFile: async (filePath: string) => {
+    const sourceCode = await window.editorAPI.readFile(filePath);
+    const processedModel = await parseSourceWithIds(sourceCode);
+
+    set((state) => {
+      const currentFileState = state.openFiles.get(filePath);
+      if (!currentFileState) {
+        return;
+      }
+      currentFileState.semanticModel = processedModel;
+      currentFileState.isDirty = false;
+      currentFileState.lastSaved = new Date();
+      currentFileState.originalCode = sourceCode;
+      currentFileState.workingCode = undefined;
+      currentFileState.hasErrors = processedModel.hasErrors || false;
+      currentFileState.errors = processedModel.errors || [];
+      currentFileState.lastValidationResult = undefined;
+      currentFileState.autoSaveError = undefined;
+      currentFileState.saveError = undefined;
+      currentFileState.externalConflict = undefined;
+      currentFileState.blockedBySourceEdit = undefined;
+    });
+  },
+
+  /**
+   * Record that the file changed on disk while the editor holds unsaved changes
+   * (E4). Auto-save is already gated off conflicted files; the conflict dialog
+   * drives resolution. `fileMissing` marks the external-delete variant (N5).
+   */
+  markExternalConflict: (filePath: string, opts?: { fileMissing?: boolean }) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+      fileState.externalConflict = {
+        detectedAt: new Date().toISOString(),
+        fileMissing: opts?.fileMissing,
+      };
+    });
+  },
+
+  /**
+   * Resolve an external conflict (E4). `keepMine` overwrites disk with the
+   * editor's content; `reloadTheirs` discards the editor's changes — reloading
+   * from disk, or closing the file when it was deleted externally (N5). Both
+   * paths clear the conflict.
+   */
+  resolveExternalConflict: async (filePath: string, resolution: 'keepMine' | 'reloadTheirs') => {
+    const fileState = get().openFiles.get(filePath);
+    if (!fileState) {
+      return;
+    }
+
+    if (resolution === 'keepMine') {
+      await get().saveFile(filePath, { overwriteExternal: true });
+      return;
+    }
+
+    // reloadTheirs: discard local changes.
+    if (fileState.externalConflict?.fileMissing) {
+      // The file is gone — there is nothing to reload; discarding means closing.
+      get().closeFile(filePath);
+      return;
+    }
+    await get().reloadFile(filePath);
+  },
+
+  /**
+   * Focus an already-open file without re-reading it from disk (E4). Used by
+   * the app-bar background-conflict chip to surface a conflicted file's dialog;
+   * unlike `openFile`, it must never reset a dirty/conflicted FileState.
+   */
+  setActiveFile: (filePath: string) => {
+    set((state) => {
+      if (state.openFiles.has(filePath)) {
+        state.activeFile = filePath;
+      }
+    });
   },
 
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => {

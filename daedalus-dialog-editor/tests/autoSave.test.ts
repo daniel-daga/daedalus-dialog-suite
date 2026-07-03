@@ -373,6 +373,31 @@ describe('useAutoSave hook', () => {
     expect(mockSaveFile).not.toHaveBeenCalled();
   });
 
+  test('does not auto-save a file that is in external conflict', async () => {
+    const filePath = 'conflict.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+        externalConflict: { detectedAt: new Date().toISOString() },
+      }]]),
+      activeFile: filePath,
+    });
+
+    renderHook(() => useAutoSave());
+
+    await act(async () => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    expect(mockSaveFile).not.toHaveBeenCalled();
+  });
+
   test('keeps a file dirty when it is edited while a save is in flight', async () => {
     const filePath = 'test.d';
     useEditorStore.setState({
