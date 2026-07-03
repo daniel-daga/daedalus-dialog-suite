@@ -14,8 +14,8 @@ jest.mock('../src/renderer/components/actionRenderers', () => ({
   getActionTypeLabel: () => 'Choice',
 }));
 
-// Mock react-beautiful-dnd to avoid errors
-jest.mock('react-beautiful-dnd', () => ({
+// Mock the dnd library to avoid errors
+jest.mock('@hello-pangea/dnd', () => ({
   DragDropContext: ({ children }: any) => children,
   Droppable: ({ children }: any) => children({ innerRef: () => {}, droppableProps: {}, placeholder: null }),
   Draggable: ({ children }: any) => children({ innerRef: () => {}, draggableProps: {}, dragHandleProps: null }, {}),

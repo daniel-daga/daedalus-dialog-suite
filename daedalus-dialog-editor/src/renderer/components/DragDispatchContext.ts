@@ -8,7 +8,7 @@ export type DragMoveHandler = (sourceIndex: number, destinationIndex: number) =>
 
 /**
  * Registry shared by a single DragDropContext per dialog-editing pane (fix-05
- * §2.5). react-beautiful-dnd forbids nested DragDropContexts, so the top-level
+ * §2.5). The dnd library forbids nested DragDropContexts, so the top-level
  * pane (DialogActionsSection) renders exactly one context and every descendant
  * ActionsList — including nested ConditionalAction branches and InlineChoice
  * sub-lists — registers its per-list move handler here instead of mounting its

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useContext, useMemo, useRef } from 'react';
 import { Stack, Box } from '@mui/material';
-import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import ActionCard from './ActionCard';
 import type { ActionTypeId } from './actionTypes';
 import type { DialogAction, SemanticModel } from '../types/global';
@@ -42,8 +42,10 @@ interface ActionsListProps {
 const IMMEDIATE_RENDER_THRESHOLD = 20;
 const INITIAL_BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 16; // ~1 frame at 60fps
+// Keep identities free of ':' — the dnd library builds internal lookups that
+// can break on a colon inside a draggableId (finding U5). '__' is our safe delimiter.
 const getActionIdentity = (action: DialogAction, fallbackIndex: number): string =>
-  action.type === 'DialogLine' ? action.id : `${action.type}:${fallbackIndex}`;
+  action.type === 'DialogLine' ? action.id : `${action.type}__${fallbackIndex}`;
 
 /**
  * Optimized list component that only re-renders when actions array changes
@@ -120,8 +122,11 @@ const ActionsList = React.memo<ActionsListProps>(({
   // Namespaced droppableId: unique across the single hoisted DragDropContext.
   // The local path disambiguates lists within one function (root vs. conditional
   // branches); the namespace disambiguates across functions (choice sub-lists).
+  // Namespace + path form a globally unique droppableId. The delimiter must be
+  // ':'-free: a colon anywhere in a draggableId (droppableId is its prefix)
+  // can break the dnd library's drag start (finding U5).
   const effectiveNamespace = droppableNamespace ?? dialogContextName;
-  const droppableId = `${effectiveNamespace}:${actionPathToKey(pathPrefix) || 'root'}`;
+  const droppableId = `${effectiveNamespace}__${actionPathToKey(pathPrefix) || 'root'}`;
 
   // Stable per-item identities: disambiguate duplicate DialogLine ids
   // (real mod files repeat AI_Output ids) so React keys and rbd draggableIds

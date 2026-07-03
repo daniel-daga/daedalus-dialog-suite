@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 /**
  * E2E tests for action reordering via drag-and-drop.
- * Uses react-beautiful-dnd drag handles.
+ * Uses @hello-pangea/dnd drag handles.
  * Note: drag-and-drop tests can be flaky; uses slow pointer moves to improve reliability.
  */
 

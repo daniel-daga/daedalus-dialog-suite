@@ -2,7 +2,7 @@
  * Shared type definitions for dialog editing components
  */
 
-import type { DraggableProvidedDragHandleProps } from 'react-beautiful-dnd';
+import type { DraggableProvidedDragHandleProps } from '@hello-pangea/dnd';
 import type {
   Dialog,
   DialogAction,

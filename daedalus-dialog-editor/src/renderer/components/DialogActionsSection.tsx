@@ -10,7 +10,7 @@ import {
 import {
   Add as AddIcon,
 } from '@mui/icons-material';
-import { DragDropContext, DropResult } from 'react-beautiful-dnd';
+import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import ActionsList from './ActionsList';
 import ActionTypeMenu from './common/ActionTypeMenu';
 import { DragDispatchContext } from './DragDispatchContext';

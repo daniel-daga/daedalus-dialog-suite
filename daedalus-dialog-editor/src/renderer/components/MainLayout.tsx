@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
@@ -78,7 +79,15 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
       // Commit any in-flight debounced edit as a normal history step BEFORE the
       // undo/redo, so the first Ctrl+Z reverts the newest keystrokes and a late
       // timer cannot echo a phantom step onto the stack (finding U4).
-      flushAllPendingEdits();
+      //
+      // flushSync forces the flushed edit's render to commit before the undo
+      // runs. Otherwise the flush (model -> edited) and the undo (edited ->
+      // original) collapse into one React batch whose net store change is a
+      // no-op reference, so the edited card never re-renders to drop its stale
+      // local text — the field would keep showing the just-typed value.
+      flushSync(() => {
+        flushAllPendingEdits();
+      });
       if (isUndo) useHistoryStore.getState().undo(activeFilePath);
       if (isRedo) useHistoryStore.getState().redo(activeFilePath);
     };

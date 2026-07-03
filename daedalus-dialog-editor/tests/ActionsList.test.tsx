@@ -33,8 +33,8 @@ describe('ActionsList draggable identity (U5 keys)', () => {
   } as any;
 
   const draggableIds = (container: HTMLElement): string[] =>
-    Array.from(container.querySelectorAll('[data-rbd-draggable-id]')).map(
-      (el) => el.getAttribute('data-rbd-draggable-id') as string
+    Array.from(container.querySelectorAll('[data-rfd-draggable-id]')).map(
+      (el) => el.getAttribute('data-rfd-draggable-id') as string
     );
 
   test('gives duplicate DialogLine ids unique draggableIds and emits no duplicate-key warning', () => {
