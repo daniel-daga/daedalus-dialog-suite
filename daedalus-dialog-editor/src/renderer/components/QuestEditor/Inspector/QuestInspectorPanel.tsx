@@ -4,6 +4,7 @@ import VariableAutocomplete from '../../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../../common/autocompletePolicies';
 import type { DialogCondition } from '../../../types/global';
 import type { QuestGraphEdge, QuestGraphNode } from '../../../types/questGraph';
+import { validateConditionExpressionSyntax } from '../../../quest/domain/commands/conditionExpressionCodec';
 
 interface QuestInspectorPanelProps {
   questName: string;
@@ -43,6 +44,7 @@ interface QuestInspectorPanelProps {
     operator: '==' | '!=';
     negated?: boolean;
   }) => void;
+  onSetConditionExpression: (payload: { nodeId: string; expression: string }) => void;
   commandError: string | null;
   commandBusy: boolean;
 }
@@ -62,6 +64,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   onUpdateTransitionText,
   onRemoveConditionLink,
   onUpdateConditionLink,
+  onSetConditionExpression,
   commandError,
   commandBusy
 }) => {
@@ -74,6 +77,8 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   const [originalEdgeVariable, setOriginalEdgeVariable] = useState('');
   const [originalEdgeValue, setOriginalEdgeValue] = useState('');
   const [transitionText, setTransitionText] = useState('');
+  const [conditionExpressionDraft, setConditionExpressionDraft] = useState('');
+  const [conditionExpressionError, setConditionExpressionError] = useState<string | null>(null);
   const [conditionDraft, setConditionDraft] = useState<{
     variableName: string;
     value: string;
@@ -234,6 +239,18 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
     }
     setTransitionText(String(selectedEdge.label || 'Continue'));
   }, [selectedEdge]);
+
+  const isDialogNode = Boolean(selectedNode?.data.kind === 'dialog');
+
+  useEffect(() => {
+    if (!selectedNode || selectedNode.data.kind !== 'dialog') {
+      setConditionExpressionDraft('');
+      setConditionExpressionError(null);
+      return;
+    }
+    setConditionExpressionDraft(String(selectedNode.data.conditionExpression || ''));
+    setConditionExpressionError(null);
+  }, [selectedNode]);
 
   const hasComplexExpression = Boolean(
     selectedNode?.data.kind === 'condition' &&
@@ -464,6 +481,46 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
               </Alert>
             )}
 
+            {writableEnabled && isDialogNode && (
+              <>
+                <Divider />
+                <Typography variant="subtitle2">Condition expression</Typography>
+                <TextField
+                  size="small"
+                  multiline
+                  minRows={2}
+                  label="Condition expression"
+                  value={conditionExpressionDraft}
+                  onChange={(event) => {
+                    setConditionExpressionDraft(event.target.value);
+                    if (conditionExpressionError) setConditionExpressionError(null);
+                  }}
+                  error={Boolean(conditionExpressionError)}
+                  helperText={conditionExpressionError || 'Use && / || to combine clauses.'}
+                />
+                <Button
+                  variant="contained"
+                  size="small"
+                  data-testid="qi-condition-expression-preview"
+                  disabled={commandBusy || !conditionExpressionDraft.trim()}
+                  onClick={() => {
+                    if (!selectedNode) return;
+                    const validation = validateConditionExpressionSyntax(conditionExpressionDraft);
+                    if (!validation.ok) {
+                      setConditionExpressionError(validation.error);
+                      return;
+                    }
+                    onSetConditionExpression({
+                      nodeId: selectedNode.id,
+                      expression: conditionExpressionDraft.trim()
+                    });
+                  }}
+                >
+                  Preview Diff
+                </Button>
+              </>
+            )}
+
             {writableEnabled && canEditMisState && (
               <>
                 <Divider />
@@ -509,6 +566,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                 <Button
                   variant="contained"
                   size="small"
+                  data-testid="qi-topic-status-preview"
                   disabled={commandBusy || !topicStatus.trim() || !functionName}
                   onClick={() => {
                     if (!functionName) return;

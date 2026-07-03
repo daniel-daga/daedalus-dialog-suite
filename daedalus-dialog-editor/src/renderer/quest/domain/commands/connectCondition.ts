@@ -1,6 +1,6 @@
 import type { DialogAction, DialogCondition } from '../../../types/global';
 import type { ConnectConditionCommand, QuestCommandContext, QuestCommandResult } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 const isMatchingVariableCondition = (
   condition: DialogCondition,
@@ -59,8 +59,6 @@ export const executeConnectConditionCommand = (
       };
     }
 
-    const updatedModel = cloneModel(context.model);
-    const conditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
     const operator = command.operator || '==';
     if (operator !== '==' && operator !== '!=') {
       return {
@@ -72,14 +70,17 @@ export const executeConnectConditionCommand = (
       };
     }
 
-    conditions.push({
-      type: 'VariableCondition',
-      variableName: command.variableName,
-      operator,
-      value: command.value,
-      negated: false
+    const updatedModel = withUpdatedFunction(context.model, command.targetFunctionName, (fn) => {
+      const conditions = [...(fn.conditions || [])];
+      conditions.push({
+        type: 'VariableCondition',
+        variableName: command.variableName!,
+        operator,
+        value: command.value!,
+        negated: false
+      });
+      fn.conditions = conditions;
     });
-    updatedModel.functions[command.targetFunctionName].conditions = conditions;
 
     return {
       ok: true,
@@ -111,16 +112,17 @@ export const executeConnectConditionCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const actions = [...(updatedModel.functions[command.sourceFunctionName].actions || [])];
-  const nextAction: DialogAction = {
-    type: 'Choice',
-    dialogRef: 'self',
-    text: (command.choiceText || 'Continue').trim() || 'Continue',
-    targetFunction: command.targetFunctionName
-  };
-  actions.push(nextAction);
-  updatedModel.functions[command.sourceFunctionName].actions = actions;
+  const updatedModel = withUpdatedFunction(context.model, command.sourceFunctionName, (fn) => {
+    const actions = [...(fn.actions || [])];
+    const nextAction: DialogAction = {
+      type: 'Choice',
+      dialogRef: 'self',
+      text: (command.choiceText || 'Continue').trim() || 'Continue',
+      targetFunction: command.targetFunctionName
+    };
+    actions.push(nextAction);
+    fn.actions = actions;
+  });
 
   return {
     ok: true,

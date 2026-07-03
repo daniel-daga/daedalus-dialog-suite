@@ -1,5 +1,4 @@
 import type { MoveNodeCommand, QuestCommandContext, QuestCommandResult } from './types';
-import { cloneModel } from './shared';
 
 export const executeMoveNodeCommand = (
   context: QuestCommandContext,
@@ -25,9 +24,10 @@ export const executeMoveNodeCommand = (
     };
   }
 
-  // moveNode is a graph-layout command; semantic model content is unchanged.
-  const updatedModel = cloneModel(context.model);
-  const functionExists = !!updatedModel.functions?.[command.nodeId];
+  // moveNode is a graph-layout command; semantic model content is unchanged, so
+  // the model is returned by reference (its result model is discarded by the
+  // position-only history path in QuestFlow).
+  const functionExists = !!context.model.functions?.[command.nodeId];
 
   if (!functionExists && !command.nodeId.startsWith('external-')) {
     return {
@@ -41,7 +41,7 @@ export const executeMoveNodeCommand = (
 
   return {
     ok: true,
-    updatedModel,
+    updatedModel: context.model,
     affectedFunctionNames: functionExists ? [command.nodeId] : []
   };
 };

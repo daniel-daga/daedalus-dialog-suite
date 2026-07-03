@@ -30,9 +30,21 @@ export interface EditHistoryState {
   future: EditSnapshot[];
 }
 
+/**
+ * One file's participation in a quest batch. Records the exact snapshot object
+ * that was pushed onto (or created for) the file's edit history, so batch
+ * undo/redo can verify — by reference identity — that no newer edit has landed
+ * on top before reverting. Snapshots are immutable-by-reference (see
+ * EditSnapshot), which makes `===` a sound staleness check.
+ */
+export interface QuestBatchEntry {
+  filePath: string;
+  snapshot: EditSnapshot;
+}
+
 export interface QuestBatchHistoryState {
-  past: string[][];
-  future: string[][];
+  past: QuestBatchEntry[][];
+  future: QuestBatchEntry[][];
 }
 
 export const normalizeBatchFilePaths = (filePaths: string[]): string[] => (

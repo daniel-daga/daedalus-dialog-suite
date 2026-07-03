@@ -1,6 +1,6 @@
 import type { DialogCondition } from '../../../types/global';
 import type { AddKnowsInfoRequirementCommand, QuestCommandContext, QuestCommandResult } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 const isMatchingKnowsInfoCondition = (
   condition: DialogCondition,
@@ -46,19 +46,20 @@ export const executeAddKnowsInfoRequirementCommand = (
   if (existing) {
     return {
       ok: true,
-      updatedModel: cloneModel(context.model),
+      updatedModel: context.model,
       affectedFunctionNames: [command.targetFunctionName]
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const conditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
-  conditions.push({
-    type: 'NpcKnowsInfoCondition',
-    npc,
-    dialogRef
+  const updatedModel = withUpdatedFunction(context.model, command.targetFunctionName, (fn) => {
+    const conditions = [...(fn.conditions || [])];
+    conditions.push({
+      type: 'NpcKnowsInfoCondition',
+      npc,
+      dialogRef
+    });
+    fn.conditions = conditions;
   });
-  updatedModel.functions[command.targetFunctionName].conditions = conditions;
 
   return {
     ok: true,

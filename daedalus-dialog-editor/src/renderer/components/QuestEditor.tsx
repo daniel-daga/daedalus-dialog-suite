@@ -18,10 +18,10 @@ interface QuestEditorProps {
 const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnabled = true }) => {
   const [viewMode, setViewMode] = useState<'details' | 'flow'>('details');
 
-  const { getQuestUsage, isIngesting, parsedFiles, projectPath } = useProjectStore((state) => ({
+  const { getQuestUsage, isIngesting, parseGeneration, projectPath } = useProjectStore((state) => ({
       getQuestUsage: state.getQuestUsage,
       isIngesting: state.isIngesting,
-      parsedFiles: state.parsedFiles,
+      parseGeneration: state.parseGeneration,
       projectPath: state.projectPath
   }), shallow);
   const { selectedQuest, setSelectedQuest } = useUISelectionStore((state) => ({
@@ -30,6 +30,12 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnable
   }), shallow);
 
   const isProjectMode = !!projectPath;
+
+  // While a background ingestion is in flight, freeze the recompute token so the
+  // per-file `parseGeneration` bumps do not re-run `getQuestUsage` (which scans
+  // every parsed file). When ingestion ends the token flips to the live
+  // generation, triggering exactly one recomputation against the full model set.
+  const recomputeToken = isIngesting ? -1 : parseGeneration;
 
   // Use global project analysis when in project mode, otherwise fall back to provided model
   const activeModel = useMemo(() => {
@@ -40,7 +46,8 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnable
       }
 
       return semanticModel;
-  }, [selectedQuest, isProjectMode, parsedFiles, getQuestUsage, semanticModel]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedQuest, isProjectMode, recomputeToken, getQuestUsage, semanticModel]);
 
   return (
     <Box sx={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>

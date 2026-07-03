@@ -6,6 +6,13 @@ import NodeEditorPlayground from './NodeEditorPlayground';
 import { themes, THEME_STORAGE_KEY, ThemeMode } from './theme';
 import { ThemeModeContext } from './themeContext';
 
+// Match main.tsx: expose the quest-graph debug surface in the dev/test node-editor
+// playground so the manual smoke pass can inspect viewport/render counters.
+const viteEnv = (import.meta as unknown as { env?: { DEV?: boolean; MODE?: string } }).env;
+if (viteEnv?.DEV || viteEnv?.MODE === 'test') {
+  (window as unknown as { __questGraphDebugEnabled?: boolean }).__questGraphDebugEnabled = true;
+}
+
 const getInitialTheme = (): ThemeMode => {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
   if (stored === 'light' || stored === 'dark' || stored === 'gothic') {

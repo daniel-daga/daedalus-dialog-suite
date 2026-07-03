@@ -68,10 +68,10 @@ const formatDiffPreviewSource = (
 
 const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writableEnabled = true }) => {
   const { navigateToDialog, navigateToSymbol } = useNavigation();
-  const { projectPath, parsedFiles } = useProjectStore((state) => ({
-    projectPath: state.projectPath,
-    parsedFiles: state.parsedFiles
-  }), shallow);
+  // Only `projectPath` drives rendering here. `parsedFiles` is read imperatively
+  // inside `resolveFilePathForFunction` (see below) so that its per-file identity
+  // churn during background ingestion does not re-render the quest flow (PF3).
+  const projectPath = useProjectStore((state) => state.projectPath);
   const { activeFile, getFileState, openFile, codeSettings } = useFileStore((state) => ({
     activeFile: state.activeFile,
     getFileState: state.getFileState,
@@ -227,6 +227,9 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
       }
     }
 
+    // Read the parsed-file cache imperatively so ingestion churn never re-renders
+    // this component (PF3), mirroring the existing useFileStore.getState() pattern.
+    const parsedFiles = useProjectStore.getState().parsedFiles;
     const matches = Array.from(parsedFiles.entries())
       .filter(([, cache]) => Boolean(cache.semanticModel.functions?.[functionName]))
       .map(([filePath]) => filePath);
@@ -251,7 +254,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
 
     setCommandError(`Function "${functionName}" was not found in loaded files.`);
     return null;
-  }, [activeFile, getFileState, openFile, parsedFiles]);
+  }, [activeFile, getFileState, openFile]);
 
   const preparePendingPreview = useCallback(async (
     updates: Array<{ filePath: string; updatedModel: SemanticModel }>
@@ -664,16 +667,34 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   }, [runQuestCommandWithPreview]);
 
   const handleApplyDiff = useCallback(() => {
-    if (!pendingPreview) return;
-    applyQuestModelsWithHistory(
-      pendingPreview.updates.map((entry) => ({
-        filePath: entry.filePath,
-        model: entry.updatedModel
-      }))
-    );
+    if (!pendingPreview || !questName) return;
+    const result = QuestEditingService.applyQuestUpdates(questName, pendingPreview.updates, {
+      getCurrentModel: (filePath) => useFileStore.getState().getFileState(filePath)?.semanticModel ?? null,
+      applyQuestModelsWithHistory
+    });
+    if (!result.ok) {
+      setCommandError(
+        `Apply blocked to protect quest guardrails: ${result.blockingWarnings.map((warning) => warning.message).join(' ')}`
+      );
+      setPendingPreview(null);
+      return;
+    }
     setPendingPreview(null);
     refreshGraph();
-  }, [pendingPreview, applyQuestModelsWithHistory, refreshGraph]);
+  }, [pendingPreview, questName, applyQuestModelsWithHistory, refreshGraph]);
+
+  // Test-only seam (dev/test builds only, same gate as window.__questGraphDebug):
+  // exposes the REAL apply handler so E2E can exercise the apply-time guardrail refusal
+  // without fighting React's disabled-button event filtering. Not present in production.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as { __questGraphDebugEnabled?: boolean; __questApplyDiff?: () => void };
+    if (!w.__questGraphDebugEnabled) return;
+    w.__questApplyDiff = handleApplyDiff;
+    return () => {
+      if (w.__questApplyDiff === handleApplyDiff) delete w.__questApplyDiff;
+    };
+  }, [handleApplyDiff]);
 
   const canUndo = canUndoLastQuestBatch();
   const canRedo = canRedoLastQuestBatch();
@@ -700,7 +721,10 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
               startIcon={<UndoIcon fontSize="small" />}
               disabled={!writableEnabled || !canUndo}
               onClick={() => {
-                undoLastQuestBatch();
+                const result = undoLastQuestBatch();
+                if (result && !result.ok && result.message) {
+                  setCommandError(result.message);
+                }
                 refreshGraph();
               }}
             >
@@ -711,7 +735,10 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
               startIcon={<RedoIcon fontSize="small" />}
               disabled={!writableEnabled || !canRedo}
               onClick={() => {
-                redoLastQuestBatch();
+                const result = redoLastQuestBatch();
+                if (result && !result.ok && result.message) {
+                  setCommandError(result.message);
+                }
                 refreshGraph();
               }}
             >
@@ -754,12 +781,12 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
             nodes={nodes}
             edges={edges}
             selectedNodeId={selectedNodeId}
+            selectedEdgeId={selectedEdgeId}
             onNodeClick={onNodeClick}
             onNodeDoubleClick={onNodeDoubleClick}
             onEdgeClick={onEdgeClick}
             onNodeMove={handleLiteGraphNodeMove}
             onPaneClick={handlePaneClick}
-            onSetConditionExpression={handleSetConditionExpression}
           />
         </Box>
       </Box>
@@ -779,6 +806,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         onUpdateTransitionText={handleUpdateTransitionText}
         onRemoveConditionLink={handleRemoveConditionLink}
         onUpdateConditionLink={handleUpdateConditionLink}
+        onSetConditionExpression={handleSetConditionExpression}
         commandError={commandError}
         commandBusy={commandBusy || !writableEnabled}
       />
