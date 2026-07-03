@@ -774,7 +774,6 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
             onEdgeClick={onEdgeClick}
             onNodeMove={handleLiteGraphNodeMove}
             onPaneClick={handlePaneClick}
-            onSetConditionExpression={handleSetConditionExpression}
           />
         </Box>
       </Box>
@@ -794,6 +793,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
         onUpdateTransitionText={handleUpdateTransitionText}
         onRemoveConditionLink={handleRemoveConditionLink}
         onUpdateConditionLink={handleUpdateConditionLink}
+        onSetConditionExpression={handleSetConditionExpression}
         commandError={commandError}
         commandBusy={commandBusy || !writableEnabled}
       />

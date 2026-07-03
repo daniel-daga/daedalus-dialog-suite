@@ -107,7 +107,6 @@ const renderCanvas = (overrides: RenderOverrides = {}) => {
       onEdgeClick={onEdgeClick}
       onNodeMove={jest.fn()}
       onPaneClick={onPaneClick}
-      onSetConditionExpression={jest.fn()}
     />
   );
   const graphCanvas = LGraphCanvasMock.mock.instances[

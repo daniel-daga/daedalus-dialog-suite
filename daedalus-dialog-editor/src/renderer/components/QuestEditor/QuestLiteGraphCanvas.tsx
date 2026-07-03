@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import React, { useEffect, useRef } from 'react';
+import { Box } from '@mui/material';
 import { LGraph, LGraphCanvas, LGraphNode } from 'litegraph.js';
 import type { QuestGraphConditionType, QuestGraphEdge, QuestGraphNode } from '../../types/questGraph';
-import { validateConditionExpressionSyntax } from '../../quest/domain/commands/conditionExpressionCodec';
 
 interface QuestLiteGraphCanvasProps {
   nodes: QuestGraphNode[];
@@ -19,7 +18,6 @@ interface QuestLiteGraphCanvasProps {
     ownerFilePath?: string
   ) => void;
   onPaneClick: () => void;
-  onSetConditionExpression?: (payload: { nodeId: string; expression: string }) => void;
 }
 
 type VisibleLink = { id: number; _pos?: [number, number] };
@@ -151,10 +149,6 @@ const attachConditionPreviewRenderer = (
   };
 };
 
-const isJsdomEnvironment = (): boolean => (
-  typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')
-);
-
 const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   nodes,
   edges,
@@ -164,8 +158,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   onNodeDoubleClick,
   onEdgeClick,
   onNodeMove,
-  onPaneClick,
-  onSetConditionExpression
+  onPaneClick
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -174,17 +167,13 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const nodeMapRef = useRef<Map<string, QuestGraphNode>>(new Map());
   const questIdToRuntimeNodeRef = useRef<Map<string, LGraphNode>>(new Map());
   const linkIdToEdgeRef = useRef<Map<number, QuestGraphEdge>>(new Map());
-  const [expressionEditorNodeId, setExpressionEditorNodeId] = useState<string | null>(null);
-  const [expressionEditorDraft, setExpressionEditorDraft] = useState('');
-  const [expressionEditorError, setExpressionEditorError] = useState<string | null>(null);
 
   const callbacksRef = useRef({
     onNodeClick,
     onNodeDoubleClick,
     onEdgeClick,
     onNodeMove,
-    onPaneClick,
-    onSetConditionExpression
+    onPaneClick
   });
 
   useEffect(() => {
@@ -193,8 +182,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       onNodeDoubleClick,
       onEdgeClick,
       onNodeMove,
-      onPaneClick,
-      onSetConditionExpression
+      onPaneClick
     };
   });
 
@@ -487,22 +475,38 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             ? '#2c6936'
             : '#2d4f7c';
       const runtimeNodeAny = runtimeNode as any;
-      if (!isJsdomEnvironment()) {
-        if (node.type === 'condition' && typeof node.data?.expression === 'string') {
-          const expressionPreviewSource = String(node.data.expression || '').trim();
-          if (expressionPreviewSource.length > 0) {
-            runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_PANEL_MIN_WIDTH);
-            runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_PANEL_MIN_HEIGHT);
-            attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource, { chipLabel: 'IF' });
-          }
+      if (node.type === 'condition' && typeof node.data?.expression === 'string') {
+        const expressionPreviewSource = String(node.data.expression || '').trim();
+        if (expressionPreviewSource.length > 0) {
+          runtimeNodeAny.size[0] = Math.max(runtimeNodeAny.size[0], CONDITION_PANEL_MIN_WIDTH);
+          runtimeNodeAny.size[1] = Math.max(runtimeNodeAny.size[1], CONDITION_PANEL_MIN_HEIGHT);
+          attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource, { chipLabel: 'IF' });
         }
+      }
 
-        if (node.type === 'dialog') {
-          const expressionPreviewSource = String(node.data?.conditionExpression || '').trim() || 'No condition expression.';
-          const inputCount = Array.isArray(runtimeNode.inputs) ? runtimeNode.inputs.length : 0;
-          const panelY = Math.max(52, 34 + Math.max(0, inputCount) * 18);
-          attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource, { panelY, chipLabel: 'IF' });
-        }
+      if (node.type === 'dialog') {
+        const expressionPreviewSource = String(node.data?.conditionExpression || '').trim() || 'No condition expression.';
+        const inputCount = Array.isArray(runtimeNode.inputs) ? runtimeNode.inputs.length : 0;
+        const panelY = Math.max(52, 34 + Math.max(0, inputCount) * 18);
+        attachConditionPreviewRenderer(runtimeNode, expressionPreviewSource, { panelY, chipLabel: 'IF' });
+
+        // Clicking the painted IF chip selects the node (opening the inspector's condition
+        // expression editor) and blocks node-drag for that click. Geometry mirrors
+        // attachConditionPreviewRenderer: panelX=10, panelHeight=40, width = size-20.
+        const panelWidth = Math.max(120, (runtimeNodeAny.size?.[0] ?? 220) - 20);
+        const questNode = node;
+        runtimeNodeAny.onMouseDown = (_event: MouseEvent, pos?: [number, number]) => {
+          if (!Array.isArray(pos)) return false;
+          const [localX, localY] = pos;
+          if (
+            localX >= 10 && localX <= 10 + panelWidth &&
+            localY >= panelY && localY <= panelY + 40
+          ) {
+            callbacksRef.current.onNodeClick({ preventDefault: () => undefined } as React.MouseEvent, questNode);
+            return true;
+          }
+          return false;
+        };
       }
       graph.add(runtimeNode);
       runtimeNodes.set(node.id, runtimeNode);
@@ -559,208 +563,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     graphCanvasRef.current?.setDirty(true, true);
   }, [selectedEdgeId]);
 
-  const conditionCapsuleNodes = useMemo(() => (
-    nodes.filter((node) => node.type === 'dialog')
-  ), [nodes]);
-
-  const conditionDetailNodes = useMemo(() => (
-    nodes.filter((node) => (
-      node.type === 'condition' &&
-      typeof node.data.expression === 'string' &&
-      node.data.expression.trim().length > 0
-    ))
-  ), [nodes]);
-
-  const getOverlayPosition = (
-    node: QuestGraphNode,
-    offset: { x: number; y: number }
-  ): { left: number; top: number } => {
-    const runtimeNode = questIdToRuntimeNodeRef.current.get(node.id);
-    const baseX = runtimeNode?.pos?.[0] ?? node.position.x;
-    const baseY = runtimeNode?.pos?.[1] ?? node.position.y;
-
-    const graphCanvas = graphCanvasRef.current;
-    const scale = graphCanvas?.ds?.scale ?? 1;
-    const offsetX = graphCanvas?.ds?.offset?.[0] ?? 0;
-    const offsetY = graphCanvas?.ds?.offset?.[1] ?? 0;
-
-    return {
-      left: baseX * scale + offsetX + offset.x,
-      top: baseY * scale + offsetY + offset.y
-    };
-  };
-
-  const closeExpressionEditor = () => {
-    setExpressionEditorNodeId(null);
-    setExpressionEditorDraft('');
-    setExpressionEditorError(null);
-  };
-
-  const openExpressionEditor = (node: QuestGraphNode) => {
-    setExpressionEditorNodeId(node.id);
-    setExpressionEditorDraft(String(node.data.conditionExpression || ''));
-    setExpressionEditorError(null);
-  };
-
-  const applyExpressionEditor = () => {
-    if (!expressionEditorNodeId) return;
-    const validation = validateConditionExpressionSyntax(expressionEditorDraft);
-    if (!validation.ok) {
-      setExpressionEditorError(validation.error);
-      return;
-    }
-
-    onSetConditionExpression?.({
-      nodeId: expressionEditorNodeId,
-      expression: expressionEditorDraft.trim()
-    });
-    closeExpressionEditor();
-  };
-
   return (
     <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
-
-            {isJsdomEnvironment() && conditionCapsuleNodes.map((node) => {
-        const rawExpression = String(node.data.conditionExpression || '').trim();
-        const preview = rawExpression.length > 0
-          ? truncateExpressionPreview(rawExpression)
-          : 'No condition expression.';
-        const runtimeNode = questIdToRuntimeNodeRef.current.get(node.id);
-        const inputCount = Array.isArray(runtimeNode?.inputs) ? runtimeNode.inputs.length : Number(node.data.conditionCount || 0);
-        const bodyOffsetY = Math.max(46, 30 + Math.max(0, inputCount) * 18);
-        const chipPosition = getOverlayPosition(node, { x: 8, y: 8 });
-        const bodyPosition = getOverlayPosition(node, { x: 8, y: bodyOffsetY });
-        const bodyWidth = Math.max(188, (runtimeNode?.size?.[0] ?? 220) - 16);
-        const isEditing = expressionEditorNodeId === node.id;
-
-        return (
-          <React.Fragment key={`condition-node-body-${node.id}`}>
-            <Button
-              variant="contained"
-              size="small"
-              onClick={() => openExpressionEditor(node)}
-              sx={{
-                position: 'absolute',
-                left: `${chipPosition.left}px`,
-                top: `${chipPosition.top}px`,
-                minWidth: 0,
-                px: 0.8,
-                py: 0.25,
-                fontSize: '0.65rem',
-                lineHeight: 1.1,
-                textTransform: 'none',
-                bgcolor: '#ffb74d',
-                color: '#1a1a1a',
-                borderRadius: 1,
-                zIndex: 5,
-                pointerEvents: 'auto',
-                '&:hover': {
-                  bgcolor: '#ffcc80'
-                }
-              }}
-              aria-label={['IF: ', preview].join('')}
-            >
-              IF
-            </Button>
-
-            <Paper
-              data-testid={`condition-inline-body-${node.id}`}
-              sx={{
-                position: 'absolute',
-                left: `${bodyPosition.left}px`,
-                top: `${bodyPosition.top}px`,
-                p: 0.75,
-                width: bodyWidth,
-                maxWidth: '70vw',
-                zIndex: 6,
-                pointerEvents: 'auto',
-                backgroundColor: '#212121',
-                border: '1px solid #3a3a3a'
-              }}
-            >
-              {isEditing ? (
-                <Stack spacing={1} data-testid="condition-inline-editor">
-                  <Typography variant="caption" sx={{ color: '#ffcc80', fontWeight: 700 }}>
-                    Condition
-                  </Typography>
-                  <TextField
-                    multiline
-                    minRows={2}
-                    maxRows={6}
-                    label="Condition expression"
-                    value={expressionEditorDraft}
-                    onChange={(event) => {
-                      setExpressionEditorDraft(event.target.value);
-                      if (expressionEditorError) setExpressionEditorError(null);
-                    }}
-                    error={Boolean(expressionEditorError)}
-                    helperText={expressionEditorError || 'Use && for simple clauses.'}
-                    fullWidth
-                    size="small"
-                  />
-                  <Stack direction="row" spacing={1} justifyContent="flex-end">
-                    <Button size="small" onClick={closeExpressionEditor}>Cancel</Button>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      onClick={applyExpressionEditor}
-                      disabled={!expressionEditorNodeId || !expressionEditorDraft.trim() || !onSetConditionExpression}
-                    >
-                      Apply Expression
-                    </Button>
-                  </Stack>
-                </Stack>
-              ) : (
-                <Stack spacing={0.6}>
-                  <Typography variant="caption" sx={{ color: '#ffcc80', fontWeight: 700 }}>
-                    Condition
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#d0d0d0', lineHeight: 1.2 }}>
-                    {preview}
-                  </Typography>
-                  <Stack direction="row" justifyContent="flex-end">
-                    <Button size="small" onClick={() => openExpressionEditor(node)}>Edit</Button>
-                  </Stack>
-                </Stack>
-              )}
-            </Paper>
-          </React.Fragment>
-        );
-      })}
-
-      {isJsdomEnvironment() && conditionDetailNodes.map((node) => {
-        const expression = truncateExpressionPreview(String(node.data.expression || '').trim());
-        const bodyPosition = getOverlayPosition(node, { x: 8, y: 28 });
-
-        return (
-          <Paper
-            key={`condition-readonly-${node.id}`}
-            data-testid={`condition-readonly-body-${node.id}`}
-            sx={{
-              position: 'absolute',
-              left: `${bodyPosition.left}px`,
-              top: `${bodyPosition.top}px`,
-              p: 0.75,
-              width: 204,
-              maxWidth: '70vw',
-              zIndex: 6,
-              pointerEvents: 'none',
-              backgroundColor: '#1f1f1f',
-              border: '1px solid #3a3a3a'
-            }}
-          >
-            <Stack spacing={0.6}>
-              <Typography variant="caption" sx={{ color: "#9ecbff", fontWeight: 700 }}>
-                Condition
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#d0d0d0", lineHeight: 1.2 }}>
-                {expression}
-              </Typography>
-            </Stack>
-          </Paper>
-        );
-      })}
     </Box>
   );
 };

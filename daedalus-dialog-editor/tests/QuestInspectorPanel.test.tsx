@@ -51,9 +51,22 @@ const baseProps = {
   onUpdateTransitionText: jest.fn(),
   onRemoveConditionLink: jest.fn(),
   onUpdateConditionLink: jest.fn(),
+  onSetConditionExpression: jest.fn(),
   commandError: null,
   commandBusy: false
 };
+
+const createDialogNode = () => ({
+  id: 'DIA_Target_Info',
+  position: { x: 0, y: 0 },
+  type: 'dialog' as const,
+  data: {
+    kind: 'dialog' as const,
+    label: 'DIA_Target',
+    npc: 'NPC_Target',
+    conditionExpression: 'MIS_TEST == LOG_RUNNING'
+  }
+});
 
 describe('QuestInspectorPanel requires edge editing', () => {
   beforeEach(() => {
@@ -207,6 +220,57 @@ describe('QuestInspectorPanel requires edge editing', () => {
       value: 'LOG_RUNNING',
       operator: '=='
     });
+  });
+
+  it('seeds the condition expression field from the selected dialog node', () => {
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedNode={createDialogNode()}
+        selectedEdge={null}
+      />
+    );
+
+    expect(screen.getByLabelText('Condition expression')).toHaveValue('MIS_TEST == LOG_RUNNING');
+  });
+
+  it('submits a valid condition expression trimmed through onSetConditionExpression', () => {
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedNode={createDialogNode()}
+        selectedEdge={null}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Condition expression'), {
+      target: { value: '  MIS_TEST == LOG_SUCCESS  ' }
+    });
+    fireEvent.click(screen.getByText('Preview Diff'));
+
+    expect(baseProps.onSetConditionExpression).toHaveBeenCalledTimes(1);
+    expect(baseProps.onSetConditionExpression).toHaveBeenCalledWith({
+      nodeId: 'DIA_Target_Info',
+      expression: 'MIS_TEST == LOG_SUCCESS'
+    });
+  });
+
+  it('shows a codec error and does not call onSetConditionExpression for invalid input', () => {
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedNode={createDialogNode()}
+        selectedEdge={null}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Condition expression'), {
+      target: { value: 'MIS_TEST ==' }
+    });
+    fireEvent.click(screen.getByText('Preview Diff'));
+
+    expect(baseProps.onSetConditionExpression).not.toHaveBeenCalled();
+    expect(screen.getByText('Invalid comparison clause in condition expression.')).toBeInTheDocument();
   });
 
   it('shows read-only message for range requires expressions', () => {

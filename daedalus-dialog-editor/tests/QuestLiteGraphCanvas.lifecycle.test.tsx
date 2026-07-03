@@ -88,7 +88,6 @@ const renderCanvas = (
     onEdgeClick={jest.fn()}
     onNodeMove={jest.fn()}
     onPaneClick={jest.fn()}
-    onSetConditionExpression={jest.fn()}
     {...overrides}
   />
 );
@@ -134,7 +133,6 @@ describe('QuestLiteGraphCanvas lifecycle', () => {
           onEdgeClick={jest.fn()}
           onNodeMove={jest.fn()}
           onPaneClick={jest.fn()}
-          onSetConditionExpression={jest.fn()}
         />
       );
     }
