@@ -664,16 +664,21 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
   }, [runQuestCommandWithPreview]);
 
   const handleApplyDiff = useCallback(() => {
-    if (!pendingPreview) return;
-    applyQuestModelsWithHistory(
-      pendingPreview.updates.map((entry) => ({
-        filePath: entry.filePath,
-        model: entry.updatedModel
-      }))
-    );
+    if (!pendingPreview || !questName) return;
+    const result = QuestEditingService.applyQuestUpdates(questName, pendingPreview.updates, {
+      getCurrentModel: (filePath) => useFileStore.getState().getFileState(filePath)?.semanticModel ?? null,
+      applyQuestModelsWithHistory
+    });
+    if (!result.ok) {
+      setCommandError(
+        `Apply blocked to protect quest guardrails: ${result.blockingWarnings.map((warning) => warning.message).join(' ')}`
+      );
+      setPendingPreview(null);
+      return;
+    }
     setPendingPreview(null);
     refreshGraph();
-  }, [pendingPreview, applyQuestModelsWithHistory, refreshGraph]);
+  }, [pendingPreview, questName, applyQuestModelsWithHistory, refreshGraph]);
 
   const canUndo = canUndoLastQuestBatch();
   const canRedo = canRedoLastQuestBatch();

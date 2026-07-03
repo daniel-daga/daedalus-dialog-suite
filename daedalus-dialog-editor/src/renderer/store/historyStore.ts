@@ -262,6 +262,10 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
     get().applyQuestModelsWithHistory([{ filePath, model }]);
   },
 
+  // Raw, validation-free primitive: pushes history snapshots and swaps in the new models
+  // with no guardrail checks. Quest UI must NOT call this directly — route edits through
+  // QuestEditingService.applyQuestUpdates, which recomputes guardrail deltas against
+  // apply-time fileStore state and refuses blocking changes before delegating here.
   applyQuestModelsWithHistory: (updates: Array<{ filePath: string; model: SemanticModel }>) => {
     if (!updates.length) return;
 
