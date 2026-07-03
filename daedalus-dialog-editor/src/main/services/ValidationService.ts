@@ -165,9 +165,22 @@ export class ValidationService {
     // Normalize the model to ensure all types are present
     const semanticModel = deserializeSemanticModel(model);
 
+    // Pre-check: a model opened with parse errors is a partial parse that no
+    // editor mutation can make whole. Saving it drops the unreadable content,
+    // so surface it as an error (the forced-save path turns this into informed
+    // consent). Generation below uses allowPartialModel so we report the real
+    // problems instead of the fix-01 P7 hard throw.
+    if (semanticModel.hasErrors) {
+      const parseErrorCount = semanticModel.errors?.length ?? 0;
+      errors.push({
+        type: 'syntax_error',
+        message: `File was opened with ${parseErrorCount} parse error(s); saving from the visual editor will drop the content the parser could not read.`
+      });
+    }
+
     // Step 1: Generate code
     try {
-      generatedCode = this.codeGeneratorService.generateCode(semanticModel, settings);
+      generatedCode = this.codeGeneratorService.generateCode(semanticModel, settings, { allowPartialModel: true });
     } catch (error) {
       errors.push({
         type: 'syntax_error',

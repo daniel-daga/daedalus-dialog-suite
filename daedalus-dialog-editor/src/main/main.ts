@@ -156,8 +156,8 @@ function setupIpcHandlers() {
       }
 
       // Fallback: generate code directly (only if validation skipped or didn't provide code)
-      const code = codeGeneratorService.generateCode(model, settings);
-      
+      const code = codeGeneratorService.generateCode(model, settings, { allowPartialModel: options?.forceOnErrors === true });
+
       // Final sanity check for generated code - ALWAYS run this if we are falling back
       const syntaxResult = await parserService.parseSource(code);
       if (syntaxResult.hasErrors && !options?.forceOnErrors) {

@@ -65,6 +65,11 @@ const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
   const hasCriticalErrors = errors.some(e =>
     e.type === 'syntax_error' || e.type === 'circular_dependency'
   );
+  // The E3 parse-loss entry means the model was opened with parse errors;
+  // forcing the save drops the content the parser could not read.
+  const hasParseLossWarning = errors.some(
+    (e) => e.type === 'syntax_error' && /opened with \d+ parse error/i.test(e.message)
+  );
 
   return (
     <Dialog
@@ -166,7 +171,7 @@ const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
           color="warning"
           variant="outlined"
         >
-          Save Anyway
+          {hasParseLossWarning ? 'Save anyway (drops unparsed content)' : 'Save Anyway'}
         </Button>
       </DialogActions>
     </Dialog>

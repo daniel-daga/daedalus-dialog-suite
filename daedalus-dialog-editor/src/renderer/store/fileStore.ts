@@ -121,6 +121,13 @@ export interface FileState {
   lastSaved: Date;
   originalCode?: string;
   workingCode?: string; // Current code in source editor (may differ from semanticModel or originalCode)
+  /**
+   * Parse-state mirror of `semanticModel.hasErrors`: true when the file was
+   * opened / re-parsed into a partial model. Set only where a fresh parse lands
+   * (openFile, saveSource, adoptWorkingCode) — never cleared by model
+   * mutations. `semanticModel.hasErrors` is authoritative; this exists for
+   * cheap selector access.
+   */
   hasErrors?: boolean;
   errors?: ParseError[];
   lastValidationResult?: ValidationResult;
@@ -131,6 +138,12 @@ export interface FileState {
    * the next successful save or on a subsequent edit.
    */
   saveError?: SaveError;
+  /**
+   * Set when the file changed on disk while the editor holds unsaved changes
+   * (E4). Type-only for now — the actions/watcher wiring land in a later slice;
+   * the auto-save gate already excludes conflicted files.
+   */
+  externalConflict?: { detectedAt: string; fileMissing?: boolean };
 }
 
 interface EditorProject {
@@ -287,7 +300,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         fileState.isDirty = true;
         fileState.workingCode = undefined;
         fileState.autoSaveError = undefined;
-        fileState.hasErrors = false;
       }
     });
   },
@@ -303,7 +315,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -329,7 +340,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -366,7 +376,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -392,7 +401,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -417,7 +425,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -459,7 +466,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -570,7 +576,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -605,7 +610,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -813,7 +817,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         fileState.isDirty = true;
         fileState.workingCode = undefined;
         fileState.autoSaveError = undefined;
-        fileState.hasErrors = false;
       }
     });
   },

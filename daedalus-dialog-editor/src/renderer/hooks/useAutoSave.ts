@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useEditorStore } from '../store/editorStore';
+import { useEditorStore, type FileState } from '../store/editorStore';
 import { classifySaveError, type SaveError } from '../utils/saveError';
 
 interface AutoSaveStatus {
   isAutoSaving: boolean;
   lastAutoSaveTime: Date | null;
+}
+
+/**
+ * Auto-save candidacy (E3): a file may auto-save only when it is model-dirty,
+ * its model is a complete parse (`semanticModel.hasErrors` is authoritative),
+ * no validation failure is outstanding, and it is not in external conflict.
+ * Source-dirty files are deliberately excluded (they are not model-dirty).
+ */
+function isAutoSaveCandidate(fileState: FileState): boolean {
+  return (
+    fileState.isDirty &&
+    !fileState.semanticModel.hasErrors &&
+    !fileState.autoSaveError &&
+    !fileState.externalConflict
+  );
 }
 
 /**
@@ -25,9 +40,9 @@ export function useAutoSave(): AutoSaveStatus {
     const state = useEditorStore.getState();
     const filesToSave: string[] = [];
 
-    // Find all dirty files without errors
+    // Find all auto-save candidates
     state.openFiles.forEach((fileState, filePath) => {
-      if (fileState.isDirty && !fileState.hasErrors) {
+      if (isAutoSaveCandidate(fileState)) {
         filesToSave.push(filePath);
       }
     });
@@ -124,20 +139,17 @@ export function useAutoSave(): AutoSaveStatus {
           }
         });
 
-        // Mark failed saves with their validation errors
+        // Mark failed saves with their validation errors. N6: a validation
+        // failure is NOT a parse error — it must not touch the parse-state
+        // mirror (hasErrors/errors). It sets only autoSaveError, which the gate
+        // honours and the next mutation clears.
         failedSaves.forEach((validationResult, filePath) => {
           const currentFileState = newOpenFiles.get(filePath);
           if (currentFileState) {
             newOpenFiles.set(filePath, {
               ...currentFileState,
               isDirty: true, // Keep it dirty so work is not lost
-              hasErrors: !validationResult.isValid,
               autoSaveError: validationResult,
-              errors: validationResult.errors.filter((e: any) => e.type === 'syntax_error').map((e: any) => ({
-                type: e.type,
-                message: e.message,
-                position: e.position
-              })),
             });
           }
         });
@@ -170,10 +182,10 @@ export function useAutoSave(): AutoSaveStatus {
       return;
     }
 
-    // Check if any files are dirty
+    // Check if any files are auto-save candidates
     let hasDirtyFiles = false;
     openFiles.forEach((fileState) => {
-      if (fileState.isDirty && !fileState.hasErrors) {
+      if (isAutoSaveCandidate(fileState)) {
         hasDirtyFiles = true;
       }
     });
