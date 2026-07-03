@@ -83,12 +83,11 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
     onUpdateFunction((currentFunc) => {
       if (!currentFunc) return currentFunc;
       const newConditions = [...(currentFunc.conditions || [])];
-      // Note: we assume index is valid. If array changed concurrently, this might be risky,
-      // but it's better than overwriting the whole function.
+      // Only overwrite an in-range slot. An out-of-range index means the card
+      // was reindexed/removed while a debounce was pending (finding U3): the
+      // write is a no-op rather than appending a resurrected condition.
       if (index >= 0 && index < newConditions.length) {
         newConditions[index] = sanitizeCondition(updated);
-      } else if (index === newConditions.length) {
-        newConditions.push(sanitizeCondition(updated));
       }
       return {
         ...currentFunc,
