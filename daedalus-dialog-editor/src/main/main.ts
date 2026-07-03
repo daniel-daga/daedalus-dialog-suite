@@ -19,6 +19,15 @@ import {
   sanitizeRendererErrorPayload,
 } from './ipcValidation';
 
+// E2E userData isolation seam (fix-08 §2 / T9a). When the real-Electron E2E
+// harness sets DDE_E2E_USER_DATA, redirect Electron's userData to a per-test
+// temp dir BEFORE any service reads `app.getPath('userData')` — the
+// SettingsService and LogService constructions below both resolve it eagerly.
+// Inert in production: the env var is never set outside the E2E harness.
+if (process.env.DDE_E2E_USER_DATA) {
+  app.setPath('userData', process.env.DDE_E2E_USER_DATA);
+}
+
 let mainWindow: BrowserWindow | null = null;
 // E1 window-close guard: main intercepts `close`, defers to the renderer, and
 // only lets the window go once the renderer approves (or fails to ACK in time).

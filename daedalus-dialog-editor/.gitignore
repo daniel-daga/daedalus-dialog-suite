@@ -36,7 +36,9 @@ Thumbs.db
 *.sqlite-journal
 
 test-results/
+test-results-electron/
 playwright-report/
+playwright-report-electron/
 .playwright-mcp
 .mcp.json
 .claude/
