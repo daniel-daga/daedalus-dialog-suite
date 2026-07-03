@@ -48,10 +48,25 @@ export class FileWatcherService {
   private selfWrittenPaths = new Set<string>();
 
   /**
+   * Optional hook invoked for genuine external changes (after self-write
+   * suppression). Used by the main process to invalidate FileService's
+   * encoding/stat caches for the changed path.
+   */
+  private onExternalChange: ((filePath: string, type: FileChangeType) => void) | null = null;
+
+  /**
    * Register the renderer window so events can be sent to it.
    */
   setWindow(window: BrowserWindow): void {
     this.window = window;
+  }
+
+  /**
+   * Register a callback invoked for every external (non-self-write) change,
+   * before the event is forwarded to the renderer. Passing `null` clears it.
+   */
+  setOnExternalChange(cb: ((filePath: string, type: FileChangeType) => void) | null): void {
+    this.onExternalChange = cb;
   }
 
   /**
@@ -129,6 +144,12 @@ export class FileWatcherService {
     if (this.selfWrittenPaths.has(key)) {
       this.selfWrittenPaths.delete(key);
       return;
+    }
+
+    // Genuine external change: invalidate main-process caches before notifying
+    // the renderer, so a self-write never nukes its own fresh cache entry.
+    if (this.onExternalChange) {
+      this.onExternalChange(filePath, type);
     }
 
     const event: FileChangeEvent = { type, filePath };

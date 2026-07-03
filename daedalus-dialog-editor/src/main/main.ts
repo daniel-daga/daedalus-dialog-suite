@@ -43,6 +43,14 @@ function createWindow() {
   // Register window with file watcher so it can send events to renderer
   fileWatcherService.setWindow(mainWindow);
 
+  // Invalidate FileService caches when a file changes externally so the next
+  // read re-detects encoding and the next expectUnchanged write re-checks
+  // the disk mtime instead of trusting stale cached state.
+  fileWatcherService.setOnExternalChange((filePath) => {
+    fileService.clearEncodingCache(filePath);
+    fileService.clearStatCache(filePath);
+  });
+
   mainWindow.on('closed', () => {
     fileWatcherService.stopWatching();
     mainWindow = null;
@@ -116,7 +124,8 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean }) => {
+  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean }) => {
+    const expectUnchanged = !options?.overwriteExternal;
     try {
       // Validate path before saving
       pathValidator.validatePath(filePath);
@@ -136,7 +145,7 @@ function setupIpcHandlers() {
 
         // Use pre-generated code from validation if available
         if (validationResult.generatedCode) {
-          const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode);
+          const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode, { expectUnchanged });
           // Arm self-write suppression only after an actual write succeeds
           fileWatcherService.notifySelfWrite(filePath);
           return {
@@ -169,7 +178,7 @@ function setupIpcHandlers() {
           };
       }
 
-      const writeResult = await fileService.writeFile(filePath, code);
+      const writeResult = await fileService.writeFile(filePath, code, { expectUnchanged });
       // Arm self-write suppression only after an actual write succeeds
       fileWatcherService.notifySelfWrite(filePath);
       return writeResult;
@@ -200,12 +209,12 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('file:write', async (_event, filePath: string, content: string) => {
+  ipcMain.handle('file:write', async (_event, filePath: string, content: string, options?: { overwriteExternal?: boolean }) => {
     try {
       // Validate path before writing
       pathValidator.validatePath(filePath);
 
-      const writeResult = await fileService.writeFile(filePath, content);
+      const writeResult = await fileService.writeFile(filePath, content, { expectUnchanged: !options?.overwriteExternal });
       // Arm self-write suppression only after an actual write succeeds
       fileWatcherService.notifySelfWrite(filePath);
       return writeResult;

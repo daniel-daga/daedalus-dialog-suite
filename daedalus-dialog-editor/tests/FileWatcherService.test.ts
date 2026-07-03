@@ -225,6 +225,43 @@ describe('FileWatcherService', () => {
       // path must be traversed rather than wrongly skipped
       expect(ignored('C:\\project\\Mod.bak', undefined)).toBe(false);
     });
+
+    it('ignores the editor atomic-write temp files (they never end in .d)', async () => {
+      const ignored = await getIgnored('/project');
+      // E5 temp file: `.<basename>.<pid>.<rand>.tmp` — must produce no events.
+      expect(ignored('/project/.DIA_Test.d.12345.ab3d9.tmp', fileStats)).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // External-change callback (cache invalidation hook)
+  // -------------------------------------------------------------------------
+
+  describe('setOnExternalChange', () => {
+    it('invokes the callback for a genuine external change event', async () => {
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      const win = makeMockWindow();
+      service.setWindow(win as any);
+      await service.startWatching('/project');
+
+      mockWatcher._emit('change', '/project/DIA_Test.d');
+
+      expect(cb).toHaveBeenCalledWith('/project/DIA_Test.d', 'change');
+    });
+
+    it('does not invoke the callback for a self-suppressed write', async () => {
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      const win = makeMockWindow();
+      service.setWindow(win as any);
+      await service.startWatching('/project');
+
+      service.notifySelfWrite('/project/DIA_Test.d');
+      mockWatcher._emit('change', '/project/DIA_Test.d');
+
+      expect(cb).not.toHaveBeenCalled();
+    });
   });
 
   // -------------------------------------------------------------------------

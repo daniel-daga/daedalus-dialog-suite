@@ -13,12 +13,13 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // Code Generator API
   generateCode: (model: any, settings: any) => ipcRenderer.invoke('generator:generateCode', model, settings),
   generateDialogCode: (model: any, dialogName: string, settings: any) => ipcRenderer.invoke('generator:generateDialogCode', model, dialogName, settings),
-  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean }) =>
+  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean }) =>
     ipcRenderer.invoke('generator:saveFile', filePath, model, settings, options),
 
   // File I/O API
   readFile: (filePath: string) => ipcRenderer.invoke('file:read', filePath),
-  writeFile: (filePath: string, content: string) => ipcRenderer.invoke('file:write', filePath, content),
+  writeFile: (filePath: string, content: string, options?: { overwriteExternal?: boolean }) =>
+    ipcRenderer.invoke('file:write', filePath, content, options),
   openFileDialog: () => ipcRenderer.invoke('file:openDialog'),
   saveFileDialog: () => ipcRenderer.invoke('file:saveDialog'),
 

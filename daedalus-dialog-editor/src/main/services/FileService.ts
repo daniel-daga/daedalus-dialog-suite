@@ -1,7 +1,8 @@
 import { promises as fs } from 'fs';
+import type { FileHandle } from 'fs/promises';
+import * as path from 'path';
 import { dialog } from 'electron';
-import * as iconv from 'iconv-lite';
-import { decodeBuffer } from '../utils/encodingUtils';
+import { decodeBuffer, encodeWithRoundtripCheck } from '../utils/encodingUtils';
 
 /**
  * Error types for FileService operations
@@ -25,10 +26,81 @@ export class FileServiceError extends Error {
 const fileEncodingCache = new Map<string, string>();
 
 /**
+ * Mapping of file paths to the `mtimeMs` observed at the last successful read
+ * or write. Used by the `expectUnchanged` write precondition (E4 phase 2) to
+ * detect an external modification landing before the file watcher fires.
+ */
+const fileStatCache = new Map<string, number>();
+
+/**
  * Simple lock mechanism to prevent race conditions during file operations
  * Maps file paths to pending operation promises
  */
 const fileLocks = new Map<string, Promise<any>>();
+
+/**
+ * Rename `from` to `to`, retrying transient Windows locking errors
+ * (EPERM/EBUSY from AV scanners or the indexer) a few times before giving up.
+ * `rename` is atomic on POSIX and maps to MoveFileExW(MOVEFILE_REPLACE_EXISTING)
+ * on Windows, so the target is never observed half-written.
+ */
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if ((code === 'EPERM' || code === 'EBUSY') && attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * Write `buffer` to `filePath` atomically: stage it in a sibling temp file,
+ * flush it to disk, then rename over the target. Any failure before the rename
+ * leaves the original file untouched; the temp file is best-effort removed.
+ *
+ * The temp name deliberately does NOT end in `.d` so the file watcher's ignore
+ * predicate (which only watches `.d` files) never emits events for the churn.
+ */
+async function writeFileAtomic(filePath: string, buffer: Buffer): Promise<void> {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  const tmp = path.join(
+    dir,
+    `.${base}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+  );
+
+  let handle: FileHandle | undefined;
+  try {
+    handle = await fs.open(tmp, 'w');
+    await handle.write(buffer);
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await renameWithRetry(tmp, filePath);
+  } catch (error) {
+    if (handle) {
+      try {
+        await handle.close();
+      } catch {
+        // ignore — the temp file is being discarded anyway
+      }
+    }
+    try {
+      await fs.unlink(tmp);
+    } catch {
+      // best effort — temp may never have been created
+    }
+    throw error;
+  }
+}
 
 /**
  * Acquires a lock for a file operation.
@@ -81,6 +153,14 @@ export class FileService {
         // Store the detected encoding for later use when writing
         fileEncodingCache.set(filePath, encoding);
 
+        // Remember the on-disk mtime so a later `expectUnchanged` write can
+        // detect an external modification (E4 phase 2).
+        try {
+          fileStatCache.set(filePath, (await fs.stat(filePath)).mtimeMs);
+        } catch {
+          // Non-fatal: without a cached mtime the write guard simply no-ops.
+        }
+
         return content;
       } catch (error) {
         const err = error as NodeJS.ErrnoException;
@@ -118,18 +198,83 @@ export class FileService {
    * @returns Success status with encoding information
    * @throws {FileServiceError} If file cannot be written
    */
-  async writeFile(filePath: string, content: string): Promise<{ success: boolean; encoding?: string }> {
+  async writeFile(
+    filePath: string,
+    content: string,
+    opts?: { expectUnchanged?: boolean }
+  ): Promise<{ success: boolean; encoding?: string }> {
     return acquireLock(filePath, async () => {
+      // --- External-modification precondition (E4 phase 2) ------------------
+      // Refuse the write, without touching the file, if the caller expected
+      // the file to be unchanged but its on-disk mtime no longer matches the
+      // mtime we cached at read time (an edit landed before the watcher fired).
+      if (opts?.expectUnchanged) {
+        const cachedMtime = fileStatCache.get(filePath);
+        if (cachedMtime !== undefined) {
+          let diskMtime: number | undefined;
+          try {
+            diskMtime = (await fs.stat(filePath)).mtimeMs;
+          } catch {
+            // File is gone — nothing to conflict with; the write recreates it.
+            diskMtime = undefined;
+          }
+          if (diskMtime !== undefined && diskMtime !== cachedMtime) {
+            throw new FileServiceError(
+              `EXTERNAL_MODIFICATION: ${filePath} was modified on disk since it was last read`,
+              'EXTERNAL_MODIFICATION',
+              filePath
+            );
+          }
+        }
+      }
+
+      // --- Encoding roundtrip + lossy-write policy (E6) ---------------------
+      // Use the cached encoding if available. For files the editor never read
+      // (e.g. freshly created scripts) default to windows-1252, the encoding
+      // Gothic 2 tooling expects — not utf8.
+      const hadCache = fileEncodingCache.has(filePath);
+      let encoding = fileEncodingCache.get(filePath) || 'windows-1252';
+      let { buffer, lossyChars } = encodeWithRoundtripCheck(content, encoding);
+
+      if (lossyChars.length > 0) {
+        // Silently upgrade ASCII-detected / uncached files to windows-1252
+        // (byte-identical for pure ASCII, and the Gothic tooling default) and
+        // re-verify. Never upgrade an explicitly detected multi-byte encoding.
+        const upgradable =
+          !hadCache || encoding === 'ASCII' || encoding === 'ISO-8859-1';
+        if (upgradable && encoding !== 'windows-1252') {
+          encoding = 'windows-1252';
+          ({ buffer, lossyChars } = encodeWithRoundtripCheck(content, encoding));
+          if (lossyChars.length === 0) {
+            fileEncodingCache.set(filePath, encoding);
+          }
+        }
+
+        if (lossyChars.length > 0) {
+          const named = lossyChars
+            .slice(0, 5)
+            .map((l) => `'${l.char}' (position ${l.position})`)
+            .join(', ');
+          throw new FileServiceError(
+            `ENCODING_LOSS: ${lossyChars.length} character(s) cannot be written in ${encoding}: ${named}`,
+            'ENCODING_LOSS',
+            filePath
+          );
+        }
+      }
+
+      // --- Atomic write (E5) ------------------------------------------------
       try {
-        // Use the cached encoding if available. For files the editor never
-        // read (e.g. freshly created scripts) default to windows-1252, the
-        // encoding Gothic 2 tooling expects — not utf8.
-        const encoding = fileEncodingCache.get(filePath) || 'windows-1252';
+        await writeFileAtomic(filePath, buffer);
 
-        // Encode the content using the appropriate encoding
-        const buffer = iconv.encode(content, encoding);
+        // Refresh the cached mtime so a subsequent expectUnchanged write does
+        // not misfire on our own write.
+        try {
+          fileStatCache.set(filePath, (await fs.stat(filePath)).mtimeMs);
+        } catch {
+          // Non-fatal: the next read repopulates the cache.
+        }
 
-        await fs.writeFile(filePath, buffer);
         return { success: true, encoding };
       } catch (error) {
         const err = error as NodeJS.ErrnoException;
@@ -178,6 +323,20 @@ export class FileService {
       fileEncodingCache.delete(filePath);
     } else {
       fileEncodingCache.clear();
+    }
+  }
+
+  /**
+   * Clear the mtime stat cache for a specific file or all files. Called on
+   * external file-watcher changes so the next `expectUnchanged` write
+   * re-reads the disk state instead of trusting a stale mtime.
+   * @param filePath - Optional path to clear specific file, omit to clear all
+   */
+  clearStatCache(filePath?: string): void {
+    if (filePath) {
+      fileStatCache.delete(filePath);
+    } else {
+      fileStatCache.clear();
     }
   }
 
