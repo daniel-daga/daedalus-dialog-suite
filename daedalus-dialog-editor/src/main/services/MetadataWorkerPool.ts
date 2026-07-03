@@ -5,7 +5,6 @@ import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import type { DialogMetadata } from '../../shared/types';
 import { promises as fsPromises } from 'fs';
-import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 import { decodeBuffer } from '../utils/encodingUtils';
 import { WorkerRequestError } from './WorkerRequestError';
 
@@ -328,6 +327,12 @@ export class MetadataWorkerPool {
     try {
       const buffer = await fsPromises.readFile(filePath);
       const { content } = decodeBuffer(buffer);
+      // Lazy require: semanticMetadataUtils loads the native tree-sitter
+      // addon, which must not be pulled into Jest module registries that only
+      // exercise the worker path (re-loading the addon in a second registry in
+      // the same process corrupts it).
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { extractFileMetadataFromSource } = require('../utils/semanticMetadataUtils');
       return extractFileMetadataFromSource(content, filePath);
     } catch (error) {
       // Match worker-path behavior: tolerate per-file processing failures.
