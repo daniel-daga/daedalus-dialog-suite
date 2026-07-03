@@ -201,3 +201,52 @@ test('finds errors nested inside deeper blocks', () => {
     'Reported error should point at the nested line'
   );
 });
+
+// ===================================================================
+// P7: hasErrors guard in the code generator
+// ===================================================================
+
+const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+const { DialogFunction, DialogLine } = require('../dist/semantic/semantic-model');
+
+test('generateSemanticModel throws on a model with parse errors', () => {
+  const model = parseSemanticModel(`
+    func void Broken() {
+      var int x = ;
+    };
+  `);
+  assert.ok(model.hasErrors, 'precondition: model should have errors');
+
+  const generator = new SemanticCodeGenerator();
+  assert.throws(
+    () => generator.generateSemanticModel(model),
+    /parse error/i,
+    'should refuse to generate from an errored model'
+  );
+});
+
+test('generateSemanticModel with allowPartialModel: true generates from an errored model', () => {
+  const model = parseSemanticModel(`
+    func void Broken() {
+      var int x = ;
+    };
+  `);
+  assert.ok(model.hasErrors, 'precondition: model should have errors');
+
+  const generator = new SemanticCodeGenerator({ allowPartialModel: true });
+  let output;
+  assert.doesNotThrow(() => {
+    output = generator.generateSemanticModel(model);
+  }, 'should not throw when opted in');
+  assert.equal(typeof output, 'string', 'should return a (best-effort) string when opted in');
+});
+
+test('generateFunction is unaffected by the hasErrors guard', () => {
+  // Hand-built partial models are legitimate for the single-function entry point.
+  const generator = new SemanticCodeGenerator();
+  const func = new DialogFunction('DIA_Test_Info', 'void');
+  func.actions.push(new DialogLine('self', 'Hello', 'DIA_TEST_01'));
+
+  const output = generator.generateFunction(func);
+  assert.ok(output.includes('DIA_Test_Info'), 'generateFunction should still emit the function');
+});

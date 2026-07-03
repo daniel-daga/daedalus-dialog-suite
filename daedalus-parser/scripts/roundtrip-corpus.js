@@ -101,11 +101,20 @@ function extractModelSummary(model) {
     }
   }
 
+  // N6: globals (constants/variables/instances) must be visible to the drift
+  // check, otherwise a dropped/renamed global is invisible to the corpus.
+  const constants = Object.keys(model.constants || {}).sort();
+  const variables = Object.keys(model.variables || {}).sort();
+  const instances = Object.keys(model.instances || {}).sort();
+
   return {
     dialogs,
     functions,
     functionStats,
-    missingChoiceTargets
+    missingChoiceTargets,
+    constants,
+    variables,
+    instances
   };
 }
 
@@ -210,6 +219,61 @@ function parseFileWithFallback(filePath, parser) {
   }
 }
 
+const BOM = /^﻿/;
+
+function normalizeLineEndings(text) {
+  return text.replace(BOM, '').replace(/\r\n?/g, '\n');
+}
+
+/**
+ * Tier 1 token stream: in-order leaf tokens (named leaves + anonymous tokens),
+ * each contributing its exact text. Comment tokens contribute their text with
+ * trailing whitespace trimmed. Inter-token whitespace, line endings and BOM are
+ * normalized away (they never enter the stream); identifier case, numeric
+ * literal text, string literals (quotes included), operators/punctuation,
+ * comment text and token order are byte-stable.
+ */
+function tokenStream(rootNode) {
+  const tokens = [];
+  const walk = (node) => {
+    if (node.childCount === 0) {
+      let text = node.text.replace(BOM, '');
+      if (node.type === 'comment') {
+        // Block comments may contain CRLF; normalize then trim trailing space.
+        text = normalizeLineEndings(text).replace(/[ \t]+$/gm, '').replace(/\s+$/, '');
+      }
+      tokens.push({ type: node.type, text });
+      return;
+    }
+    for (let i = 0; i < node.childCount; i += 1) {
+      walk(node.child(i));
+    }
+  };
+  walk(rootNode);
+  return tokens;
+}
+
+function compareTokenStreams(sourceTokens, generatedTokens) {
+  const max = Math.max(sourceTokens.length, generatedTokens.length);
+  for (let i = 0; i < max; i += 1) {
+    const a = sourceTokens[i];
+    const b = generatedTokens[i];
+    if (!a || !b || a.text !== b.text) {
+      const lo = Math.max(0, i - 5);
+      const hi = i + 6;
+      return {
+        drift: true,
+        divergenceIndex: i,
+        sourceTokenCount: sourceTokens.length,
+        generatedTokenCount: generatedTokens.length,
+        sourceContext: sourceTokens.slice(lo, hi).map((t) => (t ? t.text : null)),
+        generatedContext: generatedTokens.slice(lo, hi).map((t) => (t ? t.text : null))
+      };
+    }
+  }
+  return { drift: false };
+}
+
 function analyzeFile(filePath, parser, generator) {
   const source = parseFileWithFallback(filePath, parser);
 
@@ -242,6 +306,15 @@ function analyzeFile(filePath, parser, generator) {
   generatedVisitor.pass1_createObjects(generated.rootNode);
   generatedVisitor.pass2_analyzeAndLink(generated.rootNode);
 
+  // Tier 1 (token fidelity) + Tier 2 (byte fidelity) — compare the original
+  // source against the generated text, both of which parse cleanly here.
+  const tokenFidelity = compareTokenStreams(
+    tokenStream(source.rootNode),
+    tokenStream(generated.rootNode)
+  );
+  const byteFidelityDrift =
+    normalizeLineEndings(source.rootNode.text) !== normalizeLineEndings(generatedText);
+
   // Idempotence check: save output should stabilize after the first generation.
   const generatedTextSecond = generator.generateSemanticModel(generatedVisitor.semanticModel);
   const byteIdempotenceDrift = generatedText !== generatedTextSecond;
@@ -269,6 +342,15 @@ function analyzeFile(filePath, parser, generator) {
     extraDialogs: setDiff(generatedSummary.dialogs, sourceSummary.dialogs),
     missingFunctions: setDiff(sourceSummary.functions, generatedSummary.functions),
     extraFunctions: setDiff(generatedSummary.functions, sourceSummary.functions),
+    missingConstants: setDiff(sourceSummary.constants, generatedSummary.constants),
+    extraConstants: setDiff(generatedSummary.constants, sourceSummary.constants),
+    missingVariables: setDiff(sourceSummary.variables, generatedSummary.variables),
+    extraVariables: setDiff(generatedSummary.variables, sourceSummary.variables),
+    missingInstances: setDiff(sourceSummary.instances, generatedSummary.instances),
+    extraInstances: setDiff(generatedSummary.instances, sourceSummary.instances),
+    tokenFidelity,
+    tokenFidelityDrift: tokenFidelity.drift,
+    byteFidelityDrift,
     functionCountDrift: [],
     functionCountDriftSecondPass: [],
     functionActionMultisetDrift: [],
@@ -361,6 +443,12 @@ function analyzeFile(filePath, parser, generator) {
     drift.extraDialogs.length > 0 ||
     drift.missingFunctions.length > 0 ||
     drift.extraFunctions.length > 0 ||
+    drift.missingConstants.length > 0 ||
+    drift.extraConstants.length > 0 ||
+    drift.missingVariables.length > 0 ||
+    drift.extraVariables.length > 0 ||
+    drift.missingInstances.length > 0 ||
+    drift.extraInstances.length > 0 ||
     drift.functionCountDrift.length > 0 ||
     drift.functionActionMultisetDrift.length > 0 ||
     drift.functionConditionMultisetDrift.length > 0 ||
@@ -410,6 +498,8 @@ function writeReports(reportDir, reportPrefix, summary, details) {
     `- Condition multiset drift files: **${summary.conditionMultisetDriftFiles}**`,
     `- Semantic idempotence drift files: **${summary.semanticIdempotenceDriftFiles}**`,
     `- Byte idempotence drift files (non-failing): **${summary.byteIdempotenceDriftFiles}**`,
+    `- Token fidelity drift files (Tier 1, failing): **${summary.tokenFidelityDriftFiles}**`,
+    `- Byte fidelity drift files (Tier 2, non-failing): **${summary.byteFidelityDriftFiles}**`,
     `- Generated at: ${summary.generatedAt}`
   ];
 
@@ -444,7 +534,7 @@ function main() {
   const parser = DaedalusParser.create();
   const generator = new SemanticCodeGenerator({
     includeComments: true,
-    sectionHeaders: true,
+    sectionHeaders: false,
     preserveSourceStyle: true
   });
 
@@ -466,6 +556,8 @@ function main() {
     conditionMultisetDriftFiles: details.filter((d) => d.drift && d.drift.functionConditionMultisetDrift.length > 0).length,
     semanticIdempotenceDriftFiles: details.filter((d) => d.drift && d.drift.semanticIdempotenceDrift).length,
     byteIdempotenceDriftFiles: details.filter((d) => d.drift && d.drift.byteIdempotenceDrift).length,
+    tokenFidelityDriftFiles: details.filter((d) => d.drift && d.drift.tokenFidelityDrift).length,
+    byteFidelityDriftFiles: details.filter((d) => d.drift && d.drift.byteFidelityDrift).length,
     choiceTargetIssuesBefore: details.reduce((sum, d) => sum + ((d.drift && d.drift.missingChoiceTargetsBefore.length) || 0), 0),
     choiceTargetIssuesAfter: details.reduce((sum, d) => sum + ((d.drift && d.drift.missingChoiceTargetsAfter.length) || 0), 0),
     choiceTargetIncreases: details.filter((d) => d.drift && d.drift.choiceTargetIncrease).length
@@ -486,14 +578,20 @@ function main() {
   console.log(`Condition multiset drift files: ${summary.conditionMultisetDriftFiles}`);
   console.log(`Semantic idempotence drift files: ${summary.semanticIdempotenceDriftFiles}`);
   console.log(`Byte idempotence drift files (non-failing): ${summary.byteIdempotenceDriftFiles}`);
+  console.log(`Token fidelity drift files (Tier 1): ${summary.tokenFidelityDriftFiles}`);
+  console.log(`Byte fidelity drift files (Tier 2, non-failing): ${summary.byteFidelityDriftFiles}`);
   console.log(`Reports:`);
   console.log(`  ${reportPaths.summaryPath}`);
   console.log(`  ${reportPaths.markdownPath}`);
   console.log(`  ${reportPaths.detailsPath}`);
   console.log(`  ${reportPaths.byteIdempotencePath}`);
 
+  // --strict failure condition: Tier 1 token drift OR generated syntax errors
+  // OR Tier 3 (semantic/idempotence/global) drift OR a choice-target increase.
+  // Tier 2 byte fidelity is reported but never fails the run.
   const hasFailure = summary.driftFiles > 0 ||
     summary.generatedSyntaxErrors > 0 ||
+    summary.tokenFidelityDriftFiles > 0 ||
     summary.choiceTargetIssuesAfter > summary.choiceTargetIssuesBefore;
   if (strict && hasFailure) {
     process.exit(1);

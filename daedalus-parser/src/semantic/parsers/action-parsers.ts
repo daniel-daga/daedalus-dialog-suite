@@ -27,14 +27,28 @@ import {
   RemoveInventoryItemsAction,
   InsertNpcAction
 } from '../semantic-model';
-import { parseArguments } from './argument-parsing';
+import { parseArguments, parseNumericArg } from './argument-parsing';
 
 export class ActionParsers {
 
   /**
-   * Parse a semantic action based on function name
+   * Parse a semantic action based on function name.
+   *
+   * A recognized call whose argument count does not match the expected arity
+   * (or that a specific parser otherwise declines) never gets dropped: it falls
+   * back to a verbatim generic `Action`, preserving the source text.
    */
-  static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction | null {
+  static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction {
+    const specific = ActionParsers.parseSpecificAction(node, functionName);
+    return specific ?? ActionParsers.parseGenericAction(node);
+  }
+
+  /**
+   * Dispatch to a specific action parser by (case-insensitive) function name.
+   * Returns null when the name is unrecognized or the specific parser declines
+   * (e.g. arity mismatch); callers fall back to a generic verbatim action.
+   */
+  private static parseSpecificAction(node: TreeSitterNode, functionName: string): DialogAction | null {
     // Daedalus identifiers are case-insensitive, so dispatch on a normalized
     // key while passing the original `functionName` to sub-parsers that need to
     // preserve the source casing in the model.
@@ -86,12 +100,13 @@ export class ActionParsers {
       case 'b_givetradeinv':
         return ActionParsers.parseGiveTradeInventoryCall(node);
       case 'npc_removeinvitems':
+        return ActionParsers.parseRemoveInventoryItemsCall(node, functionName, 3);
       case 'npc_removeinvitem':
-        return ActionParsers.parseRemoveInventoryItemsCall(node, functionName);
+        return ActionParsers.parseRemoveInventoryItemsCall(node, functionName, 2);
       case 'wld_insertnpc':
         return ActionParsers.parseInsertNpcCall(node);
       default:
-        return ActionParsers.parseGenericAction(node);
+        return null;
     }
   }
 
@@ -101,14 +116,19 @@ export class ActionParsers {
    */
   private static parseActionWithArgs<T>(
     node: TreeSitterNode,
-    minArgs: number,
+    arity: number | { min: number; max: number },
     factory: (args: string[]) => T | null
   ): T | null {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
     const args = parseArguments(argsNode);
-    if (args.length < minArgs) return null;
+    const min = typeof arity === 'number' ? arity : arity.min;
+    const max = typeof arity === 'number' ? arity : arity.max;
+    // Fall back (return null) on an argument count that does not match the
+    // expected arity in either direction, so the call is preserved verbatim by
+    // the generic fallback rather than being coerced or truncated.
+    if (args.length < min || args.length > max) return null;
 
     return factory(args);
   }
@@ -167,7 +187,7 @@ export class ActionParsers {
    * Parse Log_CreateTopic function call
    */
   static parseCreateTopicCall(node: TreeSitterNode): CreateTopic | null {
-    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
+    return ActionParsers.parseActionWithArgs(node, { min: 1, max: 2 }, (args) =>
       new CreateTopic(args[0], args[1] || null)
     );
   }
@@ -195,7 +215,7 @@ export class ActionParsers {
    */
   static parseCreateInventoryItemsCall(node: TreeSitterNode): CreateInventoryItems | null {
     return ActionParsers.parseActionWithArgs(node, 3, (args) =>
-      new CreateInventoryItems(args[0], args[1], parseInt(args[2]) || 1)
+      new CreateInventoryItems(args[0], args[1], parseNumericArg(args[2], 1))
     );
   }
 
@@ -204,7 +224,7 @@ export class ActionParsers {
    */
   static parseGiveInventoryItemsCall(node: TreeSitterNode): GiveInventoryItems | null {
     return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new GiveInventoryItems(args[0], args[1], args[2], parseInt(args[3]) || 1)
+      new GiveInventoryItems(args[0], args[1], args[2], parseNumericArg(args[3], 1))
     );
   }
 
@@ -213,7 +233,7 @@ export class ActionParsers {
    */
   static parseAttackCall(node: TreeSitterNode): AttackAction | null {
     return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new AttackAction(args[0], args[1], args[2], parseInt(args[3]) || 1)
+      new AttackAction(args[0], args[1], args[2], parseNumericArg(args[3], 1))
     );
   }
 
@@ -240,7 +260,7 @@ export class ActionParsers {
    */
   static parseChapterTransitionCall(node: TreeSitterNode): ChapterTransitionAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new ChapterTransitionAction(parseInt(args[0]) || 1, args[1])
+      new ChapterTransitionAction(parseNumericArg(args[0], 1), args[1])
     );
   }
 
@@ -257,8 +277,8 @@ export class ActionParsers {
    * Parse Npc_SetRefuseTalk function call
    */
   static parseSetRefuseTalkCall(node: TreeSitterNode): SetRefuseTalkAction | null {
-    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new SetRefuseTalkAction(args[0], parseInt(args[1]) || 300)
+    return ActionParsers.parseActionWithArgs(node, { min: 1, max: 2 }, (args) =>
+      new SetRefuseTalkAction(args[0], parseNumericArg(args[1], 300))
     );
   }
 
@@ -321,8 +341,12 @@ export class ActionParsers {
   /**
    * Parse Npc_RemoveInvItems / Npc_RemoveInvItem function call
    */
-  static parseRemoveInventoryItemsCall(node: TreeSitterNode, functionName: string): RemoveInventoryItemsAction | null {
-    return ActionParsers.parseActionWithArgs(node, 3, (args) =>
+  static parseRemoveInventoryItemsCall(
+    node: TreeSitterNode,
+    functionName: string,
+    arity: number
+  ): RemoveInventoryItemsAction | null {
+    return ActionParsers.parseActionWithArgs(node, arity, (args) =>
       new RemoveInventoryItemsAction(
         functionName as 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
         args[0],

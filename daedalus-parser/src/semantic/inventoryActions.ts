@@ -11,9 +11,9 @@ export class CreateInventoryItems implements CodeGeneratable {
   public readonly type = 'CreateInventoryItems';
   public target: string;
   public item: string;
-  public quantity: number;
+  public quantity: number | string;
 
-  constructor(target: string, item: string, quantity: number) {
+  constructor(target: string, item: string, quantity: number | string) {
     this.target = target;
     this.item = item;
     this.quantity = quantity;
@@ -37,9 +37,9 @@ export class GiveInventoryItems implements CodeGeneratable {
   public giver: string;
   public receiver: string;
   public item: string;
-  public quantity: number;
+  public quantity: number | string;
 
-  constructor(giver: string, receiver: string, item: string, quantity: number) {
+  constructor(giver: string, receiver: string, item: string, quantity: number | string) {
     this.giver = giver;
     this.receiver = receiver;
     this.item = item;
@@ -85,26 +85,34 @@ export class RemoveInventoryItemsAction implements CodeGeneratable {
   public removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
   public removeNpc: string;
   public removeItem: string;
-  public removeQuantity: string;
+  public removeQuantity?: string;
 
   constructor(
     removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
     removeNpc: string,
     removeItem: string,
-    removeQuantity: string
+    removeQuantity?: string
   ) {
     this.removeFunctionName = removeFunctionName;
     this.removeNpc = removeNpc;
     this.removeItem = removeItem;
-    this.removeQuantity = removeQuantity;
+    if (removeQuantity !== undefined) {
+      this.removeQuantity = removeQuantity;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `${this.removeFunctionName} (${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity});`;
+    const args = this.removeQuantity === undefined
+      ? `${this.removeNpc}, ${this.removeItem}`
+      : `${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity}`;
+    return `${this.removeFunctionName} (${args});`;
   }
 
   toDisplayString(): string {
-    return `[RemoveInventoryItems: ${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity}]`;
+    const detail = this.removeQuantity === undefined
+      ? `${this.removeNpc}, ${this.removeItem}`
+      : `${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity}`;
+    return `[RemoveInventoryItems: ${detail}]`;
   }
 
   getTypeName(): string {

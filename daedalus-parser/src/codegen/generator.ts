@@ -30,6 +30,7 @@ export interface CodeGeneratorOptions {
   sectionHeaders?: boolean;
   uppercaseKeywords?: boolean;
   preserveSourceStyle?: boolean;
+  allowPartialModel?: boolean;
 }
 
 export class SemanticCodeGenerator {
@@ -43,6 +44,7 @@ export class SemanticCodeGenerator {
       sectionHeaders: true,
       uppercaseKeywords: false,
       preserveSourceStyle: true,
+      allowPartialModel: false,
       ...options
     };
   }
@@ -51,6 +53,12 @@ export class SemanticCodeGenerator {
    * Generate complete Daedalus source file from semantic model
    */
   generateSemanticModel(model: SemanticModel): string {
+    if (model.hasErrors && !this.options.allowPartialModel) {
+      throw new Error(
+        `Refusing to generate code from a model with ${model.errors?.length ?? 0} parse error(s); pass allowPartialModel: true to override.`
+      );
+    }
+
     if (model.declarationOrder && model.declarationOrder.length > 0) {
       return this.generateByDeclarationOrder(model);
     }

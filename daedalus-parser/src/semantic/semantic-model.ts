@@ -410,10 +410,10 @@ export class ConditionalAction implements CodeGeneratable {
 
 export class ChapterTransitionAction implements CodeGeneratable {
   public readonly type = 'ChapterTransitionAction';
-  public chapter: number;
+  public chapter: number | string;
   public world: string;
 
-  constructor(chapter: number, world: string) {
+  constructor(chapter: number | string, world: string) {
     this.chapter = chapter;
     this.world = world;
   }

@@ -23,3 +23,15 @@ export function normalizeArgumentText(node: TreeSitterNode): string {
   }
   return node.text.trim();
 }
+
+/**
+ * Parse a numeric argument while preserving source fidelity: a plain integer
+ * literal (including `0` and negatives) becomes a number; anything else (a
+ * constant name, an expression, etc.) keeps its raw trimmed text so it can be
+ * regenerated verbatim.
+ */
+export function parseNumericArg(raw: string | undefined, fallback: number): number | string {
+  if (raw === undefined || raw === '') return fallback;
+  const trimmed = raw.trim();
+  return /^-?\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
+}

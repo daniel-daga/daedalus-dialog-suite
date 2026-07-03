@@ -274,3 +274,38 @@ test('deserializeSemanticModel should preserve global order entries and source t
   assert.equal(model.constants.MAX_GOLD.sourceText, 'const int MAX_GOLD = 1000;');
   assert.ok(model.instances.ItFo_Apple.sourceText.includes('name = "Apple";'));
 });
+
+test('deserializeSemanticModel preserves string-valued numeric arguments through code generation', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const plainJson = {
+    functions: {
+      DIA_Num_Info: {
+        name: 'DIA_Num_Info',
+        returnType: 'void',
+        actions: [
+          // quantity kept as an identifier string (P3 fidelity)
+          { type: 'CreateInventoryItems', target: 'self', item: 'ItMi_Gold', quantity: 'Gold_Amount' },
+          // quantity kept as a literal number
+          { type: 'CreateInventoryItems', target: 'self', item: 'ItMi_Gold', quantity: 0 },
+          // 2-arg remove has no quantity field
+          { type: 'RemoveInventoryItemsAction', removeFunctionName: 'Npc_RemoveInvItem', removeNpc: 'self', removeItem: 'ItMi_Gold' }
+        ],
+        conditions: [],
+        calls: []
+      }
+    },
+    dialogs: {}
+  };
+
+  const model = deserializeSemanticModel(plainJson);
+  const { actions } = model.functions['DIA_Num_Info'];
+  assert.strictEqual(actions[0].quantity, 'Gold_Amount', 'string quantity should survive deserialization');
+  assert.strictEqual(actions[1].quantity, 0, 'numeric zero quantity should survive deserialization');
+  assert.strictEqual(actions[2].removeQuantity, undefined, 'absent removeQuantity should stay absent');
+
+  const generator = new SemanticCodeGenerator();
+  const emitted = actions.map((a) => generator.generateAction(a));
+  assert.ok(emitted.includes('CreateInvItems (self, ItMi_Gold, Gold_Amount);'), 'emits identifier quantity verbatim');
+  assert.ok(emitted.includes('CreateInvItems (self, ItMi_Gold, 0);'), 'emits literal zero quantity');
+  assert.ok(emitted.includes('Npc_RemoveInvItem (self, ItMi_Gold);'), 'emits 2-arg remove without quantity');
+});

@@ -12,9 +12,9 @@ export class AttackAction implements CodeGeneratable {
   public attacker: string;
   public target: string;
   public attackReason: string;
-  public damage: number;
+  public damage: number | string;
 
-  constructor(attacker: string, target: string, attackReason: string, damage: number) {
+  constructor(attacker: string, target: string, attackReason: string, damage: number | string) {
     this.attacker = attacker;
     this.target = target;
     this.attackReason = attackReason;
@@ -104,9 +104,9 @@ export class StopProcessInfosAction implements CodeGeneratable {
 export class SetRefuseTalkAction implements CodeGeneratable {
   public readonly type = 'SetRefuseTalkAction';
   public target: string;
-  public seconds: number;
+  public seconds: number | string;
 
-  constructor(target: string = 'self', seconds: number = 300) {
+  constructor(target: string = 'self', seconds: number | string = 300) {
     this.target = target;
     this.seconds = seconds;
   }

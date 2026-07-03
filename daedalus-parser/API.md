@@ -262,6 +262,7 @@ interface CodeGeneratorOptions {
   includeComments?: boolean;  // Default: true
   sectionHeaders?: boolean;   // Default: true
   uppercaseKeywords?: boolean; // Default: false
+  allowPartialModel?: boolean; // Default: false
 }
 ```
 
@@ -285,11 +286,20 @@ Generate complete Daedalus source file from semantic model.
 - **Parameters:**
   - `model` - Semantic model with dialogs and functions
 - **Returns:** Generated Daedalus source code (string)
+- **Throws:** `Error` when `model.hasErrors` is truthy, unless the generator was
+  constructed with `allowPartialModel: true`. This prevents silently emitting
+  placeholder-filled output from a model built off an unparseable source file.
+  The guard applies only to this whole-model entry point; `generateFunction` and
+  `generateDialog` are unaffected and remain usable for hand-built partial models.
 
 **Example:**
 ```typescript
 const code = generator.generateSemanticModel(visitor.semanticModel);
 console.log(code);
+
+// To generate from a model with parse errors anyway (best-effort):
+const lenient = new SemanticCodeGenerator({ allowPartialModel: true });
+const partial = lenient.generateSemanticModel(erroredModel);
 ```
 
 ##### `generateDialog(dialog: Dialog): string`
