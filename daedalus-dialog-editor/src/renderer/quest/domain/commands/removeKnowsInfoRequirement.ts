@@ -1,6 +1,6 @@
 import type { DialogCondition } from '../../../types/global';
 import type { QuestCommandContext, QuestCommandResult, RemoveKnowsInfoRequirementCommand } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 const isMatchingKnowsInfoCondition = (
   condition: DialogCondition,
@@ -47,15 +47,16 @@ export const executeRemoveKnowsInfoRequirementCommand = (
   if (conditionIndex < 0) {
     return {
       ok: true,
-      updatedModel: cloneModel(context.model),
+      updatedModel: context.model,
       affectedFunctionNames: [command.targetFunctionName]
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const updatedConditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
-  updatedConditions.splice(conditionIndex, 1);
-  updatedModel.functions[command.targetFunctionName].conditions = updatedConditions;
+  const updatedModel = withUpdatedFunction(context.model, command.targetFunctionName, (fn) => {
+    const updatedConditions = [...(fn.conditions || [])];
+    updatedConditions.splice(conditionIndex, 1);
+    fn.conditions = updatedConditions;
+  });
 
   return {
     ok: true,

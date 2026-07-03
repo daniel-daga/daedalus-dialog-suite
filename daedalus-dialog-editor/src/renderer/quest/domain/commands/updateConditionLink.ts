@@ -1,6 +1,6 @@
 import type { DialogCondition } from '../../../types/global';
 import type { QuestCommandContext, QuestCommandResult, UpdateConditionLinkCommand } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 const isMatchingVariableCondition = (
   condition: DialogCondition,
@@ -96,16 +96,17 @@ export const executeUpdateConditionLinkCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const updatedConditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
-  updatedConditions[existingIndex] = {
-    type: 'VariableCondition',
-    variableName: command.variableName,
-    operator,
-    value: command.value,
-    negated: nextNegated
-  };
-  updatedModel.functions[command.targetFunctionName].conditions = updatedConditions;
+  const updatedModel = withUpdatedFunction(context.model, command.targetFunctionName, (fn) => {
+    const updatedConditions = [...(fn.conditions || [])];
+    updatedConditions[existingIndex] = {
+      type: 'VariableCondition',
+      variableName: command.variableName,
+      operator,
+      value: command.value,
+      negated: nextNegated
+    };
+    fn.conditions = updatedConditions;
+  });
 
   return {
     ok: true,

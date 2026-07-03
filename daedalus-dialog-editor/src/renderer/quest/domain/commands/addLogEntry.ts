@@ -1,6 +1,6 @@
 import type { DialogAction } from '../../../types/global';
 import type { AddLogEntryCommand, QuestCommandContext, QuestCommandResult } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 export const executeAddLogEntryCommand = (
   context: QuestCommandContext,
@@ -28,18 +28,18 @@ export const executeAddLogEntryCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const targetFunction = updatedModel.functions[command.functionName];
-  const actions = [...(targetFunction.actions || [])];
+  const updatedModel = withUpdatedFunction(context.model, command.functionName, (targetFunction) => {
+    const actions = [...(targetFunction.actions || [])];
 
-  const nextAction: DialogAction = {
-    type: 'LogEntry',
-    topic: command.topic,
-    text
-  };
+    const nextAction: DialogAction = {
+      type: 'LogEntry',
+      topic: command.topic,
+      text
+    };
 
-  actions.push(nextAction);
-  targetFunction.actions = actions;
+    actions.push(nextAction);
+    targetFunction.actions = actions;
+  });
 
   return {
     ok: true,

@@ -1,6 +1,6 @@
 import type { DialogAction } from '../../../types/global';
 import type { QuestCommandContext, QuestCommandResult, SetMisStateCommand } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 export const executeSetMisStateCommand = (
   context: QuestCommandContext,
@@ -54,32 +54,32 @@ export const executeSetMisStateCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const targetFunction = updatedModel.functions[command.functionName];
-  const actions = [...(targetFunction.actions || [])];
+  const updatedModel = withUpdatedFunction(context.model, command.functionName, (targetFunction) => {
+    const actions = [...(targetFunction.actions || [])];
 
-  const actionIndex = actions.findIndex((action: DialogAction) => {
-    return (
-      action.type === 'SetVariableAction' &&
-      action.variableName === variableName &&
-      action.operator === '='
-    );
+    const actionIndex = actions.findIndex((action: DialogAction) => {
+      return (
+        action.type === 'SetVariableAction' &&
+        action.variableName === variableName &&
+        action.operator === '='
+      );
+    });
+
+    const nextAction: DialogAction = {
+      type: 'SetVariableAction',
+      variableName,
+      operator: '=',
+      value: command.value
+    };
+
+    if (actionIndex >= 0) {
+      actions[actionIndex] = nextAction;
+    } else {
+      actions.push(nextAction);
+    }
+
+    targetFunction.actions = actions;
   });
-
-  const nextAction: DialogAction = {
-    type: 'SetVariableAction',
-    variableName,
-    operator: '=',
-    value: command.value
-  };
-
-  if (actionIndex >= 0) {
-    actions[actionIndex] = nextAction;
-  } else {
-    actions.push(nextAction);
-  }
-
-  targetFunction.actions = actions;
 
   return {
     ok: true,

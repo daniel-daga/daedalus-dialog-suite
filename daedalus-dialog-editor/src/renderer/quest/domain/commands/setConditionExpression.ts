@@ -1,5 +1,5 @@
 import type { QuestCommandContext, QuestCommandResult, SetConditionExpressionCommand } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 import { parseConditionExpressionToConditions } from './conditionExpressionCodec';
 
 export const executeSetConditionExpressionCommand = (
@@ -28,9 +28,10 @@ export const executeSetConditionExpressionCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  updatedModel.functions[command.targetFunctionName].conditions = parseResult.conditions;
-  updatedModel.functions[command.targetFunctionName].conditionOperator = parseResult.conditionOperator ?? 'AND';
+  const updatedModel = withUpdatedFunction(context.model, command.targetFunctionName, (fn) => {
+    fn.conditions = parseResult.conditions;
+    fn.conditionOperator = parseResult.conditionOperator ?? 'AND';
+  });
 
   return {
     ok: true,

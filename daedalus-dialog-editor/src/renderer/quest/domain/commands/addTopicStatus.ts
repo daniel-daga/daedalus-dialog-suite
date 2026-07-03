@@ -1,6 +1,6 @@
 import type { DialogAction } from '../../../types/global';
 import type { AddTopicStatusCommand, QuestCommandContext, QuestCommandResult } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 export const executeAddTopicStatusCommand = (
   context: QuestCommandContext,
@@ -28,18 +28,18 @@ export const executeAddTopicStatusCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const targetFunction = updatedModel.functions[command.functionName];
-  const actions = [...(targetFunction.actions || [])];
+  const updatedModel = withUpdatedFunction(context.model, command.functionName, (targetFunction) => {
+    const actions = [...(targetFunction.actions || [])];
 
-  const nextAction: DialogAction = {
-    type: 'LogSetTopicStatus',
-    topic: command.topic,
-    status
-  };
+    const nextAction: DialogAction = {
+      type: 'LogSetTopicStatus',
+      topic: command.topic,
+      status
+    };
 
-  actions.push(nextAction);
-  targetFunction.actions = actions;
+    actions.push(nextAction);
+    targetFunction.actions = actions;
+  });
 
   return {
     ok: true,

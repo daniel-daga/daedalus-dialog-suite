@@ -1,6 +1,6 @@
 import type { DialogCondition } from '../../../types/global';
 import type { RemoveTransitionCommand, QuestCommandContext, QuestCommandResult } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 const isMatchingVariableCondition = (
   condition: DialogCondition,
@@ -59,10 +59,11 @@ export const executeRemoveTransitionCommand = (
       };
     }
 
-    const updatedModel = cloneModel(context.model);
-    const updatedConditions = [...(updatedModel.functions[command.targetFunctionName].conditions || [])];
-    updatedConditions.splice(conditionIndex, 1);
-    updatedModel.functions[command.targetFunctionName].conditions = updatedConditions;
+    const updatedModel = withUpdatedFunction(context.model, command.targetFunctionName, (fn) => {
+      const updatedConditions = [...(fn.conditions || [])];
+      updatedConditions.splice(conditionIndex, 1);
+      fn.conditions = updatedConditions;
+    });
 
     return {
       ok: true,
@@ -100,10 +101,11 @@ export const executeRemoveTransitionCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const updatedActions = [...(updatedModel.functions[command.sourceFunctionName].actions || [])];
-  updatedActions.splice(choiceIndex, 1);
-  updatedModel.functions[command.sourceFunctionName].actions = updatedActions;
+  const updatedModel = withUpdatedFunction(context.model, command.sourceFunctionName, (fn) => {
+    const updatedActions = [...(fn.actions || [])];
+    updatedActions.splice(choiceIndex, 1);
+    fn.actions = updatedActions;
+  });
 
   return {
     ok: true,

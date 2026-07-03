@@ -1,5 +1,5 @@
 import type { QuestCommandContext, QuestCommandResult, UpdateTransitionTextCommand } from './types';
-import { cloneModel } from './shared';
+import { withUpdatedFunction } from './shared';
 
 export const executeUpdateTransitionTextCommand = (
   context: QuestCommandContext,
@@ -45,10 +45,7 @@ export const executeUpdateTransitionTextCommand = (
     };
   }
 
-  const updatedModel = cloneModel(context.model);
-  const updatedActions = [...(updatedModel.functions[command.sourceFunctionName].actions || [])];
-  const existingAction = updatedActions[choiceIndex];
-  if (existingAction.type !== 'Choice') {
+  if (sourceActions[choiceIndex].type !== 'Choice') {
     return {
       ok: false,
       errors: [{
@@ -58,11 +55,17 @@ export const executeUpdateTransitionTextCommand = (
     };
   }
 
-  updatedActions[choiceIndex] = {
-    ...existingAction,
-    text
-  };
-  updatedModel.functions[command.sourceFunctionName].actions = updatedActions;
+  const updatedModel = withUpdatedFunction(context.model, command.sourceFunctionName, (fn) => {
+    const updatedActions = [...(fn.actions || [])];
+    const existingAction = updatedActions[choiceIndex];
+    if (existingAction.type === 'Choice') {
+      updatedActions[choiceIndex] = {
+        ...existingAction,
+        text
+      };
+    }
+    fn.actions = updatedActions;
+  });
 
   return {
     ok: true,
