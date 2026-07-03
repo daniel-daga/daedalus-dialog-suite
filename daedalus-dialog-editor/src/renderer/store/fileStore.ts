@@ -144,6 +144,41 @@ export interface FileState {
    * the auto-save gate already excludes conflicted files.
    */
   externalConflict?: { detectedAt: string; fileMissing?: boolean };
+  /**
+   * Transient UI hint (E2a): a model mutation was refused because the file is
+   * source-dirty (pending source edits in workingCode). Cleared on the next
+   * successful mutation / adopt / workingCode reset.
+   */
+  blockedBySourceEdit?: boolean;
+}
+
+/**
+ * A file is source-dirty when the source editor holds text that differs from
+ * the code on disk (E2a). Derived, never stored, so it cannot desync.
+ */
+export const isSourceDirty = (fs: FileState): boolean =>
+  fs.workingCode !== undefined && fs.workingCode !== fs.originalCode;
+
+/**
+ * A file has unsaved changes when its model is dirty, its source is dirty, or it
+ * is in external conflict. This is the single discard-guard predicate (E2a).
+ */
+export const hasUnsavedChanges = (fs: FileState): boolean =>
+  fs.isDirty || isSourceDirty(fs) || !!fs.externalConflict;
+
+/**
+ * E2a mutation guard (operates on an immer draft). If the file has pending
+ * source edits, refuse the model mutation — applying it would silently wipe the
+ * typed source — and flag the block for the UI. Returns true when the caller
+ * must bail out; otherwise clears any stale block flag and proceeds.
+ */
+function refuseMutationIfSourceDirty(fileState: FileState): boolean {
+  if (isSourceDirty(fileState)) {
+    fileState.blockedBySourceEdit = true;
+    return true;
+  }
+  fileState.blockedBySourceEdit = undefined;
+  return false;
 }
 
 interface EditorProject {
@@ -222,6 +257,7 @@ export interface FileStore {
   clearPendingValidation: () => void;
   generateCode: (filePath: string) => Promise<string>;
   setWorkingCode: (filePath: string, code: string | undefined) => void;
+  adoptWorkingCode: (filePath: string) => Promise<{ ok: boolean; errors?: ParseError[] }>;
   saveSource: (filePath: string, code: string) => Promise<void>;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
@@ -295,12 +331,16 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   updateModel: (filePath: string, model: SemanticModel) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
-      if (fileState) {
-        fileState.semanticModel = model;
-        fileState.isDirty = true;
-        fileState.workingCode = undefined;
-        fileState.autoSaveError = undefined;
+      if (!fileState) {
+        return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
+      fileState.semanticModel = model;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
     });
   },
 
@@ -308,6 +348,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
       fileState.semanticModel.dialogs[dialogName] = dialog;
@@ -322,6 +365,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
 
@@ -371,6 +417,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       if (!fileState) {
         return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
       fileState.semanticModel.functions[functionName] = func;
       fileState.isDirty = true;
       fileState.workingCode = undefined;
@@ -383,6 +432,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
 
@@ -410,6 +462,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       if (!fileState) {
         return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
 
       const existingFunction = fileState.semanticModel.functions[oldFunctionName];
       if (!existingFunction) {
@@ -432,6 +487,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) return;
+      if (refuseMutationIfSourceDirty(fileState)) return;
 
       const model = fileState.semanticModel;
       const dialog = model.dialogs[dialogName];
@@ -473,6 +529,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) return;
+      if (refuseMutationIfSourceDirty(fileState)) return;
 
       const model = fileState.semanticModel;
       const dialog = model.dialogs[oldDialogName];
@@ -583,6 +640,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
 
@@ -735,8 +795,52 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const fileState = state.openFiles.get(filePath);
       if (fileState) {
         fileState.workingCode = code;
+        // Clearing the source buffer resolves any earlier blocked mutation hint.
+        if (code === undefined) {
+          fileState.blockedBySourceEdit = undefined;
+        }
       }
     });
+  },
+
+  /**
+   * Reconcile pending source edits (E2a): parse workingCode and, on success,
+   * adopt it as the model (marking the file model-dirty and clearing the source
+   * buffer). On parse errors the source buffer is kept and the errors returned
+   * so the caller can surface them.
+   */
+  adoptWorkingCode: async (filePath: string) => {
+    const fileState = get().openFiles.get(filePath);
+    if (!fileState) {
+      throw new Error('File not open');
+    }
+
+    const code = fileState.workingCode;
+    if (code === undefined) {
+      return { ok: true };
+    }
+
+    const parsed = await parseSourceWithIds(code);
+
+    if (parsed.hasErrors) {
+      // Keep the typed source; the model is untouched.
+      return { ok: false, errors: parsed.errors };
+    }
+
+    set((state) => {
+      const currentFileState = state.openFiles.get(filePath);
+      if (currentFileState) {
+        currentFileState.semanticModel = parsed;
+        currentFileState.isDirty = true;
+        currentFileState.workingCode = undefined;
+        currentFileState.hasErrors = parsed.hasErrors || false;
+        currentFileState.errors = parsed.errors || [];
+        currentFileState.autoSaveError = undefined;
+        currentFileState.blockedBySourceEdit = undefined;
+      }
+    });
+
+    return { ok: true };
   },
 
   saveSource: async (filePath: string, code: string) => {
@@ -812,12 +916,16 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   _applyHistoryModelUpdate: (filePath: string, model: SemanticModel) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
-      if (fileState) {
-        fileState.semanticModel = model;
-        fileState.isDirty = true;
-        fileState.workingCode = undefined;
-        fileState.autoSaveError = undefined;
+      if (!fileState) {
+        return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
+      fileState.semanticModel = model;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
     });
   },
 

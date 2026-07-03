@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useProjectStore } from '../store/projectStore';
-import { useFileStore } from '../store/fileStore';
+import { useFileStore, hasUnsavedChanges } from '../store/fileStore';
 import { planExitDialogsForAddedFile } from '../utils/npcExitDialog';
 import type { FileChangeEvent, SemanticModel } from '../types/global';
 
@@ -73,10 +73,10 @@ async function handleFileModified(
   // If the file is currently open in the editor, reload it
   const openFileState = fileStore.openFiles.get(filePath);
   if (openFileState) {
-    // If the file has unsaved changes in the editor, skip the reload
-    // to avoid overwriting the user's work
-    if (openFileState.isDirty) {
-      console.log('[FileWatcher] Skipping reload of dirty file:', filePath);
+    // If the file has unsaved changes in the editor (model- or source-dirty, or
+    // already in conflict), skip the reload to avoid overwriting the user's work
+    if (hasUnsavedChanges(openFileState)) {
+      console.log('[FileWatcher] Skipping reload of file with unsaved changes:', filePath);
       return;
     }
 

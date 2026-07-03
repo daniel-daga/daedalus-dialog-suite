@@ -34,6 +34,7 @@ import { useThemeMode } from './themeContext';
 import { initStoreSync } from './store/storeSync';
 import { shallow } from 'zustand/shallow';
 import type { SaveError } from './utils/saveError';
+import { isSourceDirty, hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
 
 /**
  * App-bar copy for a classifiable save failure. Every message keeps the "your
@@ -93,6 +94,7 @@ const App: React.FC = () => {
   const activeFileState = activeFile ? openFiles.get(activeFile) : null;
   const autoSaveError = activeFileState?.autoSaveError;
   const saveError = activeFileState?.saveError;
+  const activeSourceDirty = activeFileState ? isSourceDirty(activeFileState) : false;
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [appError, setAppError] = useState<string | null>(null);
@@ -112,7 +114,7 @@ const App: React.FC = () => {
   const showProjectOpeningOverlay = isProjectOpening || (!!projectPath && isIngesting);
 
   const hasUnsavedChanges = useMemo(
-    () => Array.from(openFiles.values()).some((fileState) => fileState.isDirty),
+    () => Array.from(openFiles.values()).some((fileState) => fileHasUnsavedChanges(fileState)),
     [openFiles]
   );
 
@@ -261,6 +263,10 @@ const App: React.FC = () => {
                   </Box>
                 }>
                   <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />
+                </Tooltip>
+              ) : activeSourceDirty ? (
+                <Tooltip title="Unsaved source changes — Ctrl+S to save">
+                  <SaveIcon sx={{ color: 'warning.light', mr: 1 }} />
                 </Tooltip>
               ) : isAutoSaving ? (
                 <Tooltip title="Saving...">
