@@ -131,6 +131,13 @@ export interface EditorAPI {
   // App info
   getAppVersion: () => Promise<string>;
 
+  // Window close guard (E1). Main intercepts the window `close`, sends
+  // `app:closeRequested`, and waits for the renderer to acknowledge and decide.
+  onCloseRequested: (callback: () => void) => () => void;
+  ackCloseRequest: () => void;
+  approveClose: () => void;
+  cancelClose: () => void;
+
   // Updater API
   checkForUpdate: () => Promise<UpdateCheckResult>;
   downloadUpdate: (url: string) => Promise<string>;

@@ -11,6 +11,10 @@ import { FileWatcherService } from './services/FileWatcherService';
 import { UpdaterService } from './services/UpdaterService';
 
 let mainWindow: BrowserWindow | null = null;
+// E1 window-close guard: main intercepts `close`, defers to the renderer, and
+// only lets the window go once the renderer approves (or fails to ACK in time).
+let closeApproved = false;
+let closeGuardAckTimer: ReturnType<typeof setTimeout> | null = null;
 const fileService = new FileService();
 const parserService = new ParserService();
 const codeGeneratorService = new CodeGeneratorService();
@@ -49,6 +53,24 @@ function createWindow() {
   fileWatcherService.setOnExternalChange((filePath) => {
     fileService.clearEncodingCache(filePath);
     fileService.clearStatCache(filePath);
+  });
+
+  // E1: intercept the window close so the renderer can guard unsaved work.
+  // `preventDefault` vetoes the close; we ask the renderer to flush pending
+  // edits, list unsaved files, and choose. A safety timer force-destroys the
+  // window if the renderer never acknowledges — this covers a hung/crashed
+  // renderer (fix-03 R1 world), never a user still deciding (the ACK, sent
+  // immediately on receipt, clears it).
+  mainWindow.on('close', (e) => {
+    if (closeApproved) {
+      return;
+    }
+    e.preventDefault();
+    mainWindow?.webContents.send('app:closeRequested');
+    closeGuardAckTimer = setTimeout(() => {
+      closeApproved = true;
+      mainWindow?.destroy();
+    }, 3000);
   });
 
   mainWindow.on('closed', () => {
@@ -384,6 +406,31 @@ function setupIpcHandlers() {
 
   // App info
   ipcMain.handle('app:getVersion', () => app.getVersion());
+
+  // Window close guard (E1). `before-quit` needs no extra handling — quitting
+  // closes the window, and the `close` handler above runs and defers here.
+  ipcMain.on('app:ackCloseRequest', () => {
+    // The renderer is alive and handling the request — cancel the force-close
+    // safety net. The user may now take as long as they like to decide.
+    if (closeGuardAckTimer) {
+      clearTimeout(closeGuardAckTimer);
+      closeGuardAckTimer = null;
+    }
+  });
+
+  ipcMain.on('app:approveClose', () => {
+    if (closeGuardAckTimer) {
+      clearTimeout(closeGuardAckTimer);
+      closeGuardAckTimer = null;
+    }
+    closeApproved = true;
+    mainWindow?.close();
+  });
+
+  ipcMain.on('app:cancelClose', () => {
+    // The user chose to stay. Nothing to do: the close was already vetoed and
+    // the ACK cleared the safety timer.
+  });
 
   // Updater handlers
   ipcMain.handle('updater:checkForUpdate', async () => {

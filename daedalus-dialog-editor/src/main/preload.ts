@@ -47,6 +47,16 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // App info
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+  // Window close guard (E1)
+  onCloseRequested: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('app:closeRequested', listener);
+    return () => { ipcRenderer.removeListener('app:closeRequested', listener); };
+  },
+  ackCloseRequest: () => ipcRenderer.send('app:ackCloseRequest'),
+  approveClose: () => ipcRenderer.send('app:approveClose'),
+  cancelClose: () => ipcRenderer.send('app:cancelClose'),
+
   // Updater API
   checkForUpdate: () => ipcRenderer.invoke('updater:checkForUpdate'),
   downloadUpdate: (url: string) => ipcRenderer.invoke('updater:downloadUpdate', url),
