@@ -144,6 +144,45 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  editor-e2e-electron:
+    name: E2E Tests (real Electron)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Builds dist/main + dist/renderer, which the harness launches with
+      # NODE_ENV=production. Electron itself comes from the pnpm install
+      # postinstall — no `playwright install` (Electron is the browser here).
+      - name: Build editor
+        run: pnpm --filter daedalus-dialog-editor run build
+
+      - name: Run real-Electron E2E suite
+        working-directory: daedalus-dialog-editor
+        run: xvfb-run --auto-servernum pnpm exec playwright test -c playwright.electron.config.ts
+
+      - name: Upload Electron E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-electron
+          path: daedalus-dialog-editor/playwright-report-electron
+          if-no-files-found: ignore
+          retention-days: 7
+
   parser-tests:
     runs-on: ubuntu-latest
     steps:
