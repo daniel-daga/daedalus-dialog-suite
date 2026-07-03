@@ -16,9 +16,19 @@ export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
 import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
+import type { MetadataResult, ProcessFileResult } from './MetadataWorkerPool';
 
 function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
+}
+
+// D3 will collect these into ProjectIndex.metadataFailures; until then a
+// per-file failure is treated as empty metadata so the index build survives.
+function toMetadata(result: ProcessFileResult): MetadataResult {
+  if ('ok' in result) {
+    return { dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [] };
+  }
+  return result;
 }
 
 class ProjectService {
@@ -79,9 +89,9 @@ class ProjectService {
     const pool = new MetadataWorkerPool();
 
     try {
-      const results = await Promise.all(
+      const results = (await Promise.all(
         allFiles.map(filePath => pool.processFile(filePath))
-      );
+      )).map(toMetadata);
 
       const parentByType = new Map<string, string>();
       results.forEach((result) => {
