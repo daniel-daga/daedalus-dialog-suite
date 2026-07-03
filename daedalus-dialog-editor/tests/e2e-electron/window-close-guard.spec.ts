@@ -14,7 +14,10 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
 
 const NPC = 'SLD_99005_Arog';
 const DIALOG = 'DIA_Arog_EntscheidungKillAlchemist';
-const ORIGINAL_TEXT_ID = 'DIA_Arog_EntscheidungKillAlchemist_15_6';
+// Distinctive ASCII substring of the fixture's first-line subtitle comment —
+// the Text field renders DialogLine `text` (the //comment), not the AI_Output
+// id (same technique as undo-redo-save.spec.ts).
+const ORIGINAL_TEXT = 'Du hast ihn einfach umgebracht';
 const SAVE_MARKER = 'DIA_Arog_CLOSEGUARD_SAVE_MARKER';
 
 /** Fire the real OS window close (vetoed by the main-process guard). */
@@ -40,7 +43,7 @@ test.describe('Window close guard (real OS close, disk truth)', () => {
     await page.getByText(NPC).click();
     await page.getByRole('button', { name: new RegExp(DIALOG) }).click();
     await expect(page.getByRole('heading', { name: DIALOG, exact: true })).toBeVisible();
-    await expect(page.getByLabel('Text').first()).toHaveValue(ORIGINAL_TEXT_ID);
+    await expect(page.getByLabel('Text').first()).toHaveValue(new RegExp(ORIGINAL_TEXT));
   });
 
   test.afterEach(async () => {

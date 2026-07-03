@@ -17,6 +17,14 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
  * reference-equal to the one produced by openFile. Auto-save then serializes
  * that pristine model: the effective "no-edit save".
  *
+ * The write is detected via the file's mtime (not a content marker): the
+ * fixture's AI_Output line has no subtitle comment, so the UI's Text field
+ * shows the id fallback and a text edit is invisible to codegen — EVERY write
+ * this test can produce is expected to be byte-identical, which is exactly the
+ * fidelity claim under test. (This also means the test must not poll for
+ * changed content; a content poll on unchanged-content writes passes vacuously
+ * before any write happens — the CI failure mode of the first version.)
+ *
  * RATCHET — this asserts on a fixture that is already fidelity-clean through the
  * editor's DEFAULT code settings (`sectionHeaders: true`, `preserveSourceStyle:
  * true`), not merely through raw parse->generate. `save-fidelity.d` is the
@@ -28,6 +36,8 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
 
 const NPC = 'Some_NPC';
 const DIALOG = 'DIA_Order';
+// No subtitle comment on the line -> DialogLine.text falls back to the id, and
+// that is what the Text field renders (DialogLineRenderer binds `text`).
 const ORIGINAL_TEXT_ID = 'DIA_Order_15_00';
 const EDIT_MARKER = 'DIA_Order_ZZZ_TEMP_MARKER';
 
@@ -66,7 +76,10 @@ test.describe('Save fidelity (no-edit / undo-to-clean, disk truth)', () => {
     const firstLine = page.getByLabel('Text').first();
     await expect(firstLine).toHaveValue(ORIGINAL_TEXT_ID);
 
-    // Trivial edit, flushed into history.
+    // No write can have happened yet — the file was only opened (read).
+    const mtimeBefore = fs.statSync(savedFile).mtimeMs;
+
+    // Trivial edit, flushed into history (arms dirty state + undo).
     await firstLine.click();
     await firstLine.fill(EDIT_MARKER);
     await page.keyboard.press('Tab');
@@ -78,11 +91,13 @@ test.describe('Save fidelity (no-edit / undo-to-clean, disk truth)', () => {
     await page.keyboard.press('Control+z');
     await expect(firstLine).toHaveValue(ORIGINAL_TEXT_ID);
 
-    // Auto-save serializes the pristine model. The write must reproduce the
-    // original bytes exactly (modulo line-ending normalization, per Tier-1).
+    // Auto-save (2 s debounce) serializes the model through the real codegen +
+    // FileService write. Wait for the write to actually land (mtime change),
+    // then assert the written bytes reproduce the original exactly (modulo
+    // line-ending normalization, per Tier-1).
     await expect(async () => {
+      expect(fs.statSync(savedFile).mtimeMs).not.toBe(mtimeBefore);
       const disk = fs.readFileSync(savedFile, 'latin1');
-      expect(disk).not.toContain(EDIT_MARKER);
       expect(normalizeNewlines(disk)).toBe(normalizeNewlines(originalBytes));
     }).toPass({ timeout: 20000 });
   });

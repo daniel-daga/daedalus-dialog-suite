@@ -60,7 +60,29 @@ export async function launchApp(): Promise<AppFixture> {
   await page.waitForLoadState('domcontentloaded');
 
   const cleanup = async () => {
-    await app.close().catch(() => {});
+    // Destroy windows directly before closing: `destroy()` skips the `close`
+    // event, so the window-close guard (which shows a modal dialog and waits
+    // for the user when a file is dirty) can never block teardown. Without
+    // this, a test ending with a dirty file hangs `app.close()` forever
+    // (observed as CI worker-teardown timeouts). The app may already have
+    // quit (e.g. the force-destroy spec) — ignore evaluate failures.
+    try {
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows().forEach((w) => w.destroy());
+      });
+    } catch {
+      // app already gone
+    }
+    // Belt and braces: never let close() hang the worker; kill after a bound.
+    await Promise.race([
+      app.close().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+    ]);
+    try {
+      app.process().kill();
+    } catch {
+      // process already exited
+    }
     try {
       fs.rmSync(userDataDir, { recursive: true, force: true });
     } catch {

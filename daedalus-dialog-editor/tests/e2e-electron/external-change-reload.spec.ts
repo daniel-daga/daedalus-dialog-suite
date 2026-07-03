@@ -12,16 +12,22 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
  *  - Dirty open file changed on disk -> `markExternalConflict` + the conflict
  *    dialog (no silent clobber). Either the watcher path or the main-side mtime
  *    write precondition raises the conflict; both are asserted via the dialog.
+ *
+ * NOTE: the UI's Text field renders the DialogLine `text` — the human-readable
+ * subtitle comment, not the AI_Output id (DialogLineRenderer binds `text`).
  */
 
 const NPC = 'SLD_99005_Arog';
 const DIALOG = 'DIA_Arog_EntscheidungKillAlchemist';
-const ORIGINAL_TEXT_ID = 'DIA_Arog_EntscheidungKillAlchemist_15_6';
+// Distinctive ASCII substring of the fixture's first-line subtitle comment
+// (same technique as undo-redo-save.spec.ts).
+const ORIGINAL_TEXT = 'Du hast ihn einfach umgebracht';
 const RELOAD_MARKER = 'RELOAD_MARKER_FROM_DISK';
 
 // A parseable replacement keeping the same NPC / dialog / function names so the
-// currently-selected dialog stays mounted; only the first line's id changes.
-function externalContent(firstLineId: string): string {
+// currently-selected dialog stays mounted; only the first line's subtitle
+// comment (the Text field's content) changes.
+function externalContent(firstLineComment: string): string {
   return [
     `INSTANCE ${DIALOG}(C_INFO)`,
     '{',
@@ -38,7 +44,7 @@ function externalContent(firstLineId: string): string {
     '',
     `FUNC VOID ${DIALOG}_Info()`,
     '{',
-    `\tAI_Output(self, other, "${firstLineId}");`,
+    `\tAI_Output(self, other, "${DIALOG}_15_6"); //${firstLineComment}`,
     '};',
     '',
   ].join('\n');
@@ -52,7 +58,7 @@ async function openProjectDialog(fixture: AppFixture, projectDir: string): Promi
   await page.getByText(NPC).click();
   await page.getByRole('button', { name: new RegExp(DIALOG) }).click();
   await expect(page.getByRole('heading', { name: DIALOG, exact: true })).toBeVisible();
-  await expect(page.getByLabel('Text').first()).toHaveValue(ORIGINAL_TEXT_ID);
+  await expect(page.getByLabel('Text').first()).toHaveValue(new RegExp(ORIGINAL_TEXT));
 }
 
 test.describe('External change -> reload / conflict (real watcher, disk truth)', () => {
@@ -97,7 +103,7 @@ test.describe('External change -> reload / conflict (real watcher, disk truth)',
     await firstLine.click();
     await firstLine.fill('DIA_Arog_DIRTY_EDIT_MARKER');
     await page.keyboard.press('Tab');
-    fs.writeFileSync(savedFile, externalContent('DIA_Arog_EXTERNAL_WHILE_DIRTY'), 'latin1');
+    fs.writeFileSync(savedFile, externalContent('External edit while dirty'), 'latin1');
 
     await expect(page.getByTestId('external-conflict-dialog')).toBeVisible({ timeout: 25000 });
     await expect(page.getByTestId('external-conflict-keep-mine')).toBeVisible();

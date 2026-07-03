@@ -14,5 +14,6 @@ FUNC INT DIA_Umlaut_Greet_Condition()
 
 FUNC VOID DIA_Umlaut_Greet_Info()
 {
-	AI_Output(self, other, "DIA_Umlaut_Greet_15_00"); //Schöne Grüße, Söldner. Über Änderungen später.
+	AI_Output(self, other, "DIA_Umlaut_Greet_15_00"); //Willkommen, Fremder. Über Änderungen später.
+	AI_Output(self, other, "DIA_Umlaut_Greet_15_01"); //Schöne Grüße, Söldner!
 };
