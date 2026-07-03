@@ -17,6 +17,17 @@ Each slice gets a deep-dive pass producing a fix plan document (linked below). S
 | 7 | Rendering performance at mod scale (merge storms, subscriptions) | Major | [fix-07-render-performance.md](./fix-07-render-performance.md) | plan-ready |
 | 8 | Test truthfulness & release gating (mock E2E, ungated releases) | Blocker | [fix-08-test-release-gating.md](./fix-08-test-release-gating.md) | plan-ready |
 
+## Notable deltas from the deep dives
+
+The plan-writing passes corrected or sharpened several original findings:
+
+- **U6 largely obsolete:** the `[BUG DEMO]` stale-model-on-save bug is already fixed architecturally (condition edits flow through store updaters; `historyActions.updateModel` has no callers). The live remnant is the 300 ms debounce window, fixed via slice 5's flush registry (see fix-02 / fix-05 §2.3).
+- **E2 latent, not live:** `SourceCodeEditor` is unreachable in the shipped app (its mount is commented out in `MainLayout.tsx`); `workingCode` semantics are fixed as a prerequisite for re-enabling the view (fix-02 N1).
+- **E3 × P7 must ship together:** once fix-01's generator guard lands, the `hasErrors`-clearing bug degrades into a permanently failing auto-save — fix-01 P7 and fix-02 E3 are a same-release pair.
+- **Corpus job can't just be re-enabled:** its default root is the gitignored MDK path; it needs fix-01's committed fixture corpus plus explicit `--root` (fix-08).
+- **New perf finding (fix-07 N1):** selector-less `useNavigation()` makes every `VariableAutocomplete`/`ReferenceLink` leaf re-render on each merge, bypassing ActionCard's memo.
+- **New loss scenarios (fix-02):** external delete/rename of a dirty file discards all work via the watcher's `unlink` → `closeFile`; `saveSource` has a worse twin of E7's mid-save race.
+
 ## Working agreement
 
 - Plans follow repo TDD rules: every fix starts from a failing test that genuinely exercises the defect (see finding IDs in each plan).
