@@ -28,7 +28,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   semanticModel
 }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
-  const { localCondition, handleUpdate, handleImmediateUpdate, flushUpdate } = useConditionUpdate(
+  const { localCondition, handleUpdate, handleImmediateUpdate, flushUpdate, markDeleted } = useConditionUpdate(
     condition, index, updateCondition
   );
 
@@ -78,7 +78,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
           <IconButton
             size="small"
             color="error"
-            onClick={() => deleteCondition(index)}
+            onClick={() => { markDeleted(); deleteCondition(index); }}
             sx={{ flexShrink: 0 }}
             aria-label="Delete condition"
           >

@@ -24,6 +24,27 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
   const [conditionsExpanded, setConditionsExpanded] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
   const conditionRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Stable synthetic identities for ConditionCard keys (fix-05 §2.4 stage 2).
+  // Conditions carry no id, so a parallel uiIds side-table gives each card a
+  // key that survives a deletion above it — keeping the card owning a pending
+  // debounce mounted so the in-flight edit lands on the right condition. The
+  // handlers below splice/push uiIds in lockstep with the conditions array;
+  // out-of-band length changes (undo/redo, dialog switch) regenerate the ids.
+  const uiIdsRef = useRef<string[]>([]);
+  const uiIdCounterRef = useRef(0);
+  const uiIdsNameRef = useRef<string | undefined>(undefined);
+  const currentConditionCount = conditionFunction?.conditions?.length ?? 0;
+  if (
+    uiIdsNameRef.current !== conditionFunction?.name ||
+    uiIdsRef.current.length !== currentConditionCount
+  ) {
+    uiIdsNameRef.current = conditionFunction?.name;
+    uiIdsRef.current = Array.from(
+      { length: currentConditionCount },
+      () => `cond-${uiIdCounterRef.current++}`
+    );
+  }
   const isNpcKnowsCondition = (condition: ConditionEditorCondition): condition is ConditionEditorCondition & { npc: string; dialogRef: string } =>
     'npc' in condition && 'dialogRef' in condition;
   const isVariableCondition = (condition: ConditionEditorCondition): condition is ConditionEditorCondition & { variableName: string } =>
@@ -31,9 +52,17 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
 
   // Helper to strip non-serializable functions from conditions
   const sanitizeCondition = (condition: ConditionEditorCondition): DialogCondition => {
-    const { getTypeName, ...rest } = condition;
+    const { getTypeName: _getTypeName, ...rest } = condition;
     return rest as DialogCondition;
   };
+
+  // Cache hydrated conditions by their raw (store) object so an unchanged
+  // condition keeps a STABLE hydrated reference across re-renders (fix-05 §2.4
+  // stage 2). Without this, hydrating fresh objects every render makes each
+  // ConditionCard's prop-sync effect fire on any sibling edit — clobbering a
+  // pending debounce in a card that was not touched. Immer structural sharing
+  // keeps unchanged conditions reference-stable, so a WeakMap keys cleanly.
+  const hydrationCacheRef = useRef(new WeakMap<object, ConditionEditorCondition>());
 
   // Helper to add getTypeName to conditions for UI usage
   const hydrateCondition = (condition: ConditionEditorCondition): ConditionEditorCondition => {
@@ -42,18 +71,21 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
       return condition;
     }
 
-    if (condition.type) {
-      return { ...condition, getTypeName: () => condition.type as string };
-    }
+    const cached = hydrationCacheRef.current.get(condition as object);
+    if (cached) return cached;
 
-    // Add getTypeName based on condition properties
-    if (isNpcKnowsCondition(condition)) {
-      return { ...condition, getTypeName: () => 'NpcKnowsInfoCondition' };
+    let hydrated: ConditionEditorCondition;
+    if (condition.type) {
+      hydrated = { ...condition, getTypeName: () => condition.type as string };
+    } else if (isNpcKnowsCondition(condition)) {
+      hydrated = { ...condition, getTypeName: () => 'NpcKnowsInfoCondition' };
+    } else if (isVariableCondition(condition)) {
+      hydrated = { ...condition, getTypeName: () => 'VariableCondition' };
+    } else {
+      hydrated = { ...condition, getTypeName: () => 'Condition' };
     }
-    if (isVariableCondition(condition)) {
-      return { ...condition, getTypeName: () => 'VariableCondition' };
-    }
-    return { ...condition, getTypeName: () => 'Condition' };
+    hydrationCacheRef.current.set(condition as object, hydrated);
+    return hydrated;
   };
 
   // Hydrate conditions with getTypeName for UI (store doesn't have these functions)
@@ -83,12 +115,11 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
     onUpdateFunction((currentFunc) => {
       if (!currentFunc) return currentFunc;
       const newConditions = [...(currentFunc.conditions || [])];
-      // Note: we assume index is valid. If array changed concurrently, this might be risky,
-      // but it's better than overwriting the whole function.
+      // Only overwrite an in-range slot. An out-of-range index means the card
+      // was reindexed/removed while a debounce was pending (finding U3): the
+      // write is a no-op rather than appending a resurrected condition.
       if (index >= 0 && index < newConditions.length) {
         newConditions[index] = sanitizeCondition(updated);
-      } else if (index === newConditions.length) {
-        newConditions.push(sanitizeCondition(updated));
       }
       return {
         ...currentFunc,
@@ -98,6 +129,10 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
   }, [onUpdateFunction]);
 
   const deleteCondition = useCallback((index: number) => {
+    // Keep the uiIds side-table in lockstep so surviving cards keep their keys.
+    if (index >= 0 && index < uiIdsRef.current.length) {
+      uiIdsRef.current = uiIdsRef.current.filter((_, i) => i !== index);
+    }
     onUpdateFunction((currentFunc) => {
       if (!currentFunc) return currentFunc;
       const newConditions = (currentFunc.conditions || []).filter((_, i: number) => i !== index);
@@ -197,6 +232,8 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
         break;
     }
 
+    // Append a matching uiId so the reconcile above does not regenerate keys.
+    uiIdsRef.current = [...uiIdsRef.current, `cond-${uiIdCounterRef.current++}`];
     onUpdateFunction((currentFunc) => {
       if (!currentFunc) return currentFunc;
       const newConditions = [...(currentFunc.conditions || []), sanitizeCondition(newCondition)];
@@ -362,7 +399,7 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
               <Stack spacing={2}>
                 {localFunction.conditions.map((condition: ConditionEditorCondition, idx: number) => (
                   <ConditionCard
-                    key={idx}
+                    key={uiIdsRef.current[idx] ?? idx}
                     ref={(el) => (conditionRefs.current[idx] = el)}
                     condition={condition}
                     index={idx}

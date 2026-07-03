@@ -1,4 +1,3 @@
-import { act } from '@testing-library/react';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { SemanticModel } from '../src/renderer/types/global';
 

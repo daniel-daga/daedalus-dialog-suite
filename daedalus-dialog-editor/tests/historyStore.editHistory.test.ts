@@ -352,3 +352,59 @@ describe('historyStore – subscription: auto-clear on file close', () => {
     expect(useHistoryStore.getState().editHistory.has(filePath)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Subscription: saving one file must NOT wipe other files' quest batches (F-B)
+// ---------------------------------------------------------------------------
+
+describe('historyStore – save does not reset unrelated quest batches (F-B)', () => {
+  const fileA = 'C:/tmp/A.d';
+  const fileB = 'C:/tmp/B.d';
+
+  const openTwoFiles = () => {
+    useFileStore.setState({
+      openFiles: new Map([
+        [fileA, {
+          filePath: fileA, semanticModel: makeModel('A0'), isDirty: false,
+          lastSaved: new Date(), originalCode: 'A-src-0', workingCode: '',
+          hasErrors: false, errors: [], validationResult: null,
+        }],
+        [fileB, {
+          filePath: fileB, semanticModel: makeModel('B0'), isDirty: false,
+          lastSaved: new Date(), originalCode: 'B-src-0', workingCode: '',
+          hasErrors: false, errors: [], validationResult: null,
+        }],
+      ]),
+      activeFile: fileA,
+    });
+    useHistoryStore.setState({
+      editHistory: new Map(),
+      questBatchHistory: { past: [], future: [] },
+      questNodePositions: new Map(),
+    });
+  };
+
+  it('keeps file B\'s quest batch undoable after file A is saved', () => {
+    openTwoFiles();
+
+    // Quest batch on A, then a quest batch on B (B on top).
+    useHistoryStore.getState().applyQuestModelWithHistory(fileA, makeModel('A1'));
+    useHistoryStore.getState().applyQuestModelWithHistory(fileB, makeModel('B1'));
+    expect(useHistoryStore.getState().canUndoLastQuestBatch()).toBe(true);
+
+    // Simulate a source save of file A only: originalCode changes, isDirty=false.
+    useFileStore.setState((state) => {
+      const next = new Map(state.openFiles);
+      const a = next.get(fileA)!;
+      next.set(fileA, { ...a, originalCode: 'A-src-1', isDirty: false });
+      return { openFiles: next };
+    });
+
+    // B's quest batch must survive (only batches containing A are cleared).
+    expect(useHistoryStore.getState().canUndoLastQuestBatch()).toBe(true);
+    useHistoryStore.getState().undoLastQuestBatch();
+    expect(
+      useFileStore.getState().getFileState(fileB)?.semanticModel.dialogs?.DIA_Test?.properties?.npc
+    ).toBe('B0');
+  });
+});

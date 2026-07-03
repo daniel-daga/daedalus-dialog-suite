@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * E2E tests for Project Mode editing
+ * Browser mock-harness tests for Project Mode editing (NOT end-to-end).
  * Verifies that selecting a dialog from the project tree correctly
  * enables editing and allows adding dialog lines.
+ *
+ * These assertions are all UI-state only (tree population, action counts,
+ * field values) — the part the mock legitimately covers (see
+ * tests/e2e/README.md). Save-verification / disk-truth (generated file content
+ * after saving) belongs to the real-Electron suite tests/e2e-electron/ (built
+ * separately), never here.
  */
 
 const PROJECT_FILE_CONTENT = `// Project Dialog File

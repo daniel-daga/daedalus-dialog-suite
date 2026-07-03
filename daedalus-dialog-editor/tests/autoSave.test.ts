@@ -286,7 +286,7 @@ describe('useAutoSave hook', () => {
       activeFile: filePath,
     });
 
-    const { result } = renderHook(() => useAutoSave());
+    renderHook(() => useAutoSave());
 
     // Make file dirty
     act(() => {

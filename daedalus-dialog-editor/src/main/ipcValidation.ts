@@ -40,6 +40,34 @@ export function assertSaveFileSettings(settings: unknown): void {
   }
 }
 
+/**
+ * Renderer crash-report forwarding (fix-08 §5). The renderer forwards
+ * `window.onerror` / `unhandledrejection` payloads over IPC; a compromised or
+ * buggy renderer must not be able to push arbitrary or unbounded data into the
+ * local log. Strings only, bounded lengths, drop anything else.
+ */
+export const RENDERER_ERROR_MESSAGE_MAX = 2000;
+export const RENDERER_ERROR_STACK_MAX = 8000;
+
+export function sanitizeRendererErrorPayload(
+  payload: unknown
+): { message: string; stack?: string } | null {
+  if (!isPlainObject(payload)) {
+    return null;
+  }
+  const { message, stack } = payload;
+  if (typeof message !== 'string' || message.length === 0 || message.length > RENDERER_ERROR_MESSAGE_MAX) {
+    return null;
+  }
+  if (stack !== undefined) {
+    if (typeof stack !== 'string' || stack.length > RENDERER_ERROR_STACK_MAX) {
+      return null;
+    }
+    return { message, stack };
+  }
+  return { message };
+}
+
 const SAVE_FILE_OPTION_KEYS = ['skipValidation', 'forceOnErrors', 'overwriteExternal'] as const;
 
 /**
@@ -55,7 +83,10 @@ export function assertSaveFileOptions(options: unknown): void {
     if (!(SAVE_FILE_OPTION_KEYS as readonly string[]).includes(key)) {
       throw new Error(`Invalid options payload: unknown option "${key}"`);
     }
-    if (typeof options[key] !== 'boolean') {
+    // Callers spread optional flags (`{ forceOnErrors: options?.forceOnErrors }`),
+    // so absent flags arrive as keys with undefined values over structured
+    // clone. Treat them as "not set" rather than malformed.
+    if (options[key] !== undefined && typeof options[key] !== 'boolean') {
       throw new Error(`Invalid options payload: option "${key}" must be a boolean`);
     }
   }

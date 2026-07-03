@@ -4,7 +4,7 @@
  * @jest-environment node
  */
 
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, afterEach, jest } from '@jest/globals';
 import { applyWindowSecurity } from '../src/main/windowSecurity';
 
 interface StubWebContents {

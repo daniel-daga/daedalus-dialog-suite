@@ -12,6 +12,7 @@ import {
   createExitDialogTemplate,
   planExitDialogsForAddedFile
 } from '../src/renderer/utils/npcExitDialog';
+import { execFileSync } from 'child_process';
 import type { DialogMetadata, SemanticModel } from '../src/renderer/types/global';
 
 const emptyModel = (): SemanticModel => ({
@@ -76,8 +77,6 @@ describe('createExitDialogTemplate', () => {
     // The native tree-sitter binding cannot be loaded into more than one Jest
     // module registry per worker process (ProjectService.test.ts already loads
     // it inline), so the parse runs in a child process instead.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { execFileSync } = require('child_process');
     const parserPath = require.resolve('daedalus-parser');
     const visitorPath = require.resolve('daedalus-parser/semantic-visitor');
     const script = `

@@ -131,6 +131,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
         onRenameFunction={handleRenameFunction}
         dialogContextName={dialogName}
         contextId={targetFunctionName}
+        droppableNamespace={targetFunctionName}
         filePath={filePath}
       />
     </Box>

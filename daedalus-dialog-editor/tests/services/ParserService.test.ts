@@ -7,6 +7,8 @@
  * @jest-environment node
  */
 
+import * as os from 'os';
+import * as fs from 'fs';
 import * as path from 'path';
 import { ParserService } from '../../src/main/services/ParserService';
 import { WorkerRequestError } from '../../src/main/services/WorkerRequestError';
@@ -84,7 +86,7 @@ describe('ParserService worker lifecycle', () => {
 
   it('recovers after a crash: all subsequent requests settle', async () => {
     const marker = path.join(
-      require('os').tmpdir(),
+      os.tmpdir(),
       `parser-crash-once-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     process.env.CRASH_ONCE_MARKER = marker;
@@ -101,7 +103,6 @@ describe('ParserService worker lifecycle', () => {
       );
       expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
     } finally {
-      const fs = require('fs');
       if (fs.existsSync(marker)) fs.unlinkSync(marker);
       delete process.env.CRASH_ONCE_MARKER;
     }

@@ -12,10 +12,10 @@ Each slice gets a deep-dive pass producing a fix plan document (linked below). S
 | 2 | Editor save/dirty-state pipeline (unsaved-work loss, lossy writes) | Blocker | done — durable outcomes in [save-pipeline.md](../architecture/save-pipeline.md) | done |
 | 3 | Worker lifecycle & reliability (crash → silent permanent hang) | Blocker | done — durable outcomes in [worker-reliability.md](../architecture/worker-reliability.md) | done |
 | 4 | Quest editor stack (features unreachable in prod, canvas leaks) | Blocker | [fix-04-quest-editor.md](./fix-04-quest-editor.md) | in-progress (all 8 steps implemented; manual smoke outstanding) |
-| 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | [fix-05-undo-debounce.md](./fix-05-undo-debounce.md) | plan-ready |
+| 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | [fix-05-undo-debounce.md](./fix-05-undo-debounce.md) | in-progress (all 5 steps landed; see progress notes) |
 | 6 | Security & update chain (unverified updates, EOL Electron, symlinks) | Blocker | [fix-06-security-updates.md](./fix-06-security-updates.md) | in-progress |
 | 7 | Rendering performance at mod scale (merge storms, subscriptions) | Major | [fix-07-render-performance.md](./fix-07-render-performance.md) | plan-ready |
-| 8 | Test truthfulness & release gating (mock E2E, ungated releases) | Blocker | [fix-08-test-release-gating.md](./fix-08-test-release-gating.md) | plan-ready |
+| 8 | Test truthfulness & release gating (mock E2E, ungated releases) | Blocker | [fix-08-test-release-gating.md](./fix-08-test-release-gating.md) | in-progress (items 1–8 landed; see progress notes) |
 
 ## Notable deltas from the deep dives
 
@@ -78,6 +78,92 @@ Fixes 1–4 of fix-06 landed (SettingsService atomic/serialized writes; symlink-
 - **Fix 6 (code signing)**: blocked on the owner's cert / Azure Trusted Signing decision.
 - **Fix 7 (Electron 29 → latest stable + electron-builder bump)**: land after 1–5; needs packaged-app verification on Windows.
 - Manual checklist items in fix-06 §3 (junction-layout error UX, signed-installer QA, upgrade smoke).
+
+## Slice 8 progress notes (2026-07-03)
+
+All eight §9 items of fix-08 are implemented and landed on this branch:
+
+- **§7 Jest fallback** — silent parser-mock mapping deleted; missing `daedalus-parser`
+  now throws with remediation text. `jest.mocked.config.js` layers on a new shared
+  `jest.base.config.js` so `test:mocked` is genuinely independent of the guard.
+- **§2 honesty** — CI jobs renamed `editor-ui-tests` / `editor-ui-merge-reports`
+  ("browser harness"); `playwright.config.ts` header + `tests/e2e/README.md` state the
+  mock-harness contract (T7: no disk-truth assertions beyond AI_Output lines).
+- **§3 corpus job** — `roundtrip-corpus` re-enabled against the committed fixture
+  corpus (`--root test/fixtures/corpus --strict`), green in CI with report artifacts;
+  MDK `--root` override documented in `daedalus-parser/README.md`.
+- **§4 release gating** — `all-tests.yml` gained `workflow_call:`; `build-windows.yml`
+  now `needs` the full matrix, has a master-only ref guard, stale-run guard,
+  `concurrency` publish serialization, and `commit` in `update-meta.json` (sha256
+  producer + post-publish self-check were already landed by fix-06 and untouched).
+  The §8.5 workflow-dispatch checklist (non-master dispatch skipped, red-main refusal,
+  stale-rerun refusal, publish assertion) has NOT been executed yet — requires a
+  maintainer dispatch.
+- **§5 crash logging** — `LogService` (1 MiB rotation, per-session banner, injectable
+  base dir), `uncaughtException`/`unhandledRejection`/`render-process-gone`/
+  `child-process-gone` handlers, renderer `window.onerror`/`unhandledrejection`
+  forwarding through validated IPC (`sanitizeRendererErrorPayload`), "Show log file"
+  affordance in the app footer. Local file only — no telemetry.
+- **§6 ESLint bootstrap** — flat `eslint.config.js` (parser-parity rules,
+  `react-hooks` with `exhaustive-deps: warn`), `lint` script + CI step; 96 errors
+  burned to 0 with 8 exhaustive-deps warnings left for slices 4/7 (do not auto-fix).
+- **§2 real-Electron E2E** — `tests/e2e-electron/` + `playwright.electron.config.ts`
+  + `harness.ts` (Electron launch, dialog stubbing, `DDE_E2E_USER_DATA` seam, fixture
+  seeding) + `editor-e2e-electron` CI job (xvfb). All 10 planned specs exist (17
+  tests): #1 app-launch/IPC, #2 open-project-edit-save, #3 save-fidelity ratchet,
+  #4 cp1252 encoding roundtrip, #5 undo-redo-save, #6 external-change reload/conflict,
+  #7 parse-error save guard, #8 window-security, #9 crash-logging, #10 window-close
+  guard (atomic mid-write-kill sub-case is a documented `test.fixme`; the temp+rename
+  mechanism is Jest-covered). Specs #1/#2/#5/#8/#9 proven green on real Electron in CI
+  (run 28661165938); #3/#4/#6/#7/#10 written with source-verified selectors, first CI
+  execution pending on the PR run.
+
+Environment caveats recorded for reviewers: the sandbox cannot download the Electron
+binary (egress policy), so the plan §8.1 "watch it headed" manual verification is
+replaced by real CI execution evidence; a temporary push-trigger commit used to obtain
+the first CI run before PR #205 existed has been reverted.
+
+Outstanding before `done`: first CI green for the five disk-truth specs; §8.5
+release-gating dispatch checklist (maintainer-run); ratchet-expansion follow-ups
+(#3 fixture set widens with fix-01; corpus strict set); optional phase-2
+(Electron E2E on windows-latest inside build-windows); then extract durable outcomes
+(harness split contract, release-gating invariants, crash-log privacy stance, lint
+baseline) into `docs/architecture/` / `docs/reference/`, update CLAUDE.md's CI section,
+and delete the plan file.
+
+## Slice 5 progress notes (2026-07-03)
+
+All five fix-05 §4 steps landed (TDD, one commit per step + a verification follow-up):
+
+- **§2.2 (F-A)** `pushSnapshotTransactional` — no-op mutations no longer push phantom
+  undo steps or wipe redo (`tests/historyActions.noop.test.ts`).
+- **§2.4 stage 1 (U3)** condition edits use the ActionCard ref pattern (fire-time
+  refs, guarded unmount flush, `markDeleted()`); ConditionEditor's resurrection
+  append branch removed (`tests/useConditionUpdate.interleave.test.tsx`).
+- **§2.3 (U4)** `flushAllPendingEdits()` before undo/redo in MainLayout keydown and
+  QuestFlow batch buttons; wrapped in `flushSync` so the flushed edit commits before
+  the undo (found via Playwright: a same-batch flush+undo left stale local text in
+  the edited card). Registry + save/auto-save/close sites were slice 2's.
+- **§2.1 (U1/F-B)** `EditSnapshot.id` + id-validated quest batch undo/redo with lazy
+  pruning; global `resetBatchHistory` on save removed. **Behavior change:** batch
+  undo/redo disable when a member file diverges instead of reverting wrong edits;
+  the two slice-4 tests codifying the old behavior were rewritten
+  (`tests/historyStore.batchValidity.test.ts`).
+- **§2.5 + §2.4 stage 2 (U5)** single hoisted `DragDropContext` per dialog pane with
+  a dispatch registry, namespaced unique droppableIds, duplicate-AI_Output-id key
+  disambiguation, ConditionCards keyed by a `uiIds` identity side-table.
+  **Migrated react-beautiful-dnd → @hello-pangea/dnd** (plan §2.5's offered drop-in):
+  rbd 13 never registered draggables under React 18 StrictMode, so real DnD was
+  broken in the harness and the old reorder spec passed only via a lenient assertion.
+- Browser-harness Playwright: `tests/e2e/undo-flush-debounce.spec.ts` and
+  `tests/e2e/keyboard-dnd-reorder.spec.ts` (run and verified locally; keyboard DnD
+  reorders top-level and ConditionalAction-branch lists for real). Known residual:
+  choice sub-list reorder commits correctly but isn't visible until a re-render —
+  pre-existing memo gap, filed as `docs/refactoring-targets.md` entry #3.
+
+Outstanding before `done`: CI validation on the PR, extract durable decisions
+(unified-history model, flush-registry contract, batch-undo behavior change) to
+`docs/architecture/` / `docs/reference/`, then delete the plan file.
 
 ## Working agreement
 

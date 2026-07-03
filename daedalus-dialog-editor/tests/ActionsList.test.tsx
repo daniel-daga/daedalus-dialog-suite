@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 
 // Mock ActionCard to observe props
 jest.mock('../src/renderer/components/ActionCard', () => {
-  return React.forwardRef((props: any, ref) => {
+  return React.forwardRef((props: any, _ref) => {
     return (
       <div data-testid="action-card">
         <button onClick={() => props.onRenameFunction('old', 'new')}>
@@ -13,6 +13,67 @@ jest.mock('../src/renderer/components/ActionCard', () => {
         </button>
       </div>
     );
+  });
+});
+
+describe('ActionsList draggable identity (U5 keys)', () => {
+  const baseProps = {
+    npcName: 'NPC',
+    updateActionAtPath: jest.fn(),
+    deleteActionAtPath: jest.fn(),
+    focusActionAtPath: jest.fn(),
+    addDialogLineAfterPath: jest.fn(),
+    deleteActionAndFocusPrevAtPath: jest.fn(),
+    addActionAfterPath: jest.fn(),
+    addActionToBranchEnd: jest.fn(),
+    moveAction: jest.fn(),
+    registerActionRef: jest.fn(),
+    getVisibleActionPaths: () => [],
+    dialogContextName: 'DIA_Test',
+  } as any;
+
+  const draggableIds = (container: HTMLElement): string[] =>
+    Array.from(container.querySelectorAll('[data-rfd-draggable-id]')).map(
+      (el) => el.getAttribute('data-rfd-draggable-id') as string
+    );
+
+  test('gives duplicate DialogLine ids unique draggableIds and emits no duplicate-key warning', () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const actions = [
+      { type: 'DialogLine', id: 'AI_Output', text: 'a', speaker: 'Hero' },
+      { type: 'DialogLine', id: 'AI_Output', text: 'b', speaker: 'Hero' },
+      { type: 'DialogLine', id: 'AI_Output', text: 'c', speaker: 'Hero' },
+    ];
+
+    const { container } = render(<ActionsList {...baseProps} actions={actions} />);
+
+    const ids = draggableIds(container);
+    expect(ids).toHaveLength(3);
+    expect(new Set(ids).size).toBe(3); // all unique despite identical action.id
+
+    const duplicateKeyWarning = errorSpy.mock.calls.some((call) =>
+      String(call[0]).includes('same key')
+    );
+    expect(duplicateKeyWarning).toBe(false);
+
+    errorSpy.mockRestore();
+  });
+
+  test('keeps draggableIds stable across an unrelated re-render', () => {
+    const actions = [
+      { type: 'DialogLine', id: 'AI_Output', text: 'a', speaker: 'Hero' },
+      { type: 'DialogLine', id: 'AI_Output', text: 'b', speaker: 'Hero' },
+    ];
+
+    const { container, rerender } = render(<ActionsList {...baseProps} actions={actions} />);
+    const before = draggableIds(container);
+
+    // Re-render with a new npcName (unrelated) but the same actions reference.
+    rerender(<ActionsList {...baseProps} npcName="OTHER" actions={actions} />);
+    const after = draggableIds(container);
+
+    expect(after).toEqual(before);
   });
 });
 

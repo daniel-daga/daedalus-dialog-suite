@@ -28,8 +28,9 @@ function withHistory<Args extends [string, ...unknown[]]>(
 ): (...args: Args) => void {
   return (...args: Args) => {
     const filePath = args[0];
-    useHistoryStore.getState().pushSnapshot(filePath);
-    getMethod()(...args);
+    useHistoryStore.getState().pushSnapshotTransactional(filePath, () => {
+      getMethod()(...args);
+    });
   };
 }
 

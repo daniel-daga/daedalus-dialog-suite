@@ -331,7 +331,7 @@ export class MetadataWorkerPool {
       // addon, which must not be pulled into Jest module registries that only
       // exercise the worker path (re-loading the addon in a second registry in
       // the same process corrupts it).
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require, see comment above
       const { extractFileMetadataFromSource } = require('../utils/semanticMetadataUtils');
       return extractFileMetadataFromSource(content, filePath);
     } catch (error) {

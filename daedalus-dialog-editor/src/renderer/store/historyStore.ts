@@ -37,6 +37,7 @@ interface HistoryStore {
   // from either surface walks the same per-file timeline.
   editHistory: Map<string, EditHistoryState>;
   pushSnapshot: (filePath: string) => void;
+  pushSnapshotTransactional: (filePath: string, mutate: () => void) => void;
   undo: (filePath: string) => void;
   redo: (filePath: string) => void;
   canUndo: (filePath: string) => boolean;
@@ -75,7 +76,6 @@ interface HistoryStore {
   // Internal cleanup actions called by subscription
   clearHistoryForFile: (filePath: string) => void;
   resetHistory: () => void;
-  resetBatchHistory: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,11 +89,16 @@ interface HistoryStore {
  * structurally shared object. The model passed here must therefore come from
  * plain fileStore state (`useFileStore.getState()`), not from an Immer draft.
  */
+// Monotonic snapshot-id source. Every EditSnapshot gets a unique id so quest
+// batch entries can validate identity by id (eviction-proof) — see U1.
+let nextSnapshotId = 1;
+
 const createEditSnapshot = (
   model: SemanticModel,
   nodePositions: Map<string, QuestNodePositionMap> | undefined,
   timestamp: number
 ): EditSnapshot => ({
+  id: nextSnapshotId++,
   model,
   nodePositions: cloneQuestNodePositionsForFile(nodePositions),
   timestamp,
@@ -210,6 +215,59 @@ const applyRestoreSteps = (steps: RestoreStep[]): void => {
   });
 };
 
+/**
+ * A batch is valid to UNDO only when, for every member file, the exact snapshot
+ * the batch pushed is still the top of that file's past stack. A newer edit,
+ * a per-file undo, eviction, or a save/close on any member invalidates it.
+ */
+const isBatchUndoable = (
+  editHistory: Map<string, EditHistoryState>,
+  batch: QuestBatchEntry[]
+): boolean =>
+  batch.length > 0 &&
+  batch.every((entry) => {
+    const history = editHistory.get(entry.filePath);
+    const top = history?.past[history.past.length - 1];
+    return !!top && top.id === entry.snapshotId;
+  });
+
+/** Mirror of isBatchUndoable for the redo direction (top of each future). */
+const isBatchRedoable = (
+  editHistory: Map<string, EditHistoryState>,
+  batch: QuestBatchEntry[]
+): boolean =>
+  batch.length > 0 &&
+  batch.every((entry) => {
+    const history = editHistory.get(entry.filePath);
+    return history?.future[0]?.id === entry.snapshotId;
+  });
+
+/**
+ * Index of the topmost undoable batch in `past` (scanning from the top, past
+ * any invalid entries), or -1 if none is reachable. Invalid entries above it
+ * are dead and get pruned when the undo commits.
+ */
+const findUndoableBatchIndex = (
+  editHistory: Map<string, EditHistoryState>,
+  past: QuestBatchEntry[][]
+): number => {
+  for (let i = past.length - 1; i >= 0; i--) {
+    if (isBatchUndoable(editHistory, past[i])) return i;
+  }
+  return -1;
+};
+
+/** Mirror of findUndoableBatchIndex for the redo direction (scan from front). */
+const findRedoableBatchIndex = (
+  editHistory: Map<string, EditHistoryState>,
+  future: QuestBatchEntry[][]
+): number => {
+  for (let i = 0; i < future.length; i++) {
+    if (isBatchRedoable(editHistory, future[i])) return i;
+  }
+  return -1;
+};
+
 export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
   editHistory: new Map(),
   questBatchHistory: { past: [], future: [] },
@@ -245,6 +303,40 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
       h.future = [];
       state.editHistory.set(filePath, h);
     });
+  },
+
+  // Push a snapshot, run `mutate`, then roll the snapshot back if the mutation
+  // no-opped (finding F-A). fileStore is Immer-produced, so any real change
+  // yields a NEW semanticModel object; an unchanged reference means the mutation
+  // hit a silent no-op guard (missing dialog/function, updater returned null).
+  // In that case restoring the pre-call past/future avoids a phantom undo step
+  // and, crucially, avoids wiping the redo `future`.
+  pushSnapshotTransactional: (filePath: string, mutate: () => void) => {
+    const beforeModel = useFileStore.getState().openFiles.get(filePath)?.semanticModel;
+
+    const prevHistory = get().editHistory.get(filePath);
+    const hadHistory = prevHistory !== undefined;
+    const capturedPast = prevHistory ? [...prevHistory.past] : [];
+    const capturedFuture = prevHistory ? [...prevHistory.future] : [];
+
+    get().pushSnapshot(filePath);
+    mutate();
+
+    const afterModel = useFileStore.getState().openFiles.get(filePath)?.semanticModel;
+
+    // Only restore when the file exists and its model reference is unchanged.
+    if (beforeModel !== undefined && afterModel === beforeModel) {
+      set((state) => {
+        if (!hadHistory) {
+          state.editHistory.delete(filePath);
+          return;
+        }
+        const h = state.editHistory.get(filePath);
+        if (!h) return;
+        h.past = capturedPast;
+        h.future = capturedFuture;
+      });
+    }
   },
 
   undo: (filePath: string) => {
@@ -304,7 +396,7 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
           filePath,
           fileState.semanticModel
         );
-        batchEntries.push({ filePath, snapshot });
+        batchEntries.push({ filePath, snapshotId: snapshot.id });
       });
 
       if (batchEntries.length > 0) {
@@ -334,27 +426,16 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
 
   undoLastQuestBatch: (): QuestBatchUndoResult => {
     const { editHistory, questBatchHistory } = get();
-    const latestBatch = questBatchHistory.past[questBatchHistory.past.length - 1];
-    if (!latestBatch || latestBatch.length === 0) {
-      return { ok: false };
-    }
 
-    // Snapshot-identity guard: every file's top-of-past must still be the exact
-    // snapshot this batch pushed. If a newer edit (e.g. a coalesced dialog edit)
-    // landed on top of any file, refuse the whole batch — never revert the wrong
-    // change (finding U1). A partial undo would desync the stacks permanently.
-    const staleEntry = latestBatch.find((entry) => {
-      const history = editHistory.get(entry.filePath);
-      return !history || history.past[history.past.length - 1] !== entry.snapshot;
-    });
-    if (staleEntry) {
-      return {
-        ok: false,
-        message: `Undo the newer edits in ${staleEntry.filePath} first (Ctrl+Z), then retry quest undo.`,
-      };
-    }
+    // Find the topmost batch whose every member snapshot is still on top of its
+    // file's past stack. Batches above it are stale (a member got a newer edit,
+    // per-file undo, eviction, or save/close) and get pruned when we commit —
+    // never revert the wrong change (finding U1).
+    const index = findUndoableBatchIndex(editHistory, questBatchHistory.past);
+    if (index < 0) return { ok: false };
 
-    const steps = latestBatch
+    const batch = questBatchHistory.past[index];
+    const steps = batch
       .map((entry) => planUndoForFile(editHistory, entry.filePath))
       .filter((step): step is RestoreStep => step !== null);
 
@@ -362,9 +443,10 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
       const futureEntries: QuestBatchEntry[] = [];
       steps.forEach((step) => {
         const snapshot = commitUndoForFile(state.editHistory, state.questNodePositions, step);
-        if (snapshot) futureEntries.push({ filePath: step.filePath, snapshot });
+        if (snapshot) futureEntries.push({ filePath: step.filePath, snapshotId: snapshot.id });
       });
-      state.questBatchHistory.past = state.questBatchHistory.past.slice(0, state.questBatchHistory.past.length - 1);
+      // Drop the acted batch and any stale batches that sat above it.
+      state.questBatchHistory.past = state.questBatchHistory.past.slice(0, index);
       if (futureEntries.length > 0) {
         state.questBatchHistory.future = [futureEntries, ...state.questBatchHistory.future];
       }
@@ -375,26 +457,12 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
 
   redoLastQuestBatch: (): QuestBatchUndoResult => {
     const { editHistory, questBatchHistory } = get();
-    const latestBatch = questBatchHistory.future[0];
-    if (!latestBatch || latestBatch.length === 0) {
-      return { ok: false };
-    }
 
-    // Mirror of the undo guard: every file's top-of-future must still be the
-    // exact snapshot this batch queued for redo. A newer edit clears/replaces
-    // the redo future, so redoing would restore stale state — refuse instead.
-    const staleEntry = latestBatch.find((entry) => {
-      const history = editHistory.get(entry.filePath);
-      return !history || history.future[0] !== entry.snapshot;
-    });
-    if (staleEntry) {
-      return {
-        ok: false,
-        message: `Undo the newer edits in ${staleEntry.filePath} first (Ctrl+Z), then retry quest redo.`,
-      };
-    }
+    const index = findRedoableBatchIndex(editHistory, questBatchHistory.future);
+    if (index < 0) return { ok: false };
 
-    const steps = latestBatch
+    const batch = questBatchHistory.future[index];
+    const steps = batch
       .map((entry) => planRedoForFile(editHistory, entry.filePath))
       .filter((step): step is RestoreStep => step !== null);
 
@@ -402,9 +470,10 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
       const pastEntries: QuestBatchEntry[] = [];
       steps.forEach((step) => {
         const snapshot = commitRedoForFile(state.editHistory, state.questNodePositions, step);
-        if (snapshot) pastEntries.push({ filePath: step.filePath, snapshot });
+        if (snapshot) pastEntries.push({ filePath: step.filePath, snapshotId: snapshot.id });
       });
-      state.questBatchHistory.future = state.questBatchHistory.future.slice(1);
+      // Drop the acted batch and any stale batches that sat before it.
+      state.questBatchHistory.future = state.questBatchHistory.future.slice(index + 1);
       if (pastEntries.length > 0) {
         state.questBatchHistory.past = [...state.questBatchHistory.past, pastEntries];
       }
@@ -415,22 +484,12 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
 
   canUndoLastQuestBatch: () => {
     const { editHistory, questBatchHistory } = get();
-    const latestBatch = questBatchHistory.past[questBatchHistory.past.length - 1];
-    if (!latestBatch || latestBatch.length === 0) return false;
-    return latestBatch.every((entry) => {
-      const history = editHistory.get(entry.filePath);
-      return !!history && history.past[history.past.length - 1] === entry.snapshot;
-    });
+    return findUndoableBatchIndex(editHistory, questBatchHistory.past) >= 0;
   },
 
   canRedoLastQuestBatch: () => {
     const { editHistory, questBatchHistory } = get();
-    const latestBatch = questBatchHistory.future[0];
-    if (!latestBatch || latestBatch.length === 0) return false;
-    return latestBatch.every((entry) => {
-      const history = editHistory.get(entry.filePath);
-      return !!history && history.future[0] === entry.snapshot;
-    });
+    return findRedoableBatchIndex(editHistory, questBatchHistory.future) >= 0;
   },
 
   applyQuestNodePositionWithHistory: (filePath: string, questName: string, nodeId: string, position: QuestNodePosition) => {
@@ -444,7 +503,7 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
         filePath,
         fileState.semanticModel
       );
-      state.questBatchHistory.past = [...state.questBatchHistory.past, [{ filePath, snapshot }]];
+      state.questBatchHistory.past = [...state.questBatchHistory.past, [{ filePath, snapshotId: snapshot.id }]];
       state.questBatchHistory.future = [];
 
       if (!state.questNodePositions.has(filePath)) {
@@ -527,12 +586,6 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
       state.questBatchHistory = { past: [], future: [] };
     });
   },
-
-  resetBatchHistory: () => {
-    set((state) => {
-      state.questBatchHistory = { past: [], future: [] };
-    });
-  },
 })));
 
 // ---------------------------------------------------------------------------
@@ -558,15 +611,15 @@ useFileStore.subscribe((state, prevState) => {
 
   if (removedFiles.length > 0) {
     const historyState = useHistoryStore.getState();
+    // clearHistoryForFile also drops every batch that contains the removed file,
+    // so closing files (including a full session reset) needs no global reset.
     removedFiles.forEach((fp) => historyState.clearHistoryForFile(fp));
-
-    // If all files were cleared at once (e.g. session reset), also reset batch history
-    if (state.openFiles.size === 0 && prevState.openFiles.size > 0) {
-      historyState.resetBatchHistory();
-    }
   }
 
-  // Detect source saves: existing file whose originalCode changed and is no longer dirty
+  // Detect source saves: existing file whose originalCode changed and is no
+  // longer dirty. Only the saved file's history is cleared — a single-file save
+  // must NOT wipe quest batches belonging to other files (finding F-B).
+  // clearHistoryForFile already removes any batch containing the saved file.
   state.openFiles.forEach((fileState, filePath) => {
     const prevFileState = prevState.openFiles.get(filePath);
     if (
@@ -574,9 +627,7 @@ useFileStore.subscribe((state, prevState) => {
       prevFileState.originalCode !== fileState.originalCode &&
       !fileState.isDirty
     ) {
-      const historyState = useHistoryStore.getState();
-      historyState.clearHistoryForFile(filePath);
-      historyState.resetBatchHistory();
+      useHistoryStore.getState().clearHistoryForFile(filePath);
     }
   });
 });

@@ -3,13 +3,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * E2E content-integrity tests: edit content, let auto-save persist it, reload
- * the app, reopen the file and assert the change survived the
- * generate -> persist -> reparse round-trip.
+ * Browser mock-harness content-integrity tests: edit content, let auto-save
+ * persist it to the mock (localStorage) store, reload the app, reopen the file
+ * and assert the change survived the mock generate -> persist -> reparse
+ * round-trip.
  *
- * The browser mock generator round-trips dialog properties and AI_Output dialog
- * lines, so these assertions target that subset (count + property value), which
- * is what genuinely persists end-to-end.
+ * NOT end-to-end. The mock generator only round-trips dialog properties and
+ * AI_Output dialog lines, so these assertions are deliberately confined to that
+ * subset (priority property value + AI_Output line count) — the part the mock
+ * legitimately covers (see tests/e2e/README.md). The disk-truth half — real
+ * codegen output, byte-for-byte file content after save — is verified by the
+ * real-Electron suite tests/e2e-electron/ (built separately), never here.
  */
 
 const SAMPLE_DIALOG_CONTENT = fs.readFileSync(

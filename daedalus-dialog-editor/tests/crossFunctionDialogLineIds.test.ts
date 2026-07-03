@@ -1,8 +1,5 @@
 import { createDialogLineId } from '../src/renderer/components/actionFactory';
-import {
-  collectAllDialogLineActionsFromModel,
-  collectDialogLineActions
-} from '../src/renderer/components/nestedActionUtils';
+import { collectAllDialogLineActionsFromModel } from '../src/renderer/components/nestedActionUtils';
 
 describe('collectAllDialogLineActionsFromModel', () => {
   const makeModel = (functions: Record<string, { actions?: any[] }>) => ({

@@ -1,0 +1,161 @@
+import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import DaedalusParser from 'daedalus-parser';
+import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+
+/**
+ * Real-Electron E2E harness (fix-08 §2).
+ *
+ * Launches the built app with an isolated, per-test userData dir so no state
+ * bleeds between tests, and provides call-time dialog stubs plus fixture
+ * seeding. Keep every launch flag centralized here — the Electron upgrade
+ * (29 -> latest) should touch only this file.
+ *
+ * PREREQUISITE: the editor must be built first (`npm run build`), producing
+ * `dist/main/main.js` and `dist/renderer/index.html`. We launch with
+ * `NODE_ENV=production`, which is the branch of `main.ts` that loads the built
+ * renderer from disk. CI builds before invoking this config.
+ */
+
+// tests/e2e-electron -> daedalus-dialog-editor
+const EDITOR_DIR = path.resolve(__dirname, '..', '..');
+const FIXTURES_DIR = path.join(EDITOR_DIR, 'tests', 'fixtures');
+
+export interface AppFixture {
+  app: ElectronApplication;
+  page: Page;
+  /** Isolated userData dir; the main-process log lives at `logs/main.log` under it. */
+  userDataDir: string;
+  /** Close the app and remove the temp userData dir. */
+  cleanup: () => Promise<void>;
+}
+
+const tempDirs: string[] = [];
+
+function mkTemp(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+/** Launch the built Electron app against a fresh, isolated userData dir. */
+export async function launchApp(): Promise<AppFixture> {
+  const userDataDir = mkTemp('dde-e2e-userdata-');
+
+  const app = await electron.launch({
+    // `.` loads the app at cwd (reads `main` from package.json -> dist/main/main.js).
+    // `--no-sandbox` mirrors the `dev:electron` script and is required on CI runners.
+    args: ['.', '--no-sandbox'],
+    cwd: EDITOR_DIR,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      DDE_E2E_USER_DATA: userDataDir,
+    },
+  });
+
+  const page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+
+  const cleanup = async () => {
+    // Destroy windows directly before closing: `destroy()` skips the `close`
+    // event, so the window-close guard (which shows a modal dialog and waits
+    // for the user when a file is dirty) can never block teardown. Without
+    // this, a test ending with a dirty file hangs `app.close()` forever
+    // (observed as CI worker-teardown timeouts). The app may already have
+    // quit (e.g. the force-destroy spec) — ignore evaluate failures.
+    try {
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows().forEach((w) => w.destroy());
+      });
+    } catch {
+      // app already gone
+    }
+    // Belt and braces: never let close() hang the worker; kill after a bound.
+    await Promise.race([
+      app.close().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+    ]);
+    try {
+      app.process().kill();
+    } catch {
+      // process already exited
+    }
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    } catch {
+      // best-effort temp cleanup
+    }
+  };
+
+  return { app, page, userDataDir, cleanup };
+}
+
+/**
+ * Stub `dialog.showOpenDialog` to return the given paths (a file for "Open
+ * Single File", a directory for "Open Project").
+ *
+ * INVARIANT: this works only because `FileService`/`main.ts` reach for
+ * `dialog.showOpenDialog` at CALL TIME on the shared `electron` module object.
+ * A refactor that captures `dialog.showOpenDialog` into a const at import time
+ * would silently break these stubs — keep dialog access lazy.
+ */
+export async function stubOpenDialog(app: ElectronApplication, filePaths: string[]): Promise<void> {
+  await app.evaluate(({ dialog }, paths) => {
+    (dialog as { showOpenDialog: unknown }).showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: paths,
+    });
+  }, filePaths);
+}
+
+/** Stub `dialog.showSaveDialog` to return the given target path. Same call-time invariant as above. */
+export async function stubSaveDialog(app: ElectronApplication, filePath: string): Promise<void> {
+  await app.evaluate(({ dialog }, fp) => {
+    (dialog as { showSaveDialog: unknown }).showSaveDialog = async () => ({
+      canceled: false,
+      filePath: fp,
+    });
+  }, filePath);
+}
+
+/**
+ * Create a per-test temp project dir seeded by copying the named fixtures from
+ * `tests/fixtures/`. Disk assertions read bytes directly from the returned dir.
+ */
+export function seedProjectDir(fixtureNames: string[]): string {
+  const dir = mkTemp('dde-e2e-project-');
+  for (const name of fixtureNames) {
+    fs.copyFileSync(path.join(FIXTURES_DIR, name), path.join(dir, name));
+  }
+  return dir;
+}
+
+/** Read the main-process log file for a launched app, or null if it does not exist yet. */
+export function readMainLog(userDataDir: string): string | null {
+  const logPath = path.join(userDataDir, 'logs', 'main.log');
+  try {
+    return fs.readFileSync(logPath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reparse Daedalus source with the real `daedalus-parser` package in the test
+ * process (the same native parser + semantic visitor the app runs), returning
+ * whether the model has syntax errors. Used to assert saved bytes are clean.
+ */
+export function reparse(source: string): { hasErrors: boolean; model: { dialogs: Record<string, unknown> } } {
+  const wrapper = new DaedalusParser();
+  const { tree } = wrapper.parse(source);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.checkForSyntaxErrors(tree.rootNode, source);
+  if (!visitor.semanticModel.hasErrors) {
+    visitor.pass1_createObjects(tree.rootNode);
+    visitor.pass2_analyzeAndLink(tree.rootNode);
+  }
+  return { hasErrors: !!visitor.semanticModel.hasErrors, model: visitor.semanticModel };
+}

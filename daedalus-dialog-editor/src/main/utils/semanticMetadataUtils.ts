@@ -1,8 +1,7 @@
 import type { DialogMetadata, SemanticModel } from '../../shared/types';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
-// @ts-ignore - CommonJS module
-const DaedalusParser = require('daedalus-parser');
+import DaedalusParser from 'daedalus-parser';
 const daedalusWrapper = new DaedalusParser();
 
 export interface ParsedFileMetadata {

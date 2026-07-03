@@ -1,5 +1,5 @@
 export class SemanticCodeGenerator {
-  constructor(options: any) {}
+  constructor(_options: any) {}
   generateSemanticModel(model: any) {
     let output = JSON.stringify(model);
 

@@ -27,6 +27,7 @@ import { QuestEditingService } from '../quest/application';
 import QuestInspectorPanel from './QuestEditor/Inspector/QuestInspectorPanel';
 import QuestDiffPreviewDialog from './QuestEditor/Inspector/QuestDiffPreviewDialog';
 import QuestLiteGraphCanvas from './QuestEditor/QuestLiteGraphCanvas';
+import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 
 interface QuestFlowProps {
   semanticModel: SemanticModel;
@@ -721,6 +722,9 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
               startIcon={<UndoIcon fontSize="small" />}
               disabled={!writableEnabled || !canUndo}
               onClick={() => {
+                // Drain any pending dialog-surface debounce on a member file
+                // before the batch undo, so it can't fire mid-undo (finding U4).
+                flushAllPendingEdits();
                 const result = undoLastQuestBatch();
                 if (result && !result.ok && result.message) {
                   setCommandError(result.message);
@@ -735,6 +739,7 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
               startIcon={<RedoIcon fontSize="small" />}
               disabled={!writableEnabled || !canRedo}
               onClick={() => {
+                flushAllPendingEdits();
                 const result = redoLastQuestBatch();
                 if (result && !result.ok && result.message) {
                   setCommandError(result.message);

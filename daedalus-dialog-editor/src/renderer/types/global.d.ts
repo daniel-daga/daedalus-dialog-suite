@@ -130,6 +130,12 @@ export interface EditorAPI {
   // App info
   getAppVersion: () => Promise<string>;
 
+  // Crash logging (fix-08 §5). The renderer forwards window.onerror /
+  // unhandledrejection here; main validates and appends to the local log file.
+  logRendererError: (payload: { message: string; stack?: string }) => Promise<void>;
+  getLogPath: () => Promise<string>;
+  showLogFile: () => Promise<void>;
+
   // Window close guard (E1). Main intercepts the window `close`, sends
   // `app:closeRequested`, and waits for the renderer to acknowledge and decide.
   onCloseRequested: (callback: () => void) => () => void;

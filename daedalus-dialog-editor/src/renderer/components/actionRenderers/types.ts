@@ -32,4 +32,7 @@ export interface BaseActionRendererProps {
   registerActionRef?: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths?: () => ActionPath[];
   filePath?: string | null;
+  // Namespace for nested list droppableIds (fix-05 §2.5); propagated to
+  // ConditionalAction branch lists so their droppableIds stay globally unique.
+  droppableNamespace?: string;
 }
