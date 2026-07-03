@@ -65,6 +65,11 @@ interface ProjectState {
   // Cached parsed files (full semantic models)
   parsedFiles: Map<string, ParsedFileCache>;
 
+  // Monotonic counter bumped whenever `parsedFiles` is replaced. Consumers that
+  // only need a coarse "the parsed models changed" signal can subscribe to this
+  // instead of the map identity (which churns per file during ingestion).
+  parseGeneration: number;
+
   // Merged semantic model for currently selected NPC
   mergedSemanticModel: SemanticModel;
 
@@ -163,7 +168,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     set((state) => {
       const newCache = new Map(state.parsedFiles);
       newCache.delete(filePath);
-      return { parsedFiles: newCache };
+      return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
     });
   };
 
@@ -224,6 +229,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   npcPrototypes: [],
   metadataFailures: [],
   parsedFiles: new Map(),
+  parseGeneration: 0,
   mergedSemanticModel: createEmptySemanticModel(),
   selectedNpc: null,
   isLoading: false,
@@ -265,6 +271,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         metadataFailures: rawIndex.metadataFailures || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
+        parseGeneration: get().parseGeneration + 1,
         selectedNpc: null
       });
 
@@ -302,7 +309,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         set((state) => {
           const newCache = new Map(state.parsedFiles);
           pendingUpdates.forEach((value, key) => newCache.set(key, value));
-          return { parsedFiles: newCache };
+          return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
         });
         pendingUpdates.clear();
       }
@@ -403,6 +410,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       npcPrototypes: [],
       metadataFailures: [],
       parsedFiles: new Map(),
+      parseGeneration: get().parseGeneration + 1,
       mergedSemanticModel: createEmptySemanticModel(),
       selectedNpc: null,
       loadError: null,
@@ -449,7 +457,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         semanticModel,
         lastParsed: new Date()
       });
-      return { parsedFiles: newCache };
+      return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
     });
 
     return semanticModel;
@@ -721,7 +729,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   },
 
   clearCache: () => {
-    set({ parsedFiles: new Map() });
+    set((state) => ({ parsedFiles: new Map(), parseGeneration: state.parseGeneration + 1 }));
   },
 
   updateFileModel: (filePath: string, model: SemanticModel) => {
@@ -773,9 +781,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
     }
 
-    set(dialogSetChanged
-      ? { parsedFiles: newCache, dialogIndex: newDialogIndex }
-      : { parsedFiles: newCache });
+    set((state) => (dialogSetChanged
+      ? { parsedFiles: newCache, dialogIndex: newDialogIndex, parseGeneration: state.parseGeneration + 1 }
+      : { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 }));
 
     // Re-merge the semantic model for the currently selected NPC so that
     // description changes, renames, and deletes are reflected immediately.

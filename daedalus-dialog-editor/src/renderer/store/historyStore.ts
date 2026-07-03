@@ -4,16 +4,26 @@ import { enableMapSet } from 'immer';
 import { useFileStore } from './fileStore';
 import {
   cloneQuestNodePositionsForFile,
-  normalizeBatchFilePaths,
 } from '../utils/historyUtils';
 import type {
   QuestNodePosition,
   QuestNodePositionMap,
   QuestBatchHistoryState,
+  QuestBatchEntry,
   EditSnapshot,
   EditHistoryState,
 } from '../utils/historyUtils';
 import type { SemanticModel } from '../types/global';
+
+/**
+ * Result of a quest batch undo/redo attempt. `ok: false` with a `message` means
+ * the batch was refused (a newer edit sits on top of one of its files); callers
+ * should surface the message rather than treating it as a silent no-op.
+ */
+export interface QuestBatchUndoResult {
+  ok: boolean;
+  message?: string;
+}
 
 const MAX_HISTORY_SIZE = 50;
 const COALESCE_MS = 300;
@@ -43,8 +53,8 @@ interface HistoryStore {
   redoQuestModel: (filePath: string) => void;
   canUndoQuestModel: (filePath: string) => boolean;
   canRedoQuestModel: (filePath: string) => boolean;
-  undoLastQuestBatch: () => void;
-  redoLastQuestBatch: () => void;
+  undoLastQuestBatch: () => QuestBatchUndoResult;
+  redoLastQuestBatch: () => QuestBatchUndoResult;
   canUndoLastQuestBatch: () => boolean;
   canRedoLastQuestBatch: () => boolean;
   applyQuestNodePositionWithHistory: (
@@ -99,13 +109,14 @@ const pushUncoalescedSnapshot = (
   questNodePositions: Map<string, Map<string, QuestNodePositionMap>>,
   filePath: string,
   model: SemanticModel
-): void => {
+): EditSnapshot => {
   const snapshot = createEditSnapshot(model, questNodePositions.get(filePath), 0);
   const history: EditHistoryState = editHistory.get(filePath) ?? { past: [], future: [] };
   history.past.push(snapshot);
   if (history.past.length > MAX_HISTORY_SIZE) history.past.shift();
   history.future = [];
   editHistory.set(filePath, history);
+  return snapshot;
 };
 
 /**
@@ -153,37 +164,43 @@ const planRedoForFile = (
   };
 };
 
-/** Move the stacks for a planned undo step. Mutates the Immer draft maps. */
+/**
+ * Move the stacks for a planned undo step. Mutates the Immer draft maps and
+ * returns the freshly created future snapshot (the one redo would restore),
+ * so quest batch history can record its identity for a later staleness check.
+ */
 const commitUndoForFile = (
   editHistory: Map<string, EditHistoryState>,
   questNodePositions: Map<string, Map<string, QuestNodePositionMap>>,
   step: RestoreStep
-): void => {
+): EditSnapshot | null => {
   const history = editHistory.get(step.filePath);
-  if (!history) return;
-  history.future = [
-    createEditSnapshot(step.currentModel, questNodePositions.get(step.filePath), 0),
-    ...history.future
-  ];
+  if (!history) return null;
+  const futureSnapshot = createEditSnapshot(step.currentModel, questNodePositions.get(step.filePath), 0);
+  history.future = [futureSnapshot, ...history.future];
   history.past = history.past.slice(0, history.past.length - 1);
   questNodePositions.set(step.filePath, cloneQuestNodePositionsForFile(step.snapshot.nodePositions));
+  return futureSnapshot;
 };
 
-/** Move the stacks for a planned redo step. Mutates the Immer draft maps. */
+/**
+ * Move the stacks for a planned redo step. Mutates the Immer draft maps and
+ * returns the freshly created past snapshot (the one a subsequent undo would
+ * restore), so quest batch history can record its identity for the guard.
+ */
 const commitRedoForFile = (
   editHistory: Map<string, EditHistoryState>,
   questNodePositions: Map<string, Map<string, QuestNodePositionMap>>,
   step: RestoreStep
-): void => {
+): EditSnapshot | null => {
   const history = editHistory.get(step.filePath);
-  if (!history) return;
-  history.past = [
-    ...history.past,
-    createEditSnapshot(step.currentModel, questNodePositions.get(step.filePath), 0)
-  ];
+  if (!history) return null;
+  const pastSnapshot = createEditSnapshot(step.currentModel, questNodePositions.get(step.filePath), 0);
+  history.past = [...history.past, pastSnapshot];
   if (history.past.length > MAX_HISTORY_SIZE) history.past.shift();
   history.future = history.future.slice(1);
   questNodePositions.set(step.filePath, cloneQuestNodePositionsForFile(step.snapshot.nodePositions));
+  return pastSnapshot;
 };
 
 /** Restore the planned snapshot models into fileStore (outside the Immer draft). */
@@ -277,22 +294,21 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
     const fileStoreState = useFileStore.getState();
 
     set((state) => {
-      const appliedFilePaths: string[] = [];
+      const batchEntries: QuestBatchEntry[] = [];
       uniqueUpdates.forEach((_, filePath) => {
         const fileState = fileStoreState.openFiles.get(filePath);
         if (!fileState) return;
-        pushUncoalescedSnapshot(
+        const snapshot = pushUncoalescedSnapshot(
           state.editHistory,
           state.questNodePositions,
           filePath,
           fileState.semanticModel
         );
-        appliedFilePaths.push(filePath);
+        batchEntries.push({ filePath, snapshot });
       });
 
-      const batchFilePaths = normalizeBatchFilePaths(appliedFilePaths);
-      if (batchFilePaths.length > 0) {
-        state.questBatchHistory.past = [...state.questBatchHistory.past, batchFilePaths];
+      if (batchEntries.length > 0) {
+        state.questBatchHistory.past = [...state.questBatchHistory.past, batchEntries];
         state.questBatchHistory.future = [];
       }
     });
@@ -316,64 +332,119 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
 
   canRedoQuestModel: (filePath: string) => get().canRedo(filePath),
 
-  undoLastQuestBatch: () => {
+  undoLastQuestBatch: (): QuestBatchUndoResult => {
     const { editHistory, questBatchHistory } = get();
     const latestBatch = questBatchHistory.past[questBatchHistory.past.length - 1];
     if (!latestBatch || latestBatch.length === 0) {
-      return;
+      return { ok: false };
     }
 
-    const steps = normalizeBatchFilePaths(latestBatch)
-      .map((filePath) => planUndoForFile(editHistory, filePath))
+    // Snapshot-identity guard: every file's top-of-past must still be the exact
+    // snapshot this batch pushed. If a newer edit (e.g. a coalesced dialog edit)
+    // landed on top of any file, refuse the whole batch — never revert the wrong
+    // change (finding U1). A partial undo would desync the stacks permanently.
+    const staleEntry = latestBatch.find((entry) => {
+      const history = editHistory.get(entry.filePath);
+      return !history || history.past[history.past.length - 1] !== entry.snapshot;
+    });
+    if (staleEntry) {
+      return {
+        ok: false,
+        message: `Undo the newer edits in ${staleEntry.filePath} first (Ctrl+Z), then retry quest undo.`,
+      };
+    }
+
+    const steps = latestBatch
+      .map((entry) => planUndoForFile(editHistory, entry.filePath))
       .filter((step): step is RestoreStep => step !== null);
 
     set((state) => {
-      steps.forEach((step) => commitUndoForFile(state.editHistory, state.questNodePositions, step));
+      const futureEntries: QuestBatchEntry[] = [];
+      steps.forEach((step) => {
+        const snapshot = commitUndoForFile(state.editHistory, state.questNodePositions, step);
+        if (snapshot) futureEntries.push({ filePath: step.filePath, snapshot });
+      });
       state.questBatchHistory.past = state.questBatchHistory.past.slice(0, state.questBatchHistory.past.length - 1);
-      if (steps.length > 0) {
-        state.questBatchHistory.future = [steps.map((step) => step.filePath), ...state.questBatchHistory.future];
+      if (futureEntries.length > 0) {
+        state.questBatchHistory.future = [futureEntries, ...state.questBatchHistory.future];
       }
     });
     applyRestoreSteps(steps);
+    return { ok: true };
   },
 
-  redoLastQuestBatch: () => {
+  redoLastQuestBatch: (): QuestBatchUndoResult => {
     const { editHistory, questBatchHistory } = get();
     const latestBatch = questBatchHistory.future[0];
     if (!latestBatch || latestBatch.length === 0) {
-      return;
+      return { ok: false };
     }
 
-    const steps = normalizeBatchFilePaths(latestBatch)
-      .map((filePath) => planRedoForFile(editHistory, filePath))
+    // Mirror of the undo guard: every file's top-of-future must still be the
+    // exact snapshot this batch queued for redo. A newer edit clears/replaces
+    // the redo future, so redoing would restore stale state — refuse instead.
+    const staleEntry = latestBatch.find((entry) => {
+      const history = editHistory.get(entry.filePath);
+      return !history || history.future[0] !== entry.snapshot;
+    });
+    if (staleEntry) {
+      return {
+        ok: false,
+        message: `Undo the newer edits in ${staleEntry.filePath} first (Ctrl+Z), then retry quest redo.`,
+      };
+    }
+
+    const steps = latestBatch
+      .map((entry) => planRedoForFile(editHistory, entry.filePath))
       .filter((step): step is RestoreStep => step !== null);
 
     set((state) => {
-      steps.forEach((step) => commitRedoForFile(state.editHistory, state.questNodePositions, step));
+      const pastEntries: QuestBatchEntry[] = [];
+      steps.forEach((step) => {
+        const snapshot = commitRedoForFile(state.editHistory, state.questNodePositions, step);
+        if (snapshot) pastEntries.push({ filePath: step.filePath, snapshot });
+      });
       state.questBatchHistory.future = state.questBatchHistory.future.slice(1);
-      if (steps.length > 0) {
-        state.questBatchHistory.past = [...state.questBatchHistory.past, steps.map((step) => step.filePath)];
+      if (pastEntries.length > 0) {
+        state.questBatchHistory.past = [...state.questBatchHistory.past, pastEntries];
       }
     });
     applyRestoreSteps(steps);
+    return { ok: true };
   },
 
-  canUndoLastQuestBatch: () => get().questBatchHistory.past.length > 0,
+  canUndoLastQuestBatch: () => {
+    const { editHistory, questBatchHistory } = get();
+    const latestBatch = questBatchHistory.past[questBatchHistory.past.length - 1];
+    if (!latestBatch || latestBatch.length === 0) return false;
+    return latestBatch.every((entry) => {
+      const history = editHistory.get(entry.filePath);
+      return !!history && history.past[history.past.length - 1] === entry.snapshot;
+    });
+  },
 
-  canRedoLastQuestBatch: () => get().questBatchHistory.future.length > 0,
+  canRedoLastQuestBatch: () => {
+    const { editHistory, questBatchHistory } = get();
+    const latestBatch = questBatchHistory.future[0];
+    if (!latestBatch || latestBatch.length === 0) return false;
+    return latestBatch.every((entry) => {
+      const history = editHistory.get(entry.filePath);
+      return !!history && history.future[0] === entry.snapshot;
+    });
+  },
 
   applyQuestNodePositionWithHistory: (filePath: string, questName: string, nodeId: string, position: QuestNodePosition) => {
     const fileState = useFileStore.getState().openFiles.get(filePath);
     if (!fileState) return;
 
     set((state) => {
-      pushUncoalescedSnapshot(
+      const snapshot = pushUncoalescedSnapshot(
         state.editHistory,
         state.questNodePositions,
         filePath,
         fileState.semanticModel
       );
-      state.questBatchHistory.past = [...state.questBatchHistory.past, [filePath]];
+      state.questBatchHistory.past = [...state.questBatchHistory.past, [{ filePath, snapshot }]];
       state.questBatchHistory.future = [];
 
       if (!state.questNodePositions.has(filePath)) {
@@ -441,10 +512,10 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
       state.editHistory.delete(filePath);
       state.questNodePositions.delete(filePath);
       state.questBatchHistory.past = state.questBatchHistory.past.filter(
-        (batch) => !batch.includes(filePath)
+        (batch) => !batch.some((entry) => entry.filePath === filePath)
       );
       state.questBatchHistory.future = state.questBatchHistory.future.filter(
-        (batch) => !batch.includes(filePath)
+        (batch) => !batch.some((entry) => entry.filePath === filePath)
       );
     });
   },

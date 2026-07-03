@@ -219,14 +219,57 @@ describe('historyStore – unified cross-surface history', () => {
     expect(currentValue()).toBe('initial');
   });
 
-  it('quest batch undo after a dialog edit reverts the most recent state of that file', () => {
+  it('refuses quest batch undo when a newer dialog edit sits on top of the same file (U1)', () => {
     useHistoryStore.getState().applyQuestModelWithHistory(filePath, createModel('quest-edit'));
+
+    // A coalesced dialog edit lands on top of the quest batch's snapshot.
     useHistoryStore.getState().pushSnapshot(filePath);
     useFileStore.getState()._applyHistoryModelUpdate(filePath, createModel('dialog-edit'));
 
-    // Batch undo pops the latest change for the file on the shared timeline
-    useHistoryStore.getState().undoLastQuestBatch();
+    // The batch's snapshot is no longer the file's top-of-stack, so the guard
+    // must disable the button and refuse the undo — reverting here would drop
+    // the dialog edit (the U1 bug).
+    expect(useHistoryStore.getState().canUndoLastQuestBatch()).toBe(false);
+
+    const result = useHistoryStore.getState().undoLastQuestBatch();
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain(filePath);
+
+    // The dialog edit survives; nothing was reverted.
+    expect(currentValue()).toBe('dialog-edit');
+  });
+
+  it('undoes and redoes a quest batch that still sits on top of its file (U1 happy path)', () => {
+    useHistoryStore.getState().applyQuestModelWithHistory(filePath, createModel('quest-edit'));
+    expect(useHistoryStore.getState().canUndoLastQuestBatch()).toBe(true);
+
+    const undoResult = useHistoryStore.getState().undoLastQuestBatch();
+    expect(undoResult.ok).toBe(true);
+    expect(currentValue()).toBe('initial');
+
+    expect(useHistoryStore.getState().canRedoLastQuestBatch()).toBe(true);
+    const redoResult = useHistoryStore.getState().redoLastQuestBatch();
+    expect(redoResult.ok).toBe(true);
     expect(currentValue()).toBe('quest-edit');
+  });
+
+  it('refuses quest batch redo when a newer edit invalidated the file future (U1 redo mirror)', () => {
+    useHistoryStore.getState().applyQuestModelWithHistory(filePath, createModel('quest-edit'));
+    useHistoryStore.getState().undoLastQuestBatch();
+    expect(currentValue()).toBe('initial');
+    expect(useHistoryStore.getState().canRedoLastQuestBatch()).toBe(true);
+
+    // A new dialog edit clears the file's redo future, invalidating the batch redo.
+    useHistoryStore.getState().pushSnapshot(filePath);
+    useFileStore.getState()._applyHistoryModelUpdate(filePath, createModel('new-edit'));
+
+    expect(useHistoryStore.getState().canRedoLastQuestBatch()).toBe(false);
+    const result = useHistoryStore.getState().redoLastQuestBatch();
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain(filePath);
+
+    // The newer edit survives; the stale batch redo did not run.
+    expect(currentValue()).toBe('new-edit');
   });
 
   it('toolbar undo restores node positions captured in snapshots', () => {

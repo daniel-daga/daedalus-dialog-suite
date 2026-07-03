@@ -125,7 +125,10 @@ const semanticModel: SemanticModel = {
 };
 
 jest.mock('../src/renderer/store/projectStore', () => ({
-  useProjectStore: (selector: (state: typeof projectStoreState) => unknown) => selector(projectStoreState)
+  useProjectStore: Object.assign(
+    (selector: (state: typeof projectStoreState) => unknown) => selector(projectStoreState),
+    { getState: () => projectStoreState }
+  )
 }));
 
 // All mock state is initialised in the fileStore factory (which runs first) so
