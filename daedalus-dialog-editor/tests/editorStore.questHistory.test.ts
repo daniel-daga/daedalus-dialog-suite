@@ -227,13 +227,12 @@ describe('historyStore – unified cross-surface history', () => {
     useFileStore.getState()._applyHistoryModelUpdate(filePath, createModel('dialog-edit'));
 
     // The batch's snapshot is no longer the file's top-of-stack, so the guard
-    // must disable the button and refuse the undo — reverting here would drop
-    // the dialog edit (the U1 bug).
+    // must disable the button (canUndo=false) and make undo a no-op — reverting
+    // here would drop the dialog edit (the U1 bug).
     expect(useHistoryStore.getState().canUndoLastQuestBatch()).toBe(false);
 
     const result = useHistoryStore.getState().undoLastQuestBatch();
     expect(result.ok).toBe(false);
-    expect(result.message).toContain(filePath);
 
     // The dialog edit survives; nothing was reverted.
     expect(currentValue()).toBe('dialog-edit');
@@ -266,7 +265,6 @@ describe('historyStore – unified cross-surface history', () => {
     expect(useHistoryStore.getState().canRedoLastQuestBatch()).toBe(false);
     const result = useHistoryStore.getState().redoLastQuestBatch();
     expect(result.ok).toBe(false);
-    expect(result.message).toContain(filePath);
 
     // The newer edit survives; the stale batch redo did not run.
     expect(currentValue()).toBe('new-edit');

@@ -20,6 +20,13 @@ export type QuestNodePositionMap = Map<string, QuestNodePosition>;
  * fileStore state), not deep-cloned.
  */
 export interface EditSnapshot {
+  /**
+   * Monotonic, process-unique id assigned when the snapshot is created. Quest
+   * batch entries reference this id to validate — eviction-proof, unlike stack
+   * depths — that the exact snapshot they pushed still sits on a member file's
+   * stack before a batch undo/redo acts (finding U1).
+   */
+  id: number;
   model: SemanticModel;
   nodePositions: Map<string, QuestNodePositionMap>;
   timestamp: number;
@@ -31,15 +38,15 @@ export interface EditHistoryState {
 }
 
 /**
- * One file's participation in a quest batch. Records the exact snapshot object
- * that was pushed onto (or created for) the file's edit history, so batch
- * undo/redo can verify — by reference identity — that no newer edit has landed
- * on top before reverting. Snapshots are immutable-by-reference (see
- * EditSnapshot), which makes `===` a sound staleness check.
+ * One file's participation in a quest batch. Records the id of the exact
+ * snapshot pushed onto (or created for) the file's edit history, so batch
+ * undo/redo can verify that no newer edit has landed on top before reverting.
+ * Snapshot ids are monotonic and eviction-proof, which makes id equality a
+ * sound staleness check (finding U1).
  */
 export interface QuestBatchEntry {
   filePath: string;
-  snapshot: EditSnapshot;
+  snapshotId: number;
 }
 
 export interface QuestBatchHistoryState {
