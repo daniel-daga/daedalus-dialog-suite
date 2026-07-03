@@ -33,6 +33,26 @@ import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
 import { initStoreSync } from './store/storeSync';
 import { shallow } from 'zustand/shallow';
+import type { SaveError } from './utils/saveError';
+
+/**
+ * App-bar copy for a classifiable save failure. Every message keeps the "your
+ * changes are kept in the editor" reassurance and an actionable next step.
+ */
+const describeSaveError = (saveError: SaveError): string => {
+  switch (saveError.kind) {
+    case 'timeout':
+      return 'Save failed: the parser did not respond (timed out). Your changes are kept in the editor — retry with Ctrl+S.';
+    case 'worker-crashed':
+      return 'Save failed: the parser worker crashed. Your changes are kept in the editor — retry with Ctrl+S.';
+    case 'encoding':
+      return 'Save failed: this file’s encoding cannot represent some characters you typed. Your changes are kept in the editor — remove the characters or convert the file to UTF-8 externally.';
+    case 'external-conflict':
+      return 'Save failed: the file changed on disk since it was opened. Your changes are kept in the editor — reload to see the external version or overwrite it.';
+    default:
+      return 'Save failed. Your changes are kept in the editor — retry with Ctrl+S.';
+  }
+};
 
 // Wire up the cross-store model sync once at module load.
 // editorStore pushes semantic model changes to projectStore's parsed-files
@@ -222,9 +242,7 @@ const App: React.FC = () => {
               {saveError ? (
                 <Tooltip title={
                   <Typography variant="caption" sx={{ display: 'block' }}>
-                    {saveError.kind === 'timeout'
-                      ? 'Save failed: the parser did not respond (timed out). Your changes are kept in the editor — retry with Ctrl+S.'
-                      : 'Save failed: the parser worker crashed. Your changes are kept in the editor — retry with Ctrl+S.'}
+                    {describeSaveError(saveError)}
                   </Typography>
                 }>
                   <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />

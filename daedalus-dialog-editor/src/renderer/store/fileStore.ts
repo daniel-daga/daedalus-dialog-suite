@@ -642,23 +642,35 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       throw new Error('File not open');
     }
 
+    // Capture the exact model reference being written so edits landing during
+    // the IPC round-trip are not marked clean (E7). Compared OUTSIDE set()
+    // below — the immer middleware hands updaters draft proxies which are never
+    // reference-equal (same technique/comment as useAutoSave.ts).
+    const savedModel = fileState.semanticModel;
+
     try {
       // The main process arms file-watcher self-write suppression after the
       // actual write succeeds (so a validation failure does not swallow a
       // genuine external change).
       const result = await window.editorAPI.saveFile(
         filePath,
-        fileState.semanticModel,
+        savedModel,
         state.codeSettings,
         { forceOnErrors: options?.forceOnErrors }
       );
 
+      const stillCurrent = get().openFiles.get(filePath)?.semanticModel === savedModel;
+
       if (!result.success && result.validationResult) {
         set((state) => {
-          state.pendingValidation = { filePath, validationResult: result.validationResult! };
           const currentFileState = state.openFiles.get(filePath);
           if (currentFileState) {
             currentFileState.lastValidationResult = result.validationResult;
+          }
+          // A superseded model must not raise a stale validation dialog: the
+          // edit that landed mid-save has not been validated.
+          if (stillCurrent) {
+            state.pendingValidation = { filePath, validationResult: result.validationResult! };
           }
         });
 
@@ -668,10 +680,14 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       set((state) => {
         const currentFileState = state.openFiles.get(filePath);
         if (currentFileState) {
-          currentFileState.isDirty = false;
-          currentFileState.lastSaved = new Date();
           currentFileState.lastValidationResult = result.validationResult;
           currentFileState.saveError = undefined;
+          // Only mark clean if the written model is still the current one;
+          // an edit that landed mid-save is not on disk yet.
+          if (stillCurrent) {
+            currentFileState.isDirty = false;
+            currentFileState.lastSaved = new Date();
+          }
         }
         state.pendingValidation = null;
       });
@@ -732,6 +748,13 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       await window.editorAPI.writeFile(filePath, code);
       const processedModel = await parseSourceWithIds(code);
 
+      // If the user kept typing during the save, the newer keystrokes are
+      // already in workingCode (Monaco debounce). Determined OUTSIDE set()
+      // since immer drafts are never reference-equal.
+      const latest = get().openFiles.get(filePath);
+      const sourceChangedDuringSave =
+        latest?.workingCode !== undefined && latest.workingCode !== code;
+
       set((state) => {
         const currentFileState = state.openFiles.get(filePath);
         if (currentFileState) {
@@ -739,11 +762,16 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           currentFileState.isDirty = false;
           currentFileState.lastSaved = new Date();
           currentFileState.originalCode = code;
-          currentFileState.workingCode = undefined;
           currentFileState.hasErrors = processedModel.hasErrors || false;
           currentFileState.errors = processedModel.errors || [];
           currentFileState.lastValidationResult = undefined;
           currentFileState.saveError = undefined;
+          // Keep keystrokes typed during the save so the file stays
+          // source-dirty (E2a); only wipe when nothing changed since the
+          // saved snapshot, where clearing is lossless.
+          if (!sourceChangedDuringSave) {
+            currentFileState.workingCode = undefined;
+          }
         }
       });
       // historyStore subscribes to originalCode changes and clears history automatically

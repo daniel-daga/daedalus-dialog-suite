@@ -445,6 +445,35 @@ describe('useAutoSave hook', () => {
     expect(mockSaveFile).toHaveBeenCalledTimes(1);
   });
 
+  test('marks an encoding-loss save with saveError kind encoding and keeps the file dirty', async () => {
+    const filePath = 'encoding.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+    });
+
+    mockSaveFile.mockRejectedValueOnce(new Error('ENCODING_LOSS: character "ł" at position 5'));
+
+    renderHook(() => useAutoSave());
+
+    await act(async () => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    const fileState = useEditorStore.getState().getFileState(filePath);
+    expect(fileState?.isDirty).toBe(true);
+    expect(fileState?.saveError?.kind).toBe('encoding');
+    expect(mockSaveFile).toHaveBeenCalledTimes(1);
+  });
+
   test('fileStore.saveFile records saveError and keeps the file dirty on a classifiable rejection', async () => {
     const filePath = 'manual.d';
     useEditorStore.setState({
