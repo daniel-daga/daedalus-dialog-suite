@@ -36,7 +36,6 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // File Watcher API
   startFileWatcher: (projectPath: string) => ipcRenderer.invoke('fileWatcher:start', projectPath),
   stopFileWatcher: () => ipcRenderer.invoke('fileWatcher:stop'),
-  notifySelfWrite: (filePath: string) => ipcRenderer.invoke('fileWatcher:notifySelfWrite', filePath),
   onFileChanged: (callback: (event: { type: string; filePath: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: { type: string; filePath: string }) => callback(data);
     ipcRenderer.on('fileWatcher:changed', listener);

@@ -64,13 +64,12 @@ test.describe('Source Code View', () => {
     ).not.toBeVisible();
   });
 
-  test('source view dialog has copy and open-in-new-window buttons', async ({ page }) => {
+  test('source view dialog has a copy button', async ({ page }) => {
     await page.getByRole('button', { name: /View Source/i }).click();
     await expect(
       page.getByText('Source Code: DIA_Arog_EntscheidungKillAlchemist')
     ).toBeVisible({ timeout: 5000 });
 
     await expect(page.getByRole('button', { name: 'Copy to clipboard' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Open in new window' })).toBeVisible();
   });
 });

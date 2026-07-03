@@ -9,6 +9,13 @@ import { PathValidationService, PathValidationError } from './services/PathValid
 import { SettingsService } from './services/SettingsService';
 import { FileWatcherService } from './services/FileWatcherService';
 import { UpdaterService } from './services/UpdaterService';
+import { applyWindowSecurity } from './windowSecurity';
+import {
+  assertModelShape,
+  assertDialogName,
+  assertSaveFileSettings,
+  assertSaveFileOptions,
+} from './ipcValidation';
 
 let mainWindow: BrowserWindow | null = null;
 // E1 window-close guard: main intercepts `close`, defers to the renderer, and
@@ -36,6 +43,9 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+
+  // Deny-by-default window-open / navigation before loading any content.
+  applyWindowSecurity(mainWindow.webContents);
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
@@ -120,6 +130,7 @@ function setupIpcHandlers() {
   // Code generator handlers
   ipcMain.handle('generator:generateCode', async (_event, model: any, settings: any) => {
     try {
+      assertModelShape(model);
       return codeGeneratorService.generateCode(model, settings);
     } catch (error) {
       console.error('[IPC] generator:generateCode error:', error);
@@ -129,6 +140,8 @@ function setupIpcHandlers() {
 
   ipcMain.handle('generator:generateDialogCode', async (_event, model: any, dialogName: string, settings: any) => {
     try {
+      assertModelShape(model);
+      assertDialogName(dialogName);
       return codeGeneratorService.generateDialogCode(model, dialogName, settings);
     } catch (error) {
       console.error('[IPC] generator:generateDialogCode error:', error);
@@ -139,6 +152,7 @@ function setupIpcHandlers() {
   // Validation handler - validates model without saving
   ipcMain.handle('validation:validate', async (_event, model: any, settings: any, options?: any) => {
     try {
+      assertModelShape(model);
       return validationService.validate(model, settings, options);
     } catch (error) {
       console.error('[IPC] validation:validate error:', error);
@@ -149,8 +163,13 @@ function setupIpcHandlers() {
   ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean }) => {
     const expectUnchanged = !options?.overwriteExternal;
     try {
-      // Validate path before saving
-      pathValidator.validatePath(filePath);
+      // Validate payload shapes before touching services
+      assertModelShape(model);
+      assertSaveFileSettings(settings);
+      assertSaveFileOptions(options);
+
+      // Validate path before saving (symlink-resolved, write mode)
+      await pathValidator.validatePathResolved(filePath, { write: true });
 
       // Validate model unless explicitly skipped
       if (!options?.skipValidation) {
@@ -207,7 +226,7 @@ function setupIpcHandlers() {
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] generator:saveFile - Path validation failed:', error.message);
-        throw new Error(`Path validation failed: ${error.reason}`);
+        throw new Error(error.message);
       }
       console.error('[IPC] generator:saveFile error:', error);
       throw new Error(`Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -217,14 +236,14 @@ function setupIpcHandlers() {
   // File I/O handlers
   ipcMain.handle('file:read', async (_event, filePath: string) => {
     try {
-      // Validate path before reading
-      pathValidator.validatePath(filePath);
+      // Validate path before reading (symlink-resolved)
+      await pathValidator.validatePathResolved(filePath);
 
       return fileService.readFile(filePath);
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] file:read - Path validation failed:', error.message);
-        throw new Error(`Path validation failed: ${error.reason}`);
+        throw new Error(error.message);
       }
       console.error('[IPC] file:read error:', error);
       throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -233,8 +252,8 @@ function setupIpcHandlers() {
 
   ipcMain.handle('file:write', async (_event, filePath: string, content: string, options?: { overwriteExternal?: boolean }) => {
     try {
-      // Validate path before writing
-      pathValidator.validatePath(filePath);
+      // Validate path before writing (symlink-resolved, write mode)
+      await pathValidator.validatePathResolved(filePath, { write: true });
 
       const writeResult = await fileService.writeFile(filePath, content, { expectUnchanged: !options?.overwriteExternal });
       // Arm self-write suppression only after an actual write succeeds
@@ -243,7 +262,7 @@ function setupIpcHandlers() {
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] file:write - Path validation failed:', error.message);
-        throw new Error(`Path validation failed: ${error.reason}`);
+        throw new Error(error.message);
       }
       console.error('[IPC] file:write error:', error);
       throw new Error(`Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -254,10 +273,9 @@ function setupIpcHandlers() {
     try {
       const filePath = await fileService.openFileDialog();
 
-      // When user selects a file via dialog, add its directory to allowed paths
+      // Whitelist only the exact file the user selected, not its directory.
       if (filePath) {
-        const fileDir = path.dirname(filePath);
-        pathValidator.addAllowedPath(fileDir);
+        pathValidator.addAllowedFile(filePath);
       }
 
       return filePath;
@@ -271,10 +289,9 @@ function setupIpcHandlers() {
     try {
       const filePath = await fileService.saveFileDialog();
 
-      // When user selects a save location via dialog, add its directory to allowed paths
+      // Whitelist only the exact save target the user selected, not its directory.
       if (filePath) {
-        const fileDir = path.dirname(filePath);
-        pathValidator.addAllowedPath(fileDir);
+        pathValidator.addAllowedFile(filePath);
       }
 
       return filePath;
@@ -310,14 +327,14 @@ function setupIpcHandlers() {
 
   ipcMain.handle('project:buildIndex', async (_event, folderPath: string) => {
     try {
-      // Validate project folder path
-      pathValidator.validatePath(folderPath);
+      // Validate project folder path (symlink-resolved)
+      await pathValidator.validatePathResolved(folderPath);
 
       return await projectService.buildProjectIndex(folderPath);
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] project:buildIndex - Path validation failed:', error.message);
-        throw new Error(`Path validation failed: ${error.reason}`);
+        throw new Error(error.message);
       }
       console.error('[IPC] project:buildIndex error:', error);
       throw new Error(`Failed to build project index: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -326,15 +343,15 @@ function setupIpcHandlers() {
 
   ipcMain.handle('project:parseDialogFile', async (_event, filePath: string) => {
     try {
-      // Validate file path before parsing
-      pathValidator.validatePath(filePath);
+      // Validate file path before parsing (symlink-resolved)
+      await pathValidator.validatePathResolved(filePath);
 
       const content = await fileService.readFile(filePath);
       return await parserService.parseSource(content);
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] project:parseDialogFile - Path validation failed:', error.message);
-        throw new Error(`Path validation failed: ${error.reason}`);
+        throw new Error(error.message);
       }
       console.error('[IPC] project:parseDialogFile error:', error);
       throw new Error(`Failed to parse dialog file: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -398,10 +415,6 @@ function setupIpcHandlers() {
       console.error('[IPC] fileWatcher:stop error:', error);
       throw new Error(`Failed to stop file watcher: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  });
-
-  ipcMain.handle('fileWatcher:notifySelfWrite', (_event, filePath: string) => {
-    fileWatcherService.notifySelfWrite(filePath);
   });
 
   // App info

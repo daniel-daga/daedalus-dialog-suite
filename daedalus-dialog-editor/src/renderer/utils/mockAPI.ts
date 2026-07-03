@@ -518,7 +518,6 @@ export const mockEditorAPI: EditorAPI = {
   // `__mockEmitFileChange` window hook (there is no real watcher in the mock).
   async startFileWatcher(): Promise<void> {},
   async stopFileWatcher(): Promise<void> {},
-  async notifySelfWrite(): Promise<void> {},
   onFileChanged(callback): () => void {
     mockFileChangeListener = callback;
     if (typeof window !== 'undefined') {

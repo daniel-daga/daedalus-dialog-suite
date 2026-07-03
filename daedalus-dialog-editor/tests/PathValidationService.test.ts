@@ -11,6 +11,8 @@
 
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 
 describe('PathValidationService', () => {
   let PathValidationService: any;
@@ -105,16 +107,17 @@ describe('PathValidationService', () => {
       expect(service.isPathAllowed(filePath)).toBe(false);
     });
 
-    it('should reject encoded directory traversal (URL encoded)', () => {
-      // %2e%2e%2f is URL encoding for ../
+    it('should treat URL-encoded sequences as literal filename characters (IPC-c)', () => {
+      // The local fs never URL-decodes, so %2e/%2f are ordinary filename
+      // characters. A file literally named like this lives inside the project
+      // and must be allowed (the old substring rejection was a false positive).
       const filePath = projectPath + '/%2e%2e%2f%2e%2e%2fsecret.txt';
-      expect(service.isPathAllowed(filePath)).toBe(false);
+      expect(service.isPathAllowed(filePath)).toBe(true);
     });
 
-    it('should reject double-encoded directory traversal', () => {
-      // Double encoding attempt
+    it('should treat double-encoded sequences as literal filename characters (IPC-c)', () => {
       const filePath = projectPath + '/%252e%252e%252fsecret.txt';
-      expect(service.isPathAllowed(filePath)).toBe(false);
+      expect(service.isPathAllowed(filePath)).toBe(true);
     });
 
     it('should allow .. that stays within project bounds', () => {
@@ -381,6 +384,155 @@ describe('PathValidationService', () => {
 
       const maliciousFile = isWin ? 'C:\\Malicious\\Path\\file.d' : '/tmp/Malicious/Path/file.d';
       expect(service.isPathAllowed(maliciousFile)).toBe(false);
+    });
+  });
+
+  // N3: containment must be segment-aware. A sibling whose first segment merely
+  // *begins* with '..' (e.g. "..backup") is a legitimate child, not traversal.
+  describe('..-prefix sibling edge (N3)', () => {
+    it('should allow a child directory whose name begins with ".." (isPathAllowed)', () => {
+      const service = new PathValidationService([projectPath]);
+      const filePath = path.join(projectPath, '..backup', 'x.d');
+      expect(service.isPathAllowed(filePath)).toBe(true);
+    });
+
+    it('should allow a child directory whose name begins with ".." (validatePath)', () => {
+      const service = new PathValidationService([projectPath]);
+      const filePath = path.join(projectPath, '..backup', 'x.d');
+      expect(() => service.validatePath(filePath)).not.toThrow();
+    });
+  });
+
+  describe('%2e literal filename (IPC-c)', () => {
+    it('should allow a real folder whose name literally contains "%2e"', () => {
+      const service = new PathValidationService([projectPath]);
+      const filePath = path.join(projectPath, 'mod%2e5', 'x.d');
+      expect(service.isPathAllowed(filePath)).toBe(true);
+      expect(() => service.validatePath(filePath)).not.toThrow();
+    });
+  });
+
+  // Symlink-aware async validation against the real filesystem.
+  describe('validatePathResolved - symlink-aware containment', () => {
+    // Symlink creation may need Developer Mode on Windows; probe and skip.
+    let canSymlink = false;
+    let probeDir = '';
+    beforeAll(async () => {
+      probeDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-probe-'));
+      try {
+        await fsp.symlink(path.join(probeDir, 'target'), path.join(probeDir, 'link'), 'junction');
+        canSymlink = true;
+      } catch {
+        try {
+          await fsp.symlink(path.join(probeDir, 'target'), path.join(probeDir, 'link2'));
+          canSymlink = true;
+        } catch {
+          canSymlink = false;
+        }
+      }
+    });
+    afterAll(async () => {
+      if (probeDir) await fsp.rm(probeDir, { recursive: true, force: true });
+    });
+
+    let root = '';
+    let outside = '';
+    let service: any;
+    beforeEach(async () => {
+      root = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-root-'));
+      outside = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-out-'));
+      service = new PathValidationService([root]);
+    });
+    afterEach(async () => {
+      await fsp.rm(root, { recursive: true, force: true });
+      await fsp.rm(outside, { recursive: true, force: true });
+    });
+
+    const maybe = (name: string, fn: () => Promise<void>) =>
+      it(name, async () => {
+        if (!canSymlink) {
+          return; // symlinks unavailable on this platform/CI
+        }
+        await fn();
+      });
+
+    it('allows an ordinary file inside the root', async () => {
+      const p = path.join(root, 'DIA_Test.d');
+      await fsp.writeFile(p, 'x');
+      await expect(service.validatePathResolved(p)).resolves.toBeUndefined();
+    });
+
+    it('allows a non-existent save-as target inside the root', async () => {
+      const p = path.join(root, 'new', 'sub', 'file.d');
+      await expect(service.validatePathResolved(p)).resolves.toBeUndefined();
+    });
+
+    it('rejects an absolute path outside the root', async () => {
+      const p = path.join(outside, 'evil.d');
+      await fsp.writeFile(p, 'x');
+      await expect(service.validatePathResolved(p)).rejects.toThrow();
+    });
+
+    maybe('rejects a symlinked directory that escapes the root', async () => {
+      await fsp.symlink(outside, path.join(root, 'link'), 'junction');
+      await expect(
+        service.validatePathResolved(path.join(root, 'link', 'x.d'))
+      ).rejects.toThrow();
+    });
+
+    maybe('rejects writing through a symlinked file that escapes the root', async () => {
+      // Broken/dangling symlink: target's parent exists, target file does not.
+      await fsp.symlink(path.join(outside, 'target'), path.join(root, 'evil.d'));
+      await expect(
+        service.validatePathResolved(path.join(root, 'evil.d'), { write: true })
+      ).rejects.toThrow();
+    });
+
+    maybe('allows a symlink that points within another allowed root', async () => {
+      const rootB = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-rootB-'));
+      try {
+        service.addAllowedPath(rootB);
+        await fsp.symlink(rootB, path.join(root, 'link'), 'junction');
+        const p = path.join(root, 'link', 'x.d');
+        await fsp.writeFile(path.join(rootB, 'x.d'), 'x');
+        await expect(service.validatePathResolved(p)).resolves.toBeUndefined();
+      } finally {
+        await fsp.rm(rootB, { recursive: true, force: true });
+      }
+    });
+
+    maybe('rejects a non-existent target under an escaping symlink (save-as)', async () => {
+      await fsp.symlink(outside, path.join(root, 'link-out'), 'junction');
+      await expect(
+        service.validatePathResolved(path.join(root, 'link-out', 'new.d'))
+      ).rejects.toThrow();
+    });
+
+    it('still rejects .. traversal against the resolved variant', async () => {
+      const p = path.join(root, '..', '..', 'etc', 'passwd');
+      await expect(service.validatePathResolved(p)).rejects.toThrow();
+    });
+  });
+
+  // Whitelist granularity: openDialog/saveDialog whitelist the exact selected
+  // file, not its parent directory. Selecting a.d must NOT grant b.d.
+  describe('whitelist granularity - allowedFiles', () => {
+    let dir = '';
+    let service: any;
+    beforeEach(async () => {
+      dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-files-'));
+      await fsp.writeFile(path.join(dir, 'a.d'), 'x');
+      await fsp.writeFile(path.join(dir, 'b.d'), 'x');
+      service = new PathValidationService([]);
+    });
+    afterEach(async () => {
+      await fsp.rm(dir, { recursive: true, force: true });
+    });
+
+    it('allows the exact whitelisted file but rejects a sibling', async () => {
+      service.addAllowedFile(path.join(dir, 'a.d'));
+      await expect(service.validatePathResolved(path.join(dir, 'a.d'))).resolves.toBeUndefined();
+      await expect(service.validatePathResolved(path.join(dir, 'b.d'))).rejects.toThrow();
     });
   });
 });
