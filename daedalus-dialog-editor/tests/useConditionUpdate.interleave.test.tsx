@@ -90,9 +90,12 @@ describe('useConditionUpdate interleaving (U3 stage 1)', () => {
     act(() => { jest.runOnlyPendingTimers(); });
 
     const texts = conditionTexts(getLatest());
-    // Exactly two conditions remain, in order, with no resurrected c0 and no
-    // appended/duplicated edit landing in the wrong slot.
-    expect(texts).toEqual(['c1', 'c2']);
+    // Exactly two conditions remain: no resurrected c0, and the edit did not
+    // land in the wrong slot or duplicate. (With stage-2 identity keys the edit
+    // survives on its logical condition; the explicit survival case is below.)
+    expect(texts).toHaveLength(2);
+    expect(texts).not.toContain('c0');
+    expect(texts[0]).toBe('c1');
   });
 
   it('does not resurrect the last condition when it is deleted with a pending edit', () => {
@@ -107,5 +110,21 @@ describe('useConditionUpdate interleaving (U3 stage 1)', () => {
 
     const texts = conditionTexts(getLatest());
     expect(texts).toEqual(['c0', 'c1']);
+  });
+
+  // Stage 2: identity keys keep the edited card mounted across a deletion above
+  // it, so the in-flight edit lands on the same logical condition instead of
+  // being dropped.
+  it('keeps a pending edit on the same logical condition when one above is deleted', () => {
+    const getLatest = renderExpanded(['c0', 'c1', 'c2']);
+
+    const inputs = screen.getAllByLabelText('Condition Expression');
+    fireEvent.change(inputs[2], { target: { value: 'c2-edited' } });
+    fireEvent.click(screen.getAllByLabelText('Delete condition')[0]);
+
+    act(() => { jest.runOnlyPendingTimers(); });
+
+    const texts = conditionTexts(getLatest());
+    expect(texts).toEqual(['c1', 'c2-edited']);
   });
 });

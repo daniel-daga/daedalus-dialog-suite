@@ -56,6 +56,7 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   onNavigateToFunction,
   onRenameFunction,
   dialogContextName,
+  droppableNamespace,
   filePath
 }) => {
   const typedAction = action as ConditionalAction;
@@ -150,6 +151,7 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
                 onNavigateToFunction={onNavigateToFunction}
                 onRenameFunction={onRenameFunction}
                 dialogContextName={dialogContextName || ''}
+                droppableNamespace={droppableNamespace}
                 contextId={`${dialogContextName || 'dialog'}:${path.join('.')}:${branch}`}
                 filePath={filePath}
               />

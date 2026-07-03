@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Paper,
@@ -10,8 +10,11 @@ import {
 import {
   Add as AddIcon,
 } from '@mui/icons-material';
+import { DragDropContext, DropResult } from 'react-beautiful-dnd';
 import ActionsList from './ActionsList';
 import ActionTypeMenu from './common/ActionTypeMenu';
+import { DragDispatchContext } from './DragDispatchContext';
+import type { DragMoveHandler, DragDispatchContextValue } from './DragDispatchContext';
 import type { ActionTypeId } from './actionTypes';
 import type { DialogAction, DialogFunction, SemanticModel } from '../types/global';
 import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
@@ -59,6 +62,31 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
 }) => {
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
 
+  // Single DragDropContext for the whole dialog pane (fix-05 §2.5). Every
+  // descendant ActionsList — top-level list, ConditionalAction branches, and
+  // InlineChoice sub-lists — registers its move handler here keyed by its
+  // namespaced droppableId, so no nested contexts exist.
+  const handlersRef = useRef<Map<string, DragMoveHandler>>(new Map());
+  const dragDispatch = useMemo<DragDispatchContextValue>(() => ({
+    register: (droppableId, handler) => {
+      handlersRef.current.set(droppableId, handler);
+      return () => {
+        if (handlersRef.current.get(droppableId) === handler) {
+          handlersRef.current.delete(droppableId);
+        }
+      };
+    },
+  }), []);
+
+  const handleDragEnd = useCallback((result: DropResult) => {
+    const { source, destination } = result;
+    if (!destination) return;
+    // Cross-list moves stay unsupported (as before the hoist).
+    if (source.droppableId !== destination.droppableId) return;
+    if (source.index === destination.index) return;
+    handlersRef.current.get(source.droppableId)?.(source.index, destination.index);
+  }, []);
+
   return (
     <Paper sx={{ p: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -103,26 +131,30 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
           </Button>
         </Box>
       ) : (
-        <ActionsList
-          actions={currentFunction.actions || []}
-          npcName={npcName}
-          updateActionAtPath={updateActionAtPath}
-          deleteActionAtPath={deleteActionAtPath}
-          focusActionAtPath={focusActionAtPath}
-          addDialogLineAfterPath={addDialogLineAfterPath}
-          deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
-          addActionAfterPath={addActionAfterPath}
-          addActionToBranchEnd={addActionToBranchEnd}
-          moveAction={moveAction}
-          registerActionRef={registerActionRef}
-          getVisibleActionPaths={getVisibleActionPaths}
-          semanticModel={semanticModel}
-          onNavigateToFunction={onNavigateToFunction}
-          onRenameFunction={onRenameFunction}
-          dialogContextName={dialogName}
-          contextId={currentFunction.name}
-          filePath={filePath}
-        />
+        <DragDispatchContext.Provider value={dragDispatch}>
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <ActionsList
+              actions={currentFunction.actions || []}
+              npcName={npcName}
+              updateActionAtPath={updateActionAtPath}
+              deleteActionAtPath={deleteActionAtPath}
+              focusActionAtPath={focusActionAtPath}
+              addDialogLineAfterPath={addDialogLineAfterPath}
+              deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
+              addActionAfterPath={addActionAfterPath}
+              addActionToBranchEnd={addActionToBranchEnd}
+              moveAction={moveAction}
+              registerActionRef={registerActionRef}
+              getVisibleActionPaths={getVisibleActionPaths}
+              semanticModel={semanticModel}
+              onNavigateToFunction={onNavigateToFunction}
+              onRenameFunction={onRenameFunction}
+              dialogContextName={dialogName}
+              contextId={currentFunction.name}
+              filePath={filePath}
+            />
+          </DragDropContext>
+        </DragDispatchContext.Provider>
       )}
     </Paper>
   );

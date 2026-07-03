@@ -42,6 +42,10 @@ export interface ActionCardProps {
   dialogContextName?: string; // The dialog/function name for validation prefix
   dragHandleProps?: DraggableProvidedDragHandleProps | null;
   filePath?: string | null;
+  // Namespace for nested list droppableIds (fix-05 §2.5). Propagated to
+  // ConditionalAction branch lists so a conditional inside a choice sub-dialog
+  // does not collide with an outer conditional at the same path.
+  droppableNamespace?: string;
 }
 
 export interface DialogDetailsEditorProps {
