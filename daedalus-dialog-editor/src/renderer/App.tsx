@@ -16,7 +16,8 @@ import {
   LightMode as LightModeIcon,
   AutoAwesome as AutoAwesomeIcon,
   Undo as UndoIcon,
-  Redo as RedoIcon
+  Redo as RedoIcon,
+  Description as DescriptionIcon
 } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useHistoryStore } from './store/historyStore';
@@ -491,6 +492,16 @@ const App: React.FC = () => {
           }}
         >
           <UpdateNotification triggerCheck={triggerUpdateCheck} />
+          <Tooltip title="Show log file">
+            <IconButton
+              size="small"
+              aria-label="Show log file"
+              onClick={() => void window.editorAPI.showLogFile()}
+              sx={{ mr: 0.5, color: 'text.disabled' }}
+            >
+              <DescriptionIcon fontSize="inherit" />
+            </IconButton>
+          </Tooltip>
           <Typography variant="caption" color="text.disabled">
             v{appVersion}
           </Typography>

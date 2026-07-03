@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // App info
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+  // Crash logging (fix-08 §5)
+  logRendererError: (payload: { message: string; stack?: string }) => ipcRenderer.invoke('log:rendererError', payload),
+  getLogPath: () => ipcRenderer.invoke('app:getLogPath'),
+  showLogFile: () => ipcRenderer.invoke('app:showLogFile'),
+
   // Window close guard (E1)
   onCloseRequested: (callback: () => void) => {
     const listener = () => callback();

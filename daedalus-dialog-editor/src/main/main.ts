@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import { FileService } from './services/FileService';
+import { LogService } from './services/LogService';
 import { ParserService } from './services/ParserService';
 import { CodeGeneratorService } from './services/CodeGeneratorService';
 import { ValidationService } from './services/ValidationService';
@@ -15,6 +16,7 @@ import {
   assertDialogName,
   assertSaveFileSettings,
   assertSaveFileOptions,
+  sanitizeRendererErrorPayload,
 } from './ipcValidation';
 
 let mainWindow: BrowserWindow | null = null;
@@ -30,8 +32,48 @@ const projectService = new ProjectService();
 const settingsService = new SettingsService();
 const fileWatcherService = new FileWatcherService();
 const updaterService = new UpdaterService(settingsService);
+const logService = new LogService(app.getPath('userData'), app.getVersion());
 // Path validator starts empty - paths are added when user opens files/projects via dialogs
 const pathValidator = new PathValidationService([]);
+
+// Crash visibility (fix-08 §5). Wire the process/app crash handlers before
+// `app.whenReady()` so failures during startup are still captured. Deliberately
+// log-only: no `process.exit`, no dialog — hard-fail semantics belong to the
+// error-surfacing slices.
+process.on('uncaughtException', (error) => {
+  logService.log(
+    'error',
+    'main',
+    `uncaughtException: ${error instanceof Error ? error.message : String(error)}`,
+    error instanceof Error ? error.stack : undefined
+  );
+});
+
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : undefined;
+  logService.log(
+    'error',
+    'main',
+    `unhandledRejection: ${error ? error.message : String(reason)}`,
+    error?.stack
+  );
+});
+
+app.on('render-process-gone', (_event, _webContents, details) => {
+  logService.log(
+    'error',
+    'renderer-process',
+    `render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`
+  );
+});
+
+app.on('child-process-gone', (_event, details) => {
+  logService.log(
+    'error',
+    'child-process',
+    `child-process-gone: type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`
+  );
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -419,6 +461,22 @@ function setupIpcHandlers() {
 
   // App info
   ipcMain.handle('app:getVersion', () => app.getVersion());
+
+  // Crash logging (fix-08 §5). Validate the renderer-forwarded payload at the
+  // boundary: strings only, bounded lengths, drop anything else.
+  ipcMain.handle('log:rendererError', (_event, payload: unknown) => {
+    const sanitized = sanitizeRendererErrorPayload(payload);
+    if (!sanitized) {
+      return;
+    }
+    logService.log('error', 'renderer', sanitized.message, sanitized.stack);
+  });
+
+  ipcMain.handle('app:getLogPath', () => logService.getLogFilePath());
+
+  ipcMain.handle('app:showLogFile', () => {
+    shell.showItemInFolder(logService.getLogFilePath());
+  });
 
   // Window close guard (E1). `before-quit` needs no extra handling — quitting
   // closes the window, and the `close` handler above runs and defers here.

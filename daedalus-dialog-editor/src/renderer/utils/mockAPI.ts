@@ -571,6 +571,14 @@ export const mockEditorAPI: EditorAPI = {
     return '0.0.0-mock';
   },
 
+  // Crash logging (fix-08 §5). No-ops in the browser harness so window.onerror
+  // forwarding is inert and the mock stays unaffected.
+  async logRendererError(_payload: { message: string; stack?: string }): Promise<void> {},
+  async getLogPath(): Promise<string> {
+    return '';
+  },
+  async showLogFile(): Promise<void> {},
+
   // Window close guard (E1). The request callback is captured so E2E tests can
   // inject a close request via the `__mockEmitCloseRequested` window hook; the
   // ack/approve/cancel signals are recorded for assertion (no real window here).

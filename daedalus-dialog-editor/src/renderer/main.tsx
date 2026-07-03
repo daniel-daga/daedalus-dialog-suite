@@ -12,6 +12,27 @@ if (!window.editorAPI) {
   window.editorAPI = mockEditorAPI;
 }
 
+// Crash logging (fix-08 §5): forward uncaught renderer errors and unhandled
+// rejections to the main-process log file. Guarded on the function existing so
+// the browser harness (mock provides a no-op) is unaffected.
+window.onerror = (message, source, lineno, colno, error) => {
+  const where = source ? ` (${source}:${lineno ?? 0}:${colno ?? 0})` : '';
+  window.editorAPI?.logRendererError?.({
+    message: `${typeof message === 'string' ? message : 'Unknown error'}${where}`,
+    stack: error?.stack,
+  });
+  return false;
+};
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  const error = reason instanceof Error ? reason : undefined;
+  window.editorAPI?.logRendererError?.({
+    message: error ? error.message : `Unhandled rejection: ${String(reason)}`,
+    stack: error?.stack,
+  });
+});
+
 // Expose the quest-graph debug surface only in dev/test builds (Vite dev server,
 // including the Playwright `dev:browser` harness). `import.meta.env.DEV` is false
 // for production `vite build` output, so the hook never ships. Set here — the only

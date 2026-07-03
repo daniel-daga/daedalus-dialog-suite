@@ -10,6 +10,9 @@ import {
   assertDialogName,
   assertSaveFileSettings,
   assertSaveFileOptions,
+  sanitizeRendererErrorPayload,
+  RENDERER_ERROR_MESSAGE_MAX,
+  RENDERER_ERROR_STACK_MAX,
 } from '../src/main/ipcValidation';
 
 describe('assertModelShape', () => {
@@ -86,5 +89,54 @@ describe('assertSaveFileOptions', () => {
 
   it('rejects a non-object', () => {
     expect(() => assertSaveFileOptions('x')).toThrow(/option/i);
+  });
+});
+
+describe('sanitizeRendererErrorPayload', () => {
+  it('accepts a well-formed payload with message only', () => {
+    expect(sanitizeRendererErrorPayload({ message: 'boom' })).toEqual({ message: 'boom' });
+  });
+
+  it('accepts a well-formed payload with message and stack', () => {
+    expect(sanitizeRendererErrorPayload({ message: 'boom', stack: 'at foo' })).toEqual({
+      message: 'boom',
+      stack: 'at foo',
+    });
+  });
+
+  it('drops a non-object payload', () => {
+    expect(sanitizeRendererErrorPayload('boom')).toBeNull();
+    expect(sanitizeRendererErrorPayload(null)).toBeNull();
+    expect(sanitizeRendererErrorPayload(42)).toBeNull();
+    expect(sanitizeRendererErrorPayload([])).toBeNull();
+  });
+
+  it('drops a payload whose message is not a string', () => {
+    expect(sanitizeRendererErrorPayload({ message: 42 })).toBeNull();
+    expect(sanitizeRendererErrorPayload({ message: { nested: true } })).toBeNull();
+    expect(sanitizeRendererErrorPayload({})).toBeNull();
+  });
+
+  it('drops a payload with an empty message', () => {
+    expect(sanitizeRendererErrorPayload({ message: '' })).toBeNull();
+  });
+
+  it('drops a payload whose message exceeds the cap', () => {
+    const oversized = 'x'.repeat(RENDERER_ERROR_MESSAGE_MAX + 1);
+    expect(sanitizeRendererErrorPayload({ message: oversized })).toBeNull();
+  });
+
+  it('accepts a message exactly at the cap', () => {
+    const atCap = 'x'.repeat(RENDERER_ERROR_MESSAGE_MAX);
+    expect(sanitizeRendererErrorPayload({ message: atCap })).toEqual({ message: atCap });
+  });
+
+  it('drops a payload whose stack is not a string', () => {
+    expect(sanitizeRendererErrorPayload({ message: 'boom', stack: 42 })).toBeNull();
+  });
+
+  it('drops a payload whose stack exceeds the cap', () => {
+    const oversized = 'y'.repeat(RENDERER_ERROR_STACK_MAX + 1);
+    expect(sanitizeRendererErrorPayload({ message: 'boom', stack: oversized })).toBeNull();
   });
 });
