@@ -4,6 +4,7 @@ import type { AttackActionType } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
 
 const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -50,9 +51,8 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <ActionTextField
         label="Damage"
-        type="number"
-        value={typedAction.damage || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, damage: parseInt(value) || 0 })}
+        value={displayNumericOrStringField(typedAction.damage)}
+        onChange={(value) => handleUpdate({ ...typedAction, damage: parseNumericOrStringField(value) })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}

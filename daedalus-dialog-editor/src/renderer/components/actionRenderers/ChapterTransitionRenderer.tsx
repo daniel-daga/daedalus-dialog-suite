@@ -2,6 +2,7 @@ import React from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { ChapterTransitionAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
+import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
 
 const ChapterTransitionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -17,9 +18,8 @@ const ChapterTransitionRenderer: React.FC<BaseActionRendererProps> = ({
     <ActionFieldContainer>
       <ActionTextField
         label="Chapter"
-        type="number"
-        value={typedAction.chapter || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, chapter: parseInt(value) || 0 })}
+        value={displayNumericOrStringField(typedAction.chapter)}
+        onChange={(value) => handleUpdate({ ...typedAction, chapter: parseNumericOrStringField(value) })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

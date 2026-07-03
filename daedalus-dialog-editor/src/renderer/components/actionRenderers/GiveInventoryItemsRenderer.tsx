@@ -7,6 +7,7 @@ import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../co
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { createRowTabHandlers } from './rowTabNavigation';
+import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
 
 const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -72,9 +73,8 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <ActionTextField
         label="Quantity"
-        type="number"
-        value={typedAction.quantity || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, quantity: parseInt(value) || 0 })}
+        value={displayNumericOrStringField(typedAction.quantity)}
+        onChange={(value) => handleUpdate({ ...typedAction, quantity: parseNumericOrStringField(value) })}
         onFlush={flushUpdate}
         onKeyDown={fieldKeyDown[3]}
         sx={{ width: 90 }}

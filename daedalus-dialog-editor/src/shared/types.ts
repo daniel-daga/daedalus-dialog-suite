@@ -81,7 +81,7 @@ export interface CreateInventoryItemsAction {
   type: 'CreateInventoryItems';
   target: string;
   item: string;
-  quantity: number;
+  quantity: number | string;
 }
 
 export interface GiveInventoryItemsAction {
@@ -89,7 +89,7 @@ export interface GiveInventoryItemsAction {
   giver: string;
   receiver: string;
   item: string;
-  quantity: number;
+  quantity: number | string;
 }
 
 export interface AttackActionType {
@@ -97,7 +97,7 @@ export interface AttackActionType {
   attacker: string;
   target: string;
   attackReason: string;
-  damage: number;
+  damage: number | string;
 }
 
 export interface SetAttitudeActionType {
@@ -108,7 +108,7 @@ export interface SetAttitudeActionType {
 
 export interface ChapterTransitionAction {
   type: 'ChapterTransitionAction';
-  chapter: number;
+  chapter: number | string;
   world: string;
 }
 
@@ -140,7 +140,7 @@ export interface PlayAniAction {
 export interface SetRefuseTalkAction {
   type: 'SetRefuseTalkAction';
   target: string;
-  seconds: number;
+  seconds: number | string;
 }
 
 export interface ClearChoicesAction {
@@ -183,7 +183,8 @@ export interface RemoveInventoryItemsActionType {
   removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
   removeNpc: string;
   removeItem: string;
-  removeQuantity: string;
+  /** Absent for the 2-arg `Npc_RemoveInvItem` engine form. */
+  removeQuantity?: string;
 }
 
 export interface InsertNpcActionType {
@@ -200,6 +201,16 @@ export interface HeroFollowsActionType {
 export interface Action {
   type: 'Action';
   action: string;
+}
+
+/**
+ * A standalone comment inside a function or condition body, preserved in
+ * source position (mirrors the parser's `CommentAction`). Read-only in the
+ * editor UI; regenerates verbatim with no trailing `;`.
+ */
+export interface CommentActionType {
+  type: 'CommentAction';
+  text: string;
 }
 
 export interface CustomAction {
@@ -244,6 +255,7 @@ export type DialogAction =
   | HeroFollowsActionType
   | ConditionalAction
   | Action
+  | CommentActionType
   | CustomAction;
 
 // ============================================================================
@@ -372,6 +384,12 @@ export interface Dialog {
   name: string;
   parent: string;
   properties: DialogProperties;
+  /** Standalone comments preceding a C_INFO property, keyed by property name. */
+  propertyLeadingComments?: { [key: string]: string[] };
+  /** Same-line trailing comment after a C_INFO property, keyed by property name. */
+  propertyTrailingComments?: { [key: string]: string };
+  /** Standalone comments after the last property, before the closing `};`. */
+  trailingBodyComments?: string[];
 }
 
 export interface ParseError {
@@ -438,13 +456,52 @@ export interface GlobalInstance {
   };
 }
 
+export interface GlobalClass {
+  name: string;
+  sourceText?: string;
+  leadingComments?: string[];
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
+export interface GlobalPrototype {
+  name: string;
+  parent: string;
+  sourceText?: string;
+  leadingComments?: string[];
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
 export interface SemanticModel {
   dialogs: Record<string, Dialog>;
   functions: Record<string, DialogFunction>;
-  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance'; name: string }>;
+  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype'; name: string }>;
   constants?: Record<string, GlobalConstant>;
   variables?: Record<string, GlobalVariable>;
   instances?: Record<string, GlobalInstance>;
+  classes?: Record<string, GlobalClass>;
+  prototypes?: Record<string, GlobalPrototype>;
+  /** File-trailing comments (after the last declaration, at EOF). */
+  trailingComments?: string[];
   items?: Record<string, GlobalInstance>;
   npcs?: Record<string, GlobalInstance>;
   animations?: Record<string, GlobalInstance>;

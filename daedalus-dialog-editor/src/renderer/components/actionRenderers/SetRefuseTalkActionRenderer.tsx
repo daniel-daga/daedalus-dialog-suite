@@ -5,6 +5,7 @@ import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../co
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { Typography } from '@mui/material';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
 
 const SetRefuseTalkActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -36,9 +37,8 @@ const SetRefuseTalkActionRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <ActionTextField
         label="Seconds"
-        type="number"
-        value={typedAction.seconds ?? 300}
-        onChange={(value) => handleUpdate({ ...typedAction, seconds: parseInt(value) || 0 })}
+        value={displayNumericOrStringField(typedAction.seconds ?? 300)}
+        onChange={(value) => handleUpdate({ ...typedAction, seconds: parseNumericOrStringField(value) })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 120 }}

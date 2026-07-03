@@ -34,6 +34,7 @@ import InsertNpcActionRenderer from './InsertNpcActionRenderer';
 import HeroFollowsActionRenderer from './HeroFollowsActionRenderer';
 import ConditionalActionRenderer from './ConditionalActionRenderer';
 import CustomActionRenderer from './CustomActionRenderer';
+import CommentActionRenderer from './CommentActionRenderer';
 import UnknownActionRenderer from './UnknownActionRenderer';
 
 /**
@@ -65,6 +66,7 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   insertNpcAction: InsertNpcActionRenderer,
   heroFollowsAction: HeroFollowsActionRenderer,
   conditionalAction: ConditionalActionRenderer,
+  commentAction: CommentActionRenderer,
   customAction: CustomActionRenderer
 };
 
@@ -105,6 +107,7 @@ export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
   insertNpcAction: 'Insert NPC',
   heroFollowsAction: 'Hero Follows NPC',
   conditionalAction: 'If / Else Block',
+  commentAction: 'Comment',
   customAction: 'Action'
 };
 

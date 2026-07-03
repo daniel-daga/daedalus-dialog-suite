@@ -38,7 +38,7 @@ export interface CreateInventoryItemsAction {
   type: 'CreateInventoryItems';
   target: string;
   item: string;
-  quantity: number;
+  quantity: number | string;
 }
 
 export interface GiveInventoryItemsAction {
@@ -46,7 +46,7 @@ export interface GiveInventoryItemsAction {
   giver: string;
   receiver: string;
   item: string;
-  quantity: number;
+  quantity: number | string;
 }
 
 export interface AttackAction {
@@ -54,7 +54,7 @@ export interface AttackAction {
   attacker: string;
   target: string;
   attackReason: string;
-  damage: number;
+  damage: number | string;
 }
 
 export interface SetAttitudeAction {
@@ -65,7 +65,7 @@ export interface SetAttitudeAction {
 
 export interface ChapterTransitionAction {
   type: 'ChapterTransitionAction';
-  chapter: number;
+  chapter: number | string;
   world: string;
 }
 
@@ -97,7 +97,7 @@ export interface PlayAniAction {
 export interface SetRefuseTalkAction {
   type: 'SetRefuseTalkAction';
   target: string;
-  seconds: number;
+  seconds: number | string;
 }
 
 export interface ClearChoicesAction {
@@ -145,7 +145,8 @@ export interface RemoveInventoryItemsAction {
   removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
   removeNpc: string;
   removeItem: string;
-  removeQuantity: string;
+  /** Absent for the 2-arg `Npc_RemoveInvItem` engine form. */
+  removeQuantity?: string;
 }
 
 export interface InsertNpcAction {
@@ -162,6 +163,16 @@ export interface HeroFollowsAction {
 export interface CustomAction {
   type: 'CustomAction';
   action: string;
+}
+
+/**
+ * A standalone comment inside a function or condition body, preserved in
+ * source position (mirrors the parser's `CommentAction`). Read-only in the
+ * editor UI; regenerates verbatim with no trailing `;`.
+ */
+export interface CommentAction {
+  type: 'CommentAction';
+  text: string;
 }
 
 export interface ConditionalAction {
@@ -201,6 +212,7 @@ export type ActionType =
   | HeroFollowsAction
   | ConditionalAction
   | Action
+  | CommentAction
   | CustomAction;
 
 /**
@@ -232,6 +244,7 @@ export type ActionTypeId =
   | 'insertNpcAction'
   | 'heroFollowsAction'
   | 'conditionalAction'
+  | 'commentAction'
   | 'customAction';
 
 export type UnknownDialogAction = Record<string, unknown>;
@@ -269,6 +282,7 @@ const TYPE_TO_ID: Record<string, ActionTypeId> = {
   'HeroFollowsAction': 'heroFollowsAction',
   'ConditionalAction': 'conditionalAction',
   'Action': 'customAction',
+  'CommentAction': 'commentAction',
   'CustomAction': 'customAction',
 };
 

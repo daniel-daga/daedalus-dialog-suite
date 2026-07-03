@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Box, Tooltip, Typography } from '@mui/material';
-import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon, Star as StarIcon, School as SchoolIcon, PersonAdd as PersonAddIcon, RemoveShoppingCart as RemoveShoppingCartIcon, Inventory2 as Inventory2Icon, DragIndicator as DragIndicatorIcon } from '@mui/icons-material';
+import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon, Star as StarIcon, School as SchoolIcon, PersonAdd as PersonAddIcon, RemoveShoppingCart as RemoveShoppingCartIcon, Inventory2 as Inventory2Icon, DragIndicator as DragIndicatorIcon, Comment as CommentIcon } from '@mui/icons-material';
 import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
 import { getActionType } from './actionTypes';
@@ -212,6 +212,7 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       case 'removeInventoryItemsAction': return <RemoveShoppingCartIcon fontSize="small" />;
       case 'insertNpcAction': return <PersonAddIcon fontSize="small" />;
       case 'conditionalAction': return <CallSplitIcon fontSize="small" />;
+      case 'commentAction': return <CommentIcon fontSize="small" />;
       case 'customAction': return <CodeIcon fontSize="small" />;
       default: return <CodeIcon fontSize="small" />;
     }

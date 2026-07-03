@@ -4,6 +4,7 @@ import type { CreateInventoryItemsAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
 
 const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -42,9 +43,8 @@ const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       />
       <ActionTextField
         label="Quantity"
-        type="number"
-        value={typedAction.quantity || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, quantity: parseInt(value) || 0 })}
+        value={displayNumericOrStringField(typedAction.quantity)}
+        onChange={(value) => handleUpdate({ ...typedAction, quantity: parseNumericOrStringField(value) })}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         sx={{ width: 90 }}
