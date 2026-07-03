@@ -37,6 +37,7 @@ interface HistoryStore {
   // from either surface walks the same per-file timeline.
   editHistory: Map<string, EditHistoryState>;
   pushSnapshot: (filePath: string) => void;
+  pushSnapshotTransactional: (filePath: string, mutate: () => void) => void;
   undo: (filePath: string) => void;
   redo: (filePath: string) => void;
   canUndo: (filePath: string) => boolean;
@@ -245,6 +246,40 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
       h.future = [];
       state.editHistory.set(filePath, h);
     });
+  },
+
+  // Push a snapshot, run `mutate`, then roll the snapshot back if the mutation
+  // no-opped (finding F-A). fileStore is Immer-produced, so any real change
+  // yields a NEW semanticModel object; an unchanged reference means the mutation
+  // hit a silent no-op guard (missing dialog/function, updater returned null).
+  // In that case restoring the pre-call past/future avoids a phantom undo step
+  // and, crucially, avoids wiping the redo `future`.
+  pushSnapshotTransactional: (filePath: string, mutate: () => void) => {
+    const beforeModel = useFileStore.getState().openFiles.get(filePath)?.semanticModel;
+
+    const prevHistory = get().editHistory.get(filePath);
+    const hadHistory = prevHistory !== undefined;
+    const capturedPast = prevHistory ? [...prevHistory.past] : [];
+    const capturedFuture = prevHistory ? [...prevHistory.future] : [];
+
+    get().pushSnapshot(filePath);
+    mutate();
+
+    const afterModel = useFileStore.getState().openFiles.get(filePath)?.semanticModel;
+
+    // Only restore when the file exists and its model reference is unchanged.
+    if (beforeModel !== undefined && afterModel === beforeModel) {
+      set((state) => {
+        if (!hadHistory) {
+          state.editHistory.delete(filePath);
+          return;
+        }
+        const h = state.editHistory.get(filePath);
+        if (!h) return;
+        h.past = capturedPast;
+        h.future = capturedFuture;
+      });
+    }
   },
 
   undo: (filePath: string) => {
