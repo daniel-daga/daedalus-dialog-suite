@@ -14,6 +14,8 @@ export class DialogLine implements CodeGeneratable {
   public text: string;
   public id: string;
   public inlineComment?: boolean;
+  /** True when the source id argument was not a string literal (N7). */
+  public idIsExpression?: boolean;
 
   constructor(speaker: string, text: string, id: string, listener?: string) {
     this.speaker = speaker;
@@ -28,7 +30,8 @@ export class DialogLine implements CodeGeneratable {
     // Fall back to the speaker-derived default only for legacy serialized
     // lines that carry no listener field.
     const listener = this.listener ?? (this.speaker === 'other' ? 'self' : 'other');
-    return `AI_Output (${this.speaker}, ${listener}, "${this.id}");${comment}`;
+    const id = this.idIsExpression ? this.id : `"${this.id}"`;
+    return `AI_Output (${this.speaker}, ${listener}, ${id});${comment}`;
   }
 
   toDisplayString(): string {

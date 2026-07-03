@@ -592,8 +592,10 @@ func void DIA_Test_Choices_B()
   assert.ok(choiceAIdx < choiceBIdx, 'choice A should come before choice B');
 });
 
-test('SemanticCodeGenerator clusters functions even when source order is scattered', () => {
-  // Simulate a model where choice functions were declared far from their dialog
+test('SemanticCodeGenerator preserves scattered source order when a declaration order is present (N10)', () => {
+  // A parsed model carries a declarationOrder; N10 requires emitting strictly in
+  // that order rather than clustering functions with their dialog. Source order
+  // here is B, A, instance, condition, info — output must match it exactly.
   const sourceCode = `
 func void DIA_Test_Scattered_B()
 {
@@ -635,15 +637,77 @@ func void DIA_Test_Scattered_Info()
   const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
   const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
 
+  const bIdx = generatedCode.indexOf('func void DIA_Test_Scattered_B()');
+  const aIdx = generatedCode.indexOf('func void DIA_Test_Scattered_A()');
   const instanceIdx = generatedCode.indexOf('instance DIA_Test_Scattered(C_INFO)');
   const conditionIdx = generatedCode.indexOf('func int DIA_Test_Scattered_Condition()');
   const infoIdx = generatedCode.indexOf('func void DIA_Test_Scattered_Info()');
-  const choiceAIdx = generatedCode.indexOf('func void DIA_Test_Scattered_A()');
-  const choiceBIdx = generatedCode.indexOf('func void DIA_Test_Scattered_B()');
+
+  assert.ok(bIdx >= 0 && aIdx >= 0 && instanceIdx >= 0 && conditionIdx >= 0 && infoIdx >= 0, 'all declarations should exist');
+
+  // Strict source order wins over clustering when a declaration order is present.
+  assert.ok(bIdx < aIdx, 'B should stay before A (source order)');
+  assert.ok(aIdx < instanceIdx, 'scattered functions should stay before the dialog instance');
+  assert.ok(instanceIdx < conditionIdx, 'instance should stay before condition (source order)');
+  assert.ok(conditionIdx < infoIdx, 'condition should stay before info (source order)');
+});
+
+test('SemanticCodeGenerator clusters functions for models without a declaration order (fallback)', () => {
+  // A model with no declarationOrder (e.g. editor-created or legacy) falls back
+  // to clustering associated functions with their dialog.
+  const sourceCode = `
+func void DIA_Test_Cluster_B()
+{
+\tAI_Output(self, other, "DIA_Test_Cluster_B_01");
+};
+
+func void DIA_Test_Cluster_A()
+{
+\tAI_Output(self, other, "DIA_Test_Cluster_A_01");
+};
+
+instance DIA_Test_Cluster(C_INFO)
+{
+\tnpc\t\t\t= TEST_NPC;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_Cluster_Condition;
+\tinformation\t= DIA_Test_Cluster_Info;
+\tdescription\t= "Cluster";
+};
+
+func int DIA_Test_Cluster_Condition()
+{
+\treturn TRUE;
+};
+
+func void DIA_Test_Cluster_Info()
+{
+\tAI_Output(other, self, "DIA_Test_Cluster_15_00");
+\tInfo_AddChoice(DIA_Test_Cluster, "A", DIA_Test_Cluster_A);
+\tInfo_AddChoice(DIA_Test_Cluster, "B", DIA_Test_Cluster_B);
+};
+`;
+
+  const tree = parser.parse(sourceCode);
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  // Drop the declaration order to exercise the clustering fallback path.
+  visitor.semanticModel.declarationOrder = [];
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
+
+  const instanceIdx = generatedCode.indexOf('instance DIA_Test_Cluster(C_INFO)');
+  const conditionIdx = generatedCode.indexOf('func int DIA_Test_Cluster_Condition()');
+  const infoIdx = generatedCode.indexOf('func void DIA_Test_Cluster_Info()');
+  const choiceAIdx = generatedCode.indexOf('func void DIA_Test_Cluster_A()');
+  const choiceBIdx = generatedCode.indexOf('func void DIA_Test_Cluster_B()');
 
   assert.ok(instanceIdx >= 0, 'instance should exist');
 
-  // All associated functions should follow the dialog instance, clustered together
+  // All associated functions should follow the dialog instance, clustered together.
   assert.ok(instanceIdx < conditionIdx, 'condition should follow its dialog instance');
   assert.ok(conditionIdx < infoIdx, 'info should follow condition');
   assert.ok(infoIdx < choiceAIdx, 'choice A should follow info');

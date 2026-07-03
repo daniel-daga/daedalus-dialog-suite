@@ -11,6 +11,7 @@ import {
   getDialogProperty
 } from '../semantic/semantic-model';
 import { Choice } from '../semantic/dialogActions';
+import { resolveCaseInsensitive } from '../semantic/name-utils';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -30,6 +31,7 @@ export interface CodeGeneratorOptions {
   sectionHeaders?: boolean;
   uppercaseKeywords?: boolean;
   preserveSourceStyle?: boolean;
+  allowPartialModel?: boolean;
 }
 
 export class SemanticCodeGenerator {
@@ -43,6 +45,7 @@ export class SemanticCodeGenerator {
       sectionHeaders: true,
       uppercaseKeywords: false,
       preserveSourceStyle: true,
+      allowPartialModel: false,
       ...options
     };
   }
@@ -51,15 +54,27 @@ export class SemanticCodeGenerator {
    * Generate complete Daedalus source file from semantic model
    */
   generateSemanticModel(model: SemanticModel): string {
+    if (model.hasErrors && !this.options.allowPartialModel) {
+      throw new Error(
+        `Refusing to generate code from a model with ${model.errors?.length ?? 0} parse error(s); pass allowPartialModel: true to override.`
+      );
+    }
+
     if (model.declarationOrder && model.declarationOrder.length > 0) {
       return this.generateByDeclarationOrder(model);
     }
 
     const sections: string[] = [];
 
-    // Without declaration order, constants and variables lead the file
-    // (declare-before-use) and instances trail it.
+    // Without declaration order, classes/prototypes/constants/variables lead the
+    // file (declare-before-use) and instances trail it.
     const globalLeading: string[] = [];
+    for (const name in model.classes || {}) {
+      globalLeading.push(this.generateGlobalDeclaration('class', model.classes![name]));
+    }
+    for (const name in model.prototypes || {}) {
+      globalLeading.push(this.generateGlobalDeclaration('prototype', model.prototypes![name]));
+    }
     for (const name in model.constants || {}) {
       globalLeading.push(this.generateGlobalDeclaration('constant', model.constants![name]));
     }
@@ -95,6 +110,11 @@ export class SemanticCodeGenerator {
       sections.push(globalTrailing.join('\n') + '\n');
     }
 
+    const trailing = this.renderTrailingComments(model.trailingComments);
+    if (trailing) {
+      sections.push(trailing);
+    }
+
     return sections.join('\n');
   }
 
@@ -114,11 +134,20 @@ export class SemanticCodeGenerator {
       }
     };
 
-    // Pre-compute which functions belong to which dialog so we can cluster them.
-    const functionToDialog = this.buildFunctionToDialogMap(model);
-
+    // N10 — declaration-order fidelity: when the model carries a declaration
+    // order (i.e. it came from a parse), emit strictly in that order. Every
+    // parsed declaration has its own order entry, so dialog-clustering and
+    // synthesized section headers are NOT applied here — they only rearrange
+    // or invent content. Clustering / header synthesis remain the fallback for
+    // dialogs and functions missing from the order (the leftover loops below).
     for (const declaration of model.declarationOrder || []) {
-      if (declaration.type === 'constant' || declaration.type === 'variable' || declaration.type === 'instance') {
+      if (
+        declaration.type === 'constant' ||
+        declaration.type === 'variable' ||
+        declaration.type === 'instance' ||
+        declaration.type === 'class' ||
+        declaration.type === 'prototype'
+      ) {
         const symbol = this.lookupGlobalSymbol(declaration.type, declaration.name, model);
         const key = `${declaration.type}:${declaration.name}`;
         if (symbol && !emittedGlobals.has(key)) {
@@ -132,37 +161,18 @@ export class SemanticCodeGenerator {
         const dialog = model.dialogs[declaration.name];
         if (dialog && !emittedDialogs.has(dialog.name)) {
           flushGlobals();
-          // Emit section header / leading comments
+          // Emit leading comments verbatim; do NOT synthesize a section header
+          // for a dialog that has its own order entry (invented content).
           const leading = this.renderLeadingComments(dialog.leadingComments);
           if (leading) {
             sections.push(leading);
-          } else if (this.options.sectionHeaders && this.options.includeComments) {
-            sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
           }
           sections.push(this.generateDialog(dialog));
           emittedDialogs.add(dialog.name);
-
-          // Cluster: immediately emit all associated functions in canonical order
-          const associatedFuncs = this.getAssociatedFunctions(dialog, model);
-          for (const func of associatedFuncs) {
-            if (!emittedFunctions.has(func.name)) {
-              const funcLeading = this.renderLeadingComments(func.leadingComments);
-              if (funcLeading) {
-                sections.push(funcLeading);
-              }
-              sections.push(this.generateFunction(func));
-              emittedFunctions.add(func.name);
-            }
-          }
         }
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
         if (func && !emittedFunctions.has(func.name)) {
-          // If this function belongs to a dialog that hasn't been emitted yet,
-          // skip it here — it will be pulled in when the dialog is emitted.
-          if (functionToDialog.has(func.name) && !emittedDialogs.has(functionToDialog.get(func.name)!)) {
-            continue;
-          }
           flushGlobals();
           const leading = this.renderLeadingComments(func.leadingComments);
           if (leading) {
@@ -214,8 +224,19 @@ export class SemanticCodeGenerator {
     }
 
     // Globals missing from declarationOrder (e.g. manually constructed models):
-    // constants and variables lead the file (declare-before-use), instances trail it.
+    // classes/prototypes/constants/variables lead the file (declare-before-use),
+    // instances trail it.
     const leftoverLeading: string[] = [];
+    for (const name in model.classes || {}) {
+      if (!emittedGlobals.has(`class:${name}`)) {
+        leftoverLeading.push(this.generateGlobalDeclaration('class', model.classes![name]));
+      }
+    }
+    for (const name in model.prototypes || {}) {
+      if (!emittedGlobals.has(`prototype:${name}`)) {
+        leftoverLeading.push(this.generateGlobalDeclaration('prototype', model.prototypes![name]));
+      }
+    }
     for (const name in model.constants || {}) {
       if (!emittedGlobals.has(`constant:${name}`)) {
         leftoverLeading.push(this.generateGlobalDeclaration('constant', model.constants![name]));
@@ -239,16 +260,23 @@ export class SemanticCodeGenerator {
       sections.push(leftoverInstances.join('\n') + '\n');
     }
 
+    const trailing = this.renderTrailingComments(model.trailingComments);
+    if (trailing) {
+      sections.push(trailing);
+    }
+
     return sections.join('\n');
   }
 
   private lookupGlobalSymbol(
-    type: 'constant' | 'variable' | 'instance',
+    type: 'constant' | 'variable' | 'instance' | 'class' | 'prototype',
     name: string,
     model: SemanticModel
   ): GlobalSymbol | undefined {
     if (type === 'constant') return model.constants?.[name];
     if (type === 'variable') return model.variables?.[name];
+    if (type === 'class') return model.classes?.[name];
+    if (type === 'prototype') return model.prototypes?.[name];
     return model.instances?.[name];
   }
 
@@ -258,7 +286,7 @@ export class SemanticCodeGenerator {
    * instance bodies); otherwise a canonical form is built from the model fields.
    */
   private generateGlobalDeclaration(
-    type: 'constant' | 'variable' | 'instance',
+    type: 'constant' | 'variable' | 'instance' | 'class' | 'prototype',
     symbol: GlobalSymbol
   ): string {
     const parts: string[] = [];
@@ -273,28 +301,15 @@ export class SemanticCodeGenerator {
       parts.push(`const ${symbol.type} ${symbol.name} = ${this.formatValue(symbol.value!)};`);
     } else if (type === 'variable') {
       parts.push(`var ${symbol.type} ${symbol.name};`);
+    } else if (type === 'class') {
+      parts.push(`class ${symbol.name} {};`);
+    } else if (type === 'prototype') {
+      parts.push(`prototype ${symbol.name}(${symbol.parent}) {};`);
     } else {
       parts.push(`instance ${symbol.name}(${symbol.parent}) {};`);
     }
 
     return parts.join('\n');
-  }
-
-  /**
-   * Build a reverse map from function name → owning dialog name.
-   * Used by generateByDeclarationOrder to defer function emission until
-   * its parent dialog is encountered.
-   */
-  private buildFunctionToDialogMap(model: SemanticModel): Map<string, string> {
-    const map = new Map<string, string>();
-    for (const dialogName in model.dialogs) {
-      const dialog = model.dialogs[dialogName];
-      const associated = this.getAssociatedFunctions(dialog, model);
-      for (const func of associated) {
-        map.set(func.name, dialogName);
-      }
-    }
-    return map;
   }
 
   /**
@@ -386,7 +401,9 @@ export class SemanticCodeGenerator {
     if (infoFunc) {
       for (const action of infoFunc.actions) {
         if (action instanceof Choice && action.targetFunction) {
-          const targetFunc = model.functions[action.targetFunction];
+          // Case-insensitive: a case-drifted choice target must still cluster
+          // (and, via generateDialogWithFunctions, still be emitted at all).
+          const targetFunc = resolveCaseInsensitive(model.functions, action.targetFunction);
           if (targetFunc && !seen.has(targetFunc.name)) {
             funcs.push(targetFunc);
             seen.add(targetFunc.name);
@@ -415,8 +432,25 @@ export class SemanticCodeGenerator {
     for (const key in dialog.properties) {
       const value = dialog.properties[key];
       if (value === undefined) continue;
+      // Standalone comments preceding this property (P6).
+      if (this.options.includeComments && dialog.propertyLeadingComments) {
+        for (const comment of dialog.propertyLeadingComments[key] || []) {
+          lines.push(`${indent}${comment}`);
+        }
+      }
       const spacing = this.resolvePropertySpacing(dialog, key);
-      lines.push(`${indent}${key}${spacing.beforeEquals}=${spacing.afterEquals}${this.formatDialogPropertyValue(dialog, key, value)};`);
+      const trailing =
+        this.options.includeComments && dialog.propertyTrailingComments && dialog.propertyTrailingComments[key]
+          ? ` ${dialog.propertyTrailingComments[key]}`
+          : '';
+      lines.push(`${indent}${key}${spacing.beforeEquals}=${spacing.afterEquals}${this.formatDialogPropertyValue(dialog, key, value)};${trailing}`);
+    }
+
+    // Standalone comments after the last property, before the closing brace (P6).
+    if (this.options.includeComments && dialog.trailingBodyComments) {
+      for (const comment of dialog.trailingBodyComments) {
+        lines.push(`${indent}${comment}`);
+      }
     }
 
     lines.push('};');
@@ -526,7 +560,11 @@ export class SemanticCodeGenerator {
           lines.push(`${indent}return TRUE;`);
         }
       } else if (returnTypeLower === 'void') {
-        lines.push(`${indent}// T` + `ODO: Implement function body`);
+        // N4: never invent a placeholder comment for a function that had an
+        // empty body in source. Only emit the placeholder for hand-built models.
+        if (!this.options.preserveSourceStyle || func.hasExplicitBodyContent !== false) {
+          lines.push(`${indent}// T` + `ODO: Implement function body`);
+        }
       }
     }
 
@@ -623,5 +661,9 @@ export class SemanticCodeGenerator {
     if (!this.options.includeComments) return null;
     if (!comments || comments.length === 0) return null;
     return comments.join('\n');
+  }
+
+  private renderTrailingComments(comments?: string[]): string | null {
+    return this.renderLeadingComments(comments);
   }
 }

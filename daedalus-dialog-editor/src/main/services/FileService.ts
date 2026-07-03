@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { dialog } from 'electron';
-import * as chardet from 'chardet';
 import * as iconv from 'iconv-lite';
+import { decodeBuffer } from '../utils/encodingUtils';
 
 /**
  * Error types for FileService operations
@@ -75,31 +75,13 @@ export class FileService {
         // Read file as buffer first
         const buffer = await fs.readFile(filePath);
 
-        // Detect encoding
-        let detectedEncoding = chardet.detect(buffer);
-
-        // Intelligent encoding detection for Central European vs Western European
-        // chardet sometimes confuses windows-1252 with windows-1250
-        if (detectedEncoding === 'windows-1252' || detectedEncoding === 'ISO-8859-1') {
-          // Check for Central European character byte patterns specific to windows-1250
-          // Windows-1250 uses different byte positions than windows-1252 for certain characters
-          const hasCentralEuropeanBytes = this.detectCentralEuropeanPattern(buffer);
-
-          if (hasCentralEuropeanBytes) {
-            // File contains Central European characters, use windows-1250
-            detectedEncoding = 'windows-1250';
-          }
-          // Otherwise, keep the detected encoding (windows-1252 or ISO-8859-1)
-        }
-
-        const encoding = detectedEncoding || 'utf8';
+        // Detect encoding and decode (shared with the metadata extraction path)
+        const { content, encoding } = decodeBuffer(buffer);
 
         // Store the detected encoding for later use when writing
         fileEncodingCache.set(filePath, encoding);
 
-        // Decode the buffer using the detected encoding
-        const data = iconv.decode(buffer, encoding);
-        return data;
+        return content;
       } catch (error) {
         const err = error as NodeJS.ErrnoException;
 
@@ -127,51 +109,6 @@ export class FileService {
         }
       }
     });
-  }
-
-  /**
-   * Detect if a buffer contains Central European character byte patterns
-   * specific to windows-1250 encoding
-   * @param buffer - The file buffer to analyze
-   * @returns true if Central European patterns are found
-   */
-  private detectCentralEuropeanPattern(buffer: Buffer): boolean {
-    // Byte values that are distinct to windows-1250 and commonly used in Central European languages:
-    // 0x8A (Š), 0x8C (Ś), 0x8D (Ť), 0x8E (Ž), 0x8F (Ź)
-    // 0x9A (š), 0x9C (ś), 0x9D (ť), 0x9E (ž), 0x9F (ź)
-    // 0xA5 (Ą), 0xAA (Ş), 0xAF (Ż)
-    // 0xB9 (ą), 0xBA (ş), 0xBC (ľ), 0xBE (ľ), 0xBF (ż)
-    // 0xC8 (Č), 0xD2 (Ň), 0xD5 (Ő), 0xD8 (Ř), 0xDD (Ý)
-    // 0xE8 (č), 0xF2 (ň), 0xF5 (ő), 0xF8 (ř)
-    const centralEuropeanBytes = [
-      0x8A, 0x8C, 0x8D, 0x8E, 0x8F,
-      0x9A, 0x9C, 0x9D, 0x9E, 0x9F,
-      0xA5, 0xAA, 0xAF,
-      0xB9, 0xBA, 0xBC, 0xBE, 0xBF,
-      0xC8, 0xD2, 0xD5, 0xD8, 0xDD,
-      0xE8, 0xF2, 0xF5, 0xF8
-    ];
-
-    // Optimization: Limit the scan to the first 256KB of the file
-    // This provides a massive performance boost for large files (O(1) vs O(N))
-    // while still being accurate enough for encoding detection as special characters
-    // typically appear early in text files.
-    const MAX_SCAN_SIZE = 256 * 1024; // 256KB
-    const limit = Math.min(buffer.length, MAX_SCAN_SIZE);
-
-    // Create a view of the buffer (no copy)
-    const sample = buffer.subarray(0, limit);
-
-    // Check if any of these bytes appear in the sample
-    // Optimization: Use buffer.includes() which uses native memchr and is significantly faster
-    // than a JavaScript loop, even when checking multiple bytes.
-    for (const byte of centralEuropeanBytes) {
-      if (sample.includes(byte)) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   /**

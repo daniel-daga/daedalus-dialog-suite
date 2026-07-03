@@ -416,6 +416,59 @@ describe('useAutoSave hook', () => {
     expect(useEditorStore.getState().getFileState(filePath)?.isDirty).toBe(true);
   });
 
+  test('marks a timed-out save with saveError and keeps the file dirty', async () => {
+    const filePath = 'timeout.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+    });
+
+    mockSaveFile.mockRejectedValueOnce(new Error('PARSE_TIMEOUT: parser did not respond'));
+
+    renderHook(() => useAutoSave());
+
+    await act(async () => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    const fileState = useEditorStore.getState().getFileState(filePath);
+    expect(fileState?.isDirty).toBe(true);
+    expect(fileState?.saveError?.kind).toBe('timeout');
+    expect(mockSaveFile).toHaveBeenCalledTimes(1);
+  });
+
+  test('fileStore.saveFile records saveError and keeps the file dirty on a classifiable rejection', async () => {
+    const filePath = 'manual.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+    });
+
+    mockSaveFile.mockRejectedValueOnce(new Error('PARSER_CRASHED: worker died'));
+
+    await expect(useEditorStore.getState().saveFile(filePath)).rejects.toThrow('PARSER_CRASHED');
+
+    const fileState = useEditorStore.getState().getFileState(filePath);
+    expect(fileState?.isDirty).toBe(true);
+    expect(fileState?.saveError?.kind).toBe('worker-crashed');
+  });
+
   test('should return auto-save status', () => {
     const { result } = renderHook(() => useAutoSave());
 

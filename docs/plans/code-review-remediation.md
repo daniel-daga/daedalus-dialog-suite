@@ -8,9 +8,9 @@ Each slice gets a deep-dive pass producing a fix plan document (linked below). S
 
 | # | Slice | Severity | Plan document | Status |
 |---|-------|----------|---------------|--------|
-| 1 | Parser roundtrip fidelity (silent data loss on parse→generate) | Blocker | [fix-01-parser-fidelity.md](./fix-01-parser-fidelity.md) | plan-ready |
+| 1 | Parser roundtrip fidelity (silent data loss on parse→generate) | Blocker | done — durable outcomes in [parser-fidelity.md](../architecture/parser-fidelity.md) | done |
 | 2 | Editor save/dirty-state pipeline (unsaved-work loss, lossy writes) | Blocker | [fix-02-save-pipeline.md](./fix-02-save-pipeline.md) | plan-ready |
-| 3 | Worker lifecycle & reliability (crash → silent permanent hang) | Blocker | [fix-03-worker-reliability.md](./fix-03-worker-reliability.md) | plan-ready |
+| 3 | Worker lifecycle & reliability (crash → silent permanent hang) | Blocker | done — durable outcomes in [worker-reliability.md](../architecture/worker-reliability.md) | done |
 | 4 | Quest editor stack (features unreachable in prod, canvas leaks) | Blocker | [fix-04-quest-editor.md](./fix-04-quest-editor.md) | plan-ready |
 | 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | [fix-05-undo-debounce.md](./fix-05-undo-debounce.md) | plan-ready |
 | 6 | Security & update chain (unverified updates, EOL Electron, symlinks) | Blocker | [fix-06-security-updates.md](./fix-06-security-updates.md) | plan-ready |

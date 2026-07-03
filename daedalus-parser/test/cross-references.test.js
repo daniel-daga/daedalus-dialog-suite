@@ -242,6 +242,57 @@ test('findFunctionReferences: matches linked DialogFunction object refs', () => 
   assert.equal(condRefs[0].dialogName, 'DIA_Obj');
 });
 
+// ---------------------------------------------------------------------------
+// M1/M2: reference matching must be case-insensitive (Daedalus identifiers).
+// ---------------------------------------------------------------------------
+
+test('findDialogReferences: matches a case-drifted dialogRef', () => {
+  const model = makeModel({
+    functions: {
+      DIA_Cond: makeFunc('DIA_Cond', { conditions: [makeKnowsInfo('other', 'dia_target')] })
+    }
+  });
+
+  const refs = findDialogReferences(model, 'DIA_Target');
+  assert.equal(refs.length, 1, 'lowercase dialogRef should still match DIA_Target');
+});
+
+test('findFunctionReferences: matches case-drifted info/condition/choice refs', () => {
+  const model = makeModel({
+    dialogs: {
+      DIA_Test: makeDialog('DIA_Test', {
+        information: 'dia_test_info',
+        condition: 'DIA_TEST_CONDITION'
+      })
+    },
+    functions: {
+      DIA_Test_Info: makeFunc('DIA_Test_Info', {
+        actions: [makeChoice('DIA_Test', 'dia_test_choice1')]
+      })
+    }
+  });
+
+  assert.equal(findFunctionReferences(model, 'DIA_Test_Info').length, 1, 'case-drifted info ref matches');
+  assert.equal(findFunctionReferences(model, 'DIA_Test_Condition').length, 1, 'case-drifted condition ref matches');
+  assert.equal(findFunctionReferences(model, 'DIA_Test_Choice1').length, 1, 'case-drifted choice target matches');
+});
+
+test('collectReachableFunctions: follows a case-drifted choice target and returns canonical names', () => {
+  const model = makeModel({
+    functions: {
+      DIA_Test_Info: makeFunc('DIA_Test_Info', {
+        actions: [makeChoice('DIA_Test', 'dia_test_choice1')]
+      }),
+      DIA_Test_Choice1: makeFunc('DIA_Test_Choice1')
+    }
+  });
+
+  const reachable = collectReachableFunctions(model, 'dia_test_info');
+  assert.ok(reachable.has('DIA_Test_Info'), 'canonical start name returned regardless of input casing');
+  assert.ok(reachable.has('DIA_Test_Choice1'), 'case-drifted choice target is reachable');
+  assert.equal(reachable.size, 2);
+});
+
 // F3: dialog property lookups must be case-insensitive.
 test('findFunctionReferences: matches capitalized Information/Condition property keys', () => {
   const dialog = makeDialog('DIA_Caps');

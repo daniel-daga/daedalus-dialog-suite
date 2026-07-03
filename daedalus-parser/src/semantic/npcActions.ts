@@ -12,9 +12,9 @@ export class AttackAction implements CodeGeneratable {
   public attacker: string;
   public target: string;
   public attackReason: string;
-  public damage: number;
+  public damage: number | string;
 
-  constructor(attacker: string, target: string, attackReason: string, damage: number) {
+  constructor(attacker: string, target: string, attackReason: string, damage: number | string) {
     this.attacker = attacker;
     this.target = target;
     this.attackReason = attackReason;
@@ -61,14 +61,20 @@ export class ExchangeRoutineAction implements CodeGeneratable {
   public readonly type = 'ExchangeRoutineAction';
   public target: string;
   public routine: string;
+  /** True when the source routine argument was not a string literal. */
+  public routineIsExpression?: boolean;
 
-  constructor(target: string, routine: string) {
+  constructor(target: string, routine: string, routineIsExpression?: boolean) {
     this.target = target;
     this.routine = routine;
+    if (routineIsExpression !== undefined) {
+      this.routineIsExpression = routineIsExpression;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Npc_ExchangeRoutine (${this.target}, "${this.routine}");`;
+    const routine = this.routineIsExpression ? this.routine : `"${this.routine}"`;
+    return `Npc_ExchangeRoutine (${this.target}, ${routine});`;
   }
 
   toDisplayString(): string {
@@ -104,9 +110,9 @@ export class StopProcessInfosAction implements CodeGeneratable {
 export class SetRefuseTalkAction implements CodeGeneratable {
   public readonly type = 'SetRefuseTalkAction';
   public target: string;
-  public seconds: number;
+  public seconds: number | string;
 
-  constructor(target: string = 'self', seconds: number = 300) {
+  constructor(target: string = 'self', seconds: number | string = 300) {
     this.target = target;
     this.seconds = seconds;
   }
@@ -128,14 +134,20 @@ export class PlayAniAction implements CodeGeneratable {
   public readonly type = 'PlayAniAction';
   public target: string;
   public animationName: string;
+  /** True when the source animation argument was not a string literal. */
+  public animationNameIsExpression?: boolean;
 
-  constructor(target: string, animationName: string) {
+  constructor(target: string, animationName: string, animationNameIsExpression?: boolean) {
     this.target = target;
     this.animationName = animationName;
+    if (animationNameIsExpression !== undefined) {
+      this.animationNameIsExpression = animationNameIsExpression;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `AI_PlayAni (${this.target}, "${this.animationName}");`;
+    const animationName = this.animationNameIsExpression ? this.animationName : `"${this.animationName}"`;
+    return `AI_PlayAni (${this.target}, ${animationName});`;
   }
 
   toDisplayString(): string {
@@ -150,10 +162,20 @@ export class PlayAniAction implements CodeGeneratable {
 export class PickpocketAction implements CodeGeneratable {
   public readonly type = 'PickpocketAction';
   public pickpocketMode: 'B_Beklauen' | 'C_Beklauen';
+  /** Original source casing of the call (e.g. `b_beklauen`) for fidelity. */
+  public sourceFunctionName?: string;
+  /** Raw source arguments, emitted verbatim when present. */
+  public pickpocketArgs?: string[];
   public minChance?: string;
   public maxChance?: string;
 
-  constructor(mode: 'B_Beklauen' | 'C_Beklauen', minChance?: string, maxChance?: string) {
+  constructor(
+    mode: 'B_Beklauen' | 'C_Beklauen',
+    minChance?: string,
+    maxChance?: string,
+    sourceFunctionName?: string,
+    pickpocketArgs?: string[]
+  ) {
     this.pickpocketMode = mode;
     if (minChance !== undefined) {
       this.minChance = minChance;
@@ -161,16 +183,30 @@ export class PickpocketAction implements CodeGeneratable {
     if (maxChance !== undefined) {
       this.maxChance = maxChance;
     }
+    if (sourceFunctionName !== undefined) {
+      this.sourceFunctionName = sourceFunctionName;
+    }
+    if (pickpocketArgs !== undefined) {
+      this.pickpocketArgs = pickpocketArgs;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
+    // Emit the original source casing when known so a case-drifted call
+    // (e.g. `b_beklauen`) roundtrips; fall back to the canonical mode name.
+    const name = this.sourceFunctionName ?? this.pickpocketMode;
+
+    if (this.pickpocketArgs !== undefined) {
+      return `${name} (${this.pickpocketArgs.join(', ')});`;
+    }
+
     if (this.pickpocketMode === 'B_Beklauen') {
-      return 'B_Beklauen ();';
+      return `${name} ();`;
     }
 
     const min = this.minChance || '0';
     const max = this.maxChance || min;
-    return `C_Beklauen (${min}, ${max});`;
+    return `${name} (${min}, ${max});`;
   }
 
   toDisplayString(): string {
@@ -190,19 +226,26 @@ export class StartOtherRoutineAction implements CodeGeneratable {
   public routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine';
   public routineNpc: string;
   public routineName: string;
+  /** True when the source routine-name argument was not a string literal. */
+  public routineNameIsExpression?: boolean;
 
   constructor(
     routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine',
     routineNpc: string,
-    routineName: string
+    routineName: string,
+    routineNameIsExpression?: boolean
   ) {
     this.routineFunctionName = routineFunctionName;
     this.routineNpc = routineNpc;
     this.routineName = routineName;
+    if (routineNameIsExpression !== undefined) {
+      this.routineNameIsExpression = routineNameIsExpression;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `${this.routineFunctionName} (${this.routineNpc}, "${this.routineName}");`;
+    const routineName = this.routineNameIsExpression ? this.routineName : `"${this.routineName}"`;
+    return `${this.routineFunctionName} (${this.routineNpc}, ${routineName});`;
   }
 
   toDisplayString(): string {
@@ -241,14 +284,20 @@ export class InsertNpcAction implements CodeGeneratable {
   public readonly type = 'InsertNpcAction';
   public npcInstance: string;
   public spawnPoint: string;
+  /** True when the source spawn-point argument was not a string literal. */
+  public spawnPointIsExpression?: boolean;
 
-  constructor(npcInstance: string, spawnPoint: string) {
+  constructor(npcInstance: string, spawnPoint: string, spawnPointIsExpression?: boolean) {
     this.npcInstance = npcInstance;
     this.spawnPoint = spawnPoint;
+    if (spawnPointIsExpression !== undefined) {
+      this.spawnPointIsExpression = spawnPointIsExpression;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Wld_InsertNpc (${this.npcInstance}, "${this.spawnPoint}");`;
+    const spawnPoint = this.spawnPointIsExpression ? this.spawnPoint : `"${this.spawnPoint}"`;
+    return `Wld_InsertNpc (${this.npcInstance}, ${spawnPoint});`;
   }
 
   toDisplayString(): string {
@@ -263,16 +312,22 @@ export class InsertNpcAction implements CodeGeneratable {
 export class HeroFollowsAction implements CodeGeneratable {
   public readonly type = 'HeroFollowsAction';
   public guideRoutine: string;
+  /** True when the guide-routine argument should be emitted without quotes. */
+  public guideRoutineIsExpression?: boolean;
 
-  constructor(guideRoutine: string = '') {
+  constructor(guideRoutine: string = '', guideRoutineIsExpression?: boolean) {
     this.guideRoutine = guideRoutine;
+    if (guideRoutineIsExpression !== undefined) {
+      this.guideRoutineIsExpression = guideRoutineIsExpression;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
+    const guideRoutine = this.guideRoutineIsExpression ? this.guideRoutine : `"${this.guideRoutine}"`;
     return [
       `AI_StopProcessInfos (self);`,
       `self.aivar[AIV_PARTYMEMBER] = TRUE;`,
-      `Npc_ExchangeRoutine (self, "${this.guideRoutine}");`
+      `Npc_ExchangeRoutine (self, ${guideRoutine});`
     ].join('\n');
   }
 

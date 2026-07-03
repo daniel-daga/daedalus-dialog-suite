@@ -209,6 +209,60 @@ export class GlobalInstance {
 }
 
 /**
+ * A `class C_Foo { ... };` declaration, captured verbatim for faithful
+ * re-emission (modeled on GlobalInstance).
+ */
+export class GlobalClass {
+  public name: string;
+  /** Verbatim declaration text (including body), used for faithful re-emission. */
+  public sourceText?: string;
+  public leadingComments?: string[];
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string) {
+    this.name = name;
+  }
+}
+
+/**
+ * A `prototype Mst_Foo(C_Foo) { ... };` declaration, captured verbatim for
+ * faithful re-emission (modeled on GlobalInstance).
+ */
+export class GlobalPrototype {
+  public name: string;
+  public parent: string;
+  /** Verbatim declaration text (including body), used for faithful re-emission. */
+  public sourceText?: string;
+  public leadingComments?: string[];
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string, parent: string) {
+    this.name = name;
+    this.parent = parent;
+  }
+}
+
+/**
  * A dialog property value referencing a C_INFO function: either the bare
  * function name, or the live `DialogFunction` instance once linking has
  * resolved it (pass 2 / `Dialog.fromJSON`).
@@ -281,14 +335,20 @@ export class LogEntry implements CodeGeneratable {
   public readonly type = 'LogEntry';
   public topic: string;
   public text: string;
+  /** True when the source text argument was not a string literal. */
+  public textIsExpression?: boolean;
 
-  constructor(topic: string, text: string) {
+  constructor(topic: string, text: string, textIsExpression?: boolean) {
     this.topic = topic;
     this.text = text;
+    if (textIsExpression !== undefined) {
+      this.textIsExpression = textIsExpression;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `\nB_LogEntry (${this.topic}, "${this.text}");\n`;
+    const text = this.textIsExpression ? this.text : `"${this.text}"`;
+    return `\nB_LogEntry (${this.topic}, ${text});\n`;
   }
 
   toDisplayString(): string {
@@ -342,6 +402,31 @@ export class Action implements CodeGeneratable {
 
   getTypeName(): string {
     return 'Action';
+  }
+}
+
+/**
+ * A standalone comment inside a function or condition body, preserved in
+ * source position so it regenerates verbatim (no trailing `;`).
+ */
+export class CommentAction implements CodeGeneratable {
+  public readonly type = 'CommentAction';
+  public text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return this.text.trimEnd();
+  }
+
+  toDisplayString(): string {
+    return `[Comment: ${this.text}]`;
+  }
+
+  getTypeName(): string {
+    return 'CommentAction';
   }
 }
 
@@ -410,10 +495,10 @@ export class ConditionalAction implements CodeGeneratable {
 
 export class ChapterTransitionAction implements CodeGeneratable {
   public readonly type = 'ChapterTransitionAction';
-  public chapter: number;
+  public chapter: number | string;
   public world: string;
 
-  constructor(chapter: number, world: string) {
+  constructor(chapter: number | string, world: string) {
     this.chapter = chapter;
     this.world = world;
   }
@@ -487,6 +572,7 @@ export type DialogAction =
   | LogEntry
   | LogSetTopicStatus
   | Action
+  | CommentAction
   | ConditionalAction
   | Choice
   | ClearChoicesAction
@@ -527,6 +613,7 @@ const ACTION_DISCRIMINATOR: DiscriminatorConfig = {
     { value: LogEntry, name: 'LogEntry' },
     { value: LogSetTopicStatus, name: 'LogSetTopicStatus' },
     { value: Action, name: 'Action' },
+    { value: CommentAction, name: 'CommentAction' },
     { value: ConditionalAction, name: 'ConditionalAction' },
     { value: Choice, name: 'Choice' },
     { value: ClearChoicesAction, name: 'ClearChoicesAction' },
@@ -592,6 +679,7 @@ function ensureActionType(json: any): void {
     else if ('removeFunctionName' in json && 'removeNpc' in json && 'removeItem' in json) json.type = 'RemoveInventoryItemsAction';
     else if ('npcInstance' in json && 'spawnPoint' in json) json.type = 'InsertNpcAction';
     else if ('guideRoutine' in json) json.type = 'HeroFollowsAction';
+    else if ('text' in json && Object.keys(json).filter((k) => k !== 'type').length === 1) json.type = 'CommentAction';
     else if ('action' in json) json.type = 'Action';
   }
 
@@ -775,6 +863,12 @@ export class Dialog {
   public properties: DialogProperties;
   public propertyFormatting?: PropertyFormatting;
   public propertyExpressionKeys?: string[];
+  /** Standalone comments preceding a C_INFO property, keyed by property name. */
+  public propertyLeadingComments?: { [key: string]: string[] };
+  /** Same-line trailing comment after a C_INFO property, keyed by property name. */
+  public propertyTrailingComments?: { [key: string]: string };
+  /** Standalone comments after the last property, before the closing `};`. */
+  public trailingBodyComments?: string[];
   public actions: DialogAction[];
 
   constructor(name: string, parent: string | null) {
@@ -805,6 +899,15 @@ export class Dialog {
     if (Array.isArray(json.propertyExpressionKeys)) {
       dialog.propertyExpressionKeys = json.propertyExpressionKeys;
     }
+    if (json.propertyLeadingComments && typeof json.propertyLeadingComments === 'object') {
+      dialog.propertyLeadingComments = json.propertyLeadingComments;
+    }
+    if (json.propertyTrailingComments && typeof json.propertyTrailingComments === 'object') {
+      dialog.propertyTrailingComments = json.propertyTrailingComments;
+    }
+    if (Array.isArray(json.trailingBodyComments)) {
+      dialog.trailingBodyComments = json.trailingBodyComments;
+    }
 
     // --- function-reference linking: resolve property values to live DialogFunction instances ---
     dialog.properties = linkPropertiesToFunctions(json.name, json.properties ?? {}, functionsMap);
@@ -830,13 +933,17 @@ export interface SyntaxError {
 export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
-  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance'; name: string }>;
+  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype'; name: string }>;
   constants?: { [key: string]: GlobalConstant };
   variables?: { [key: string]: GlobalVariable };
   instances?: { [key: string]: GlobalInstance };
+  classes?: { [key: string]: GlobalClass };
+  prototypes?: { [key: string]: GlobalPrototype };
   items?: { [key: string]: GlobalInstance };
   npcs?: { [key: string]: GlobalInstance };
   animations?: { [key: string]: GlobalInstance };
+  /** File-trailing comments (after the last declaration, at EOF). */
+  trailingComments?: string[];
   errors?: SyntaxError[];
   hasErrors?: boolean;
 }
@@ -850,9 +957,12 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     constants: {},
     variables: {},
     instances: {},
+    classes: {},
+    prototypes: {},
     items: {},
     npcs: {},
     animations: {},
+    trailingComments: json.trailingComments,
     errors: json.errors,
     hasErrors: json.hasErrors
   };
@@ -918,6 +1028,18 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   if (json.animations) {
     for (const key in json.animations) {
       model.animations![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.animations[key]);
+    }
+  }
+
+  // 9. Reconstruct classes and prototypes
+  if (json.classes) {
+    for (const key in json.classes) {
+      model.classes![key] = plainToInstance(GlobalClass as ClassConstructor<any>, json.classes[key]);
+    }
+  }
+  if (json.prototypes) {
+    for (const key in json.prototypes) {
+      model.prototypes![key] = plainToInstance(GlobalPrototype as ClassConstructor<any>, json.prototypes[key]);
     }
   }
 

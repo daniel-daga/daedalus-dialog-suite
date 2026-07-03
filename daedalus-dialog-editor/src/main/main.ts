@@ -80,7 +80,7 @@ function setupIpcHandlers() {
   // Parser handler (main process has access to native modules)
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: string) => {
     try {
-      return parserService.parseSource(sourceCode);
+      return await parserService.parseSource(sourceCode);
     } catch (error) {
       console.error('[IPC] parser:parseSource error:', error);
       throw new Error(`Failed to parse source: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -282,7 +282,7 @@ function setupIpcHandlers() {
       // Validate project folder path
       pathValidator.validatePath(folderPath);
 
-      return projectService.buildProjectIndex(folderPath);
+      return await projectService.buildProjectIndex(folderPath);
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] project:buildIndex - Path validation failed:', error.message);
@@ -299,7 +299,7 @@ function setupIpcHandlers() {
       pathValidator.validatePath(filePath);
 
       const content = await fileService.readFile(filePath);
-      return parserService.parseSource(content);
+      return await parserService.parseSource(content);
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] project:parseDialogFile - Path validation failed:', error.message);

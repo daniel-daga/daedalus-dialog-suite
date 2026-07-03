@@ -1,13 +1,15 @@
 import { parentPort } from 'worker_threads';
 import { promises as fs } from 'fs';
 import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
+import { decodeBuffer } from '../utils/encodingUtils';
 
 if (parentPort) {
   parentPort.on('message', async (message: { id: string; filePath: string }) => {
     const { id, filePath } = message;
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const buffer = await fs.readFile(filePath);
+      const { content } = decodeBuffer(buffer);
       const { dialogs, instances, prototypes, isQuestFile, routines } = extractFileMetadataFromSource(content, filePath);
 
       parentPort!.postMessage({

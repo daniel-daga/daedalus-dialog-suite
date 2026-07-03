@@ -1,0 +1,73 @@
+import * as chardet from 'chardet';
+import * as iconv from 'iconv-lite';
+
+/**
+ * Pure encoding detection/decoding shared by FileService (read-before-write)
+ * and the metadata extraction path (metadata.worker + MetadataWorkerPool inline).
+ *
+ * The metadata path runs in worker threads where `electron`'s `dialog` is
+ * unavailable, so it cannot import FileService. This module has no such
+ * dependencies and can be imported from either process.
+ */
+
+/**
+ * Detect if a buffer contains Central European character byte patterns
+ * specific to windows-1250 encoding (chardet frequently reports these as
+ * windows-1252 / ISO-8859-1).
+ */
+function detectCentralEuropeanPattern(buffer: Buffer): boolean {
+  // Byte values that are distinct to windows-1250 and commonly used in Central European languages:
+  // 0x8A (Š), 0x8C (Ś), 0x8D (Ť), 0x8E (Ž), 0x8F (Ź)
+  // 0x9A (š), 0x9C (ś), 0x9D (ť), 0x9E (ž), 0x9F (ź)
+  // 0xA5 (Ą), 0xAA (Ş), 0xAF (Ż)
+  // 0xB9 (ą), 0xBA (ş), 0xBC (ľ), 0xBE (ľ), 0xBF (ż)
+  // 0xC8 (Č), 0xD2 (Ň), 0xD5 (Ő), 0xD8 (Ř), 0xDD (Ý)
+  // 0xE8 (č), 0xF2 (ň), 0xF5 (ő), 0xF8 (ř)
+  const centralEuropeanBytes = [
+    0x8A, 0x8C, 0x8D, 0x8E, 0x8F,
+    0x9A, 0x9C, 0x9D, 0x9E, 0x9F,
+    0xA5, 0xAA, 0xAF,
+    0xB9, 0xBA, 0xBC, 0xBE, 0xBF,
+    0xC8, 0xD2, 0xD5, 0xD8, 0xDD,
+    0xE8, 0xF2, 0xF5, 0xF8
+  ];
+
+  // Limit the scan to the first 256KB of the file: a massive speedup for large
+  // files while remaining accurate, as special characters typically appear early.
+  const MAX_SCAN_SIZE = 256 * 1024;
+  const limit = Math.min(buffer.length, MAX_SCAN_SIZE);
+  const sample = buffer.subarray(0, limit);
+
+  for (const byte of centralEuropeanBytes) {
+    if (sample.includes(byte)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Detect the encoding of a buffer, applying the windows-1250 heuristic that
+ * corrects chardet's frequent Central-European-as-windows-1252 confusion.
+ */
+export function detectEncoding(buffer: Buffer): string {
+  let detectedEncoding = chardet.detect(buffer);
+
+  if (detectedEncoding === 'windows-1252' || detectedEncoding === 'ISO-8859-1') {
+    if (detectCentralEuropeanPattern(buffer)) {
+      detectedEncoding = 'windows-1250';
+    }
+  }
+
+  return detectedEncoding || 'utf8';
+}
+
+/**
+ * Decode a buffer using the detected encoding, returning both the decoded
+ * string and the encoding used (so callers can cache it for write-back).
+ */
+export function decodeBuffer(buffer: Buffer): { content: string; encoding: string } {
+  const encoding = detectEncoding(buffer);
+  return { content: iconv.decode(buffer, encoding), encoding };
+}

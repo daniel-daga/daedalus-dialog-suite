@@ -4,7 +4,7 @@ Source: [`code-review-findings.md`](./code-review-findings.md) §8 (QA infrastru
 Scope: `daedalus-dialog-editor` test harnesses (`playwright.config.ts`, `tests/e2e/`, `jest.config.js`), `.github/workflows/all-tests.yml` + `build-windows.yml`, `src/main/main.ts` + a new logging service, editor ESLint bootstrap, CI wiring for the fix-01 fidelity corpus.
 Status: plan only — no implementation in this pass.
 
-Interlocking plans: [fix-01-parser-fidelity.md](./fix-01-parser-fidelity.md) §3 owns the corpus redesign + fixtures (this plan owns the CI job wiring, per fix-01 §3 "flipping the standalone `roundtrip-corpus` workflow job … is slice 8's call"). [fix-06-security-updates.md](./fix-06-security-updates.md) §2.1/§4 owns update-meta sha256 + release sequencing (this plan absorbs its `workflow_dispatch` ref-guard and post-publish hash assertion into the gating work, per fix-06 §4 "whoever lands first adds it" — slice 8 claims both).
+Interlocking plans: fix-01 — **landed**; the corpus redesign + fixtures exist (see [parser-fidelity.md](../architecture/parser-fidelity.md), "Fidelity measurement"): all 11 fixtures already run strict via `test/roundtrip-corpus-smoke.test.js` inside `parser-tests`; this plan still owns flipping the standalone `roundtrip-corpus` workflow job (fixture-corpus mode + `--root` override for local MDK runs). [fix-06-security-updates.md](./fix-06-security-updates.md) §2.1/§4 owns update-meta sha256 + release sequencing (this plan absorbs its `workflow_dispatch` ref-guard and post-publish hash assertion into the gating work, per fix-06 §4 "whoever lands first adds it" — slice 8 claims both).
 
 ---
 

@@ -25,30 +25,36 @@ interface IngestedFilesDialogProps {
 }
 
 export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, onClose }) => {
-  const { parsedFiles, allDialogFiles, isIngesting } = useProjectStore((state) => ({
+  const { parsedFiles, allDialogFiles, isIngesting, metadataFailures } = useProjectStore((state) => ({
     parsedFiles: state.parsedFiles,
     allDialogFiles: state.allDialogFiles,
-    isIngesting: state.isIngesting
+    isIngesting: state.isIngesting,
+    metadataFailures: state.metadataFailures
   }), shallow);
 
   if (!open || !allDialogFiles || !parsedFiles) {
     return null;
   }
 
+  const metadataFailuresByPath = new Map(
+    (metadataFailures || []).map((failure) => [failure.filePath, failure.error])
+  );
+
   // Merge all known files with their parsed status
   const fileList = (allDialogFiles || []).map(filePath => {
     // Safely handle both Map and plain object
     const parsed = (parsedFiles && typeof (parsedFiles as any).get === 'function')
-      ? (parsedFiles as any).get(filePath) 
+      ? (parsedFiles as any).get(filePath)
       : (parsedFiles as any)?.[filePath];
-      
+
     return {
       filePath,
       isParsed: !!parsed,
       hasErrors: parsed?.semanticModel?.hasErrors || false,
       errors: parsed?.semanticModel?.errors || [],
       errorCount: parsed?.semanticModel?.errors?.length || 0,
-      lastParsed: parsed?.lastParsed
+      lastParsed: parsed?.lastParsed,
+      metadataError: metadataFailuresByPath.get(filePath)
     };
   });
 
@@ -79,7 +85,17 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
       <DialogTitle>
         <Box display="flex" flexDirection="column" gap={1}>
           <Box display="flex" alignItems="center" justifyContent="space-between">
-            Project Files ({fileList.length})
+            <Box display="flex" alignItems="center" gap={1}>
+              Project Files ({fileList.length})
+              {metadataFailuresByPath.size > 0 && (
+                <Chip
+                  icon={<ErrorIcon />}
+                  label={`${metadataFailuresByPath.size} metadata failed`}
+                  color="warning"
+                  size="small"
+                />
+              )}
+            </Box>
             <IconButton onClick={onClose} size="small">
               <CloseIcon />
             </IconButton>
@@ -148,6 +164,21 @@ export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, 
                           variant="outlined"
                           sx={{ opacity: 0.6 }}
                         />
+                      )}
+                      {file.metadataError && (
+                        <Tooltip title={
+                          <Typography variant="caption" sx={{ whiteSpace: 'pre-wrap' }}>
+                            {file.metadataError}
+                          </Typography>
+                        }>
+                          <Chip
+                            icon={<ErrorIcon />}
+                            label="Metadata failed"
+                            color="warning"
+                            size="small"
+                            variant="outlined"
+                          />
+                        </Tooltip>
                       )}
                     </Box>
                   }

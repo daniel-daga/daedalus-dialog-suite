@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { createParser } = require('./helpers');
 const { SemanticModelBuilderVisitor, parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
+const { SemanticCodeGenerator } = require('../dist/codegen/generator');
 
 const parser = createParser();
 
@@ -114,6 +115,97 @@ test('condition dispatch is case-insensitive: lowercase npc_knowsinfo parses as 
 
   const cond = func.conditions.find((c) => c.constructor.name === 'NpcKnowsInfoCondition');
   assert.ok(cond, 'lowercase npc_knowsinfo should be dispatched to the NpcKnowsInfo condition parser');
+});
+
+// ---------------------------------------------------------------------------
+// M1–M5 + PF4: case-insensitive references and clustering (fix-01 step 6)
+// ---------------------------------------------------------------------------
+
+// M5: b_beklauen must map to the B_Beklauen behavior and roundtrip verbatim,
+// not be rewritten as C_Beklauen (0, 0).
+test('lowercase b_beklauen with args roundtrips byte-identically (M5)', () => {
+  const source = 'func void DIA_Steal()\n{\n\tb_beklauen (10, 20);\n};\n';
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Steal;
+  const action = func.actions[0];
+  assert.equal(action.type, 'PickpocketAction');
+  assert.equal(action.pickpocketMode, 'B_Beklauen', 'dispatch by lowercase key selects B_Beklauen');
+  assert.equal(action.sourceFunctionName, 'b_beklauen', 'source casing is preserved');
+
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  assert.ok(generated.includes('b_beklauen (10, 20);'), `should emit source-cased call verbatim, got:\n${generated}`);
+  assert.ok(!generated.includes('C_Beklauen'), 'must not rewrite b_beklauen as C_Beklauen');
+});
+
+// M3: generateDialogWithFunctions must include a case-drifted choice target,
+// otherwise the editor omits that function from the emitted output entirely.
+test('generateDialogWithFunctions includes a case-drifted choice target (M3)', () => {
+  const source = `
+instance DIA_Test(C_INFO)
+{
+    npc = Some_NPC;
+    nr = 1;
+    information = DIA_Test_Info;
+};
+
+func void DIA_Test_Info()
+{
+    Info_AddChoice (DIA_Test, "Continue", dia_test_branch);
+};
+
+func void DIA_Test_Branch()
+{
+    AI_Output (self, other, "DIA_Test_Branch_00");
+};
+`;
+
+  const model = parseSemanticModel(source);
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false })
+    .generateDialogWithFunctions('DIA_Test', model);
+
+  assert.ok(
+    generated.includes('func void DIA_Test_Branch()'),
+    `case-drifted choice target must be emitted, got:\n${generated}`
+  );
+});
+
+// M4 + PF4: a function owned by no dialog must resolve correctly (and not be
+// mis-attributed) even amid many dialogs; the miss is cached but stays correct.
+test('findDialogForFunction resolves case-insensitively and handles unowned functions (M4/PF4)', () => {
+  const source = `
+instance DIA_A(C_INFO) { npc = N; nr = 1; information = dia_a_info; };
+instance DIA_B(C_INFO) { npc = N; nr = 2; information = DIA_B_Info; };
+
+func void DIA_A_Info()
+{
+    AI_Output (self, other, "DIA_A_00");
+};
+
+func void DIA_B_Info()
+{
+    AI_Output (self, other, "DIA_B_00");
+};
+
+func void B_Standalone_Helper()
+{
+    AI_Output (self, other, "HELPER_00");
+};
+`;
+
+  const model = parseSemanticModel(source);
+
+  // Case-drifted information ref (dia_a_info) must still cluster its info
+  // function's action onto DIA_A's dialog.
+  const dialogA = model.dialogs.DIA_A;
+  assert.ok(dialogA.actions.some((a) => a.id === 'DIA_A_00'), 'case-drifted info function action clusters onto DIA_A');
+
+  const dialogB = model.dialogs.DIA_B;
+  assert.ok(dialogB.actions.some((a) => a.id === 'DIA_B_00'), 'DIA_B info action clusters onto DIA_B');
+
+  // The standalone helper is owned by no dialog: its action must not leak onto
+  // any dialog.
+  const leaked = [dialogA, dialogB].some((d) => d.actions.some((a) => a.id === 'HELPER_00'));
+  assert.ok(!leaked, 'unowned function action must not be attributed to any dialog');
 });
 
 // ---------------------------------------------------------------------------

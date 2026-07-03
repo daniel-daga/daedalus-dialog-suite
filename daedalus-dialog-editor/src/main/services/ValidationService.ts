@@ -125,7 +125,9 @@ const ACTION_REQUIRED_FIELD_VALIDATORS: Readonly<Partial<Record<string, ActionVa
   StartOtherRoutineAction:  (a) => (!a.routineFunctionName || !a.routineNpc || !a.routineName) ? 'is missing function, NPC, or routine name' : null,
   TeachAction:              (a) => (!a.teachFunctionName || !Array.isArray(a.teachArgs))        ? 'is missing teach function or argument list' : null,
   GiveTradeInventoryAction: (a) => (!a.tradeTarget)                               ? 'is missing target' : null,
-  RemoveInventoryItemsAction: (a) => (!a.removeFunctionName || !a.removeNpc || !a.removeItem || !a.removeQuantity) ? 'is missing function, NPC, item, or quantity' : null,
+  // Npc_RemoveInvItem is the 2-arg engine form and has no quantity argument;
+  // only the 3-arg Npc_RemoveInvItems form requires removeQuantity.
+  RemoveInventoryItemsAction: (a) => (!a.removeFunctionName || !a.removeNpc || !a.removeItem || (a.removeFunctionName === 'Npc_RemoveInvItems' && !a.removeQuantity)) ? 'is missing function, NPC, item, or quantity' : null,
   InsertNpcAction:          (a) => (!a.npcInstance || !a.spawnPoint)              ? 'is missing NPC instance or spawn point' : null,
 };
 

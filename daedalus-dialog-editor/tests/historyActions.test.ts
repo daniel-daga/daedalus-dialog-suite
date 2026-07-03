@@ -381,6 +381,36 @@ describe('historyActions – removeDialog', () => {
     expect(getModel()?.functions['DIA_Shared_Target']).toBeDefined();
     expect(getModel()?.functions['DIA_Other_Info']).toBeDefined();
   });
+
+  it('preserves class/prototype declarationOrder entries and maps untouched by a dialog deletion', () => {
+    // Parser fix P1: declarationOrder entries can now be 'class'/'prototype'.
+    // removeDialog filters declarationOrder by name, so unrelated entry types
+    // (and the classes/prototypes maps themselves) must survive unchanged.
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        classes: { C_Foo: { name: 'C_Foo', sourceText: 'class C_Foo {};' } },
+        prototypes: { Mst_Default: { name: 'Mst_Default', parent: 'C_Foo', sourceText: 'prototype Mst_Default(C_Foo) {};' } },
+        declarationOrder: [
+          { type: 'class', name: 'C_Foo' },
+          { type: 'prototype', name: 'Mst_Default' },
+          { type: 'dialog', name: 'DIA_Test' },
+          { type: 'function', name: 'DIA_Test_Info' },
+        ],
+      } as any;
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    const model = getModel();
+    expect(model?.classes?.['C_Foo']).toBeDefined();
+    expect(model?.prototypes?.['Mst_Default']).toBeDefined();
+    expect(model?.declarationOrder).toEqual([
+      { type: 'class', name: 'C_Foo' },
+      { type: 'prototype', name: 'Mst_Default' },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -513,5 +543,31 @@ describe('historyActions – renameDialog', () => {
     // ...and the nested Choice reference updated to the new name
     const infoActions = getModel()?.functions['DIA_Npc_Greeting_Info']?.actions as any[];
     expect(infoActions[0].thenActions[0].targetFunction).toBe('DIA_Npc_Greeting_Option1');
+  });
+
+  it('leaves class/prototype declarationOrder entries unrenamed', () => {
+    // renameDialog only rewrites 'dialog'/'function' declarationOrder entries;
+    // 'class'/'prototype' entries (parser fix P1) must pass through untouched.
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        declarationOrder: [
+          { type: 'class', name: 'C_Foo' },
+          { type: 'prototype', name: 'Mst_Default' },
+          { type: 'dialog', name: 'DIA_Npc_Hello' },
+          { type: 'function', name: 'DIA_Npc_Hello_Info' },
+        ],
+      } as any;
+    });
+
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    expect(getModel()?.declarationOrder).toEqual([
+      { type: 'class', name: 'C_Foo' },
+      { type: 'prototype', name: 'Mst_Default' },
+      { type: 'dialog', name: 'DIA_Npc_Greeting' },
+      { type: 'function', name: 'DIA_Npc_Greeting_Info' },
+    ]);
   });
 });

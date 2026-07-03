@@ -723,6 +723,71 @@ describe('ValidationService', () => {
       );
     });
 
+    test('should not require removeQuantity for the 2-arg Npc_RemoveInvItem form', async () => {
+      // Npc_RemoveInvItem(self, ItMi_Gold) is a valid 2-arg engine call with no
+      // quantity argument (parser fix P3: removeQuantity is optional for this form).
+      const model = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'RemoveInventoryItemsAction',
+                removeFunctionName: 'Npc_RemoveInvItem',
+                removeNpc: 'self',
+                removeItem: 'ItMi_Gold'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      const actionErrors = result.errors.filter(e => e.type === 'missing_required_property' && e.message.includes('Remove Inventory Items'));
+      expect(actionErrors).toHaveLength(0);
+    });
+
+    test('should require removeQuantity for the 3-arg Npc_RemoveInvItems form', async () => {
+      const modelWithMissingQuantity = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [
+              {
+                type: 'RemoveInventoryItemsAction',
+                removeFunctionName: 'Npc_RemoveInvItems',
+                removeNpc: 'self',
+                removeItem: 'ItMi_Gold'
+              }
+            ],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(modelWithMissingQuantity, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('Remove Inventory Items')
+        })
+      );
+    });
+
     test('should pass when all actions are valid', async () => {
       const model = {
         dialogs: {},
