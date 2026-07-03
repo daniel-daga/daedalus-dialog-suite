@@ -125,7 +125,6 @@ export interface EditorAPI {
   // File Watcher API
   startFileWatcher: (projectPath: string) => Promise<void>;
   stopFileWatcher: () => Promise<void>;
-  notifySelfWrite: (filePath: string) => Promise<void>;
   onFileChanged: (callback: (event: FileChangeEvent) => void) => () => void;
 
   // App info

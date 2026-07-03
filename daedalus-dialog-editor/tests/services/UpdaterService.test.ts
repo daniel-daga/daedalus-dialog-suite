@@ -74,6 +74,11 @@ jest.mock('https', () => ({
   get: jest.fn(),
 }));
 
+const mockSpawn = jest.fn(() => ({ unref: jest.fn() }));
+jest.mock('child_process', () => ({
+  spawn: (...args: unknown[]) => mockSpawn(...args),
+}));
+
 const mockGetUpdaterSettings = jest.fn();
 const mockSetUpdaterLastCheckTimestamp = jest.fn();
 
@@ -91,8 +96,8 @@ function makeDefaultUpdaterSettings(overrides: Partial<UpdaterSettings> = {}): U
   };
 }
 
-function buildMockRelease(metaVersion: string, buildNumber: number) {
-  const meta = JSON.stringify({ version: metaVersion, baseVersion: metaVersion.split('-')[0], buildNumber });
+function buildMockRelease(metaVersion: string, buildNumber: number, extraMeta: Record<string, unknown> = {}) {
+  const meta = JSON.stringify({ version: metaVersion, baseVersion: metaVersion.split('-')[0], buildNumber, ...extraMeta });
   const release = JSON.stringify({
     html_url: 'https://github.com/daniel-daga/daedalus-dialog-suite/releases/tag/windows-latest',
     assets: [
@@ -298,5 +303,211 @@ describe('UpdaterService redirect handling', () => {
     expect(result.updateAvailable).toBe(false);
     // 1 initial request + at most 5 redirects
     expect((https.get as jest.Mock).mock.calls.length).toBeLessThanOrEqual(6);
+  });
+
+  it.each([303, 307, 308])('bounds %d redirects the same way as 301/302', async (status) => {
+    const { app } = require('electron');
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+
+    const https = require('https');
+    (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
+      const mockRes = {
+        statusCode: status,
+        headers: { location: 'https://example.com/loop' },
+        on: jest.fn().mockReturnThis(),
+      };
+      callback(mockRes);
+      return { on: jest.fn() };
+    });
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+
+    expect(result.updateAvailable).toBe(false);
+    expect((https.get as jest.Mock).mock.calls.length).toBeLessThanOrEqual(6);
+  });
+});
+
+// ============================================================================
+// UpdaterService.downloadUpdate / installUpdate — integrity (sha256 / size)
+// Uses real Readable streams so the service's real hashing + file write runs.
+// ============================================================================
+
+const { Readable } = require('stream');
+const crypto = require('crypto');
+const realFs = require('fs');
+
+const DOWNLOAD_DEST = '/tmp/daedalus-update-0.1.0-build.10.exe';
+
+function streamResponse(
+  body: string | null,
+  { status = 200, headers = {} }: { status?: number; headers?: Record<string, string> } = {}
+) {
+  const res: any = new Readable({ read() {} });
+  res.statusCode = status;
+  res.headers = headers;
+  process.nextTick(() => {
+    if (body != null) res.push(Buffer.from(body));
+    res.push(null);
+  });
+  return res;
+}
+
+// Redirect responses are never piped; the service only reads statusCode/location.
+function redirectResponse(status: number, location: string) {
+  return { statusCode: status, headers: { location } };
+}
+
+function setupStreamMock(responses: any[]) {
+  const https = require('https');
+  let i = 0;
+  (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
+    const r = responses[i++] ?? responses[responses.length - 1];
+    callback(r);
+    return { on: jest.fn() };
+  });
+}
+
+describe('UpdaterService.downloadUpdate integrity', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { app } = require('electron');
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    (app.getPath as jest.Mock).mockReturnValue('/tmp');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+    mockSetUpdaterLastCheckTimestamp.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    try { realFs.unlinkSync(DOWNLOAD_DEST); } catch { /* ignore */ }
+  });
+
+  it('resolves when the streamed bytes match meta.sha256 and meta.size', async () => {
+    const body = 'installer-bytes-abcdef';
+    const digest = crypto.createHash('sha256').update(body).digest('hex');
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20, { sha256: digest, size: body.length });
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      streamResponse(body, { headers: { 'content-length': String(body.length) } }),
+    ]);
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    const dest = await service.downloadUpdate(result.downloadUrl!, () => {});
+
+    expect(realFs.existsSync(dest)).toBe(true);
+    expect(realFs.readFileSync(dest).toString()).toBe(body);
+  });
+
+  it('rejects and unlinks the file when meta.sha256 does not match', async () => {
+    const body = 'installer-bytes-abcdef';
+    const wrong = 'a'.repeat(64);
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20, { sha256: wrong, size: body.length });
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      streamResponse(body, { headers: { 'content-length': String(body.length) } }),
+    ]);
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    await expect(service.downloadUpdate(result.downloadUrl!, () => {})).rejects.toThrow(/sha256/i);
+    expect(realFs.existsSync(DOWNLOAD_DEST)).toBe(false);
+  });
+
+  it('rejects when downloaded bytes disagree with content-length', async () => {
+    const body = 'only-fifty-ish-bytes';
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20);
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      // Claim 100 bytes but stream far fewer.
+      streamResponse(body, { headers: { 'content-length': '100' } }),
+    ]);
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    await expect(service.downloadUpdate(result.downloadUrl!, () => {})).rejects.toThrow(/size|length/i);
+    expect(realFs.existsSync(DOWNLOAD_DEST)).toBe(false);
+  });
+
+  it('rejects when downloaded bytes disagree with meta.size', async () => {
+    const body = 'installer-bytes-abcdef';
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20, { size: body.length + 999 });
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      streamResponse(body, { headers: { 'content-length': String(body.length) } }),
+    ]);
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    await expect(service.downloadUpdate(result.downloadUrl!, () => {})).rejects.toThrow(/size/i);
+    expect(realFs.existsSync(DOWNLOAD_DEST)).toBe(false);
+  });
+
+  it('warns and proceeds when meta has no sha256 (R1 tolerance)', async () => {
+    const body = 'installer-bytes-abcdef';
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20); // no sha256, no size
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      streamResponse(body, { headers: { 'content-length': String(body.length) } }),
+    ]);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    const dest = await service.downloadUpdate(result.downloadUrl!, () => {});
+
+    expect(realFs.existsSync(dest)).toBe(true);
+    expect(warnSpy.mock.calls.some((c) => String(c[0]).toLowerCase().includes('sha256'))).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it('follows a 307 redirect and still verifies sha256', async () => {
+    const body = 'installer-bytes-abcdef';
+    const digest = crypto.createHash('sha256').update(body).digest('hex');
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20, { sha256: digest, size: body.length });
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      redirectResponse(307, 'https://example.com/redirected.exe'),
+      streamResponse(body, { headers: { 'content-length': String(body.length) } }),
+    ]);
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    const dest = await service.downloadUpdate(result.downloadUrl!, () => {});
+
+    expect(realFs.existsSync(dest)).toBe(true);
+    expect(realFs.readFileSync(dest).toString()).toBe(body);
+  });
+
+  it('re-hashes the file before install and refuses a tampered installer (N2)', async () => {
+    const body = 'installer-bytes-abcdef';
+    const digest = crypto.createHash('sha256').update(body).digest('hex');
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20, { sha256: digest, size: body.length });
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      streamResponse(body, { headers: { 'content-length': String(body.length) } }),
+    ]);
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    const dest = await service.downloadUpdate(result.downloadUrl!, () => {});
+
+    // A local process swaps the installer between download and install.
+    realFs.writeFileSync(dest, 'malicious-payload');
+
+    const { app } = require('electron');
+    expect(() => service.installUpdate(dest)).toThrow(/sha256|integrity|mismatch/i);
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    // Tampered file is removed.
+    expect(realFs.existsSync(dest)).toBe(false);
   });
 });

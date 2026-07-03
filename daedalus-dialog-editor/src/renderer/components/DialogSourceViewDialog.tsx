@@ -11,7 +11,7 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
-import { Close as CloseIcon, ContentCopy as CopyIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
+import { Close as CloseIcon, ContentCopy as CopyIcon } from '@mui/icons-material';
 import Editor from '@monaco-editor/react';
 import { useEditorStore } from '../store/editorStore';
 import { SemanticModel } from '../types/global';
@@ -55,29 +55,6 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
     navigator.clipboard.writeText(code);
   };
 
-  const handleOpenInNewWindow = () => {
-    // This is a placeholder for actual new window implementation if needed
-    // For now, we'll just log it
-    console.log('Open in new window requested for', dialogName);
-    
-    // In Electron, we can use window.open if it's enabled, 
-    // but we'd need a route that handles displaying just the code.
-    const win = window.open('', '_blank', 'width=800,height=600');
-    if (win) {
-      win.document.write(`
-        <html>
-          <head>
-            <title>Source Code: ${dialogName}</title>
-            <style>
-              body { margin: 0; padding: 20px; background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; white-space: pre; }
-            </style>
-          </head>
-          <body>${code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body>
-        </html>
-      `);
-    }
-  };
-
   return (
     <Dialog
       open={open}
@@ -94,11 +71,6 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
           <Tooltip title="Copy to clipboard">
             <IconButton onClick={handleCopy}>
               <CopyIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Open in new window">
-            <IconButton onClick={handleOpenInNewWindow}>
-              <OpenInNewIcon />
             </IconButton>
           </Tooltip>
           <IconButton onClick={onClose}>

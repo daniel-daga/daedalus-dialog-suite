@@ -118,11 +118,19 @@ jobs:
     - name: Generate update metadata
       shell: pwsh
       run: |
+        $installer = "daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe"
+        # Hash and size the exact normalized file that gets published, so the
+        # updater can verify it against these values before running it.
+        $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+        $size = (Get-Item $installer).Length
         @{
           version = "${{ steps.version.outputs.BUILD_VERSION }}"
           baseVersion = "${{ steps.version.outputs.BASE_VERSION }}"
           buildNumber = [int]${{ github.run_number }}
+          sha256 = $sha256
+          size = $size
         } | ConvertTo-Json | Set-Content "daedalus-dialog-editor/dist/update-meta.json" -Encoding UTF8
+        Write-Host "Installer sha256: $sha256 ($size bytes)"
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -149,3 +157,36 @@ jobs:
           daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
           daedalus-dialog-editor/dist/update-meta.json
         make_latest: false
+
+    - name: Verify published release integrity
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Re-download the published metadata + installer and confirm the
+        # advertised sha256 matches the bytes clients would actually fetch.
+        # Fail the job on any mismatch so a broken release cannot ship silently.
+        $verifyDir = "daedalus-dialog-editor/dist/verify"
+        Remove-Item $verifyDir -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path $verifyDir | Out-Null
+
+        gh release download windows-latest `
+          --repo "$env:GITHUB_REPOSITORY" `
+          --pattern "update-meta.json" `
+          --pattern "daedalus-dialog-editor-windows-latest.exe" `
+          --dir $verifyDir `
+          --clobber
+        if ($LASTEXITCODE -ne 0) { throw "Failed to download published release assets" }
+
+        $meta = Get-Content "$verifyDir/update-meta.json" -Raw | ConvertFrom-Json
+        $installer = "$verifyDir/daedalus-dialog-editor-windows-latest.exe"
+        $actualSha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+        $actualSize = (Get-Item $installer).Length
+
+        if ($meta.sha256 -ne $actualSha) {
+          throw "Published sha256 mismatch: meta=$($meta.sha256) actual=$actualSha"
+        }
+        if ([int64]$meta.size -ne $actualSize) {
+          throw "Published size mismatch: meta=$($meta.size) actual=$actualSize"
+        }
+        Write-Host "Published release integrity verified: $actualSha ($actualSize bytes)"

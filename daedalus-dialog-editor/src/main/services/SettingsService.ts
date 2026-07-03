@@ -14,41 +14,88 @@ const DEFAULT_UPDATER_SETTINGS: UpdaterSettings = {
 
 export class SettingsService {
   private settingsPath: string;
+  // Serializes all read-modify-write operations so concurrent setters cannot
+  // interleave and drop one another's fields. Every public method that touches
+  // the file routes through `enqueue`.
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor() {
     this.settingsPath = path.join(app.getPath('userData'), 'settings.json');
   }
 
-  private async ensureSettingsFile(): Promise<void> {
-    try {
-      await fs.access(this.settingsPath);
-    } catch {
-      await fs.writeFile(this.settingsPath, JSON.stringify({ recentProjects: [] }, null, 2));
-    }
+  /**
+   * Chain `op` onto the serialization queue so operations run one at a time in
+   * FIFO order. A rejection from one op does not break the chain for the next.
+   */
+  private enqueue<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(op, op);
+    // Keep the chain alive even if this op rejects; callers still see the error.
+    this.queue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   }
 
   private async readSettings(): Promise<any> {
-    await this.ensureSettingsFile();
+    let data: string;
     try {
-      const data = await fs.readFile(this.settingsPath, 'utf8');
+      data = await fs.readFile(this.settingsPath, 'utf8');
+    } catch {
+      // No settings file yet.
+      return { recentProjects: [] };
+    }
+    try {
       return JSON.parse(data);
     } catch (error) {
-      console.error('Error reading settings file:', error);
+      // Preserve the corrupt file as evidence before falling back to defaults:
+      // settings seed the path whitelist, so a silent reset destroys evidence.
+      const corruptPath = `${this.settingsPath}.corrupt-${Date.now()}`;
+      try {
+        await fs.rename(this.settingsPath, corruptPath);
+        console.error(
+          `Settings file was corrupt and could not be parsed. Preserved at ${corruptPath}; falling back to defaults.`,
+          error
+        );
+      } catch (renameError) {
+        console.error(
+          'Settings file was corrupt and could not be parsed, and preserving it failed; falling back to defaults.',
+          error,
+          renameError
+        );
+      }
       return { recentProjects: [] };
     }
   }
 
+  /**
+   * Atomic write: serialize to a sibling temp file, best-effort fsync, then
+   * rename over the real file. A crash/ENOSPC mid-write leaves the previous
+   * settings.json intact rather than a torn file. Errors are not swallowed.
+   */
   private async writeSettings(settings: any): Promise<void> {
+    const tmpPath = `${this.settingsPath}.tmp`;
+    const data = JSON.stringify(settings, null, 2);
+    const handle = await fs.open(tmpPath, 'w');
     try {
-      await fs.writeFile(this.settingsPath, JSON.stringify(settings, null, 2));
-    } catch (error) {
-      console.error('Error writing settings file:', error);
+      await handle.writeFile(data);
+      // Best-effort durability; not fatal if the platform rejects it.
+      try {
+        await handle.sync();
+      } catch {
+        // ignore
+      }
+    } finally {
+      await handle.close();
     }
+    await fs.rename(tmpPath, this.settingsPath);
   }
 
   async getRecentProjects(): Promise<RecentProject[]> {
-    const settings = await this.readSettings();
-    return settings.recentProjects || [];
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      return settings.recentProjects || [];
+    });
   }
 
   /**
@@ -60,52 +107,65 @@ export class SettingsService {
     if (typeof folderPath !== 'string' || folderPath.trim() === '') {
       return false;
     }
-    const recentProjects = await this.getRecentProjects();
-    const normalizedTarget = path.normalize(folderPath);
-    return recentProjects.some(
-      (project) => path.normalize(project.path) === normalizedTarget
-    );
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      const recentProjects: RecentProject[] = settings.recentProjects || [];
+      const normalizedTarget = path.normalize(folderPath);
+      return recentProjects.some(
+        (project) => path.normalize(project.path) === normalizedTarget
+      );
+    });
   }
 
   async addRecentProject(projectPath: string, projectName: string): Promise<void> {
-    const settings = await this.readSettings();
-    const recentProjects: RecentProject[] = settings.recentProjects || [];
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      const recentProjects: RecentProject[] = settings.recentProjects || [];
 
-    // Remove if already exists (to move it to top)
-    const filtered = recentProjects.filter(p => p.path !== projectPath);
+      // Remove if already exists (to move it to top)
+      const filtered = recentProjects.filter(p => p.path !== projectPath);
 
-    const newProject: RecentProject = {
-      path: projectPath,
-      name: projectName,
-      lastOpened: Date.now()
-    };
+      const newProject: RecentProject = {
+        path: projectPath,
+        name: projectName,
+        lastOpened: Date.now()
+      };
 
-    const updated = [newProject, ...filtered].slice(0, MAX_RECENT_PROJECTS);
+      const updated = [newProject, ...filtered].slice(0, MAX_RECENT_PROJECTS);
 
-    settings.recentProjects = updated;
-    await this.writeSettings(settings);
+      settings.recentProjects = updated;
+      await this.writeSettings(settings);
+    });
   }
 
   async getUpdaterSettings(): Promise<UpdaterSettings> {
-    const settings = await this.readSettings();
-    return { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}) };
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      return { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}) };
+    });
   }
 
   async setUpdaterLastCheckTimestamp(timestamp: number): Promise<void> {
-    const settings = await this.readSettings();
-    settings.updater = { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}), lastCheckTimestamp: timestamp };
-    await this.writeSettings(settings);
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      settings.updater = { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}), lastCheckTimestamp: timestamp };
+      await this.writeSettings(settings);
+    });
   }
 
   async setUpdaterDismissedVersion(version: string | null): Promise<void> {
-    const settings = await this.readSettings();
-    settings.updater = { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}), dismissedVersion: version };
-    await this.writeSettings(settings);
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      settings.updater = { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}), dismissedVersion: version };
+      await this.writeSettings(settings);
+    });
   }
 
   async setUpdaterAutoCheck(enabled: boolean): Promise<void> {
-    const settings = await this.readSettings();
-    settings.updater = { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}), autoCheckOnStartup: enabled };
-    await this.writeSettings(settings);
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      settings.updater = { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}), autoCheckOnStartup: enabled };
+      await this.writeSettings(settings);
+    });
   }
 }
