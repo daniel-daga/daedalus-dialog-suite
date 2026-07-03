@@ -8,6 +8,7 @@ interface QuestLiteGraphCanvasProps {
   nodes: QuestGraphNode[];
   edges: QuestGraphEdge[];
   selectedNodeId?: string | null;
+  selectedEdgeId?: string | null;
   onNodeClick: (event: React.MouseEvent, node: QuestGraphNode) => void;
   onNodeDoubleClick: (event: React.MouseEvent, node: QuestGraphNode) => void;
   onEdgeClick: (event: React.MouseEvent, edge: QuestGraphEdge) => void;
@@ -21,11 +22,20 @@ interface QuestLiteGraphCanvasProps {
   onSetConditionExpression?: (payload: { nodeId: string; expression: string }) => void;
 }
 
+type VisibleLink = { id: number; _pos?: [number, number] };
+
 type ExtendedLGraphCanvas = LGraphCanvas & {
   bgcolor?: string;
-  onLinkSelected?: (linkId: number) => void;
   ds?: { scale: number; offset: [number, number] };
+  visible_links?: VisibleLink[];
+  showLinkMenu?: (link: { id: number }, event?: MouseEvent) => boolean;
+  onDrawForeground?: (ctx: CanvasRenderingContext2D) => void;
 };
+
+// Selection accent for the edge-center marker; mirrors litegraph's white node
+// selection outline (LiteGraph.NODE_BOX_OUTLINE_COLOR).
+const SELECTED_EDGE_MARKER_COLOR = '#ffffff';
+const EDGE_HIT_RADIUS_PX = 12;
 
 const getConditionTypeLabel = (conditionType?: QuestGraphConditionType): string => {
   if (!conditionType) return 'Condition';
@@ -149,6 +159,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   nodes,
   edges,
   selectedNodeId,
+  selectedEdgeId,
   onNodeClick,
   onNodeDoubleClick,
   onEdgeClick,
@@ -162,7 +173,6 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const graphCanvasRef = useRef<ExtendedLGraphCanvas | null>(null);
   const nodeMapRef = useRef<Map<string, QuestGraphNode>>(new Map());
   const questIdToRuntimeNodeRef = useRef<Map<string, LGraphNode>>(new Map());
-  const edgeMapRef = useRef<Map<string, QuestGraphEdge>>(new Map());
   const linkIdToEdgeRef = useRef<Map<number, QuestGraphEdge>>(new Map());
   const [expressionEditorNodeId, setExpressionEditorNodeId] = useState<string | null>(null);
   const [expressionEditorDraft, setExpressionEditorDraft] = useState('');
@@ -190,6 +200,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedNodeIdRef.current = selectedNodeId;
+
+  const selectedEdgeIdRef = useRef(selectedEdgeId);
+  selectedEdgeIdRef.current = selectedEdgeId;
 
   const syncSelection = () => {
     const graphCanvas = graphCanvasRef.current;
@@ -244,24 +257,16 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       }
     };
 
-    graphCanvas.onLinkSelected = (linkId: number) => {
-      const directMatch = linkIdToEdgeRef.current.get(linkId);
-      if (directMatch) {
-        callbacksRef.current.onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, directMatch);
-        return;
-      }
-
-      const link = graph.links[linkId];
-      if (!link) return;
-      const sourceNode = nodeMapRef.current.get(String(link.origin_id));
-      const targetNode = nodeMapRef.current.get(String(link.target_id));
-      if (!sourceNode || !targetNode) return;
-      const edge = Array.from(edgeMapRef.current.values()).find((candidate) => (
-        candidate.source === sourceNode.id && candidate.target === targetNode.id
-      ));
+    // Primary link-click interception: litegraph's own processMouseDown link hit test
+    // invokes showLinkMenu(link, e) (a prototype method, instance-overridable). Overriding
+    // it fires our edge-selection callback and returns false to suppress the built-in
+    // "Add Node" / "Delete" context menu (N7 — its Delete would desync graph vs model).
+    graphCanvas.showLinkMenu = (link: { id: number }) => {
+      const edge = linkIdToEdgeRef.current.get(link.id);
       if (edge) {
         callbacksRef.current.onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, edge);
       }
+      return false;
     };
 
     graphCanvas.onMouse = (rawEvent: MouseEvent) => {
@@ -269,10 +274,51 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       const event = rawEvent as MouseEvent & { canvasX?: number; canvasY?: number };
       if (typeof event.canvasX !== 'number' || typeof event.canvasY !== 'number') return false;
       const clickedNode = graph.getNodeOnPos(event.canvasX, event.canvasY, graphCanvas.visible_nodes);
-      if (!clickedNode) {
-        callbacksRef.current.onPaneClick();
+      if (clickedNode) return false;
+
+      // Enlarged link hit test (12px vs litegraph's stock ±4px box) so edges are a
+      // usable primary interaction. visible_links / _pos are only populated after a
+      // draw, so tolerate empty/undefined arrays (first click before first frame).
+      const links = graphCanvas.visible_links;
+      if (Array.isArray(links)) {
+        const thresholdSq = EDGE_HIT_RADIUS_PX * EDGE_HIT_RADIUS_PX;
+        for (const link of links) {
+          const center = link?._pos;
+          if (!center) continue;
+          const dx = event.canvasX - center[0];
+          const dy = event.canvasY - center[1];
+          if (dx * dx + dy * dy > thresholdSq) continue;
+          const edge = linkIdToEdgeRef.current.get(link.id);
+          if (!edge) continue;
+          callbacksRef.current.onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, edge);
+          return true; // consume so litegraph does not start a canvas drag
+        }
       }
+
+      callbacksRef.current.onPaneClick();
       return false;
+    };
+
+    // Selected-edge visual feedback: stroke a small marker at the selected link's center.
+    graphCanvas.onDrawForeground = (ctx: CanvasRenderingContext2D) => {
+      const selectedEdge = selectedEdgeIdRef.current;
+      if (!selectedEdge || !ctx) return;
+      const links = graphCanvas.visible_links;
+      if (!Array.isArray(links)) return;
+      for (const link of links) {
+        const center = link?._pos;
+        if (!center) continue;
+        const edge = linkIdToEdgeRef.current.get(link.id);
+        if (!edge || edge.id !== selectedEdge) continue;
+        ctx.save();
+        ctx.strokeStyle = SELECTED_EDGE_MARKER_COLOR;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(center[0], center[1], 6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        break;
+      }
     };
 
     graphCanvas.onNodeMoved = (selectedNode: LGraphNode) => {
@@ -321,7 +367,6 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       graphCanvasRef.current = null;
       nodeMapRef.current = new Map();
       questIdToRuntimeNodeRef.current = new Map();
-      edgeMapRef.current = new Map();
       linkIdToEdgeRef.current = new Map();
     };
   }, []);
@@ -333,7 +378,6 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     graph.clear();
     nodeMapRef.current = new Map();
     questIdToRuntimeNodeRef.current = new Map();
-    edgeMapRef.current = new Map();
     linkIdToEdgeRef.current = new Map();
 
     const runtimeNodes = new Map<string, LGraphNode>();
@@ -498,7 +542,6 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       if (typeof linkInfo?.id === 'number') {
         linkIdToEdgeRef.current.set(linkInfo.id, edge);
       }
-      edgeMapRef.current.set(edge.id, edge);
     });
 
     graphCanvasRef.current?.draw(true, true);
@@ -510,6 +553,11 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   useEffect(() => {
     syncSelection();
   }, [selectedNodeId]);
+
+  useEffect(() => {
+    // Repaint the foreground so the selected-edge marker tracks the current selection.
+    graphCanvasRef.current?.setDirty(true, true);
+  }, [selectedEdgeId]);
 
   const conditionCapsuleNodes = useMemo(() => (
     nodes.filter((node) => node.type === 'dialog')
