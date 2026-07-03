@@ -3,6 +3,11 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
 
+// SettingsService references `require('fs').promises`; spy on that same object
+// (the ESM namespace import above is non-configurable and cannot be spied).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const fsPromises = require('fs').promises;
+
 jest.mock('electron', () => ({
   app: {
     getPath: jest.fn().mockReturnValue('./test-userData')
@@ -66,6 +71,76 @@ describe('SettingsService', () => {
     const projects = await settingsService.getRecentProjects();
     expect(projects).toHaveLength(10);
     expect(projects[0].name).toBe('Proj14');
+  });
+
+  describe('atomic + serialized writes (S6)', () => {
+    it('serializes concurrent read-modify-write setters without dropping fields', async () => {
+      // Fire three distinct setters concurrently with no awaits between starts.
+      // Each is a read-modify-write; without serialization they interleave and
+      // clobber one another's fields.
+      await Promise.all([
+        settingsService.addRecentProject('/path/concurrent', 'Concurrent'),
+        settingsService.setUpdaterLastCheckTimestamp(123456),
+        settingsService.setUpdaterAutoCheck(false),
+      ]);
+
+      const raw = await fs.readFile(settingsPath, 'utf8');
+      const settings = JSON.parse(raw);
+
+      // All three effects must survive.
+      expect(settings.recentProjects).toHaveLength(1);
+      expect(settings.recentProjects[0].path).toBe('/path/concurrent');
+      expect(settings.updater.lastCheckTimestamp).toBe(123456);
+      expect(settings.updater.autoCheckOnStartup).toBe(false);
+    });
+
+    it('writes atomically via a temp file + rename', async () => {
+      const renameSpy = jest.spyOn(fsPromises, 'rename');
+
+      await settingsService.addRecentProject('/path/atomic', 'Atomic');
+
+      expect(renameSpy).toHaveBeenCalled();
+      const [tmpArg, finalArg] = renameSpy.mock.calls[renameSpy.mock.calls.length - 1];
+      expect(finalArg).toBe(settingsPath);
+      expect(tmpArg).not.toBe(settingsPath);
+      expect(String(tmpArg).startsWith(settingsPath)).toBe(true);
+
+      renameSpy.mockRestore();
+    });
+
+    it('leaves the previous settings.json intact and rejects when the write fails', async () => {
+      // Seed a known-good settings file.
+      await settingsService.addRecentProject('/path/original', 'Original');
+      const before = await fs.readFile(settingsPath, 'utf8');
+
+      // Force the atomic rename to fail; the previous file must survive and the
+      // error must propagate to the caller (no longer swallowed).
+      const renameSpy = jest
+        .spyOn(fsPromises, 'rename')
+        .mockRejectedValueOnce(new Error('ENOSPC: simulated disk full'));
+
+      await expect(
+        settingsService.addRecentProject('/path/new', 'New')
+      ).rejects.toThrow();
+
+      const after = await fs.readFile(settingsPath, 'utf8');
+      expect(after).toBe(before);
+
+      renameSpy.mockRestore();
+    });
+
+    it('preserves a corrupt settings file and falls back to defaults on read', async () => {
+      await fs.writeFile(settingsPath, '{ this is not valid json', 'utf8');
+
+      const projects = await settingsService.getRecentProjects();
+      expect(projects).toEqual([]);
+
+      const entries = await fs.readdir(testUserDataPath);
+      const corruptSiblings = entries.filter((name) =>
+        name.startsWith('settings.json.corrupt-')
+      );
+      expect(corruptSiblings).toHaveLength(1);
+    });
   });
 
   describe('isKnownRecentProject', () => {
