@@ -2,7 +2,7 @@
 
 Source: [`code-review-findings.md`](./code-review-findings.md) §6 (S1–S6) + main-process IPC hardening notes.
 Scope: `daedalus-dialog-editor/src/main/` (PathValidationService, UpdaterService, SettingsService, main.ts, preload), `src/shared/updater-types.ts`, `package.json` build block, `.github/workflows/build-windows.yml`.
-Status: plan only — no implementation in this pass.
+Status: in-progress — fixes 1–4 implemented (2026-07-03); fixes 5–7 outstanding (see §4 table).
 
 ---
 
@@ -232,10 +232,10 @@ Failing-first unit tests against the real filesystem via `fs.mkdtemp` fixtures:
 
 | # | Fix | Size | Depends on | Risk notes |
 |---|-----|------|-----------|------------|
-| 1 | SettingsService atomic + serialized + corrupt-preserve (§2.5) | S | — | Foundation: settings seed the whitelist. Behavior change: write errors now propagate (IPC already wraps). |
-| 2 | PathValidationService: remove `%2e` checks, N3 containment fix, symlink-aware async validation, whitelist narrowing (§2.2) | M | 1 (whitelist seeding) | Main risk is over-blocking legitimate junction-based mod setups → needs the readable-error path and manual junction test. `validatePath` → async ripples through 5 `main.ts` call sites (all already async). |
-| 3 | window-open/will-navigate deny + remove placeholder button (§2.3); notifySelfWrite validation or channel removal (§2.4); IPC shape checks (§2.6) | S | — (parallel with 2) | Low risk; button removal is user-visible but the feature never worked as intended. |
-| 4 | Updater integrity R1: CI sha256/size producer + tolerant verifier + 307/308 + content-length + install-time re-hash + post-publish CI assertion (§2.1) | M | sequencing rule above | Must ship as one release. Coordinate with slice 8 (release gating) — the ref-guard on `workflow_dispatch` overlaps; whoever lands first adds it. |
+| 1 | **DONE (2026-07-03)** — SettingsService atomic + serialized + corrupt-preserve (§2.5) | S | — | Foundation: settings seed the whitelist. Behavior change: write errors now propagate (IPC already wraps). |
+| 2 | **DONE (2026-07-03)** — PathValidationService: remove `%2e` checks, N3 containment fix, symlink-aware async validation, whitelist narrowing (§2.2) | M | 1 (whitelist seeding) | Main risk is over-blocking legitimate junction-based mod setups → needs the readable-error path and manual junction test (manual junction test on Windows still outstanding, §3). `validatePath` → async ripples through 5 `main.ts` call sites (all already async). |
+| 3 | **DONE (2026-07-03)** — window-open/will-navigate deny + remove placeholder button (§2.3); notifySelfWrite channel removal — audit found no renderer caller (§2.4); IPC shape checks (§2.6) | S | — (parallel with 2) | Low risk; button removal is user-visible but the feature never worked as intended. Note: §2.6 additionally allows boolean `overwriteExternal` in `generator:saveFile` options — the live handler uses it. |
+| 4 | **DONE (2026-07-03)** — Updater integrity R1: CI sha256/size producer + tolerant verifier + 303/307/308 + content-length + install-time re-hash + post-publish CI assertion (§2.1) | M | sequencing rule above | Must ship as one release. Coordinate with slice 8 (release gating) — the ref-guard on `workflow_dispatch` overlaps; whoever lands first adds it. |
 | 5 | Updater integrity R2: strict sha256 requirement | S | 4 shipped to users | Trivial code; the risk is purely sequencing (see constraint). |
 | 6 | Code signing (code side: builder config, CI secrets wiring, Authenticode pre-spawn check) (§2.1) | M (code) | owner cert decision; ideally after 7 (electron-builder bump) | Blocked on cert acquisition (owner). Azure Trusted Signing needs electron-builder ≥ 26 → weak dependency on 7. |
 | 7 | Electron 29 → latest stable + electron-builder bump + drop `build.electronVersion` pin (§2.7) | L | best after 1–5 (don't debug a new runtime and new security code simultaneously); slice 3 (worker reliability) ideally first since workers are the top ABI-risk surface | Verify NAPI assumption in packaged app; extend smoke test to exercise a real parse. Coordinate with slice 8 for real-Electron E2E as the upgrade's safety net. |

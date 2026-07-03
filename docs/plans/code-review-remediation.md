@@ -13,7 +13,7 @@ Each slice gets a deep-dive pass producing a fix plan document (linked below). S
 | 3 | Worker lifecycle & reliability (crash → silent permanent hang) | Blocker | done — durable outcomes in [worker-reliability.md](../architecture/worker-reliability.md) | done |
 | 4 | Quest editor stack (features unreachable in prod, canvas leaks) | Blocker | [fix-04-quest-editor.md](./fix-04-quest-editor.md) | plan-ready |
 | 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | [fix-05-undo-debounce.md](./fix-05-undo-debounce.md) | plan-ready |
-| 6 | Security & update chain (unverified updates, EOL Electron, symlinks) | Blocker | [fix-06-security-updates.md](./fix-06-security-updates.md) | plan-ready |
+| 6 | Security & update chain (unverified updates, EOL Electron, symlinks) | Blocker | [fix-06-security-updates.md](./fix-06-security-updates.md) | in-progress |
 | 7 | Rendering performance at mod scale (merge storms, subscriptions) | Major | [fix-07-render-performance.md](./fix-07-render-performance.md) | plan-ready |
 | 8 | Test truthfulness & release gating (mock E2E, ungated releases) | Blocker | [fix-08-test-release-gating.md](./fix-08-test-release-gating.md) | plan-ready |
 
@@ -33,6 +33,15 @@ The plan-writing passes corrected or sharpened several original findings:
 - All nine fix-02 steps landed (E1, E2a/E2b, E3, E4 both phases, E5, E6, E7/N2, U6/N4, N3/N5/N7). Durable contracts extracted to [save-pipeline.md](../architecture/save-pipeline.md).
 - The flush registry (`src/renderer/utils/pendingEditFlushRegistry.ts`) was created here with the API agreed in fix-05 §2.3 — slice 5 builds on it rather than creating it.
 - Real-Electron E2E for window close + atomic write is recorded in fix-08's checklist (mock-harness Playwright specs cover the dialogs). Manual smoke on a real desktop build (close with dirty file, external edit via second editor, kill mid-save) remains outstanding for release QA — automated coverage is in place.
+
+## Slice 6 progress notes (2026-07-03)
+
+Fixes 1–4 of fix-06 landed (SettingsService atomic/serialized writes; symlink-aware async path validation with allowedRoots/allowedFiles whitelist narrowing; window-open/will-navigate deny + `notifySelfWrite` channel removal + IPC payload shape checks; updater sha256 integrity in its R1 tolerant phase with CI producer + post-publish self-check). Remaining before the slice is `done`:
+
+- **Fix 5 (R2 strict verifier)**: flip missing-`sha256` from warn to hard failure — only after the R1 build has actually shipped to users via the rolling release (sequencing constraint in fix-06 §4).
+- **Fix 6 (code signing)**: blocked on the owner's cert / Azure Trusted Signing decision.
+- **Fix 7 (Electron 29 → latest stable + electron-builder bump)**: land after 1–5; needs packaged-app verification on Windows.
+- Manual checklist items in fix-06 §3 (junction-layout error UX, signed-installer QA, upgrade smoke).
 
 ## Working agreement
 
