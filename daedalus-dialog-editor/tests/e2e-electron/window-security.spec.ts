@@ -39,6 +39,14 @@ test.describe('Window security (deny by default)', () => {
     // app never left its own page.
     await page.waitForTimeout(1000);
     expect(page.url()).toBe(before);
-    await expect(page.getByRole('heading', { name: 'Welcome to Dandelion' })).toBeVisible();
+    // The aborted navigation leaves Playwright's frame bookkeeping "waiting
+    // for navigation to finish", so locator auto-waiting would hang here —
+    // assert on the live DOM directly instead (CI run 28659971523).
+    const welcomeVisible = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).some((h) =>
+        (h.textContent ?? '').includes('Welcome to Dandelion')
+      )
+    );
+    expect(welcomeVisible).toBe(true);
   });
 });
