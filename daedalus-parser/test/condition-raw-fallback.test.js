@@ -123,7 +123,7 @@ test('condition function with supported expressions parses conditions', () => {
   assert.equal(func.actions.length, 0, 'Should not preserve raw actions');
 });
 
-test('condition function with top-level return fallback preserves explicit false path', () => {
+test('condition function with top-level return fallback preserves the whole body in source order (P2)', () => {
   const source = `
   instance DIA_Test(C_INFO)
   {
@@ -144,10 +144,66 @@ test('condition function with top-level return fallback preserves explicit false
   const func = model.functions.DIA_Test_Cond;
   assert.ok(func, 'Function should be parsed');
   assert.equal(func.conditions.length, 0, 'Should preserve raw when explicit top-level return exists');
-  assert.ok(func.actions.length > 0, 'Should preserve raw actions');
+
+  // P2: the `if` block consumed into conditions before the trigger must NOT be
+  // dropped — both the if-block and the trailing return survive, in source order.
+  assert.equal(func.actions.length, 2, 'Should preserve both the if block and the trailing return');
+  assert.ok(func.actions[0].action.includes('if (Npc_KnowsInfo(other, DIA_Test))'), 'First action is the if block');
+  assert.ok(func.actions[0].action.includes('return TRUE;'), 'If block keeps its true path');
+  assert.equal(func.actions[1].action.trim(), 'return FALSE;', 'Second action is the trailing return');
 
   const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
-  assert.ok(generated.includes('return FALSE;'), 'Generated raw function should preserve explicit false return');
+  const ifIndex = generated.indexOf('if (Npc_KnowsInfo(other, DIA_Test))');
+  const falseIndex = generated.indexOf('return FALSE;');
+  assert.ok(ifIndex >= 0, 'Generated function should preserve the if block');
+  assert.ok(falseIndex >= 0, 'Generated function should preserve the explicit false return');
+  assert.ok(ifIndex < falseIndex, 'The if block must precede the trailing return');
+
+  const reparsed = parseSemanticModel(generated);
+  assert.equal(reparsed.errors?.length || 0, 0, 'Generated raw function should parse without syntax errors');
+});
+
+test('condition function preserves an interleaved body with no duplicated statements (P2)', () => {
+  const source = `
+  instance DIA_Inter(C_INFO)
+  {
+    condition = DIA_Inter_Cond;
+  };
+
+  func int DIA_Inter_Cond()
+  {
+    if (Npc_KnowsInfo(other, DIA_A))
+    {
+      return TRUE;
+    };
+    AI_Output(self, other, "DIA_Inter_01");
+    if (Npc_KnowsInfo(other, DIA_B))
+    {
+      return TRUE;
+    };
+    return FALSE;
+  };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Inter_Cond;
+  assert.ok(func, 'Function should be parsed');
+  assert.equal(func.conditions.length, 0, 'Raw mode should clear structured conditions');
+
+  // All four top-level statements survive exactly once, in source order.
+  assert.equal(func.actions.length, 4, 'All four top-level statements preserved with no duplicates');
+  assert.ok(func.actions[0].action.includes('DIA_A'), 'First statement is the DIA_A if block');
+  assert.equal(func.actions[1].action.trim(), 'AI_Output(self, other, "DIA_Inter_01");', 'Second statement is the AI_Output');
+  assert.ok(func.actions[2].action.includes('DIA_B'), 'Third statement is the DIA_B if block');
+  assert.equal(func.actions[3].action.trim(), 'return FALSE;', 'Fourth statement is the trailing return');
+
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  // No statement should appear twice.
+  const outputMatches = generated.match(/AI_Output\(self, other, "DIA_Inter_01"\);/g) || [];
+  assert.equal(outputMatches.length, 1, 'The AI_Output statement must not be duplicated');
+
+  const reparsed = parseSemanticModel(generated);
+  assert.equal(reparsed.errors?.length || 0, 0, 'Generated raw function should parse without syntax errors');
 });
 
 test('legacy if/else-if condition fallback does not introduce extra closing braces', () => {

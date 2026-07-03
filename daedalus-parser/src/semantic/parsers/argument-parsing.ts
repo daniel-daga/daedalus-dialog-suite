@@ -15,6 +15,38 @@ export function parseArguments(argsNode: TreeSitterNode): string[] {
 }
 
 /**
+ * A single call argument captured with enough information to regenerate it
+ * verbatim: `raw` is the exact source text (quotes intact for strings), `value`
+ * is the normalized form (quotes stripped) used for display/structured fields,
+ * and `isString` records whether the source node was a string literal so
+ * generators can decide whether to re-quote.
+ */
+export interface ParsedArg {
+  raw: string;
+  value: string;
+  isString: boolean;
+}
+
+/**
+ * Parse a tree-sitter argument_list node into detailed argument descriptors
+ * that preserve the raw source text (fidelity by construction).
+ */
+export function parseArgumentsDetailed(argsNode: TreeSitterNode): ParsedArg[] {
+  const args: ParsedArg[] = [];
+  for (let i = 0; i < argsNode.childCount; i++) {
+    const child = argsNode.child(i);
+    if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
+      args.push({
+        raw: child.text.trim(),
+        value: normalizeArgumentText(child),
+        isString: child.type === 'string'
+      });
+    }
+  }
+  return args;
+}
+
+/**
  * Normalize argument text, removing only outer quotes for string nodes.
  */
 export function normalizeArgumentText(node: TreeSitterNode): string {

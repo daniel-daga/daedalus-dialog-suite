@@ -11,6 +11,7 @@ import {
   getDialogProperty
 } from '../semantic/semantic-model';
 import { Choice } from '../semantic/dialogActions';
+import { resolveCaseInsensitive } from '../semantic/name-utils';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -394,7 +395,9 @@ export class SemanticCodeGenerator {
     if (infoFunc) {
       for (const action of infoFunc.actions) {
         if (action instanceof Choice && action.targetFunction) {
-          const targetFunc = model.functions[action.targetFunction];
+          // Case-insensitive: a case-drifted choice target must still cluster
+          // (and, via generateDialogWithFunctions, still be emitted at all).
+          const targetFunc = resolveCaseInsensitive(model.functions, action.targetFunction);
           if (targetFunc && !seen.has(targetFunc.name)) {
             funcs.push(targetFunc);
             seen.add(targetFunc.name);

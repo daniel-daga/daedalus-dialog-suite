@@ -112,6 +112,56 @@ const cases = [
     assert: (action) => {
       assert.equal(action.type, 'Action');
     }
+  },
+  // P5: identifier routine argument must not be turned into a string literal.
+  {
+    name: 'Npc_ExchangeRoutine preserves an identifier routine argument (P5)',
+    body: 'Npc_ExchangeRoutine (self, Routine_Var);',
+    assert: (action) => {
+      assert.equal(action.type, 'ExchangeRoutineAction');
+      assert.equal(action.routine, 'Routine_Var');
+      assert.equal(action.routineIsExpression, true);
+    }
+  },
+  // P5: a real string-literal routine argument keeps its quotes.
+  {
+    name: 'AI_PlayAni preserves a string-literal animation argument (P5)',
+    body: 'AI_PlayAni (self, "T_STAND_2_SIT");',
+    assert: (action) => {
+      assert.equal(action.type, 'PlayAniAction');
+      assert.equal(action.animationName, 'T_STAND_2_SIT');
+      assert.ok(!action.animationNameIsExpression);
+    }
+  },
+  // N1: a string-literal topic must regenerate as a valid, quoted argument.
+  {
+    name: 'Log_CreateTopic preserves a string-literal topic and reparses cleanly (N1)',
+    body: 'Log_CreateTopic ("My Topic", LOG_MISSION);',
+    assert: (action) => {
+      assert.equal(action.type, 'CreateTopic');
+      assert.equal(action.topic, '"My Topic"');
+      assert.equal(action.topicType, 'LOG_MISSION');
+    }
+  },
+  // N2: an identifier text argument must not be force-quoted.
+  {
+    name: 'B_LogEntry preserves an identifier text argument (N2)',
+    body: 'B_LogEntry (TOPIC_Foo, TextConstant);',
+    assert: (action) => {
+      assert.equal(action.type, 'LogEntry');
+      assert.equal(action.text, 'TextConstant');
+      assert.equal(action.textIsExpression, true);
+    }
+  },
+  // N7: an identifier id argument for AI_Output must survive without quotes.
+  {
+    name: 'AI_Output preserves an identifier id argument (N7)',
+    body: 'AI_Output (self, other, DIALOG_ID_CONST);',
+    assert: (action) => {
+      assert.equal(action.type, 'DialogLine');
+      assert.equal(action.id, 'DIALOG_ID_CONST');
+      assert.equal(action.idIsExpression, true);
+    }
   }
 ];
 

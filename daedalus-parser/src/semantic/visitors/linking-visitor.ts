@@ -22,6 +22,7 @@ import {
   isAncestorTraversalBoundaryType
 } from '../parsers/ast-constants';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
+import { namesEqual } from '../name-utils';
 
 export class LinkingVisitor {
   private dialogs: SemanticModel['dialogs'];
@@ -30,9 +31,13 @@ export class LinkingVisitor {
   private currentInstance: Dialog | null;
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
-  private functionToDialog: Map<string, Dialog>;
+  // Keyed by lowercase function name; a cached `null` records a proven miss
+  // (a function owned by no dialog) so the O(dialogs) scan runs at most once.
+  private functionToDialog: Map<string, Dialog | null>;
   private conditionRawMode: Set<string>;
   private preservedStatementRanges: Map<string, Set<string>>;
+  private currentFunctionBodyNode: TreeSitterNode | null;
+  private rawModeActionWatermark: number;
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
     this.dialogs = semanticModel.dialogs;
@@ -41,9 +46,11 @@ export class LinkingVisitor {
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
-    this.functionToDialog = new Map<string, Dialog>();
+    this.functionToDialog = new Map<string, Dialog | null>();
     this.conditionRawMode = new Set<string>();
     this.preservedStatementRanges = new Map<string, Set<string>>;
+    this.currentFunctionBodyNode = null;
+    this.rawModeActionWatermark = 0;
   }
 
   /**
@@ -78,14 +85,23 @@ export class LinkingVisitor {
       if (child.type !== 'instance_declaration') continue;
       const body = child.childForFieldName('body');
       if (!body) continue;
+      const nameNode = child.childForFieldName('name');
+      const dialog = nameNode ? this.dialogs[nameNode.text] : undefined;
       for (const stmt of body.namedChildren) {
         if (stmt.type !== 'assignment_statement') continue;
         const left = stmt.childForFieldName('left');
         const right = stmt.childForFieldName('right');
         if (!left || !right || right.type !== 'identifier') continue;
-        if (left.text.toLowerCase() !== 'condition') continue;
+        const propertyKey = left.text.toLowerCase();
         const originalName = this.functionNameMap.get(right.text.toLowerCase());
-        this.conditionFunctions.add(originalName || right.text);
+        const functionName = originalName || right.text;
+        if (propertyKey === 'condition') {
+          this.conditionFunctions.add(functionName);
+        } else if (propertyKey === 'information' && dialog) {
+          // Pre-populate function→dialog links (PF4) so lookups resolve without
+          // an O(dialogs) scan regardless of declaration order.
+          this.functionToDialog.set(functionName.toLowerCase(), dialog);
+        }
       }
     }
   }
@@ -131,6 +147,10 @@ export class LinkingVisitor {
       if (!nameNode) return;
       this.currentFunction = this.functions[nameNode.text];
       const body = node.childForFieldName('body');
+      this.currentFunctionBodyNode = body ?? null;
+      // Watermark the actions already present so a later raw-mode trigger can
+      // discard exactly the ones recorded during this function's traversal.
+      this.rawModeActionWatermark = this.currentFunction ? this.currentFunction.actions.length : 0;
       if (this.currentFunction && body) {
         this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
       }
@@ -145,6 +165,8 @@ export class LinkingVisitor {
 
     if (type === 'function_declaration') {
       this.currentFunction = null;
+      this.currentFunctionBodyNode = null;
+      this.rawModeActionWatermark = 0;
     }
   }
 
@@ -355,7 +377,7 @@ export class LinkingVisitor {
         if (this.functions[functionName]) {
           value = this.functions[functionName];
           if (propertyKey === 'information') {
-            this.functionToDialog.set(functionName, this.currentInstance);
+            this.functionToDialog.set(functionName.toLowerCase(), this.currentInstance);
             this.syncDialogActionsForFunction(functionName, this.currentInstance);
           }
         } else {
@@ -549,9 +571,39 @@ export class LinkingVisitor {
     const funcName = this.currentFunction.name;
     if (!this.conditionRawMode.has(funcName)) {
       this.conditionRawMode.add(funcName);
+      // Statements consumed into conditions (or recorded as actions) before this
+      // trigger must not be dropped: clear the structured conditions, discard any
+      // actions recorded during this function's traversal, and re-seed the whole
+      // body top-to-bottom in source order so the continuing traversal dedupes.
       this.currentFunction.conditions = [];
+      this.discardRecordedActions(funcName);
+      const body = this.currentFunctionBodyNode;
+      if (body) {
+        for (const child of body.namedChildren) {
+          if (this.isTopLevelStatement(child)) {
+            this.preserveConditionStatement(child);
+          }
+        }
+        return;
+      }
     }
     this.preserveConditionStatement(node);
+  }
+
+  /**
+   * Remove the actions recorded for the current function during this traversal
+   * (from the watermark captured on function entry) from both the function and
+   * its owning dialog, so the raw-mode whole-body sweep is the single source of
+   * truth and no statement is duplicated.
+   */
+  private discardRecordedActions(funcName: string): void {
+    if (!this.currentFunction) return;
+    const removed = this.currentFunction.actions.splice(this.rawModeActionWatermark);
+    if (removed.length === 0) return;
+    const dialog = this.findDialogForFunction(funcName);
+    if (dialog) {
+      dialog.actions = dialog.actions.filter((action) => !removed.includes(action));
+    }
   }
 
   private isTrivialTopLevelTrueReturn(node: TreeSitterNode): boolean {
@@ -796,9 +848,11 @@ export class LinkingVisitor {
    * Optimized to O(1) lookup using functionToDialog map
    */
   private findDialogForFunction(functionName: string): Dialog | null {
-    const mappedDialog = this.functionToDialog.get(functionName);
-    if (mappedDialog) {
-      return mappedDialog;
+    const key = functionName.toLowerCase();
+    const cached = this.functionToDialog.get(key);
+    if (cached !== undefined) {
+      // Includes cached misses (null) so the scan below runs at most once.
+      return cached;
     }
 
     for (const dialog of Object.values(this.dialogs)) {
@@ -809,12 +863,13 @@ export class LinkingVisitor {
           ? information.name
           : null);
 
-      if (informationName === functionName) {
-        this.functionToDialog.set(functionName, dialog);
+      if (namesEqual(informationName, functionName)) {
+        this.functionToDialog.set(key, dialog);
         return dialog;
       }
     }
 
+    this.functionToDialog.set(key, null);
     return null;
   }
 }

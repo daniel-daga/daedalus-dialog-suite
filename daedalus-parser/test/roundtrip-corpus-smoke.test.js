@@ -20,16 +20,16 @@ const { execFileSync } = require('child_process');
 
 const GREEN_FIXTURES = [
   'arity-variants.d', // fix-01 step 1 (P4 arity fallback + N8)
-  'numeric-args.d'    // fix-01 step 3 (P3 numeric fidelity)
+  'numeric-args.d',   // fix-01 step 3 (P3 numeric fidelity)
+  'quoting.d',        // fix-01 step 4 (P5/N1/N2/N7 quote preservation)
+  'case-drift.d'      // fix-01 step 6 (M1-M5 case-insensitive references, b_beklauen)
 ];
 
 const KNOWN_RED_FIXTURES = [
   'class-prototype.d',    // P1 class/prototype declarations dropped
   'comments.d',           // P6/N3/N5 comment preservation
-  'condition-idioms.d',   // P2/N5 condition-body comment preservation
-  'case-drift.d',         // M1-M5 case-insensitive references (b_beklauen)
+  'condition-idioms.d',   // P6/N5 standalone comment inside a condition body (P2 body-loss fixed)
   'declaration-order.d',  // N10 declaration-order fidelity
-  'quoting.d',            // P5/N1/N2/N7 quote preservation (emits invalid output)
   'globals.d',            // P6 trailing/EOF comment preservation
   'items-npcs-mds.d',     // P6 trailing comment preservation
   'encoding-1252.d'       // P6 comment preservation (windows-1252 encoded)

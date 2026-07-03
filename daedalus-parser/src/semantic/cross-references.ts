@@ -7,6 +7,7 @@
 
 import type { SemanticModel } from './semantic-model';
 import { getDialogProperty } from './semantic-model';
+import { namesEqual, resolveCaseInsensitive } from './name-utils';
 
 export interface DialogReference {
   /** The function name that contains the reference */
@@ -67,7 +68,7 @@ export function findDialogReferences(
   for (const [funcName, func] of Object.entries(model.functions || {})) {
     const conditions = func.conditions || [];
     conditions.forEach((cond: any, idx: number) => {
-      if (cond.type === 'NpcKnowsInfoCondition' && cond.dialogRef === dialogName) {
+      if (cond.type === 'NpcKnowsInfoCondition' && namesEqual(cond.dialogRef, dialogName)) {
         refs.push({ functionName: funcName, kind: 'NpcKnowsInfo', conditionIndex: idx });
       }
     });
@@ -91,13 +92,13 @@ export function findFunctionReferences(
   for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
     const info = getDialogProperty(dialog.properties, 'information');
     const infoName = typeof info === 'string' ? info : typeof info === 'object' ? info.name : undefined;
-    if (infoName === functionName) {
+    if (namesEqual(infoName, functionName)) {
       refs.push({ sourceKind: 'dialog-info', dialogName });
     }
 
     const cond = getDialogProperty(dialog.properties, 'condition');
     const condName = typeof cond === 'string' ? cond : typeof cond === 'object' ? cond.name : undefined;
-    if (condName === functionName) {
+    if (namesEqual(condName, functionName)) {
       refs.push({ sourceKind: 'dialog-condition', dialogName });
     }
   }
@@ -105,7 +106,7 @@ export function findFunctionReferences(
   // Check choice action targetFunction references (including nested choices)
   for (const [funcName, func] of Object.entries(model.functions || {})) {
     forEachChoice(func.actions || [], (choice, idx) => {
-      if (choice.targetFunction === functionName) {
+      if (namesEqual(choice.targetFunction, functionName)) {
         refs.push({ sourceKind: 'choice-target', functionName: funcName, actionIndex: idx });
       }
     });
@@ -125,18 +126,23 @@ export function collectReachableFunctions(
   model: SemanticModel,
   startFunctionName: string
 ): Set<string> {
+  // `visited` holds canonical (model-cased) names; `visitedKeys` dedupes
+  // case-insensitively so a case-drifted reference is not re-queued.
   const visited = new Set<string>();
+  const visitedKeys = new Set<string>();
   const queue: string[] = [startFunctionName];
 
   while (queue.length > 0) {
     const name = queue.pop()!;
-    if (visited.has(name)) continue;
-    const func = model.functions?.[name];
+    const key = name.toLowerCase();
+    if (visitedKeys.has(key)) continue;
+    const func = resolveCaseInsensitive(model.functions, name);
     if (!func) continue;
-    visited.add(name);
+    visitedKeys.add(key);
+    visited.add(func.name);
 
     forEachChoice(func.actions || [], (choice) => {
-      if (typeof choice.targetFunction === 'string' && !visited.has(choice.targetFunction)) {
+      if (typeof choice.targetFunction === 'string' && !visitedKeys.has(choice.targetFunction.toLowerCase())) {
         queue.push(choice.targetFunction);
       }
     });

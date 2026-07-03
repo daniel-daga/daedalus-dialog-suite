@@ -275,6 +275,47 @@ test('deserializeSemanticModel should preserve global order entries and source t
   assert.ok(model.instances.ItFo_Apple.sourceText.includes('name = "Apple";'));
 });
 
+test('deserializeSemanticModel preserves quote-preservation flags through code generation', () => {
+  const { SemanticCodeGenerator } = require('../dist/semantic/semantic-visitor-index');
+  const plainJson = {
+    functions: {
+      DIA_Quote_Info: {
+        name: 'DIA_Quote_Info',
+        returnType: 'void',
+        actions: [
+          // identifier routine argument (P5) — must stay unquoted
+          { type: 'ExchangeRoutineAction', target: 'self', routine: 'Routine_Var', routineIsExpression: true },
+          // string-literal animation (P5) — must stay quoted
+          { type: 'PlayAniAction', target: 'self', animationName: 'T_STAND_2_SIT' },
+          // raw string topic (N1) — emitted verbatim
+          { type: 'CreateTopic', topic: '"My Topic"', topicType: 'LOG_MISSION' },
+          // identifier text argument (N2)
+          { type: 'LogEntry', topic: 'TOPIC_Foo', text: 'TextConstant', textIsExpression: true },
+          // identifier id argument (N7)
+          { type: 'DialogLine', speaker: 'self', listener: 'other', text: 'DIALOG_ID_CONST', id: 'DIALOG_ID_CONST', idIsExpression: true }
+        ],
+        conditions: [],
+        calls: []
+      }
+    },
+    dialogs: {}
+  };
+
+  const model = deserializeSemanticModel(JSON.parse(JSON.stringify(plainJson)));
+  const { actions } = model.functions['DIA_Quote_Info'];
+  assert.strictEqual(actions[0].routineIsExpression, true);
+  assert.strictEqual(actions[3].textIsExpression, true);
+  assert.strictEqual(actions[4].idIsExpression, true);
+
+  const generator = new SemanticCodeGenerator();
+  const emitted = actions.map((a) => generator.generateAction(a));
+  assert.ok(emitted.includes('Npc_ExchangeRoutine (self, Routine_Var);'), 'identifier routine stays unquoted');
+  assert.ok(emitted.includes('AI_PlayAni (self, "T_STAND_2_SIT");'), 'string animation stays quoted');
+  assert.ok(emitted.some((c) => c.includes('Log_CreateTopic ("My Topic", LOG_MISSION);')), 'raw string topic emitted verbatim');
+  assert.ok(emitted.some((c) => c.includes('B_LogEntry (TOPIC_Foo, TextConstant);')), 'identifier text stays unquoted');
+  assert.ok(emitted.some((c) => c.includes('AI_Output (self, other, DIALOG_ID_CONST);')), 'identifier id stays unquoted');
+});
+
 test('deserializeSemanticModel preserves string-valued numeric arguments through code generation', () => {
   const { SemanticCodeGenerator } = require('../dist/codegen/generator');
   const plainJson = {

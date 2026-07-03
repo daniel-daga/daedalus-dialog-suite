@@ -27,7 +27,7 @@ import {
   RemoveInventoryItemsAction,
   InsertNpcAction
 } from '../semantic-model';
-import { parseArguments, parseNumericArg } from './argument-parsing';
+import { parseArgumentsDetailed, parseNumericArg, ParsedArg } from './argument-parsing';
 
 export class ActionParsers {
 
@@ -117,12 +117,12 @@ export class ActionParsers {
   private static parseActionWithArgs<T>(
     node: TreeSitterNode,
     arity: number | { min: number; max: number },
-    factory: (args: string[]) => T | null
+    factory: (args: ParsedArg[]) => T | null
   ): T | null {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = parseArguments(argsNode);
+    const args = parseArgumentsDetailed(argsNode);
     const min = typeof arity === 'number' ? arity : arity.min;
     const max = typeof arity === 'number' ? arity : arity.max;
     // Fall back (return null) on an argument count that does not match the
@@ -141,12 +141,12 @@ export class ActionParsers {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = parseArguments(argsNode);
+    const args = parseArgumentsDetailed(argsNode);
     if (args.length < 3) return null;
 
-    const speaker = args[0];
-    const listener = args[1];
-    const dialogId = args[2]; // This is typically a dialog ID
+    const speaker = args[0].value;
+    const listener = args[1].value;
+    const dialogId = args[2].value; // This is typically a dialog ID
 
     // Look for comment after this AI_Output call to use as readable text
     const comment = ActionParsers.findCommentAfterStatement(node);
@@ -155,6 +155,9 @@ export class ActionParsers {
 
     const line = new DialogLine(speaker, text, dialogId, listener);
     line.inlineComment = hasInlineComment;
+    // Preserve whether the id was an identifier/expression rather than a string
+    // literal (N7), so it regenerates without invented quotes.
+    line.idIsExpression = !args[2].isString;
     return line;
   }
 
@@ -165,12 +168,11 @@ export class ActionParsers {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = parseArguments(argsNode);
+    const args = parseArgumentsDetailed(argsNode);
     if (args.length < 3) return null;
 
-    const choice = new Choice(args[0], args[1], args[2]);
-    const textNode = argsNode.namedChildren?.[1];
-    choice.textIsExpression = textNode ? textNode.type !== 'string' : false;
+    const choice = new Choice(args[0].value, args[1].value, args[2].value);
+    choice.textIsExpression = !args[1].isString;
     return choice;
   }
 
@@ -179,7 +181,7 @@ export class ActionParsers {
    */
   static parseClearChoicesCall(node: TreeSitterNode): ClearChoicesAction | null {
     return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new ClearChoicesAction(args[0])
+      new ClearChoicesAction(args[0].raw)
     );
   }
 
@@ -188,7 +190,7 @@ export class ActionParsers {
    */
   static parseCreateTopicCall(node: TreeSitterNode): CreateTopic | null {
     return ActionParsers.parseActionWithArgs(node, { min: 1, max: 2 }, (args) =>
-      new CreateTopic(args[0], args[1] || null)
+      new CreateTopic(args[0].raw, args[1] ? args[1].raw : null)
     );
   }
 
@@ -197,7 +199,7 @@ export class ActionParsers {
    */
   static parseLogEntryCall(node: TreeSitterNode): LogEntry | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new LogEntry(args[0], args[1])
+      new LogEntry(args[0].raw, args[1].value, !args[1].isString)
     );
   }
 
@@ -206,7 +208,7 @@ export class ActionParsers {
    */
   static parseLogSetTopicStatusCall(node: TreeSitterNode): LogSetTopicStatus | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new LogSetTopicStatus(args[0], args[1])
+      new LogSetTopicStatus(args[0].raw, args[1].raw)
     );
   }
 
@@ -215,7 +217,7 @@ export class ActionParsers {
    */
   static parseCreateInventoryItemsCall(node: TreeSitterNode): CreateInventoryItems | null {
     return ActionParsers.parseActionWithArgs(node, 3, (args) =>
-      new CreateInventoryItems(args[0], args[1], parseNumericArg(args[2], 1))
+      new CreateInventoryItems(args[0].raw, args[1].raw, parseNumericArg(args[2].raw, 1))
     );
   }
 
@@ -224,7 +226,7 @@ export class ActionParsers {
    */
   static parseGiveInventoryItemsCall(node: TreeSitterNode): GiveInventoryItems | null {
     return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new GiveInventoryItems(args[0], args[1], args[2], parseNumericArg(args[3], 1))
+      new GiveInventoryItems(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw, 1))
     );
   }
 
@@ -233,7 +235,7 @@ export class ActionParsers {
    */
   static parseAttackCall(node: TreeSitterNode): AttackAction | null {
     return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new AttackAction(args[0], args[1], args[2], parseNumericArg(args[3], 1))
+      new AttackAction(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw, 1))
     );
   }
 
@@ -242,7 +244,7 @@ export class ActionParsers {
    */
   static parseSetAttitudeCall(node: TreeSitterNode): SetAttitudeAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new SetAttitudeAction(args[0], args[1])
+      new SetAttitudeAction(args[0].raw, args[1].raw)
     );
   }
 
@@ -251,7 +253,7 @@ export class ActionParsers {
    */
   static parseExchangeRoutineCall(node: TreeSitterNode): ExchangeRoutineAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new ExchangeRoutineAction(args[0], args[1])
+      new ExchangeRoutineAction(args[0].raw, args[1].value, !args[1].isString)
     );
   }
 
@@ -260,7 +262,7 @@ export class ActionParsers {
    */
   static parseChapterTransitionCall(node: TreeSitterNode): ChapterTransitionAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new ChapterTransitionAction(parseNumericArg(args[0], 1), args[1])
+      new ChapterTransitionAction(parseNumericArg(args[0].raw, 1), args[1].raw)
     );
   }
 
@@ -269,7 +271,7 @@ export class ActionParsers {
    */
   static parseStopProcessInfosCall(node: TreeSitterNode): StopProcessInfosAction | null {
     return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new StopProcessInfosAction(args[0])
+      new StopProcessInfosAction(args[0].raw)
     );
   }
 
@@ -278,7 +280,7 @@ export class ActionParsers {
    */
   static parseSetRefuseTalkCall(node: TreeSitterNode): SetRefuseTalkAction | null {
     return ActionParsers.parseActionWithArgs(node, { min: 1, max: 2 }, (args) =>
-      new SetRefuseTalkAction(args[0], parseNumericArg(args[1], 300))
+      new SetRefuseTalkAction(args[0].raw, parseNumericArg(args[1] ? args[1].raw : undefined, 300))
     );
   }
 
@@ -287,7 +289,7 @@ export class ActionParsers {
    */
   static parsePlayAniCall(node: TreeSitterNode): PlayAniAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new PlayAniAction(args[0], args[1])
+      new PlayAniAction(args[0].value, args[1].value, !args[1].isString)
     );
   }
 
@@ -296,17 +298,21 @@ export class ActionParsers {
    */
   static parseGivePlayerXPCall(node: TreeSitterNode): GivePlayerXPAction | null {
     return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new GivePlayerXPAction(args[0])
+      new GivePlayerXPAction(args[0].raw)
     );
   }
 
   /**
    * Parse B_Beklauen / C_Beklauen function calls
    */
-  static parsePickpocketCall(node: TreeSitterNode, mode: string): PickpocketAction | null {
+  static parsePickpocketCall(node: TreeSitterNode, functionName: string): PickpocketAction | null {
     const argsNode = node.childForFieldName('arguments');
-    const args = argsNode ? parseArguments(argsNode) : [];
-    return new PickpocketAction(mode as 'B_Beklauen' | 'C_Beklauen', args[0], args[1]);
+    const args = argsNode ? parseArgumentsDetailed(argsNode).map((a) => a.raw) : [];
+    // Decide the mode by the (case-insensitive) dispatch key, not the source
+    // casing, so `b_beklauen` maps to the B_Beklauen behavior (M5).
+    const mode: 'B_Beklauen' | 'C_Beklauen' =
+      functionName.toLowerCase() === 'b_beklauen' ? 'B_Beklauen' : 'C_Beklauen';
+    return new PickpocketAction(mode, args[0], args[1], functionName, args);
   }
 
   /**
@@ -314,7 +320,12 @@ export class ActionParsers {
    */
   static parseStartOtherRoutineCall(node: TreeSitterNode, functionName: string): StartOtherRoutineAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new StartOtherRoutineAction(functionName as 'B_StartOtherRoutine' | 'B_StartotherRoutine', args[0], args[1])
+      new StartOtherRoutineAction(
+        functionName as 'B_StartOtherRoutine' | 'B_StartotherRoutine',
+        args[0].value,
+        args[1].value,
+        !args[1].isString
+      )
     );
   }
 
@@ -325,7 +336,7 @@ export class ActionParsers {
     const argsNode = node.childForFieldName('arguments');
     if (!argsNode) return null;
 
-    const args = parseArguments(argsNode);
+    const args = parseArgumentsDetailed(argsNode).map((a) => a.raw);
     return new TeachAction(functionName, args);
   }
 
@@ -334,7 +345,7 @@ export class ActionParsers {
    */
   static parseGiveTradeInventoryCall(node: TreeSitterNode): GiveTradeInventoryAction | null {
     return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new GiveTradeInventoryAction(args[0])
+      new GiveTradeInventoryAction(args[0].raw)
     );
   }
 
@@ -349,9 +360,9 @@ export class ActionParsers {
     return ActionParsers.parseActionWithArgs(node, arity, (args) =>
       new RemoveInventoryItemsAction(
         functionName as 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
-        args[0],
-        args[1],
-        args[2]
+        args[0].raw,
+        args[1].raw,
+        args[2] ? args[2].raw : undefined
       )
     );
   }
@@ -361,7 +372,7 @@ export class ActionParsers {
    */
   static parseInsertNpcCall(node: TreeSitterNode): InsertNpcAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new InsertNpcAction(args[0], args[1])
+      new InsertNpcAction(args[0].value, args[1].value, !args[1].isString)
     );
   }
 

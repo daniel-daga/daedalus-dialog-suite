@@ -281,14 +281,20 @@ export class LogEntry implements CodeGeneratable {
   public readonly type = 'LogEntry';
   public topic: string;
   public text: string;
+  /** True when the source text argument was not a string literal. */
+  public textIsExpression?: boolean;
 
-  constructor(topic: string, text: string) {
+  constructor(topic: string, text: string, textIsExpression?: boolean) {
     this.topic = topic;
     this.text = text;
+    if (textIsExpression !== undefined) {
+      this.textIsExpression = textIsExpression;
+    }
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `\nB_LogEntry (${this.topic}, "${this.text}");\n`;
+    const text = this.textIsExpression ? this.text : `"${this.text}"`;
+    return `\nB_LogEntry (${this.topic}, ${text});\n`;
   }
 
   toDisplayString(): string {
