@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore, type FileState } from '../store/editorStore';
 import { classifySaveError, type SaveError } from '../utils/saveError';
+import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 
 interface AutoSaveStatus {
   isAutoSaving: boolean;
@@ -37,6 +38,10 @@ export function useAutoSave(): AutoSaveStatus {
   const autoSaveInterval = useEditorStore((state) => state.autoSaveInterval);
 
   const performAutoSave = useCallback(async () => {
+    // Drain any debounced condition/action edit (N4) before reading the model,
+    // otherwise a tick landing within 300 ms of a keystroke serializes stale text.
+    flushAllPendingEdits();
+
     const state = useEditorStore.getState();
     const filesToSave: string[] = [];
 

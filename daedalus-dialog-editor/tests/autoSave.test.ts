@@ -8,6 +8,7 @@ import { describe, test, expect, beforeEach, jest, afterEach } from '@jest/globa
 import { useEditorStore } from '../src/renderer/store/editorStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
 import { useAutoSave } from '../src/renderer/hooks/useAutoSave';
+import { registerPendingEditFlusher } from '../src/renderer/utils/pendingEditFlushRegistry';
 import { renderHook, act } from '@testing-library/react';
 
 // Spy on the window.editorAPI.saveFile that is set up in tests/setup.ts
@@ -615,5 +616,51 @@ describe('useAutoSave hook', () => {
       }),
       expect.any(Object)
     );
+  });
+
+  test('flushes pending debounced edits before serializing the model (N4)', async () => {
+    const filePath = 'flush.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'PENDING' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+    });
+
+    // A registered flusher commits a still-pending debounced edit into the
+    // store, exactly as a mounted condition/action card would at save time.
+    const unregister = registerPendingEditFlusher(() => {
+      useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
+        properties: { npc: 'FLUSHED' },
+      });
+    });
+
+    try {
+      renderHook(() => useAutoSave());
+
+      await act(async () => {
+        jest.advanceTimersByTime(2500);
+      });
+
+      // The auto-save tick must have drained the flusher first, so the saved
+      // model carries the flushed value — not the pre-flush 'PENDING'.
+      expect(mockSaveFile).toHaveBeenCalledWith(
+        filePath,
+        expect.objectContaining({
+          dialogs: expect.objectContaining({
+            TestDialog: { properties: { npc: 'FLUSHED' } },
+          }),
+        }),
+        expect.any(Object)
+      );
+    } finally {
+      unregister();
+    }
   });
 });

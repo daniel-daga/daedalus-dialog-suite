@@ -7,6 +7,7 @@ import { getActionType } from './actionTypes';
 import type { ActionTypeId } from './actionTypes';
 import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
+import { registerPendingEditFlusher } from '../utils/pendingEditFlushRegistry';
 import { actionPathToKey } from './nestedActionUtils';
 import ActionTypeMenu from './common/ActionTypeMenu';
 import DeleteConfirmDialog from './common/DeleteConfirmDialog';
@@ -100,6 +101,19 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       }
     };
   }, []); // Empty deps - cleanup function only created once, uses refs for latest values
+
+  // Register a save/undo-time flusher (N4): a save within the 300 ms debounce
+  // window must serialize the newest keystroke. No-ops unless a timer is live;
+  // when it fires it commits the pending edit exactly as the timer body would.
+  React.useEffect(() => {
+    return registerPendingEditFlusher(() => {
+      if (updateTimerRef.current) {
+        clearTimeout(updateTimerRef.current);
+        updateTimerRef.current = null;
+        updateActionRef.current(pathRef.current, localActionRef.current);
+      }
+    });
+  }, []);
 
   const handleDelete = useCallback(() => {
     // Sync action ref so the unmount cleanup does not re-add via stale debounce diff

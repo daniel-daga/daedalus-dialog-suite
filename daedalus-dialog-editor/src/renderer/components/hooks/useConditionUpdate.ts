@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ConditionEditorCondition } from '../dialogTypes';
+import { registerPendingEditFlusher } from '../../utils/pendingEditFlushRegistry';
 
 const DEBOUNCE_MS = 300;
 
@@ -57,6 +58,20 @@ export function useConditionUpdate(
         updateConditionRef.current(indexRef.current, localConditionRef.current);
       }
     };
+  }, []);
+
+  // Register a save/undo-time flusher (N4): a save within the 300 ms debounce
+  // window must serialize the newest keystroke. No-ops unless a timer is live;
+  // when it fires it commits the pending edit exactly as the timer body would,
+  // resolving index/value via refs so a shifted card writes the right slot.
+  useEffect(() => {
+    return registerPendingEditFlusher(() => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+        updateConditionRef.current(indexRef.current, localConditionRef.current);
+      }
+    });
   }, []);
 
   return { localCondition, handleUpdate, handleImmediateUpdate, flushUpdate };

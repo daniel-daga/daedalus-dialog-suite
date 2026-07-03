@@ -35,6 +35,7 @@ import { initStoreSync } from './store/storeSync';
 import { shallow } from 'zustand/shallow';
 import type { SaveError } from './utils/saveError';
 import { isSourceDirty, hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
+import { flushAllPendingEdits } from './utils/pendingEditFlushRegistry';
 
 /**
  * App-bar copy for a classifiable save failure. Every message keeps the "your
@@ -113,10 +114,6 @@ const App: React.FC = () => {
   const overlayParsedFiles = isIngesting ? parsedFiles.size : 0;
   const showProjectOpeningOverlay = isProjectOpening || (!!projectPath && isIngesting);
 
-  const hasUnsavedChanges = useMemo(
-    () => Array.from(openFiles.values()).some((fileState) => fileHasUnsavedChanges(fileState)),
-    [openFiles]
-  );
 
   useEffect(() => {
     const fetchRecent = async () => {
@@ -137,6 +134,13 @@ const App: React.FC = () => {
   }, []);
 
   const confirmDiscardChanges = (context: string): boolean => {
+    // Drain any debounced condition/action edit (N4) so a pending keystroke
+    // counts toward dirtiness, then evaluate against the live store — the flush
+    // mutates the store synchronously, after this render's memo was computed.
+    flushAllPendingEdits();
+
+    const hasUnsavedChanges = Array.from(useEditorStore.getState().openFiles.values())
+      .some((fileState) => fileHasUnsavedChanges(fileState));
     if (!hasUnsavedChanges) {
       return true;
     }
