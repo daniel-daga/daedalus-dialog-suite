@@ -9,7 +9,7 @@ Each slice gets a deep-dive pass producing a fix plan document (linked below). S
 | # | Slice | Severity | Plan document | Status |
 |---|-------|----------|---------------|--------|
 | 1 | Parser roundtrip fidelity (silent data loss on parse→generate) | Blocker | done — durable outcomes in [parser-fidelity.md](../architecture/parser-fidelity.md) | done |
-| 2 | Editor save/dirty-state pipeline (unsaved-work loss, lossy writes) | Blocker | [fix-02-save-pipeline.md](./fix-02-save-pipeline.md) | plan-ready |
+| 2 | Editor save/dirty-state pipeline (unsaved-work loss, lossy writes) | Blocker | done — durable outcomes in [save-pipeline.md](../architecture/save-pipeline.md) | done |
 | 3 | Worker lifecycle & reliability (crash → silent permanent hang) | Blocker | done — durable outcomes in [worker-reliability.md](../architecture/worker-reliability.md) | done |
 | 4 | Quest editor stack (features unreachable in prod, canvas leaks) | Blocker | [fix-04-quest-editor.md](./fix-04-quest-editor.md) | plan-ready |
 | 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | [fix-05-undo-debounce.md](./fix-05-undo-debounce.md) | plan-ready |
@@ -27,6 +27,12 @@ The plan-writing passes corrected or sharpened several original findings:
 - **Corpus job can't just be re-enabled:** its default root is the gitignored MDK path; it needs fix-01's committed fixture corpus plus explicit `--root` (fix-08).
 - **New perf finding (fix-07 N1):** selector-less `useNavigation()` makes every `VariableAutocomplete`/`ReferenceLink` leaf re-render on each merge, bypassing ActionCard's memo.
 - **New loss scenarios (fix-02):** external delete/rename of a dirty file discards all work via the watcher's `unlink` → `closeFile`; `saveSource` has a worse twin of E7's mid-save race.
+
+## Slice 2 completion notes (2026-07-03)
+
+- All nine fix-02 steps landed (E1, E2a/E2b, E3, E4 both phases, E5, E6, E7/N2, U6/N4, N3/N5/N7). Durable contracts extracted to [save-pipeline.md](../architecture/save-pipeline.md).
+- The flush registry (`src/renderer/utils/pendingEditFlushRegistry.ts`) was created here with the API agreed in fix-05 §2.3 — slice 5 builds on it rather than creating it.
+- Real-Electron E2E for window close + atomic write is recorded in fix-08's checklist (mock-harness Playwright specs cover the dialogs). Manual smoke on a real desktop build (close with dirty file, external edit via second editor, kill mid-save) remains outstanding for release QA — automated coverage is in place.
 
 ## Working agreement
 
