@@ -1,5 +1,14 @@
 # Fix Plan 07 — Rendering Performance at Mod Scale (PF1–PF3, PF5, C3, D-class subscriptions)
 
+Status: **in-progress** — all 8 steps (§5) implemented and landed on branch
+`claude/code-remediation-plans-y8f0ze` (TDD, failing-first Jest per step); suites
+/ typecheck / lint green. Durable contracts extracted to
+[`../architecture/render-performance.md`](../architecture/render-performance.md).
+Outstanding before `done` (plan file kept): the §3.2 manual React Profiler
+before/after evidence and the repo-mandated desktop smoke pass (no display in the
+sandbox), and optionally the §3.3 Playwright ingestion smoke. See the tracker's
+slice-7 progress notes for commit refs and deviations.
+
 Source findings: [`code-review-findings.md`](./code-review-findings.md) §7 (PF1, PF2, PF3, PF5) plus the renderer-UI sub-review's ActionCard stale-memo finding (C3) and selector-less store subscriptions (D1–D4 class).
 Tracker: [`code-review-remediation.md`](./code-review-remediation.md) slice 7.
 
