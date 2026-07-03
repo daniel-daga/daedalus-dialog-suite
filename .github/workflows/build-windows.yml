@@ -6,8 +6,24 @@ on:
 permissions:
   contents: write
 
+# Serialize publishes to the mutable rolling release so two dispatches cannot
+# interleave asset uploads onto the same tag. Never cancel an in-flight publish.
+concurrency:
+  group: build-windows-release
+  cancel-in-progress: false
+
 jobs:
+  # Full test matrix gate: editor typecheck/Jest/build guard, browser-harness
+  # Playwright, parser tests/lint/typecheck, and the corpus job. Releasing from
+  # a red default branch is structurally impossible — the build job needs this.
+  tests:
+    uses: ./.github/workflows/all-tests.yml
+
   build:
+    needs: tests
+    # Only the default branch (master) may publish a release. Non-master
+    # dispatches produce a skipped build, not a published release.
+    if: github.ref == 'refs/heads/master'
     runs-on: windows-latest
 
     steps:
@@ -127,6 +143,7 @@ jobs:
           version = "${{ steps.version.outputs.BUILD_VERSION }}"
           baseVersion = "${{ steps.version.outputs.BASE_VERSION }}"
           buildNumber = [int]${{ github.run_number }}
+          commit = "${{ github.sha }}"
           sha256 = $sha256
           size = $size
         } | ConvertTo-Json | Set-Content "daedalus-dialog-editor/dist/update-meta.json" -Encoding UTF8
@@ -139,6 +156,20 @@ jobs:
         path: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
         retention-days: 7
 
+    - name: Guard against stale re-runs
+      shell: pwsh
+      run: |
+        # Re-running an old workflow run must not republish old bits (or an
+        # old-schema update-meta.json). Publish only when this run's commit is
+        # still the current head of master.
+        $remote = git ls-remote origin refs/heads/master
+        if ($LASTEXITCODE -ne 0) { throw "Failed to query remote head of master" }
+        $remoteSha = ($remote -split "\s+")[0]
+        if ($remoteSha -ne "${{ github.sha }}") {
+          throw "Stale run: this run's commit ${{ github.sha }} is no longer the head of master ($remoteSha). Refusing to publish."
+        }
+        Write-Host "Stale-run guard passed: $remoteSha is the current head of master"
+
     - name: Publish rolling release
       uses: softprops/action-gh-release@v2
       with:
@@ -150,6 +181,7 @@ jobs:
           **Version:** `${{ steps.version.outputs.BUILD_VERSION }}`
           **Base version:** `${{ steps.version.outputs.BASE_VERSION }}`
           **Build number:** #${{ github.run_number }}
+          **Commit:** `${{ github.sha }}`
 
           Download `daedalus-dialog-editor-windows-latest.exe` from this release.
         prerelease: true

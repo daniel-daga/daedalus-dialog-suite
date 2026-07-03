@@ -334,6 +334,25 @@ Test coverage includes:
 - formatting options
 - error handling
 
+### Roundtrip corpus
+
+CI runs the fidelity corpus over the committed fixtures in `test/fixtures/corpus`:
+
+```bash
+npm run test:roundtrip-corpus -- --root test/fixtures/corpus --strict
+```
+
+Maintainers can point the same command at a real (gitignored) MDK dialog tree
+with the `--root` override to catch fidelity gaps the synthetic fixtures do not
+cover:
+
+```bash
+npm run test:roundtrip-corpus -- --root <mdk path>
+# e.g. npm run test:roundtrip-corpus -- --root "C:\mods\Story\Dialoge"
+```
+
+Reports are written to `reports/` (summary, details, byte-idempotence JSON).
+
 ## Documentation
 
 - **[API.md](API.md)** - Low-level parser and semantic API reference
