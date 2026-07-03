@@ -48,7 +48,7 @@ jest.mock('../src/renderer/store/editorStore', () => {
 });
 
 jest.mock('../src/renderer/store/projectStore', () => ({
-  useProjectStore: () => mockProjectState
+  useProjectStore: (selector?: (state: any) => any) => selector ? selector(mockProjectState) : mockProjectState
 }));
 
 jest.mock('../src/renderer/hooks/useAutoSave', () => ({

@@ -58,21 +58,20 @@ const App: React.FC = () => {
     openFiles: state.openFiles,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
-  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
+  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
     openProject: state.openProject,
     projectPath: state.projectPath,
     projectName: state.projectName,
     isIngesting: state.isIngesting,
     allDialogFiles: state.allDialogFiles,
-    parsedFiles: state.parsedFiles,
+    parsedFilesCount: state.parsedFiles.size,
     metadataFailures: state.metadataFailures,
     isIngestedFilesOpen: state.isIngestedFilesOpen,
     setIngestedFilesOpen: state.setIngestedFilesOpen,
   }), shallow);
-  const editHistory = useHistoryStore(state => state.editHistory);
   const { undo, redo } = useHistoryStore.getState();
-  const canUndo = activeFile ? (editHistory.get(activeFile)?.past.length ?? 0) > 0 : false;
-  const canRedo = activeFile ? (editHistory.get(activeFile)?.future.length ?? 0) > 0 : false;
+  const canUndo = useHistoryStore((state) => (activeFile ? (state.editHistory.get(activeFile)?.past.length ?? 0) > 0 : false));
+  const canRedo = useHistoryStore((state) => (activeFile ? (state.editHistory.get(activeFile)?.future.length ?? 0) > 0 : false));
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   useFileWatcher();
   const closeGuardDialog = useWindowCloseGuard();
@@ -104,11 +103,11 @@ const App: React.FC = () => {
   const ingestionProgress = useMemo(() => {
     const total = allDialogFiles.length;
     if (total === 0) return 0;
-    return (parsedFiles.size / total) * 100;
-  }, [allDialogFiles.length, parsedFiles.size]);
+    return (parsedFilesCount / total) * 100;
+  }, [allDialogFiles.length, parsedFilesCount]);
 
   const overlayTotalFiles = isIngesting ? allDialogFiles.length : 0;
-  const overlayParsedFiles = isIngesting ? parsedFiles.size : 0;
+  const overlayParsedFiles = isIngesting ? parsedFilesCount : 0;
   const showProjectOpeningOverlay = isProjectOpening || (!!projectPath && isIngesting);
 
 
