@@ -8,6 +8,7 @@ import { describe, test, expect, beforeEach, jest, afterEach } from '@jest/globa
 import { useEditorStore } from '../src/renderer/store/editorStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
 import { useAutoSave } from '../src/renderer/hooks/useAutoSave';
+import { registerPendingEditFlusher } from '../src/renderer/utils/pendingEditFlushRegistry';
 import { renderHook, act } from '@testing-library/react';
 
 // Spy on the window.editorAPI.saveFile that is set up in tests/setup.ts
@@ -372,6 +373,31 @@ describe('useAutoSave hook', () => {
     expect(mockSaveFile).not.toHaveBeenCalled();
   });
 
+  test('does not auto-save a file that is in external conflict', async () => {
+    const filePath = 'conflict.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+        externalConflict: { detectedAt: new Date().toISOString() },
+      }]]),
+      activeFile: filePath,
+    });
+
+    renderHook(() => useAutoSave());
+
+    await act(async () => {
+      jest.advanceTimersByTime(3000);
+    });
+
+    expect(mockSaveFile).not.toHaveBeenCalled();
+  });
+
   test('keeps a file dirty when it is edited while a save is in flight', async () => {
     const filePath = 'test.d';
     useEditorStore.setState({
@@ -442,6 +468,35 @@ describe('useAutoSave hook', () => {
     const fileState = useEditorStore.getState().getFileState(filePath);
     expect(fileState?.isDirty).toBe(true);
     expect(fileState?.saveError?.kind).toBe('timeout');
+    expect(mockSaveFile).toHaveBeenCalledTimes(1);
+  });
+
+  test('marks an encoding-loss save with saveError kind encoding and keeps the file dirty', async () => {
+    const filePath = 'encoding.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+    });
+
+    mockSaveFile.mockRejectedValueOnce(new Error('ENCODING_LOSS: character "ł" at position 5'));
+
+    renderHook(() => useAutoSave());
+
+    await act(async () => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    const fileState = useEditorStore.getState().getFileState(filePath);
+    expect(fileState?.isDirty).toBe(true);
+    expect(fileState?.saveError?.kind).toBe('encoding');
     expect(mockSaveFile).toHaveBeenCalledTimes(1);
   });
 
@@ -586,5 +641,51 @@ describe('useAutoSave hook', () => {
       }),
       expect.any(Object)
     );
+  });
+
+  test('flushes pending debounced edits before serializing the model (N4)', async () => {
+    const filePath = 'flush.d';
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'PENDING' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+    });
+
+    // A registered flusher commits a still-pending debounced edit into the
+    // store, exactly as a mounted condition/action card would at save time.
+    const unregister = registerPendingEditFlusher(() => {
+      useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
+        properties: { npc: 'FLUSHED' },
+      });
+    });
+
+    try {
+      renderHook(() => useAutoSave());
+
+      await act(async () => {
+        jest.advanceTimersByTime(2500);
+      });
+
+      // The auto-save tick must have drained the flusher first, so the saved
+      // model carries the flushed value — not the pre-flush 'PENDING'.
+      expect(mockSaveFile).toHaveBeenCalledWith(
+        filePath,
+        expect.objectContaining({
+          dialogs: expect.objectContaining({
+            TestDialog: { properties: { npc: 'FLUSHED' } },
+          }),
+        }),
+        expect.any(Object)
+      );
+    } finally {
+      unregister();
+    }
   });
 });

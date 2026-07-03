@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useProjectStore } from '../store/projectStore';
-import { useFileStore } from '../store/fileStore';
+import { useFileStore, hasUnsavedChanges } from '../store/fileStore';
 import { planExitDialogsForAddedFile } from '../utils/npcExitDialog';
 import type { FileChangeEvent, SemanticModel } from '../types/global';
 
@@ -73,15 +73,17 @@ async function handleFileModified(
   // If the file is currently open in the editor, reload it
   const openFileState = fileStore.openFiles.get(filePath);
   if (openFileState) {
-    // If the file has unsaved changes in the editor, skip the reload
-    // to avoid overwriting the user's work
-    if (openFileState.isDirty) {
-      console.log('[FileWatcher] Skipping reload of dirty file:', filePath);
+    // If the file has unsaved changes in the editor (model- or source-dirty, or
+    // already in conflict), record an external conflict instead of overwriting
+    // the user's work — the conflict dialog then drives resolution (E4).
+    if (hasUnsavedChanges(openFileState)) {
+      fileStore.markExternalConflict(filePath);
       return;
     }
 
+    // Clean file: reload in place (preserves activeFile, reuses the slot — N3).
     try {
-      await fileStore.openFile(filePath);
+      await fileStore.reloadFile(filePath);
     } catch (err) {
       console.error('[FileWatcher] Failed to reload open file:', filePath, err);
     }
@@ -197,9 +199,17 @@ function handleFileRemoved(
   projectStore: ReturnType<typeof useProjectStore.getState>,
   fileStore: ReturnType<typeof useFileStore.getState>
 ): void {
-  // Close the file in the editor if it was open
-  if (fileStore.openFiles.has(filePath)) {
-    fileStore.closeFile(filePath);
+  // Close the file in the editor if it was open. But if it holds unsaved work
+  // (N5: external delete/rename of a dirty file), keep the FileState — the only
+  // copy of the user's edits — and mark a fileMissing conflict so the dialog
+  // can offer to restore it.
+  const openFileState = fileStore.openFiles.get(filePath);
+  if (openFileState) {
+    if (hasUnsavedChanges(openFileState)) {
+      fileStore.markExternalConflict(filePath, { fileMissing: true });
+    } else {
+      fileStore.closeFile(filePath);
+    }
   }
 
   // Remove from project cache — clearing the cache entry is sufficient

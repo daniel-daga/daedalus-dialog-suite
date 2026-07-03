@@ -1,7 +1,8 @@
 import React, { Suspense, lazy, useEffect } from 'react';
-import { Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
+import SourceEditsPendingBanner from './SourceEditsPendingBanner';
 import { useEditorStore } from '../store/editorStore';
 import { useHistoryStore } from '../store/historyStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
@@ -45,6 +46,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
   const writableQuestEditorEnabled = isWritableQuestEditorEnabled();
+
+  // E3: the active file was opened with parse errors — a partial model that
+  // visual edits cannot fully see. Warn persistently in the dialog view.
+  const activeFileHasParseErrors = !!fileState?.semanticModel?.hasErrors;
+  const activeParseErrorCount =
+    fileState?.semanticModel?.errors?.length ?? fileState?.errors?.length ?? 0;
 
   useEffect(() => {
     if ((view === 'quest' || view === 'variable') && isProjectMode) {
@@ -112,8 +119,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
       {/* Main Content */}
       <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
          {/* We use Box with display toggle to preserve state of ThreeColumnLayout when switching views */}
-         <Box sx={{ display: view === 'dialog' ? 'block' : 'none', height: '100%' }}>
-             <ThreeColumnLayout filePath={filePath} />
+         <Box sx={{ display: view === 'dialog' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+             <SourceEditsPendingBanner filePath={filePath} />
+             {activeFileHasParseErrors && (
+                 <Alert severity="warning" square sx={{ borderRadius: 0 }}>
+                     Opened with {activeParseErrorCount} parse error{activeParseErrorCount === 1 ? '' : 's'} — visual edits cannot see all of this file. Saving from the visual editor will drop the content the parser could not read.
+                 </Alert>
+             )}
+             <Box sx={{ flex: 1, minHeight: 0 }}>
+                 <ThreeColumnLayout filePath={filePath} />
+             </Box>
          </Box>
 
          {/* Source Code Editor (preserved in DOM for undo history) */}

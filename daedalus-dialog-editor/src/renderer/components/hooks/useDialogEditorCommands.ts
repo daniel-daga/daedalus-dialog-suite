@@ -11,6 +11,7 @@ import type {
   ValidationResult
 } from '../../types/global';
 import { collectAllDialogLineActionsFromModel, collectDialogLineActions, type ActionPath } from '../nestedActionUtils';
+import { flushAllPendingEdits } from '../../utils/pendingEditFlushRegistry';
 import type {
   DialogEditorSnackbarState,
   DialogEditorValidationDialogState
@@ -188,6 +189,10 @@ export function useDialogEditorCommands({
       });
       return;
     }
+
+    // Drain any debounced condition/action edit (N4) so the pending keystroke is
+    // in the model before we serialize it.
+    flushAllPendingEdits();
 
     setIsSaving(true);
     try {

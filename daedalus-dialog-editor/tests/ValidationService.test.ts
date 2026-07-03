@@ -81,8 +81,9 @@ describe('ValidationService', () => {
         expect.objectContaining({
           dialogs: expect.anything(),
           functions: expect.anything()
-        }), 
-        defaultSettings
+        }),
+        defaultSettings,
+        { allowPartialModel: true }
       );
       expect(mockParseSource).toHaveBeenCalled();
     });

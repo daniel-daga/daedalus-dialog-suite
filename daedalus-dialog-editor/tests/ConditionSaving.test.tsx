@@ -1,234 +1,192 @@
 /**
- * Integration test for condition saving bug
+ * Condition saving (U6 / N4).
  *
- * Bug: Conditions are not getting saved to the file
- *
- * Expected behavior:
- * 1. User edits a condition in ConditionEditor
- * 2. Condition changes are synced to semantic model
- * 3. User clicks Save in DialogDetailsEditor
- * 4. File is saved with condition changes
- *
- * Actual behavior:
- * Condition changes may be lost when Save is clicked because
- * onUpdateDialog/onUpdateFunction callbacks use stale semantic model
+ * Two guards:
+ *   1. Regression pin — the updater-based edit flow (`updateDialogConditionFunction`
+ *      + `updateDialogWithNormalizedProperties` + `updateFunction`, exactly as
+ *      `useDialogEditorCommands` dispatches them) preserves every interleaved
+ *      edit. This is green today; it locks in that the stale-whole-model-closure
+ *      class of bug (the old `[BUG DEMO]`) cannot regress.
+ *   2. Debounce-vs-save (N4) — an edit still pending in the 300 ms condition
+ *      debounce when the user hits Save must be serialized. Red before the
+ *      `flushAllPendingEdits()` save-entry wiring, green after.
  */
 
-import { describe, test, expect, jest } from '@jest/globals';
+import { describe, test, expect, beforeEach, jest, afterEach } from '@jest/globals';
+import React from 'react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { useEditorStore } from '../src/renderer/store/editorStore';
+import * as historyActions from '../src/renderer/store/historyActions';
+import ConditionEditor from '../src/renderer/components/ConditionEditor';
+import { useDialogEditorCommands } from '../src/renderer/components/hooks/useDialogEditorCommands';
 
-describe('Condition Saving Bug', () => {
-  test.skip('[BUG DEMO] condition changes should not be lost when dialog is saved', () => {
-    // Simulate the store
-    let semanticModel = {
-      dialogs: {
-        TestDialog: {
-          properties: {
-            npc: 'TestNPC',
-            information: 'TestInfo',
-            condition: 'TestCondition'
-          }
-        }
-      },
-      functions: {
-        TestInfo: {
-          name: 'TestInfo',
-          actions: []
-        },
-        TestCondition: {
-          name: 'TestCondition',
-          conditions: [
-            { variableName: 'ORIGINAL', negated: false }
-          ]
-        }
-      }
-    };
+const FILE_PATH = 'conditions.d';
+const DIALOG_NAME = 'TestDialog';
 
-    // Mock updateModel to simulate store updates
-    const updateModel = jest.fn((filePath: string, newModel: any) => {
-      semanticModel = newModel;
-    });
-
-    // Simulate ThreeColumnLayout's callback closures over semanticModel
-    const createCallbacks = (capturedSemanticModel: any) => ({
-      onUpdateDialog: (updatedDialog: any) => {
-        const updatedModel = {
-          ...capturedSemanticModel,
-          dialogs: {
-            ...capturedSemanticModel.dialogs,
-            TestDialog: updatedDialog
-          }
-        };
-        updateModel('test.d', updatedModel);
-      },
-      onUpdateFunction: (updatedFunction: any) => {
-        const updatedModel = {
-          ...capturedSemanticModel,
-          functions: {
-            ...capturedSemanticModel.functions,
-            [updatedFunction.name]: updatedFunction
-          }
-        };
-        updateModel('test.d', updatedModel);
-      }
-    });
-
-    // Initial render - callbacks capture initial semantic model
-    let callbacks = createCallbacks(semanticModel);
-
-    // Step 1: User edits condition (via handleUpdateSemanticModel in DialogDetailsEditor)
-    const updatedConditionFunction = {
-      name: 'TestCondition',
-      conditions: [
-        { variableName: 'MODIFIED', negated: true }
-      ]
-    };
-    const modelAfterConditionEdit = {
-      ...semanticModel,
-      functions: {
-        ...semanticModel.functions,
-        TestCondition: updatedConditionFunction
-      }
-    };
-    updateModel('test.d', modelAfterConditionEdit);
-
-    // At this point, semantic model has the updated condition
-    expect(semanticModel.functions.TestCondition.conditions[0].variableName).toBe('MODIFIED');
-
-    // BUT: ThreeColumnLayout hasn't re-rendered yet, so callbacks still use old semantic model!
-    // This simulates the bug - callbacks are closures over stale semantic model
-
-    // Step 2: User clicks Save (calls onUpdateDialog and onUpdateFunction)
-    const updatedDialog = {
+const seedModel = () => ({
+  dialogs: {
+    [DIALOG_NAME]: {
       properties: {
         npc: 'TestNPC',
         information: 'TestInfo',
         condition: 'TestCondition',
-        description: 'Updated description' // User also edited dialog properties
-      }
-    };
-    const updatedInfoFunction = {
+      },
+    },
+  },
+  functions: {
+    TestInfo: {
       name: 'TestInfo',
-      actions: [
-        { text: 'New dialog line' } // User also added a dialog line
-      ]
-    };
+      returnType: 'VOID',
+      actions: [],
+      conditions: [],
+      calls: [],
+    },
+    TestCondition: {
+      name: 'TestCondition',
+      returnType: 'INT',
+      actions: [],
+      conditions: [
+        { type: 'VariableCondition', variableName: 'ORIGINAL', negated: false },
+      ],
+      calls: [],
+    },
+  },
+  constants: {},
+  variables: {},
+  instances: {},
+  hasErrors: false,
+  errors: [],
+});
 
-    callbacks.onUpdateDialog(updatedDialog);
-    callbacks.onUpdateFunction(updatedInfoFunction);
+const seedStore = () => {
+  useEditorStore.setState({
+    openFiles: new Map([[FILE_PATH, {
+      filePath: FILE_PATH,
+      semanticModel: seedModel(),
+      isDirty: false,
+      lastSaved: new Date(),
+    }]]),
+    activeFile: FILE_PATH,
+    codeSettings: {
+      indentChar: '\t',
+      includeComments: true,
+      sectionHeaders: true,
+      uppercaseKeywords: true,
+    },
+  } as any);
+};
 
-    // BUG: Condition changes are lost!
-    // The callbacks used the old semantic model, which didn't have the condition changes
-    // So the condition function was overwritten with the old version
-    const finalConditions = semanticModel.functions.TestCondition.conditions;
+const getModel = () => useEditorStore.getState().getFileState(FILE_PATH)!.semanticModel as any;
 
-    // This assertion will FAIL with the current implementation
-    // because the condition changes are lost
-    expect(finalConditions[0].variableName).toBe('MODIFIED');
+describe('Condition saving — regression pin (updater flow)', () => {
+  beforeEach(() => {
+    seedStore();
   });
 
-  test('demonstrates the fix - callbacks should use latest semantic model', () => {
-    // Simulate the store
-    let semanticModel = {
-      dialogs: {
-        TestDialog: {
-          properties: {
-            npc: 'TestNPC',
-            information: 'TestInfo',
-            condition: 'TestCondition'
-          }
-        }
-      },
-      functions: {
-        TestInfo: {
-          name: 'TestInfo',
-          actions: []
-        },
-        TestCondition: {
-          name: 'TestCondition',
-          conditions: [
-            { variableName: 'ORIGINAL', negated: false }
-          ]
-        }
-      }
-    };
-
-    const updateModel = jest.fn((filePath: string, newModel: any) => {
-      semanticModel = newModel;
+  test('interleaved condition / dialog / function edits are all preserved', () => {
+    // Exactly the three mutations useDialogEditorCommands dispatches, interleaved.
+    act(() => {
+      historyActions.updateDialogConditionFunction(FILE_PATH, DIALOG_NAME, (fn) => ({
+        ...fn,
+        conditions: [{ type: 'VariableCondition', variableName: 'MODIFIED', negated: true }],
+      }));
     });
 
-    // Callbacks should get latest semantic model from store, not use closure
-    const createCallbacks = (getSemanticModel: () => any) => ({
-      onUpdateDialog: (updatedDialog: any) => {
-        const currentModel = getSemanticModel(); // Get latest from store
-        const updatedModel = {
-          ...currentModel,
-          dialogs: {
-            ...currentModel.dialogs,
-            TestDialog: updatedDialog
-          }
-        };
-        updateModel('test.d', updatedModel);
-      },
-      onUpdateFunction: (updatedFunction: any) => {
-        const currentModel = getSemanticModel(); // Get latest from store
-        const updatedModel = {
-          ...currentModel,
-          functions: {
-            ...currentModel.functions,
-            [updatedFunction.name]: updatedFunction
-          }
-        };
-        updateModel('test.d', updatedModel);
-      }
+    act(() => {
+      historyActions.updateDialogWithNormalizedProperties(FILE_PATH, DIALOG_NAME, (dialog) => ({
+        ...dialog,
+        properties: { ...dialog.properties, description: 'Updated description' },
+      }));
     });
 
-    const callbacks = createCallbacks(() => semanticModel);
+    act(() => {
+      historyActions.updateFunction(FILE_PATH, 'TestInfo', {
+        name: 'TestInfo',
+        returnType: 'VOID',
+        actions: [{ type: 'DialogLine', speaker: 'hero', text: 'New line' }],
+        conditions: [],
+        calls: [],
+      } as any);
+    });
 
-    // Step 1: Edit condition
-    const updatedConditionFunction = {
-      name: 'TestCondition',
-      conditions: [
-        { variableName: 'MODIFIED', negated: true }
-      ]
-    };
-    const modelAfterConditionEdit = {
-      ...semanticModel,
-      functions: {
-        ...semanticModel.functions,
-        TestCondition: updatedConditionFunction
-      }
-    };
-    updateModel('test.d', modelAfterConditionEdit);
+    const model = getModel();
+    expect(model.functions.TestCondition.conditions[0].variableName).toBe('MODIFIED');
+    expect(model.dialogs.TestDialog.properties.description).toBe('Updated description');
+    expect(model.functions.TestInfo.actions).toHaveLength(1);
+  });
+});
 
-    expect(semanticModel.functions.TestCondition.conditions[0].variableName).toBe('MODIFIED');
+/**
+ * Harness: wires ConditionEditor's condition edits and a Save button through the
+ * real `useDialogEditorCommands` hook, mirroring the shipped DialogDetailsEditor
+ * plumbing (handleConditionFunctionUpdate → updateDialogConditionFunction;
+ * handleSave → store.saveFile).
+ */
+const ConditionSaveHarness: React.FC = () => {
+  const saveFile = useEditorStore((s) => s.saveFile);
+  const model = useEditorStore((s) => s.getFileState(FILE_PATH)?.semanticModel);
+  const commands = useDialogEditorCommands({
+    dialogName: DIALOG_NAME,
+    filePath: FILE_PATH,
+    currentFunctionName: 'TestInfo',
+    currentFunction: (model as any)?.functions?.TestInfo ?? null,
+    semanticModel: model as any,
+    saveFile: saveFile as any,
+    focusAction: () => {},
+    setIsSaving: () => {},
+    setIsResetting: () => {},
+    setSnackbar: () => {},
+    setValidationDialog: () => {},
+  });
 
-    // Step 2: Save (calls both callbacks)
-    const updatedDialog = {
-      properties: {
-        npc: 'TestNPC',
-        information: 'TestInfo',
-        condition: 'TestCondition',
-        description: 'Updated description'
-      }
-    };
-    const updatedInfoFunction = {
-      name: 'TestInfo',
-      actions: [
-        { text: 'New dialog line' }
-      ]
-    };
+  return (
+    <div>
+      <ConditionEditor
+        conditionFunction={(model as any).functions.TestCondition}
+        onUpdateFunction={commands.handleConditionFunctionUpdate}
+        semanticModel={model as any}
+        filePath={FILE_PATH}
+        dialogName={DIALOG_NAME}
+      />
+      <button onClick={() => commands.handleSave()}>Save</button>
+    </div>
+  );
+};
 
-    callbacks.onUpdateDialog(updatedDialog);
-    callbacks.onUpdateFunction(updatedInfoFunction);
+describe('Condition saving — debounce vs save (N4)', () => {
+  let saveSpy: jest.SpiedFunction<typeof window.editorAPI.saveFile>;
 
-    // FIXED: Condition changes are preserved!
-    const finalConditions = semanticModel.functions.TestCondition.conditions;
-    expect(finalConditions[0].variableName).toBe('MODIFIED');
+  beforeEach(() => {
+    jest.useFakeTimers();
+    seedStore();
+    saveSpy = jest.spyOn(window.editorAPI, 'saveFile');
+    saveSpy.mockResolvedValue({ success: true } as any);
+  });
 
-    // And dialog changes are also preserved
-    expect(semanticModel.dialogs.TestDialog.properties.description).toBe('Updated description');
+  afterEach(() => {
+    jest.useRealTimers();
+    saveSpy.mockRestore();
+  });
 
-    // And info function changes are also preserved
-    expect(semanticModel.functions.TestInfo.actions).toHaveLength(1);
+  test('a condition edit pending in the 300 ms debounce is serialized on Save', async () => {
+    render(<ConditionSaveHarness />);
+
+    // Expand the condition list and edit the variable name (debounced 300 ms).
+    fireEvent.click(screen.getByText('Conditions'));
+    const field = screen.getByLabelText('Variable Name') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'MODIFIED' } });
+
+    // The store still holds ORIGINAL — the debounce has NOT fired.
+    expect(getModel().functions.TestCondition.conditions[0].variableName).toBe('ORIGINAL');
+
+    // Save WITHOUT advancing the debounce timer. The save entry must flush the
+    // pending edit before serializing the model.
+    await act(async () => {
+      fireEvent.click(screen.getByText('Save'));
+    });
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    const savedModel = saveSpy.mock.calls[0][1] as any;
+    expect(savedModel.functions.TestCondition.conditions[0].variableName).toBe('MODIFIED');
   });
 });

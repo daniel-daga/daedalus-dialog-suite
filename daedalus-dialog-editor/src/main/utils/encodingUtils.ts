@@ -71,3 +71,42 @@ export function decodeBuffer(buffer: Buffer): { content: string; encoding: strin
   const encoding = detectEncoding(buffer);
   return { content: iconv.decode(buffer, encoding), encoding };
 }
+
+/**
+ * A character that did not survive an encode → decode roundtrip in a given
+ * encoding, with its (code-point) position in the original string.
+ */
+export interface LossyChar {
+  char: string;
+  position: number;
+}
+
+/**
+ * Encode `content` in `encoding` and verify it roundtrips losslessly.
+ *
+ * iconv-lite silently substitutes unmappable characters with `?` on encode;
+ * comparing the decoded-back string against the original detects that loss
+ * without ever writing the mangled bytes. Returns the encoded buffer plus the
+ * list of offending characters (empty when the roundtrip is lossless).
+ */
+export function encodeWithRoundtripCheck(
+  content: string,
+  encoding: string
+): { buffer: Buffer; lossyChars: LossyChar[] } {
+  const buffer = iconv.encode(content, encoding);
+  const decoded = iconv.decode(buffer, encoding);
+
+  const lossyChars: LossyChar[] = [];
+  if (decoded !== content) {
+    // Compare by code point so astral characters (e.g. emoji) count as one.
+    const original = Array.from(content);
+    const back = Array.from(decoded);
+    for (let i = 0; i < original.length; i++) {
+      if (original[i] !== back[i]) {
+        lossyChars.push({ char: original[i], position: i });
+      }
+    }
+  }
+
+  return { buffer, lossyChars };
+}

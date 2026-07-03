@@ -121,6 +121,13 @@ export interface FileState {
   lastSaved: Date;
   originalCode?: string;
   workingCode?: string; // Current code in source editor (may differ from semanticModel or originalCode)
+  /**
+   * Parse-state mirror of `semanticModel.hasErrors`: true when the file was
+   * opened / re-parsed into a partial model. Set only where a fresh parse lands
+   * (openFile, saveSource, adoptWorkingCode) — never cleared by model
+   * mutations. `semanticModel.hasErrors` is authoritative; this exists for
+   * cheap selector access.
+   */
   hasErrors?: boolean;
   errors?: ParseError[];
   lastValidationResult?: ValidationResult;
@@ -131,6 +138,47 @@ export interface FileState {
    * the next successful save or on a subsequent edit.
    */
   saveError?: SaveError;
+  /**
+   * Set when the file changed on disk while the editor holds unsaved changes
+   * (E4). Type-only for now — the actions/watcher wiring land in a later slice;
+   * the auto-save gate already excludes conflicted files.
+   */
+  externalConflict?: { detectedAt: string; fileMissing?: boolean };
+  /**
+   * Transient UI hint (E2a): a model mutation was refused because the file is
+   * source-dirty (pending source edits in workingCode). Cleared on the next
+   * successful mutation / adopt / workingCode reset.
+   */
+  blockedBySourceEdit?: boolean;
+}
+
+/**
+ * A file is source-dirty when the source editor holds text that differs from
+ * the code on disk (E2a). Derived, never stored, so it cannot desync.
+ */
+export const isSourceDirty = (fs: FileState): boolean =>
+  fs.workingCode !== undefined && fs.workingCode !== fs.originalCode;
+
+/**
+ * A file has unsaved changes when its model is dirty, its source is dirty, or it
+ * is in external conflict. This is the single discard-guard predicate (E2a).
+ */
+export const hasUnsavedChanges = (fs: FileState): boolean =>
+  fs.isDirty || isSourceDirty(fs) || !!fs.externalConflict;
+
+/**
+ * E2a mutation guard (operates on an immer draft). If the file has pending
+ * source edits, refuse the model mutation — applying it would silently wipe the
+ * typed source — and flag the block for the UI. Returns true when the caller
+ * must bail out; otherwise clears any stale block flag and proceeds.
+ */
+function refuseMutationIfSourceDirty(fileState: FileState): boolean {
+  if (isSourceDirty(fileState)) {
+    fileState.blockedBySourceEdit = true;
+    return true;
+  }
+  fileState.blockedBySourceEdit = undefined;
+  return false;
 }
 
 interface EditorProject {
@@ -205,11 +253,16 @@ export interface FileStore {
     updatedFunction: DialogFunction
   ) => void;
   validateFile: (filePath: string) => Promise<ValidationResult>;
-  saveFile: (filePath: string, options?: { forceOnErrors?: boolean }) => Promise<SaveFileResult>;
+  saveFile: (filePath: string, options?: { forceOnErrors?: boolean; overwriteExternal?: boolean }) => Promise<SaveFileResult>;
   clearPendingValidation: () => void;
   generateCode: (filePath: string) => Promise<string>;
   setWorkingCode: (filePath: string, code: string | undefined) => void;
+  adoptWorkingCode: (filePath: string) => Promise<{ ok: boolean; errors?: ParseError[] }>;
   saveSource: (filePath: string, code: string) => Promise<void>;
+  reloadFile: (filePath: string) => Promise<void>;
+  markExternalConflict: (filePath: string, opts?: { fileMissing?: boolean }) => void;
+  resolveExternalConflict: (filePath: string, resolution: 'keepMine' | 'reloadTheirs') => Promise<void>;
+  setActiveFile: (filePath: string) => void;
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   setAutoSaveInterval: (interval: number) => void;
@@ -282,13 +335,16 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   updateModel: (filePath: string, model: SemanticModel) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
-      if (fileState) {
-        fileState.semanticModel = model;
-        fileState.isDirty = true;
-        fileState.workingCode = undefined;
-        fileState.autoSaveError = undefined;
-        fileState.hasErrors = false;
+      if (!fileState) {
+        return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
+      fileState.semanticModel = model;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
     });
   },
 
@@ -298,12 +354,14 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       if (!fileState) {
         return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
       fileState.semanticModel.dialogs[dialogName] = dialog;
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -311,6 +369,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
 
@@ -329,7 +390,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -361,12 +421,14 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       if (!fileState) {
         return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
       fileState.semanticModel.functions[functionName] = func;
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -374,6 +436,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
 
@@ -392,7 +457,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -400,6 +464,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
 
@@ -417,7 +484,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -425,6 +491,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) return;
+      if (refuseMutationIfSourceDirty(fileState)) return;
 
       const model = fileState.semanticModel;
       const dialog = model.dialogs[dialogName];
@@ -459,7 +526,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -467,6 +533,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) return;
+      if (refuseMutationIfSourceDirty(fileState)) return;
 
       const model = fileState.semanticModel;
       const dialog = model.dialogs[oldDialogName];
@@ -570,7 +637,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -578,6 +644,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
+        return;
+      }
+      if (refuseMutationIfSourceDirty(fileState)) {
         return;
       }
 
@@ -605,7 +674,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
-      fileState.hasErrors = false;
     });
   },
 
@@ -635,12 +703,25 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     return validationResult;
   },
 
-  saveFile: async (filePath: string, options?: { forceOnErrors?: boolean }) => {
+  saveFile: async (filePath: string, options?: { forceOnErrors?: boolean; overwriteExternal?: boolean }) => {
     const state = get();
     const fileState = state.openFiles.get(filePath);
     if (!fileState) {
       throw new Error('File not open');
     }
+
+    // A file in external conflict must not be silently overwritten (E4). The
+    // save only proceeds with explicit consent (`overwriteExternal`), which the
+    // conflict dialog supplies via `resolveExternalConflict('keepMine')`.
+    if (fileState.externalConflict && !options?.overwriteExternal) {
+      return { success: false };
+    }
+
+    // Capture the exact model reference being written so edits landing during
+    // the IPC round-trip are not marked clean (E7). Compared OUTSIDE set()
+    // below — the immer middleware hands updaters draft proxies which are never
+    // reference-equal (same technique/comment as useAutoSave.ts).
+    const savedModel = fileState.semanticModel;
 
     try {
       // The main process arms file-watcher self-write suppression after the
@@ -648,17 +729,23 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       // genuine external change).
       const result = await window.editorAPI.saveFile(
         filePath,
-        fileState.semanticModel,
+        savedModel,
         state.codeSettings,
-        { forceOnErrors: options?.forceOnErrors }
+        { forceOnErrors: options?.forceOnErrors, overwriteExternal: options?.overwriteExternal }
       );
+
+      const stillCurrent = get().openFiles.get(filePath)?.semanticModel === savedModel;
 
       if (!result.success && result.validationResult) {
         set((state) => {
-          state.pendingValidation = { filePath, validationResult: result.validationResult! };
           const currentFileState = state.openFiles.get(filePath);
           if (currentFileState) {
             currentFileState.lastValidationResult = result.validationResult;
+          }
+          // A superseded model must not raise a stale validation dialog: the
+          // edit that landed mid-save has not been validated.
+          if (stillCurrent) {
+            state.pendingValidation = { filePath, validationResult: result.validationResult! };
           }
         });
 
@@ -668,10 +755,17 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       set((state) => {
         const currentFileState = state.openFiles.get(filePath);
         if (currentFileState) {
-          currentFileState.isDirty = false;
-          currentFileState.lastSaved = new Date();
           currentFileState.lastValidationResult = result.validationResult;
           currentFileState.saveError = undefined;
+          // A successful write reconciles disk with the editor — any external
+          // conflict is now resolved in favour of the editor's content (E4).
+          currentFileState.externalConflict = undefined;
+          // Only mark clean if the written model is still the current one;
+          // an edit that landed mid-save is not on disk yet.
+          if (stillCurrent) {
+            currentFileState.isDirty = false;
+            currentFileState.lastSaved = new Date();
+          }
         }
         state.pendingValidation = null;
       });
@@ -681,7 +775,12 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       // Record a classifiable worker failure so the manual-save path surfaces
       // it the same way auto-save does. isDirty is never cleared on failure.
       const saveError = classifySaveError(error);
-      if (saveError) {
+      if (saveError?.kind === 'external-conflict') {
+        // The main-process mtime precondition (E4 phase 2) caught a change that
+        // the watcher had not yet reported. Route it into the same conflict
+        // dialog instead of the generic save-error chip.
+        get().markExternalConflict(filePath);
+      } else if (saveError) {
         set((state) => {
           const currentFileState = state.openFiles.get(filePath);
           if (currentFileState) {
@@ -715,8 +814,52 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const fileState = state.openFiles.get(filePath);
       if (fileState) {
         fileState.workingCode = code;
+        // Clearing the source buffer resolves any earlier blocked mutation hint.
+        if (code === undefined) {
+          fileState.blockedBySourceEdit = undefined;
+        }
       }
     });
+  },
+
+  /**
+   * Reconcile pending source edits (E2a): parse workingCode and, on success,
+   * adopt it as the model (marking the file model-dirty and clearing the source
+   * buffer). On parse errors the source buffer is kept and the errors returned
+   * so the caller can surface them.
+   */
+  adoptWorkingCode: async (filePath: string) => {
+    const fileState = get().openFiles.get(filePath);
+    if (!fileState) {
+      throw new Error('File not open');
+    }
+
+    const code = fileState.workingCode;
+    if (code === undefined) {
+      return { ok: true };
+    }
+
+    const parsed = await parseSourceWithIds(code);
+
+    if (parsed.hasErrors) {
+      // Keep the typed source; the model is untouched.
+      return { ok: false, errors: parsed.errors };
+    }
+
+    set((state) => {
+      const currentFileState = state.openFiles.get(filePath);
+      if (currentFileState) {
+        currentFileState.semanticModel = parsed;
+        currentFileState.isDirty = true;
+        currentFileState.workingCode = undefined;
+        currentFileState.hasErrors = parsed.hasErrors || false;
+        currentFileState.errors = parsed.errors || [];
+        currentFileState.autoSaveError = undefined;
+        currentFileState.blockedBySourceEdit = undefined;
+      }
+    });
+
+    return { ok: true };
   },
 
   saveSource: async (filePath: string, code: string) => {
@@ -732,6 +875,13 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       await window.editorAPI.writeFile(filePath, code);
       const processedModel = await parseSourceWithIds(code);
 
+      // If the user kept typing during the save, the newer keystrokes are
+      // already in workingCode (Monaco debounce). Determined OUTSIDE set()
+      // since immer drafts are never reference-equal.
+      const latest = get().openFiles.get(filePath);
+      const sourceChangedDuringSave =
+        latest?.workingCode !== undefined && latest.workingCode !== code;
+
       set((state) => {
         const currentFileState = state.openFiles.get(filePath);
         if (currentFileState) {
@@ -739,11 +889,16 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           currentFileState.isDirty = false;
           currentFileState.lastSaved = new Date();
           currentFileState.originalCode = code;
-          currentFileState.workingCode = undefined;
           currentFileState.hasErrors = processedModel.hasErrors || false;
           currentFileState.errors = processedModel.errors || [];
           currentFileState.lastValidationResult = undefined;
           currentFileState.saveError = undefined;
+          // Keep keystrokes typed during the save so the file stays
+          // source-dirty (E2a); only wipe when nothing changed since the
+          // saved snapshot, where clearing is lossless.
+          if (!sourceChangedDuringSave) {
+            currentFileState.workingCode = undefined;
+          }
         }
       });
       // historyStore subscribes to originalCode changes and clears history automatically
@@ -751,6 +906,93 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       console.error('Failed to save source:', error);
       throw error;
     }
+  },
+
+  /**
+   * Reload a file from disk into its existing FileState slot (E4/N3). Unlike
+   * `openFile`, this never touches `activeFile` and reuses the slot, so an
+   * external change to a background file does not steal the user's focus. Any
+   * external conflict is cleared — the editor now matches disk.
+   */
+  reloadFile: async (filePath: string) => {
+    const sourceCode = await window.editorAPI.readFile(filePath);
+    const processedModel = await parseSourceWithIds(sourceCode);
+
+    set((state) => {
+      const currentFileState = state.openFiles.get(filePath);
+      if (!currentFileState) {
+        return;
+      }
+      currentFileState.semanticModel = processedModel;
+      currentFileState.isDirty = false;
+      currentFileState.lastSaved = new Date();
+      currentFileState.originalCode = sourceCode;
+      currentFileState.workingCode = undefined;
+      currentFileState.hasErrors = processedModel.hasErrors || false;
+      currentFileState.errors = processedModel.errors || [];
+      currentFileState.lastValidationResult = undefined;
+      currentFileState.autoSaveError = undefined;
+      currentFileState.saveError = undefined;
+      currentFileState.externalConflict = undefined;
+      currentFileState.blockedBySourceEdit = undefined;
+    });
+  },
+
+  /**
+   * Record that the file changed on disk while the editor holds unsaved changes
+   * (E4). Auto-save is already gated off conflicted files; the conflict dialog
+   * drives resolution. `fileMissing` marks the external-delete variant (N5).
+   */
+  markExternalConflict: (filePath: string, opts?: { fileMissing?: boolean }) => {
+    set((state) => {
+      const fileState = state.openFiles.get(filePath);
+      if (!fileState) {
+        return;
+      }
+      fileState.externalConflict = {
+        detectedAt: new Date().toISOString(),
+        fileMissing: opts?.fileMissing,
+      };
+    });
+  },
+
+  /**
+   * Resolve an external conflict (E4). `keepMine` overwrites disk with the
+   * editor's content; `reloadTheirs` discards the editor's changes — reloading
+   * from disk, or closing the file when it was deleted externally (N5). Both
+   * paths clear the conflict.
+   */
+  resolveExternalConflict: async (filePath: string, resolution: 'keepMine' | 'reloadTheirs') => {
+    const fileState = get().openFiles.get(filePath);
+    if (!fileState) {
+      return;
+    }
+
+    if (resolution === 'keepMine') {
+      await get().saveFile(filePath, { overwriteExternal: true });
+      return;
+    }
+
+    // reloadTheirs: discard local changes.
+    if (fileState.externalConflict?.fileMissing) {
+      // The file is gone — there is nothing to reload; discarding means closing.
+      get().closeFile(filePath);
+      return;
+    }
+    await get().reloadFile(filePath);
+  },
+
+  /**
+   * Focus an already-open file without re-reading it from disk (E4). Used by
+   * the app-bar background-conflict chip to surface a conflicted file's dialog;
+   * unlike `openFile`, it must never reset a dirty/conflicted FileState.
+   */
+  setActiveFile: (filePath: string) => {
+    set((state) => {
+      if (state.openFiles.has(filePath)) {
+        state.activeFile = filePath;
+      }
+    });
   },
 
   updateCodeSettings: (settings: Partial<CodeGenerationSettings>) => {
@@ -780,13 +1022,16 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   _applyHistoryModelUpdate: (filePath: string, model: SemanticModel) => {
     set((state) => {
       const fileState = state.openFiles.get(filePath);
-      if (fileState) {
-        fileState.semanticModel = model;
-        fileState.isDirty = true;
-        fileState.workingCode = undefined;
-        fileState.autoSaveError = undefined;
-        fileState.hasErrors = false;
+      if (!fileState) {
+        return;
       }
+      if (refuseMutationIfSourceDirty(fileState)) {
+        return;
+      }
+      fileState.semanticModel = model;
+      fileState.isDirty = true;
+      fileState.workingCode = undefined;
+      fileState.autoSaveError = undefined;
     });
   },
 

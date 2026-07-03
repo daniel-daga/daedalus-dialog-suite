@@ -6,7 +6,32 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent } from '../types/global';
+
+// Captured file-change callback (see onFileChanged). Lets E2E tests inject
+// external change/unlink events through the `__mockEmitFileChange` window hook.
+let mockFileChangeListener: ((event: FileChangeEvent) => void) | null = null;
+
+// Captured close-requested callback (see onCloseRequested). There is no real
+// window in the mock harness, so E2E tests inject the request via the
+// `__mockEmitCloseRequested` window hook and assert against the recorded
+// ack/approve/cancel calls on `window.__closeGuardCalls`.
+let mockCloseRequestedListener: (() => void) | null = null;
+
+type CloseGuardCall = 'ackCloseRequest' | 'approveClose' | 'cancelClose';
+
+const recordCloseGuardCall = (name: CloseGuardCall) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const w = window as any;
+  w.__closeGuardCalls = w.__closeGuardCalls || {
+    ackCloseRequest: 0,
+    approveClose: 0,
+    cancelClose: 0,
+  };
+  w.__closeGuardCalls[name] += 1;
+};
 
 // Sample semantic model for testing
 const SAMPLE_MODEL = {
@@ -488,14 +513,42 @@ export const mockEditorAPI: EditorAPI = {
     localStorage.setItem('recent_projects', JSON.stringify(newRecent));
   },
 
-  // File Watcher API (no-op in mock/browser mode)
+  // File Watcher API (no-op in mock/browser mode). The change callback is
+  // captured so E2E tests can inject external file-change events via the
+  // `__mockEmitFileChange` window hook (there is no real watcher in the mock).
   async startFileWatcher(): Promise<void> {},
   async stopFileWatcher(): Promise<void> {},
   async notifySelfWrite(): Promise<void> {},
-  onFileChanged(): () => void { return () => {}; },
+  onFileChanged(callback): () => void {
+    mockFileChangeListener = callback;
+    if (typeof window !== 'undefined') {
+      (window as any).__mockEmitFileChange = (event: any) => mockFileChangeListener?.(event);
+    }
+    return () => { mockFileChangeListener = null; };
+  },
 
   async getAppVersion(): Promise<string> {
     return '0.0.0-mock';
+  },
+
+  // Window close guard (E1). The request callback is captured so E2E tests can
+  // inject a close request via the `__mockEmitCloseRequested` window hook; the
+  // ack/approve/cancel signals are recorded for assertion (no real window here).
+  onCloseRequested(callback: () => void): () => void {
+    mockCloseRequestedListener = callback;
+    if (typeof window !== 'undefined') {
+      (window as any).__mockEmitCloseRequested = () => mockCloseRequestedListener?.();
+    }
+    return () => { mockCloseRequestedListener = null; };
+  },
+  ackCloseRequest(): void {
+    recordCloseGuardCall('ackCloseRequest');
+  },
+  approveClose(): void {
+    recordCloseGuardCall('approveClose');
+  },
+  cancelClose(): void {
+    recordCloseGuardCall('cancelClose');
   },
 
   // Updater API (no-op in mock/browser mode)

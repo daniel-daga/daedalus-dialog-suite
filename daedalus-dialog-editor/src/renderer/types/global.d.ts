@@ -89,6 +89,9 @@ import type { UpdateCheckResult } from '../../shared/updater-types';
 export interface SaveOptions {
   skipValidation?: boolean;
   forceOnErrors?: boolean;
+  // When true, bypass the main-process external-modification precondition
+  // (E4 phase 2) and overwrite the file even if it changed on disk.
+  overwriteExternal?: boolean;
 }
 
 export interface EditorAPI {
@@ -105,7 +108,7 @@ export interface EditorAPI {
 
   // File I/O API
   readFile: (filePath: string) => Promise<string>;
-  writeFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
+  writeFile: (filePath: string, content: string, options?: { overwriteExternal?: boolean }) => Promise<{ success: boolean }>;
   openFileDialog: () => Promise<string | null>;
   saveFileDialog: () => Promise<string | null>;
 
@@ -127,6 +130,13 @@ export interface EditorAPI {
 
   // App info
   getAppVersion: () => Promise<string>;
+
+  // Window close guard (E1). Main intercepts the window `close`, sends
+  // `app:closeRequested`, and waits for the renderer to acknowledge and decide.
+  onCloseRequested: (callback: () => void) => () => void;
+  ackCloseRequest: () => void;
+  approveClose: () => void;
+  cancelClose: () => void;
 
   // Updater API
   checkForUpdate: () => Promise<UpdateCheckResult>;

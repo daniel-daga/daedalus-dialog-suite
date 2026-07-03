@@ -24,6 +24,7 @@ import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
 import { useFileWatcher } from './hooks/useFileWatcher';
 import MainLayout from './components/MainLayout';
+import ExternalChangeConflictDialog from './components/ExternalChangeConflictDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
@@ -33,6 +34,10 @@ import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
 import { initStoreSync } from './store/storeSync';
 import { shallow } from 'zustand/shallow';
+import { describeSaveError } from './utils/saveError';
+import { isSourceDirty, hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
+import { flushAllPendingEdits } from './utils/pendingEditFlushRegistry';
+import { useWindowCloseGuard } from './hooks/useWindowCloseGuard';
 
 // Wire up the cross-store model sync once at module load.
 // editorStore pushes semantic model changes to projectStore's parsed-files
@@ -69,10 +74,24 @@ const App: React.FC = () => {
   const canRedo = activeFile ? (editHistory.get(activeFile)?.future.length ?? 0) > 0 : false;
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   useFileWatcher();
+  const closeGuardDialog = useWindowCloseGuard();
+
+  const setActiveFile = useEditorStore((state) => state.setActiveFile);
 
   const activeFileState = activeFile ? openFiles.get(activeFile) : null;
   const autoSaveError = activeFileState?.autoSaveError;
   const saveError = activeFileState?.saveError;
+  const activeSourceDirty = activeFileState ? isSourceDirty(activeFileState) : false;
+
+  // Files in external conflict that are not the active file: the active file's
+  // conflict opens the modal dialog; background conflicts surface as an app-bar
+  // chip so they are not lost (E4).
+  const backgroundConflicts = useMemo(
+    () => Array.from(openFiles.values()).filter(
+      (fileState) => fileState.externalConflict && fileState.filePath !== activeFile
+    ),
+    [openFiles, activeFile]
+  );
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [appError, setAppError] = useState<string | null>(null);
@@ -91,10 +110,6 @@ const App: React.FC = () => {
   const overlayParsedFiles = isIngesting ? parsedFiles.size : 0;
   const showProjectOpeningOverlay = isProjectOpening || (!!projectPath && isIngesting);
 
-  const hasUnsavedChanges = useMemo(
-    () => Array.from(openFiles.values()).some((fileState) => fileState.isDirty),
-    [openFiles]
-  );
 
   useEffect(() => {
     const fetchRecent = async () => {
@@ -115,6 +130,13 @@ const App: React.FC = () => {
   }, []);
 
   const confirmDiscardChanges = (context: string): boolean => {
+    // Drain any debounced condition/action edit (N4) so a pending keystroke
+    // counts toward dirtiness, then evaluate against the live store — the flush
+    // mutates the store synchronously, after this render's memo was computed.
+    flushAllPendingEdits();
+
+    const hasUnsavedChanges = Array.from(useEditorStore.getState().openFiles.values())
+      .some((fileState) => fileHasUnsavedChanges(fileState));
     if (!hasUnsavedChanges) {
       return true;
     }
@@ -222,9 +244,7 @@ const App: React.FC = () => {
               {saveError ? (
                 <Tooltip title={
                   <Typography variant="caption" sx={{ display: 'block' }}>
-                    {saveError.kind === 'timeout'
-                      ? 'Save failed: the parser did not respond (timed out). Your changes are kept in the editor — retry with Ctrl+S.'
-                      : 'Save failed: the parser worker crashed. Your changes are kept in the editor — retry with Ctrl+S.'}
+                    {describeSaveError(saveError)}
                   </Typography>
                 }>
                   <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />
@@ -244,6 +264,10 @@ const App: React.FC = () => {
                 }>
                   <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />
                 </Tooltip>
+              ) : activeSourceDirty ? (
+                <Tooltip title="Unsaved source changes — Ctrl+S to save">
+                  <SaveIcon sx={{ color: 'warning.light', mr: 1 }} />
+                </Tooltip>
               ) : isAutoSaving ? (
                 <Tooltip title="Saving...">
                   <SaveIcon sx={{ color: 'rgba(255,255,255,0.7)', mr: 1 }} />
@@ -254,6 +278,31 @@ const App: React.FC = () => {
                 </Tooltip>
               ) : null}
             </>
+          )}
+          {backgroundConflicts.length > 0 && (
+            <Tooltip
+              title={
+                <Box>
+                  <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                    Files changed on disk with unsaved changes:
+                  </Typography>
+                  {backgroundConflicts.map((fileState) => (
+                    <Typography key={fileState.filePath} variant="caption" sx={{ display: 'block' }}>
+                      - {fileState.filePath}
+                    </Typography>
+                  ))}
+                </Box>
+              }
+            >
+              <Chip
+                icon={<ErrorIcon />}
+                color="error"
+                label={`Conflicts: ${backgroundConflicts.length}`}
+                onClick={() => setActiveFile(backgroundConflicts[0].filePath)}
+                sx={{ mr: 2, cursor: 'pointer' }}
+                data-testid="background-conflict-chip"
+              />
+            </Tooltip>
           )}
           {projectName && (
             <Chip
@@ -344,6 +393,9 @@ const App: React.FC = () => {
         open={isIngestedFilesOpen}
         onClose={() => setIngestedFilesOpen(false)}
       />
+
+      <ExternalChangeConflictDialog />
+      {closeGuardDialog}
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
         <ErrorBoundary>

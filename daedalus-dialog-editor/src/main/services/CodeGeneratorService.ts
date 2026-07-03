@@ -10,9 +10,17 @@ interface CodeGeneratorSettings {
 
 export class CodeGeneratorService {
   /**
-   * Generate Daedalus code from semantic model
+   * Generate Daedalus code from semantic model.
+   *
+   * `allowPartialModel` threads through to the generator's fix-01 P7 guard:
+   * without it, generating from a model with parse errors throws. The forced
+   * save path passes it so the user can knowingly write a partial model.
    */
-  generateCode(plainModel: any, settings: CodeGeneratorSettings): string {
+  generateCode(
+    plainModel: any,
+    settings: CodeGeneratorSettings,
+    options?: { allowPartialModel?: boolean }
+  ): string {
     // Reconstruct the model with proper class instances using the parser's deserializer
     const model = deserializeSemanticModel(plainModel);
 
@@ -21,7 +29,8 @@ export class CodeGeneratorService {
       includeComments: settings.includeComments,
       sectionHeaders: settings.sectionHeaders,
       uppercaseKeywords: settings.uppercaseKeywords,
-      preserveSourceStyle: true
+      preserveSourceStyle: true,
+      allowPartialModel: options?.allowPartialModel === true
     });
 
     return generator.generateSemanticModel(model);

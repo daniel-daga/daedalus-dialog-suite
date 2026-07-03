@@ -279,14 +279,13 @@ Notes:
 Code review remediation (production-readiness fixes), tracked in `docs/plans/code-review-remediation.md`:
 
 - `docs/plans/code-review-findings.md` — full review findings (reference, not a plan)
-- `docs/plans/fix-02-save-pipeline.md` — editor save/dirty-state pipeline
 - `docs/plans/fix-04-quest-editor.md` — quest editor (unreachable features, canvas lifecycle)
 - `docs/plans/fix-05-undo-debounce.md` — undo/redo × edit debouncing
 - `docs/plans/fix-06-security-updates.md` — security & update chain
 - `docs/plans/fix-07-render-performance.md` — rendering performance at mod scale
 - `docs/plans/fix-08-test-release-gating.md` — test truthfulness & release gating
 
-Recommended fix order: 3 → 2 → 1 → 6 → 4 → 8 → 5 → 7 (dependencies inside each plan). Slices 3 and 1 are done (see `docs/architecture/worker-reliability.md` and `docs/architecture/parser-fidelity.md`).
+Recommended fix order: 3 → 2 → 1 → 6 → 4 → 8 → 5 → 7 (dependencies inside each plan). Slices 3, 2, and 1 are done (see `docs/architecture/worker-reliability.md`, `docs/architecture/save-pipeline.md`, and `docs/architecture/parser-fidelity.md`).
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 
