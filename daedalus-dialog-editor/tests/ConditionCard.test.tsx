@@ -12,30 +12,28 @@
  * pattern used in ActionCard.tsx.
  */
 
-import React from 'react';
-
 describe('ConditionCard Data Loss Fix', () => {
   test('demonstrates the data loss problem before fix', () => {
     // BEFORE FIX: Cleanup only clears timer, loses pending changes
     const simulateOldBehavior = () => {
       let savedCondition: any = null;
-      const updateCondition = (index: number, condition: any) => {
+      const _updateCondition = (index: number, condition: any) => {
         savedCondition = condition;
       };
 
       // User starts editing a condition
       let localCondition = { variableName: 'ORIGINAL', negated: false };
-      let pendingUpdate: any = null;
+      let _pendingUpdate: any = null;
 
       // User types "MODIFIED"
       localCondition = { variableName: 'MODIFIED', negated: true };
 
       // Debounced update is scheduled
-      pendingUpdate = localCondition;
+      _pendingUpdate = localCondition;
 
       // Component unmounts BEFORE the 300ms timer fires
       // OLD behavior: Just clear the timer, lose the pending update
-      pendingUpdate = null; // Simulates clearTimeout() without flush
+      _pendingUpdate = null; // Simulates clearTimeout() without flush
 
       // Result: Data loss! Update never reached parent
       return savedCondition;
@@ -113,7 +111,7 @@ describe('ConditionCard Data Loss Fix', () => {
 
   test('verifies data integrity when switching between dialogs', () => {
     // Real-world scenario: User edits condition, then quickly switches dialog
-    let savedConditions: Record<string, any> = {};
+    const savedConditions: Record<string, any> = {};
 
     // Editing condition for Dialog A
     const dialogAConditionRef = { current: { variableName: 'HERO_KNOWS_SECRET', negated: false } };

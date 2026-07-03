@@ -23,7 +23,7 @@ const UnknownActionRenderer: React.FC<BaseActionRendererProps> = ({
               try {
                 const parsed = JSON.parse(e.target.value);
                 handleUpdate(parsed);
-              } catch (err) {
+              } catch {
                 // Invalid JSON, ignore
               }
             }}

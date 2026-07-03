@@ -145,7 +145,7 @@ describe('questGraphUtils', () => {
         ];
 
         const model = createMockModel(functions, dialogs);
-        const { nodes, edges } = buildQuestGraph(model, questName);
+        const { edges } = buildQuestGraph(model, questName);
 
         const choiceEdge = edges.find(e => e.source === funcA && e.target === funcB);
         expect(choiceEdge).toBeDefined();

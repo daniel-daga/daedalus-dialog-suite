@@ -14,7 +14,7 @@ describe('projectStore - ingestion', () => {
     const files = Array.from({ length: 10 }, (_, i) => `file${i}.d`);
     
     // Mock API
-    const parseDialogFileMock = jest.fn(async (filePath: string) => {
+    const parseDialogFileMock = jest.fn(async (_filePath: string) => {
       // simulate some work
       await new Promise(resolve => setTimeout(resolve, 10));
       return {
@@ -84,7 +84,7 @@ describe('projectStore - ingestion', () => {
   test('should respect abort signal', async () => {
     const files = Array.from({ length: 100 }, (_, i) => `file${i}.d`);
     
-    const parseDialogFileMock = jest.fn(async (filePath: string) => {
+    const parseDialogFileMock = jest.fn(async (_filePath: string) => {
       await new Promise(resolve => setTimeout(resolve, 20));
       return {
         dialogs: {},

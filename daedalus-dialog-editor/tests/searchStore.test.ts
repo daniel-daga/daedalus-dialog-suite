@@ -2,7 +2,7 @@
  * Tests for Search Store
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { useSearchStore, SearchResult } from '../src/renderer/store/searchStore';
+import { useSearchStore } from '../src/renderer/store/searchStore';
 import type { SemanticModel, DialogMetadata } from '../src/shared/types';
 
 describe('searchStore', () => {

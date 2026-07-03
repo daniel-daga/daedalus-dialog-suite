@@ -3,7 +3,7 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SearchResults from '../src/renderer/components/SearchResults';
 import { useSearchStore, SearchResult } from '../src/renderer/store/searchStore';

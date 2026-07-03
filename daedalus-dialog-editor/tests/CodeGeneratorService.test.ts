@@ -6,7 +6,6 @@
  */
 
 import { CodeGeneratorService } from '../src/main/services/CodeGeneratorService';
-import { Dialog, DialogFunction } from 'daedalus-parser/semantic-model';
 
 describe('CodeGeneratorService - Function Reference Reconstruction', () => {
   let service: CodeGeneratorService;
@@ -52,7 +51,7 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
         uppercaseKeywords: true
       };
 
-      const result = service.generateCode(plainModel, settings);
+      service.generateCode(plainModel, settings);
 
       // Assert: An error should be logged for the missing function
       // BEFORE FIX: This will fail because no error is logged (silent data corruption)
@@ -100,7 +99,7 @@ describe('CodeGeneratorService - Function Reference Reconstruction', () => {
         uppercaseKeywords: true
       };
 
-      const result = service.generateCode(plainModel, settings);
+      service.generateCode(plainModel, settings);
 
       // Assert: An error should be logged for the missing function
       // BEFORE FIX: This will fail because no error is logged (silent data corruption)

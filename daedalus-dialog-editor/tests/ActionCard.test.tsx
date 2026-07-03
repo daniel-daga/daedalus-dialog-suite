@@ -5,8 +5,6 @@
  * by using refs to track latest values instead of capturing them in the cleanup effect.
  */
 
-import React from 'react';
-
 describe('ActionCard Ref-based Cleanup Fix', () => {
   test('demonstrates the stale closure problem and ref-based solution', () => {
     // This test demonstrates the concept behind Bug #4 fix
@@ -169,7 +167,7 @@ describe('ActionCard Ref-based Cleanup Fix', () => {
 
     // Using the NEW approach (refs)
     const indexRef = { current: editingIndex };
-    const actionRef = { current: editedAction };
+    const _actionRef = { current: editedAction };
 
     // Update ref when action moves
     indexRef.current = newActualIndex;

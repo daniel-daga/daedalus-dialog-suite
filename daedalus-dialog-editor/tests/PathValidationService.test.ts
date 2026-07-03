@@ -11,7 +11,6 @@
 
 import * as path from 'path';
 import * as os from 'os';
-import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 
 describe('PathValidationService', () => {

@@ -3,7 +3,8 @@
  * Tests Bug #5 (Race condition in dialog selection) and Bug #6 (Exponential tree building)
  */
 
-import React from 'react';
+import * as fs from 'fs';
+import * as path from 'path';
 
 describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
   test('demonstrates memory leak without RAF cleanup', () => {
@@ -209,12 +210,12 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
   test('demonstrates the race condition problem with setTimeout', () => {
     // BEFORE FIX: Using arbitrary 200ms timeout (Simulated)
     const simulateOldBehavior = async () => {
-      let loadingState = false;
+      let _loadingState = false;
       const events: string[] = [];
 
       // Simulate dialog selection
       const selectDialog = () => {
-        loadingState = true;
+        _loadingState = true;
         events.push('loading:true');
 
         // Simulate state update
@@ -224,7 +225,7 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
 
         // Arbitrary timeout (might hide skeleton before rendering completes)
         setTimeout(() => {
-          loadingState = false;
+          _loadingState = false;
           events.push('loading:false');
         }, 200);
       };
@@ -249,7 +250,7 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
     // AFTER FIX: Using requestAnimationFrame
     // This simulation mirrors the handleSelectDialog logic in ThreeColumnLayout.tsx
     const simulateNewBehavior = () => {
-      let loadingState = false;
+      let _loadingState = false;
       let scrollPosition = 100; // Simulated scroll
       const events: string[] = [];
 
@@ -260,7 +261,7 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
       };
 
       const selectDialog = () => {
-        loadingState = true;
+        _loadingState = true;
         events.push('loading:true');
 
         // Simulate state update
@@ -277,7 +278,7 @@ describe('ThreeColumnLayout - Bug #5: Dialog Selection Race Condition Fix', () =
           // Wait one more frame to ensure rendering is complete
           requestAnimationFrameMock(() => {
             events.push('raf2:render_complete');
-            loadingState = false;
+            _loadingState = false;
             events.push('loading:false');
           });
         });
@@ -392,14 +393,14 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
       };
 
       // Simulate useEffect running AFTER render
-      const useEffect1 = () => {
+      const runEffect1 = () => {
         // This is where cache clearing WOULD happen in the buggy version
         // But it only runs after render
         events.push('useEffect1:run');
       };
 
       render1();
-      useEffect1();
+      runEffect1();
 
       // Semantic model changes
       semanticModel = { version: 2, dialogs: { DialogA: {} } };
@@ -428,11 +429,11 @@ describe('ThreeColumnLayout - Bug #2: Cache Race Condition on Model Changes', ()
       render2();
 
       // Now useEffect 2 runs
-      const useEffect2 = () => {
+      const runEffect2 = () => {
         events.push('useEffect2:clearing-cache');
         cache.clear();
       };
-      useEffect2();
+      runEffect2();
 
       return events;
     };
@@ -877,7 +878,7 @@ describe('ThreeColumnLayout - Bug #4: Unbounded Cache Growth', () => {
 
     const smallFile = estimatedEntries(50, 3, 2); // 300
     const mediumFile = estimatedEntries(100, 5, 2); // 1000
-    const largeFile = estimatedEntries(200, 7, 3); // 4200
+    const _largeFile = estimatedEntries(200, 7, 3); // 4200
 
     const recommendedMaxSize = 1000;
 
@@ -1379,7 +1380,7 @@ describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () =>
 
   test('handles empty dialogIndex gracefully', () => {
     const isProjectMode = true;
-    const projectNpcs = ['SLD_99003_Farim'];
+    const _projectNpcs = ['SLD_99003_Farim'];
     const dialogIndex = new Map(); // Empty index
 
     const npcMap = new Map<string, string[]>();
@@ -1598,14 +1599,10 @@ describe('ThreeColumnLayout - Bug #7: NPC Dialog Loading in Project Mode', () =>
 
 describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
   const readSource = () => {
-    const fs = require('fs');
-    const path = require('path');
     return fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/ThreeColumnLayout.tsx'), 'utf8');
   };
 
   test('sets loading before awaiting file-open work in handleSelectDialog', () => {
-    const fs = require('fs');
-    const path = require('path');
     const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useDialogNavigation.ts'), 'utf8');
     const start = source.indexOf('const handleSelectDialog');
     const end = source.indexOf('const handleSelectRecentDialog', start);
@@ -1630,8 +1627,6 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
   });
 
   test('search-driven dialog navigation uses loading lifecycle', () => {
-    const fs = require('fs');
-    const path = require('path');
     const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useSearchNavigation.ts'), 'utf8');
     const start = source.indexOf('const handleSearchResultClick');
     const end = source.indexOf('return { isSearchOpen', start);
@@ -1641,8 +1636,6 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
   });
 
   test('creates new dialogs with empty description by default', () => {
-    const fs = require('fs');
-    const path = require('path');
     const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useDialogFactory.ts'), 'utf8');
     const start = source.indexOf('const createDialogForNpc');
     const end = source.indexOf('const conditionFunction: DialogFunction', start);
@@ -1653,8 +1646,6 @@ describe('ThreeColumnLayout - Loading lifecycle guardrails', () => {
   });
 
   test("first line of a new dialog defaults to Hero (other) speaker (issue #126)", () => {
-    const fs = require('fs');
-    const path = require('path');
     const source = fs.readFileSync(path.resolve(__dirname, '../src/renderer/components/hooks/useDialogFactory.ts'), 'utf8');
     const start = source.indexOf('const informationFunction: DialogFunction');
     const end = source.indexOf('const updatedModel: SemanticModel', start);

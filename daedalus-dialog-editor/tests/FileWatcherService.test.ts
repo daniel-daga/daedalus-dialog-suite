@@ -54,6 +54,7 @@ jest.mock('chokidar', () => ({
 // ---------------------------------------------------------------------------
 
 import { FileWatcherService } from '../src/main/services/FileWatcherService';
+import * as chokidar from 'chokidar';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -193,7 +194,6 @@ describe('FileWatcherService', () => {
   describe('ignored predicate', () => {
     const getIgnored = async (projectPath: string) => {
       await service.startWatching(projectPath);
-      const chokidar = require('chokidar');
       const opts = (chokidar.watch as jest.Mock).mock.calls.at(-1)![1] as {
         ignored: (p: string, stats?: { isFile(): boolean; isDirectory(): boolean }) => boolean;
       };

@@ -1,8 +1,7 @@
 import { parentPort } from 'worker_threads';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
-// @ts-ignore - CommonJS module
-const DaedalusParser = require('daedalus-parser');
+import DaedalusParser from 'daedalus-parser';
 
 // Use the parser instance from the library to ensure ABI compatibility
 // between the Language object and the Parser implementation.

@@ -1,4 +1,9 @@
 import { parseBuildNumber, isNewerVersion, UpdaterService } from '../../src/main/services/UpdaterService';
+import { app } from 'electron';
+import * as https from 'https';
+import { Readable } from 'stream';
+import * as crypto from 'crypto';
+import * as realFs from 'fs';
 import { SettingsService } from '../../src/main/services/SettingsService';
 import { UpdaterSettings } from '../../src/shared/updater-types';
 
@@ -115,7 +120,6 @@ function buildMockRelease(metaVersion: string, buildNumber: number, extraMeta: R
 }
 
 function setupHttpsMock(responses: Array<{ body: string; status?: number }>) {
-  const https = require('https');
   let callIndex = 0;
   (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
     const response = responses[callIndex++] || responses[responses.length - 1];
@@ -144,7 +148,6 @@ describe('UpdaterService.checkForUpdate', () => {
   });
 
   it('returns no update when version has no build suffix (dev mode)', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0');
 
     const result = await service.checkForUpdate();
@@ -152,7 +155,6 @@ describe('UpdaterService.checkForUpdate', () => {
   });
 
   it('returns no update when checked within the last hour', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(
       makeDefaultUpdaterSettings({ lastCheckTimestamp: Date.now() - 1000 })
@@ -163,7 +165,6 @@ describe('UpdaterService.checkForUpdate', () => {
   });
 
   it('detects an available update when remote build is higher', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
 
@@ -178,7 +179,6 @@ describe('UpdaterService.checkForUpdate', () => {
   });
 
   it('returns no update when remote build is same or lower', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.20');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
 
@@ -190,11 +190,9 @@ describe('UpdaterService.checkForUpdate', () => {
   });
 
   it('handles network error gracefully (returns no update)', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
 
-    const https = require('https');
     (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, _callback: any) => {
       const req = { on: jest.fn((event: string, handler: any) => { if (event === 'error') handler(new Error('Network failure')); }) };
       return req;
@@ -205,7 +203,6 @@ describe('UpdaterService.checkForUpdate', () => {
   });
 
   it('handles missing assets in release gracefully', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
 
@@ -244,7 +241,6 @@ describe('UpdaterService.downloadUpdate security', () => {
   });
 
   it('accepts the URL offered by the last checkForUpdate', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
 
@@ -257,7 +253,6 @@ describe('UpdaterService.downloadUpdate security', () => {
 
     // The offered URL must pass the pinning check (the mocked https response
     // is not a valid download stream, so only assert it gets past the guard).
-    const https = require('https');
     (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
       const mockRes = {
         statusCode: 404,
@@ -282,11 +277,9 @@ describe('UpdaterService redirect handling', () => {
   });
 
   it('gives up after a bounded number of redirects instead of recursing forever', async () => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
 
-    const https = require('https');
     (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
       const mockRes = {
         statusCode: 302,
@@ -306,11 +299,9 @@ describe('UpdaterService redirect handling', () => {
   });
 
   it.each([303, 307, 308])('bounds %d redirects the same way as 301/302', async (status) => {
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
 
-    const https = require('https');
     (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
       const mockRes = {
         statusCode: status,
@@ -334,9 +325,6 @@ describe('UpdaterService redirect handling', () => {
 // Uses real Readable streams so the service's real hashing + file write runs.
 // ============================================================================
 
-const { Readable } = require('stream');
-const crypto = require('crypto');
-const realFs = require('fs');
 
 const DOWNLOAD_DEST = '/tmp/daedalus-update-0.1.0-build.10.exe';
 
@@ -360,7 +348,6 @@ function redirectResponse(status: number, location: string) {
 }
 
 function setupStreamMock(responses: any[]) {
-  const https = require('https');
   let i = 0;
   (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
     const r = responses[i++] ?? responses[responses.length - 1];
@@ -372,7 +359,6 @@ function setupStreamMock(responses: any[]) {
 describe('UpdaterService.downloadUpdate integrity', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    const { app } = require('electron');
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     (app.getPath as jest.Mock).mockReturnValue('/tmp');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
@@ -503,7 +489,6 @@ describe('UpdaterService.downloadUpdate integrity', () => {
     // A local process swaps the installer between download and install.
     realFs.writeFileSync(dest, 'malicious-payload');
 
-    const { app } = require('electron');
     expect(() => service.installUpdate(dest)).toThrow(/sha256|integrity|mismatch/i);
     expect(mockSpawn).not.toHaveBeenCalled();
     expect(app.quit).not.toHaveBeenCalled();

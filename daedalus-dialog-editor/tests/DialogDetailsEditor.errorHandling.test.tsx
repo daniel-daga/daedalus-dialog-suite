@@ -180,18 +180,20 @@ describe('DialogDetailsEditor Error Handling', () => {
     expect(resetDisabled).toBe(false);
 
     // During save - both disabled
+    const isSavingDuringSave = true;
     const duringSave = {
-      saveDisabled: !isDirty || true || isResetting, // isSaving = true
-      resetDisabled: !isDirty || isResetting || true, // isSaving = true
+      saveDisabled: !isDirty || isSavingDuringSave || isResetting,
+      resetDisabled: !isDirty || isResetting || isSavingDuringSave,
     };
 
     expect(duringSave.saveDisabled).toBe(true);
     expect(duringSave.resetDisabled).toBe(true);
 
     // During reset - both disabled
+    const isResettingDuringReset = true;
     const duringReset = {
-      saveDisabled: !isDirty || isSaving || true, // isResetting = true
-      resetDisabled: !isDirty || true || isSaving, // isResetting = true
+      saveDisabled: !isDirty || isSaving || isResettingDuringReset,
+      resetDisabled: !isDirty || isResettingDuringReset || isSaving,
     };
 
     expect(duringReset.saveDisabled).toBe(true);
@@ -228,7 +230,7 @@ describe('DialogDetailsEditor Error Handling', () => {
       isSaving = true;
       try {
         await saveFile('test.d');
-      } catch (error) {
+      } catch {
         // Error caught
       } finally {
         isSaving = false;

@@ -109,7 +109,7 @@ export class PathValidationService {
     let normalizedPath: string;
     try {
       normalizedPath = path.normalize(filePath);
-    } catch (error) {
+    } catch {
       throw new PathValidationError(
         `Path validation failed: Path normalization failed. Attempted: ${filePath}`,
         filePath,
@@ -198,7 +198,6 @@ export class PathValidationService {
     const tail: string[] = [];
 
     // Walk up until an ancestor resolves with realpath.
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       try {
         const real = await fs.realpath(current);

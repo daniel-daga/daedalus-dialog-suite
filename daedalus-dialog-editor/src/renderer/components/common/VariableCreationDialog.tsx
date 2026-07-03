@@ -146,7 +146,7 @@ const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
             >
               {availableFiles.map(f => (
                 <MenuItem key={f} value={f}>
-                  {f.split(/[\/]/).pop()}
+                  {f.split(/[/]/).pop()}
                 </MenuItem>
               ))}
             </Select>

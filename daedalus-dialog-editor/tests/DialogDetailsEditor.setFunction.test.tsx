@@ -153,7 +153,7 @@ describe('DialogDetailsEditor setFunction Fix', () => {
 
     const currentFunctionName = 'TestInfo';
     const filePath = 'test.d';
-    const currentFunc = {
+    const _currentFunc = {
       name: 'TestInfo',
       actions: [{ text: 'Hello' }]
     };

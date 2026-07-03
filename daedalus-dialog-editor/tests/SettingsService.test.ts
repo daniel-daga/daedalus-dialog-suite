@@ -1,11 +1,10 @@
 import { SettingsService } from '../src/main/services/SettingsService';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { app } from 'electron';
 
 // SettingsService references `require('fs').promises`; spy on that same object
 // (the ESM namespace import above is non-configurable and cannot be spied).
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- must spy on the exact object SettingsService uses
 const fsPromises = require('fs').promises;
 
 jest.mock('electron', () => ({
@@ -23,13 +22,17 @@ describe('SettingsService', () => {
     settingsService = new SettingsService();
     try {
       await fs.mkdir(testUserDataPath, { recursive: true });
-    } catch (e) {}
+    } catch {
+      // directory may already exist
+    }
   });
 
   afterEach(async () => {
     try {
       await fs.rm(testUserDataPath, { recursive: true, force: true });
-    } catch (e) {}
+    } catch {
+      // best-effort cleanup
+    }
   });
 
   it('should return empty list if no settings file exists', async () => {

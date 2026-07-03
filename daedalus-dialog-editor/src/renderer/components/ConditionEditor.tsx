@@ -31,7 +31,7 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
 
   // Helper to strip non-serializable functions from conditions
   const sanitizeCondition = (condition: ConditionEditorCondition): DialogCondition => {
-    const { getTypeName, ...rest } = condition;
+    const { getTypeName: _getTypeName, ...rest } = condition;
     return rest as DialogCondition;
   };
 

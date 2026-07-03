@@ -11,6 +11,7 @@ import {
   getTeacherSkill,
   createTeacherDialogTemplate
 } from '../src/renderer/utils/teacherDialogTemplate';
+import { execFileSync } from 'child_process';
 
 describe('TEACHER_SKILLS', () => {
   test('covers the four fight talents with their vanilla constants', () => {
@@ -118,8 +119,6 @@ describe('createTeacherDialogTemplate', () => {
     // Same constraint as npcExitDialog.test.ts: the native tree-sitter
     // binding cannot be loaded into more than one Jest module registry per
     // worker process, so the parse runs in a child process.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { execFileSync } = require('child_process');
     const parserPath = require.resolve('daedalus-parser');
     const visitorPath = require.resolve('daedalus-parser/semantic-visitor');
     const script = `

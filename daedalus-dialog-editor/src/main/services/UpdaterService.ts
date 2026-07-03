@@ -3,6 +3,7 @@ import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { spawn } from 'child_process';
 import { UpdateMetadata, UpdateCheckResult } from '../../shared/updater-types';
 import { SettingsService } from './SettingsService';
 
@@ -332,7 +333,6 @@ export class UpdaterService {
       }
     }
 
-    const { spawn } = require('child_process');
     const child = spawn(installerPath, ['/S'], {
       detached: true,
       stdio: 'ignore',

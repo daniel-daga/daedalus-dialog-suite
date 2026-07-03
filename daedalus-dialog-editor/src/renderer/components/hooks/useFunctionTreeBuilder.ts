@@ -87,7 +87,6 @@ export function useFunctionTreeBuilder(
       lruSet(cacheKey, result);
       return result;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [functions]
   );
 

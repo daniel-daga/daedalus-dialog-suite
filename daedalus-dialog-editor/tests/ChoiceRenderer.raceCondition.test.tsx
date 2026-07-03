@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ChoiceRenderer from '../src/renderer/components/actionRenderers/ChoiceRenderer';
 
@@ -9,7 +9,6 @@ jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
 }));
 
 describe('ChoiceRenderer Race Condition', () => {
-  let handleUpdate: jest.Mock;
   let handleDelete: jest.Mock;
   let flushUpdate: jest.Mock;
   let handleKeyDown: jest.Mock;
@@ -39,7 +38,6 @@ describe('ChoiceRenderer Race Condition', () => {
   };
 
   beforeEach(() => {
-    handleUpdate = jest.fn();
     handleDelete = jest.fn();
     flushUpdate = jest.fn();
     handleKeyDown = jest.fn();
@@ -51,17 +49,17 @@ describe('ChoiceRenderer Race Condition', () => {
     const user = userEvent.setup();
 
     // Simulate debounced handleUpdate
-    let pendingUpdate: any = null;
+    let _pendingUpdate: any = null;
     const debouncedHandleUpdate = jest.fn((updatedAction) => {
-      pendingUpdate = updatedAction;
+      _pendingUpdate = updatedAction;
       // Simulate debounce - update doesn't happen immediately
       setTimeout(() => {
         // This simulates the parent component eventually updating
-        pendingUpdate = null;
+        _pendingUpdate = null;
       }, 300);
     });
 
-    const { rerender } = render(
+    render(
       <ChoiceRenderer
         {...baseProps}
         handleUpdate={debouncedHandleUpdate}
@@ -103,11 +101,11 @@ describe('ChoiceRenderer Race Condition', () => {
 
   it('should handle rapid typing and blur without data loss', async () => {
     const user = userEvent.setup();
-    let currentActionState = { ...baseProps.action };
+    let _currentActionState = { ...baseProps.action };
 
     // Mock handleUpdate that updates local state
     const handleUpdateMock = jest.fn((updatedAction) => {
-      currentActionState = updatedAction;
+      _currentActionState = updatedAction;
     });
 
     // Mock flushUpdate that should finalize the update
@@ -115,7 +113,7 @@ describe('ChoiceRenderer Race Condition', () => {
       // Simulate flushing the pending update
     });
 
-    const { rerender } = render(
+    render(
       <ChoiceRenderer
         {...baseProps}
         handleUpdate={handleUpdateMock}
@@ -155,7 +153,7 @@ describe('ChoiceRenderer Race Condition', () => {
       }, 100);
     });
 
-    const { rerender } = render(
+    render(
       <ChoiceRenderer
         {...baseProps}
         action={actionState}

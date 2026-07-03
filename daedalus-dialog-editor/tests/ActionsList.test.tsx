@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 
 // Mock ActionCard to observe props
 jest.mock('../src/renderer/components/ActionCard', () => {
-  return React.forwardRef((props: any, ref) => {
+  return React.forwardRef((props: any, _ref) => {
     return (
       <div data-testid="action-card">
         <button onClick={() => props.onRenameFunction('old', 'new')}>
