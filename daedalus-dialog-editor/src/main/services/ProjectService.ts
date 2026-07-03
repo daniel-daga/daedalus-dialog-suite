@@ -16,19 +16,10 @@ export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
 import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
-import type { MetadataResult, ProcessFileResult } from './MetadataWorkerPool';
+import type { MetadataResult } from './MetadataWorkerPool';
 
 function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
-}
-
-// D3 will collect these into ProjectIndex.metadataFailures; until then a
-// per-file failure is treated as empty metadata so the index build survives.
-function toMetadata(result: ProcessFileResult): MetadataResult {
-  if ('ok' in result) {
-    return { dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [] };
-  }
-  return result;
 }
 
 class ProjectService {
@@ -83,15 +74,25 @@ class ProjectService {
     const allNpcs = new Set<string>();
     const questFiles: string[] = [];
     const allRoutines = new Set<string>();
+    const metadataFailures: Array<{ filePath: string; error: string }> = [];
     let npcPrototypes: string[] = [];
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
 
     try {
-      const results = (await Promise.all(
+      // Per-file failures resolve (they do not abort the index build); collect
+      // them into metadataFailures and treat the file as empty metadata so the
+      // NPC/dialog groupings continue past the failure.
+      const results: MetadataResult[] = (await Promise.all(
         allFiles.map(filePath => pool.processFile(filePath))
-      )).map(toMetadata);
+      )).map((result) => {
+        if ('ok' in result) {
+          metadataFailures.push({ filePath: result.filePath, error: result.error });
+          return { dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [] };
+        }
+        return result;
+      });
 
       const parentByType = new Map<string, string>();
       results.forEach((result) => {
@@ -173,7 +174,8 @@ class ProjectService {
       allFiles,
       questFiles,
       routines: Array.from(allRoutines).sort(),
-      npcPrototypes
+      npcPrototypes,
+      metadataFailures
     };
   }
 

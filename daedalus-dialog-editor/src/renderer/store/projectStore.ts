@@ -59,6 +59,8 @@ interface ProjectState {
   questFiles: string[];
   // Prototype names (normalized uppercase) whose parent chain reaches C_NPC
   npcPrototypes: string[];
+  // Files whose metadata extraction failed during the index build (degraded but openable)
+  metadataFailures: Array<{ filePath: string; error: string }>;
 
   // Cached parsed files (full semantic models)
   parsedFiles: Map<string, ParsedFileCache>;
@@ -220,6 +222,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   allDialogFiles: [],
   questFiles: [],
   npcPrototypes: [],
+  metadataFailures: [],
   parsedFiles: new Map(),
   mergedSemanticModel: createEmptySemanticModel(),
   selectedNpc: null,
@@ -259,6 +262,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         allDialogFiles: rawIndex.allFiles || [],
         questFiles: rawIndex.questFiles || [],
         npcPrototypes: rawIndex.npcPrototypes || [],
+        metadataFailures: rawIndex.metadataFailures || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
         selectedNpc: null
@@ -397,6 +401,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       dialogIndex: new Map(),
       allDialogFiles: [],
       npcPrototypes: [],
+      metadataFailures: [],
       parsedFiles: new Map(),
       mergedSemanticModel: createEmptySemanticModel(),
       selectedNpc: null,

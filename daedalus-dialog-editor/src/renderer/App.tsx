@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip, IconButton,
   List, ListItem, ListItemButton, ListItemIcon, ListItemText, Paper, Divider, CircularProgress,
-  Snackbar, Alert
+  Snackbar, Alert, Badge
 } from '@mui/material';
 import {
   FolderOpen as FolderOpenIcon,
@@ -52,13 +52,14 @@ const App: React.FC = () => {
     openFiles: state.openFiles,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
-  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
+  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFiles, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
     openProject: state.openProject,
     projectPath: state.projectPath,
     projectName: state.projectName,
     isIngesting: state.isIngesting,
     allDialogFiles: state.allDialogFiles,
     parsedFiles: state.parsedFiles,
+    metadataFailures: state.metadataFailures,
     isIngestedFilesOpen: state.isIngestedFilesOpen,
     setIngestedFilesOpen: state.setIngestedFilesOpen,
   }), shallow);
@@ -71,6 +72,7 @@ const App: React.FC = () => {
 
   const activeFileState = activeFile ? openFiles.get(activeFile) : null;
   const autoSaveError = activeFileState?.autoSaveError;
+  const saveError = activeFileState?.saveError;
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [appError, setAppError] = useState<string | null>(null);
@@ -217,7 +219,17 @@ const App: React.FC = () => {
                   </IconButton>
                 </span>
               </Tooltip>
-              {autoSaveError ? (
+              {saveError ? (
+                <Tooltip title={
+                  <Typography variant="caption" sx={{ display: 'block' }}>
+                    {saveError.kind === 'timeout'
+                      ? 'Save failed: the parser did not respond (timed out). Your changes are kept in the editor — retry with Ctrl+S.'
+                      : 'Save failed: the parser worker crashed. Your changes are kept in the editor — retry with Ctrl+S.'}
+                  </Typography>
+                }>
+                  <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />
+                </Tooltip>
+              ) : autoSaveError ? (
                 <Tooltip title={
                   <Box>
                     <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
@@ -284,7 +296,9 @@ const App: React.FC = () => {
                 onClick={() => setIngestedFilesOpen(true)}
                 sx={{ zIndex: 1 }}
               >
-                <ListAltIcon />
+                <Badge badgeContent={metadataFailures.length} color="warning">
+                  <ListAltIcon />
+                </Badge>
               </IconButton>
             </Box>
           </Tooltip>

@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as iconv from 'iconv-lite';
 
 describe('ProjectService', () => {
   let tempDir: string;
@@ -424,6 +425,69 @@ PROTOTYPE Item_Default(C_ITEM)
       const index = await service.buildProjectIndex(tempDir);
 
       expect(index.questFiles).not.toContain(path.join(storyDir, 'CommentOnlyMarkers.d'));
+    });
+
+    it('decodes windows-1252 dialog files so umlaut NPCs are indexed intact', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      // Exercises the real inline metadata pipeline (readFile buffer →
+      // encodingUtils.decodeBuffer → parse). A hard-coded utf-8 read would turn
+      // the 0xE4 ('ä') byte into U+FFFD and mangle the NPC identifier.
+      const file = path.join(dialogDir, 'DIA_Baerbel.d');
+      fs.writeFileSync(
+        file,
+        iconv.encode('INSTANCE DIA_Baerbel (C_INFO) { npc = Bärbel_1252; };', 'windows-1252')
+      );
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toContain('Bärbel_1252');
+      expect(index.dialogsByNpc.get('Bärbel_1252')).toHaveLength(1);
+    });
+
+    it('surfaces per-file metadata failures without aborting the index', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      const goodFile = path.join(dialogDir, 'DIA_Good.d');
+      const poisonFile = path.join(dialogDir, 'DIA_Poison.d');
+      fs.writeFileSync(goodFile, 'INSTANCE DIA_Good (C_INFO) { npc = SLD_Good; };');
+      fs.writeFileSync(poisonFile, 'INSTANCE DIA_Poison (C_INFO) { npc = SLD_Poison; };');
+
+      // Force the metadata read for one file to fail (running as root bypasses
+      // chmod 000, so a spy is the deterministic way to simulate a read error).
+      const realReadFile = fs.promises.readFile;
+      const spy = jest
+        .spyOn(fs.promises, 'readFile')
+        .mockImplementation(((p: any, ...args: any[]) => {
+          if (p === poisonFile) {
+            return Promise.reject(new Error('simulated read failure'));
+          }
+          return (realReadFile as any)(p, ...args);
+        }) as any);
+
+      try {
+        const service = new ProjectService();
+        const index = await service.buildProjectIndex(tempDir);
+
+        // The failing file is reported, not silently dropped.
+        expect(index.metadataFailures).toHaveLength(1);
+        expect(index.metadataFailures[0].filePath).toBe(poisonFile);
+        expect(index.metadataFailures[0].error).toContain('simulated read failure');
+
+        // The healthy file is still indexed normally.
+        expect(index.npcs).toContain('SLD_Good');
+        expect(index.dialogsByNpc.get('SLD_Good')).toHaveLength(1);
+        expect(index.npcs).not.toContain('SLD_Poison');
+
+        // The failing file remains tracked (scan and metadata are separate),
+        // so it stays openable — just absent from NPC groupings.
+        expect(index.allFiles).toContain(poisonFile);
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it('should ignore commented INSTANCE declarations when indexing dialogs', async () => {

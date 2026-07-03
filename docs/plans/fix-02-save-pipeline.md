@@ -6,7 +6,7 @@ Status: plan-ready (deep-dive verified 2026-07-03). **Plan only — no implement
 
 All paths relative to `daedalus-dialog-editor/` unless stated otherwise. Cross-slice contracts:
 [fix-01](./fix-01-parser-fidelity.md) (P7 `hasErrors` guard + `allowPartialModel`),
-[fix-03](./fix-03-worker-reliability.md) (D4 encoding extraction, D5 `FileState.saveError` contract),
+fix-03 — **landed**; durable contracts in [worker-reliability.md](../architecture/worker-reliability.md) (D4 encoding extraction → `src/main/utils/encodingUtils.ts`, D5 `FileState.saveError` contract → `src/renderer/utils/saveError.ts`),
 [fix-05](./fix-05-undo-debounce.md) (2.3 pending-edit flush registry; U6 handoff).
 
 ---

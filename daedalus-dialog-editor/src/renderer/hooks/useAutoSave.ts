@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore } from '../store/editorStore';
+import { classifySaveError, type SaveError } from '../utils/saveError';
 
 interface AutoSaveStatus {
   isAutoSaving: boolean;
@@ -42,6 +43,7 @@ export function useAutoSave(): AutoSaveStatus {
       // edits that land while a save is in flight are not marked clean
       const successfulSaves = new Map<string, unknown>();
       const failedSaves = new Map<string, any>();
+      const rejectedSaves = new Map<string, SaveError>();
       const errors: unknown[] = [];
 
       await Promise.all(
@@ -64,6 +66,12 @@ export function useAutoSave(): AutoSaveStatus {
                 failedSaves.set(filePath, result.validationResult);
               }
             } catch (err) {
+              // Classifiable worker failures (timeout / crash) surface on the
+              // file instead of being swallowed; the file stays dirty.
+              const saveError = classifySaveError(err);
+              if (saveError) {
+                rejectedSaves.set(filePath, saveError);
+              }
               errors.push(err);
             }
           }
@@ -98,6 +106,20 @@ export function useAutoSave(): AutoSaveStatus {
               hasErrors: false,
               errors: [],
               lastValidationResult: undefined,
+              saveError: undefined,
+            });
+          }
+        });
+
+        // Mark rejected saves (worker timeout / crash) — keep the file dirty so
+        // work is not lost; the error surfaces via the app-bar indicator.
+        rejectedSaves.forEach((saveError, filePath) => {
+          const currentFileState = newOpenFiles.get(filePath);
+          if (currentFileState) {
+            newOpenFiles.set(filePath, {
+              ...currentFileState,
+              isDirty: true,
+              saveError,
             });
           }
         });

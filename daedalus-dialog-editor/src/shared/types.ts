@@ -20,6 +20,8 @@ export interface ProjectIndex {
   routines: string[];
   /** Prototype names (normalized uppercase) whose parent chain reaches C_NPC */
   npcPrototypes: string[];
+  /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
+  metadataFailures: Array<{ filePath: string; error: string }>;
 }
 
 export interface RecentProject {

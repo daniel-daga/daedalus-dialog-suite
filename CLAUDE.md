@@ -281,14 +281,13 @@ Code review remediation (production-readiness fixes), tracked in `docs/plans/cod
 - `docs/plans/code-review-findings.md` — full review findings (reference, not a plan)
 - `docs/plans/fix-01-parser-fidelity.md` — parser roundtrip fidelity (data loss on parse→generate)
 - `docs/plans/fix-02-save-pipeline.md` — editor save/dirty-state pipeline
-- `docs/plans/fix-03-worker-reliability.md` — worker lifecycle & crash recovery
 - `docs/plans/fix-04-quest-editor.md` — quest editor (unreachable features, canvas lifecycle)
 - `docs/plans/fix-05-undo-debounce.md` — undo/redo × edit debouncing
 - `docs/plans/fix-06-security-updates.md` — security & update chain
 - `docs/plans/fix-07-render-performance.md` — rendering performance at mod scale
 - `docs/plans/fix-08-test-release-gating.md` — test truthfulness & release gating
 
-Recommended fix order: 3 → 2 → 1 → 6 → 4 → 8 → 5 → 7 (dependencies inside each plan).
+Recommended fix order: 3 → 2 → 1 → 6 → 4 → 8 → 5 → 7 (dependencies inside each plan). Slice 3 is done (see `docs/architecture/worker-reliability.md`).
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 

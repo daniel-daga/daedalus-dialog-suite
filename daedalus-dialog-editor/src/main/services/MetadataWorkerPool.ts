@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import type { DialogMetadata } from '../../shared/types';
 import { promises as fsPromises } from 'fs';
 import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
+import { decodeBuffer } from '../utils/encodingUtils';
 import { WorkerRequestError } from './WorkerRequestError';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30000;
@@ -18,8 +19,9 @@ export interface MetadataResult {
   routines: string[];
 }
 
-// D3 will surface this failure shape to the project index (metadataFailures).
-// For now ProjectService treats it as empty metadata at its boundary.
+// ProjectService.buildProjectIndex surfaces this failure shape to the project
+// index as ProjectIndex.metadataFailures (the file is otherwise treated as
+// empty metadata so the index build survives per-file failures).
 export interface MetadataFailure {
   ok: false;
   filePath: string;
@@ -324,7 +326,8 @@ export class MetadataWorkerPool {
 
   private async processFileInline(filePath: string): Promise<ProcessFileResult> {
     try {
-      const content = await fsPromises.readFile(filePath, 'utf-8');
+      const buffer = await fsPromises.readFile(filePath);
+      const { content } = decodeBuffer(buffer);
       return extractFileMetadataFromSource(content, filePath);
     } catch (error) {
       // Match worker-path behavior: tolerate per-file processing failures.

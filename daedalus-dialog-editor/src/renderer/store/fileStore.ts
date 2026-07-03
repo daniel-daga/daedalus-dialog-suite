@@ -18,6 +18,7 @@ import type {
   CodeGenerationSettings,
   ValidationResult
 } from '../types/global';
+import { classifySaveError, type SaveError } from '../utils/saveError';
 
 // Enable Map/Set support in Immer
 enableMapSet();
@@ -124,6 +125,12 @@ export interface FileState {
   errors?: ParseError[];
   lastValidationResult?: ValidationResult;
   autoSaveError?: ValidationResult;
+  /**
+   * Set when a save was rejected with a classifiable worker failure
+   * (timeout / crash). isDirty is never cleared while this is set; cleared on
+   * the next successful save or on a subsequent edit.
+   */
+  saveError?: SaveError;
 }
 
 interface EditorProject {
@@ -295,6 +302,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -320,6 +328,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -356,6 +365,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -381,6 +391,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -405,6 +416,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -446,6 +458,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -556,6 +569,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -590,6 +604,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.isDirty = true;
       fileState.workingCode = undefined;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
       fileState.hasErrors = false;
     });
   },
@@ -656,12 +671,24 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           currentFileState.isDirty = false;
           currentFileState.lastSaved = new Date();
           currentFileState.lastValidationResult = result.validationResult;
+          currentFileState.saveError = undefined;
         }
         state.pendingValidation = null;
       });
 
       return { success: true, validationResult: result.validationResult };
     } catch (error) {
+      // Record a classifiable worker failure so the manual-save path surfaces
+      // it the same way auto-save does. isDirty is never cleared on failure.
+      const saveError = classifySaveError(error);
+      if (saveError) {
+        set((state) => {
+          const currentFileState = state.openFiles.get(filePath);
+          if (currentFileState) {
+            currentFileState.saveError = saveError;
+          }
+        });
+      }
       console.error('Failed to save file:', error);
       throw error;
     }
@@ -716,6 +743,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           currentFileState.hasErrors = processedModel.hasErrors || false;
           currentFileState.errors = processedModel.errors || [];
           currentFileState.lastValidationResult = undefined;
+          currentFileState.saveError = undefined;
         }
       });
       // historyStore subscribes to originalCode changes and clears history automatically

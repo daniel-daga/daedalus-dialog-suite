@@ -32,6 +32,7 @@ const mockProjectState = {
   isIngesting: false,
   allDialogFiles: [] as string[],
   parsedFiles: new Map<string, unknown>(),
+  metadataFailures: [] as Array<{ filePath: string; error: string }>,
   isIngestedFilesOpen: false,
   setIngestedFilesOpen: jest.fn()
 };
