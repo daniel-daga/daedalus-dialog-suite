@@ -10,14 +10,14 @@ import {
   ExpandMore as ExpandMoreIcon,
   ChevronRight as ChevronRightIcon,
 } from '@mui/icons-material';
-import type { SemanticModel } from '../types/global';
 import { searchablePaneRowButtonSx } from './common/searchablePaneStyles';
 
 void React;
 
 interface DialogTreeItemProps {
   dialogName: string;
-  semanticModel: SemanticModel;
+  description: string | undefined;
+  infoFuncName: string | null;
   isSelected: boolean;
   isExpanded: boolean;
   onSelectDialog: (dialogName: string, functionName: string | null) => void;
@@ -28,7 +28,8 @@ interface DialogTreeItemProps {
 
 const DialogTreeItem = memo(({
   dialogName,
-  semanticModel,
+  description,
+  infoFuncName,
   isSelected,
   isExpanded,
   onSelectDialog,
@@ -36,18 +37,11 @@ const DialogTreeItem = memo(({
   hasChildren,
   style,
 }: DialogTreeItemProps) => {
-  const dialog = semanticModel.dialogs?.[dialogName];
-
-  if (!dialog) return null;
-
-  const infoFunc = dialog.properties?.information;
-  const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-
   return (
     <Box style={style}>
       <ListItemButton
         selected={isSelected}
-        onClick={() => onSelectDialog(dialogName, infoFuncName ?? null)}
+        onClick={() => onSelectDialog(dialogName, infoFuncName)}
         sx={(theme) => ({ ...searchablePaneRowButtonSx(theme), pr: 1, height: '100%' })}
       >
         {hasChildren ? (
@@ -68,7 +62,7 @@ const DialogTreeItem = memo(({
           <Box sx={{ width: 32, height: 32, mr: 0.5, flexShrink: 0 }} />
         )}
         <ListItemText
-          primary={dialog.properties?.description || dialogName}
+          primary={description || dialogName}
           secondary={dialogName}
           primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: isExpanded ? 600 : 400, noWrap: true }}
           secondaryTypographyProps={{ fontSize: '0.75rem', noWrap: true }}
@@ -76,35 +70,6 @@ const DialogTreeItem = memo(({
       </ListItemButton>
     </Box>
   );
-}, (prev, next) => {
-  if (prev.dialogName !== next.dialogName) return false;
-
-  const prevDialog = prev.semanticModel.dialogs?.[prev.dialogName];
-  const nextDialog = next.semanticModel.dialogs?.[next.dialogName];
-
-  if (!prevDialog && !nextDialog) {
-    // both undefined
-  } else if (!prevDialog || !nextDialog) {
-    return false;
-  } else {
-    if (prevDialog.properties?.description !== nextDialog.properties?.description) return false;
-
-    const prevInfo = prevDialog.properties?.information;
-    const nextInfo = nextDialog.properties?.information;
-
-    if (prevInfo !== nextInfo) {
-      const prevName = typeof prevInfo === 'object' ? prevInfo.name : prevInfo;
-      const nextName = typeof nextInfo === 'object' ? nextInfo.name : nextInfo;
-      if (prevName !== nextName) return false;
-    }
-  }
-
-  if (prev.isSelected !== next.isSelected) return false;
-  if (prev.isExpanded !== next.isExpanded) return false;
-  if (prev.hasChildren !== next.hasChildren) return false;
-  if (prev.style !== next.style) return false;
-
-  return true;
 });
 
 DialogTreeItem.displayName = 'DialogTreeItem';
