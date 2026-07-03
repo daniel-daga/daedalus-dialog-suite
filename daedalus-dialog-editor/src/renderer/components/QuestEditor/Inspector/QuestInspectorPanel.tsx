@@ -501,6 +501,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                 <Button
                   variant="contained"
                   size="small"
+                  data-testid="qi-condition-expression-preview"
                   disabled={commandBusy || !conditionExpressionDraft.trim()}
                   onClick={() => {
                     if (!selectedNode) return;
@@ -565,6 +566,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                 <Button
                   variant="contained"
                   size="small"
+                  data-testid="qi-topic-status-preview"
                   disabled={commandBusy || !topicStatus.trim() || !functionName}
                   onClick={() => {
                     if (!functionName) return;

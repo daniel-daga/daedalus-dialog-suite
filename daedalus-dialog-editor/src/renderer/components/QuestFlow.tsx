@@ -683,6 +683,19 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     refreshGraph();
   }, [pendingPreview, questName, applyQuestModelsWithHistory, refreshGraph]);
 
+  // Test-only seam (dev/test builds only, same gate as window.__questGraphDebug):
+  // exposes the REAL apply handler so E2E can exercise the apply-time guardrail refusal
+  // without fighting React's disabled-button event filtering. Not present in production.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as { __questGraphDebugEnabled?: boolean; __questApplyDiff?: () => void };
+    if (!w.__questGraphDebugEnabled) return;
+    w.__questApplyDiff = handleApplyDiff;
+    return () => {
+      if (w.__questApplyDiff === handleApplyDiff) delete w.__questApplyDiff;
+    };
+  }, [handleApplyDiff]);
+
   const canUndo = canUndoLastQuestBatch();
   const canRedo = canRedoLastQuestBatch();
 

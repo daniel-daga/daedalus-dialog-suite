@@ -28,6 +28,60 @@ type ExtendedLGraphCanvas = LGraphCanvas & {
   visible_links?: VisibleLink[];
   showLinkMenu?: (link: { id: number }, event?: MouseEvent) => boolean;
   onDrawForeground?: (ctx: CanvasRenderingContext2D) => void;
+  convertOffsetToCanvas?: (pos: [number, number], out?: [number, number]) => [number, number];
+};
+
+// Test-only inspection surface exposed on `window.__questGraphDebug` in dev/test
+// builds (see the gate below). Playwright drives the real litegraph canvas through
+// this — canvas pixels are otherwise unaddressable — returning CSS-pixel PAGE
+// coordinates (viewport-relative, matching Playwright's mouse coordinate space)
+// computed from `ds` scale/offset + the canvas bounding rect, per fix-04 §5's
+// HiDPI note. Not present in production builds.
+interface QuestGraphDebugScreenRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+}
+
+interface QuestGraphDebugApi {
+  /** Current pan/zoom. Used to assert the viewport survives a model edit (Q3/Q5). */
+  getViewport(): { scale: number; offset: [number, number] };
+  /** Front-canvas draw counter — flat over an idle window proves no render storm (Q5). */
+  getRenderCount(): number;
+  /** Model-sync rebuild counter. */
+  getBuildCount(): number;
+  getSelectedNodeId(): string | null;
+  getSelectedEdgeId(): string | null;
+  listNodes(): Array<{ id: string; type: string; runtimeId: number; hasIfPanel: boolean }>;
+  listEdges(): Array<{ id: string; kind?: string; source: string; target: string }>;
+  /** CSS-pixel page coords of a transition/link center marker, or null if not drawn yet. */
+  getLinkCenterScreenPos(edgeId: string): { x: number; y: number } | null;
+  getNodeScreenRect(nodeId: string): QuestGraphDebugScreenRect | null;
+  /** Screen rect of the painted IF chip panel on a dialog node (Q2 selection affordance). */
+  getIfPanelScreenRect(nodeId: string): QuestGraphDebugScreenRect | null;
+  /**
+   * Zooms/pans so every node (and therefore every link) fits inside the canvas and is
+   * drawn — dagre lays the graph out wider than the canvas, and a link's `_pos` is only
+   * computed while visible, so this makes all node/link centers addressable. Returns
+   * false if there is nothing to fit.
+   */
+  fitAll(): boolean;
+}
+
+// Gate the debug surface to dev/test builds only. The Vite entry (main.tsx /
+// node-editor.main.tsx) sets this flag from `import.meta.env.DEV || MODE==='test'`,
+// which is the exact build mode the Playwright `dev:browser` harness runs under and
+// is false for `vite build` production output. We read the flag off `window` instead
+// of referencing `import.meta` here so this module still compiles under ts-jest
+// (module=commonjs), which rejects the `import.meta` meta-property.
+const isQuestGraphDebugEnabled = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return Boolean((window as unknown as { __questGraphDebugEnabled?: boolean }).__questGraphDebugEnabled);
 };
 
 // Selection accent for the edge-center marker; mirrors litegraph's white node
@@ -167,6 +221,10 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const nodeMapRef = useRef<Map<string, QuestGraphNode>>(new Map());
   const questIdToRuntimeNodeRef = useRef<Map<string, LGraphNode>>(new Map());
   const linkIdToEdgeRef = useRef<Map<number, QuestGraphEdge>>(new Map());
+  // Debug-hook bookkeeping (test-only). renderCount ticks per front-canvas draw;
+  // buildCount ticks per model-sync rebuild. Both back the idle-stability assertions.
+  const renderCountRef = useRef(0);
+  const buildCountRef = useRef(0);
 
   const callbacksRef = useRef({
     onNodeClick,
@@ -289,6 +347,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
 
     // Selected-edge visual feedback: stroke a small marker at the selected link's center.
     graphCanvas.onDrawForeground = (ctx: CanvasRenderingContext2D) => {
+      renderCountRef.current += 1;
       const selectedEdge = selectedEdgeIdRef.current;
       if (!selectedEdge || !ctx) return;
       const links = graphCanvas.visible_links;
@@ -322,6 +381,128 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     graphRef.current = graph;
     graphCanvasRef.current = graphCanvas;
 
+    if (isQuestGraphDebugEnabled()) {
+      const graphToScreen = (gx: number, gy: number): [number, number] | null => {
+        const canvasEl = canvasRef.current;
+        const convert = graphCanvas.convertOffsetToCanvas;
+        if (!canvasEl || typeof convert !== 'function') return null;
+        const [cx, cy] = convert.call(graphCanvas, [gx, gy]);
+        const rect = canvasEl.getBoundingClientRect();
+        return [rect.left + cx, rect.top + cy];
+      };
+      const rectFromGraph = (
+        gx: number,
+        gy: number,
+        gw: number,
+        gh: number
+      ): QuestGraphDebugScreenRect | null => {
+        const topLeft = graphToScreen(gx, gy);
+        const bottomRight = graphToScreen(gx + gw, gy + gh);
+        if (!topLeft || !bottomRight) return null;
+        const [left, top] = topLeft;
+        const [right, bottom] = bottomRight;
+        return {
+          left,
+          top,
+          right,
+          bottom,
+          width: right - left,
+          height: bottom - top,
+          centerX: (left + right) / 2,
+          centerY: (top + bottom) / 2
+        };
+      };
+      const debugApi: QuestGraphDebugApi = {
+        getViewport: () => ({
+          scale: graphCanvas.ds?.scale ?? 1,
+          offset: graphCanvas.ds?.offset ?? [0, 0]
+        }),
+        getRenderCount: () => renderCountRef.current,
+        getBuildCount: () => buildCountRef.current,
+        getSelectedNodeId: () => selectedNodeIdRef.current ?? null,
+        getSelectedEdgeId: () => selectedEdgeIdRef.current ?? null,
+        listNodes: () =>
+          Array.from(questIdToRuntimeNodeRef.current.entries()).map(([id, runtimeNode]) => ({
+            id,
+            type: nodeMapRef.current.get(String(runtimeNode.id))?.type ?? 'unknown',
+            runtimeId: Number(runtimeNode.id),
+            hasIfPanel: Boolean((runtimeNode as unknown as { __ifPanelLocalRect?: unknown }).__ifPanelLocalRect)
+          })),
+        listEdges: () =>
+          Array.from(linkIdToEdgeRef.current.values()).map((edge) => ({
+            id: edge.id,
+            kind: edge.data?.kind,
+            source: edge.source,
+            target: edge.target
+          })),
+        getLinkCenterScreenPos: (edgeId: string) => {
+          const links = graphCanvas.visible_links;
+          if (!Array.isArray(links)) return null;
+          for (const link of links) {
+            const center = link?._pos;
+            if (!center) continue;
+            if (linkIdToEdgeRef.current.get(link.id)?.id !== edgeId) continue;
+            const screen = graphToScreen(center[0], center[1]);
+            return screen ? { x: screen[0], y: screen[1] } : null;
+          }
+          return null;
+        },
+        getNodeScreenRect: (nodeId: string) => {
+          // litegraph stores pos/size as Float32Array, so length-check (not Array.isArray).
+          const runtimeNode = questIdToRuntimeNodeRef.current.get(nodeId);
+          const pos = runtimeNode?.pos;
+          const size = runtimeNode?.size;
+          if (!pos || pos.length < 2 || !size || size.length < 2) return null;
+          return rectFromGraph(pos[0], pos[1], size[0], size[1]);
+        },
+        getIfPanelScreenRect: (nodeId: string) => {
+          const runtimeNode = questIdToRuntimeNodeRef.current.get(nodeId);
+          const pos = runtimeNode?.pos;
+          const panel = (runtimeNode as unknown as {
+            __ifPanelLocalRect?: { x: number; y: number; w: number; h: number };
+          })?.__ifPanelLocalRect;
+          if (!pos || pos.length < 2 || !panel) return null;
+          return rectFromGraph(pos[0] + panel.x, pos[1] + panel.y, panel.w, panel.h);
+        },
+        fitAll: () => {
+          const canvasEl = canvasRef.current;
+          const ds = graphCanvas.ds;
+          const runtimeNodes = Array.from(questIdToRuntimeNodeRef.current.values());
+          if (!canvasEl || !ds || runtimeNodes.length === 0) return false;
+          let minX = Infinity;
+          let minY = Infinity;
+          let maxX = -Infinity;
+          let maxY = -Infinity;
+          for (const runtimeNode of runtimeNodes) {
+            const pos = runtimeNode.pos;
+            const size = runtimeNode.size;
+            if (!pos || pos.length < 2 || !size || size.length < 2) continue;
+            // Include the title bar above the node body so nothing clips.
+            minX = Math.min(minX, pos[0]);
+            minY = Math.min(minY, pos[1] - 30);
+            maxX = Math.max(maxX, pos[0] + size[0]);
+            maxY = Math.max(maxY, pos[1] + size[1]);
+          }
+          if (!Number.isFinite(minX)) return false;
+          const rect = canvasEl.getBoundingClientRect();
+          const margin = 48;
+          const bboxW = Math.max(1, maxX - minX);
+          const bboxH = Math.max(1, maxY - minY);
+          const scale = Math.max(
+            0.1,
+            Math.min(1, (rect.width - margin * 2) / bboxW, (rect.height - margin * 2) / bboxH)
+          );
+          ds.scale = scale;
+          ds.offset[0] = rect.width / 2 / scale - (minX + maxX) / 2;
+          ds.offset[1] = rect.height / 2 / scale - (minY + maxY) / 2;
+          graphCanvas.setDirty(true, true);
+          graphCanvas.draw(true, true);
+          return true;
+        }
+      };
+      (window as unknown as { __questGraphDebug?: QuestGraphDebugApi }).__questGraphDebug = debugApi;
+    }
+
     const resizeCanvasToContainer = () => {
       const container = containerRef.current;
       if (!container) return;
@@ -351,6 +532,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       }
       graphCanvas.stopRendering();
       graphCanvas.setCanvas(null as unknown as HTMLCanvasElement);
+      if (isQuestGraphDebugEnabled()) {
+        delete (window as unknown as { __questGraphDebug?: QuestGraphDebugApi }).__questGraphDebug;
+      }
       graphRef.current = null;
       graphCanvasRef.current = null;
       nodeMapRef.current = new Map();
@@ -461,8 +645,11 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
             : `Input ${slotIndex + 1}`;
           runtimeNode.addInput(label, '*');
         }
-        runtimeNode.size = [220, Math.max(130, 44 + requiredInputCount * 18 + DIALOG_INLINE_PANEL_HEIGHT)];
         runtimeNode.addOutput('Out', '*');
+        // Size must be set AFTER add{Input,Output}: litegraph's addInput/addOutput each
+        // call setSize(computeSize()), which would otherwise shrink the node back and
+        // leave the painted IF panel jutting below the body (unclickable).
+        runtimeNode.size = [220, Math.max(130, 44 + requiredInputCount * 18 + DIALOG_INLINE_PANEL_HEIGHT)];
       } else {
         runtimeNode.addInput('Conditions', '*');
         runtimeNode.addOutput(node.type === 'condition' ? 'Result' : 'Out', '*');
@@ -494,6 +681,9 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
         // expression editor) and blocks node-drag for that click. Geometry mirrors
         // attachConditionPreviewRenderer: panelX=10, panelHeight=40, width = size-20.
         const panelWidth = Math.max(120, (runtimeNodeAny.size?.[0] ?? 220) - 20);
+        // Persist the IF-panel geometry (node-local coords) so the debug hook can
+        // resolve its screen rect for Playwright without duplicating this math.
+        runtimeNodeAny.__ifPanelLocalRect = { x: 10, y: panelY, w: panelWidth, h: 40 };
         const questNode = node;
         runtimeNodeAny.onMouseDown = (_event: MouseEvent, pos?: [number, number]) => {
           if (!Array.isArray(pos)) return false;
@@ -548,6 +738,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       }
     });
 
+    buildCountRef.current += 1;
     graphCanvasRef.current?.draw(true, true);
     // Pan/zoom survive automatically now that the canvas is not recreated; re-apply the
     // current selection against the freshly rebuilt runtime nodes.

@@ -1,5 +1,12 @@
 # Fix Plan 04 — Quest Editor Stack (Q1–Q5, U1–U2, PF3)
 
+> **Status (2026-07-03):** Steps 1–8 implemented and tested on branch
+> `claude/code-remediation-plans-auiccp` (durable contracts in
+> [`../architecture/quest-editor.md`](../architecture/quest-editor.md); progress notes in
+> [`code-review-remediation.md`](./code-review-remediation.md)). The §4 **manual smoke
+> checklist** (node-editor playground + real-Electron pass) is still **outstanding** — it
+> needs a desktop environment — so this plan file is kept until that pass is done.
+
 Source findings: [`code-review-findings.md`](./code-review-findings.md) §4 (Q1–Q5), §5 (U1–U2), §7 (PF3).
 Tracker: [`code-review-remediation.md`](./code-review-remediation.md) slice 4.
 

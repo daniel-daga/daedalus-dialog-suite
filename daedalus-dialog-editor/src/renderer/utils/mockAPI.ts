@@ -178,7 +178,38 @@ class MockFileSystem {
 
 // Simple parser that returns the sample model
 // In a real implementation, this could use tree-sitter WASM
+// Test seam: a seeded file may carry a hand-authored SemanticModel as JSON on a
+// line beginning `//__MOCK_MODEL__`. The mock regex parser cannot synthesise quest
+// data (conditions, MIS transitions, choice-based transitions, condition
+// expressions), so E2E specs that need a real quest graph inject the model directly
+// through this marker. Everything after the marker on that line is JSON.
+const MOCK_MODEL_MARKER = '//__MOCK_MODEL__';
+
+function extractInjectedModel(sourceCode: string): any | null {
+  const markerIndex = sourceCode.indexOf(MOCK_MODEL_MARKER);
+  if (markerIndex === -1) return null;
+  const afterMarker = sourceCode.slice(markerIndex + MOCK_MODEL_MARKER.length);
+  const newlineIndex = afterMarker.indexOf('\n');
+  const jsonText = (newlineIndex === -1 ? afterMarker : afterMarker.slice(0, newlineIndex)).trim();
+  try {
+    const model = JSON.parse(jsonText);
+    return { hasErrors: false, errors: [], dialogs: {}, functions: {}, ...model };
+  } catch (error) {
+    return {
+      dialogs: {},
+      functions: {},
+      hasErrors: true,
+      errors: [{ type: 'MockModelParseError', message: String(error) }]
+    };
+  }
+}
+
 function parseSource(sourceCode: string): any {
+  const injected = extractInjectedModel(sourceCode);
+  if (injected) {
+    return injected;
+  }
+
   // For testing, return a model based on whether the source is the sample
   if (sourceCode.includes('DIA_Example_Hello')) {
     return { ...SAMPLE_MODEL };
@@ -445,10 +476,19 @@ export const mockEditorAPI: EditorAPI = {
     const files = MockFileSystem.listFiles();
     const npcs = new Set<string>();
     const dialogsByNpc: Record<string, any[]> = {};
+    // Files carrying quest topic constants are prioritized by ingestion and merged
+    // into the base model by loadQuestData so the QuestList can see the topics.
+    const questFiles: string[] = [];
 
     for (const filePath of files) {
       const content = MockFileSystem.readFile(filePath);
       const model = parseSource(content);
+
+      const hasQuestTopic = Object.keys(model.constants || {})
+        .some((name) => /^topic_/i.test(name));
+      if (hasQuestTopic) {
+        questFiles.push(filePath);
+      }
 
       for (const npcName in model.npcs || {}) {
         npcs.add(npcName);
@@ -479,6 +519,7 @@ export const mockEditorAPI: EditorAPI = {
       npcs: Array.from(npcs).sort(),
       dialogsByNpc, // Return as object, projectStore handles conversion
       allFiles: files,
+      questFiles,
       npcPrototypes: []
     };
   },
