@@ -4,7 +4,10 @@ on:
   workflow_dispatch:
   workflow_call:
   push:
-    branches: [main,master]
+    # TEMPORARY: claude/code-remediation-plans-pbwing added to validate the new
+    # editor-e2e-electron job from the working branch (sandbox cannot run
+    # Electron); revert before merge.
+    branches: [main,master,claude/code-remediation-plans-pbwing]
   pull_request:
     branches: [main,master]
 
