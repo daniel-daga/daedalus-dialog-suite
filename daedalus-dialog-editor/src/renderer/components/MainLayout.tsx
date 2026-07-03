@@ -8,6 +8,7 @@ import { useHistoryStore } from '../store/historyStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
 import { isWritableQuestEditorEnabled } from '../config/features';
+import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import type { SemanticModel } from '../types/global';
 
 const QuestEditor = lazy(() => import('./QuestEditor'));
@@ -74,6 +75,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
       if (!activeFilePath) return;
 
       e.preventDefault();
+      // Commit any in-flight debounced edit as a normal history step BEFORE the
+      // undo/redo, so the first Ctrl+Z reverts the newest keystrokes and a late
+      // timer cannot echo a phantom step onto the stack (finding U4).
+      flushAllPendingEdits();
       if (isUndo) useHistoryStore.getState().undo(activeFilePath);
       if (isRedo) useHistoryStore.getState().redo(activeFilePath);
     };
