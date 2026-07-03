@@ -83,6 +83,19 @@ describe('assertSaveFileOptions', () => {
     expect(() => assertSaveFileOptions({ evil: true })).toThrow(/option/i);
   });
 
+  it('accepts known keys with undefined values (structured clone keeps them)', () => {
+    // fileStore.saveFile sends { forceOnErrors: options?.forceOnErrors, ... },
+    // so absent flags arrive as keys with undefined values over IPC. They must
+    // be treated as "not set", not rejected — rejecting them broke every
+    // manual save in the real app (caught by window-close-guard.spec.ts).
+    expect(() =>
+      assertSaveFileOptions({ forceOnErrors: undefined, overwriteExternal: undefined })
+    ).not.toThrow();
+    expect(() =>
+      assertSaveFileOptions({ forceOnErrors: undefined, overwriteExternal: true })
+    ).not.toThrow();
+  });
+
   it('rejects a non-boolean value for a known key', () => {
     expect(() => assertSaveFileOptions({ skipValidation: 'yes' })).toThrow(/option/i);
   });

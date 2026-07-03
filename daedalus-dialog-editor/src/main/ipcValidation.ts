@@ -83,7 +83,10 @@ export function assertSaveFileOptions(options: unknown): void {
     if (!(SAVE_FILE_OPTION_KEYS as readonly string[]).includes(key)) {
       throw new Error(`Invalid options payload: unknown option "${key}"`);
     }
-    if (typeof options[key] !== 'boolean') {
+    // Callers spread optional flags (`{ forceOnErrors: options?.forceOnErrors }`),
+    // so absent flags arrive as keys with undefined values over structured
+    // clone. Treat them as "not set" rather than malformed.
+    if (options[key] !== undefined && typeof options[key] !== 'boolean') {
       throw new Error(`Invalid options payload: option "${key}" must be a boolean`);
     }
   }
