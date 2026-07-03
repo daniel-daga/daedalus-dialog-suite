@@ -41,9 +41,11 @@ jest.mock('../src/renderer/store/storeSync', () => ({
   initStoreSync: jest.fn(() => jest.fn())
 }));
 
-jest.mock('../src/renderer/store/editorStore', () => ({
-  useEditorStore: () => mockEditorState
-}));
+jest.mock('../src/renderer/store/editorStore', () => {
+  const useEditorStore = () => mockEditorState;
+  useEditorStore.getState = () => mockEditorState;
+  return { useEditorStore };
+});
 
 jest.mock('../src/renderer/store/projectStore', () => ({
   useProjectStore: () => mockProjectState
