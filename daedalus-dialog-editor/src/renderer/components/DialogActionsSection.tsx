@@ -15,8 +15,9 @@ import ActionsList from './ActionsList';
 import ActionTypeMenu from './common/ActionTypeMenu';
 import { DragDispatchContext } from './DragDispatchContext';
 import type { DragMoveHandler, DragDispatchContextValue } from './DragDispatchContext';
+import { useStableHandlers } from './hooks/useStableHandlers';
 import type { ActionTypeId } from './actionTypes';
-import type { DialogAction, DialogFunction, SemanticModel } from '../types/global';
+import type { DialogAction, DialogFunction } from '../types/global';
 import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
 
 interface DialogActionsSectionProps {
@@ -33,7 +34,6 @@ interface DialogActionsSectionProps {
   focusActionAtPath: (path: ActionPath, scrollIntoView?: boolean) => void;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
-  semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction: (oldName: string, newName: string) => void;
   onAddActionToEnd: (actionType: ActionTypeId) => void;
@@ -54,13 +54,32 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
   focusActionAtPath,
   registerActionRef,
   getVisibleActionPaths,
-  semanticModel,
   onNavigateToFunction,
   onRenameFunction,
   onAddActionToEnd,
   filePath
 }) => {
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
+
+  // Identity-stable wrappers for every function prop that crosses the ActionCard
+  // memo boundary (fix-07 §2.8). This is a plain (non-memoized) component, so it
+  // re-renders whenever these handlers are recreated upstream and the wrappers'
+  // shared ref is refreshed — the memoized cards keep their stable props but any
+  // click routes to the latest implementation.
+  const handlers = useStableHandlers({
+    updateActionAtPath,
+    deleteActionAtPath,
+    focusActionAtPath,
+    addDialogLineAfterPath,
+    deleteActionAndFocusPrevAtPath,
+    addActionAfterPath,
+    addActionToBranchEnd,
+    moveAction,
+    registerActionRef,
+    getVisibleActionPaths,
+    onNavigateToFunction,
+    onRenameFunction,
+  });
 
   // Single DragDropContext for the whole dialog pane (fix-05 §2.5). Every
   // descendant ActionsList — top-level list, ConditionalAction branches, and
@@ -136,19 +155,18 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
             <ActionsList
               actions={currentFunction.actions || []}
               npcName={npcName}
-              updateActionAtPath={updateActionAtPath}
-              deleteActionAtPath={deleteActionAtPath}
-              focusActionAtPath={focusActionAtPath}
-              addDialogLineAfterPath={addDialogLineAfterPath}
-              deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
-              addActionAfterPath={addActionAfterPath}
-              addActionToBranchEnd={addActionToBranchEnd}
-              moveAction={moveAction}
-              registerActionRef={registerActionRef}
-              getVisibleActionPaths={getVisibleActionPaths}
-              semanticModel={semanticModel}
-              onNavigateToFunction={onNavigateToFunction}
-              onRenameFunction={onRenameFunction}
+              updateActionAtPath={handlers.updateActionAtPath}
+              deleteActionAtPath={handlers.deleteActionAtPath}
+              focusActionAtPath={handlers.focusActionAtPath}
+              addDialogLineAfterPath={handlers.addDialogLineAfterPath}
+              deleteActionAndFocusPrevAtPath={handlers.deleteActionAndFocusPrevAtPath}
+              addActionAfterPath={handlers.addActionAfterPath}
+              addActionToBranchEnd={handlers.addActionToBranchEnd}
+              moveAction={handlers.moveAction}
+              registerActionRef={handlers.registerActionRef}
+              getVisibleActionPaths={handlers.getVisibleActionPaths}
+              onNavigateToFunction={handlers.onNavigateToFunction}
+              onRenameFunction={handlers.onRenameFunction}
               dialogContextName={dialogName}
               contextId={currentFunction.name}
               filePath={filePath}

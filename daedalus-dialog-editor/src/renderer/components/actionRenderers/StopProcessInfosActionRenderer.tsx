@@ -12,8 +12,7 @@ const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as StopProcessInfosAction;
 
@@ -31,7 +30,6 @@ const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
-        semanticModel={semanticModel}
         {...AUTOCOMPLETE_POLICIES.actions.npcNoInstances}
       />
       <ActionDeleteButton onClick={handleDelete} />

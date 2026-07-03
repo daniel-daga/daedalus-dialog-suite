@@ -11,8 +11,7 @@ const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as SetAttitudeActionType;
 
@@ -28,7 +27,6 @@ const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ width: 120 }}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
-        semanticModel={semanticModel}
       />
       <VariableAutocomplete
         fullWidth
@@ -38,7 +36,6 @@ const SetAttitudeActionRenderer: React.FC<BaseActionRendererProps> = ({
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         {...AUTOCOMPLETE_POLICIES.actions.intVariable}
-        semanticModel={semanticModel}
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>

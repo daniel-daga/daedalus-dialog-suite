@@ -202,7 +202,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           focusActionAtPath={focusAction}
           registerActionRef={registerActionRef}
           getVisibleActionPaths={() => visibleActionPaths}
-          semanticModel={semanticModel}
           onNavigateToFunction={onNavigateToFunction}
           onRenameFunction={handleRenameFunction}
           onAddActionToEnd={addActionToEnd}

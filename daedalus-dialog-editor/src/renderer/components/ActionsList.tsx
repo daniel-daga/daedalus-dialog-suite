@@ -3,7 +3,7 @@ import { Stack, Box } from '@mui/material';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import ActionCard from './ActionCard';
 import type { ActionTypeId } from './actionTypes';
-import type { DialogAction, SemanticModel } from '../types/global';
+import type { DialogAction } from '../types/global';
 import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
 import { actionPathToKey } from './nestedActionUtils';
 import { DragDispatchContext } from './DragDispatchContext';
@@ -22,7 +22,6 @@ interface ActionsListProps {
   moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
-  semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName: string;
@@ -65,7 +64,6 @@ const ActionsList = React.memo<ActionsListProps>(({
   moveAction,
   registerActionRef,
   getVisibleActionPaths,
-  semanticModel,
   onNavigateToFunction,
   onRenameFunction,
   dialogContextName,
@@ -207,7 +205,6 @@ const ActionsList = React.memo<ActionsListProps>(({
                       moveAction={moveAction}
                       registerActionRef={registerActionRef}
                       getVisibleActionPaths={getVisibleActionPaths}
-                      semanticModel={semanticModel}
                       onNavigateToFunction={onNavigateToFunction}
                       onRenameFunction={onRenameFunction}
                       dialogContextName={dialogContextName}
@@ -240,9 +237,6 @@ const ActionsList = React.memo<ActionsListProps>(({
   return <DragDropContext onDragEnd={handleDragEnd}>{droppable}</DragDropContext>;
 }, (prevProps, nextProps) => {
   // Fast bailout checks
-  // If semantic model changed, we must re-render because callbacks (like onRenameFunction)
-  // likely depend on it and need to be updated to capture the latest model.
-  if (prevProps.semanticModel !== nextProps.semanticModel) return false;
   if (prevProps.filePath !== nextProps.filePath) return false;
   if (prevProps.onRenameFunction !== nextProps.onRenameFunction) return false;
 

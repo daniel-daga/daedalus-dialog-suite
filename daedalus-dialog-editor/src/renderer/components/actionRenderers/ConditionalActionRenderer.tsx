@@ -52,7 +52,6 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   moveAction,
   registerActionRef,
   getVisibleActionPaths,
-  semanticModel,
   onNavigateToFunction,
   onRenameFunction,
   dialogContextName,
@@ -147,7 +146,6 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
                 moveAction={moveAction}
                 registerActionRef={registerActionRef!}
                 getVisibleActionPaths={getVisibleActionPaths!}
-                semanticModel={semanticModel}
                 onNavigateToFunction={onNavigateToFunction}
                 onRenameFunction={onRenameFunction}
                 dialogContextName={dialogContextName || ''}

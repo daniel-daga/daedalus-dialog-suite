@@ -19,8 +19,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as LogEntryAction;
 
@@ -52,7 +51,6 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 180 }}
         {...AUTOCOMPLETE_POLICIES.actions.topic}
-        semanticModel={semanticModel}
       />
       <ActionTextField
         fullWidth

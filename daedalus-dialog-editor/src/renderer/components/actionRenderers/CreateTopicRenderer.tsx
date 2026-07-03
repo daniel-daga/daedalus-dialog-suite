@@ -23,8 +23,7 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as CreateTopicAction;
   const isProjectMode = useProjectStore((s) => !!s.projectPath);
@@ -42,7 +41,6 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 180 }}
         {...AUTOCOMPLETE_POLICIES.actions.topic}
-        semanticModel={semanticModel}
       />
       <TextField
         select

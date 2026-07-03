@@ -20,13 +20,23 @@ const updateFunction = jest.fn();
 const updateFunctionWithUpdater = jest.fn();
 const renameFunction = jest.fn();
 
-jest.mock('../src/renderer/store/editorStore', () => ({
-  useEditorStore: (selector: (s: unknown) => unknown) =>
-    selector({ updateFunction, updateFunctionWithUpdater, renameFunction }),
-}));
-
+// InlineChoiceEditor now self-resolves its model from the (editor) store, so the
+// mock exposes the edited file under openFiles keyed by the active file path.
 const SUB_FUNCTION_NAME = 'DIA_Test_Yes';
 const FILE_PATH = '/test/file.d';
+
+let mockModel: unknown = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
+
+jest.mock('../src/renderer/store/editorStore', () => ({
+  useEditorStore: (selector: (s: unknown) => unknown) =>
+    selector({
+      updateFunction,
+      updateFunctionWithUpdater,
+      renameFunction,
+      activeFile: FILE_PATH,
+      openFiles: new Map([[FILE_PATH, { filePath: FILE_PATH, semanticModel: mockModel }]]),
+    }),
+}));
 
 function makeSubFunction(): DialogFunction {
   return {
@@ -50,12 +60,12 @@ function makeModel(subFunction: DialogFunction): SemanticModel {
 }
 
 function renderInline(subFunction: DialogFunction) {
+  mockModel = makeModel(subFunction);
   return render(
     <InlineChoiceEditor
       targetFunctionName={SUB_FUNCTION_NAME}
       dialogName="DIA_Test"
       filePath={FILE_PATH}
-      semanticModel={makeModel(subFunction)}
       npcName="TestNPC"
     />
   );
@@ -122,13 +132,12 @@ describe('InlineChoiceEditor focuses the first sub-dialog line on request (issue
   });
 
   test('a positive focusFirstActionNonce focuses the first line of the sub-dialog', () => {
-    const subFunction = makeSubFunction();
+    mockModel = makeModel(makeSubFunction());
     render(
       <InlineChoiceEditor
         targetFunctionName={SUB_FUNCTION_NAME}
         dialogName="DIA_Test"
         filePath={FILE_PATH}
-        semanticModel={makeModel(subFunction)}
         npcName="TestNPC"
         focusFirstActionNonce={1}
       />
@@ -138,13 +147,12 @@ describe('InlineChoiceEditor focuses the first sub-dialog line on request (issue
   });
 
   test('a zero nonce (mouse expand) leaves focus untouched', () => {
-    const subFunction = makeSubFunction();
+    mockModel = makeModel(makeSubFunction());
     render(
       <InlineChoiceEditor
         targetFunctionName={SUB_FUNCTION_NAME}
         dialogName="DIA_Test"
         filePath={FILE_PATH}
-        semanticModel={makeModel(subFunction)}
         npcName="TestNPC"
         focusFirstActionNonce={0}
       />

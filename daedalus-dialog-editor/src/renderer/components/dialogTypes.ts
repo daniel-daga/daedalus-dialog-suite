@@ -36,7 +36,6 @@ export interface ActionCardProps {
   moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
-  semanticModel?: SemanticModel;
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName?: string; // The dialog/function name for validation prefix

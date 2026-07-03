@@ -2,6 +2,8 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import InlineChoiceEditor from '../src/renderer/components/InlineChoiceEditor';
+import { useFileStore } from '../src/renderer/store/fileStore';
+import { useProjectStore } from '../src/renderer/store/projectStore';
 import type { SemanticModel, DialogFunction } from '../src/renderer/types/global';
 
 // Mock ActionsList to avoid DnD dependencies (same pattern as ConditionalActionRenderer.test.tsx)
@@ -12,17 +14,19 @@ jest.mock('../src/renderer/components/ActionsList', () => ({
   )
 }));
 
-// Mock editorStore
-jest.mock('../src/renderer/store/editorStore', () => ({
-  useEditorStore: (selector: any) => {
-    const state = {
-      updateFunction: jest.fn(),
-      updateFunctionWithUpdater: jest.fn(),
-      renameFunction: jest.fn(),
-    };
-    return selector(state);
-  }
-}));
+const filePath = '/test/file.d';
+
+// InlineChoiceEditor now self-resolves its model from the store (fix-07 §2.8),
+// so tests seed the edited file's model there instead of passing a prop.
+const setFileModel = (model: SemanticModel) => {
+  useFileStore.setState({
+    openFiles: new Map([[filePath, { filePath, semanticModel: model } as never]]),
+    activeFile: filePath,
+  } as never);
+  useProjectStore.setState({
+    mergedSemanticModel: { dialogs: {}, functions: {}, constants: {}, variables: {}, instances: {}, hasErrors: false, errors: [] },
+  } as never);
+};
 
 const testFunction: DialogFunction = {
   name: 'DIA_Test_Yes',
@@ -44,12 +48,12 @@ const testModel: SemanticModel = {
 
 describe('InlineChoiceEditor', () => {
   test('renders target function actions', () => {
+    setFileModel(testModel);
     render(
       <InlineChoiceEditor
         targetFunctionName="DIA_Test_Yes"
         dialogName="DIA_Test"
-        filePath="/test/file.d"
-        semanticModel={testModel}
+        filePath={filePath}
         npcName="TestNPC"
       />
     );
@@ -58,18 +62,17 @@ describe('InlineChoiceEditor', () => {
   });
 
   test('shows empty state when function has no actions', () => {
-    const emptyModel: SemanticModel = {
+    setFileModel({
       ...testModel,
       functions: {
         DIA_Test_Yes: { ...testFunction, actions: [] }
       },
-    };
+    });
     render(
       <InlineChoiceEditor
         targetFunctionName="DIA_Test_Yes"
         dialogName="DIA_Test"
-        filePath="/test/file.d"
-        semanticModel={emptyModel}
+        filePath={filePath}
         npcName="TestNPC"
       />
     );
@@ -77,16 +80,12 @@ describe('InlineChoiceEditor', () => {
   });
 
   test('shows error when function not found', () => {
-    const emptyModel: SemanticModel = {
-      ...testModel,
-      functions: {},
-    };
+    setFileModel({ ...testModel, functions: {} });
     render(
       <InlineChoiceEditor
         targetFunctionName="DIA_Test_Missing"
         dialogName="DIA_Test"
-        filePath="/test/file.d"
-        semanticModel={emptyModel}
+        filePath={filePath}
         npcName="TestNPC"
       />
     );

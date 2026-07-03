@@ -13,8 +13,7 @@ const SetRefuseTalkActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as SetRefuseTalkAction;
 
@@ -32,7 +31,6 @@ const SetRefuseTalkActionRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
-        semanticModel={semanticModel}
         {...AUTOCOMPLETE_POLICIES.actions.npcNoInstances}
       />
       <ActionTextField

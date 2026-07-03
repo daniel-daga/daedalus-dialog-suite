@@ -12,8 +12,7 @@ const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as CreateInventoryItemsAction;
 
@@ -29,7 +28,6 @@ const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ width: 100 }}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
-        semanticModel={semanticModel}
       />
       <VariableAutocomplete
         label="Item"
@@ -39,7 +37,6 @@ const CreateInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={handleKeyDown}
         sx={{ flex: 1 }}
         {...AUTOCOMPLETE_POLICIES.actions.item}
-        semanticModel={semanticModel}
       />
       <ActionTextField
         label="Quantity"

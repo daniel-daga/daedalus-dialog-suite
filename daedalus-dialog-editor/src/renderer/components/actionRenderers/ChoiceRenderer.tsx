@@ -8,6 +8,9 @@ import {
 } from '@mui/icons-material';
 import { validateChoiceFunctionName } from '../dialogUtils';
 import InlineChoiceEditor from '../InlineChoiceEditor';
+import { useResolvedFunction } from '../hooks/useResolvedFunction';
+import { useFileStore } from '../../store/fileStore';
+import { useProjectStore } from '../../store/projectStore';
 import type { BaseActionRendererProps } from './types';
 import type { ChoiceAction } from '../../types/global';
 
@@ -18,7 +21,6 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
   flushUpdate,
   handleKeyDown,
   mainFieldRef,
-  semanticModel,
   onNavigateToFunction,
   onRenameFunction,
   dialogContextName,
@@ -36,12 +38,11 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
     setLocalTargetFunction(typedAction.targetFunction || '');
   }, [typedAction.targetFunction]);
 
-  const targetFunctionExists = !!(
-    semanticModel &&
-    typedAction.targetFunction &&
-    semanticModel.functions &&
-    semanticModel.functions[typedAction.targetFunction]
-  );
+  // Resolve the choice's target function from the store (fix-07 §2.8): a narrow
+  // subscription that re-renders this leaf only when that one function changes,
+  // so model data no longer has to be threaded through the ActionCard memo.
+  const targetFunction = useResolvedFunction(typedAction.targetFunction, filePath);
+  const targetFunctionExists = !!(typedAction.targetFunction && targetFunction);
 
   // Mouse toggling the sub-editor must never steal focus into it (issue #118).
   const handleToggleExpand = () => {
@@ -108,8 +109,15 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
             const originalName = originalFunctionNameRef.current;
             const newName = localTargetFunction;
             if (dialogContextName && onRenameFunction && originalName && newName !== originalName) {
+              // Read the model imperatively at validation time (event handler,
+              // not render) so ChoiceRenderer never subscribes to the whole
+              // model. File-first mirrors the editor's own resolution order.
+              const fileModel = filePath
+                ? useFileStore.getState().openFiles.get(filePath)?.semanticModel
+                : undefined;
+              const validationModel = fileModel ?? useProjectStore.getState().mergedSemanticModel;
               const validationError = validateChoiceFunctionName(
-                newName, dialogContextName, semanticModel, originalName
+                newName, dialogContextName, validationModel, originalName
               );
               if (validationError) {
                 setLocalTargetFunction(originalName);
@@ -130,7 +138,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
         {targetFunctionExists && onNavigateToFunction && (
           <Tooltip title="Edit choice actions (navigate)" arrow>
             <Badge
-              badgeContent={semanticModel!.functions![typedAction.targetFunction]?.actions?.length || 0}
+              badgeContent={targetFunction?.actions?.length || 0}
               color="secondary"
               sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', height: '16px', minWidth: '16px' } }}
             >
@@ -162,7 +170,6 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
           targetFunctionName={typedAction.targetFunction}
           dialogName={dialogContextName || ''}
           filePath={filePath || null}
-          semanticModel={semanticModel}
           npcName={npcName || ''}
           focusFirstActionNonce={focusInnerNonce}
         />

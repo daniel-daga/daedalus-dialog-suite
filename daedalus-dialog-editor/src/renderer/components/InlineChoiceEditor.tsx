@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect } from 'react';
 import { Box, Divider, Typography } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
+import { useProjectStore } from '../store/projectStore';
 import ActionsList from './ActionsList';
 import { useActionManagement } from './hooks/useActionManagement';
 import { useFocusNavigation } from './hooks/useFocusNavigation';
+import { useStableHandlers } from './hooks/useStableHandlers';
 import { flattenActionPaths } from './nestedActionUtils';
-import type { SemanticModel } from '../types/global';
 import type { FunctionUpdater } from './dialogTypes';
 
 interface InlineChoiceEditorProps {
   targetFunctionName: string;
   dialogName: string;
   filePath: string | null;
-  semanticModel?: SemanticModel;
   npcName: string;
   /**
    * Each increment requests that focus move to the first line of the sub-dialog
@@ -27,13 +27,20 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
   targetFunctionName,
   dialogName,
   filePath,
-  semanticModel,
   npcName,
   focusFirstActionNonce = 0,
 }) => {
   const updateFunction = useEditorStore((s) => s.updateFunction);
   const updateFunctionWithUpdater = useEditorStore((s) => s.updateFunctionWithUpdater);
   const renameFunction = useEditorStore((s) => s.renameFunction);
+
+  // Self-resolve the model from the store rather than receiving it through the
+  // ActionCard prop chain (fix-07 §2.8). Only mounted while a choice is expanded,
+  // so subscribing here does not affect collapsed cards. File-first mirrors the
+  // editor's resolution order, falling back to the merged project model.
+  const fileModel = useEditorStore((s) => (filePath ? s.openFiles.get(filePath)?.semanticModel : undefined));
+  const mergedModel = useProjectStore((s) => s.mergedSemanticModel);
+  const semanticModel = fileModel ?? mergedModel;
 
   const targetFunction = semanticModel?.functions?.[targetFunctionName] || null;
   const { registerActionRef, focusAction } = useFocusNavigation();
@@ -70,6 +77,23 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     if (!filePath) return;
     renameFunction(filePath, oldName, newName);
   }, [filePath, renameFunction]);
+
+  // Identity-stable wrappers for every function prop crossing the ActionCard memo
+  // boundary in the sub-dialog list (fix-07 §2.8), mirroring DialogActionsSection.
+  const handlers = useStableHandlers({
+    updateActionAtPath: updateAction,
+    deleteActionAtPath: deleteAction,
+    focusActionAtPath: focusAction,
+    addDialogLineAfterPath: addDialogLineAfter,
+    deleteActionAndFocusPrevAtPath: deleteActionAndFocusPrev,
+    addActionAfterPath: addActionAfter,
+    addActionToBranchEnd,
+    moveAction,
+    registerActionRef,
+    getVisibleActionPaths: () => flattenActionPaths(targetFunction?.actions || []),
+    onNavigateToFunction: undefined,
+    onRenameFunction: handleRenameFunction,
+  });
 
   const hasActions = (targetFunction?.actions?.length ?? 0) > 0;
 
@@ -116,19 +140,18 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
       <ActionsList
         actions={actions}
         npcName={npcName}
-        updateActionAtPath={updateAction}
-        deleteActionAtPath={deleteAction}
-        focusActionAtPath={focusAction}
-        addDialogLineAfterPath={addDialogLineAfter}
-        deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrev}
-        addActionAfterPath={addActionAfter}
-        addActionToBranchEnd={addActionToBranchEnd}
-        moveAction={moveAction}
-        registerActionRef={registerActionRef}
-        getVisibleActionPaths={() => flattenActionPaths(actions)}
-        semanticModel={semanticModel}
-        onNavigateToFunction={undefined}
-        onRenameFunction={handleRenameFunction}
+        updateActionAtPath={handlers.updateActionAtPath}
+        deleteActionAtPath={handlers.deleteActionAtPath}
+        focusActionAtPath={handlers.focusActionAtPath}
+        addDialogLineAfterPath={handlers.addDialogLineAfterPath}
+        deleteActionAndFocusPrevAtPath={handlers.deleteActionAndFocusPrevAtPath}
+        addActionAfterPath={handlers.addActionAfterPath}
+        addActionToBranchEnd={handlers.addActionToBranchEnd}
+        moveAction={handlers.moveAction}
+        registerActionRef={handlers.registerActionRef}
+        getVisibleActionPaths={handlers.getVisibleActionPaths}
+        onNavigateToFunction={handlers.onNavigateToFunction}
+        onRenameFunction={handlers.onRenameFunction}
         dialogContextName={dialogName}
         contextId={targetFunctionName}
         droppableNamespace={targetFunctionName}

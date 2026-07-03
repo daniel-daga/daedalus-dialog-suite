@@ -92,44 +92,6 @@ describe('ActionsList Memoization', () => {
     dialogContextName: 'TestDialog',
   };
 
-  test('should re-render when semanticModel changes', () => {
-    const onRenameFunction1 = jest.fn();
-    const semanticModel1 = { id: 1 };
-
-    const { rerender } = render(
-      <ActionsList
-        {...defaultProps}
-        semanticModel={semanticModel1}
-        onRenameFunction={onRenameFunction1}
-      />
-    );
-
-    // Initial render
-    expect(screen.getByTestId('action-card')).toBeInTheDocument();
-
-    // Trigger rename
-    screen.getByRole('button', { name: 'Rename' }).click();
-    expect(onRenameFunction1).toHaveBeenCalled();
-
-    // Update semanticModel and onRenameFunction (simulating parent re-render)
-    const onRenameFunction2 = jest.fn();
-    const semanticModel2 = { id: 2 }; // New reference
-
-    rerender(
-      <ActionsList
-        {...defaultProps}
-        semanticModel={semanticModel2}
-        onRenameFunction={onRenameFunction2}
-      />
-    );
-
-    // Trigger rename again - should call NEW function if re-rendered
-    screen.getByRole('button', { name: 'Rename' }).click();
-
-    // If ActionsList didn't re-render, it would still use onRenameFunction1
-    expect(onRenameFunction2).toHaveBeenCalled();
-  });
-
   test('should re-render when onRenameFunction changes', () => {
     const onRenameFunction1 = jest.fn();
 
