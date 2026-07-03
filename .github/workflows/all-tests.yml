@@ -59,6 +59,9 @@ jobs:
       - name: Run editor tests
         run: pnpm --filter daedalus-dialog-editor test
 
+      - name: Lint editor
+        run: pnpm --filter daedalus-dialog-editor run lint
+
   editor-ui-tests:
     name: UI Tests (browser harness, shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
