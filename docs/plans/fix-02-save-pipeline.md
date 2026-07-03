@@ -5,7 +5,7 @@ Slice 2 of the 2026-07-02 production-readiness remediation ([tracker](./code-rev
 Status: plan-ready (deep-dive verified 2026-07-03). **Plan only — no implementation yet.**
 
 All paths relative to `daedalus-dialog-editor/` unless stated otherwise. Cross-slice contracts:
-[fix-01](./fix-01-parser-fidelity.md) (P7 `hasErrors` guard + `allowPartialModel`),
+fix-01 — **landed**; durable contracts in [parser-fidelity.md](../architecture/parser-fidelity.md) (P7 `hasErrors` guard + `allowPartialModel` are live: `generateSemanticModel` now throws on errored models, so E3 must ship its UX),
 fix-03 — **landed**; durable contracts in [worker-reliability.md](../architecture/worker-reliability.md) (D4 encoding extraction → `src/main/utils/encodingUtils.ts`, D5 `FileState.saveError` contract → `src/renderer/utils/saveError.ts`),
 [fix-05](./fix-05-undo-debounce.md) (2.3 pending-edit flush registry; U6 handoff).
 
