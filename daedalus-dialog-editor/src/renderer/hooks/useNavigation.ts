@@ -10,35 +10,21 @@ export interface NavigationOptions {
   kind?: 'quest' | 'dialog' | 'npc' | 'variable' | 'constant' | 'instance' | 'function';
 }
 
+const findCaseInsensitiveKey = (values: string[], target: string): string | null => {
+  const lowerTarget = target.toLowerCase();
+  const match = values.find((value) => value.toLowerCase() === lowerTarget);
+  return match || null;
+};
+
 export const useNavigation = () => {
-  const { 
-    dialogIndex, 
-    selectNpc, 
-    getSemanticModel, 
-    loadAndMergeNpcModels,
-    projectPath,
-    mergedSemanticModel
-  } = useProjectStore();
-  
-  const { openFile, openFiles, activeFile } = useEditorStore();
-
-  const {
-    setSelectedNPC,
-    setSelectedDialog,
-    setSelectedQuest,
-    setSelectedFunctionName,
-    setActiveView,
-  } = useUISelectionStore();
-
-  const isProjectMode = !!projectPath;
-
-  const findCaseInsensitiveKey = useCallback((values: string[], target: string): string | null => {
-    const lowerTarget = target.toLowerCase();
-    const match = values.find((value) => value.toLowerCase() === lowerTarget);
-    return match || null;
-  }, []);
-
   const navigateToDialog = useCallback(async (dialogName: string, functionName?: string) => {
+    const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, projectPath } =
+      useProjectStore.getState();
+    const { openFile, activeFile } = useEditorStore.getState();
+    const { setSelectedNPC, setSelectedDialog, setSelectedFunctionName, setActiveView } =
+      useUISelectionStore.getState();
+    const isProjectMode = !!projectPath;
+
     let foundNpc: string | null = null;
     let foundFilePath: string | null = null;
     let exactDialogName: string | null = null;
@@ -60,20 +46,20 @@ export const useNavigation = () => {
       // 2. Select the NPC and load models
       selectNpc(foundNpc);
       setSelectedNPC(foundNpc);
-      
+
       let semanticModel: any = null;
 
       if (isProjectMode) {
         // Load semantic models for all files of this NPC
         const dialogMetadata = dialogIndex.get(foundNpc) || [];
         const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
-        
+
         await Promise.all(
           uniqueFilePaths.map(filePath => getSemanticModel(filePath))
         );
-        
+
         loadAndMergeNpcModels(foundNpc);
-        
+
         // In project mode, we also need to open the specific file to enable editing
         if (foundFilePath && activeFile !== foundFilePath) {
           await openFile(foundFilePath);
@@ -109,11 +95,18 @@ export const useNavigation = () => {
 
       return true;
     }
-    
+
     return false;
-  }, [dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, isProjectMode, activeFile, openFile, setSelectedNPC, setSelectedDialog, setSelectedFunctionName, setActiveView]);
+  }, []);
 
   const navigateToSymbol = useCallback(async (symbolName: string, options?: NavigationOptions) => {
+    const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, projectPath, mergedSemanticModel } =
+      useProjectStore.getState();
+    const { openFile, activeFile, openFiles } = useEditorStore.getState();
+    const { setSelectedNPC, setSelectedFunctionName, setSelectedQuest, setActiveView } =
+      useUISelectionStore.getState();
+    const isProjectMode = !!projectPath;
+
     const lowerSymbolName = symbolName.toLowerCase();
     const requestedKind = options?.kind;
     const currentSemanticModel = isProjectMode ? mergedSemanticModel : (activeFile ? openFiles.get(activeFile)?.semanticModel : null);
@@ -159,7 +152,7 @@ export const useNavigation = () => {
 
     // 4. Try to navigate as an NPC
     if ((!requestedKind || requestedKind === 'npc') && await navigateToNpc()) return true;
-    
+
     // 5. Try to find as a variable, constant, function, or instance in the current model
     if (currentSemanticModel) {
       // Case-insensitive lookup in objects
@@ -211,7 +204,7 @@ export const useNavigation = () => {
     }
 
     return false;
-  }, [activeFile, dialogIndex, findCaseInsensitiveKey, getSemanticModel, isProjectMode, loadAndMergeNpcModels, mergedSemanticModel, navigateToDialog, openFile, openFiles, selectNpc, setActiveView, setSelectedFunctionName, setSelectedNPC, setSelectedQuest]);
+  }, [navigateToDialog]);
 
   return {
     navigateToDialog,
