@@ -35,6 +35,9 @@ Thumbs.db
 *.sqlite
 *.sqlite-journal
 
+# Generated synthetic perf fixtures (scripts/generate-perf-fixture.js)
+perf-fixtures/
+
 test-results/
 test-results-electron/
 playwright-report/
