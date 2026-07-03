@@ -1,8 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for browser-based E2E testing
- * Uses the mock API for fast, isolated testing without Electron
+ * Playwright configuration for the browser mock-harness UI suite.
+ *
+ * This is NOT end-to-end: it never launches Electron. It runs the renderer in
+ * plain Chromium against the mock API (mock parser/codegen, localStorage-backed
+ * fake main process) for fast, isolated UI-flow testing. The word "E2E" is
+ * reserved for the real-Electron suite (tests/e2e-electron/). See
+ * tests/e2e/README.md for the harness contract.
  */
 export default defineConfig({
   testDir: './tests/e2e',
