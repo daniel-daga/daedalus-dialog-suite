@@ -38,4 +38,35 @@ describe('useVariableOptions store subscription granularity', () => {
 
     expect(renderCount).toBe(initialRenders);
   });
+
+  test('does not re-render or rebuild options when the merged model identity changes but category refs are stable', () => {
+    useProjectStore.setState({
+      mergedSemanticModel: {
+        ...emptyModel,
+        constants: { C_A: { name: 'C_A', type: 'int', value: 1, filePath: '/a.d' } },
+        variables: { V_B: { name: 'V_B', type: 'int', filePath: '/a.d' } }
+      }
+    } as never);
+
+    let renderCount = 0;
+    let lastOptions: unknown = null;
+    const Probe = () => {
+      lastOptions = useVariableOptions({});
+      renderCount += 1;
+      return null;
+    };
+
+    render(<Probe />);
+    const initialRenders = renderCount;
+    const firstOptions = lastOptions;
+
+    // Category-stable merge: new mergedSemanticModel identity, same category refs.
+    const prev = useProjectStore.getState().mergedSemanticModel;
+    act(() => {
+      useProjectStore.setState({ mergedSemanticModel: { ...prev } } as never);
+    });
+
+    expect(renderCount).toBe(initialRenders);
+    expect(lastOptions).toBe(firstOptions);
+  });
 });

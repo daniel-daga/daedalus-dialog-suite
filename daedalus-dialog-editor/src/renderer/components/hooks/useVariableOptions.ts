@@ -48,8 +48,16 @@ export function useVariableOptions({
 }: UseVariableOptionsConfig): VariableOption[] {
   // Subscribe to each field individually so autocomplete consumers only
   // re-render when one of these actually changes, not on every projectStore
-  // mutation (e.g. ingestion progress, selection changes).
-  const mergedSemanticModel = useProjectStore((s) => s.mergedSemanticModel);
+  // mutation (e.g. ingestion progress, selection changes). The merged model is
+  // subscribed per category (not by whole-model identity) so the category-
+  // stable merge (§2.1) lets an edit touching only functions skip the full
+  // option rebuild+sort for constants/variables/instances.
+  const projectConstants = useProjectStore((s) => s.mergedSemanticModel.constants);
+  const projectVariables = useProjectStore((s) => s.mergedSemanticModel.variables);
+  const projectInstances = useProjectStore((s) => s.mergedSemanticModel.instances);
+  const projectNpcs = useProjectStore((s) => s.mergedSemanticModel.npcs);
+  const projectAnimations = useProjectStore((s) => s.mergedSemanticModel.animations);
+  const projectFunctions = useProjectStore((s) => s.mergedSemanticModel.functions);
   const dialogIndex = useProjectStore((s) => s.dialogIndex);
   const npcList = useProjectStore((s) => s.npcList);
   const routineList = useProjectStore((s) => s.routineList);
@@ -140,20 +148,20 @@ export function useVariableOptions({
 
     // Constants (highest priority for same names)
     addFromRecord(semanticModel?.constants, 'constant');
-    addFromRecord(mergedSemanticModel.constants, 'constant');
+    addFromRecord(projectConstants, 'constant');
 
     // Variables
     addFromRecord(semanticModel?.variables, 'variable');
-    addFromRecord(mergedSemanticModel.variables, 'variable');
+    addFromRecord(projectVariables, 'variable');
 
     // Instances
     if (showInstances) {
       addFromRecord(semanticModel?.instances, 'instance');
-      addFromRecord(mergedSemanticModel.instances, 'instance');
+      addFromRecord(projectInstances, 'instance');
       addFromRecord(semanticModel?.npcs, 'instance');
-      addFromRecord(mergedSemanticModel.npcs, 'instance');
+      addFromRecord(projectNpcs, 'instance');
       addFromRecord(semanticModel?.animations, 'instance');
-      addFromRecord(mergedSemanticModel.animations, 'instance');
+      addFromRecord(projectAnimations, 'instance');
 
       // Fallback: project index NPC list
       for (const npcName of npcList || []) {
@@ -183,7 +191,7 @@ export function useVariableOptions({
         }
       };
       addFunctions(semanticModel?.functions);
-      addFunctions(mergedSemanticModel.functions);
+      addFunctions(projectFunctions);
     }
 
     // Daily routines
@@ -205,9 +213,9 @@ export function useVariableOptions({
         }
       };
       addRoutinesFromInstances(semanticModel?.instances);
-      addRoutinesFromInstances(mergedSemanticModel.instances);
+      addRoutinesFromInstances(projectInstances);
       addRoutinesFromInstances(semanticModel?.npcs);
-      addRoutinesFromInstances(mergedSemanticModel.npcs);
+      addRoutinesFromInstances(projectNpcs);
 
       // Fallback: project index routine list
       for (const routineName of routineList || []) {
@@ -239,7 +247,12 @@ export function useVariableOptions({
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
   }, [
-    mergedSemanticModel,
+    projectConstants,
+    projectVariables,
+    projectInstances,
+    projectNpcs,
+    projectAnimations,
+    projectFunctions,
     semanticModel,
     typeFilter,
     namePrefix,
