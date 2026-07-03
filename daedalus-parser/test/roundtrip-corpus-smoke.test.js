@@ -19,21 +19,22 @@ const { execFileSync } = require('child_process');
 // drift).
 
 const GREEN_FIXTURES = [
-  'arity-variants.d', // fix-01 step 1 (P4 arity fallback + N8)
-  'numeric-args.d',   // fix-01 step 3 (P3 numeric fidelity)
-  'quoting.d',        // fix-01 step 4 (P5/N1/N2/N7 quote preservation)
-  'case-drift.d'      // fix-01 step 6 (M1-M5 case-insensitive references, b_beklauen)
+  'arity-variants.d',    // fix-01 step 1 (P4 arity fallback + N8)
+  'numeric-args.d',      // fix-01 step 3 (P3 numeric fidelity)
+  'quoting.d',           // fix-01 step 4 (P5/N1/N2/N7 quote preservation)
+  'case-drift.d',        // fix-01 step 6 (M1-M5 case-insensitive references, b_beklauen)
+  'class-prototype.d',   // fix-01 step 7 (P1 class/prototype declarations)
+  'declaration-order.d', // fix-01 step 8 (N10 declaration-order fidelity + header suppression)
+  'comments.d',          // fix-01 step 9 (P6/N3/N4/N5 comment preservation)
+  'condition-idioms.d',  // fix-01 step 9 (P6/N5 standalone comment inside a condition body)
+  'globals.d',           // fix-01 step 9 (P6 trailing/EOF comment preservation)
+  'items-npcs-mds.d',    // fix-01 step 9 (P6 trailing comment preservation)
+  'encoding-1252.d'      // fix-01 step 9 (P6 comment preservation, windows-1252 encoded)
 ];
 
-const KNOWN_RED_FIXTURES = [
-  'class-prototype.d',    // P1 class/prototype declarations dropped
-  'comments.d',           // P6/N3/N5 comment preservation
-  'condition-idioms.d',   // P6/N5 standalone comment inside a condition body (P2 body-loss fixed)
-  'declaration-order.d',  // N10 declaration-order fidelity
-  'globals.d',            // P6 trailing/EOF comment preservation
-  'items-npcs-mds.d',     // P6 trailing comment preservation
-  'encoding-1252.d'       // P6 comment preservation (windows-1252 encoded)
-];
+// The whole synthetic corpus is now Tier-1 token-clean. New fidelity gaps land
+// here as a fresh red fixture; fix and promote to GREEN in the same change.
+const KNOWN_RED_FIXTURES = [];
 
 const corpusDir = path.resolve(__dirname, 'fixtures', 'corpus');
 const scriptPath = path.resolve(__dirname, '..', 'scripts', 'roundtrip-corpus.js');

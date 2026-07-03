@@ -6,6 +6,8 @@ import {
   SemanticModel,
   SetVariableAction,
   Action,
+  CommentAction,
+  DialogLine,
   DialogAction,
   ConditionalAction,
   getDialogProperty
@@ -38,6 +40,9 @@ export class LinkingVisitor {
   private preservedStatementRanges: Map<string, Set<string>>;
   private currentFunctionBodyNode: TreeSitterNode | null;
   private rawModeActionWatermark: number;
+  // Ranges (`startIndex:endIndex`) of comment nodes already consumed as an
+  // AI_Output subtitle, so they are not also re-emitted as standalone comments.
+  private consumedCommentRanges: Set<string>;
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
     this.dialogs = semanticModel.dialogs;
@@ -51,6 +56,7 @@ export class LinkingVisitor {
     this.preservedStatementRanges = new Map<string, Set<string>>;
     this.currentFunctionBodyNode = null;
     this.rawModeActionWatermark = 0;
+    this.consumedCommentRanges = new Set<string>();
   }
 
   /**
@@ -138,6 +144,9 @@ export class LinkingVisitor {
       const nameNode = node.childForFieldName('name');
       if (nameNode) {
         this.currentInstance = this.dialogs[nameNode.text];
+        if (this.currentInstance) {
+          this.captureDialogBodyComments(node, this.currentInstance);
+        }
       }
       return;
     }
@@ -154,6 +163,44 @@ export class LinkingVisitor {
       if (this.currentFunction && body) {
         this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
       }
+    }
+  }
+
+  /**
+   * Capture standalone / trailing comments inside a C_INFO instance body (P6),
+   * attaching them to the following property (leading), the same property line
+   * (trailing), or the end of the body (trailingBody), in source order.
+   */
+  private captureDialogBodyComments(node: TreeSitterNode, dialog: Dialog): void {
+    const body = node.childForFieldName('body');
+    if (!body) return;
+    let pending: string[] = [];
+    let prevKey: string | null = null;
+    let prevEndRow = -1;
+    for (const child of body.namedChildren) {
+      if (child.type === 'comment') {
+        if (prevKey !== null && child.startPosition.row === prevEndRow) {
+          if (!dialog.propertyTrailingComments) dialog.propertyTrailingComments = {};
+          dialog.propertyTrailingComments[prevKey] = child.text;
+        } else {
+          pending.push(child.text);
+        }
+        continue;
+      }
+      if (child.type === 'assignment_statement') {
+        const left = child.childForFieldName('left');
+        const key = left ? left.text : null;
+        if (key !== null && pending.length > 0) {
+          if (!dialog.propertyLeadingComments) dialog.propertyLeadingComments = {};
+          dialog.propertyLeadingComments[key] = pending;
+        }
+        pending = [];
+        prevKey = key;
+        prevEndRow = child.endPosition.row;
+      }
+    }
+    if (pending.length > 0) {
+      dialog.trailingBodyComments = pending;
     }
   }
 
@@ -229,6 +276,22 @@ export class LinkingVisitor {
   }
 
   private handleStatementNode(type: string, node: TreeSitterNode): void {
+    if (type === 'comment') {
+      // A standalone comment at the top level of a (non-condition) function
+      // body is preserved in position as a CommentAction. Condition-function
+      // comments are handled by the raw-mode body sweep. Comments already
+      // consumed as an AI_Output subtitle are skipped.
+      if (
+        this.currentFunction &&
+        !this.isCurrentConditionFunction() &&
+        this.isFunctionTopLevelComment(node) &&
+        !this.consumedCommentRanges.has(`${node.startIndex}:${node.endIndex}`)
+      ) {
+        this.recordActionForCurrentFunction(new CommentAction(node.text));
+      }
+      return;
+    }
+
     if (type === 'assignment_statement') {
       if (this.currentInstance) {
         this.processAssignment(node);
@@ -501,6 +564,14 @@ export class LinkingVisitor {
     const action = ActionParsers.parseSemanticAction(node, functionName);
     if (action) {
       this.recordActionForCurrentFunction(action);
+      // Track the same-line comment absorbed as this AI_Output's subtitle so it
+      // is not also emitted as a standalone CommentAction.
+      if (action instanceof DialogLine && action.inlineComment) {
+        const commentNode = ActionParsers.findCommentAfterStatement(node);
+        if (commentNode) {
+          this.consumedCommentRanges.add(`${commentNode.startIndex}:${commentNode.endIndex}`);
+        }
+      }
     }
   }
 
@@ -534,6 +605,13 @@ export class LinkingVisitor {
     if (!node.type.endsWith('_statement') && node.type !== 'variable_declaration') {
       return false;
     }
+    const parent = node.parent;
+    if (!parent || parent.type !== 'block') return false;
+    const grandParent = parent.parent;
+    return !!grandParent && grandParent.type === 'function_declaration';
+  }
+
+  private isFunctionTopLevelComment(node: TreeSitterNode): boolean {
     const parent = node.parent;
     if (!parent || parent.type !== 'block') return false;
     const grandParent = parent.parent;
@@ -580,7 +658,13 @@ export class LinkingVisitor {
       const body = this.currentFunctionBodyNode;
       if (body) {
         for (const child of body.namedChildren) {
-          if (this.isTopLevelStatement(child)) {
+          if (child.type === 'comment') {
+            // Standalone comments between top-level statements in a raw-mode
+            // condition body are preserved in position (P6/N5).
+            if (!this.consumedCommentRanges.has(`${child.startIndex}:${child.endIndex}`)) {
+              this.recordActionForCurrentFunction(new CommentAction(child.text));
+            }
+          } else if (this.isTopLevelStatement(child)) {
             this.preserveConditionStatement(child);
           }
         }
@@ -765,8 +849,16 @@ export class LinkingVisitor {
     }
 
     const actions: DialogAction[] = [];
+    // Row of an AI_Output statement whose same-line comment was absorbed as its
+    // subtitle — that comment must not also become a standalone CommentAction.
+    let subtitleRow = -1;
     for (const child of blockNode.namedChildren || []) {
       if (child.type === 'comment') {
+        if (child.startPosition.row === subtitleRow) {
+          continue;
+        }
+        // Preserve standalone comments in conditional branch bodies in position.
+        actions.push(new CommentAction(child.text));
         continue;
       }
 
@@ -775,6 +867,7 @@ export class LinkingVisitor {
         return null;
       }
       actions.push(action);
+      subtitleRow = action instanceof DialogLine && action.inlineComment ? child.endPosition.row : -1;
     }
 
     return actions;

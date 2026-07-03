@@ -7,7 +7,9 @@ import {
   SemanticModel,
   GlobalConstant,
   GlobalVariable,
-  GlobalInstance
+  GlobalInstance,
+  GlobalClass,
+  GlobalPrototype
 } from '../semantic-model';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 
@@ -45,7 +47,9 @@ export class DeclarationVisitor {
           // Only recurse into declarations we care about
           if (child.type === 'function_declaration' ||
               child.type === 'instance_declaration' ||
-              child.type === 'variable_declaration') {
+              child.type === 'variable_declaration' ||
+              child.type === 'class_declaration' ||
+              child.type === 'prototype_declaration') {
             this.createObjectsRecursively(cursor);
             this.pendingLeadingComments = [];
           } else {
@@ -53,6 +57,11 @@ export class DeclarationVisitor {
           }
         } while (cursor.gotoNextSibling());
         cursor.gotoParent();
+      }
+      // Comments after the last declaration (EOF) are file-trailing comments.
+      if (this.pendingLeadingComments.length > 0) {
+        this.semanticModel.trailingComments = [...this.pendingLeadingComments];
+        this.pendingLeadingComments = [];
       }
       return;
     }
@@ -155,6 +164,47 @@ export class DeclarationVisitor {
       return; // Optimization: Don't recurse into instance bodies during object creation
     } else if (node.type === 'variable_declaration') {
       this.createGlobalSymbol(node);
+      return;
+    } else if (node.type === 'class_declaration') {
+      const nameNode = node.childForFieldName('name');
+      if (nameNode) {
+        const globalClass = new GlobalClass(nameNode.text);
+        globalClass.sourceText = node.text;
+        globalClass.leadingComments = [...this.pendingLeadingComments];
+        globalClass.position = {
+          startLine: node.startPosition.row + 1,
+          startColumn: node.startPosition.column + 1,
+          endLine: node.endPosition.row + 1,
+          endColumn: node.endPosition.column + 1
+        };
+        globalClass.range = { startIndex: node.startIndex, endIndex: node.endIndex };
+        if (!this.semanticModel.classes) {
+          this.semanticModel.classes = {};
+        }
+        this.semanticModel.classes[globalClass.name] = globalClass;
+        this.semanticModel.declarationOrder?.push({ type: 'class', name: globalClass.name });
+      }
+      return;
+    } else if (node.type === 'prototype_declaration') {
+      const nameNode = node.childForFieldName('name');
+      const parentNode = node.childForFieldName('parent');
+      if (nameNode) {
+        const prototype = new GlobalPrototype(nameNode.text, parentNode ? parentNode.text : '');
+        prototype.sourceText = node.text;
+        prototype.leadingComments = [...this.pendingLeadingComments];
+        prototype.position = {
+          startLine: node.startPosition.row + 1,
+          startColumn: node.startPosition.column + 1,
+          endLine: node.endPosition.row + 1,
+          endColumn: node.endPosition.column + 1
+        };
+        prototype.range = { startIndex: node.startIndex, endIndex: node.endIndex };
+        if (!this.semanticModel.prototypes) {
+          this.semanticModel.prototypes = {};
+        }
+        this.semanticModel.prototypes[prototype.name] = prototype;
+        this.semanticModel.declarationOrder?.push({ type: 'prototype', name: prototype.name });
+      }
       return;
     }
 

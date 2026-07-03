@@ -106,6 +106,8 @@ function extractModelSummary(model) {
   const constants = Object.keys(model.constants || {}).sort();
   const variables = Object.keys(model.variables || {}).sort();
   const instances = Object.keys(model.instances || {}).sort();
+  const classes = Object.keys(model.classes || {}).sort();
+  const prototypes = Object.keys(model.prototypes || {}).sort();
 
   return {
     dialogs,
@@ -114,7 +116,9 @@ function extractModelSummary(model) {
     missingChoiceTargets,
     constants,
     variables,
-    instances
+    instances,
+    classes,
+    prototypes
   };
 }
 
@@ -348,6 +352,10 @@ function analyzeFile(filePath, parser, generator) {
     extraVariables: setDiff(generatedSummary.variables, sourceSummary.variables),
     missingInstances: setDiff(sourceSummary.instances, generatedSummary.instances),
     extraInstances: setDiff(generatedSummary.instances, sourceSummary.instances),
+    missingClasses: setDiff(sourceSummary.classes, generatedSummary.classes),
+    extraClasses: setDiff(generatedSummary.classes, sourceSummary.classes),
+    missingPrototypes: setDiff(sourceSummary.prototypes, generatedSummary.prototypes),
+    extraPrototypes: setDiff(generatedSummary.prototypes, sourceSummary.prototypes),
     tokenFidelity,
     tokenFidelityDrift: tokenFidelity.drift,
     byteFidelityDrift,
@@ -449,6 +457,10 @@ function analyzeFile(filePath, parser, generator) {
     drift.extraVariables.length > 0 ||
     drift.missingInstances.length > 0 ||
     drift.extraInstances.length > 0 ||
+    drift.missingClasses.length > 0 ||
+    drift.extraClasses.length > 0 ||
+    drift.missingPrototypes.length > 0 ||
+    drift.extraPrototypes.length > 0 ||
     drift.functionCountDrift.length > 0 ||
     drift.functionActionMultisetDrift.length > 0 ||
     drift.functionConditionMultisetDrift.length > 0 ||

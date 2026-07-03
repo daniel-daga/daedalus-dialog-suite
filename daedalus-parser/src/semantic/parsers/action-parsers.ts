@@ -148,9 +148,12 @@ export class ActionParsers {
     const listener = args[1].value;
     const dialogId = args[2].value; // This is typically a dialog ID
 
-    // Look for comment after this AI_Output call to use as readable text
-    const comment = ActionParsers.findCommentAfterStatement(node);
-    const hasInlineComment = comment !== null;
+    // Look for a same-line comment after this AI_Output call to use as readable
+    // text (a next-line comment is a standalone comment, not a subtitle).
+    const commentNode = ActionParsers.findCommentAfterStatement(node);
+    const hasInlineComment = commentNode !== null;
+    const rawComment = commentNode ? commentNode.text : '';
+    const comment = rawComment.startsWith('//') ? rawComment.slice(2) : rawComment;
     const text = hasInlineComment ? comment : dialogId;
 
     const line = new DialogLine(speaker, text, dialogId, listener);
@@ -385,9 +388,13 @@ export class ActionParsers {
   }
 
   /**
-   * Find comment that appears after a statement in the AST
+   * Find a same-line comment that appears immediately after a statement in the
+   * AST (an AI_Output subtitle). Returns the comment node so callers can both
+   * read its text and track that the comment was consumed (so it is not also
+   * re-emitted as a standalone CommentAction). A comment on the *next* line is
+   * a standalone comment, not a subtitle, and is not returned here.
    */
-  static findCommentAfterStatement(callNode: TreeSitterNode): string | null {
+  static findCommentAfterStatement(callNode: TreeSitterNode): TreeSitterNode | null {
     // Get the parent statement node (expression_statement)
     const parent = callNode.parent;
     if (!parent) {
@@ -400,8 +407,11 @@ export class ActionParsers {
     // Limit search distance to prevent O(N^2) complexity in large blocks
     for (let distance = 0; nextSibling && distance < MAX_SEARCH_DISTANCE; distance++) {
       if (nextSibling.type === 'comment') {
-        const raw = nextSibling.text;
-        return raw.startsWith('//') ? raw.slice(2) : raw;
+        // Only a comment on the same row as the call is the subtitle.
+        if (nextSibling.startPosition.row === callNode.endPosition.row) {
+          return nextSibling;
+        }
+        return null;
       }
 
       // Stop if we hit another statement, declaration, or block end

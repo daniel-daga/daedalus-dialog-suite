@@ -350,3 +350,85 @@ test('deserializeSemanticModel preserves string-valued numeric arguments through
   assert.ok(emitted.includes('CreateInvItems (self, ItMi_Gold, 0);'), 'emits literal zero quantity');
   assert.ok(emitted.includes('Npc_RemoveInvItem (self, ItMi_Gold);'), 'emits 2-arg remove without quantity');
 });
+
+test('deserializeSemanticModel reconstructs classes, prototypes and trailing comments', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const { GlobalClass, GlobalPrototype } = require('../dist/semantic/semantic-visitor-index');
+
+  const plainJson = {
+    functions: {},
+    dialogs: {},
+    declarationOrder: [
+      { type: 'class', name: 'C_MyRecord' },
+      { type: 'prototype', name: 'Mst_Default' }
+    ],
+    classes: {
+      C_MyRecord: { name: 'C_MyRecord', sourceText: 'class C_MyRecord\n{\n\tvar int data;\n};' }
+    },
+    prototypes: {
+      Mst_Default: { name: 'Mst_Default', parent: 'C_MyRecord', sourceText: 'prototype Mst_Default (C_MyRecord)\n{\n\tdata = 0;\n};' }
+    },
+    trailingComments: ['// end of file']
+  };
+
+  const model = deserializeSemanticModel(JSON.parse(JSON.stringify(plainJson)));
+  assert.ok(model.classes.C_MyRecord instanceof GlobalClass, 'class rehydrates as GlobalClass');
+  assert.ok(model.prototypes.Mst_Default instanceof GlobalPrototype, 'prototype rehydrates as GlobalPrototype');
+  assert.equal(model.prototypes.Mst_Default.parent, 'C_MyRecord');
+  assert.deepEqual(model.trailingComments, ['// end of file']);
+
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false, preserveSourceStyle: true });
+  const generated = generator.generateSemanticModel(model);
+  assert.ok(generated.includes('class C_MyRecord'), 'class regenerates from sourceText');
+  assert.ok(generated.includes('prototype Mst_Default (C_MyRecord)'), 'prototype regenerates from sourceText');
+  assert.ok(generated.trimEnd().endsWith('// end of file'), 'trailing comment regenerates last');
+});
+
+test('deserializeSemanticModel reconstructs CommentAction and dialog property comments', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const { CommentAction } = require('../dist/semantic/semantic-visitor-index');
+
+  const plainJson = {
+    functions: {
+      DIA_Test_Info: {
+        name: 'DIA_Test_Info',
+        returnType: 'void',
+        actions: [
+          { type: 'CommentAction', text: '// standalone note' },
+          { speaker: 'self', listener: 'other', text: 'DIA_Test_15_00', id: 'DIA_Test_15_00' }
+        ],
+        conditions: [],
+        calls: []
+      }
+    },
+    dialogs: {
+      DIA_Test: {
+        name: 'DIA_Test',
+        parent: 'C_INFO',
+        properties: { npc: 'Some_NPC', nr: 1 },
+        propertyLeadingComments: { nr: ['// choose slot'] },
+        propertyTrailingComments: { npc: '// the speaker' },
+        trailingBodyComments: ['// end of body'],
+        actions: []
+      }
+    }
+  };
+
+  const model = deserializeSemanticModel(JSON.parse(JSON.stringify(plainJson)));
+  const { actions } = model.functions.DIA_Test_Info;
+  assert.ok(actions[0] instanceof CommentAction, 'CommentAction rehydrates');
+  assert.equal(actions[0].text, '// standalone note');
+
+  const dialog = model.dialogs.DIA_Test;
+  assert.deepEqual(dialog.propertyLeadingComments.nr, ['// choose slot']);
+  assert.equal(dialog.propertyTrailingComments.npc, '// the speaker');
+  assert.deepEqual(dialog.trailingBodyComments, ['// end of body']);
+
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false, preserveSourceStyle: true });
+  const generated = generator.generateSemanticModel(model);
+  assert.ok(generated.includes('// standalone note'), 'CommentAction regenerates (no semicolon)');
+  assert.ok(!generated.includes('// standalone note;'), 'CommentAction has no trailing semicolon');
+  assert.ok(generated.includes('// choose slot'), 'property leading comment regenerates');
+  assert.ok(generated.includes('// the speaker'), 'property trailing comment regenerates');
+  assert.ok(generated.includes('// end of body'), 'body trailing comment regenerates');
+});
