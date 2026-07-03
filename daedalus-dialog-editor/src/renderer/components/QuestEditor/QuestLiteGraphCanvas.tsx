@@ -164,20 +164,56 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   const questIdToRuntimeNodeRef = useRef<Map<string, LGraphNode>>(new Map());
   const edgeMapRef = useRef<Map<string, QuestGraphEdge>>(new Map());
   const linkIdToEdgeRef = useRef<Map<number, QuestGraphEdge>>(new Map());
-  const [overlayTick, setOverlayTick] = useState(0);
   const [expressionEditorNodeId, setExpressionEditorNodeId] = useState<string | null>(null);
   const [expressionEditorDraft, setExpressionEditorDraft] = useState('');
   const [expressionEditorError, setExpressionEditorError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handle = window.setInterval(() => {
-      setOverlayTick((value) => value + 1);
-    }, 250);
-    return () => {
-      window.clearInterval(handle);
-    };
-  }, []);
+  const callbacksRef = useRef({
+    onNodeClick,
+    onNodeDoubleClick,
+    onEdgeClick,
+    onNodeMove,
+    onPaneClick,
+    onSetConditionExpression
+  });
 
+  useEffect(() => {
+    callbacksRef.current = {
+      onNodeClick,
+      onNodeDoubleClick,
+      onEdgeClick,
+      onNodeMove,
+      onPaneClick,
+      onSetConditionExpression
+    };
+  });
+
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  selectedNodeIdRef.current = selectedNodeId;
+
+  const syncSelection = () => {
+    const graphCanvas = graphCanvasRef.current;
+    if (!graphCanvas) return;
+
+    const currentSelectedId = selectedNodeIdRef.current;
+    if (!currentSelectedId) {
+      graphCanvas.deselectAllNodes();
+      graphCanvas.setDirty(true, true);
+      return;
+    }
+
+    const runtimeNode = questIdToRuntimeNodeRef.current.get(currentSelectedId);
+    if (!runtimeNode) return;
+    if (!graphCanvas.selected_nodes?.[runtimeNode.id]) {
+      graphCanvas.selectNode(runtimeNode, false);
+    }
+    graphCanvas.setDirty(true, true);
+  };
+
+  // Mount-once init: this effect must keep deps `[]` — one LGraph/LGraphCanvas per
+  // mounted <canvas>. All callback props flow through `callbacksRef` (kept current by
+  // the effect above) so prop churn never tears down / recreates the canvas (would reset
+  // pan/zoom + selection and leak stale input-wired canvases). Do NOT add reactive deps.
   useEffect(() => {
     if (!canvasRef.current) return;
     if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')) return;
@@ -185,6 +221,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
     const graph = new LGraph();
     const graphCanvas = new LGraphCanvas(canvasRef.current, graph) as ExtendedLGraphCanvas;
     graphCanvas.allow_dragcanvas = true;
+    graphCanvas.allow_searchbox = false;
     graphCanvas.bgcolor = '#1f1f1f';
 
     graphCanvas.onSelectionChange = (selectedNodes: Record<number, LGraphNode>) => {
@@ -196,21 +233,21 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       const selectedNode = runtimeNodes[runtimeNodes.length - 1];
       const questNode = nodeMapRef.current.get(String(selectedNode.id));
       if (questNode) {
-        onNodeClick({ preventDefault: () => undefined } as React.MouseEvent, questNode);
+        callbacksRef.current.onNodeClick({ preventDefault: () => undefined } as React.MouseEvent, questNode);
       }
     };
 
     graphCanvas.onNodeDblClicked = (selectedNode: LGraphNode) => {
       const questNode = nodeMapRef.current.get(String(selectedNode.id));
       if (questNode) {
-        onNodeDoubleClick({ preventDefault: () => undefined } as React.MouseEvent, questNode);
+        callbacksRef.current.onNodeDoubleClick({ preventDefault: () => undefined } as React.MouseEvent, questNode);
       }
     };
 
     graphCanvas.onLinkSelected = (linkId: number) => {
       const directMatch = linkIdToEdgeRef.current.get(linkId);
       if (directMatch) {
-        onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, directMatch);
+        callbacksRef.current.onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, directMatch);
         return;
       }
 
@@ -223,7 +260,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
         candidate.source === sourceNode.id && candidate.target === targetNode.id
       ));
       if (edge) {
-        onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, edge);
+        callbacksRef.current.onEdgeClick({ preventDefault: () => undefined } as React.MouseEvent, edge);
       }
     };
 
@@ -233,7 +270,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       if (typeof event.canvasX !== 'number' || typeof event.canvasY !== 'number') return false;
       const clickedNode = graph.getNodeOnPos(event.canvasX, event.canvasY, graphCanvas.visible_nodes);
       if (!clickedNode) {
-        onPaneClick();
+        callbacksRef.current.onPaneClick();
       }
       return false;
     };
@@ -242,7 +279,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       if (!Array.isArray(selectedNode.pos)) return;
       const questNode = nodeMapRef.current.get(String(selectedNode.id));
       if (!questNode) return;
-      onNodeMove(questNode.id, {
+      callbacksRef.current.onNodeMove(questNode.id, {
         x: selectedNode.pos[0],
         y: selectedNode.pos[1]
       }, questNode.type, questNode.data.provenance?.filePath);
@@ -279,11 +316,15 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
         window.removeEventListener('resize', resizeCanvasToContainer);
       }
       graphCanvas.stopRendering();
-      graphCanvas.clear();
+      graphCanvas.setCanvas(null as unknown as HTMLCanvasElement);
       graphRef.current = null;
       graphCanvasRef.current = null;
+      nodeMapRef.current = new Map();
+      questIdToRuntimeNodeRef.current = new Map();
+      edgeMapRef.current = new Map();
+      linkIdToEdgeRef.current = new Map();
     };
-  }, [onEdgeClick, onNodeClick, onNodeDoubleClick, onNodeMove, onPaneClick]);
+  }, []);
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -460,26 +501,14 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
       edgeMapRef.current.set(edge.id, edge);
     });
 
-    graph.start();
     graphCanvasRef.current?.draw(true, true);
+    // Pan/zoom survive automatically now that the canvas is not recreated; re-apply the
+    // current selection against the freshly rebuilt runtime nodes.
+    syncSelection();
   }, [nodes, edges]);
 
   useEffect(() => {
-    const graphCanvas = graphCanvasRef.current;
-    if (!graphCanvas) return;
-
-    if (!selectedNodeId) {
-      graphCanvas.deselectAllNodes();
-      graphCanvas.setDirty(true, true);
-      return;
-    }
-
-    const runtimeNode = questIdToRuntimeNodeRef.current.get(selectedNodeId);
-    if (!runtimeNode) return;
-    if (!graphCanvas.selected_nodes?.[runtimeNode.id]) {
-      graphCanvas.selectNode(runtimeNode, false);
-    }
-    graphCanvas.setDirty(true, true);
+    syncSelection();
   }, [selectedNodeId]);
 
   const conditionCapsuleNodes = useMemo(() => (
@@ -541,7 +570,7 @@ const QuestLiteGraphCanvas: React.FC<QuestLiteGraphCanvasProps> = ({
   };
 
   return (
-    <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }} data-overlay-tick={overlayTick}>
+    <Box ref={containerRef} sx={{ height: '100%', width: '100%', position: 'relative' }}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
 
             {isJsdomEnvironment() && conditionCapsuleNodes.map((node) => {
