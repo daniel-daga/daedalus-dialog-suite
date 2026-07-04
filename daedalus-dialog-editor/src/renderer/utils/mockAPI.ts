@@ -525,6 +525,17 @@ export const mockEditorAPI: EditorAPI = {
   },
 
   async parseDialogFile(filePath: string): Promise<any> {
+    // Test seam: the mock parser is synchronous, so a whole project ingests
+    // within a single microtask burst — faster than the store's 500 ms flush
+    // window. That makes the real app's "ingestion in progress" phase
+    // unobservable in the harness. A spec may set `mockapi_parse_delay_ms` in
+    // localStorage to add a per-file latency (modelling real parse cost) so
+    // ingestion spans multiple flush windows and the progress UI is exercisable.
+    // Defaults to 0 → no effect on any spec that does not opt in.
+    const delayMs = Number(localStorage.getItem('mockapi_parse_delay_ms')) || 0;
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     try {
       const content = MockFileSystem.readFile(filePath);
       return parseSource(content);

@@ -4,10 +4,18 @@ Status: **in-progress** — all 8 steps (§5) implemented and landed on branch
 `claude/code-remediation-plans-y8f0ze` (TDD, failing-first Jest per step); suites
 / typecheck / lint green. Durable contracts extracted to
 [`../architecture/render-performance.md`](../architecture/render-performance.md).
+The §3.3 Playwright ingestion smoke is now landed
+(`daedalus-dialog-editor/tests/e2e/ingestion-interactivity.spec.ts`): it opens a
+mod-scale generated fixture (~50 NPCs × 3 files) and asserts the ingestion
+progress overlay appears with determinate progress, ingestion completes, and the
+NPC filter is then interactive — no timing/wall-clock assertions. (Deviation: the
+app's full-screen `ProjectOpeningOverlay` blocks all interaction for the whole
+`isIngesting` window by design, so the filter probe runs the instant the overlay
+clears rather than mid-ingestion; a gated mock-only `mockapi_parse_delay_ms` seam
+makes the ingestion window observable in the otherwise-synchronous mock parser.)
 Outstanding before `done` (plan file kept): the §3.2 manual React Profiler
 before/after evidence and the repo-mandated desktop smoke pass (no display in the
-sandbox), and optionally the §3.3 Playwright ingestion smoke. See the tracker's
-slice-7 progress notes for commit refs and deviations.
+sandbox). See the tracker's slice-7 progress notes for commit refs and deviations.
 
 Source findings: [`code-review-findings.md`](./code-review-findings.md) §7 (PF1, PF2, PF3, PF5) plus the renderer-UI sub-review's ActionCard stale-memo finding (C3) and selector-less store subscriptions (D1–D4 class).
 Tracker: [`code-review-remediation.md`](./code-review-remediation.md) slice 7.

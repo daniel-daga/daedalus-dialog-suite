@@ -72,11 +72,15 @@ Outstanding before `done` (do not delete the plan file yet):
 
 ## Slice 6 progress notes (2026-07-03)
 
-Fixes 1–4 of fix-06 landed (SettingsService atomic/serialized writes; symlink-aware async path validation with allowedRoots/allowedFiles whitelist narrowing; window-open/will-navigate deny + `notifySelfWrite` channel removal + IPC payload shape checks; updater sha256 integrity in its R1 tolerant phase with CI producer + post-publish self-check). Remaining before the slice is `done`:
+Fixes 1–4 of fix-06 landed (SettingsService atomic/serialized writes; symlink-aware async path validation with allowedRoots/allowedFiles whitelist narrowing; window-open/will-navigate deny + `notifySelfWrite` channel removal + IPC payload shape checks; updater sha256 integrity in its R1 tolerant phase with CI producer + post-publish self-check).
 
-- **Fix 5 (R2 strict verifier)**: flip missing-`sha256` from warn to hard failure — only after the R1 build has actually shipped to users via the rolling release (sequencing constraint in fix-06 §4).
+**Fix 7 code landed (2026-07-04):** Electron `^29.4.6` → `^43.0.0` (latest stable; bundled Node 20 → 24, `@types/node` ^24), electron-builder `^24.13.3` → `^26.0.0`, and the `build.electronVersion` dual pin deleted (builder now infers from the devDependency). electron-builder 26's schema validated against the existing `build` block (no deprecations); `build-windows.yml` needs no changes (NSIS artifact naming and asar-verify assertions unchanged). The `npmRebuild: false` NAPI invariant is documented in [worker-reliability.md](../architecture/worker-reliability.md). Local gates green (Jest 131/893, typecheck, main+renderer builds, lint). Sandbox cannot download the Electron binary (egress policy), so runtime verification is CI's `editor-e2e-electron` job under Electron 43 — the plan's designated NAPI/worker safety net — plus the maintainer-run packaged Windows smoke.
+
+Remaining before the slice is `done`:
+
+- **Fix 5 (R2 strict verifier)**: flip missing-`sha256` from warn to hard failure — only after the R1 build has actually shipped to users via the rolling release (sequencing constraint in fix-06 §4). Checked 2026-07-04: the rolling release still predates R1 (last published 2026-02-27), so this stays blocked.
 - **Fix 6 (code signing)**: blocked on the owner's cert / Azure Trusted Signing decision.
-- **Fix 7 (Electron 29 → latest stable + electron-builder bump)**: land after 1–5; needs packaged-app verification on Windows.
+- **Fix 7 verification**: green `editor-e2e-electron` CI run on this branch/master under Electron 43, then packaged-app verification on Windows (maintainer dispatch; extend/keep the packaged-smoke real-parse checklist item).
 - Manual checklist items in fix-06 §3 (junction-layout error UX, signed-installer QA, upgrade smoke).
 
 ## Slice 8 progress notes (2026-07-03)
@@ -191,10 +195,22 @@ Deviations from the plan text (all noted in the diffs):
 - **`useStableHandlers` placement** — applied at `DialogActionsSection` /
   `InlineChoiceEditor` (the non-memoized owners), not `ActionsList`.
 
+The §3.3 Playwright ingestion smoke landed 2026-07-04
+(`tests/e2e/ingestion-interactivity.spec.ts`, browser mock harness): 150 seeded
+dialog files across 50 NPCs, an opt-in `mockapi_parse_delay_ms` seam in
+`mockAPI.parseDialogFile` (default 0, no effect on other specs) so ingestion
+spans multiple flush windows, determinate-progress + completion + NPC-filter
+interactivity assertions, zero timing benchmarks. Note: the full-screen
+`ProjectOpeningOverlay` modally blocks input during `isIngesting` by product
+design, so the filter probe runs the instant the overlay clears (Playwright
+actionability wait encodes "UI interactive again"); a stalled overlay, a hung
+ingestion, or a frozen filter all fail the spec. Verified non-vacuous by
+inverting the filter step (red), then restoring (green).
+
 Outstanding before `done` (plan file kept): the §3.2 manual React Profiler
-before/after evidence and the repo-mandated desktop smoke pass (no display in this
-sandbox), and optionally the §3.3 Playwright ingestion smoke. All automated
-(Jest / structural) coverage is in place.
+before/after evidence and the repo-mandated desktop smoke pass (no display in
+this sandbox). All automated (Jest / structural / Playwright) coverage is in
+place.
 
 ## Working agreement
 
