@@ -80,7 +80,7 @@ Remaining before the slice is `done`:
 
 - **Fix 5 (R2 strict verifier)**: flip missing-`sha256` from warn to hard failure — only after the R1 build has actually shipped to users via the rolling release (sequencing constraint in fix-06 §4). Checked 2026-07-04: the rolling release still predates R1 (last published 2026-02-27), so this stays blocked.
 - **Fix 6 (code signing)**: blocked on the owner's cert / Azure Trusted Signing decision.
-- **Fix 7 verification**: green `editor-e2e-electron` CI run on this branch/master under Electron 43, then packaged-app verification on Windows (maintainer dispatch; extend/keep the packaged-smoke real-parse checklist item).
+- **Fix 7 verification**: the CI half is **satisfied** — master run 28697785586 (merge commit a7ebd2d, 2026-07-04) is fully green under Electron 43, including "E2E Tests (real Electron)" (editor build + all 17 real-Electron tests through the NAPI parser/worker path — the plan's designated safety net). Remaining: packaged-app verification on Windows (maintainer dispatch; extend/keep the packaged-smoke real-parse checklist item).
 - Manual checklist items in fix-06 §3 (junction-layout error UX, signed-installer QA, upgrade smoke).
 
 ## Slice 8 progress notes (2026-07-03)
