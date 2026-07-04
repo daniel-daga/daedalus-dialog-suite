@@ -18,9 +18,18 @@ This directory is the canonical home for repository-level documentation.
 
 - [architecture/dialog-editor.md](architecture/dialog-editor.md)
 - [architecture/quest-editor.md](architecture/quest-editor.md)
+- [architecture/parser-fidelity.md](architecture/parser-fidelity.md)
+- [architecture/save-pipeline.md](architecture/save-pipeline.md)
+- [architecture/worker-reliability.md](architecture/worker-reliability.md)
+- [architecture/render-performance.md](architecture/render-performance.md)
+- [architecture/security-model.md](architecture/security-model.md)
 - [reference/autocomplete-fields.md](reference/autocomplete-fields.md)
 - [reference/dialog-authoring-automations.md](reference/dialog-authoring-automations.md)
 - [reference/parser-roundtrip-scope.md](reference/parser-roundtrip-scope.md)
+
+## Release
+
+- [release-checklist.md](release-checklist.md) — release/QA work (code signing, update verifier, desktop passes) parked until the first release
 
 ## Workspace Entry Points
 

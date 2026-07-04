@@ -123,5 +123,7 @@ shipped runtime and would catch an ABI break.
 `error`/`exit` event fires and no in-process restart can help. The defenses here
 cover JS exceptions escaping the worker, worker OOM (via `resourceLimits`),
 self-exit, and — via timeout — pathological-input hangs. Process-level crash
-handling and relaunch is out of scope for this slice and is owned by slice 8
-(`docs/plans/fix-08-test-release-gating.md`).
+handling was out of scope for this slice; slice 8 later added crash *visibility*
+(a local crash log via `LogService`, plus `render-process-gone` /
+`child-process-gone` handlers) but not automatic relaunch — see
+[`../plans/code-review-remediation.md`](../plans/code-review-remediation.md).

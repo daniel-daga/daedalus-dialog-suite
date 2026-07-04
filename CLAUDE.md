@@ -262,30 +262,24 @@ Import direction is one-way: UI → application → domain.
 
 | Workflow | Jobs |
 |---|---|
-| `all-tests.yml` | `editor-tests` (typecheck + Jest + renderer build), `editor-e2e-tests` (Playwright, sharded 4×), `editor-e2e-merge-reports`, `parser-tests` (tests + lint + typecheck) |
-| `build-windows.yml` | Windows Electron build + installer |
+| `all-tests.yml` | `editor-tests` (typecheck main + renderer, renderer build warning-guard, Jest, lint), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
+| `build-windows.yml` | Windows Electron build + installer; `build` job needs both the full `all-tests.yml` matrix (via `workflow_call`, job `tests`) and `e2e-electron-windows`; guarded to `refs/heads/master`; publishes serialized via `concurrency` group; stale re-runs rejected by comparing `github.sha` to live master head |
 | `deploy-pages.yml` | GitHub Pages deployment |
 
 Notes:
-- `editor-e2e-tests` runs in CI as 4 parallel shards; blob reports are merged into a single HTML artifact
-- `roundtrip-corpus` job is disabled (`if: false`) in CI
+- `all-tests.yml` triggers include `workflow_call` so it can gate releases
 - Editor CI typechecks both main process and renderer separately
 - Editor CI build is guarded against chunk-size and `eval` warnings (litegraph.js eval is whitelisted)
 
 ---
 
-## Active Plans (`docs/plans/`)
+## Code Review Remediation
 
-Code review remediation (production-readiness fixes), tracked in `docs/plans/code-review-remediation.md`:
+The code-review remediation effort is complete — all code landed and CI-green. Durable outcomes live in `docs/architecture/` (`parser-fidelity.md`, `save-pipeline.md`, `worker-reliability.md`, `quest-editor.md`, `dialog-editor.md`, `render-performance.md`, `security-model.md`). The historical review findings are in `docs/plans/code-review-findings.md` and the closeout record is `docs/plans/code-review-remediation.md`.
 
-- `docs/plans/code-review-findings.md` — full review findings (reference, not a plan)
-- `docs/plans/fix-06-security-updates.md` — security & update chain
-- `docs/plans/fix-07-render-performance.md` — rendering performance at mod scale
-- `docs/plans/fix-08-test-release-gating.md` — test truthfulness & release gating
+Production-hardening work that only matters at first release (code signing, strict update verifier, release-dispatch QA, manual desktop passes) is parked in `docs/release-checklist.md`.
 
-Recommended fix order: 3 → 2 → 1 → 6 → 4 → 8 → 5 → 7 (dependencies inside each plan). Slices 1, 2, 3, 4, and 5 are done — durable outcomes in `docs/architecture/` (`parser-fidelity.md`, `save-pipeline.md`, `worker-reliability.md`, the quest Canvas Interaction Contract in `quest-editor.md`, and the undo/redo + drag-and-drop sections of `dialog-editor.md`); their plan files are deleted. Slices 6, 7, and 8 are in-progress (all code landed; manual/maintainer verification or ratchet follow-ups outstanding — see the tracker).
-
-When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
+No active plans remain. When a future plan is complete, extract durable decisions into canonical docs and delete the plan file.
 
 ---
 
