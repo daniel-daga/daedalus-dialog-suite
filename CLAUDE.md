@@ -149,7 +149,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 
 ### Stack
 
-- **Electron 29** — main process (`src/main/`)
+- **Electron 43** — main process (`src/main/`)
 - **React 18 + TypeScript** — renderer process (`src/renderer/`)
 - **Vite** — bundler for renderer
 - **Zustand + Immer** — state management (`src/renderer/store/`)
