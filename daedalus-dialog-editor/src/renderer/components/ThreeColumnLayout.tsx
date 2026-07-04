@@ -74,7 +74,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     addDialogToIndex,
     addProjectFile,
     setIngestedFilesOpen,
-    parsedFiles,
     allDialogFiles
   } = useProjectStore((state) => ({
     projectPath: state.projectPath,
@@ -87,7 +86,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     addDialogToIndex: state.addDialogToIndex,
     addProjectFile: state.addProjectFile,
     setIngestedFilesOpen: state.setIngestedFilesOpen,
-    parsedFiles: state.parsedFiles,
     allDialogFiles: state.allDialogFiles,
   }), shallow);
   const fileState = filePath ? openFiles.get(filePath) : null;
@@ -482,7 +480,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         onAddDialog={handleAddDialog}
         onCreateTeacherDialog={isProjectMode ? handleCreateTeacherDialog : undefined}
         dialogIndex={dialogIndex}
-        parsedFiles={parsedFiles}
         setIngestedFilesOpen={setIngestedFilesOpen}
       />
 

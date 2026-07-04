@@ -1,13 +1,16 @@
 import { useMemo, useEffect } from 'react';
+import { shallow } from 'zustand/shallow';
 import type { DialogMetadata } from '../../types/global';
 import type { ParsedFileCache } from '../../store/projectStore';
+import { useProjectStore } from '../../store/projectStore';
 
 interface UseNpcDialogErrorsProps {
   isProjectMode: boolean;
   selectedNPC: string | null;
   dialogIndex: Map<string, DialogMetadata[]>;
-  parsedFiles: Map<string, ParsedFileCache>;
 }
+
+const EMPTY_PATHS: string[] = [];
 
 export interface NpcDialogError {
   filePath: string;
@@ -27,17 +30,25 @@ export function useNpcDialogErrors({
   isProjectMode,
   selectedNPC,
   dialogIndex,
-  parsedFiles,
 }: UseNpcDialogErrorsProps): UseNpcDialogErrorsResult {
-  const npcDialogErrors = useMemo((): NpcDialogError[] => {
-    if (!isProjectMode || !selectedNPC) return [];
-
+  const npcFilePaths = useMemo((): string[] => {
+    if (!isProjectMode || !selectedNPC) return EMPTY_PATHS;
     const dialogMetadata = dialogIndex.get(selectedNPC) || [];
-    const npcFilePaths = Array.from(new Set(dialogMetadata.map(m => m.filePath)));
+    return Array.from(new Set(dialogMetadata.map(m => m.filePath)));
+  }, [isProjectMode, selectedNPC, dialogIndex]);
 
+  // Narrow subscription: only the selected NPC's parsed file entries, compared
+  // with shallow so ingestion flushes touching other NPCs' files (which replace
+  // the whole parsedFiles Map) do not re-render this NPC's dialog column.
+  const npcParsedEntries = useProjectStore(
+    (s) => npcFilePaths.map((fp) => s.parsedFiles.get(fp)),
+    shallow
+  ) as Array<ParsedFileCache | undefined>;
+
+  const npcDialogErrors = useMemo((): NpcDialogError[] => {
     const errors: NpcDialogError[] = [];
-    npcFilePaths.forEach((filePath) => {
-      const parsed = parsedFiles.get(filePath);
+    npcFilePaths.forEach((filePath, i) => {
+      const parsed = npcParsedEntries[i];
       const fileErrors = parsed?.semanticModel?.errors || [];
       if (parsed?.semanticModel?.hasErrors) {
         fileErrors.forEach((err) => {
@@ -45,9 +56,8 @@ export function useNpcDialogErrors({
         });
       }
     });
-
     return errors;
-  }, [isProjectMode, selectedNPC, dialogIndex, parsedFiles]);
+  }, [npcFilePaths, npcParsedEntries]);
 
   const hasNpcDialogErrors = npcDialogErrors.length > 0;
 

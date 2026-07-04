@@ -42,4 +42,20 @@ describe('IngestedFilesDialog re-render behaviour', () => {
     });
     expect(commits).toBeGreaterThan(afterMount);
   });
+
+  it('does not re-render on parsedFiles flushes while closed (item E gate)', () => {
+    let commits = 0;
+    render(
+      <React.Profiler id="ingested-closed" onRender={() => { commits += 1; }}>
+        <IngestedFilesDialog open={false} onClose={() => {}} />
+      </React.Profiler>
+    );
+    const afterMount = commits;
+
+    // A closed dialog must not re-render when ingestion replaces parsedFiles.
+    act(() => {
+      useProjectStore.setState({ parsedFiles: new Map([['/p/a.d', {} as never]]) });
+    });
+    expect(commits).toBe(afterMount);
+  });
 });

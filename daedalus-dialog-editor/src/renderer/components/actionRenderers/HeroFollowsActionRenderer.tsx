@@ -11,8 +11,7 @@ const HeroFollowsActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as HeroFollowsActionType;
 
@@ -28,7 +27,6 @@ const HeroFollowsActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         placeholder="e.g. RTN_SZMYK_15_GUIDEMITTE"
-        semanticModel={semanticModel}
         {...AUTOCOMPLETE_POLICIES.actions.routine}
       />
       <ActionDeleteButton onClick={handleDelete} />

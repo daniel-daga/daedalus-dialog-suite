@@ -31,7 +31,7 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
 }) => {
   const [code, setCode] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const { codeSettings } = useEditorStore();
+  const codeSettings = useEditorStore((s) => s.codeSettings);
 
   useEffect(() => {
     if (open && dialogName && semanticModel) {

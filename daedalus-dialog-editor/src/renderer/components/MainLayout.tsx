@@ -40,11 +40,13 @@ const LoadingView: React.FC<LoadingViewProps> = ({ label }) => (
 );
 
 const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
-  const { openFiles } = useEditorStore();
-  const { activeView: view, setActiveView: setView } = useUISelectionStore();
-  const { projectPath, mergedSemanticModel, loadQuestData } = useProjectStore();
+  const fileState = useEditorStore((s) => (filePath ? s.openFiles.get(filePath) ?? null : null));
+  const view = useUISelectionStore((s) => s.activeView);
+  const setView = useUISelectionStore((s) => s.setActiveView);
+  const projectPath = useProjectStore((s) => s.projectPath);
+  const mergedSemanticModel = useProjectStore((s) => s.mergedSemanticModel);
+  const loadQuestData = useProjectStore((s) => s.loadQuestData);
 
-  const fileState = filePath ? openFiles.get(filePath) : null;
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
   const writableQuestEditorEnabled = isWritableQuestEditorEnabled();

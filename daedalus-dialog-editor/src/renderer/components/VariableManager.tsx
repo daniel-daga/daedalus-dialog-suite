@@ -43,7 +43,9 @@ type VariableEntry = {
 };
 
 const VariableManager: React.FC = () => {
-  const { mergedSemanticModel, deleteVariable } = useProjectStore();
+  const constantDecls = useProjectStore((s) => s.mergedSemanticModel.constants);
+  const variableDecls = useProjectStore((s) => s.mergedSemanticModel.variables);
+  const deleteVariable = useProjectStore((s) => s.deleteVariable);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'constants' | 'variables'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -53,9 +55,9 @@ const VariableManager: React.FC = () => {
 
   const variables = useMemo(() => {
     const vars: VariableEntry[] = [];
-    if (mergedSemanticModel.constants) {
+    if (constantDecls) {
       vars.push(
-        ...Object.values(mergedSemanticModel.constants).map((c) => ({
+        ...Object.values(constantDecls).map((c) => ({
           variable: c,
           isConstant: true,
           lowerName: c.name.toLowerCase(),
@@ -65,9 +67,9 @@ const VariableManager: React.FC = () => {
         }))
       );
     }
-    if (mergedSemanticModel.variables) {
+    if (variableDecls) {
       vars.push(
-        ...Object.values(mergedSemanticModel.variables).map((v) => ({
+        ...Object.values(variableDecls).map((v) => ({
           variable: v,
           isConstant: false,
           lowerName: v.name.toLowerCase(),
@@ -78,7 +80,7 @@ const VariableManager: React.FC = () => {
       );
     }
     return vars.sort((a, b) => a.variable.name.localeCompare(b.variable.name));
-  }, [mergedSemanticModel]);
+  }, [constantDecls, variableDecls]);
 
   const availableTypes = useMemo(() => {
     const types = new Set<string>();

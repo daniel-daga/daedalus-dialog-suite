@@ -12,8 +12,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as SetVariableAction;
 
@@ -29,7 +28,6 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 200 }}
         {...AUTOCOMPLETE_POLICIES.actions.setVariableName}
-        semanticModel={semanticModel}
         textFieldProps={{
           error: !typedAction.variableName?.trim(),
           helperText: !typedAction.variableName?.trim() ? 'Variable name required' : undefined

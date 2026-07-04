@@ -12,8 +12,7 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as AttackActionType;
 
@@ -29,7 +28,6 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ width: 90 }}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
-        semanticModel={semanticModel}
       />
       <VariableAutocomplete
         label="Target"
@@ -39,7 +37,6 @@ const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={handleKeyDown}
         sx={{ width: 80 }}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
-        semanticModel={semanticModel}
       />
       <ActionTextField
         label="Reason"

@@ -12,7 +12,7 @@ import { actionPathToKey } from './nestedActionUtils';
 import ActionTypeMenu from './common/ActionTypeMenu';
 import DeleteConfirmDialog from './common/DeleteConfirmDialog';
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, semanticModel, onNavigateToFunction, onRenameFunction, dialogContextName, droppableNamespace, dragHandleProps, filePath }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, onNavigateToFunction, onRenameFunction, dialogContextName, droppableNamespace, dragHandleProps, filePath }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -247,7 +247,6 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     flushUpdate,
     handleKeyDown,
     mainFieldRef,
-    semanticModel,
     onNavigateToFunction,
     onRenameFunction,
     dialogContextName,
@@ -411,9 +410,18 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     </Box>
   );
 }), (prevProps, nextProps) => {
-  // Custom comparison to prevent unnecessary re-renders
-  // Compare by action ID and check if action content is deeply equal
-  // This prevents re-renders when only function props change (which happens often)
+  // Honest comparator (fix-07 §2.8 option iii). This intentionally ignores every
+  // function prop and reads no model data, which is only safe because of two
+  // invariants the owner guarantees:
+  //   1. All function props crossing this boundary are identity-stable
+  //      (ActionsList's owner wraps them via useStableHandlers), so a swapped
+  //      handler implementation is picked up through the wrapper's ref without a
+  //      re-render.
+  //   2. Model data must NOT cross this boundary — renderers that need the
+  //      semantic model read it from the store at the leaf (ChoiceRenderer via
+  //      useResolvedFunction; VariableAutocomplete via useVariableOptions), so a
+  //      memo-blocked card never shows stale model data.
+  // Given those, the true render inputs are just the fields compared below.
 
   if (actionPathToKey(prevProps.path) !== actionPathToKey(nextProps.path)) return false;
   if (prevProps.index !== nextProps.index) return false;

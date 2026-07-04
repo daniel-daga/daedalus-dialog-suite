@@ -4,6 +4,8 @@ export type DialogRowData = {
   type: 'dialog';
   id: string; // dialogName
   dialogName: string;
+  description: string | undefined;
+  infoFuncName: string | null;
   hasChildren: boolean;
   isExpanded: boolean;
   depth: number;
@@ -24,7 +26,8 @@ export type FlatItem = DialogRowData | ChoiceRowData;
 
 export const flattenDialogs = (
   filteredDialogs: string[],
-  semanticModel: SemanticModel,
+  dialogs: SemanticModel['dialogs'],
+  functions: SemanticModel['functions'],
   expandedDialogs: Set<string>,
   expandedChoices: Set<string>,
   buildFunctionTree: (funcName: string, ancestorPath?: string[]) => FunctionTreeNode | null
@@ -32,13 +35,13 @@ export const flattenDialogs = (
   const items: FlatItem[] = [];
 
   for (const dialogName of filteredDialogs) {
-    const dialog = semanticModel.dialogs?.[dialogName];
+    const dialog = dialogs?.[dialogName];
     if (!dialog) continue;
 
     const isExpanded = expandedDialogs.has(dialogName);
     const infoFunc = dialog.properties?.information;
     const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-    const infoFuncData = infoFuncName ? semanticModel.functions?.[infoFuncName] : null;
+    const infoFuncData = infoFuncName ? functions?.[infoFuncName] : null;
 
     let tree: FunctionTreeNode | null = null;
     let hasChildren = false;
@@ -55,6 +58,8 @@ export const flattenDialogs = (
       type: 'dialog',
       id: dialogName,
       dialogName: dialogName,
+      description: dialog.properties?.description,
+      infoFuncName: infoFuncName ?? null,
       hasChildren,
       isExpanded,
       depth: 0

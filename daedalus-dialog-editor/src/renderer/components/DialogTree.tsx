@@ -28,7 +28,6 @@ import { TEACHER_SKILLS, getTeacherSkill, type TeacherSkillId } from '../utils/t
 import DialogTreeItem from './DialogTreeItem';
 import ChoiceTreeItem from './ChoiceTreeItem';
 import { flattenDialogs } from './dialogTreeUtils';
-import type { SemanticModel } from '../types/global';
 import {
   SEARCHABLE_PANE_PATTERN,
   searchablePaneContentSx,
@@ -40,7 +39,6 @@ import {
 
 interface ItemData {
   flatItems: any[];
-  semanticModel: SemanticModel;
   selectedDialog: string | null;
   selectedFunctionName: string | null;
   onSelectDialog: (dialogName: string, functionName: string | null) => void;
@@ -51,7 +49,6 @@ interface ItemData {
 const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => {
   const {
     flatItems,
-    semanticModel,
     selectedDialog,
     selectedFunctionName,
     onSelectDialog,
@@ -62,14 +59,12 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<ItemData>) => 
   const item = flatItems[index];
 
   if (item.type === 'dialog') {
-    const infoFunc = semanticModel.dialogs?.[item.dialogName]?.properties?.information;
-    const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
-
     return (
       <DialogTreeItem
         dialogName={item.dialogName}
-        semanticModel={semanticModel}
-        isSelected={selectedDialog === item.dialogName && selectedFunctionName === infoFuncName}
+        description={item.description}
+        infoFuncName={item.infoFuncName}
+        isSelected={selectedDialog === item.dialogName && selectedFunctionName === item.infoFuncName}
         isExpanded={item.isExpanded}
         onSelectDialog={onSelectDialog}
         onToggleDialogExpand={onToggleDialogExpand}
@@ -112,7 +107,9 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   onAddDialog,
   onCreateTeacherDialog,
 }) => {
-  const { dialogFilter, setDialogFilter, filterDialogs } = useSearchStore();
+  const dialogFilter = useSearchStore((s) => s.dialogFilter);
+  const setDialogFilter = useSearchStore((s) => s.setDialogFilter);
+  const filterDialogs = useSearchStore((s) => s.filterDialogs);
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [newDialogName, setNewDialogName] = React.useState('');
   const [isCreating, setIsCreating] = React.useState(false);
@@ -148,16 +145,16 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     if (!selectedNPC) return [];
     return flattenDialogs(
       filteredDialogs,
-      semanticModel,
+      semanticModel.dialogs,
+      semanticModel.functions,
       expandedDialogs,
       expandedChoices,
       buildFunctionTree
     );
-  }, [selectedNPC, filteredDialogs, semanticModel, expandedDialogs, expandedChoices, buildFunctionTree]);
+  }, [selectedNPC, filteredDialogs, semanticModel.dialogs, semanticModel.functions, expandedDialogs, expandedChoices, buildFunctionTree]);
 
   const itemData = useMemo(() => ({
     flatItems,
-    semanticModel,
     selectedDialog,
     selectedFunctionName,
     onSelectDialog,
@@ -165,7 +162,6 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     onToggleChoiceExpand,
   }), [
     flatItems,
-    semanticModel,
     selectedDialog,
     selectedFunctionName,
     onSelectDialog,

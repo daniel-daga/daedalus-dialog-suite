@@ -29,7 +29,6 @@ export function useSearchNavigation({
   setOperationError,
 }: UseSearchNavigationProps): UseSearchNavigationResult {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const { setSelectedFunctionName } = useUISelectionStore();
 
   // Keyboard shortcut handler for Ctrl+F / Escape
   useEffect(() => {
@@ -92,9 +91,9 @@ export function useSearchNavigation({
       }
 
       // Not a dialog info function — navigate directly to the function
-      setSelectedFunctionName(result.functionName);
+      useUISelectionStore.getState().setSelectedFunctionName(result.functionName);
     }
-  }, [semanticModel, handleSelectNPC, navigateToDialogWithLoading, setOperationError, setSelectedFunctionName]);
+  }, [semanticModel, handleSelectNPC, navigateToDialogWithLoading, setOperationError]);
 
   return { isSearchOpen, setIsSearchOpen, handleSearchResultClick };
 }

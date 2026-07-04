@@ -33,7 +33,8 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
   onResultClick
 }) => {
   const focusRef = useRef<(() => void) | null>(null);
-  const { performSearch, clearSearch } = useSearchStore();
+  const performSearch = useSearchStore((s) => s.performSearch);
+  const clearSearch = useSearchStore((s) => s.clearSearch);
 
   useEffect(() => {
     if (isOpen) {

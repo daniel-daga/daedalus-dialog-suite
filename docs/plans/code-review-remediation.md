@@ -12,9 +12,9 @@ Each slice gets a deep-dive pass producing a fix plan document (linked below). S
 | 2 | Editor save/dirty-state pipeline (unsaved-work loss, lossy writes) | Blocker | done — durable outcomes in [save-pipeline.md](../architecture/save-pipeline.md) | done |
 | 3 | Worker lifecycle & reliability (crash → silent permanent hang) | Blocker | done — durable outcomes in [worker-reliability.md](../architecture/worker-reliability.md) | done |
 | 4 | Quest editor stack (features unreachable in prod, canvas leaks) | Blocker | [fix-04-quest-editor.md](./fix-04-quest-editor.md) | in-progress (all 8 steps implemented; manual smoke outstanding) |
-| 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | [fix-05-undo-debounce.md](./fix-05-undo-debounce.md) | in-progress (all 5 steps landed; see progress notes) |
+| 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | done — durable outcomes in [dialog-editor.md](../architecture/dialog-editor.md) (undo/redo, fire-time edits, drag-and-drop) + [save-pipeline.md](../architecture/save-pipeline.md) (flush registry) | done |
 | 6 | Security & update chain (unverified updates, EOL Electron, symlinks) | Blocker | [fix-06-security-updates.md](./fix-06-security-updates.md) | in-progress |
-| 7 | Rendering performance at mod scale (merge storms, subscriptions) | Major | [fix-07-render-performance.md](./fix-07-render-performance.md) | plan-ready |
+| 7 | Rendering performance at mod scale (merge storms, subscriptions) | Major | [fix-07-render-performance.md](./fix-07-render-performance.md) | in-progress (all 8 steps implemented; manual profiler/smoke outstanding) |
 | 8 | Test truthfulness & release gating (mock E2E, ungated releases) | Blocker | [fix-08-test-release-gating.md](./fix-08-test-release-gating.md) | in-progress (items 1–8 landed; see progress notes) |
 
 ## Notable deltas from the deep dives
@@ -114,56 +114,87 @@ All eight §9 items of fix-08 are implemented and landed on this branch:
   #4 cp1252 encoding roundtrip, #5 undo-redo-save, #6 external-change reload/conflict,
   #7 parse-error save guard, #8 window-security, #9 crash-logging, #10 window-close
   guard (atomic mid-write-kill sub-case is a documented `test.fixme`; the temp+rename
-  mechanism is Jest-covered). Specs #1/#2/#5/#8/#9 proven green on real Electron in CI
-  (run 28661165938); #3/#4/#6/#7/#10 written with source-verified selectors, first CI
-  execution pending on the PR run.
+  mechanism is Jest-covered). Specs #1/#2/#5/#8/#9 proved green earlier (run
+  28661165938); the five disk-truth specs #3/#4/#6/#7/#10 are **now CI-green** on
+  master run 28685341652 (merge commit cd78d38, 2026-07-03) — all 9 jobs green
+  including `editor-e2e-electron` ("E2E Tests (real Electron)"), their first full-CI
+  execution. This is also the on-master validation of slice 5's landed work.
 
 Environment caveats recorded for reviewers: the sandbox cannot download the Electron
 binary (egress policy), so the plan §8.1 "watch it headed" manual verification is
 replaced by real CI execution evidence; a temporary push-trigger commit used to obtain
 the first CI run before PR #205 existed has been reverted.
 
-Outstanding before `done`: first CI green for the five disk-truth specs; §8.5
-release-gating dispatch checklist (maintainer-run); ratchet-expansion follow-ups
-(#3 fixture set widens with fix-01; corpus strict set); optional phase-2
-(Electron E2E on windows-latest inside build-windows); then extract durable outcomes
-(harness split contract, release-gating invariants, crash-log privacy stance, lint
-baseline) into `docs/architecture/` / `docs/reference/`, update CLAUDE.md's CI section,
-and delete the plan file.
+Outstanding before `done` (the five disk-truth specs are now CI-green, so that
+gate is cleared): §8.5 release-gating dispatch checklist (maintainer-run);
+ratchet-expansion follow-ups (#3 fixture set widens with fix-01; corpus strict set);
+optional phase-2 (Electron E2E on windows-latest inside build-windows); then extract
+durable outcomes (harness split contract, release-gating invariants, crash-log
+privacy stance, lint baseline) into `docs/architecture/` / `docs/reference/`, update
+CLAUDE.md's CI section, and delete the plan file.
 
-## Slice 5 progress notes (2026-07-03)
+## Slice 5 completion notes (2026-07-03)
 
-All five fix-05 §4 steps landed (TDD, one commit per step + a verification follow-up):
+All five fix-05 steps landed (TDD; F-A phantom-undo transaction, U3 condition
+fire-time refs, U4 flush-before-undo, U1/F-B batch snapshot ids + validity with the
+global save-wipe removed, U5 single hoisted `@hello-pangea/dnd` context with a
+dispatch registry). CI validation is satisfied (master run 28685341652, all jobs
+green). Durable contracts extracted to
+[dialog-editor.md](../architecture/dialog-editor.md) (undo/redo model, fire-time
+debounced edits, drag-and-drop) and
+[save-pipeline.md](../architecture/save-pipeline.md) (flush-registry undo/redo
+sites); the plan file is deleted. The residual choice-sublist memo gap is tracked
+as `docs/refactoring-targets.md` entry #3.
 
-- **§2.2 (F-A)** `pushSnapshotTransactional` — no-op mutations no longer push phantom
-  undo steps or wipe redo (`tests/historyActions.noop.test.ts`).
-- **§2.4 stage 1 (U3)** condition edits use the ActionCard ref pattern (fire-time
-  refs, guarded unmount flush, `markDeleted()`); ConditionEditor's resurrection
-  append branch removed (`tests/useConditionUpdate.interleave.test.tsx`).
-- **§2.3 (U4)** `flushAllPendingEdits()` before undo/redo in MainLayout keydown and
-  QuestFlow batch buttons; wrapped in `flushSync` so the flushed edit commits before
-  the undo (found via Playwright: a same-batch flush+undo left stale local text in
-  the edited card). Registry + save/auto-save/close sites were slice 2's.
-- **§2.1 (U1/F-B)** `EditSnapshot.id` + id-validated quest batch undo/redo with lazy
-  pruning; global `resetBatchHistory` on save removed. **Behavior change:** batch
-  undo/redo disable when a member file diverges instead of reverting wrong edits;
-  the two slice-4 tests codifying the old behavior were rewritten
-  (`tests/historyStore.batchValidity.test.ts`).
-- **§2.5 + §2.4 stage 2 (U5)** single hoisted `DragDropContext` per dialog pane with
-  a dispatch registry, namespaced unique droppableIds, duplicate-AI_Output-id key
-  disambiguation, ConditionCards keyed by a `uiIds` identity side-table.
-  **Migrated react-beautiful-dnd → @hello-pangea/dnd** (plan §2.5's offered drop-in):
-  rbd 13 never registered draggables under React 18 StrictMode, so real DnD was
-  broken in the harness and the old reorder spec passed only via a lenient assertion.
-- Browser-harness Playwright: `tests/e2e/undo-flush-debounce.spec.ts` and
-  `tests/e2e/keyboard-dnd-reorder.spec.ts` (run and verified locally; keyboard DnD
-  reorders top-level and ConditionalAction-branch lists for real). Known residual:
-  choice sub-list reorder commits correctly but isn't visible until a re-render —
-  pre-existing memo gap, filed as `docs/refactoring-targets.md` entry #3.
+## Slice 7 progress notes (2026-07-03)
 
-Outstanding before `done`: CI validation on the PR, extract durable decisions
-(unified-history model, flush-registry contract, batch-undo behavior change) to
-`docs/architecture/` / `docs/reference/`, then delete the plan file.
+All eight fix-07 §5 steps are implemented and landed on this branch (TDD,
+failing-first Jest per step; suites / typecheck / lint green after each). Durable
+contracts extracted to [render-performance.md](../architecture/render-performance.md).
+
+- **Steps 1–2 (`cd0379b`)** — PF5 guards (ingestion abort/flush discard on
+  abort-or-project-swap, `getSemanticModel` in-flight dedup with
+  invalidate/clear/close drop) + category-stable incremental merge (§2.1:
+  per-category input-signature cache in the store closure, untouched categories
+  keep identity across merges, reset on `closeProject`/`clearCache`), memoized
+  files-with-dialogs set (N2).
+- **Step 3 (`a3f615b`)** — `useNavigation` subscription-free, callbacks stable via
+  `getState()` (N1).
+- **Step 4 (`fd5d6d4`, `5d09981`)** — selector checklist items 1–24 (17–19 via the
+  step-3 rewrite) + coarse-identity A/B/C/E (App `parsedFiles.size` +
+  `canUndo`/`canRedo` booleans; `useNpcDialogErrors` owns a narrow shallow-compared
+  selector; `IngestedFilesDialog` gated on `open`). Item D was slice-4-owned and
+  verified landed.
+- **Step 5 (`ea71769`)** — VariableManager + `useVariableOptions` per-category
+  subscriptions (§2.4 / N4).
+- **Step 6 (`ce191f3`)** — DialogTree itemData narrowed to row primitives (PF2);
+  `DialogTreeItem` comparator deleted.
+- **Step 7 (`f2b364e`)** — ActionCard C3 (§2.8 option iii): `useResolvedFunction`
+  (file-store-first, merged fallback) + `useStableHandlers`; `semanticModel`
+  removed from the memo boundary and ~16 renderers; comparator invariant
+  documented.
+- **Step 8 (`9c817dd`)** — measurement tooling: deterministic
+  `scripts/generate-perf-fixture.js` + informational `scripts/bench-merge.js`
+  (`perf:fixture` / `perf:bench` npm entries; `perf-fixtures/` gitignored). Bench
+  on a 20-file sample: ~10× per-merge, six of eight categories reused by identity.
+
+Deviations from the plan text (all noted in the diffs):
+
+- **Item 21** — `useDialogNavigation.activeFile` moved to `getState()` (it is read
+  only in handlers), not the reactive per-field selector the checklist proposed.
+- **`flattenDialogs`** now takes `dialogs`+`functions` maps: the plan's "uses
+  nothing else" was inaccurate — it reads `functions` for `hasChildren`.
+- **`VariableAutocomplete` keeps its `semanticModel` prop** — it serves
+  quest-inspector/condition callers passing a different model; single-file mode is
+  handled via per-category active-file reads in `useVariableOptions` (a deduped
+  benign superset).
+- **`useStableHandlers` placement** — applied at `DialogActionsSection` /
+  `InlineChoiceEditor` (the non-memoized owners), not `ActionsList`.
+
+Outstanding before `done` (plan file kept): the §3.2 manual React Profiler
+before/after evidence and the repo-mandated desktop smoke pass (no display in this
+sandbox), and optionally the §3.3 Playwright ingestion smoke. All automated
+(Jest / structural) coverage is in place.
 
 ## Working agreement
 

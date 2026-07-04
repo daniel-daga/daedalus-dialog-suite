@@ -11,8 +11,7 @@ const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as ExchangeRoutineAction;
 
@@ -38,7 +37,6 @@ const ExchangeRoutineRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ width: 120 }}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
-        semanticModel={semanticModel}
       />
       <ActionTextField
         fullWidth

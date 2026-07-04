@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useProjectStore } from '../../store/projectStore';
+import { useFileStore } from '../../store/fileStore';
 import type { SemanticModel } from '../../types/global';
 
 export type VariableOptionSource = 'variable' | 'constant' | 'instance' | 'dialog' | 'new';
@@ -48,11 +49,32 @@ export function useVariableOptions({
 }: UseVariableOptionsConfig): VariableOption[] {
   // Subscribe to each field individually so autocomplete consumers only
   // re-render when one of these actually changes, not on every projectStore
-  // mutation (e.g. ingestion progress, selection changes).
-  const mergedSemanticModel = useProjectStore((s) => s.mergedSemanticModel);
+  // mutation (e.g. ingestion progress, selection changes). The merged model is
+  // subscribed per category (not by whole-model identity) so the category-
+  // stable merge (§2.1) lets an edit touching only functions skip the full
+  // option rebuild+sort for constants/variables/instances.
+  const projectConstants = useProjectStore((s) => s.mergedSemanticModel.constants);
+  const projectVariables = useProjectStore((s) => s.mergedSemanticModel.variables);
+  const projectInstances = useProjectStore((s) => s.mergedSemanticModel.instances);
+  const projectNpcs = useProjectStore((s) => s.mergedSemanticModel.npcs);
+  const projectAnimations = useProjectStore((s) => s.mergedSemanticModel.animations);
+  const projectFunctions = useProjectStore((s) => s.mergedSemanticModel.functions);
   const dialogIndex = useProjectStore((s) => s.dialogIndex);
   const npcList = useProjectStore((s) => s.npcList);
   const routineList = useProjectStore((s) => s.routineList);
+
+  // Active-file model, read per category from the file store. This replaces the
+  // per-renderer `semanticModel` local-model prop that action renderers used to
+  // thread (fix-07 §2.8): in single-file mode the merged project model is empty,
+  // so the edited file's own symbols are only available here. Each read selects a
+  // single category ref, so an action edit that leaves a category untouched does
+  // not rebuild options.
+  const localConstants = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.constants : undefined));
+  const localVariables = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.variables : undefined));
+  const localInstances = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.instances : undefined));
+  const localNpcs = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.npcs : undefined));
+  const localAnimations = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.animations : undefined));
+  const localFunctions = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.functions : undefined));
 
   return useMemo(() => {
     const opts: VariableOption[] = [];
@@ -140,20 +162,25 @@ export function useVariableOptions({
 
     // Constants (highest priority for same names)
     addFromRecord(semanticModel?.constants, 'constant');
-    addFromRecord(mergedSemanticModel.constants, 'constant');
+    addFromRecord(localConstants, 'constant');
+    addFromRecord(projectConstants, 'constant');
 
     // Variables
     addFromRecord(semanticModel?.variables, 'variable');
-    addFromRecord(mergedSemanticModel.variables, 'variable');
+    addFromRecord(localVariables, 'variable');
+    addFromRecord(projectVariables, 'variable');
 
     // Instances
     if (showInstances) {
       addFromRecord(semanticModel?.instances, 'instance');
-      addFromRecord(mergedSemanticModel.instances, 'instance');
+      addFromRecord(localInstances, 'instance');
+      addFromRecord(projectInstances, 'instance');
       addFromRecord(semanticModel?.npcs, 'instance');
-      addFromRecord(mergedSemanticModel.npcs, 'instance');
+      addFromRecord(localNpcs, 'instance');
+      addFromRecord(projectNpcs, 'instance');
       addFromRecord(semanticModel?.animations, 'instance');
-      addFromRecord(mergedSemanticModel.animations, 'instance');
+      addFromRecord(localAnimations, 'instance');
+      addFromRecord(projectAnimations, 'instance');
 
       // Fallback: project index NPC list
       for (const npcName of npcList || []) {
@@ -183,7 +210,8 @@ export function useVariableOptions({
         }
       };
       addFunctions(semanticModel?.functions);
-      addFunctions(mergedSemanticModel.functions);
+      addFunctions(localFunctions);
+      addFunctions(projectFunctions);
     }
 
     // Daily routines
@@ -205,9 +233,11 @@ export function useVariableOptions({
         }
       };
       addRoutinesFromInstances(semanticModel?.instances);
-      addRoutinesFromInstances(mergedSemanticModel.instances);
+      addRoutinesFromInstances(localInstances);
+      addRoutinesFromInstances(projectInstances);
       addRoutinesFromInstances(semanticModel?.npcs);
-      addRoutinesFromInstances(mergedSemanticModel.npcs);
+      addRoutinesFromInstances(localNpcs);
+      addRoutinesFromInstances(projectNpcs);
 
       // Fallback: project index routine list
       for (const routineName of routineList || []) {
@@ -239,7 +269,18 @@ export function useVariableOptions({
 
     return opts.sort((a, b) => a.name.localeCompare(b.name));
   }, [
-    mergedSemanticModel,
+    projectConstants,
+    projectVariables,
+    projectInstances,
+    projectNpcs,
+    projectAnimations,
+    projectFunctions,
+    localConstants,
+    localVariables,
+    localInstances,
+    localNpcs,
+    localAnimations,
+    localFunctions,
     semanticModel,
     typeFilter,
     namePrefix,

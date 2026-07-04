@@ -15,8 +15,7 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as GiveInventoryItemsAction;
 
@@ -36,7 +35,6 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         mainFieldRef={mainFieldRef}
         sx={{ width: 80 }}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
-        semanticModel={semanticModel}
       />
       {/* Issue #183 (item 1): swap Giver <-> Receiver. tabIndex=-1 keeps it a
           mouse-only affordance so the in-row Tab order (item 3) is unaffected. */}
@@ -59,7 +57,6 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={fieldKeyDown[1]}
         sx={{ width: 90 }}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
-        semanticModel={semanticModel}
       />
       <VariableAutocomplete
         label="Item"
@@ -69,7 +66,6 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={fieldKeyDown[2]}
         sx={{ flex: 1 }}
         {...AUTOCOMPLETE_POLICIES.actions.item}
-        semanticModel={semanticModel}
       />
       <ActionTextField
         label="Quantity"

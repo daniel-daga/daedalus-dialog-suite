@@ -162,9 +162,60 @@ interface ProjectActions {
 
 type ProjectStore = ProjectState & ProjectActions;
 
+// Categories merged by mergeSemanticModels (mirrors the historical set — does
+// not include classes/prototypes/declarationOrder/trailingComments).
+const MERGE_CATEGORY_KEYS = [
+  'dialogs',
+  'functions',
+  'constants',
+  'variables',
+  'instances',
+  'items',
+  'npcs',
+  'animations'
+] as const;
+
+type MergeCategoryKey = typeof MERGE_CATEGORY_KEYS[number];
+type CategoryMap = Record<string, unknown>;
+
 export const useProjectStore = create<ProjectStore>((set, get) => {
+  // In-flight parse dedup: concurrent getSemanticModel calls for the same path
+  // share one IPC parse. Entries settle-remove themselves and are dropped by
+  // invalidateCacheForFile/clearCache/closeProject so a stale parse is never
+  // handed to a post-mutation caller.
+  const inFlight = new Map<string, Promise<SemanticModel>>();
+
+  // Category-stable merge cache. For each category we remember the ordered list
+  // of input map references from the last merge plus the merged object we
+  // produced. An unchanged signature (same length + all refs ===) means the
+  // inputs are identical, so the previous merged category object is reused
+  // verbatim — this is what keeps per-category selectors from recomputing on
+  // unrelated edits. MUST be reset on closeProject/clearCache (see
+  // resetMergeCache) or a reopened project could reuse stale category objects.
+  let mergeCache: Partial<Record<MergeCategoryKey, { signature: CategoryMap[]; merged: CategoryMap }>> = {};
+  const resetMergeCache = () => {
+    mergeCache = {};
+  };
+
+  // N2: the set of files that contribute dialogs is O(project) to build (it
+  // iterates the whole dialogIndex). It only changes when dialogIndex is
+  // replaced, so memoize it per dialogIndex identity; the cheap per-call filter
+  // against allDialogFiles stays live so newly-added global files still count.
+  const filesWithDialogsCache = new WeakMap<Map<string, DialogMetadata[]>, Set<string>>();
+  const getFilesWithDialogs = (dialogIndex: Map<string, DialogMetadata[]>): Set<string> => {
+    const cached = filesWithDialogsCache.get(dialogIndex);
+    if (cached) return cached;
+    const filesWithDialogs = new Set<string>();
+    for (const metadataList of dialogIndex.values()) {
+      for (const meta of metadataList) filesWithDialogs.add(meta.filePath);
+    }
+    filesWithDialogsCache.set(dialogIndex, filesWithDialogs);
+    return filesWithDialogs;
+  };
+
   /** Remove a single file from the parsed-files cache. */
   const invalidateCacheForFile = (filePath: string) => {
+    inFlight.delete(filePath);
     set((state) => {
       const newCache = new Map(state.parsedFiles);
       newCache.delete(filePath);
@@ -295,6 +346,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
 
     const controller = new AbortController();
+    // Capture the project this run belongs to. A late flush (interval or the
+    // finally block) must never write into a successor project's cache.
+    const ingestionProjectPath = get().projectPath;
     set({ isIngesting: true, abortIngestion: () => controller.abort() });
 
     // Prioritize quest files, then the rest
@@ -305,6 +359,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     // Batch updates to avoid excessive re-renders
     const pendingUpdates = new Map<string, ParsedFileCache>();
     const flushUpdates = () => {
+      // Discard the batch if this run was aborted or the project has since been
+      // swapped out — stale entries must not bleed into the new project.
+      if (controller.signal.aborted || get().projectPath !== ingestionProjectPath) {
+        pendingUpdates.clear();
+        return;
+      }
       if (pendingUpdates.size > 0) {
         set((state) => {
           const newCache = new Map(state.parsedFiles);
@@ -340,6 +400,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           try {
             // Parse the file directly to avoid state update in getSemanticModel
             const semanticModel = await window.editorAPI.parseDialogFile(filePath);
+
+            // Bail if the run was aborted while the parse was in flight — the
+            // result belongs to a project that is no longer current.
+            if (controller.signal.aborted) return;
 
             // Inject file path into constants and variables for tracking
             if (semanticModel.constants) {
@@ -400,6 +464,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       abortIngestion();
     }
 
+    inFlight.clear();
+    resetMergeCache();
+
     set({
       projectPath: null,
       projectName: null,
@@ -438,29 +505,48 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       return cached.semanticModel;
     }
 
-    // Parse file via IPC
-    const semanticModel = await window.editorAPI.parseDialogFile(filePath);
-
-    // Inject file path into constants and variables for tracking
-    if (semanticModel.constants) {
-      Object.values(semanticModel.constants).forEach(c => { c.filePath = filePath; });
-    }
-    if (semanticModel.variables) {
-      Object.values(semanticModel.variables).forEach(v => { v.filePath = filePath; });
+    // Coalesce concurrent callers onto a single in-flight parse.
+    const existing = inFlight.get(filePath);
+    if (existing) {
+      return existing;
     }
 
-    // Cache the result
-    set((state) => {
-      const newCache = new Map(state.parsedFiles);
-      newCache.set(filePath, {
-        filePath,
-        semanticModel,
-        lastParsed: new Date()
+    const parsePromise = (async () => {
+      // Parse file via IPC
+      const semanticModel = await window.editorAPI.parseDialogFile(filePath);
+
+      // Inject file path into constants and variables for tracking
+      if (semanticModel.constants) {
+        Object.values(semanticModel.constants).forEach(c => { c.filePath = filePath; });
+      }
+      if (semanticModel.variables) {
+        Object.values(semanticModel.variables).forEach(v => { v.filePath = filePath; });
+      }
+
+      // Cache the result
+      set((state) => {
+        const newCache = new Map(state.parsedFiles);
+        newCache.set(filePath, {
+          filePath,
+          semanticModel,
+          lastParsed: new Date()
+        });
+        return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
       });
-      return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
-    });
 
-    return semanticModel;
+      return semanticModel;
+    })();
+
+    inFlight.set(filePath, parsePromise);
+    try {
+      return await parsePromise;
+    } finally {
+      // Only clear our own entry: invalidation mid-flight may have already
+      // dropped it and registered a newer parse we must not evict.
+      if (inFlight.get(filePath) === parsePromise) {
+        inFlight.delete(filePath);
+      }
+    }
   },
 
   mergeSemanticModels: (models: SemanticModel[]) => {
@@ -472,36 +558,35 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       mergedModel.errors = modelsWithErrors.flatMap(model => model.errors || []);
     }
 
-    // Merge all models, skipping those with errors
-    models.forEach(model => {
-      // Skip models with errors to avoid corrupting the merged model
-      if (model?.hasErrors) {
-        return;
+    // Contributing models, in order (error models are skipped as before).
+    const contributing = models.filter(
+      (model): model is SemanticModel => !!model && !model.hasErrors
+    );
+    const mergedRecord = mergedModel as unknown as Record<MergeCategoryKey, CategoryMap>;
+
+    // Category-stable merge: rebuild only categories whose input signature
+    // changed; reuse the previous merged object otherwise (see mergeCache).
+    MERGE_CATEGORY_KEYS.forEach(key => {
+      const inputs: CategoryMap[] = [];
+      for (const model of contributing) {
+        const category = (model as unknown as Record<MergeCategoryKey, CategoryMap | undefined>)[key];
+        if (category) inputs.push(category);
       }
 
-      if (model?.dialogs) {
-        Object.assign(mergedModel.dialogs, model.dialogs);
-      }
-      if (model?.functions) {
-        Object.assign(mergedModel.functions, model.functions);
-      }
-      if (model?.constants) {
-        Object.assign(mergedModel.constants!, model.constants);
-      }
-      if (model?.variables) {
-        Object.assign(mergedModel.variables!, model.variables);
-      }
-      if (model?.instances) {
-        Object.assign(mergedModel.instances!, model.instances);
-      }
-      if (model?.items) {
-        Object.assign(mergedModel.items!, model.items);
-      }
-      if (model?.npcs) {
-        Object.assign(mergedModel.npcs!, model.npcs);
-      }
-      if (model?.animations) {
-        Object.assign(mergedModel.animations!, model.animations);
+      const prev = mergeCache[key];
+      const signatureMatches =
+        prev !== undefined &&
+        prev.signature.length === inputs.length &&
+        prev.signature.every((ref, i) => ref === inputs[i]);
+
+      if (signatureMatches) {
+        mergedRecord[key] = prev!.merged;
+      } else {
+        const mergedCategory = mergedRecord[key];
+        for (const category of inputs) {
+          Object.assign(mergedCategory, category);
+        }
+        mergeCache[key] = { signature: inputs, merged: mergedCategory };
       }
     });
 
@@ -701,12 +786,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     // 2. Identify "Global" files (non-dialog files)
     // We consider any file that is NOT associated with ANY NPC in the index as a global file.
     // (e.g. Constants.d, Story_Globals.d, LOG_Entries.d)
-    const allFilesWithDialogs = new Set<string>();
-    for (const metadataList of dialogIndex.values()) {
-        for (const meta of metadataList) {
-            allFilesWithDialogs.add(meta.filePath);
-        }
-    }
+    const allFilesWithDialogs = getFilesWithDialogs(dialogIndex);
 
     const globalFiles = allDialogFiles.filter(f => !allFilesWithDialogs.has(f));
 
@@ -729,6 +809,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   },
 
   clearCache: () => {
+    inFlight.clear();
+    resetMergeCache();
     set((state) => ({ parsedFiles: new Map(), parseGeneration: state.parseGeneration + 1 }));
   },
 

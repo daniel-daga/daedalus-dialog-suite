@@ -140,10 +140,20 @@ Debounced component-local edits (condition fields, ActionCard, 300 ms) are
 invisible to the store until their timer fires. The registry
 `src/renderer/utils/pendingEditFlushRegistry.ts`
 (`registerPendingEditFlusher(fn): unregister`, `flushAllPendingEdits()`) is
-co-owned with slice 5. Rule: **every save/discard decision entry point calls
-`flushAllPendingEdits()` first, always at the UI layer — the store never
-flushes.** Current call sites: `handleSave`, `performAutoSave`,
-`App.confirmDiscardChanges`, the window-close guard.
+co-owned with slice 5. Rule: **every save/discard *and undo/redo* decision entry
+point calls `flushAllPendingEdits()` first, always at the UI layer — the store
+never flushes.** A flusher no-ops unless its timer is pending, then runs the exact
+timer body (ref-resolved), so flush and natural fire are byte-identical. Call
+sites:
+
+- **Save/discard:** `handleSave`, `performAutoSave`, `App.confirmDiscardChanges`,
+  the window-close guard (slice 2).
+- **Undo/redo (slice 5):** the `MainLayout` Ctrl+Z/Ctrl+Y keydown handler and the
+  QuestFlow batch undo/redo buttons, wrapped in `flushSync` so the flushed edit
+  commits *before* the undo runs (otherwise a same-batch flush+undo leaves stale
+  local text in the edited card). This makes the first Ctrl+Z after typing revert
+  the in-flight burst rather than a late timer clobbering the redo stack — see the
+  undo/redo contract in [dialog-editor.md](./dialog-editor.md).
 
 ## Window-close guard
 

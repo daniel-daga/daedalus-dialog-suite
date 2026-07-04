@@ -24,13 +24,26 @@ interface IngestedFilesDialogProps {
   onClose: () => void;
 }
 
+// Stable closed-state snapshot so a closed dialog does not re-render on the
+// per-flush `parsedFiles` churn it would otherwise subscribe to (item E).
+const CLOSED_SNAPSHOT = {
+  parsedFiles: new Map(),
+  allDialogFiles: [] as string[],
+  isIngesting: false,
+  metadataFailures: [] as Array<{ filePath: string; error: string }>
+};
+
 export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, onClose }) => {
-  const { parsedFiles, allDialogFiles, isIngesting, metadataFailures } = useProjectStore((state) => ({
-    parsedFiles: state.parsedFiles,
-    allDialogFiles: state.allDialogFiles,
-    isIngesting: state.isIngesting,
-    metadataFailures: state.metadataFailures
-  }), shallow);
+  const { parsedFiles, allDialogFiles, isIngesting, metadataFailures } = useProjectStore((state) => (
+    open
+      ? {
+          parsedFiles: state.parsedFiles,
+          allDialogFiles: state.allDialogFiles,
+          isIngesting: state.isIngesting,
+          metadataFailures: state.metadataFailures
+        }
+      : CLOSED_SNAPSHOT
+  ), shallow);
 
   if (!open || !allDialogFiles || !parsedFiles) {
     return null;

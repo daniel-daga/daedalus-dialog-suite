@@ -58,6 +58,84 @@ Established by the March 2026 review (see git history of
 - The global Ctrl+Z / Ctrl+Y handler (`MainLayout.tsx`) yields to Monaco's
   built-in undo/redo whenever focus is inside a `.monaco-editor` element.
 
+Durable decisions from remediation slice 5 (fix-05, 2026-07-03):
+
+- **Snapshot identity.** `EditSnapshot` carries a monotonic `id` (module-level
+  counter, assigned in `createEditSnapshot`). Ids are eviction-proof and O(1) to
+  compare — stack depths are not, because `MAX_HISTORY_SIZE` eviction and
+  `clearHistoryForFile` shift them.
+- **No phantom undo steps.** Snapshot pushes are transactional
+  (`pushSnapshotTransactional`): the pre-state `past`/`future` refs and the
+  current model reference are captured, the mutation runs, and if the model
+  reference is unchanged (the fileStore updater no-opped — missing dialog/function,
+  updater returned `null`) the captured stacks are **restored**. This also undoes
+  the coalescing path's `future = []` wipe, so a no-op edit can no longer consume a
+  Ctrl+Z or destroy the redo stack. Reference equality is sound because fileStore
+  is Immer-produced (a real change always allocates a new model object).
+- **Quest batch validity (behavior change).** Quest batch entries record
+  `{ filePath, snapshotId }` per member, not just file paths. A batch is
+  **valid** for undo only if every member's top `past` snapshot id still matches
+  the recorded id; batch redo validates each member's `future[0]` id symmetrically.
+  Invalid entries (a member got a newer dialog edit, its snapshot was consumed by
+  per-file undo, evicted, or cleared) are pruned lazily and
+  `canUndoLastQuestBatch`/`canRedoLastQuestBatch` return false — the QuestFlow
+  toolbar button **disables** instead of popping whatever is on top and reverting
+  the wrong edits. User-facing consequence: after a member file diverges, atomic
+  batch undo is unavailable, but per-file Ctrl+Z remains for everything. (The two
+  slice-4 tests that codified the old "reverts most recent state" behavior were
+  rewritten.)
+- **No save-wipe of batch history.** The fileStore save-detection branch no longer
+  calls a global `resetBatchHistory()` — saving one file must not wipe quest batch
+  undo for all other files. `clearHistoryForFile(savedFile)` already removes
+  batches containing that file; with id-validation this is belt-and-braces.
+- **Flush before undo/redo.** The Ctrl+Z/Ctrl+Y handler and the QuestFlow batch
+  buttons call `flushAllPendingEdits()` (see the pending-edit flush registry in
+  [save-pipeline.md](./save-pipeline.md)) inside `flushSync` before invoking
+  undo/redo, so a 300 ms-debounced in-flight edit commits as a normal history step
+  *first* — the first Ctrl+Z then reverts the in-flight typing and redo can restore
+  it (standard editor semantics; flushing, never cancelling, so keystrokes are
+  never silently discarded).
+
+## Fire-time debounced edits
+
+Both `ActionCard` and (since slice 5) `ConditionCard` resolve their 300 ms
+debounced edits at **fire time via refs**, never from values captured lexically
+when the timer was scheduled:
+
+- The timer body reads `updateRef.current(indexRef.current, localRef.current)`, so
+  a reindex (a delete above a card keyed by array index) lands the write on the
+  current slot, not the stale one.
+- The unmount flush is guarded by `shallowEqual(local, lastParentSynced)` so an
+  unmount from drag-reorder does not re-apply an already-synced value.
+- Delete exposes `markDeleted()` (clears the timer, syncs the ref) which the delete
+  button calls before removing the item, so a pending edit cannot resurrect a
+  deleted condition. `ConditionEditor.updateCondition`'s out-of-range append branch
+  (the resurrection vector) was removed — out-of-range updates are no-ops (and push
+  no phantom snapshot, above).
+
+## Drag-and-drop
+
+Action/condition reordering uses **`@hello-pangea/dnd`** (a maintained drop-in
+replacement for the archived `react-beautiful-dnd`, which never registered
+draggables under React 18 StrictMode). Architecture:
+
+- **One hoisted `DragDropContext` per dialog-editing pane**
+  (`DialogActionsSection`), not one per list. `ActionsList` is rendered
+  recursively (conditional-action then/else branches, inline choice editors nest
+  2–3 deep); nested contexts are unsupported.
+- **Dispatch registry.** Each descendant `ActionsList` registers
+  `droppableId → moveAction(pathPrefix, …)` with a small React `DragDispatchContext`
+  on mount; the single `onDragEnd` dispatches by `result.source.droppableId`.
+  Dispatch must be a registry rather than path-parsing because an inline choice
+  editor's `moveAction` targets a *different function* than the outer list.
+- **Namespaced droppableIds.** `${dialogContextName-or-target-function}:${actionPathToKey(pathPrefix) || 'root'}`
+  — the old bare `'root'` collided the moment contexts were unified. Cross-list
+  moves are rejected (`source.droppableId !== destination.droppableId`).
+- **Stable, unique keys/draggableIds.** Duplicated `AI_Output` ids in real mod
+  files are disambiguated (`id`, `id@2`, …) via a `useMemo` over the list content;
+  conditions (which have no ids) are keyed by a parallel `uiIds` side-table mutated
+  in the same add/delete handlers as the array.
+
 ## Main-Process Security Boundaries
 
 The renderer is untrusted; security decisions live in the main process:

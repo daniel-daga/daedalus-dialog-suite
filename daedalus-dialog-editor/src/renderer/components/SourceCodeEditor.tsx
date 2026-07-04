@@ -11,8 +11,10 @@ interface SourceCodeEditorProps {
 }
 
 const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({ filePath }) => {
-  const { openFiles, setWorkingCode, saveSource, codeSettings } = useEditorStore();
-  const fileState = openFiles.get(filePath);
+  const fileState = useEditorStore((s) => s.openFiles.get(filePath));
+  const setWorkingCode = useEditorStore((s) => s.setWorkingCode);
+  const saveSource = useEditorStore((s) => s.saveSource);
+  const codeSettings = useEditorStore((s) => s.codeSettings);
 
   const [isLoading, setIsLoading] = useState(false);
   const [editorValue, setEditorValue] = useState<string>(() => {

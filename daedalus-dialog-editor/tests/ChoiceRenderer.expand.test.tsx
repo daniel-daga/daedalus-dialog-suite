@@ -2,6 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ChoiceRenderer from '../src/renderer/components/actionRenderers/ChoiceRenderer';
+import { useFileStore } from '../src/renderer/store/fileStore';
+import { useProjectStore } from '../src/renderer/store/projectStore';
 
 // Mock InlineChoiceEditor to avoid deep dependency chain. Expose the
 // focus-request nonce so tests can assert the dive-into-sub-editor wiring.
@@ -14,16 +16,7 @@ jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
   )
 }));
 
-jest.mock('../src/renderer/store/editorStore', () => ({
-  useEditorStore: (selector: any) => {
-    const state = {
-      updateFunction: jest.fn(),
-      updateFunctionWithUpdater: jest.fn(),
-      renameFunction: jest.fn(),
-    };
-    return selector(state);
-  }
-}));
+const filePath = '/test/file.d';
 
 const choiceAction = {
   type: 'choice' as const,
@@ -49,7 +42,23 @@ const semanticModel = {
   errors: [],
 };
 
+// ChoiceRenderer now resolves its target function from the store (fix-07 §2.8),
+// so tests set the edited file's model there instead of threading a prop.
+const setFileModel = (model: unknown) => {
+  useFileStore.setState({
+    openFiles: new Map([[filePath, { filePath, semanticModel: model } as never]]),
+    activeFile: filePath,
+  } as never);
+};
+
 describe('ChoiceRenderer expand/collapse', () => {
+  beforeEach(() => {
+    useProjectStore.setState({
+      mergedSemanticModel: { dialogs: {}, functions: {}, constants: {}, variables: {}, instances: {}, hasErrors: false, errors: [] },
+    } as never);
+    setFileModel(semanticModel);
+  });
+
   const baseProps = {
     action: choiceAction,
     path: [0] as any,
@@ -74,11 +83,8 @@ describe('ChoiceRenderer expand/collapse', () => {
   });
 
   test('does not show expand button when target function is missing', () => {
-    const propsNoFunc = {
-      ...baseProps,
-      semanticModel: { dialogs: {}, functions: {}, hasErrors: false, errors: [] } as any,
-    };
-    render(<ChoiceRenderer {...propsNoFunc} />);
+    setFileModel({ dialogs: {}, functions: {}, hasErrors: false, errors: [] });
+    render(<ChoiceRenderer {...baseProps} />);
     expect(screen.queryByLabelText('Expand choice actions')).not.toBeInTheDocument();
   });
 
@@ -141,11 +147,8 @@ describe('ChoiceRenderer expand/collapse', () => {
     });
 
     test('Tab falls back to card navigation when the target function does not exist yet', () => {
-      const propsNoFunc = {
-        ...baseProps,
-        semanticModel: { dialogs: {}, functions: {}, hasErrors: false, errors: [] } as any,
-      };
-      render(<ChoiceRenderer {...propsNoFunc} />);
+      setFileModel({ dialogs: {}, functions: {}, hasErrors: false, errors: [] });
+      render(<ChoiceRenderer {...baseProps} />);
       const choiceText = screen.getByLabelText('Choice Text');
       fireEvent.keyDown(choiceText, { key: 'Tab' });
 

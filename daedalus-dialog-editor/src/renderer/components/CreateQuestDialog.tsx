@@ -29,7 +29,10 @@ interface CreateQuestDialogProps {
 }
 
 const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) => {
-  const { mergedSemanticModel, createQuest, isLoading } = useProjectStore();
+  const constants = useProjectStore((s) => s.mergedSemanticModel.constants);
+  const variables = useProjectStore((s) => s.mergedSemanticModel.variables);
+  const createQuest = useProjectStore((s) => s.createQuest);
+  const isLoading = useProjectStore((s) => s.isLoading);
 
   const [title, setTitle] = useState('');
   const [internalName, setInternalName] = useState('');
@@ -44,13 +47,13 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
     const topicFiles = new Map<string, number>();
     const varFiles = new Map<string, number>();
 
-    Object.values(mergedSemanticModel.constants || {}).forEach(c => {
+    Object.values(constants || {}).forEach(c => {
         if (c.name.startsWith('TOPIC_') && c.filePath) {
             topicFiles.set(c.filePath, (topicFiles.get(c.filePath) || 0) + 1);
         }
     });
 
-    Object.values(mergedSemanticModel.variables || {}).forEach(v => {
+    Object.values(variables || {}).forEach(v => {
         if (v.name.startsWith('MIS_') && v.filePath) {
             varFiles.set(v.filePath, (varFiles.get(v.filePath) || 0) + 1);
         }
@@ -69,7 +72,7 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
         topics: sortedTopicFiles,
         variables: sortedVarFiles
     };
-  }, [mergedSemanticModel]);
+  }, [constants, variables]);
 
   // Set default files when opening
   useEffect(() => {
@@ -102,11 +105,11 @@ const CreateQuestDialog: React.FC<CreateQuestDialogProps> = ({ open, onClose }) 
     }
 
     // Check for duplicate names
-    if (mergedSemanticModel.constants?.[`TOPIC_${internalName}`]) {
+    if (constants?.[`TOPIC_${internalName}`]) {
         setError(`TOPIC_${internalName} already exists`);
         return;
     }
-    if (logicMethod === 'explicit' && mergedSemanticModel.variables?.[`MIS_${internalName}`]) {
+    if (logicMethod === 'explicit' && variables?.[`MIS_${internalName}`]) {
         setError(`MIS_${internalName} already exists`);
         return;
     }

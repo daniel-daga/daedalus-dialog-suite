@@ -3,7 +3,6 @@ import { Box, Typography, Alert, Button } from '@mui/material';
 import DialogTree from './DialogTree';
 import { useNpcDialogErrors } from './hooks/useNpcDialogErrors';
 import type { SemanticModel, DialogMetadata, FunctionTreeNode } from '../types/global';
-import type { ParsedFileCache } from '../store/projectStore';
 
 interface DialogTreeColumnProps {
   isProjectMode: boolean;
@@ -19,7 +18,6 @@ interface DialogTreeColumnProps {
   onAddDialog: (dialogName: string) => Promise<void>;
   onCreateTeacherDialog?: (config: import('../utils/teacherDialogTemplate').TeacherDialogConfig) => Promise<void>;
   dialogIndex: Map<string, DialogMetadata[]>;
-  parsedFiles: Map<string, ParsedFileCache>;
   setIngestedFilesOpen: (open: boolean) => void;
 }
 
@@ -37,7 +35,6 @@ const DialogTreeColumn: React.FC<DialogTreeColumnProps> = ({
   onAddDialog,
   onCreateTeacherDialog,
   dialogIndex,
-  parsedFiles,
   setIngestedFilesOpen,
 }) => {
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set());
@@ -46,7 +43,6 @@ const DialogTreeColumn: React.FC<DialogTreeColumnProps> = ({
     isProjectMode,
     selectedNPC,
     dialogIndex,
-    parsedFiles,
   });
 
   const handleToggleChoiceExpand = useCallback((choiceKey: string) => {

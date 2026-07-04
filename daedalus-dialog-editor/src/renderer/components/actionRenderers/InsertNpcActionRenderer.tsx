@@ -11,8 +11,7 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as InsertNpcActionType;
 
@@ -27,7 +26,6 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 220 }}
-        semanticModel={semanticModel}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
       />
       <ActionTextField

@@ -6,11 +6,14 @@ import '@testing-library/jest-dom';
 
 // Mock useSearchStore
 jest.mock('../src/renderer/store/searchStore', () => ({
-  useSearchStore: jest.fn(() => ({
-    dialogFilter: '',
-    setDialogFilter: jest.fn(),
-    filterDialogs: (dialogs) => dialogs,
-  })),
+  useSearchStore: jest.fn((selector) => {
+    const state = {
+      dialogFilter: '',
+      setDialogFilter: jest.fn(),
+      filterDialogs: (dialogs) => dialogs,
+    };
+    return selector ? selector(state) : state;
+  }),
 }));
 
 // Mock AutoSizer

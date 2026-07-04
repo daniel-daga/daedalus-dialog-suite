@@ -37,7 +37,9 @@ interface QuestDetailsProps {
 
 const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName }) => {
   const { navigateToDialog, navigateToSymbol } = useNavigation();
-  const { addVariable, updateGlobalConstant, isLoading } = useProjectStore();
+  const addVariable = useProjectStore((s) => s.addVariable);
+  const updateGlobalConstant = useProjectStore((s) => s.updateGlobalConstant);
+  const isLoading = useProjectStore((s) => s.isLoading);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');

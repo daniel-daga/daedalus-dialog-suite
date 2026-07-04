@@ -11,8 +11,7 @@ const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
   handleDelete,
   flushUpdate,
   handleKeyDown,
-  mainFieldRef,
-  semanticModel
+  mainFieldRef
 }) => {
   const typedAction = action as PlayAniAction;
 
@@ -27,7 +26,6 @@ const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 150 }}
-        semanticModel={semanticModel}
         {...AUTOCOMPLETE_POLICIES.actions.npcNoInstances}
       />
       <VariableAutocomplete
@@ -39,7 +37,6 @@ const PlayAniActionRenderer: React.FC<BaseActionRendererProps> = ({
         onKeyDown={handleKeyDown}
         placeholder="e.g. T_SEARCH"
         sx={{ ml: 1 }}
-        semanticModel={semanticModel}
         {...AUTOCOMPLETE_POLICIES.actions.animation}
       />
       <ActionDeleteButton onClick={handleDelete} />

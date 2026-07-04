@@ -32,7 +32,10 @@ const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
   initialType = 'int',
   isConstant: initialIsConstant = false,
 }) => {
-  const { addVariable, questFiles, allDialogFiles, isLoading } = useProjectStore();
+  const addVariable = useProjectStore((s) => s.addVariable);
+  const questFiles = useProjectStore((s) => s.questFiles);
+  const allDialogFiles = useProjectStore((s) => s.allDialogFiles);
+  const isLoading = useProjectStore((s) => s.isLoading);
   
   const [newName, setNewName] = useState(initialName);
   const [newType, setNewType] = useState(initialType);
