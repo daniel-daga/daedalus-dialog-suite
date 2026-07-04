@@ -19,8 +19,56 @@ jobs:
   tests:
     uses: ./.github/workflows/all-tests.yml
 
+  # Phase 2 (fix-08 §2): run the real-Electron E2E suite on the SHIPPED platform
+  # (Windows) before packaging. This mirrors the ubuntu `editor-e2e-electron`
+  # job minus xvfb — Electron opens real windows on the windows runner without a
+  # display server, so no xvfb-run wrapper. It catches encoding/path/NSIS-adjacent
+  # regressions where they matter. Runs unconditionally on dispatch (like the
+  # `tests` gate); publishing stays guarded on the `build` job below.
+  e2e-electron-windows:
+    name: E2E Tests (real Electron, Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Builds dist/main + dist/renderer, which the harness launches with
+      # NODE_ENV=production. Electron comes from the pnpm install postinstall —
+      # no `playwright install` (Electron is the browser here).
+      - name: Build editor
+        run: pnpm --filter daedalus-dialog-editor run build
+
+      # No xvfb on Windows: the runner has a real desktop session, so Electron
+      # opens actual windows. Config pins workers:1, no sharding, retries from
+      # the config (CI ? 1 : 0) — keep the suite budget small (fix-08 §2).
+      - name: Run real-Electron E2E suite (Windows)
+        working-directory: daedalus-dialog-editor
+        run: pnpm exec playwright test -c playwright.electron.config.ts
+
+      - name: Upload Electron E2E report (Windows)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-electron-windows
+          path: daedalus-dialog-editor/playwright-report-electron
+          if-no-files-found: ignore
+          retention-days: 7
+
   build:
-    needs: tests
+    needs: [tests, e2e-electron-windows]
     # Only the default branch (master) may publish a release. Non-master
     # dispatches produce a skipped build, not a published release.
     if: github.ref == 'refs/heads/master'
