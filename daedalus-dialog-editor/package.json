@@ -43,7 +43,6 @@
   "build": {
     "appId": "com.gothicmodding.daedalusdialog",
     "productName": "Daedalus Dialog Editor",
-    "electronVersion": "29.4.6",
     "files": [
       "dist/main/**/*",
       "dist/renderer/**/*",
@@ -99,7 +98,7 @@
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/chardet": "^0.8.3",
-    "@types/node": "^20.11.30",
+    "@types/node": "^24.0.0",
     "@types/react": "^18.2.73",
     "@types/react-dom": "^18.2.23",
     "@types/react-virtualized-auto-sizer": "^1.0.4",
@@ -107,8 +106,8 @@
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0",
-    "electron": "^29.4.6",
-    "electron-builder": "^24.13.3",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.0",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^14.0.0",

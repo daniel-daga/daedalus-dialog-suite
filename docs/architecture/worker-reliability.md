@@ -90,6 +90,32 @@ Electron's `dialog`, unavailable in worker threads). The metadata path
 deliberately does **not** populate FileService's encoding cache:
 write-encoding decisions stay owned by FileService's read-before-write flow.
 
+## Native module ABI: `npmRebuild: false` invariant
+
+The `build` block in `daedalus-dialog-editor/package.json` sets
+`"npmRebuild": false`, so electron-builder ships the native modules exactly as
+installed without rebuilding them against Electron's headers. This is safe only
+because **both** native deps are Node-API (ABI-stable across Node/Electron
+majors):
+
+- `tree-sitter@0.21.x` — `node-addon-api` + `node-gyp-build` (loads a prebuilt
+  NAPI binary).
+- `daedalus-parser`'s own binding — `bindings/node/binding.cc` includes
+  `napi.h`, built with `prebuildify --napi`.
+
+Because Node-API guarantees ABI stability, the prebuilt binaries load unchanged
+under any Electron/Node major, which is why the Electron 29 → 43 upgrade
+(bundled Node 20 → 24) needed no rebuild and no `@electron/rebuild`.
+
+**Invariant (foot-gun if broken):** `npmRebuild: false` is valid *only* while
+every native dependency is NAPI. If a non-NAPI native module (raw V8/NAN, or a
+non-prebuildify addon) is ever added, it will be shipped unrebuilt and crash at
+load in the packaged app. Adding such a dep requires flipping `npmRebuild` back
+on (or adding `@electron/rebuild`) — do not add native deps without checking
+this. The `editor-e2e-electron` CI job (real Electron, `playwright.electron.config.ts`)
+is the safety net that exercises a real parse through the worker under the
+shipped runtime and would catch an ABI break.
+
 ## Known limitation: native SIGSEGV
 
 `worker_threads` are threads in the **same process**. A hard native crash
