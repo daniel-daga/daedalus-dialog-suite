@@ -80,7 +80,7 @@ Remaining before the slice is `done`:
 
 - **Fix 5 (R2 strict verifier)**: flip missing-`sha256` from warn to hard failure — only after the R1 build has actually shipped to users via the rolling release (sequencing constraint in fix-06 §4). Checked 2026-07-04: the rolling release still predates R1 (last published 2026-02-27), so this stays blocked.
 - **Fix 6 (code signing)**: blocked on the owner's cert / Azure Trusted Signing decision.
-- **Fix 7 verification**: green `editor-e2e-electron` CI run on this branch/master under Electron 43, then packaged-app verification on Windows (maintainer dispatch; extend/keep the packaged-smoke real-parse checklist item).
+- **Fix 7 verification**: the CI half is **satisfied** — master run 28697785586 (merge commit a7ebd2d, 2026-07-04) is fully green under Electron 43, including "E2E Tests (real Electron)" (editor build + all 17 real-Electron tests through the NAPI parser/worker path — the plan's designated safety net). Remaining: packaged-app verification on Windows (maintainer dispatch; extend/keep the packaged-smoke real-parse checklist item).
 - Manual checklist items in fix-06 §3 (junction-layout error UX, signed-installer QA, upgrade smoke).
 
 ## Slice 8 progress notes (2026-07-03)
@@ -129,13 +129,32 @@ binary (egress policy), so the plan §8.1 "watch it headed" manual verification 
 replaced by real CI execution evidence; a temporary push-trigger commit used to obtain
 the first CI run before PR #205 existed has been reverted.
 
-Outstanding before `done` (the five disk-truth specs are now CI-green, so that
-gate is cleared): §8.5 release-gating dispatch checklist (maintainer-run);
-ratchet-expansion follow-ups (#3 fixture set widens with fix-01; corpus strict set);
-optional phase-2 (Electron E2E on windows-latest inside build-windows); then extract
-durable outcomes (harness split contract, release-gating invariants, crash-log
-privacy stance, lint baseline) into `docs/architecture/` / `docs/reference/`, update
-CLAUDE.md's CI section, and delete the plan file.
+Follow-ups completed 2026-07-04:
+
+- **Ratchet expansion** — the corpus strict set was already complete (all 11
+  fixtures GREEN, `KNOWN_RED_FIXTURES` empty in the parser smoke test). The #3
+  widener ran: a new editor-path **byte**-fidelity Jest ratchet
+  (`tests/saveFidelityCorpus.test.ts`) runs every corpus fixture through the real
+  save-path seam (`CodeGeneratorService.generateCode` with the editor's default
+  `codeSettings`) — 6 GREEN / 5 KNOWN_GAP, each gap with its root cause documented
+  (inter-global blank lines, inline comment on non-AI_Output statements, raw
+  multi-line re-indentation, topic/log renderer blank lines); a KNOWN_GAP that
+  flips byte-green fails the suite until promoted. One genuine codegen bug found
+  and fixed TDD (parser `renderTrailingComments` dropped the final newline after
+  EOF comments), promoting `globals.d` + `encoding-1252.d`. E2E spec #3 is now
+  parameterized over the byte-green *and* UI-drivable subset (`save-fidelity.d`,
+  `case-drift.d`); byte-green fixtures without an NPC/dialog are covered by the
+  Jest ratchet only (documented in the spec header).
+- **Phase-2** — `build-windows.yml` gained an `e2e-electron-windows` job
+  (windows-latest, mirrors the ubuntu job minus xvfb, distinct report artifact)
+  and the packaging job now `needs` it; ref/stale-run/concurrency guards
+  untouched. First execution happens on the next maintainer dispatch.
+
+Outstanding before `done`: §8.5 release-gating dispatch checklist (maintainer-run;
+now also proves the windows E2E job); then extract durable outcomes (harness split
+contract, release-gating invariants, crash-log privacy stance, lint baseline) into
+`docs/architecture/` / `docs/reference/`, update CLAUDE.md's CI section, and delete
+the plan file.
 
 ## Slice 5 completion notes (2026-07-03)
 

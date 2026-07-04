@@ -664,6 +664,10 @@ export class SemanticCodeGenerator {
   }
 
   private renderTrailingComments(comments?: string[]): string | null {
-    return this.renderLeadingComments(comments);
+    const rendered = this.renderLeadingComments(comments);
+    // EOF comments are the last thing in the file; the source ends with a
+    // trailing newline after them, so preserve it for byte fidelity (the
+    // sections join adds no newline after the final section).
+    return rendered === null ? null : `${rendered}\n`;
   }
 }

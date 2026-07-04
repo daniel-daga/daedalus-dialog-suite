@@ -120,6 +120,21 @@ test('end-of-file comments are preserved as file-trailing comments', () => {
   assert.ok(generated.trimEnd().endsWith('// end of file note'), 'EOF comment emitted last');
 });
 
+test('a file ending in an EOF comment keeps its final newline (byte fidelity)', () => {
+  // The source ends with a trailing newline after the EOF comment. Dropping it
+  // makes the generated output byte-different from the original even though it
+  // is token-equal — the editor save path (byte-fidelity ratchet) then reports
+  // a false gap for otherwise-clean globals-only files. Regenerating must
+  // reproduce the source exactly.
+  const source = `var int Some_Global;
+
+// end of file note
+`;
+  const model = parseSemanticModel(source);
+  const generated = generate(model);
+  assert.equal(generated, source, 'EOF-comment file regenerates byte-identical (final newline preserved)');
+});
+
 test('empty void function does not gain an invented TODO placeholder', () => {
   const source = `func void B_Empty()
 {
