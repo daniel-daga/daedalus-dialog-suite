@@ -21,6 +21,12 @@ interface InlineChoiceEditorProps {
    * mouse.
    */
   focusFirstActionNonce?: number;
+  /**
+   * Invoked when Shift+Tab is pressed on the first sub-dialog line (which has no
+   * previous line to move to). ChoiceRenderer wires this to re-focus the Choice
+   * Text field — the reverse of the Tab-dive-in (issue #118).
+   */
+  onEscapeBackward?: () => void;
 }
 
 const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
@@ -29,6 +35,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
   filePath,
   npcName,
   focusFirstActionNonce = 0,
+  onEscapeBackward,
 }) => {
   const updateFunction = useEditorStore((s) => s.updateFunction);
   const updateFunctionWithUpdater = useEditorStore((s) => s.updateFunctionWithUpdater);
@@ -93,6 +100,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     getVisibleActionPaths: () => flattenActionPaths(targetFunction?.actions || []),
     onNavigateToFunction: undefined,
     onRenameFunction: handleRenameFunction,
+    onEscapeBackward,
   });
 
   const hasActions = (targetFunction?.actions?.length ?? 0) > 0;
@@ -152,6 +160,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
         getVisibleActionPaths={handlers.getVisibleActionPaths}
         onNavigateToFunction={handlers.onNavigateToFunction}
         onRenameFunction={handlers.onRenameFunction}
+        onEscapeBackward={handlers.onEscapeBackward}
         dialogContextName={dialogName}
         contextId={targetFunctionName}
         droppableNamespace={targetFunctionName}

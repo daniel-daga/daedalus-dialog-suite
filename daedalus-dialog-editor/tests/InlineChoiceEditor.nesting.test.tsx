@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import InlineChoiceEditor from '../src/renderer/components/InlineChoiceEditor';
 import type { SemanticModel, DialogFunction } from '../src/renderer/types/global';
@@ -159,5 +159,76 @@ describe('InlineChoiceEditor focuses the first sub-dialog line on request (issue
     );
 
     expect(screen.getByLabelText('Text')).not.toHaveFocus();
+  });
+});
+
+/**
+ * Issue #118 (reverse direction): Shift+Tab out of the FIRST sub-dialog line has
+ * nowhere to go inside the sub-dialog, so it must escape back to the container —
+ * ChoiceRenderer wires that to re-focus the Choice Text field. A non-first line
+ * still navigates to its predecessor and must NOT escape.
+ */
+describe('InlineChoiceEditor escapes backward from the first sub-dialog line (issue #118)', () => {
+  beforeEach(() => {
+    updateFunction.mockClear();
+    updateFunctionWithUpdater.mockClear();
+    renameFunction.mockClear();
+  });
+
+  function makeTwoLineSubFunction(): DialogFunction {
+    return {
+      name: SUB_FUNCTION_NAME,
+      returnType: 'VOID',
+      actions: [
+        { type: 'DialogLine', speaker: 'other', text: 'First sub line', id: 'DIA_Test_Yes_other_1_0' },
+        { type: 'DialogLine', speaker: 'self', text: 'Second sub line', id: 'DIA_Test_Yes_self_2_0' },
+      ],
+      conditions: [],
+      calls: [],
+    } as DialogFunction;
+  }
+
+  test('Shift+Tab on the first line calls onEscapeBackward', () => {
+    const onEscapeBackward = jest.fn();
+    mockModel = makeModel(makeSubFunction());
+    render(
+      <InlineChoiceEditor
+        targetFunctionName={SUB_FUNCTION_NAME}
+        dialogName="DIA_Test"
+        filePath={FILE_PATH}
+        npcName="TestNPC"
+        focusFirstActionNonce={1}
+        onEscapeBackward={onEscapeBackward}
+      />
+    );
+
+    const firstLine = screen.getByLabelText('Text');
+    expect(firstLine).toHaveFocus();
+
+    fireEvent.keyDown(firstLine, { key: 'Tab', shiftKey: true });
+    expect(onEscapeBackward).toHaveBeenCalledTimes(1);
+  });
+
+  test('Shift+Tab on a later line navigates to the previous line, not escaping', () => {
+    const onEscapeBackward = jest.fn();
+    mockModel = makeModel(makeTwoLineSubFunction());
+    render(
+      <InlineChoiceEditor
+        targetFunctionName={SUB_FUNCTION_NAME}
+        dialogName="DIA_Test"
+        filePath={FILE_PATH}
+        npcName="TestNPC"
+        onEscapeBackward={onEscapeBackward}
+      />
+    );
+
+    const lines = screen.getAllByLabelText('Text');
+    expect(lines).toHaveLength(2);
+    act(() => lines[1].focus());
+
+    fireEvent.keyDown(lines[1], { key: 'Tab', shiftKey: true });
+
+    expect(onEscapeBackward).not.toHaveBeenCalled();
+    expect(lines[0]).toHaveFocus();
   });
 });

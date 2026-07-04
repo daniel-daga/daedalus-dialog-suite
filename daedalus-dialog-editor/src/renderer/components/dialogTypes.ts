@@ -39,6 +39,11 @@ export interface ActionCardProps {
   onNavigateToFunction?: (functionName: string) => void;
   onRenameFunction?: (oldName: string, newName: string) => void;
   dialogContextName?: string; // The dialog/function name for validation prefix
+  // Shift+Tab on the first card of a list has nowhere to go within the list; when
+  // provided, it escapes backward to the container instead of doing nothing.
+  // Choice sub-dialogs supply this to return focus to the Choice Text field
+  // (issue #118, the reverse of the Tab-dive-in).
+  onEscapeBackward?: () => void;
   dragHandleProps?: DraggableProvidedDragHandleProps | null;
   filePath?: string | null;
   // Namespace for nested list droppableIds (fix-05 §2.5). Propagated to

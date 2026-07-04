@@ -27,6 +27,9 @@ interface ActionsListProps {
   dialogContextName: string;
   contextId?: string; // Unique ID to reset progressive rendering (e.g. function name)
   filePath?: string | null;
+  // Shift+Tab on the first card escapes backward to the container when there is
+  // no previous card (issue #118). Only choice sub-dialogs supply this.
+  onEscapeBackward?: () => void;
   /**
    * Namespace that keeps this list's droppableId unique across the single
    * hoisted DragDropContext (fix-05 §2.5). Defaults to dialogContextName. Choice
@@ -69,7 +72,8 @@ const ActionsList = React.memo<ActionsListProps>(({
   dialogContextName,
   contextId,
   filePath,
-  droppableNamespace
+  droppableNamespace,
+  onEscapeBackward
 }) => {
   // Progressive rendering for large lists
   const [renderedCount, setRenderedCount] = useState(() =>
@@ -208,6 +212,7 @@ const ActionsList = React.memo<ActionsListProps>(({
                       onNavigateToFunction={onNavigateToFunction}
                       onRenameFunction={onRenameFunction}
                       dialogContextName={dialogContextName}
+                      onEscapeBackward={onEscapeBackward}
                       droppableNamespace={effectiveNamespace}
                       filePath={filePath}
                       dragHandleProps={draggableProvided.dragHandleProps}

@@ -133,6 +133,25 @@ test.describe('Choice accessibility after creation in project mode (issue #117)'
     await expect(page.getByLabel('Text', { exact: true }).nth(1)).toBeFocused();
   });
 
+  test('Shift+Tab from the sub-dialog line returns to Choice Text (issue #118)', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();
+
+    const choiceText = page.getByLabel('Choice Text');
+    await expect(choiceText).toBeVisible();
+
+    // Dive into the sub-dialog: Tab lands focus on the seeded sub-dialog line.
+    await choiceText.focus();
+    await choiceText.press('Tab');
+    const subLine = page.getByLabel('Text', { exact: true }).nth(1);
+    await expect(subLine).toBeFocused();
+
+    // Shift+Tab out of the first sub-dialog line must return to the Choice Text
+    // field (the symmetric counterpart of the dive-in), not stay put.
+    await subLine.press('Shift+Tab');
+    await expect(choiceText).toBeFocused();
+  });
+
   test('Choice Text is mirrored into the seeded sub-dialog line (issue #181)', async ({ page }) => {
     await page.getByRole('button', { name: 'Add action' }).click();
     await page.getByRole('menuitem', { name: 'Choice', exact: true }).click();

@@ -65,6 +65,13 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
     handleKeyDown(e);
   };
 
+  // Reverse of the dive-in: Shift+Tab on the first sub-dialog line returns focus
+  // to the Choice Text field (issue #118). mainFieldRef is stable, so this reads
+  // the latest input node at call time.
+  const handleEscapeBackToChoiceText = React.useCallback(() => {
+    mainFieldRef.current?.focus();
+  }, [mainFieldRef]);
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -172,6 +179,7 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
           filePath={filePath || null}
           npcName={npcName || ''}
           focusFirstActionNonce={focusInnerNonce}
+          onEscapeBackward={handleEscapeBackToChoiceText}
         />
       </Collapse>
     </Box>

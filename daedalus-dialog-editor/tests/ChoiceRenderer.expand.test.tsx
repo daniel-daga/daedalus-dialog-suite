@@ -6,12 +6,16 @@ import { useFileStore } from '../src/renderer/store/fileStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 
 // Mock InlineChoiceEditor to avoid deep dependency chain. Expose the
-// focus-request nonce so tests can assert the dive-into-sub-editor wiring.
+// focus-request nonce so tests can assert the dive-into-sub-editor wiring, and a
+// button that invokes onEscapeBackward so the Shift+Tab-out wiring is testable.
 jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
   __esModule: true,
-  default: ({ targetFunctionName, focusFirstActionNonce }: any) => (
+  default: ({ targetFunctionName, focusFirstActionNonce, onEscapeBackward }: any) => (
     <div data-testid="inline-editor" data-focus-nonce={focusFirstActionNonce ?? 0}>
       {targetFunctionName}
+      <button data-testid="invoke-escape-backward" onClick={() => onEscapeBackward?.()}>
+        escape
+      </button>
     </div>
   )
 }));
@@ -154,6 +158,21 @@ describe('ChoiceRenderer expand/collapse', () => {
 
       expect(screen.queryByTestId('inline-editor')).not.toBeInTheDocument();
       expect(baseProps.handleKeyDown).toHaveBeenCalled();
+    });
+
+    test('escaping backward out of the sub-editor returns focus to the Choice Text field', () => {
+      render(<ChoiceRenderer {...baseProps} mainFieldRef={React.createRef<HTMLInputElement>()} />);
+      // Expand so the inline sub-editor is mounted.
+      fireEvent.click(screen.getByLabelText('Expand choice actions'));
+
+      const choiceText = screen.getByLabelText('Choice Text');
+      // Move focus away first, then trigger the sub-editor's escape-backward.
+      const escapeButton = screen.getByTestId('invoke-escape-backward');
+      escapeButton.focus();
+      expect(choiceText).not.toHaveFocus();
+
+      fireEvent.click(escapeButton);
+      expect(choiceText).toHaveFocus();
     });
   });
 });

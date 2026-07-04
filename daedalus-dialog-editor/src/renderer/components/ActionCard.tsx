@@ -12,7 +12,7 @@ import { actionPathToKey } from './nestedActionUtils';
 import ActionTypeMenu from './common/ActionTypeMenu';
 import DeleteConfirmDialog from './common/DeleteConfirmDialog';
 
-const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, onNavigateToFunction, onRenameFunction, dialogContextName, droppableNamespace, dragHandleProps, filePath }, ref) => {
+const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps>(({ action, path, index, totalActions, npcName, updateActionAtPath, deleteActionAtPath, focusActionAtPath, addDialogLineAfterPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addActionToBranchEnd, moveAction, registerActionRef, getVisibleActionPaths, onNavigateToFunction, onRenameFunction, dialogContextName, onEscapeBackward, droppableNamespace, dragHandleProps, filePath }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const actionBoxRef = useRef<HTMLDivElement>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -136,8 +136,13 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     const prevPath = currentIndex > 0 ? visiblePaths[currentIndex - 1] : undefined;
     if (prevPath) {
       focusActionAtPath(prevPath);
+    } else if (currentIndex === 0 && onEscapeBackward) {
+      // First card in the list, nowhere to go inside it: escape backward to the
+      // container (choice sub-dialogs return focus to the Choice Text field —
+      // issue #118, the reverse of the Tab-dive-in).
+      onEscapeBackward();
     }
-  }, [focusActionAtPath, getVisibleActionPaths, path]);
+  }, [focusActionAtPath, getVisibleActionPaths, path, onEscapeBackward]);
 
   const handleAddNewAfter = useCallback((toggleSpeaker: boolean = true) => {
     addDialogLineAfterPath(path, toggleSpeaker);
