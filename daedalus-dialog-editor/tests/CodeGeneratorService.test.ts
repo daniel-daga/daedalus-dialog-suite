@@ -540,6 +540,67 @@ describe('HeroFollowsAction code generation', () => {
   });
 });
 
+describe('AI_Output listener (issue #115)', () => {
+  let service: CodeGeneratorService;
+
+  beforeEach(() => {
+    service = new CodeGeneratorService();
+  });
+
+  const settings = {
+    indentChar: '\t' as const,
+    includeComments: false,
+    sectionHeaders: false,
+    uppercaseKeywords: false,
+  };
+
+  // The editor serializes a hero dialog line as { type, speaker: 'other', text, id }
+  // with no listener field. The generated AI_Output must read (other, self) —
+  // (other, other) makes Gothic skip the line.
+  test('generates other, self for a hero line that carries no listener field', () => {
+    const plainModel = {
+      dialogs: {},
+      functions: {
+        DIA_Test_Info: {
+          name: 'DIA_Test_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [
+            { type: 'DialogLine', speaker: 'other', text: 'Hallo!', id: 'DIA_Test_Hero_01' }
+          ]
+        }
+      }
+    };
+
+    const result = service.generateCode(plainModel, settings);
+
+    expect(result).toContain('AI_Output (other, self, "DIA_Test_Hero_01");');
+    expect(result).not.toContain('AI_Output (other, other');
+  });
+
+  test('generates self, other for an NPC line that carries no listener field', () => {
+    const plainModel = {
+      dialogs: {},
+      functions: {
+        DIA_Test_Info: {
+          name: 'DIA_Test_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [
+            { type: 'DialogLine', speaker: 'self', text: 'Servus!', id: 'DIA_Test_Npc_01' }
+          ]
+        }
+      }
+    };
+
+    const result = service.generateCode(plainModel, settings);
+
+    expect(result).toContain('AI_Output (self, other, "DIA_Test_Npc_01");');
+  });
+});
+
 /**
  * Test Summary:
  *

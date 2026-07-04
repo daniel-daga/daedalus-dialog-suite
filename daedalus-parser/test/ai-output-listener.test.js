@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseSemanticModel, SemanticCodeGenerator } = require('../dist/semantic/semantic-visitor-index');
+const { parseSemanticModel, SemanticCodeGenerator, deserializeAction } = require('../dist/semantic/semantic-visitor-index');
 
 test('preserves AI_Output listener argument during parse and generation', () => {
   const source = `
@@ -59,4 +59,32 @@ test('preserves non-default AI_Output listener during parse and generation', () 
   const code = generator.generateFunction(func);
   assert.ok(code.includes('AI_Output (self, hero, "DIA_Test_02");'),
     `Generated code should keep the stored listener, got:\n${code}`);
+});
+
+// Issue #115: the editor serializes hero dialog lines over IPC as
+// { speaker: 'other', text, id } with NO listener field. Deserializing that
+// shape must derive listener='self' from the speaker, not leave it at 'other'.
+// Previously plainToInstance ran the DialogLine constructor with no args (so
+// listener defaulted to 'other' from an undefined speaker) and never corrected
+// it once the real speaker 'other' was copied in — emitting other, other.
+test('deserializeAction derives listener from speaker when the field is absent (hero line)', () => {
+  const heroLine = deserializeAction({ speaker: 'other', text: 'Hallo!', id: 'DIA_Test_Hero_01' });
+  assert.equal(heroLine.listener, 'self',
+    'Hero line (speaker other) must have listener self after deserialization');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false });
+  const code = generator.generateAction(heroLine);
+  assert.equal(code, 'AI_Output (other, self, "DIA_Test_Hero_01");',
+    `Hero line must generate other, self — not other, other. Got:\n${code}`);
+});
+
+test('deserializeAction derives listener from speaker when the field is absent (npc line)', () => {
+  const npcLine = deserializeAction({ speaker: 'self', text: 'Servus!', id: 'DIA_Test_Npc_01' });
+  assert.equal(npcLine.listener, 'other',
+    'NPC line (speaker self) must have listener other after deserialization');
+});
+
+test('deserializeAction preserves an explicit listener field', () => {
+  const line = deserializeAction({ speaker: 'self', listener: 'hero', text: 'x', id: 'DIA_Test_Explicit_01' });
+  assert.equal(line.listener, 'hero', 'Explicit listener must survive deserialization');
 });

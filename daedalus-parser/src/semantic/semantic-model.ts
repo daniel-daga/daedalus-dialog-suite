@@ -683,6 +683,18 @@ function ensureActionType(json: any): void {
     else if ('action' in json) json.type = 'Action';
   }
 
+  // Normalise the DialogLine listener on the plain JSON *before* class-transformer
+  // constructs it. The editor serialises hero lines as { speaker: 'other', text, id }
+  // with no listener, and class-transformer runs the DialogLine constructor with no
+  // arguments (so its speaker-derived default is computed from an undefined speaker,
+  // yielding 'other') and never overwrites listener when the source omits it. Filling
+  // it in here — keyed off the real speaker — makes hero lines emit `other, self`,
+  // not `other, other`, which Gothic would skip (issue #115). An explicit listener
+  // (e.g. `self, hero`) is left untouched.
+  if (json.type === 'DialogLine' && json.listener == null && json.speaker != null) {
+    json.listener = json.speaker === 'other' ? 'self' : 'other';
+  }
+
   if (Array.isArray(json.thenActions)) {
     json.thenActions.forEach((action: any) => ensureActionType(action));
   }
