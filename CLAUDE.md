@@ -279,12 +279,11 @@ Notes:
 Code review remediation (production-readiness fixes), tracked in `docs/plans/code-review-remediation.md`:
 
 - `docs/plans/code-review-findings.md` — full review findings (reference, not a plan)
-- `docs/plans/fix-04-quest-editor.md` — quest editor (unreachable features, canvas lifecycle)
 - `docs/plans/fix-06-security-updates.md` — security & update chain
 - `docs/plans/fix-07-render-performance.md` — rendering performance at mod scale
 - `docs/plans/fix-08-test-release-gating.md` — test truthfulness & release gating
 
-Recommended fix order: 3 → 2 → 1 → 6 → 4 → 8 → 5 → 7 (dependencies inside each plan). Slices 1, 2, 3, and 5 are done — durable outcomes in `docs/architecture/` (`parser-fidelity.md`, `save-pipeline.md`, `worker-reliability.md`, and the undo/redo + drag-and-drop sections of `dialog-editor.md`); their plan files are deleted. Slices 4, 6, 7, and 8 are in-progress (all code landed; manual/maintainer verification or ratchet follow-ups outstanding — see the tracker).
+Recommended fix order: 3 → 2 → 1 → 6 → 4 → 8 → 5 → 7 (dependencies inside each plan). Slices 1, 2, 3, 4, and 5 are done — durable outcomes in `docs/architecture/` (`parser-fidelity.md`, `save-pipeline.md`, `worker-reliability.md`, the quest Canvas Interaction Contract in `quest-editor.md`, and the undo/redo + drag-and-drop sections of `dialog-editor.md`); their plan files are deleted. Slices 6, 7, and 8 are in-progress (all code landed; manual/maintainer verification or ratchet follow-ups outstanding — see the tracker).
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 

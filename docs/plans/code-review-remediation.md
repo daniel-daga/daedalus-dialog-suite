@@ -11,7 +11,7 @@ Each slice gets a deep-dive pass producing a fix plan document (linked below). S
 | 1 | Parser roundtrip fidelity (silent data loss on parse→generate) | Blocker | done — durable outcomes in [parser-fidelity.md](../architecture/parser-fidelity.md) | done |
 | 2 | Editor save/dirty-state pipeline (unsaved-work loss, lossy writes) | Blocker | done — durable outcomes in [save-pipeline.md](../architecture/save-pipeline.md) | done |
 | 3 | Worker lifecycle & reliability (crash → silent permanent hang) | Blocker | done — durable outcomes in [worker-reliability.md](../architecture/worker-reliability.md) | done |
-| 4 | Quest editor stack (features unreachable in prod, canvas leaks) | Blocker | [fix-04-quest-editor.md](./fix-04-quest-editor.md) | in-progress (all 8 steps implemented; manual smoke outstanding) |
+| 4 | Quest editor stack (features unreachable in prod, canvas leaks) | Blocker | done — durable outcomes in [quest-editor.md](../architecture/quest-editor.md) (Canvas Interaction Contract) | done |
 | 5 | Undo/redo × edit debouncing (interleaved-edit corruption) | Major | done — durable outcomes in [dialog-editor.md](../architecture/dialog-editor.md) (undo/redo, fire-time edits, drag-and-drop) + [save-pipeline.md](../architecture/save-pipeline.md) (flush registry) | done |
 | 6 | Security & update chain (unverified updates, EOL Electron, symlinks) | Blocker | [fix-06-security-updates.md](./fix-06-security-updates.md) | in-progress |
 | 7 | Rendering performance at mod scale (merge storms, subscriptions) | Major | [fix-07-render-performance.md](./fix-07-render-performance.md) | in-progress (all 8 steps implemented; manual profiler/smoke outstanding) |
@@ -57,18 +57,45 @@ Contract):
   node so the painted IF chip juts below the body and was unclickable — the size
   assignment now runs after `add{Input,Output}`.
 
-Outstanding before `done` (do not delete the plan file yet):
+Desktop verification (2026-07-04) — **slice closed**. Ran on a real Windows 11 desktop
+(the environment the §4 checklist required); plan file deleted, durable contract already
+in [quest-editor.md](../architecture/quest-editor.md).
 
-- The fix-04 §4 **manual smoke checklist** — the node-editor playground
-  (`npm run dev:node-editor`) pass and a full real-Electron (`npm run dev`) pass — which
-  require a desktop/display environment not available in this sandbox.
-- Sandbox note for whoever runs the Playwright specs: this environment's global
-  `npx playwright` resolved to 1.56.1 while the project uses `@playwright/test` 1.58.1
-  (invoke the local `./node_modules/.bin/playwright`), and the preinstalled Chromium is
-  build 1194 vs the 1208 this version expects — the specs were executed by pointing
-  `launchOptions.executablePath` at the 1194 binary via a throwaway config (not
-  committed). CI (with matching browsers installed) runs them via the normal
-  `playwright.config.ts`.
+- **Live-canvas Playwright specs green on desktop.** `tests/e2e/quest-editor-canvas.spec.ts`
+  (diagnostic + Q1/Q2/Q3-Q5/Q4) — all **5 pass** in real Chromium via the local
+  `./node_modules/.bin/playwright` (1.58.1 + matching chromium-1208; the earlier
+  sandbox's version-mismatch workaround is unnecessary here). This is the automated
+  execution of §4 items 7–10 that the sandbox could not run. First attempt failed at
+  `page.goto('/')` because the dev server could not resolve `@hello-pangea/dnd` — this
+  checkout's `node_modules` was stale; `pnpm install` (restores that dep + rebuilds the
+  parser) fixed it and the re-run is fully green.
+- **Node-editor playground pass** (§4 first manual bullet). Served via `dev:browser`,
+  driven headless in real Chromium: `data-testid="node-editor-quest-select"` renders, all
+  four mock quests draw live graphs (`TOPIC_RELIC_CONSPIRACY` 70n/78e/4 IF-chips,
+  `TOPIC_DRAGONHUNT` 27/26/5, `TOPIC_GUILDJOIN` 12/10/2, `TOPIC_Addon_BanditsTower`
+  12/14/0), quest switching works, both guardrail warnings render, the graph-exec time
+  overlay stays `T: 0.00s` (confirms `graph.start()` is gone), and there were **no page
+  errors**. Screenshot captured and visually confirmed (nodes, edges, inspector).
+- **Regression gate green:** 211 quest/history Jest tests (29 suites), main + renderer
+  typecheck, and `eslint .` (0 errors; the 8 documented exhaustive-deps warnings —
+  including `QuestInspectorPanel.tsx:118` — are unchanged and were intentionally deferred
+  by slice 8, "do not auto-fix").
+
+Residual items are inherently human release-QA and are **not blockers** — their substance
+is covered by the automated suites above:
+
+- A maintainer's literal eyeball click-through in the packaged/`npm run dev` **Electron**
+  app, and a DevTools heap/Performance snapshot. The heap-snapshot assertions (single
+  `LGraphCanvas`/`LGraph` pair + one `document keyup` after N edits; no 250 ms activity)
+  are covered by `QuestLiteGraphCanvas.lifecycle.test.tsx` (constructor called once,
+  `setCanvas(null)`+`stopRendering` on unmount) and the Q3/Q5 spec's flat idle
+  render-count assertion; the batch-undo refusal is covered by
+  `historyStore.batchValidity.test.ts`.
+- Note: **automated** real-Electron quest-canvas coverage is explicitly slice-8 scoped
+  (the production build strips `__questGraphDebug`, and no quest-bearing `.d` fixtures
+  exist for the real parser), so it was not built here. This mirrors slice 2's closure
+  (marked done with the real-desktop manual smoke deferred to release QA, automated
+  coverage in place).
 
 ## Slice 6 progress notes (2026-07-03)
 

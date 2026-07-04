@@ -22,7 +22,7 @@ Tracker: [`code-review-remediation.md`](./code-review-remediation.md) slice 7.
 
 Scope: `daedalus-dialog-editor/src/renderer/store/projectStore.ts`, `store/storeSync.ts`, every renderer store subscription, `components/MainLayout.tsx`, `VariableManager.tsx`, `DialogTree.tsx` (+ `DialogTreeItem.tsx`, `dialogTreeUtils.ts`), `App.tsx`, `ThreeColumnLayout.tsx`, `hooks/useNavigation.ts`, `components/hooks/useVariableOptions.ts`, `ActionCard.tsx`.
 
-Boundary with [`fix-04-quest-editor.md`](./fix-04-quest-editor.md): slice 4 owns the `QuestFlow`/`QuestEditor` `parsedFiles` subscription fixes and the canvas lifecycle (its step 7, PF3). Slice 7 owns everything store-side (merge strategy, `parseGeneration` mechanics if slice 4 has not landed it, remaining `parsedFiles` subscribers) and all non-quest component subscriptions. Whichever slice lands first implements `parseGeneration` in `projectStore`; the other consumes it.
+Boundary with slice 4 (done — outcomes in [`../architecture/quest-editor.md`](../architecture/quest-editor.md)): slice 4 owns the `QuestFlow`/`QuestEditor` `parsedFiles` subscription fixes and the canvas lifecycle (its step 7, PF3, which landed `parseGeneration` in `projectStore`). Slice 7 owns everything store-side (merge strategy, `parseGeneration` mechanics if slice 4 has not landed it, remaining `parsedFiles` subscribers) and all non-quest component subscriptions. Whichever slice lands first implements `parseGeneration` in `projectStore`; the other consumes it.
 
 ---
 
