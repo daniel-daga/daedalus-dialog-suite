@@ -117,6 +117,7 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
                   {`${tab.npcName}: ${tab.dialogName}`}
                 </Typography>
                 <IconButton
+                  component="span"
                   size="small"
                   aria-label={`Close tab ${tab.npcName}: ${tab.dialogName}`}
                   onClick={(event) => {
