@@ -235,12 +235,34 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   ): Promise<SemanticModel> => {
     const content = await window.editorAPI.readFile(filePath);
     const newContent = await mutatorFn(content);
+    // Never write content the parser cannot read. A malformed mutation (e.g. a
+    // constant with an empty value → `const int X = ;`) would otherwise corrupt
+    // the file on disk and blank the editor with a syntax error. Validate first
+    // and surface the failure to the caller instead.
+    const parsed = await window.editorAPI.parseSource(newContent);
+    if (parsed.hasErrors) {
+      const detail = parsed.errors?.[0]?.message;
+      throw new Error(
+        `This change would introduce a syntax error into ${filePath}${detail ? ` (${detail})` : ''}, so it was not saved.`
+      );
+    }
     // The main process arms file-watcher self-write suppression after the
     // actual write succeeds.
     await window.editorAPI.writeFile(filePath, newContent);
     invalidateCacheForFile(filePath);
     return get().getSemanticModel(filePath);
   };
+
+  // The merged model carries an AGGREGATE hasErrors flag summarising its inputs.
+  // When it is re-fed as a base into another merge it must be cleared first:
+  // mergeSemanticModels drops any input flagged hasErrors, so leaving it set
+  // would discard the entire (still valid) accumulated model — blanking the
+  // view. The flag is re-derived from the real file models in the new merge.
+  const withoutAggregateErrors = (model: SemanticModel): SemanticModel => ({
+    ...model,
+    hasErrors: false,
+    errors: []
+  });
 
   /**
    * Fold freshly-parsed quest file models into the merged model. Constants
@@ -261,7 +283,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     );
 
     const base: SemanticModel = {
-      ...merged,
+      ...withoutAggregateErrors(merged),
       constants: dropFromUpdatedFiles(merged.constants),
       variables: dropFromUpdatedFiles(merged.variables),
     };
@@ -602,7 +624,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     );
 
     const currentModel = get().mergedSemanticModel;
-    mergeSemanticModels([currentModel, ...models]);
+    mergeSemanticModels([withoutAggregateErrors(currentModel), ...models]);
   },
 
   getQuestUsage: (questName: string) => getQuestUsage(get().parsedFiles, questName),

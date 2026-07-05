@@ -231,6 +231,108 @@ describe('ProjectStore - mergedSemanticModel', () => {
     }
   });
 
+  test('addVariable refuses to write a change that would introduce a syntax error', async () => {
+    const questFile = '/path/to/Constants.d';
+    const existingSource = 'const int MIS_KEEP = 1;\n';
+
+    // Pre-existing merged content that must survive a rejected add.
+    useProjectStore.setState({
+      allDialogFiles: [questFile],
+      questFiles: [questFile],
+      parsedFiles: new Map(),
+      mergedSemanticModel: createModel([], [{ name: 'DIA_Keep', npc: 'NPC_Keep' }])
+    });
+
+    const readFileSpy = jest.spyOn(window.editorAPI, 'readFile').mockResolvedValue(existingSource);
+    const writeFileSpy = jest.spyOn(window.editorAPI, 'writeFile').mockResolvedValue({ success: true });
+    // Faithful stand-in for the real parser: an empty constant value (`= ;`) is a syntax error.
+    const parseSourceSpy = jest.spyOn(window.editorAPI, 'parseSource').mockImplementation(async (code: string) => {
+      if (/=\s*;/.test(code)) {
+        return { ...createModel([]), hasErrors: true, errors: [{ type: 'syntax_error', message: 'Syntax error' }] };
+      }
+      return { ...createModel([]), hasErrors: false, errors: [] };
+    });
+
+    try {
+      // Constant with an empty value → `const int BROKEN = ;`
+      await expect(
+        useProjectStore.getState().addVariable('BROKEN', 'int', '', questFile, true)
+      ).rejects.toThrow();
+
+      // The corrupt content must never reach disk.
+      expect(writeFileSpy).not.toHaveBeenCalled();
+      // The existing merged model must be intact (not blanked).
+      const merged = useProjectStore.getState().mergedSemanticModel;
+      expect(merged.dialogs).toHaveProperty('DIA_Keep');
+    } finally {
+      readFileSpy.mockRestore();
+      writeFileSpy.mockRestore();
+      parseSourceSpy.mockRestore();
+    }
+  });
+
+  test('addVariable preserves existing merged content when the merged model already carries aggregate errors', async () => {
+    const questFile = '/path/to/Constants.d';
+    const existingSource = 'const int MIS_KEEP = 1;\n';
+
+    // A prior parse of an UNRELATED file left the merged model flagged
+    // hasErrors, but it still holds valid dialogs/vars that must not be dropped
+    // when the user adds a new (valid) variable.
+    useProjectStore.setState({
+      allDialogFiles: [questFile],
+      questFiles: [questFile],
+      parsedFiles: new Map(),
+      mergedSemanticModel: {
+        ...createModel([], [{ name: 'DIA_Keep', npc: 'NPC_Keep' }]),
+        hasErrors: true,
+        errors: [{ type: 'syntax_error', message: 'an unrelated file is broken' }]
+      }
+    });
+
+    const readFileSpy = jest.spyOn(window.editorAPI, 'readFile').mockResolvedValue(existingSource);
+    const writeFileSpy = jest.spyOn(window.editorAPI, 'writeFile').mockResolvedValue({ success: true });
+    const parseSourceSpy = jest.spyOn(window.editorAPI, 'parseSource')
+      .mockResolvedValue({ ...createModel([]), hasErrors: false, errors: [] });
+    const parseDialogFileSpy = jest.spyOn(window.editorAPI, 'parseDialogFile')
+      .mockResolvedValue(createModel(['NEW_VAR']));
+
+    try {
+      await useProjectStore.getState().addVariable('NEW_VAR', 'int', undefined, questFile, false);
+
+      const merged = useProjectStore.getState().mergedSemanticModel;
+      expect(merged.dialogs).toHaveProperty('DIA_Keep'); // not blanked
+      expect(merged.variables).toHaveProperty('NEW_VAR'); // new var merged in
+    } finally {
+      readFileSpy.mockRestore();
+      writeFileSpy.mockRestore();
+      parseSourceSpy.mockRestore();
+      parseDialogFileSpy.mockRestore();
+    }
+  });
+
+  test('loadQuestData preserves existing merged content when the merged model carries aggregate errors', async () => {
+    const questFile = '/path/to/Quests.d';
+
+    useProjectStore.setState({
+      questFiles: [questFile],
+      parsedFiles: new Map([
+        [questFile, { filePath: questFile, semanticModel: createModel(['VAR_QUEST']), lastParsed: new Date() }]
+      ]),
+      mergedSemanticModel: {
+        ...createModel(['VAR_KEEP'], [{ name: 'DIA_Keep', npc: 'NPC_Keep' }]),
+        hasErrors: true,
+        errors: [{ type: 'syntax_error', message: 'some other file is broken' }]
+      }
+    });
+
+    await useProjectStore.getState().loadQuestData();
+
+    const merged = useProjectStore.getState().mergedSemanticModel;
+    expect(merged.dialogs).toHaveProperty('DIA_Keep');
+    expect(merged.variables).toHaveProperty('VAR_KEEP');
+    expect(merged.variables).toHaveProperty('VAR_QUEST');
+  });
+
   test('addDialogToIndex does not duplicate existing dialog metadata', () => {
     const store = useProjectStore.getState();
     const metadata = {

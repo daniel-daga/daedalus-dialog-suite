@@ -83,6 +83,13 @@ const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
       return;
     }
 
+    // A constant must have a value — an empty value generates unparseable code
+    // (e.g. `const int X = ;`).
+    if (isConstant && !newValue.trim()) {
+      setError('A value is required for a constant.');
+      return;
+    }
+
     try {
       await addVariable(newName, newType, newValue, targetFile, isConstant);
       onClose();

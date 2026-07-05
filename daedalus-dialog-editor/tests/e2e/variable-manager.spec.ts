@@ -95,6 +95,23 @@ test.describe('Variable Manager', () => {
     await expect(page.getByRole('dialog').locator('[role="combobox"]').first()).toBeVisible();
   });
 
+  test('adding a constant with an empty value is blocked with a validation error', async ({ page }) => {
+    await page.getByRole('button', { name: /Add Variable/i }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add New Variable/Constant' });
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByLabel('Name').fill('MIS_EMPTY_CONST');
+    // Toggle Constant on (the Value field appears) but leave Value empty.
+    await dialog.getByRole('checkbox', { name: 'Constant' }).check();
+    await expect(dialog.getByLabel('Value')).toBeVisible();
+
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+
+    // The dialog must stay open with a validation error — nothing is written.
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/value is required/i)).toBeVisible();
+  });
+
   test('Add Variable dialog can be cancelled', async ({ page }) => {
     await page.getByRole('button', { name: /Add Variable/i }).click();
     await expect(page.getByRole('dialog', { name: 'Add New Variable/Constant' })).toBeVisible();
