@@ -219,7 +219,7 @@ export interface FileStore {
 
   // Actions
   getFileState: (filePath: string) => FileState | undefined;
-  openFile: (filePath: string) => Promise<void>;
+  openFile: (filePath: string, opts?: { model?: SemanticModel }) => Promise<void>;
   closeFile: (filePath: string) => void;
   updateModel: (filePath: string, model: SemanticModel) => void;
   updateDialog: (filePath: string, dialogName: string, dialog: Dialog) => void;
@@ -297,10 +297,12 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
 
   getFileState: (filePath: string) => get().openFiles.get(filePath),
 
-  openFile: async (filePath: string) => {
+  openFile: async (filePath: string, opts?: { model?: SemanticModel }) => {
     try {
       const sourceCode = await window.editorAPI.readFile(filePath);
-      const processedModel = await parseSourceWithIds(sourceCode);
+      const processedModel = opts?.model
+        ? ensureActionIds(opts.model)
+        : await parseSourceWithIds(sourceCode);
 
       const fileState: FileState = {
         filePath,

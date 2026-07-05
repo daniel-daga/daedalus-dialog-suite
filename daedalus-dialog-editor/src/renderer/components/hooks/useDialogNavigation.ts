@@ -115,12 +115,17 @@ export function useDialogNavigation({
       // In project mode, ensure the file containing this dialog is opened in editorStore
       // so that it can be edited (DialogDetailsEditor requires a filePath in openFiles)
       if (isProjectMode && selectedNPC) {
-        const { dialogIndex } = useProjectStore.getState();
-        const { activeFile, openFile } = useEditorStore.getState();
+        const { dialogIndex, getSemanticModel } = useProjectStore.getState();
+        const { activeFile, openFiles, setActiveFile, openFile } = useEditorStore.getState();
         const npcDialogs = dialogIndex.get(selectedNPC);
         const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
         if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
-          await openFile(metadata.filePath);
+          if (openFiles.has(metadata.filePath)) {
+            setActiveFile(metadata.filePath);
+          } else {
+            const model = await getSemanticModel(metadata.filePath);
+            await openFile(metadata.filePath, model && !model.hasErrors ? { model } : undefined);
+          }
         }
       }
 
@@ -156,9 +161,14 @@ export function useDialogNavigation({
           await Promise.all(uniqueFilePaths.map((path) => getSemanticModel(path)));
           loadAndMergeNpcModels(npcName);
 
-          const { activeFile, openFile } = useEditorStore.getState();
+          const { activeFile, openFiles, setActiveFile, openFile } = useEditorStore.getState();
           if (activeFile !== metadata.filePath) {
-            await openFile(metadata.filePath);
+            if (openFiles.has(metadata.filePath)) {
+              setActiveFile(metadata.filePath);
+            } else {
+              const model = await getSemanticModel(metadata.filePath);
+              await openFile(metadata.filePath, model && !model.hasErrors ? { model } : undefined);
+            }
           }
 
           finalizeDialogSelection(dialogName, functionName);
