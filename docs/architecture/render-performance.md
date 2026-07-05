@@ -80,6 +80,8 @@ stable across unrelated edits, which is what makes the merge's identity
 preservation observable. `VariableManager` (`constants`/`variables`) and
 `useVariableOptions` (per-category deps) follow this rule; their sort+rebuild
 memos now run only when the relevant category actually changes.
+`useVariableOptions` additionally hoists the candidate-pool build itself out of
+per-field memos into a module-level cache — see *Dialog-open latency* below.
 
 ## Subscription rules
 
@@ -165,6 +167,83 @@ replaced (`flushUpdates`, `getSemanticModel` cache write, `updateFileModel`,
 `invalidateCacheForFile`, `clearCache`, `closeProject`). Ingestion-time
 subscribers watch `parseGeneration`, not `parsedFiles` identity, so the
 500 ms-flush render storm is bounded (consumed by the quest editor, slice 4).
+
+## Dialog-open latency (dialog-click hot path)
+
+Durable decisions from the dialog-open-latency work (2026-07-05). Clicking a
+dialog in the list used to cost 1–2 s even on a fully-indexed project: two
+independent costs stacked on every click. Fixed in three independent slices.
+
+### Click-open reuses both caches (no re-parse on click)
+
+`useDialogNavigation` (`handleSelectDialog` / `handleSelectRecentDialog`) no
+longer re-parses on selection:
+
+- **Already-open file** → `fileStore.setActiveFile(path)` (focus without a disk
+  read or parse), never `openFile`. This also closes a latent data-loss bug:
+  `openFile` on an already-open **dirty** file re-read disk and reset
+  `isDirty`/`originalCode`, silently discarding edits still inside the auto-save
+  debounce window; `setActiveFile` preserves the `FileState`.
+- **Not-yet-open file** → reuse the `projectStore` cached model. `openFile`
+  takes an optional `openFile(path, { model })`: it still does the `readFile`
+  IPC (so `originalCode` is disk-true) but **skips `parseSource`**, running
+  `ensureActionIds` on the supplied model instead. The caller passes the
+  `getSemanticModel(path)` result (a `parsedFiles` cache hit after the NPC's
+  files were parsed at NPC-select time), and **omits the model when it
+  `hasErrors`** so the error-recovery parse path is unchanged. `ensureActionIds`
+  is copy-on-write, so applying it to the shared cache object is safe.
+
+Staleness is bounded by the same `FileWatcherService` invalidation the rest of
+the app already trusts. Net: the first click after selecting an NPC no longer
+re-parses a just-parsed file, and repeat cross-NPC clicks cost one `readFile`
+instead of a full tree-sitter + two-pass parse every time.
+
+### Editor stays mounted across dialog switches
+
+`useDialogTransition` previously marked `isLoadingDialog`, unmounted the whole
+editor to a spinner shell, then remounted it two RAFs later in a synchronous
+high-priority render — paying the full `useVariableOptions` + MUI mount cost on
+every click. It now uses `useTransition`:
+
+- `finalizeDialogSelection` clears the async-open flag and commits the
+  dialog/function selection inside `startTransition`; `isLoadingDialog =
+  isPending || asyncOpenFlag`. The previously-committed selection keeps
+  rendering until the new one is ready, and `isPending` is race-free by
+  construction — two rapid finalize calls resolve to the latest selection, so
+  the old RAF cancellation/`transitionId` guard is deleted.
+- `EditorPane` keeps `DialogDetailsEditor` **mounted** (no `key={dialog}` —
+  reconciliation updates in place; action cards are already keyed by stable
+  action ids) and draws an absolutely-positioned, theme-aware spinner **overlay**
+  while loading instead of returning a spinner shell. Placeholder branches (no
+  dialog / missing function) are unchanged.
+- Because the editor no longer remounts, per-dialog UI state that mounting used
+  to reset for free is reset **explicitly** via an effect keyed on `dialogName`
+  (`propertiesExpanded`, `sourceViewOpen`, `snackbar`, `validationDialog`);
+  transient in-flight flags (`isSaving`/`isResetting`) are intentionally left
+  alone. Scroll-to-top is an effect keyed on the committed selection.
+
+The rapid-switch race the RAF guard used to cover is now guarded by
+`tests/e2e/dialog-rapid-switch.spec.ts`.
+
+### Shared autocomplete option pool
+
+Assembling the full candidate list from ~11k project symbols and
+`localeCompare`-sorting it used to happen inside **every** mounted
+`VariableAutocomplete` field's own `useMemo` (28 call sites, 6–20 ms/field). The
+assembly is identical for every field reading the same project + active-file
+state, so it is hoisted into a module-level cache (`buildOptionPool`, keyed by
+the reference identity of the 15 source records — mirrors the `mergeCache`
+idiom) built once per source-identity change and reused by all fields. Each
+field then only filters + dedups the (small) survivor set.
+
+**Parity invariant (load-bearing):** the pool must **not** dedup by name — name
+shadowing applies only to entries that pass a field's `typeFilter`/`namePrefix`/
+`show*` gating, so a same-named entry excluded by a filter must not shadow a
+later matching one. The pool keeps every same-named candidate in source-priority
+order (constant → variable → instance → dialog; within each, local before
+project); dedup happens only in the per-field pass via a fresh `seenNames`. The
+optional per-field caller `semanticModel` is folded into the per-field pass (not
+the shared pool) so the pool stays reusable across fields whose models differ.
 
 ## Measurement tooling
 

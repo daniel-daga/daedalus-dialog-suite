@@ -9,79 +9,50 @@ export interface UseDialogTransitionResult {
 }
 
 /**
- * Manages the RAF-based two-frame sequencing used when switching dialogs:
- *  1. Immediately mark loading so stale content is hidden.
- *  2. Commit the new dialog/function selection inside a React transition.
- *  3. After the first paint, scroll the editor to the top.
- *  4. After the second paint, clear the loading flag.
- *
- * Cancels any in-flight RAFs on remount and whenever a newer dialog is
- * selected mid-transition (Bug #1 fix — prevents memory leaks and stale
- * setIsLoadingDialog calls from previous selections).
+ * Keeps the editor pane mounted across dialog switches instead of unmounting
+ * it while loading:
+ *  - Navigation handlers set the async flag (`setIsLoadingDialog(true)`)
+ *    while a file open is in flight.
+ *  - `finalizeDialogSelection` clears that async flag and commits the new
+ *    dialog/function selection inside a React transition, so the previously
+ *    committed selection keeps rendering until the new one is ready.
+ *  - `isLoadingDialog` is true whenever either the async flag or the
+ *    transition (`isPending`) is active, so the loading overlay stays
+ *    visible continuously across both phases.
+ *  - `isPending` is race-free by construction: if two selections are
+ *    finalized in quick succession, React resolves the transition against
+ *    the latest state update, so the second selection always wins.
+ *  - Scrolling back to the top happens once the *committed* selection
+ *    actually changes.
  */
 export function useDialogTransition(): UseDialogTransitionResult {
-  const [isLoadingDialog, setIsLoadingDialog] = useState(false);
-  const [_isPending, startTransition] = useTransition();
-  const rafId1Ref = useRef<number | null>(null);
-  const rafId2Ref = useRef<number | null>(null);
-  const dialogTransitionIdRef = useRef(0);
+  const [isAsyncLoading, setIsAsyncLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const editorScrollRef = useRef<HTMLDivElement>(null);
 
-  // Cleanup RAF callbacks on unmount (Bug #1 fix)
+  const selectedDialog = useUISelectionStore((state) => state.selectedDialog);
+  const selectedFunctionName = useUISelectionStore((state) => state.selectedFunctionName);
+
   useEffect(() => {
-    return () => {
-      if (rafId1Ref.current !== null) {
-        cancelAnimationFrame(rafId1Ref.current);
-      }
-      if (rafId2Ref.current !== null) {
-        cancelAnimationFrame(rafId2Ref.current);
-      }
-    };
-  }, []);
+    if (editorScrollRef.current) {
+      editorScrollRef.current.scrollTop = 0;
+    }
+  }, [selectedDialog, selectedFunctionName]);
 
   const finalizeDialogSelection = useCallback((dialogName: string, functionName: string | null) => {
-    const transitionId = dialogTransitionIdRef.current + 1;
-    dialogTransitionIdRef.current = transitionId;
+    setIsAsyncLoading(false);
 
-    // Cancel any pending RAF callbacks from previous dialog selection (Bug #1 fix)
-    if (rafId1Ref.current !== null) {
-      cancelAnimationFrame(rafId1Ref.current);
-      rafId1Ref.current = null;
-    }
-    if (rafId2Ref.current !== null) {
-      cancelAnimationFrame(rafId2Ref.current);
-      rafId2Ref.current = null;
-    }
-
-    // Show loading immediately to prevent stale content flash during transitions
-    setIsLoadingDialog(true);
-
-    // Use startTransition to keep UI responsive when switching to dialogs with many actions
     startTransition(() => {
       const { setSelectedDialog, setSelectedFunctionName } = useUISelectionStore.getState();
       setSelectedDialog(dialogName);
       setSelectedFunctionName(functionName);
-
-      // Use requestAnimationFrame to ensure state changes are committed and painted
-      rafId1Ref.current = requestAnimationFrame(() => {
-        // Scroll to top after content has changed
-        if (editorScrollRef.current) {
-          editorScrollRef.current.scrollTop = 0;
-        }
-
-        // Wait one more frame to ensure rendering is complete
-        rafId2Ref.current = requestAnimationFrame(() => {
-          if (dialogTransitionIdRef.current === transitionId) {
-            setIsLoadingDialog(false);
-          }
-
-          // Clear refs after execution
-          rafId1Ref.current = null;
-          rafId2Ref.current = null;
-        });
-      });
     });
   }, []);
 
-  return { isLoadingDialog, setIsLoadingDialog, finalizeDialogSelection, editorScrollRef };
+  return {
+    isLoadingDialog: isPending || isAsyncLoading,
+    setIsLoadingDialog: setIsAsyncLoading,
+    finalizeDialogSelection,
+    editorScrollRef,
+  };
 }

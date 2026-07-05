@@ -61,6 +61,20 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const uiState = useDialogEditorUIState();
   const { registerActionRef, focusAction, trimRefs } = useFocusNavigation();
 
+  // The editor pane now stays mounted across dialog switches (it no longer
+  // unmounts/remounts, which used to reset this UI state for free). Reset
+  // the per-dialog fields explicitly whenever the dialog being edited
+  // changes. Transient in-flight flags (isSaving, isResetting) are left
+  // alone — they track an operation on the current dialog, not per-dialog
+  // display state.
+  useEffect(() => {
+    uiState.setPropertiesExpanded(false);
+    uiState.setSourceViewOpen(false);
+    uiState.setSnackbar({ open: false, message: '', severity: 'info' });
+    uiState.setValidationDialog({ open: false, validationResult: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogName]);
+
   const {
     setFunction,
     handleRenameFunction,

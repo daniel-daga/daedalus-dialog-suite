@@ -1,5 +1,7 @@
 import React, { forwardRef } from 'react';
 import { Box, Typography, Alert, Tabs, Tab, IconButton, CircularProgress } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
 import { Close as CloseIcon } from '@mui/icons-material';
 import DialogDetailsEditor from './DialogDetailsEditor';
 import type { SemanticModel, Dialog, DialogFunction } from '../types/global';
@@ -49,6 +51,19 @@ const editorPaneContentStyles = {
   alignItems: 'center',
   justifyContent: 'center'
 } as const;
+
+const loadingOverlaySx = (theme: Theme) => ({
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: alpha(theme.palette.background.paper, 0.5),
+  zIndex: 1
+});
 
 /**
  * The right-most pane that displays the dialog editor or placeholder content
@@ -133,10 +148,6 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
     </Box>
   );
 
-  if (isLoadingDialog) {
-    return renderStateShell(<CircularProgress />);
-  }
-
   // No dialog selected - show placeholder
   if (!selectedDialog || !dialogData) {
     return renderStateShell(
@@ -173,7 +184,7 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
     <Box ref={ref} sx={editorPaneContainerStyles}>
       {tabsHeader}
 
-      <Box sx={{ width: '100%', p: 2, minHeight: 0, flex: 1 }}>
+      <Box sx={{ width: '100%', p: 2, minHeight: 0, flex: 1, position: 'relative' }}>
         <DialogDetailsEditor
           dialogName={selectedDialog}
           filePath={filePath}
@@ -183,6 +194,11 @@ const EditorPane = forwardRef<HTMLDivElement, EditorPaneProps>(({
           onDeleteDialog={onDeleteDialog}
           onRenameDialog={onRenameDialog}
         />
+        {isLoadingDialog && (
+          <Box sx={loadingOverlaySx}>
+            <CircularProgress />
+          </Box>
+        )}
       </Box>
     </Box>
   );
