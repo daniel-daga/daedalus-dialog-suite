@@ -15,7 +15,10 @@ describe('EditorPane loading state', () => {
     onNavigateToFunction: jest.fn()
   };
 
-  test('shows spinner immediately when loading starts even before dialog is selected', () => {
+  test('shows the placeholder, not a spinner, when loading starts before any dialog is selected', () => {
+    // There is no previously-committed dialog to keep on screen, so there is
+    // nothing to overlay a spinner on top of — the placeholder is shown
+    // as-is regardless of the loading flag.
     render(
       <EditorPane
         {...baseProps}
@@ -27,11 +30,11 @@ describe('EditorPane loading state', () => {
       />
     );
 
-    expect(screen.getByRole('progressbar')).toBeInTheDocument();
-    expect(screen.queryByText('Select a dialog to edit')).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByText('Select a dialog to edit')).toBeInTheDocument();
   });
 
-  test('uses spinner instead of skeleton while loading selected dialog', () => {
+  test('overlays a spinner on top of the still-mounted editor while loading a selected dialog', () => {
     const { container } = render(
       <EditorPane
         {...baseProps}
@@ -43,7 +46,11 @@ describe('EditorPane loading state', () => {
       />
     );
 
+    // The overlay spinner is present...
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
     expect(container.querySelector('.MuiSkeleton-root')).toBeNull();
+    // ...and the editor underneath stays mounted (not unmounted/replaced by
+    // a bare loading shell) — its heading renders the dialog name.
+    expect(screen.getByRole('heading', { name: 'DIA_TEST' })).toBeInTheDocument();
   });
 });
