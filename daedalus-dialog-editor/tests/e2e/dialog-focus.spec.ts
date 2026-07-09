@@ -114,6 +114,64 @@ test.describe('Dialog Line Focus', () => {
     await expect(secondLine).toBeFocused();
   });
 
+  test('pressing Backspace in an empty last line removes it and focuses the previous line', async ({ page }) => {
+    const textFields = page.getByLabel('Text');
+    const firstLine = textFields.first();
+    await firstLine.click();
+    await firstLine.fill('Hello');
+
+    // Enter creates a new (empty) last line and focuses it.
+    await page.keyboard.press('Enter');
+    await expect(textFields).toHaveCount(2);
+    await expect(textFields.nth(1)).toBeFocused();
+
+    // Backspace in the empty line must delete it. Before the fix, moving focus
+    // to the previous line fired a blur-flush that re-appended the deleted line.
+    await page.keyboard.press('Backspace');
+
+    await expect(textFields).toHaveCount(1);
+    await expect(textFields.first()).toBeFocused();
+    await expect(textFields.first()).toHaveValue('Hello');
+
+    // The line must STAY removed after the 300 ms edit-debounce window — a
+    // pending debounce timer must not resurrect it.
+    await page.waitForTimeout(500);
+    await expect(textFields).toHaveCount(1);
+  });
+
+  test('pressing Backspace in an emptied middle line deletes it without touching the following line', async ({ page }) => {
+    const textFields = page.getByLabel('Text');
+    const firstLine = textFields.first();
+    await firstLine.click();
+    await firstLine.fill('Hello');
+    await page.keyboard.press('Enter');
+    await expect(textFields).toHaveCount(2);
+    await expect(textFields.nth(1)).toBeFocused();
+    await textFields.nth(1).fill('Middle');
+    await page.keyboard.press('Enter');
+    await expect(textFields).toHaveCount(3);
+    await expect(textFields.nth(2)).toBeFocused();
+    await textFields.nth(2).fill('World');
+    // Let the edit debounce flush so the model holds all three lines.
+    await page.waitForTimeout(400);
+
+    // Clear the middle line and press Backspace within the debounce window.
+    await textFields.nth(1).fill('');
+    await page.keyboard.press('Backspace');
+
+    // The middle line is deleted; the FOLLOWING line must survive intact —
+    // before the fix the blur-flush overwrote it with the deleted empty line.
+    await expect(textFields).toHaveCount(2);
+    await expect(textFields.nth(0)).toHaveValue('Hello');
+    await expect(textFields.nth(1)).toHaveValue('World');
+    await expect(textFields.nth(0)).toBeFocused();
+
+    // And it must stay intact after the debounce window.
+    await page.waitForTimeout(500);
+    await expect(textFields).toHaveCount(2);
+    await expect(textFields.nth(1)).toHaveValue('World');
+  });
+
   test('inserting an action between two existing actions should focus the new line', async ({ page }) => {
     // Add a second line via the "Add action" menu — now there are 2 lines
     await page.getByRole('button', { name: 'Add action' }).click();

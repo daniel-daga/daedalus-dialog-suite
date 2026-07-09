@@ -23,6 +23,12 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   // Local state for text input to avoid parent re-renders on every keystroke
   const [localAction, setLocalAction] = useState(action);
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Set when this card's action has been deleted. Deleting moves focus to the
+  // previous card synchronously — before React unmounts this card — which fires
+  // a native blur on this card's field. Without the flag, that blur's
+  // flushUpdate writes the deleted action back to its old path: re-appending it
+  // (last line) or overwriting the line that shifted into the slot (data loss).
+  const deletedRef = useRef(false);
 
   // Use refs to store latest values without triggering re-renders
   const localActionRef = useRef(localAction);
@@ -60,6 +66,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, [path, registerActionRef]);
 
   const flushUpdate = useCallback(() => {
+    if (deletedRef.current) {
+      return;
+    }
     if (updateTimerRef.current) {
       clearTimeout(updateTimerRef.current);
       updateTimerRef.current = null;
@@ -78,11 +87,14 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       clearTimeout(updateTimerRef.current);
     }
     updateTimerRef.current = setTimeout(() => {
+      updateTimerRef.current = null;
+      if (deletedRef.current) {
+        return;
+      }
       // Resolve path/action via refs at fire time: the card's path may have
       // shifted while the debounce was pending (insertion above, undo, drag),
       // and a lexically captured path would write the text onto a sibling.
       updateActionRef.current(pathRef.current, localActionRef.current);
-      updateTimerRef.current = null;
     }, 300); // 300ms debounce
   }, []);
 
@@ -149,6 +161,14 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, [addDialogLineAfterPath, path]);
 
   const handleDeleteAndFocusPrev = useCallback(() => {
+    // Suppress the blur-flush fired when focus moves to the previous card
+    // (still inside this keydown dispatch, before this card unmounts), and
+    // cancel any pending debounce so it cannot write the deleted action back.
+    deletedRef.current = true;
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = null;
+    }
     // Sync action ref so the unmount cleanup does not re-add via stale debounce diff
     actionRef.current = localActionRef.current;
     deleteActionAndFocusPrevAtPath(path);
