@@ -5,6 +5,7 @@
   "main": "dist/main/main.js",
   "scripts": {
     "start": "electron .",
+    "predev": "npm run build --prefix ../daedalus-parser && npm run build:ts --prefix ../daedalus-parser",
     "dev": "npm run build:main && node scripts/dev.js",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
