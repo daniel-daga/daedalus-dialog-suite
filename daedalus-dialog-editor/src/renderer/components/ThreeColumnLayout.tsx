@@ -69,7 +69,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     dialogIndex,
     selectNpc,
     getSemanticModel,
-    mergedSemanticModel,
     loadAndMergeNpcModels,
     addDialogToIndex,
     addProjectFile,
@@ -81,13 +80,19 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     dialogIndex: state.dialogIndex,
     selectNpc: state.selectNpc,
     getSemanticModel: state.getSemanticModel,
-    mergedSemanticModel: state.mergedSemanticModel,
     loadAndMergeNpcModels: state.loadAndMergeNpcModels,
     addDialogToIndex: state.addDialogToIndex,
     addProjectFile: state.addProjectFile,
     setIngestedFilesOpen: state.setIngestedFilesOpen,
     allDialogFiles: state.allDialogFiles,
   }), shallow);
+  // §3c: the layout (and its whole subtree) only ever reads `dialogs` and
+  // `functions` from the merged model. Subscribing to those two categories
+  // instead of the whole model keeps no-op merges and unrelated-category churn
+  // (constants/variables/instances) from re-rendering the layout, while real
+  // dialog/function edits still reach the editor.
+  const mergedDialogs = useProjectStore((state) => state.mergedSemanticModel.dialogs);
+  const mergedFunctions = useProjectStore((state) => state.mergedSemanticModel.functions);
   const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
@@ -95,7 +100,15 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const { recentDialogs, addRecentDialog, closeRecentDialog, renameRecentDialog } = useRecentDialogTabs();
 
   const isProjectMode = !!projectPath;
-  const semanticModel: SemanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel ?? EMPTY_SEMANTIC_MODEL);
+  // Reassemble the two consumed categories into a model-shaped object with a
+  // stable identity (changes only when dialogs or functions change), so the
+  // deferred value and every child receiving `semanticModel` stay stable across
+  // unrelated merges.
+  const projectSemanticModel = useMemo<SemanticModel>(
+    () => ({ dialogs: mergedDialogs, functions: mergedFunctions, hasErrors: false, errors: [] }),
+    [mergedDialogs, mergedFunctions]
+  );
+  const semanticModel: SemanticModel = isProjectMode ? projectSemanticModel : (fileState?.semanticModel ?? EMPTY_SEMANTIC_MODEL);
 
   // Defer the semantic model update for the heavy tree view to prevent blocking the main thread
   const deferredSemanticModel = useDeferredValue(semanticModel);
@@ -271,7 +284,10 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       functionsToDelete,
       brokenReferences: brokenRefs,
     };
-  }, [deleteDialogTarget, semanticModel]);
+  // Re-keyed on the two consumed categories (§3c): `semanticModel` is a stable
+  // reconstruction of exactly these, so it never goes stale relative to them.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deleteDialogTarget, semanticModel.dialogs, semanticModel.functions]);
 
   const handleDeleteDialogRequest = useCallback((dialogName: string) => {
     setDeleteDialogTarget(dialogName);
@@ -348,7 +364,9 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       }
     }
     return entries;
-  }, [renameDialogTarget, renameNewName, semanticModel]);
+  // Re-keyed on the two consumed categories (§3c): see deleteDialogInfo above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renameDialogTarget, renameNewName, semanticModel.dialogs, semanticModel.functions]);
 
   const handleRenameDialogRequest = useCallback((dialogName: string) => {
     setRenameDialogTarget(dialogName);

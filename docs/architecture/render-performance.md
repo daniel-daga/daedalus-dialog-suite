@@ -21,6 +21,20 @@ merge inputs are the globals (thousands of constants/variables) plus the selecte
 NPC's files, so a naive full rebuild is O(all symbols) *per keystroke pause* and
 hands every subscriber a fresh model identity.
 
+## Flush dirty-guard
+
+The cascade above must only fire when there is actually something to write.
+`ActionCard`'s three flush paths — `flushUpdate` (invoked unconditionally on
+Enter/Tab/Ctrl+Enter), the 300 ms debounce timer body, and the pending-edit
+registry flusher — all skip the store write when
+`shallowEqual(localActionRef.current, actionRef.current)`, the same guard the
+unmount cleanup always used. Net effect: Ctrl+Enter/Tab on a clean card costs
+zero store writes (the menu/focus behavior is unaffected), and Enter pays one
+cascade instead of two when the line text is already synced. The timer body and
+the registry flusher stay byte-identical (flush contract in
+[save-pipeline.md](./save-pipeline.md)); the guard is part of that shared body.
+Guarded by `tests/ActionCard.flushDirtyGuard.test.tsx`.
+
 ## Category-stable merge contract
 
 `mergeSemanticModels` (`src/renderer/store/projectStore.ts`) merges exactly these
@@ -42,9 +56,16 @@ signature cache** held in the store closure:
   **previous merged category object is reused verbatim** — no rebuild, identity
   preserved.
 - Otherwise only that category is rebuilt (`Object.assign` over its inputs).
-- `mergedSemanticModel` itself always takes a **new top-level identity** whenever
-  any category changed — `dialogs`/`functions` consumers must react — but
-  untouched categories are referentially stable across merges.
+- `mergedSemanticModel` takes a **new top-level identity** whenever any category
+  changed — `dialogs`/`functions` consumers must react — but untouched categories
+  are referentially stable across merges.
+- **No-op merge identity rule:** when *every* merged category is referentially
+  identical to the current store model's category and the aggregate error state
+  is unchanged, `mergeSemanticModels` returns **without calling `set()`** — the
+  previous top-level object keeps its identity and whole-model subscribers do
+  not wake at all. The comparison is against `get().mergedSemanticModel` (not a
+  tracked closure ref) so it stays correct across `clearMergedModel`. Guarded by
+  `tests/projectStore.mergeIdentity.test.ts`.
 
 Result: the keystroke merge drops from O(all symbols) to O(dialogs+functions in
 scope), and every `useMemo` keyed on `constants`/`variables`/`instances` stops
@@ -69,7 +90,11 @@ flush), add per-file contribution maps with a collision-count fallback. Not
 expected: a single `Object.assign` pass over even 50k entries is single-digit
 milliseconds. Per-symbol contribution tracking was rejected as the primary fix
 because last-wins merge semantics make case-drift collisions (real in mod
-corpora) correctness-sensitive.
+corpora) correctness-sensitive. Same measure-first status applies to
+`updateFileModel`'s per-flush O(project) bookkeeping (`parsedFiles` Map clone,
+two `dialogIndex` scans) and Enter's O(dialog functions) line-id scan
+(`collectAllDialogLineActionsFromModel`) — likely single-digit ms; profile
+against the perf fixture before touching either.
 
 ## Per-category selector rule
 
@@ -98,6 +123,19 @@ across the renderer:
   narrowed to what is actually read: App selects `parsedFiles.size` and
   `canUndo`/`canRedo` booleans, not the whole `parsedFiles` Map or `editHistory`;
   `IngestedFilesDialog` gates its `parsedFiles` selector on `open`.
+- **No whole-model subscriptions in the dialog-editing path.** `MainLayout`
+  gates its merged-model selector on the active view (`null` while
+  `view === 'dialog'` — the model is only threaded to the quest/variable
+  panels). `ThreeColumnLayout` selects the `dialogs`/`functions` categories and
+  reassembles a memoized model for its children, so unrelated-category churn
+  and no-op merges never reach it and its `deleteDialogInfo`/
+  `renameFunctionEntries`/`dialogsForNPC` memos are keyed on the categories,
+  not whole-model identity. `InlineChoiceEditor` likewise subscribes to the two
+  categories `useActionManagement` actually needs (`dialogs` + `functions` —
+  not a single resolved function: sibling collection, unique-name generation
+  and item seeding read across both maps). `RegisterTopicDialog` gates its
+  model selector on `open` (the `IngestedFilesDialog` idiom). Render-count
+  probes live in the respective component test files.
 
 **Navigation-hook template.** `useNavigation` / `useDialogNavigation` are pure
 event-handler hooks: they hold **no store subscriptions** and read
@@ -141,6 +179,16 @@ Deviation: `VariableAutocomplete` **keeps** its `semanticModel` prop — it serv
 quest-inspector and condition callers that pass a *different* model. Single-file
 dialog mode folds the active file's own symbols into autocomplete via
 `useVariableOptions`' per-category active-file reads (a deduped, benign superset).
+
+**`VariableAutocomplete` call-site contract.** The leaf itself is
+`React.memo`-wrapped, and that memo only holds if every call site passes
+identity-stable props: static `sx` objects are hoisted to module-level consts
+and `onChange`/`onFlush`/`onKeyDown` handlers are `useCallback`-wrapped with
+complete deps (or module-level no-ops). All call sites (action renderers,
+condition fields, `DialogPropertiesSection`, `QuestInspectorPanel`) follow
+this; new call sites must too — an inline `sx={{…}}` or `onChange={(v) => …}`
+silently defeats the memo. Render-probe precedent:
+`tests/SetVariableActionRenderer.rerender.test.tsx`.
 
 ## PF5 ingestion / parse guards
 
@@ -231,10 +279,38 @@ Assembling the full candidate list from ~11k project symbols and
 `localeCompare`-sorting it used to happen inside **every** mounted
 `VariableAutocomplete` field's own `useMemo` (28 call sites, 6–20 ms/field). The
 assembly is identical for every field reading the same project + active-file
-state, so it is hoisted into a module-level cache (`buildOptionPool`, keyed by
-the reference identity of the 15 source records — mirrors the `mergeCache`
-idiom) built once per source-identity change and reused by all fields. Each
-field then only filters + dedups the (small) survivor set.
+state, so it is hoisted into module-level caches built once per source-identity
+change and reused by all fields. Each field then only filters + dedups the
+(small) survivor set.
+
+**Per-category sub-pool cache contract.** The pool is not one cache keyed on
+all sources (that signature made *any* edit — always a `functions` churn —
+rebuild the whole ~11k-symbol pool per keystroke pause). `buildOptionPool`
+assembles the `OptionPool` from five independently cached sub-pools, each keyed
+**only on the refs it derives from**:
+
+- constants ← `localConstants`, `projectConstants`
+- variables ← `localVariables`, `projectVariables`
+- instances ← local/project `instances`, `npcs`, `animations`
+- functions ← local/project `functions`, `routineList`
+- dialogs ← `dialogIndex`, `npcList`
+
+An action edit (functions-only churn) rebuilds only the functions sub-pool;
+the other four keep `===` identity, and `buildOptionPool` keeps the top-level
+pool identity when every sub-pool is unchanged. Guarded by
+`tests/useVariableOptions.pool.test.tsx`.
+
+**Gated functions subscriptions.** Fields whose policy config has neither
+`showFunctions` nor `showRoutines` select `null` instead of
+`mergedSemanticModel.functions` (and the file-store local functions), so they
+never wake on functions churn at all — per edit flush, only
+functions-consuming fields re-derive. Load-bearing constraint: the
+`showFunctions`/`showRoutines` flags must be render-stable per mounted field
+(they come from module-level `autocompletePolicies.ts`) because they gate hook
+subscriptions. Gated fields short-circuit to a shared empty functions sub-pool
+rather than passing `null` through the shared cache, so they cannot evict the
+real functions sub-pool built by ungated fields. Guarded by
+`tests/useVariableOptions.subscription.test.tsx`.
 
 **Parity invariant (load-bearing):** the pool must **not** dedup by name — name
 shadowing applies only to entries that pass a field's `typeFilter`/`namePrefix`/
@@ -244,6 +320,26 @@ order (constant → variable → instance → dialog; within each, local before
 project); dedup happens only in the per-field pass via a fresh `seenNames`. The
 optional per-field caller `semanticModel` is folded into the per-field pass (not
 the shared pool) so the pool stays reusable across fields whose models differ.
+
+## Dev-harness overhead
+
+Dev-mode feel is ~2× worse than production by construction and that is
+accepted: `StrictMode` stays (it is a correctness tool; it double-invokes
+renders in dev), and the auto-opened DevTools used to add uniform overhead on
+top. DevTools no longer auto-open on dev launch — set `DEVTOOLS=1` to get the
+old behavior (`src/main/main.ts`). Judge latency in a packaged/production
+build before reaching for further fixes.
+
+**Monaco stays on the jsdelivr CDN (decision, 2026-07-12).** Bundling
+`monaco-editor` locally via `loader.config({ monaco })` was implemented and
+reverted: the static import grows the renderer entry chunk from ~374 kB to
+~4.2 MB, tripping CI's chunk-size warning guard. Landing it requires either
+`React.lazy` code-splitting of the two editor call sites
+(`SourceCodeEditor.tsx`, `DialogSourceViewDialog.tsx` via `MainLayout.tsx` /
+`DialogDetailsEditor.tsx`) or a `vite.config.ts` `manualChunks` entry plus a
+warning-limit change — a deliberate trade-off against the guard, not a
+mechanical fix. Until then, first Monaco open needs network and can stall for
+seconds.
 
 ## Measurement tooling
 
@@ -277,6 +373,10 @@ as category-identity reuse — the mechanism the speedup follows from.
 React DevTools Profiler against the generated fixture, (a) type 20 characters into
 a dialog line on a large NPC → only the edited card's subtree commits; (b) profile
 the ingestion window → no App-rooted commits per 500 ms flush; (c) open Variable
-Manager, then type in a dialog → VariableManager does not re-render. These are the
+Manager, then type in a dialog → VariableManager does not re-render. From the
+interaction-latency work: (d) Ctrl+Enter on a clean card → no store write, menu
+opens <100 ms; (e) Enter on a typed line → one cascade, not two; (f) typing with
+pauses → no whole-layout commits, only functions-consuming autocomplete fields
+re-derive; (g) dialog switch on a large NPC stays fluid. These are the
 before/after evidence attached to the PR, plus the repo-mandated desktop smoke
-pass.
+pass (type, Enter, Ctrl+Enter, switch dialogs, undo/redo, drag-reorder, save).

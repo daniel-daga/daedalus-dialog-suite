@@ -7,9 +7,19 @@ import type { ConditionFieldsProps } from './conditionRegistry';
 
 type C = { type: 'NpcIsDeadCondition'; npc: string; negated?: boolean; getTypeName?: () => string };
 
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const NPC_FIELD_SX = { flex: 1 };
+
 export default function NpcIsDeadFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
   const c = condition as unknown as C;
-  const upd = (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition);
+  const upd = React.useCallback(
+    (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
+    [c]
+  );
+  const handleNpcChange = React.useCallback(
+    (value: string) => handleUpdate(upd({ npc: value })),
+    [handleUpdate, upd]
+  );
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
       <FormControlLabel
@@ -26,12 +36,12 @@ export default function NpcIsDeadFields({ condition, handleUpdate, handleImmedia
       <VariableAutocomplete
         label="NPC"
         value={c.npc || ''}
-        onChange={(value: string) => handleUpdate(upd({ npc: value }))}
+        onChange={handleNpcChange}
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.npc}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ flex: 1 }}
+        sx={NPC_FIELD_SX}
         semanticModel={semanticModel}
       />
     </Box>

@@ -14,9 +14,19 @@ type C = {
   getTypeName?: () => string;
 };
 
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const VARIABLE_NAME_FIELD_SX = { flex: 1 };
+
 export default function VariableConditionFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
   const c = condition as unknown as C;
-  const upd = (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition);
+  const upd = React.useCallback(
+    (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
+    [c]
+  );
+  const handleVariableNameChange = React.useCallback(
+    (value: string) => handleUpdate(upd({ variableName: value })),
+    [handleUpdate, upd]
+  );
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
       <FormControlLabel
@@ -33,12 +43,12 @@ export default function VariableConditionFields({ condition, handleUpdate, handl
       <VariableAutocomplete
         label="Variable Name"
         value={c.variableName || ''}
-        onChange={(value: string) => handleUpdate(upd({ variableName: value }))}
+        onChange={handleVariableNameChange}
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.variableName}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ flex: 1 }}
+        sx={VARIABLE_NAME_FIELD_SX}
         placeholder="e.g., MIS_QuestCompleted"
         semanticModel={semanticModel}
       />

@@ -73,6 +73,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       clearTimeout(updateTimerRef.current);
       updateTimerRef.current = null;
     }
+    if (shallowEqual(localActionRef.current, actionRef.current)) {
+      return;
+    }
     // Sync local state to parent immediately
     updateActionAtPath(path, localAction);
   }, [updateActionAtPath, path, localAction]);
@@ -89,6 +92,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     updateTimerRef.current = setTimeout(() => {
       updateTimerRef.current = null;
       if (deletedRef.current) {
+        return;
+      }
+      if (shallowEqual(localActionRef.current, actionRef.current)) {
         return;
       }
       // Resolve path/action via refs at fire time: the card's path may have
@@ -122,6 +128,9 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       if (updateTimerRef.current) {
         clearTimeout(updateTimerRef.current);
         updateTimerRef.current = null;
+        if (shallowEqual(localActionRef.current, actionRef.current)) {
+          return;
+        }
         updateActionRef.current(pathRef.current, localActionRef.current);
       }
     });

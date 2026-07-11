@@ -98,13 +98,15 @@ export interface OptionPoolSources {
   projectInstances: Record<string, any> | undefined;
   projectNpcs: Record<string, any> | undefined;
   projectAnimations: Record<string, any> | undefined;
-  projectFunctions: Record<string, any> | undefined;
+  // `null` when the field gates functions out (neither showFunctions nor
+  // showRoutines) — see the subscription gating in `useVariableOptions`.
+  projectFunctions: Record<string, any> | null | undefined;
   localConstants: Record<string, any> | undefined;
   localVariables: Record<string, any> | undefined;
   localInstances: Record<string, any> | undefined;
   localNpcs: Record<string, any> | undefined;
   localAnimations: Record<string, any> | undefined;
-  localFunctions: Record<string, any> | undefined;
+  localFunctions: Record<string, any> | null | undefined;
   dialogIndex: Map<string, DialogMetadata[]> | undefined;
   npcList: string[] | undefined;
   routineList: string[] | undefined;
@@ -171,59 +173,156 @@ const extractDialogCandidates = (
   return out;
 };
 
-const buildOptionPoolFromSources = (sources: OptionPoolSources): OptionPool => ({
-  constants: extractConstVarCandidates([sources.localConstants, sources.projectConstants]),
-  variables: extractConstVarCandidates([sources.localVariables, sources.projectVariables]),
-  instanceItems: extractInstanceCandidates([sources.localInstances, sources.projectInstances]),
-  npcItems: extractInstanceCandidates([sources.localNpcs, sources.projectNpcs]),
-  animationItems: extractInstanceCandidates([sources.localAnimations, sources.projectAnimations]),
-  functions: extractFunctionCandidates([sources.localFunctions, sources.projectFunctions]),
-  npcList: sources.npcList || [],
-  routineList: sources.routineList || [],
-  dialogs: extractDialogCandidates(sources.dialogIndex)
-});
+// ---------------------------------------------------------------------------
+// Per-category sub-pool caches (Slice 2 of docs/plans/frontend-interaction-
+// latency.md). Splitting the pool by category — instead of one cache slot keyed
+// on all 15 sources — means an action edit, which churns only `functions`,
+// invalidates only the functions sub-pool; the constants, variables, instances,
+// and dialogs sub-pools keep their array identity, so fields that do not consume
+// functions never re-extract the ~11k-symbol pool per keystroke pause.
+//
+// Each sub-pool is a module-level single slot (every mounted field reads the
+// same store refs on a given render, so one shared slot serves all of them),
+// keyed only on the source refs it derives from:
+//   constants ← localConstants, projectConstants
+//   variables ← localVariables, projectVariables
+//   instances ← local/project instances, npcs, animations
+//   functions ← local/project functions, routineList
+//   dialogs   ← dialogIndex, npcList
+//
+// Parity invariant (load-bearing, docs/architecture/render-performance.md): the
+// sub-pools do NOT dedup by name and preserve local-before-project source order
+// within each category. Name shadowing and cross-category source priority live
+// entirely in `deriveOptionsFromPool`'s per-field pass (a fresh `seenNames`).
+// ---------------------------------------------------------------------------
 
-// Module-level (not per-hook-instance) cache: every mounted VariableAutocomplete
-// field reads the same store references on a given render pass, so a single
-// cache slot keyed by reference identity is shared and reused by all of them.
-let poolCache: { signature: unknown[]; pool: OptionPool } | null = null;
+interface InstancesSubPool {
+  instanceItems: InstanceCandidate[];
+  npcItems: InstanceCandidate[];
+  animationItems: InstanceCandidate[];
+}
 
-const SOURCE_KEYS: Array<keyof OptionPoolSources> = [
-  'projectConstants',
-  'projectVariables',
-  'projectInstances',
-  'projectNpcs',
-  'projectAnimations',
-  'projectFunctions',
-  'localConstants',
-  'localVariables',
-  'localInstances',
-  'localNpcs',
-  'localAnimations',
-  'localFunctions',
-  'dialogIndex',
-  'npcList',
-  'routineList'
-];
+interface FunctionsSubPool {
+  functions: FunctionCandidate[];
+  routineList: string[];
+}
+
+interface DialogsSubPool {
+  dialogs: DialogCandidate[];
+  npcList: string[];
+}
+
+const sigEqual = (a: readonly unknown[], b: readonly unknown[]): boolean =>
+  a.length === b.length && a.every((ref, i) => ref === b[i]);
+
+let constantsCache: { sig: unknown[]; value: ConstVarCandidate[] } | null = null;
+let variablesCache: { sig: unknown[]; value: ConstVarCandidate[] } | null = null;
+let instancesCache: { sig: unknown[]; value: InstancesSubPool } | null = null;
+let functionsCache: { sig: unknown[]; value: FunctionsSubPool } | null = null;
+let dialogsCache: { sig: unknown[]; value: DialogsSubPool } | null = null;
+let poolCache: { subs: unknown[]; pool: OptionPool } | null = null;
+
+const EMPTY_FUNCTIONS_SUBPOOL: FunctionsSubPool = { functions: [], routineList: [] };
+
+const getConstantsSubPool = (sources: OptionPoolSources): ConstVarCandidate[] => {
+  const sig = [sources.localConstants, sources.projectConstants];
+  if (constantsCache && sigEqual(constantsCache.sig, sig)) return constantsCache.value;
+  const value = extractConstVarCandidates([sources.localConstants, sources.projectConstants]);
+  constantsCache = { sig, value };
+  return value;
+};
+
+const getVariablesSubPool = (sources: OptionPoolSources): ConstVarCandidate[] => {
+  const sig = [sources.localVariables, sources.projectVariables];
+  if (variablesCache && sigEqual(variablesCache.sig, sig)) return variablesCache.value;
+  const value = extractConstVarCandidates([sources.localVariables, sources.projectVariables]);
+  variablesCache = { sig, value };
+  return value;
+};
+
+const getInstancesSubPool = (sources: OptionPoolSources): InstancesSubPool => {
+  const sig = [
+    sources.localInstances,
+    sources.projectInstances,
+    sources.localNpcs,
+    sources.projectNpcs,
+    sources.localAnimations,
+    sources.projectAnimations
+  ];
+  if (instancesCache && sigEqual(instancesCache.sig, sig)) return instancesCache.value;
+  const value: InstancesSubPool = {
+    instanceItems: extractInstanceCandidates([sources.localInstances, sources.projectInstances]),
+    npcItems: extractInstanceCandidates([sources.localNpcs, sources.projectNpcs]),
+    animationItems: extractInstanceCandidates([sources.localAnimations, sources.projectAnimations])
+  };
+  instancesCache = { sig, value };
+  return value;
+};
+
+const getFunctionsSubPool = (sources: OptionPoolSources): FunctionsSubPool => {
+  // Fields whose config gates out functions (neither showFunctions nor
+  // showRoutines) subscribe to `null` for both function records and never read
+  // pool.functions / pool.routineList. Short-circuit to a stable empty sub-pool
+  // WITHOUT touching the shared cache the functions-consuming fields rely on, so
+  // a gated field rendering during an unrelated-category churn cannot evict the
+  // real functions sub-pool and force the ~11k-symbol rebuild on the next
+  // functions-field render. (A non-gated field always reads a real functions
+  // object — the merged model always has a `functions` object — so `null` here
+  // is an unambiguous gated-out signal.)
+  if (sources.localFunctions == null && sources.projectFunctions == null) {
+    return EMPTY_FUNCTIONS_SUBPOOL;
+  }
+  const sig = [sources.localFunctions, sources.projectFunctions, sources.routineList];
+  if (functionsCache && sigEqual(functionsCache.sig, sig)) return functionsCache.value;
+  const value: FunctionsSubPool = {
+    functions: extractFunctionCandidates([sources.localFunctions ?? undefined, sources.projectFunctions ?? undefined]),
+    routineList: sources.routineList || []
+  };
+  functionsCache = { sig, value };
+  return value;
+};
+
+const getDialogsSubPool = (sources: OptionPoolSources): DialogsSubPool => {
+  const sig = [sources.dialogIndex, sources.npcList];
+  if (dialogsCache && sigEqual(dialogsCache.sig, sig)) return dialogsCache.value;
+  const value: DialogsSubPool = {
+    dialogs: extractDialogCandidates(sources.dialogIndex),
+    npcList: sources.npcList || []
+  };
+  dialogsCache = { sig, value };
+  return value;
+};
 
 /**
- * Builds (or reuses) the shared, unfiltered option pool. Reuses the previous
- * pool by reference when every source ref is `===` to the last build (mirrors
- * the `mergeCache` idiom in `projectStore.ts`).
+ * Builds (or reuses) the shared, unfiltered option pool from per-category
+ * sub-pools. Each sub-pool is reused by reference when the source refs it
+ * derives from are unchanged, so a functions-only churn leaves the
+ * constants/variables/instances/dialogs sub-pools referentially stable. The
+ * assembled top-level pool keeps its identity when every sub-pool is unchanged
+ * (mirrors the `mergeCache` idiom in `projectStore.ts`).
  */
 export const buildOptionPool = (sources: OptionPoolSources): OptionPool => {
-  const signature: unknown[] = SOURCE_KEYS.map((key) => sources[key]);
+  const constants = getConstantsSubPool(sources);
+  const variables = getVariablesSubPool(sources);
+  const instances = getInstancesSubPool(sources);
+  const functions = getFunctionsSubPool(sources);
+  const dialogs = getDialogsSubPool(sources);
 
-  if (
-    poolCache &&
-    poolCache.signature.length === signature.length &&
-    poolCache.signature.every((ref, i) => ref === signature[i])
-  ) {
-    return poolCache.pool;
-  }
+  const subs = [constants, variables, instances, functions, dialogs];
+  if (poolCache && sigEqual(poolCache.subs, subs)) return poolCache.pool;
 
-  const pool = buildOptionPoolFromSources(sources);
-  poolCache = { signature, pool };
+  const pool: OptionPool = {
+    constants,
+    variables,
+    instanceItems: instances.instanceItems,
+    npcItems: instances.npcItems,
+    animationItems: instances.animationItems,
+    functions: functions.functions,
+    npcList: dialogs.npcList,
+    routineList: functions.routineList,
+    dialogs: dialogs.dialogs
+  };
+  poolCache = { subs, pool };
   return pool;
 };
 
@@ -521,7 +620,20 @@ export function useVariableOptions({
   const projectInstances = useProjectStore((s) => s.mergedSemanticModel.instances);
   const projectNpcs = useProjectStore((s) => s.mergedSemanticModel.npcs);
   const projectAnimations = useProjectStore((s) => s.mergedSemanticModel.animations);
-  const projectFunctions = useProjectStore((s) => s.mergedSemanticModel.functions);
+
+  // Gate the two functions subscriptions on this field's config. A field that
+  // shows neither functions nor routines must NOT wake when `functions` churns
+  // (the per-keystroke hot path), so its selector resolves to a constant `null`
+  // and Zustand never re-renders it on functions edits.
+  //
+  // INVARIANT: `showFunctions` / `showRoutines` must be render-stable for a given
+  // mounted field. They are supplied by module-level policy objects
+  // (src/renderer/components/common/autocompletePolicies.ts), so `subscribeFunctions`
+  // never flips across renders and the selector consistently picks the same
+  // branch. Wiring these flags to a per-render-varying prop would thrash the
+  // subscription — do not.
+  const subscribeFunctions = showFunctions || showRoutines;
+  const projectFunctions = useProjectStore((s) => (subscribeFunctions ? s.mergedSemanticModel.functions : null));
   const dialogIndex = useProjectStore((s) => s.dialogIndex);
   const npcList = useProjectStore((s) => s.npcList);
   const routineList = useProjectStore((s) => s.routineList);
@@ -537,7 +649,10 @@ export function useVariableOptions({
   const localInstances = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.instances : undefined));
   const localNpcs = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.npcs : undefined));
   const localAnimations = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.animations : undefined));
-  const localFunctions = useFileStore((s) => (s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.functions : undefined));
+  // Gated identically to the project functions read above (see the invariant
+  // note there): a field that consumes neither functions nor routines resolves
+  // to a constant `null` and stays deaf to active-file functions churn.
+  const localFunctions = useFileStore((s) => (subscribeFunctions && s.activeFile ? s.openFiles.get(s.activeFile)?.semanticModel?.functions : null));
 
   // Shared pool: built once per source-identity change and reused by every
   // mounted VariableAutocomplete field (see `buildOptionPool` above).

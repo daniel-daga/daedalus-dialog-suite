@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { InsertNpcActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const NPC_INSTANCE_FIELD_SX = { minWidth: 220 };
 
 const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -15,17 +18,22 @@ const InsertNpcActionRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const typedAction = action as InsertNpcActionType;
 
+  const handleNpcInstanceChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, npcInstance: value }),
+    [handleUpdate, typedAction]
+  );
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="NPC Instance"
         value={typedAction.npcInstance || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, npcInstance: value })}
+        onChange={handleNpcInstanceChange}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ minWidth: 220 }}
+        sx={NPC_INSTANCE_FIELD_SX}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
       />
       <ActionTextField

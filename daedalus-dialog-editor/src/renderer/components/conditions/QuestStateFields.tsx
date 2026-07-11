@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { Box, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
@@ -7,20 +8,30 @@ import type { ConditionFieldsProps } from './conditionRegistry';
 type QuestState = 'LOG_RUNNING' | 'LOG_SUCCESS' | 'LOG_FAILED' | 'LOG_OBSOLETE';
 type C = { type: 'QuestStateCondition'; questVariable: string; state: QuestState; getTypeName?: () => string };
 
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const QUEST_VARIABLE_FIELD_SX = { flex: '1 1 55%', minWidth: 180 };
+
 export default function QuestStateFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
   const c = condition as unknown as C;
-  const upd = (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition);
+  const upd = useCallback(
+    (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
+    [c]
+  );
+  const handleQuestVariableChange = useCallback(
+    (value: string) => handleUpdate(upd({ questVariable: value })),
+    [handleUpdate, upd]
+  );
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
       <VariableAutocomplete
         label="Quest-Variable"
         value={c.questVariable || ''}
-        onChange={(value: string) => handleUpdate(upd({ questVariable: value }))}
+        onChange={handleQuestVariableChange}
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.questVariable}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ flex: '1 1 55%', minWidth: 180 }}
+        sx={QUEST_VARIABLE_FIELD_SX}
         placeholder="e.g. MIS_Addon_Greg_ClearCanyon"
         semanticModel={semanticModel}
       />

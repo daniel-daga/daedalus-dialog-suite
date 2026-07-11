@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Chip, Divider, Paper, Stack, TextField, Typography } from '@mui/material';
 import VariableAutocomplete from '../../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../../common/autocompletePolicies';
 import type { DialogCondition } from '../../../types/global';
 import type { QuestGraphEdge, QuestGraphNode } from '../../../types/questGraph';
 import { validateConditionExpressionSyntax } from '../../../quest/domain/commands/conditionExpressionCodec';
+
+// Hoisted so VariableAutocomplete's memo sees a stable onFlush identity.
+const NOOP_FLUSH = () => undefined;
 
 interface QuestInspectorPanelProps {
   questName: string;
@@ -264,6 +267,11 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
     selectedNode?.data.kind === 'condition' && !isVariableCondition(selectedNode?.data.condition)
   );
 
+  const handleConditionVariableNameChange = useCallback(
+    (value: string) => setConditionDraft((prev) => prev ? { ...prev, variableName: value } : prev),
+    []
+  );
+
   const functionName = selectedNode?.data.provenance?.functionName;
   const canAppendTopicStatus = Boolean(
     functionName &&
@@ -403,8 +411,8 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                 <VariableAutocomplete
                   label="Variable Name"
                   value={conditionDraft.variableName}
-                  onChange={(value) => setConditionDraft((prev) => prev ? { ...prev, variableName: value } : prev)}
-                  onFlush={() => undefined}
+                  onChange={handleConditionVariableNameChange}
+                  onFlush={NOOP_FLUSH}
                   {...AUTOCOMPLETE_POLICIES.conditions.variableName}
                   semanticModel={semanticModel}
                   fullWidth

@@ -51,4 +51,20 @@ describe('MainLayout re-render granularity', () => {
     act(() => { useProjectStore.setState({ projectPath: '/other' } as never); });
     expect(commits).toBeGreaterThan(afterMount);
   });
+
+  it('does not re-render when the merged model identity churns in dialog view', () => {
+    // §3b: the dialog view never consumes the merged model (it is only threaded
+    // to the quest/variable panels), so a merge that hands out a fresh top-level
+    // identity must not reach MainLayout while the dialog view is active.
+    let commits = 0;
+    render(
+      <React.Profiler id="main-dialog" onRender={() => { commits += 1; }}>
+        <MainLayout filePath={null} />
+      </React.Profiler>
+    );
+    const afterMount = commits;
+
+    act(() => { useProjectStore.setState({ mergedSemanticModel: { ...emptyModel } } as never); });
+    expect(commits).toBe(afterMount);
+  });
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Box, Divider, Typography } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
@@ -8,6 +8,7 @@ import { useFocusNavigation } from './hooks/useFocusNavigation';
 import { useStableHandlers } from './hooks/useStableHandlers';
 import { flattenActionPaths } from './nestedActionUtils';
 import type { FunctionUpdater } from './dialogTypes';
+import type { SemanticModel } from '../types/global';
 
 interface InlineChoiceEditorProps {
   targetFunctionName: string;
@@ -45,9 +46,18 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
   // ActionCard prop chain (fix-07 §2.8). Only mounted while a choice is expanded,
   // so subscribing here does not affect collapsed cards. File-first mirrors the
   // editor's resolution order, falling back to the merged project model.
+  //
+  // §3d: the merged fallback is only ever read for its `dialogs` (item seeding)
+  // and `functions` (target/sibling lookup, unique-name generation) categories,
+  // so subscribe to those two rather than the whole merged model — a no-op or
+  // unrelated-category merge then no longer re-renders this sub-editor.
   const fileModel = useEditorStore((s) => (filePath ? s.openFiles.get(filePath)?.semanticModel : undefined));
-  const mergedModel = useProjectStore((s) => s.mergedSemanticModel);
-  const semanticModel = fileModel ?? mergedModel;
+  const mergedDialogs = useProjectStore((s) => s.mergedSemanticModel.dialogs);
+  const mergedFunctions = useProjectStore((s) => s.mergedSemanticModel.functions);
+  const semanticModel = useMemo<SemanticModel>(
+    () => fileModel ?? { dialogs: mergedDialogs, functions: mergedFunctions, hasErrors: false, errors: [] },
+    [fileModel, mergedDialogs, mergedFunctions]
+  );
 
   const targetFunction = semanticModel?.functions?.[targetFunctionName] || null;
   const { registerActionRef, focusAction } = useFocusNavigation();

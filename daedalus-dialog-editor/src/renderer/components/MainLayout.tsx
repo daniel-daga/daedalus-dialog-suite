@@ -44,7 +44,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   const view = useUISelectionStore((s) => s.activeView);
   const setView = useUISelectionStore((s) => s.setActiveView);
   const projectPath = useProjectStore((s) => s.projectPath);
-  const mergedSemanticModel = useProjectStore((s) => s.mergedSemanticModel);
+  // §3b: only the quest/variable panels consume the merged model. Gate the
+  // subscription on the active view so a merge's fresh top-level identity does
+  // not re-render the whole layout while the dialog view is active.
+  const mergedSemanticModel = useProjectStore((s) => (view === 'dialog' ? null : s.mergedSemanticModel));
   const loadQuestData = useProjectStore((s) => s.loadQuestData);
 
   const isProjectMode = !!projectPath;

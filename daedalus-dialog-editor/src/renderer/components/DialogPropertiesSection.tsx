@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -39,6 +39,11 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
   useEffect(() => {
     setLocalDescription(dialog.properties?.description || '');
   }, [dialog.properties?.description]);
+
+  const handleNpcChange = useCallback((value: string) => onDialogPropertyChange((existingDialog) => ({
+    ...existingDialog,
+    properties: { ...existingDialog.properties, npc: value }
+  })), [onDialogPropertyChange]);
 
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
@@ -89,10 +94,7 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
             fullWidth
             label="NPC"
             value={dialog.properties?.npc || ''}
-            onChange={(value) => onDialogPropertyChange((existingDialog) => ({
-              ...existingDialog,
-              properties: { ...existingDialog.properties, npc: value }
-            }))}
+            onChange={handleNpcChange}
             {...AUTOCOMPLETE_POLICIES.dialogProperties.npc}
             semanticModel={semanticModel}
           />

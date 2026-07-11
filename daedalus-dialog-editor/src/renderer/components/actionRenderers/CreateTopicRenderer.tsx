@@ -17,6 +17,9 @@ const normalizeTopicName = (value: string): string => {
   return normalized;
 };
 
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const TOPIC_FIELD_SX = { minWidth: 180 };
+
 const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
   action,
   handleUpdate,
@@ -29,17 +32,22 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
   const isProjectMode = useProjectStore((s) => !!s.projectPath);
   const [isRegisterOpen, setIsRegisterOpen] = React.useState(false);
 
+  const handleTopicChange = React.useCallback(
+    (value: string) => handleUpdate({ ...typedAction, topic: normalizeTopicName(value) }),
+    [handleUpdate, typedAction]
+  );
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Topic"
         value={typedAction.topic || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, topic: normalizeTopicName(value) })}
+        onChange={handleTopicChange}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ minWidth: 180 }}
+        sx={TOPIC_FIELD_SX}
         {...AUTOCOMPLETE_POLICIES.actions.topic}
       />
       <TextField

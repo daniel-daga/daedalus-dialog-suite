@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { HeroFollowsActionType } from '../../../shared/types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
@@ -15,13 +15,18 @@ const HeroFollowsActionRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const typedAction = action as HeroFollowsActionType;
 
+  const handleGuideRoutineChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, guideRoutine: value }),
+    [handleUpdate, typedAction]
+  );
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         fullWidth
         label="Guide Routine"
         value={typedAction.guideRoutine || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, guideRoutine: value })}
+        onChange={handleGuideRoutineChange}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

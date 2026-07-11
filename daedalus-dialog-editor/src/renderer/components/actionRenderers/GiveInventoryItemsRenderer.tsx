@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { IconButton, Tooltip } from '@mui/material';
 import { SwapHoriz as SwapHorizIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
@@ -8,6 +8,11 @@ import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { createRowTabHandlers } from './rowTabNavigation';
 import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
+
+// Hoisted so VariableAutocomplete's memo sees stable sx identities (slice 4).
+const GIVER_FIELD_SX = { width: 80 };
+const RECEIVER_FIELD_SX = { width: 90 };
+const ITEM_FIELD_SX = { flex: 1 };
 
 const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -21,19 +26,34 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
 
   // Issue #183 (item 3): keep Tab inside the row (Giver -> Receiver -> Item ->
   // Quantity); only the edges hand off to card-to-card navigation.
-  const fieldKeyDown = createRowTabHandlers(handleKeyDown, 4);
+  const fieldKeyDown = useMemo(() => createRowTabHandlers(handleKeyDown, 4), [handleKeyDown]);
+
+  const handleGiverChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, giver: value }),
+    [handleUpdate, typedAction]
+  );
+
+  const handleReceiverChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, receiver: value }),
+    [handleUpdate, typedAction]
+  );
+
+  const handleItemChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, item: value }),
+    [handleUpdate, typedAction]
+  );
 
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Giver"
         value={typedAction.giver || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, giver: value })}
+        onChange={handleGiverChange}
         onFlush={flushUpdate}
         onKeyDown={fieldKeyDown[0]}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ width: 80 }}
+        sx={GIVER_FIELD_SX}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
       />
       {/* Issue #183 (item 1): swap Giver <-> Receiver. tabIndex=-1 keeps it a
@@ -52,19 +72,19 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
       <VariableAutocomplete
         label="Receiver"
         value={typedAction.receiver || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, receiver: value })}
+        onChange={handleReceiverChange}
         onFlush={flushUpdate}
         onKeyDown={fieldKeyDown[1]}
-        sx={{ width: 90 }}
+        sx={RECEIVER_FIELD_SX}
         {...AUTOCOMPLETE_POLICIES.actions.npc}
       />
       <VariableAutocomplete
         label="Item"
         value={typedAction.item || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, item: value })}
+        onChange={handleItemChange}
         onFlush={flushUpdate}
         onKeyDown={fieldKeyDown[2]}
-        sx={{ flex: 1 }}
+        sx={ITEM_FIELD_SX}
         {...AUTOCOMPLETE_POLICIES.actions.item}
       />
       <ActionTextField

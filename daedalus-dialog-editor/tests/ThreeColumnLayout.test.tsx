@@ -5,6 +5,84 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import React from 'react';
+import { render, act } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import ThreeColumnLayout from '../src/renderer/components/ThreeColumnLayout';
+import { useProjectStore } from '../src/renderer/store/projectStore';
+import { useUISelectionStore } from '../src/renderer/store/uiSelectionStore';
+import { useFileStore } from '../src/renderer/store/fileStore';
+
+// Stub the heavy column children so the Profiler measures ThreeColumnLayout's
+// own commit count, not its subtree.
+jest.mock('../src/renderer/components/NpcColumn', () => () => null);
+jest.mock('../src/renderer/components/DialogTreeColumn', () => () => null);
+jest.mock('../src/renderer/components/EditorColumn', () => ({
+  __esModule: true,
+  default: React.forwardRef(() => null),
+}));
+jest.mock('../src/renderer/components/SearchPanel', () => () => null);
+jest.mock('../src/renderer/components/SyntaxErrorsDisplay', () => () => null);
+jest.mock('../src/renderer/components/DeleteDialogConfirmDialog', () => () => null);
+jest.mock('../src/renderer/components/RenameDialogConfirmDialog', () => () => null);
+
+describe('ThreeColumnLayout - §3c per-category subscription', () => {
+  // Stable category references shared across store updates so we can distinguish
+  // "unrelated-category churn / no-op merge" (dialogs+functions refs preserved)
+  // from a real function edit (new functions ref).
+  const sharedDialogs = {} as never;
+  const sharedFunctions = {} as never;
+
+  const modelWith = (functions: unknown, constants: unknown) => ({
+    dialogs: sharedDialogs,
+    functions,
+    constants,
+    variables: {},
+    instances: {},
+    hasErrors: false,
+    errors: [],
+  }) as never;
+
+  beforeEach(() => {
+    useProjectStore.setState({
+      projectPath: '/proj',
+      npcList: [],
+      dialogIndex: new Map(),
+      allDialogFiles: [],
+      mergedSemanticModel: modelWith(sharedFunctions, {}),
+    } as never);
+    useUISelectionStore.setState({
+      selectedNPC: null,
+      selectedDialog: null,
+      selectedFunctionName: null,
+    } as never);
+    useFileStore.setState({ openFiles: new Map(), activeFile: null } as never);
+  });
+
+  test('unrelated-category churn / no-op merge does not re-render; a function edit does', () => {
+    let commits = 0;
+    render(
+      <React.Profiler id="tcl" onRender={() => { commits += 1; }}>
+        <ThreeColumnLayout filePath={null} />
+      </React.Profiler>
+    );
+    const afterMount = commits;
+
+    // Fresh top-level model, but dialogs + functions references preserved: an
+    // unrelated-category change (or a no-op merge) must not reach the layout.
+    act(() => {
+      useProjectStore.setState({ mergedSemanticModel: modelWith(sharedFunctions, { NEW_C: {} }) });
+    });
+    expect(commits).toBe(afterMount);
+
+    // A real function edit replaces the functions reference — the editor needs
+    // it, so the layout must re-render.
+    act(() => {
+      useProjectStore.setState({ mergedSemanticModel: modelWith({ NEW_F: {} }, { NEW_C: {} }) });
+    });
+    expect(commits).toBeGreaterThan(afterMount);
+  });
+});
 
 describe('ThreeColumnLayout - Bug #1: Missing RAF Cleanup', () => {
   test('demonstrates memory leak without RAF cleanup', () => {

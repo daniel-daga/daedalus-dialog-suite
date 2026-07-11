@@ -14,29 +14,44 @@ type C = {
   getTypeName?: () => string;
 };
 
+// Hoisted so VariableAutocomplete's memo sees stable sx identities (slice 4).
+const NPC_FIELD_SX = { flex: '1 1 30%', minWidth: 120 };
+const ITEM_FIELD_SX = { flex: '1 1 35%', minWidth: 140 };
+
 export default function NpcHasItemsFields({ condition, handleUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
   const c = condition as unknown as C;
-  const upd = (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition);
+  const upd = React.useCallback(
+    (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
+    [c]
+  );
+  const handleNpcChange = React.useCallback(
+    (value: string) => handleUpdate(upd({ npc: value })),
+    [handleUpdate, upd]
+  );
+  const handleItemChange = React.useCallback(
+    (value: string) => handleUpdate(upd({ item: value })),
+    [handleUpdate, upd]
+  );
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
       <VariableAutocomplete
         label="NPC"
         value={c.npc || ''}
-        onChange={(value: string) => handleUpdate(upd({ npc: value }))}
+        onChange={handleNpcChange}
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.npc}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ flex: '1 1 30%', minWidth: 120 }}
+        sx={NPC_FIELD_SX}
         semanticModel={semanticModel}
       />
       <VariableAutocomplete
         label="Item"
         value={c.item || ''}
-        onChange={(value: string) => handleUpdate(upd({ item: value }))}
+        onChange={handleItemChange}
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.item}
-        sx={{ flex: '1 1 35%', minWidth: 140 }}
+        sx={ITEM_FIELD_SX}
         semanticModel={semanticModel}
       />
       <TextField

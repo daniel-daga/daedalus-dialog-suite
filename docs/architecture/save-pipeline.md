@@ -143,8 +143,11 @@ invisible to the store until their timer fires. The registry
 co-owned with slice 5. Rule: **every save/discard *and undo/redo* decision entry
 point calls `flushAllPendingEdits()` first, always at the UI layer — the store
 never flushes.** A flusher no-ops unless its timer is pending, then runs the exact
-timer body (ref-resolved), so flush and natural fire are byte-identical. Call
-sites:
+timer body (ref-resolved), so flush and natural fire are byte-identical. The
+shared body also no-ops when the local edit shallow-equals the store value (the
+flush dirty-guard — see
+[render-performance.md](./render-performance.md)); a clean flush writes nothing.
+Call sites:
 
 - **Save/discard:** `handleSave`, `performAutoSave`, `App.confirmDiscardChanges`,
   the window-close guard (slice 2).

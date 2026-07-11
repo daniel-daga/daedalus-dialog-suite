@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { SetVariableAction } from '../../../shared/types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import { TextField, MenuItem } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const VARIABLE_FIELD_SX = { minWidth: 200 };
 
 const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -16,22 +19,30 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const typedAction = action as SetVariableAction;
 
+  const handleVariableNameChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, variableName: value }),
+    [handleUpdate, typedAction]
+  );
+
+  const variableNameMissing = !typedAction.variableName?.trim();
+  const variableTextFieldProps = useMemo(() => ({
+    error: variableNameMissing,
+    helperText: variableNameMissing ? 'Variable name required' : undefined
+  }), [variableNameMissing]);
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Variable"
         value={typedAction.variableName || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, variableName: value })}
+        onChange={handleVariableNameChange}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ minWidth: 200 }}
+        sx={VARIABLE_FIELD_SX}
         {...AUTOCOMPLETE_POLICIES.actions.setVariableName}
-        textFieldProps={{
-          error: !typedAction.variableName?.trim(),
-          helperText: !typedAction.variableName?.trim() ? 'Variable name required' : undefined
-        }}
+        textFieldProps={variableTextFieldProps}
       />
       <TextField
         select

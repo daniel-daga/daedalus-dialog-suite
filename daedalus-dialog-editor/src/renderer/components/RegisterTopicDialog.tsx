@@ -33,8 +33,10 @@ interface RegisterTopicDialogProps {
  */
 const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose, topicName }) => {
   // Granular selectors: the merged model is large and recreated frequently,
-  // and one instance of this dialog is hosted per Create Topic action card.
-  const mergedSemanticModel = useProjectStore((s) => s.mergedSemanticModel);
+  // and one instance of this dialog is hosted per Create Topic action card, so
+  // gate the whole-model subscription on `open` — a closed instance then no
+  // longer re-renders on every merge (precedent: IngestedFilesDialog).
+  const mergedSemanticModel = useProjectStore((s) => (open ? s.mergedSemanticModel : null));
   const parsedFiles = useProjectStore((s) => s.parsedFiles);
   const registerTopicInLogFiles = useProjectStore((s) => s.registerTopicInLogFiles);
   const isLoading = useProjectStore((s) => s.isLoading);
@@ -47,7 +49,7 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
   const [error, setError] = useState<string | null>(null);
 
   const constantsSuggestions = useMemo(
-    () => suggestTopicConstantFiles(mergedSemanticModel),
+    () => (mergedSemanticModel ? suggestTopicConstantFiles(mergedSemanticModel) : []),
     [mergedSemanticModel]
   );
   const closeTopicsSuggestions = useMemo(
@@ -86,7 +88,7 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
       setError('Chapter numbers must be non-negative integers.');
       return;
     }
-    if (mergedSemanticModel.constants?.[`TOPIC_${base}`]) {
+    if (mergedSemanticModel?.constants?.[`TOPIC_${base}`]) {
       setError(`TOPIC_${base} already exists in the project.`);
       return;
     }

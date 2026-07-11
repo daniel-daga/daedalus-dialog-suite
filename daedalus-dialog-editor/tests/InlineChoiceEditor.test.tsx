@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import InlineChoiceEditor from '../src/renderer/components/InlineChoiceEditor';
 import { useFileStore } from '../src/renderer/store/fileStore';
@@ -90,5 +90,48 @@ describe('InlineChoiceEditor', () => {
       />
     );
     expect(screen.getByText(/not found/i)).toBeInTheDocument();
+  });
+
+  test('does not re-render on a no-op / unrelated-category merge (§3d)', () => {
+    // Shared category refs so a fresh top-level merged model can preserve the
+    // dialogs/functions references (mimics a no-op or unrelated-category merge).
+    const sharedDialogs = {} as never;
+    const sharedFunctions = {} as never;
+    useFileStore.setState({
+      openFiles: new Map([[filePath, { filePath, semanticModel: testModel } as never]]),
+      activeFile: filePath,
+    } as never);
+    useProjectStore.setState({
+      mergedSemanticModel: {
+        dialogs: sharedDialogs, functions: sharedFunctions, constants: {},
+        variables: {}, instances: {}, hasErrors: false, errors: [],
+      },
+    } as never);
+
+    let commits = 0;
+    render(
+      <React.Profiler id="ice" onRender={() => { commits += 1; }}>
+        <InlineChoiceEditor
+          targetFunctionName="DIA_Test_Yes"
+          dialogName="DIA_Test"
+          filePath={filePath}
+          npcName="TestNPC"
+        />
+      </React.Profiler>
+    );
+    const afterMount = commits;
+
+    // The editor resolves its function from the file model; a merge that hands
+    // out a fresh top-level model (dialogs/functions refs preserved) must not
+    // reach it.
+    act(() => {
+      useProjectStore.setState({
+        mergedSemanticModel: {
+          dialogs: sharedDialogs, functions: sharedFunctions, constants: { NEW_C: {} },
+          variables: {}, instances: {}, hasErrors: false, errors: [],
+        },
+      } as never);
+    });
+    expect(commits).toBe(afterMount);
   });
 });

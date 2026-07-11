@@ -76,6 +76,28 @@ describe('projectStore category-stable merge identity', () => {
     expect(after.functions).toHaveProperty('F_NEW');
   });
 
+  test('a no-op merge (all category signatures unchanged) preserves the top-level model identity', () => {
+    const constants = { C_A: { name: 'C_A', type: 'int' } } as never;
+    const functions = { F1: { name: 'F1' } } as never;
+    const model = modelWith({ constants, functions });
+
+    useProjectStore.getState().mergeSemanticModels([model]);
+    const first = useProjectStore.getState().mergedSemanticModel;
+
+    // Merge identical inputs again → every category signature hits the cache,
+    // so the top-level object identity must be preserved (no-op merge).
+    useProjectStore.getState().mergeSemanticModels([model]);
+    const second = useProjectStore.getState().mergedSemanticModel;
+    expect(second).toBe(first);
+
+    // A real category change still yields a fresh top-level reference.
+    const changed = { ...model, functions: { F1: { name: 'F1' }, F2: { name: 'F2' } } as never };
+    useProjectStore.getState().mergeSemanticModels([changed]);
+    const third = useProjectStore.getState().mergedSemanticModel;
+    expect(third).not.toBe(second);
+    expect(third.functions).toHaveProperty('F2');
+  });
+
   test('closeProject resets the merge cache so a reopen does not reuse stale category objects', () => {
     const sharedConstants = { C_A: { name: 'C_A', type: 'int' } } as never;
     const model = modelWith({ constants: sharedConstants });

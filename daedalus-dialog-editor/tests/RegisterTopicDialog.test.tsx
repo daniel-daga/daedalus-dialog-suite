@@ -53,4 +53,21 @@ describe('RegisterTopicDialog', () => {
     expect(constantsField).toHaveValue('C:/project/LOG_Constants.d');
     expect(titleField).toHaveValue('Mein Quest');
   });
+
+  test('does not re-render on merged-model churn while closed (§3e gate)', () => {
+    // One RegisterTopicDialog is hosted (closed) per Create Topic action card, so
+    // a closed instance must not react to the merged model churning on edits.
+    let commits = 0;
+    render(
+      <React.Profiler id="rtd-closed" onRender={() => { commits += 1; }}>
+        <RegisterTopicDialog open={false} onClose={() => {}} topicName='TOPIC_X' />
+      </React.Profiler>
+    );
+    const afterMount = commits;
+
+    act(() => {
+      useProjectStore.setState({ mergedSemanticModel: emptyModel() as any });
+    });
+    expect(commits).toBe(afterMount);
+  });
 });

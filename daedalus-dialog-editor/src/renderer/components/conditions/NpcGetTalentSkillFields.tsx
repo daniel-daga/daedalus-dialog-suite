@@ -14,20 +14,30 @@ type C = {
   getTypeName?: () => string;
 };
 
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const NPC_FIELD_SX = { flex: '1 1 25%', minWidth: 120 };
+
 export default function NpcGetTalentSkillFields({ condition, handleUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
   const c = condition as unknown as C;
-  const upd = (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition);
+  const upd = React.useCallback(
+    (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
+    [c]
+  );
+  const handleNpcChange = React.useCallback(
+    (value: string) => handleUpdate(upd({ npc: value })),
+    [handleUpdate, upd]
+  );
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
       <VariableAutocomplete
         label="NPC"
         value={c.npc || ''}
-        onChange={(value: string) => handleUpdate(upd({ npc: value }))}
+        onChange={handleNpcChange}
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.npc}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ flex: '1 1 25%', minWidth: 120 }}
+        sx={NPC_FIELD_SX}
         semanticModel={semanticModel}
       />
       <TextField

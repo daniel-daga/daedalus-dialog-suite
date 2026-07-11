@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { StopProcessInfosAction } from '../../../shared/types';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
@@ -16,6 +16,11 @@ const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const typedAction = action as StopProcessInfosAction;
 
+  const handleTargetChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, target: value }),
+    [handleUpdate, typedAction]
+  );
+
   return (
     <ActionFieldContainer>
       <Typography variant="body2" sx={{ mr: 2, whiteSpace: 'nowrap', fontWeight: 'bold', color: 'primary.main' }}>
@@ -25,7 +30,7 @@ const StopProcessInfosActionRenderer: React.FC<BaseActionRendererProps> = ({
         fullWidth
         label="Target"
         value={typedAction.target || 'self'}
-        onChange={(value) => handleUpdate({ ...typedAction, target: value })}
+        onChange={handleTargetChange}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField

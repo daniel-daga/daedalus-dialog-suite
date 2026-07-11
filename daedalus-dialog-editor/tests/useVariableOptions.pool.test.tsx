@@ -243,6 +243,44 @@ describe('useVariableOptions shared pool (Phase 3)', () => {
       expect(poolA2.constants).toEqual(poolA1.constants);
       expect(poolA2.constants[0].name).toBe('C_A');
     });
+
+    // Slice 2: per-category sub-pool caches. A functions-only churn must leave
+    // the constants/variables/instances sub-pools referentially stable (they are
+    // keyed only on their own source refs), while the functions sub-pool rebuilds.
+    test('a functions-only source change reuses the constants/variables/instances sub-pools by identity', () => {
+      const projectConstants = { C_A: { name: 'C_A', type: 'int', value: 1, filePath: '/a.d' } };
+      const projectVariables = { V_B: { name: 'V_B', type: 'int', filePath: '/b.d' } };
+      const projectInstances = { NPC_A: { name: 'NPC_A', parent: 'C_NPC', filePath: '/npc.d' } };
+      const projectNpcs = { NPC_C: { name: 'NPC_C', parent: 'C_NPC', filePath: '/npc.d' } };
+      const projectAnimations = { ANI_D: { name: 'ANI_D', parent: 'C_MDS', filePath: '/ani.d' } };
+      const functions1 = { fn_one: { filePath: '/f.d' } };
+
+      const sources1: OptionPoolSources = {
+        ...baseSources,
+        projectConstants,
+        projectVariables,
+        projectInstances,
+        projectNpcs,
+        projectAnimations,
+        projectFunctions: functions1
+      };
+      const pool1 = buildOptionPool(sources1);
+
+      // Only the functions category churns (new object identity, new content).
+      const functions2 = { fn_one: { filePath: '/f.d' }, fn_two: { filePath: '/g.d' } };
+      const sources2: OptionPoolSources = { ...sources1, projectFunctions: functions2 };
+      const pool2 = buildOptionPool(sources2);
+
+      // Untouched categories keep their sub-pool array identity...
+      expect(pool2.constants).toBe(pool1.constants);
+      expect(pool2.variables).toBe(pool1.variables);
+      expect(pool2.instanceItems).toBe(pool1.instanceItems);
+      expect(pool2.npcItems).toBe(pool1.npcItems);
+      expect(pool2.animationItems).toBe(pool1.animationItems);
+      // ...while the functions sub-pool rebuilds to reflect the change.
+      expect(pool2.functions).not.toBe(pool1.functions);
+      expect(pool2.functions.map((f) => f.name).sort()).toEqual(['fn_one', 'fn_two']);
+    });
   });
 
   describe('filter parity with the legacy single-pass implementation', () => {
@@ -327,6 +365,34 @@ describe('useVariableOptions shared pool (Phase 3)', () => {
 
       const expected = legacyBuildOptions({ ...rawSources, localConstants }, {});
       expect(actual).toEqual(expected);
+    });
+
+    // Slice 2: the instances sub-pool bundles instances + npcs + animations. This
+    // locks the per-category grouping/order the split must preserve: within the
+    // instances category, order is instances → npcs → animations, and within each
+    // the local record precedes the project record.
+    test('instances sub-pool preserves the instances -> npcs -> animations grouping and local-before-project order', () => {
+      const localInstances = { ItMi_Local: { name: 'ItMi_Local', parent: 'C_ITEM', displayName: 'Local Blade', filePath: '/local.d' } };
+      const projectInstances = { ItMi_Proj: { name: 'ItMi_Proj', parent: 'C_ITEM', filePath: '/proj.d' } };
+      const localNpcs = { NPC_Local: { name: 'NPC_Local', parent: 'C_NPC', dailyRoutine: 'RTN_Local', filePath: '/local.d' } };
+      const projectNpcs = { NPC_Proj: { name: 'NPC_Proj', parent: 'C_NPC', dailyRoutine: 'RTN_Proj', filePath: '/proj.d' } };
+      const localAnimations = { ANI_Local: { name: 'ANI_Local', parent: 'C_MDS', filePath: '/local.d' } };
+      const projectAnimations = { ANI_Proj: { name: 'ANI_Proj', parent: 'C_MDS', filePath: '/proj.d' } };
+
+      const rawInstanceSources = {
+        localInstances, projectInstances, localNpcs, projectNpcs, localAnimations, projectAnimations
+      };
+      const config = { showInstances: true, showRoutines: true };
+      const expected = legacyBuildOptions(rawInstanceSources, config);
+
+      const pool = buildOptionPool({ ...baseSources, ...rawInstanceSources });
+      const actual = deriveOptionsFromPool(pool, config);
+      expect(actual).toEqual(expected);
+      // Sanity: every distinct source contributed (nothing dropped by the split).
+      const names = actual.map((o) => o.name);
+      expect(names).toEqual(expect.arrayContaining([
+        'ItMi_Local', 'ItMi_Proj', 'NPC_Local', 'NPC_Proj', 'ANI_Local', 'ANI_Proj', 'RTN_Local', 'RTN_Proj'
+      ]));
     });
   });
 });

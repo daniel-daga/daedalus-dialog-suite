@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { TextField, MenuItem, Box, Chip } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
 import type { LogSetTopicStatusAction } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+
+// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
+const TOPIC_FIELD_SX = { minWidth: 180 };
 
 const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -27,17 +30,22 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
 
   const typedAction = action as LogSetTopicStatusAction;
 
+  const handleTopicChange = useCallback(
+    (value: string) => handleUpdate({ ...typedAction, topic: value }),
+    [handleUpdate, typedAction]
+  );
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
         label="Topic"
         value={typedAction.topic || ''}
-        onChange={(value) => handleUpdate({ ...typedAction, topic: value })}
+        onChange={handleTopicChange}
         onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
-        sx={{ minWidth: 180 }}
+        sx={TOPIC_FIELD_SX}
         {...AUTOCOMPLETE_POLICIES.actions.topic}
       />
       <TextField

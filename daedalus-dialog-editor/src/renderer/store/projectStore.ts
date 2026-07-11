@@ -612,6 +612,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
     });
 
+    // No-op merge identity: when every merged category is referentially identical
+    // to the one already in the store (all signatures hit the cache) and the
+    // aggregate error state is unchanged, preserve the previous top-level object
+    // so whole-model subscribers do not wake on a merge that changed nothing.
+    // Comparing against the current store model (rather than a tracked closure
+    // ref) keeps this correct across clearMergedModel, which replaces the model
+    // without touching the cache.
+    const previous = get().mergedSemanticModel;
+    const previousRecord = previous as unknown as Record<MergeCategoryKey, CategoryMap>;
+    const categoriesUnchanged = MERGE_CATEGORY_KEYS.every(key => mergedRecord[key] === previousRecord[key]);
+    const errorsUnchanged =
+      !!previous.hasErrors === !!mergedModel.hasErrors &&
+      (previous.errors?.length ?? 0) === (mergedModel.errors?.length ?? 0);
+
+    if (categoriesUnchanged && errorsUnchanged) {
+      return;
+    }
+
     set({ mergedSemanticModel: mergedModel });
   },
 
