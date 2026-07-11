@@ -44,6 +44,13 @@ daedalus-dialog-suite/
 
 ---
 
+## Agent Shell Conventions
+
+- Prefer `pnpm --filter <package> <script>` (e.g. `pnpm --filter daedalus-dialog-editor test`, `pnpm --filter daedalus-parser build`) run from the repo root over `cd`/`Set-Location` into a workspace directory — it runs the script with the correct working directory without ever leaving the root.
+- Minimize directory changes generally: a shell's working directory persists across commands within a session, so change directory once per context switch rather than prepending `cd`/`Set-Location` to every command.
+
+---
+
 ## Workspace: `daedalus-parser/`
 
 ### Purpose
