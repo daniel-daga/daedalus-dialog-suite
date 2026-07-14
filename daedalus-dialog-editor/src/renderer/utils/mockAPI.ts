@@ -559,12 +559,6 @@ export const mockEditorAPI: EditorAPI = {
     return recent ? JSON.parse(recent) : [];
   },
 
-  async addRecentProject(projectPath: string, projectName: string): Promise<void> {
-    const recent = await this.getRecentProjects();
-    const newRecent = [{ path: projectPath, name: projectName, lastOpened: Date.now() }, ...recent.filter(p => p.path !== projectPath)].slice(0, 10);
-    localStorage.setItem('recent_projects', JSON.stringify(newRecent));
-  },
-
   // File Watcher API (no-op in mock/browser mode). The change callback is
   // captured so E2E tests can inject external file-change events via the
   // `__mockEmitFileChange` window hook (there is no real watcher in the mock).

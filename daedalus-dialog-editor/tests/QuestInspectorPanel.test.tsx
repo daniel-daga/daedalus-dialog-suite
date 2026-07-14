@@ -64,7 +64,9 @@ const createDialogNode = () => ({
     kind: 'dialog' as const,
     label: 'DIA_Target',
     npc: 'NPC_Target',
-    conditionExpression: 'MIS_TEST == LOG_RUNNING'
+    conditionExpression: 'MIS_TEST == LOG_RUNNING',
+    editableConditionExpression: 'MIS_TEST == LOG_RUNNING',
+    conditionOwnerFunctionName: 'DIA_Target_Info'
   }
 });
 
@@ -234,6 +236,34 @@ describe('QuestInspectorPanel requires edge editing', () => {
     expect(screen.getByLabelText('Condition expression')).toHaveValue('MIS_TEST == LOG_RUNNING');
   });
 
+  it('renders the dialog condition field read-only when no round-trippable owner expression is resolved', () => {
+    const node = createDialogNode();
+    // A dialog node whose conditions could not be serialised back to codec-parseable
+    // source (mixed owners or unsupported condition types) carries neither the owner
+    // nor the editable expression, so the editable field must not render.
+    const readOnlyNode = {
+      ...node,
+      data: {
+        ...node.data,
+        editableConditionExpression: undefined,
+        conditionOwnerFunctionName: undefined
+      }
+    };
+
+    render(
+      <QuestInspectorPanel
+        {...baseProps}
+        selectedNode={readOnlyNode}
+        selectedEdge={null}
+      />
+    );
+
+    expect(screen.queryByLabelText('Condition expression')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/condition expression is read-only here/i)
+    ).toBeInTheDocument();
+  });
+
   it('submits a valid condition expression trimmed through onSetConditionExpression', () => {
     render(
       <QuestInspectorPanel
@@ -251,6 +281,7 @@ describe('QuestInspectorPanel requires edge editing', () => {
     expect(baseProps.onSetConditionExpression).toHaveBeenCalledTimes(1);
     expect(baseProps.onSetConditionExpression).toHaveBeenCalledWith({
       nodeId: 'DIA_Target_Info',
+      targetFunctionName: 'DIA_Target_Info',
       expression: 'MIS_TEST == LOG_SUCCESS'
     });
   });

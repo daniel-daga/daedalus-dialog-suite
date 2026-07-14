@@ -9,6 +9,7 @@
 import type { DialogCondition, SemanticModel } from '../../types/global';
 import type { QuestGraphConditionType, QuestGraphSourceKind } from '../../types/questGraph';
 import type { EffectiveConditionEntry } from './questGraphInternalTypes';
+import { serializeConditionsToExpression } from './commands/conditionExpressionCodec';
 
 export const isStateNode = (type: string, description?: string): boolean => {
   const desc = description || '';
@@ -227,10 +228,18 @@ export const getConditionSummaryForFunction = (
   conditionExpression?: string;
   conditionCount: number;
   conditionMode?: 'structured' | 'generic-expression';
+  editableConditionExpression?: string;
+  conditionOwnerFunctionName?: string;
 } => {
   const effectiveConditions = getEffectiveConditionEntriesForFunction(funcName, semanticModel);
   if (effectiveConditions.length === 0) {
-    return { conditionCount: 0 };
+    // No conditions yet: the editable field targets this function so the inspector
+    // can ADD conditions; serializing an empty list yields an empty expression.
+    return {
+      conditionCount: 0,
+      editableConditionExpression: '',
+      conditionOwnerFunctionName: funcName
+    };
   }
 
   const expressions = effectiveConditions
@@ -251,10 +260,36 @@ export const getConditionSummaryForFunction = (
       : expressions.join(joinOperator))
     : expressions.join(joinOperator);
 
+  // Derive an editable, codec-parseable expression from the STRUCTURED conditions
+  // (not the pretty display string) so the inspector prefill and re-parse are
+  // inverses. The editable field targets a single owner function: when every
+  // effective condition belongs to one function and that owner's conditions
+  // round-trip losslessly, that owner is the edit target. Otherwise the field is
+  // left undefined and the inspector renders it read-only — this is what prevents
+  // (a) degrading non-parseable labels into invalid generic conditions and
+  // (b) copying a separate condition function's conditions onto the info function.
+  const ownerNames = new Set(effectiveConditions.map((entry) => entry.ownerFunctionName));
+  let editableConditionExpression: string | undefined;
+  let conditionOwnerFunctionName: string | undefined;
+  if (ownerNames.size === 1) {
+    const ownerName = effectiveConditions[0].ownerFunctionName;
+    const ownerFunc = semanticModel.functions?.[ownerName];
+    const serialized = serializeConditionsToExpression(
+      ownerFunc?.conditions,
+      ownerFunc?.conditionOperator === 'OR' ? 'OR' : undefined
+    );
+    if (serialized.ok) {
+      editableConditionExpression = serialized.expression;
+      conditionOwnerFunctionName = ownerName;
+    }
+  }
+
   return {
     conditionExpression,
     conditionCount: effectiveConditions.length,
-    conditionMode
+    conditionMode,
+    editableConditionExpression,
+    conditionOwnerFunctionName
   };
 };
 

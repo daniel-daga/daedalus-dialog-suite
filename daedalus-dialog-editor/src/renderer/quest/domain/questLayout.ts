@@ -210,6 +210,8 @@ export const calculateDagreLayout = (
         conditionExpression: data.conditionExpression,
         conditionCount: data.conditionCount,
         conditionMode: data.conditionMode,
+        editableConditionExpression: data.editableConditionExpression,
+        conditionOwnerFunctionName: data.conditionOwnerFunctionName,
         condition: data.condition,
         conditionIndex: data.conditionIndex,
         kind: data.kind,

@@ -329,8 +329,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const pathParts = folderPath.split(/[\\/]/);
       const projectName = pathParts[pathParts.length - 1];
 
-      // Add to recent projects
-      await window.editorAPI.addRecentProject(folderPath, projectName);
+      // Recent projects are persisted main-side inside project:openFolderDialog;
+      // the renderer no longer whitelists or records recents (security item 1.1).
 
       set({
         projectPath: folderPath,

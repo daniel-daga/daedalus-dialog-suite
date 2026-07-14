@@ -57,6 +57,14 @@ export function updateActionAtPath(actions: DialogAction[], path: ActionPath, up
     return actions;
   }
 
+  // Only write an in-range slot. An out-of-range index (e.g. `first === length`)
+  // means the card was reindexed/removed while a debounce was pending: without
+  // this guard the write below appends a resurrected action, corrupting the list
+  // (0.1). Mirrors ConditionEditor's updateCondition bounds check.
+  if (first < 0 || first >= actions.length) {
+    return actions;
+  }
+
   const nextActions = [...actions];
   if (rest.length === 0) {
     nextActions[first] = updatedAction;

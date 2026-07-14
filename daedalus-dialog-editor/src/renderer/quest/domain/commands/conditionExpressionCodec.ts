@@ -164,6 +164,83 @@ export const validateConditionExpressionSyntax = (expression: string): ParseFail
   return { ok: true };
 };
 
+type SerializeSuccess = { ok: true; expression: string };
+type SerializeFailure = { ok: false };
+export type ConditionExpressionSerializeResult = SerializeSuccess | SerializeFailure;
+
+const SUPPORTED_VARIABLE_OPERATORS = new Set(['==', '!=', '<=', '>=', '<', '>']);
+
+const serializeLiteral = (
+  value: string | number | boolean | undefined
+): { ok: true; text: string } | { ok: false } => {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return { ok: false };
+    return { ok: true, text: String(value) };
+  }
+  if (typeof value === 'boolean') {
+    return { ok: true, text: value ? 'TRUE' : 'FALSE' };
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return { ok: false };
+    // A string the parser would coerce to a number or boolean cannot round-trip
+    // (it would re-parse into a different JS type), and any comparison/grouping
+    // token would re-tokenize the clause. Reject those so the caller falls back
+    // to a read-only presentation instead of silently corrupting the value.
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return { ok: false };
+    if (/^(true|false)$/i.test(trimmed)) return { ok: false };
+    if (/[()&|,]/.test(trimmed) || COMPARISON_OPERATOR_PATTERN.test(trimmed)) return { ok: false };
+    return { ok: true, text: trimmed };
+  }
+  return { ok: false };
+};
+
+const serializeClause = (
+  condition: DialogCondition
+): { ok: true; text: string } | { ok: false } => {
+  if (condition.type === 'NpcKnowsInfoCondition' && 'npc' in condition && 'dialogRef' in condition) {
+    return { ok: true, text: `Npc_KnowsInfo(${condition.npc}, ${condition.dialogRef})` };
+  }
+  if (condition.type === 'NpcIsDeadCondition' && 'npc' in condition) {
+    const negated = Boolean((condition as { negated?: boolean }).negated);
+    return { ok: true, text: `${negated ? '!' : ''}Npc_IsDead(${condition.npc})` };
+  }
+  if (condition.type === 'VariableCondition' && 'variableName' in condition) {
+    if ((condition as { negated?: boolean }).negated) return { ok: false };
+    const operator = (condition as { operator?: string }).operator;
+    if (!operator || !SUPPORTED_VARIABLE_OPERATORS.has(operator)) return { ok: false };
+    const literal = serializeLiteral((condition as { value?: string | number | boolean }).value);
+    if (!literal.ok) return { ok: false };
+    return { ok: true, text: `${condition.variableName} ${operator} ${literal.text}` };
+  }
+  return { ok: false };
+};
+
+/**
+ * Inverse of {@link parseConditionExpressionToConditions}: renders structured
+ * conditions back into codec-parseable source text. Returns `{ ok: false }` when
+ * any condition uses a shape the parser cannot reconstruct exactly (unsupported
+ * condition type, negated variable condition, or a value that would coerce on
+ * re-parse), so callers can present those conditions as read-only rather than
+ * degrading them into an invalid generic condition on the next apply.
+ */
+export const serializeConditionsToExpression = (
+  conditions: DialogCondition[] | undefined,
+  conditionOperator?: 'AND' | 'OR'
+): ConditionExpressionSerializeResult => {
+  if (!conditions || conditions.length === 0) {
+    return { ok: true, expression: '' };
+  }
+  const clauses: string[] = [];
+  for (const condition of conditions) {
+    const serialized = serializeClause(condition);
+    if (!serialized.ok) return { ok: false };
+    clauses.push(serialized.text);
+  }
+  const joiner = conditionOperator === 'OR' ? ' || ' : ' && ';
+  return { ok: true, expression: clauses.join(joiner) };
+};
+
 export const parseConditionExpressionToConditions = (expression: string): ConditionExpressionParseResult => {
   const trimmed = expression.trim();
   const syntaxValidation = validateConditionExpressionSyntax(trimmed);

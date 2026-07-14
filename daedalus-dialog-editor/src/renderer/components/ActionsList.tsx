@@ -46,8 +46,17 @@ const INITIAL_BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 16; // ~1 frame at 60fps
 // Keep identities free of ':' — the dnd library builds internal lookups that
 // can break on a colon inside a draggableId (finding U5). '__' is our safe delimiter.
+//
+// Identities must be index-INDEPENDENT so a deletion above a card does not shift
+// its React key/draggableId (which reuses the wrong ActionCard instance and
+// discards its pending debounce edit — 0.1). DialogLine carries its AI_Output id;
+// every other action carries a stable synthetic `id` (the factory stamps one on
+// creation; ensureActionIds fills it in for loaded actions). Fall back to the
+// index only for the transient case of an action with no id yet.
 const getActionIdentity = (action: DialogAction, fallbackIndex: number): string =>
-  action.type === 'DialogLine' ? action.id : `${action.type}__${fallbackIndex}`;
+  action.type === 'DialogLine'
+    ? action.id
+    : (action as { id?: string }).id ?? `${action.type}__${fallbackIndex}`;
 
 /**
  * Optimized list component that only re-renders when actions array changes

@@ -32,6 +32,14 @@ export interface InternalNodeData {
   conditionExpression?: string;
   conditionCount?: number;
   conditionMode?: 'structured' | 'generic-expression';
+  /**
+   * Codec-parseable source form of the owner function's conditions, used to
+   * prefill the inspector's editable condition field so prefill and re-parse are
+   * inverses. Present only when the owner's conditions can round-trip losslessly.
+   */
+  editableConditionExpression?: string;
+  /** Function that actually owns the displayed conditions (info fn or its condition fn). */
+  conditionOwnerFunctionName?: string;
   sourceKind: QuestGraphSourceKind;
   entrySurface?: boolean;
   latentEntry?: boolean;

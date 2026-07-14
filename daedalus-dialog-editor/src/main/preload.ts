@@ -31,7 +31,6 @@ contextBridge.exposeInMainWorld('editorAPI', {
 
   // Settings API
   getRecentProjects: () => ipcRenderer.invoke('settings:getRecentProjects'),
-  addRecentProject: (projectPath: string, projectName: string) => ipcRenderer.invoke('settings:addRecentProject', projectPath, projectName),
 
   // File Watcher API
   startFileWatcher: (projectPath: string) => ipcRenderer.invoke('fileWatcher:start', projectPath),

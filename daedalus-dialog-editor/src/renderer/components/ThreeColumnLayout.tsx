@@ -40,13 +40,11 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const {
     openFiles,
     openFile,
-    updateModel,
     getFileState,
     activeFile,
   } = useEditorStore((state) => ({
     openFiles: state.openFiles,
     openFile: state.openFile,
-    updateModel: state.updateModel,
     getFileState: state.getFileState,
     activeFile: state.activeFile,
   }), shallow);
@@ -190,7 +188,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     selectedNPC,
     openFile,
     getFileState,
-    updateModel,
+    updateModel: historyActions.updateModel,
     addDialogToIndex,
     selectNpc,
     loadAndMergeNpcModels,

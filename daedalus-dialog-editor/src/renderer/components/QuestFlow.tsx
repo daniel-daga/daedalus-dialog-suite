@@ -659,10 +659,10 @@ const QuestFlow: React.FC<QuestFlowProps> = ({ semanticModel, questName, writabl
     }, 'Failed to update condition link.');
   }, [runQuestCommandWithPreview]);
 
-  const handleSetConditionExpression = useCallback(async (payload: { nodeId: string; expression: string }) => {
+  const handleSetConditionExpression = useCallback(async (payload: { nodeId: string; targetFunctionName: string; expression: string }) => {
     await runQuestCommandWithPreview({
       type: 'setConditionExpression',
-      targetFunctionName: payload.nodeId,
+      targetFunctionName: payload.targetFunctionName,
       expression: payload.expression
     }, 'Failed to update condition expression.');
   }, [runQuestCommandWithPreview]);

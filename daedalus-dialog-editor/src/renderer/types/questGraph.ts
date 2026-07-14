@@ -56,6 +56,8 @@ export interface QuestGraphNodeData {
   conditionExpression?: string;
   conditionCount?: number;
   conditionMode?: 'structured' | 'generic-expression';
+  editableConditionExpression?: string;
+  conditionOwnerFunctionName?: string;
   condition?: DialogCondition;
   conditionIndex?: number;
   kind: QuestGraphNodeKind;

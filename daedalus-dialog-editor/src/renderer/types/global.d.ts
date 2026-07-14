@@ -120,7 +120,6 @@ export interface EditorAPI {
 
   // Settings API
   getRecentProjects: () => Promise<RecentProject[]>;
-  addRecentProject: (projectPath: string, projectName: string) => Promise<void>;
 
   // File Watcher API
   startFileWatcher: (projectPath: string) => Promise<void>;

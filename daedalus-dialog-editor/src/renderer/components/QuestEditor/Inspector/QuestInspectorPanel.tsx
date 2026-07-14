@@ -47,7 +47,7 @@ interface QuestInspectorPanelProps {
     operator: '==' | '!=';
     negated?: boolean;
   }) => void;
-  onSetConditionExpression: (payload: { nodeId: string; expression: string }) => void;
+  onSetConditionExpression: (payload: { nodeId: string; targetFunctionName: string; expression: string }) => void;
   commandError: string | null;
   commandBusy: boolean;
 }
@@ -244,6 +244,16 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
   }, [selectedEdge]);
 
   const isDialogNode = Boolean(selectedNode?.data.kind === 'dialog');
+  // The dialog condition field is editable only when the graph resolved a single
+  // owning function whose conditions round-trip losslessly through the codec. The
+  // editable text is derived from the STRUCTURED conditions (not the pretty display
+  // label), so prefill and re-parse are inverses; when it is undefined the field is
+  // read-only to avoid degrading conditions or copying them onto the wrong function.
+  const isConditionExpressionEditable = Boolean(
+    isDialogNode &&
+    selectedNode?.data.conditionOwnerFunctionName &&
+    typeof selectedNode?.data.editableConditionExpression === 'string'
+  );
 
   useEffect(() => {
     if (!selectedNode || selectedNode.data.kind !== 'dialog') {
@@ -251,7 +261,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
       setConditionExpressionError(null);
       return;
     }
-    setConditionExpressionDraft(String(selectedNode.data.conditionExpression || ''));
+    setConditionExpressionDraft(selectedNode.data.editableConditionExpression ?? '');
     setConditionExpressionError(null);
   }, [selectedNode]);
 
@@ -489,7 +499,18 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
               </Alert>
             )}
 
-            {writableEnabled && isDialogNode && (
+            {writableEnabled && isDialogNode && !isConditionExpressionEditable && (
+              <>
+                <Divider />
+                <Alert severity="info">
+                  This dialog&apos;s condition expression is read-only here because it combines
+                  conditions from more than one function or uses condition types the inspector
+                  cannot round-trip. Edit individual conditions through their condition nodes.
+                </Alert>
+              </>
+            )}
+
+            {writableEnabled && isDialogNode && isConditionExpressionEditable && (
               <>
                 <Divider />
                 <Typography variant="subtitle2">Condition expression</Typography>
@@ -513,6 +534,8 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                   disabled={commandBusy || !conditionExpressionDraft.trim()}
                   onClick={() => {
                     if (!selectedNode) return;
+                    const targetFunctionName = selectedNode.data.conditionOwnerFunctionName;
+                    if (!targetFunctionName) return;
                     const validation = validateConditionExpressionSyntax(conditionExpressionDraft);
                     if (!validation.ok) {
                       setConditionExpressionError(validation.error);
@@ -520,6 +543,7 @@ const QuestInspectorPanel: React.FC<QuestInspectorPanelProps> = ({
                     }
                     onSetConditionExpression({
                       nodeId: selectedNode.id,
+                      targetFunctionName,
                       expression: conditionExpressionDraft.trim()
                     });
                   }}

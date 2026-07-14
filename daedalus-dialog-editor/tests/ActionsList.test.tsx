@@ -60,6 +60,29 @@ describe('ActionsList draggable identity (U5 keys)', () => {
     errorSpy.mockRestore();
   });
 
+  test('non-DialogLine actions get id-based draggableIds that survive a deletion above', () => {
+    // 0.1: non-DialogLine actions carry a stable `id` (the factory already
+    // stamps one; ensureActionIds fills it in for loaded actions). Their
+    // identity must derive from that id, not the list index — otherwise
+    // deleting a card above reindexes the identity, React reuses the wrong
+    // ActionCard instance, and a pending debounce edit is discarded.
+    const setVarA = { type: 'SetVariableAction', id: 'action_aaa', variableName: 'X', operator: '=', value: 1 };
+    const setVarB = { type: 'SetVariableAction', id: 'action_bbb', variableName: 'Y', operator: '=', value: 2 };
+
+    const { container, rerender } = render(<ActionsList {...baseProps} actions={[setVarA, setVarB]} />);
+    const before = draggableIds(container);
+    expect(before).toHaveLength(2);
+    expect(before[1]).toContain('action_bbb');
+
+    // Delete the action above (A); B shifts from index 1 to index 0.
+    rerender(<ActionsList {...baseProps} actions={[setVarB]} />);
+    const after = draggableIds(container);
+
+    expect(after).toHaveLength(1);
+    // B keeps the SAME draggableId despite the index shift.
+    expect(after[0]).toBe(before[1]);
+  });
+
   test('keeps draggableIds stable across an unrelated re-render', () => {
     const actions = [
       { type: 'DialogLine', id: 'AI_Output', text: 'a', speaker: 'Hero' },

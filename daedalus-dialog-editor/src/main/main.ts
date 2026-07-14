@@ -368,8 +368,13 @@ function setupIpcHandlers() {
 
       const folderPath = result.filePaths[0];
 
-      // When user selects a project folder, add it to allowed paths
+      // When user selects a project folder, add it to allowed paths and
+      // persist it as a recent project. This is the only place recents are
+      // written — recents seed the path whitelist on next launch, so the
+      // write must originate from a main-process-chosen path, never a
+      // renderer-supplied one (see docs/architecture/security-model.md).
       pathValidator.addAllowedPath(folderPath);
+      await settingsService.addRecentProject(folderPath, path.basename(folderPath));
 
       return folderPath;
     } catch (error) {
@@ -440,22 +445,18 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('settings:addRecentProject', async (_event, projectPath: string, projectName: string) => {
-    try {
-      await settingsService.addRecentProject(projectPath, projectName);
-      // When adding a recent project, also add it to allowed paths for safety
-      pathValidator.addAllowedPath(projectPath);
-    } catch (error) {
-      console.error('[IPC] settings:addRecentProject error:', error);
-      throw new Error(`Failed to add recent project: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
-
   // File watcher handlers
   ipcMain.handle('fileWatcher:start', async (_event, projectPath: string) => {
     try {
+      // Validate path before watching (symlink-resolved)
+      await pathValidator.validatePathResolved(projectPath);
+
       await fileWatcherService.startWatching(projectPath);
     } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] fileWatcher:start - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
       console.error('[IPC] fileWatcher:start error:', error);
       throw new Error(`Failed to start file watcher: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

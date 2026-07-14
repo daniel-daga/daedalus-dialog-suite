@@ -60,6 +60,27 @@ describe('nestedActionUtils', () => {
     expect(actions[1].thenActions[0].text).toBe('then');
   });
 
+  test('updateActionAtPath ignores out-of-range indices (no append/corruption)', () => {
+    const actions = createModel();
+    const ghost = {
+      type: 'DialogLine',
+      speaker: 'self',
+      text: 'ghost',
+      id: 'DIA_Test_08_99'
+    } as any;
+
+    // index === length previously appended, corrupting the list. This is the
+    // stale-path unmount-flush vector (0.1): a debounce firing at index==length.
+    const atLength = updateActionAtPath(actions, [actions.length], ghost);
+    expect(atLength).toBe(actions);
+    expect(atLength).toHaveLength(2);
+
+    // Any out-of-range index is a no-op returning the original array.
+    const beyond = updateActionAtPath(actions, [99], ghost);
+    expect(beyond).toBe(actions);
+    expect(beyond).toHaveLength(2);
+  });
+
   test('inserts new actions after nested branch paths', () => {
     const actions = createModel();
     const inserted = insertActionAfterPath(actions, [1, 'then', 0], {

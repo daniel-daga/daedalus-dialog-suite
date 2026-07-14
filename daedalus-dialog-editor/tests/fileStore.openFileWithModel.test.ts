@@ -75,6 +75,52 @@ describe('openFile with a pre-parsed model (opts.model)', () => {
     expect(action.id).not.toBe('NEW_LINE_ID');
   });
 
+  test('ensureActionIds stamps stable ids on non-DialogLine actions, including nested', async () => {
+    const filePath = 'nonDialogLineIds.d';
+    seedMockFile(filePath, '// disk\n');
+
+    const model = {
+      dialogs: {
+        D1: { name: 'D1', properties: { npc: 'NPC1', information: 'D1_Info' } },
+      },
+      functions: {
+        D1_Info: {
+          name: 'D1_Info',
+          returnType: 'VOID',
+          calls: [],
+          actions: [
+            { type: 'SetVariableAction', variableName: 'X', operator: '=', value: 1 },
+            {
+              type: 'ConditionalAction',
+              condition: 'X == 1',
+              thenActions: [
+                { type: 'GivePlayerXPAction', amount: 100 },
+              ],
+              elseActions: [],
+            },
+          ],
+        },
+      },
+      hasErrors: false,
+      errors: [],
+    } as any;
+
+    await useEditorStore.getState().openFile(filePath, { model });
+
+    const fileState = useEditorStore.getState().getFileState(filePath);
+    const actions = fileState?.semanticModel.functions.D1_Info.actions as any[];
+
+    // Top-level and nested non-DialogLine actions all receive a stable id so
+    // their React/draggable identity survives sibling deletion (0.1).
+    expect(typeof actions[0].id).toBe('string');
+    expect(actions[0].id.length).toBeGreaterThan(0);
+    expect(typeof actions[1].id).toBe('string');
+    expect(typeof actions[1].thenActions[0].id).toBe('string');
+
+    const ids = [actions[0].id, actions[1].id, actions[1].thenActions[0].id];
+    expect(new Set(ids).size).toBe(3); // ids are unique
+  });
+
   test('without opts, still parses via parseSource (unchanged behavior)', async () => {
     const filePath = 'needs-parse.d';
     seedMockFile(filePath, 'INSTANCE DIA_Example_Hello(C_INFO) {\n\tnpc = PC_Hero;\n};');

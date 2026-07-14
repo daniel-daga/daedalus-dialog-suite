@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
-import { createDialogLineId } from '../components/actionFactory';
+import { createDialogLineId, generateActionId } from '../components/actionFactory';
 import { collectDialogLineActions, mapChoiceTargetFunctions } from '../components/nestedActionUtils';
 import {
   collectReachableChoiceFunctions,
@@ -22,6 +22,45 @@ import { classifySaveError, type SaveError } from '../utils/saveError';
 
 // Enable Map/Set support in Immer
 enableMapSet();
+
+/**
+ * Stamp a stable synthetic `id` on every non-DialogLine action that lacks one,
+ * recursing into ConditionalAction branches. DialogLine ids are the AI_Output
+ * ids handled separately below; other action types need a stable identity so
+ * their React/draggable key survives a sibling deletion (0.1). The factory
+ * already stamps session-created actions — this covers actions loaded from disk.
+ * Returns the original array unchanged when nothing needed an id.
+ */
+function stampNonDialogLineActionIds(
+  actions: DialogAction[]
+): { actions: DialogAction[]; changed: boolean } {
+  let changed = false;
+  const next = actions.map((action) => {
+    let result = action as DialogAction & {
+      id?: string;
+      thenActions?: DialogAction[];
+      elseActions?: DialogAction[];
+    };
+
+    if (result.type !== 'DialogLine' && !result.id) {
+      result = { ...result, id: generateActionId() };
+      changed = true;
+    }
+
+    if (result.type === 'ConditionalAction') {
+      const thenResult = stampNonDialogLineActionIds(result.thenActions || []);
+      const elseResult = stampNonDialogLineActionIds(result.elseActions || []);
+      if (thenResult.changed || elseResult.changed) {
+        result = { ...result, thenActions: thenResult.actions, elseActions: elseResult.actions };
+        changed = true;
+      }
+    }
+
+    return result;
+  });
+
+  return changed ? { actions: next, changed } : { actions, changed };
+}
 
 /**
  * Ensure all actions in the model have unique IDs
@@ -100,13 +139,16 @@ function ensureActionIds(model: SemanticModel): SemanticModel {
         hasChanges = true;
       }
 
-      if (!hasChanges) {
+      // Also stamp stable ids on non-DialogLine actions (including nested ones)
+      // so their draggable/React identity is index-independent (0.1).
+      const stamped = stampNonDialogLineActionIds(actions);
+      if (!hasChanges && !stamped.changed) {
         return;
       }
 
       updatedFunctions[funcName] = {
         ...func,
-        actions
+        actions: stamped.actions
       };
     }
   });

@@ -56,6 +56,15 @@ folder. A manual Windows pass on this UX is in the
 - The renderer-exposed `fileWatcher:notifySelfWrite` channel was **removed** — an
   audit found no renderer caller; `generator:saveFile`/`file:write` already notify
   the watcher main-side after validation.
+- The renderer-exposed `settings:addRecentProject` channel was **removed** — it
+  called `addAllowedPath` on an unvalidated renderer-supplied path and persisted it
+  into recents (which `project:addAllowedPath` then trusts forever), so a
+  compromised renderer could whitelist e.g. `C:\` and read/write anywhere. Recents
+  are now recorded main-side only, inside `project:openFolderDialog` after the OS
+  dialog returns a real folder.
+- `fileWatcher:start` now runs `validatePathResolved` on its argument like every
+  other path-accepting handler; it was previously the only one without the check,
+  so the renderer could aim the watcher at an arbitrary directory.
 
 ## Window / navigation lockdown
 

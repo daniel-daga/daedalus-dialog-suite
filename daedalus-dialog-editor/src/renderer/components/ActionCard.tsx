@@ -76,9 +76,14 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     if (shallowEqual(localActionRef.current, actionRef.current)) {
       return;
     }
-    // Sync local state to parent immediately
-    updateActionAtPath(path, localAction);
-  }, [updateActionAtPath, path, localAction]);
+    // Resolve path/action via refs, mirroring the debounce timer body and the
+    // unmount flush. Select-type renderers call handleUpdate(...) then
+    // flushUpdate() in the SAME tick; at that point the closure-captured
+    // `localAction` is still the pre-change value (setLocalAction is async), so
+    // a lexical write would commit the stale value and clear the timer that
+    // would otherwise have committed the real one (0.2).
+    updateActionRef.current(pathRef.current, localActionRef.current);
+  }, []);
 
   const handleUpdate = useCallback((updated: typeof localAction) => {
     // Update local state immediately for responsive UI
