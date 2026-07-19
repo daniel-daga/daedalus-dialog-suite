@@ -512,6 +512,71 @@ PROTOTYPE Item_Default(C_ITEM)
       expect(realDialogs).toHaveLength(1);
       expect(realDialogs[0].dialogName).toBe('DIA_Real');
     });
+
+    it('aggregates AI_Output voice ids under one uppercased key with all locations', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      const fileA = path.join(dialogDir, 'DIA_Alrik.d');
+      const fileB = path.join(dialogDir, 'DIA_Bengar.d');
+      fs.writeFileSync(fileA, `
+FUNC VOID DIA_Alrik_Hallo_Info()
+{
+	AI_Output (self, other, "DIA_Alrik_Hallo_15_00"); //Hallo!
+};
+      `);
+      // Same voice id with different casing in another file
+      fs.writeFileSync(fileB, `
+FUNC VOID DIA_Bengar_Hallo_Info()
+{
+	AI_Output (self, other, "dia_alrik_hallo_15_00"); //Hallo!
+	AI_Output (other, self, "DIA_Bengar_Hallo_15_01"); //Selber hallo.
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      const shared = index.voiceIds['DIA_ALRIK_HALLO_15_00'];
+      expect(shared).toHaveLength(2);
+      expect(shared).toContainEqual({ filePath: fileA, functionName: 'DIA_Alrik_Hallo_Info' });
+      expect(shared).toContainEqual({ filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info' });
+
+      expect(index.voiceIds['DIA_BENGAR_HALLO_15_01']).toEqual([
+        { filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info' }
+      ]);
+    });
+  });
+
+  describe('voice id extraction (semanticMetadataUtils)', () => {
+    it('collects literal DialogLine ids across functions, including nested ones, and skips expression ids', async () => {
+      const { extractFileMetadataFromSource } = await import('../src/main/utils/semanticMetadataUtils');
+
+      const content = `
+FUNC VOID DIA_Test_Hallo_Info()
+{
+	AI_Output (self, other, "DIA_Test_Hallo_15_00"); //Hallo!
+	if (MIS_Test == LOG_RUNNING)
+	{
+		AI_Output (self, other, "DIA_Test_Hallo_15_01"); //Nested line
+	};
+};
+
+FUNC VOID DIA_Test_Bye_Info()
+{
+	AI_Output (other, self, "DIA_Test_Bye_15_00"); //Bye
+	AI_Output (self, other, ConcatStrings(prefix, "_15_02")); //Expression id
+};
+      `;
+
+      const metadata = extractFileMetadataFromSource(content, '/test/DIA_Test.d');
+
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_00', functionName: 'DIA_Test_Hallo_Info' });
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_01', functionName: 'DIA_Test_Hallo_Info' });
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Bye_15_00', functionName: 'DIA_Test_Bye_Info' });
+      // The expression-valued id is skipped
+      expect(metadata.voiceIds).toHaveLength(3);
+    });
   });
 
   describe('getDialogsForNpc', () => {

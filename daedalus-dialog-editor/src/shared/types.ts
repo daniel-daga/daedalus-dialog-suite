@@ -20,6 +20,13 @@ export interface ProjectIndex {
   routines: string[];
   /** Prototype names (normalized uppercase) whose parent chain reaches C_NPC */
   npcPrototypes: string[];
+  /**
+   * AI_Output voice ids across the project, keyed by UPPERCASED id (Daedalus is
+   * case-insensitive); entries keep the original file/function locations.
+   * Built at project load/reindex time — not refreshed on every save, so it can
+   * be stale until the next reindex.
+   */
+  voiceIds: Record<string, Array<{ filePath: string; functionName: string }>>;
   /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
   metadataFailures: Array<{ filePath: string; error: string }>;
 }
@@ -50,6 +57,8 @@ export interface DialogLineAction {
   speaker: 'self' | 'other';
   text: string;
   id: string;
+  /** True when the source id argument was not a string literal. */
+  idIsExpression?: boolean;
 }
 
 export interface ChoiceAction {
@@ -535,7 +544,9 @@ export type ValidationErrorType =
   | 'duplicate_dialog'
   | 'missing_function'
   | 'missing_required_property'
-  | 'circular_dependency';
+  | 'circular_dependency'
+  | 'duplicate_voice_id'
+  | 'malformed_voice_id';
 
 export interface ValidationError {
   type: ValidationErrorType;
@@ -555,6 +566,11 @@ export interface ValidationWarning {
 export interface ValidationOptions {
   existingDialogs?: string[];
   skipSyntaxValidation?: boolean;
+  /**
+   * Project-wide AI_Output voice ids (excluding the file being validated),
+   * keyed by UPPERCASED id — same shape as ProjectIndex.voiceIds.
+   */
+  existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>;
 }
 
 export interface ValidationResult {

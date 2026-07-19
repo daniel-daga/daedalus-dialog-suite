@@ -9,6 +9,7 @@ import {
   resolveFunctionRef
 } from '../components/dialogUtils';
 import { useUISelectionStore } from './uiSelectionStore';
+import { useProjectStore } from './projectStore';
 import type {
   SemanticModel,
   Dialog,
@@ -279,6 +280,30 @@ export interface FileStore {
 async function parseSourceWithIds(sourceCode: string): Promise<SemanticModel> {
   const model = await window.editorAPI.parseSource(sourceCode);
   return model.hasErrors ? model : ensureActionIds(model);
+}
+
+/**
+ * Cross-file voice-ID context for validation: the project-wide voice-ID index
+ * minus the file being validated. Returns undefined outside project mode, so
+ * validation degrades to intra-file checks only. The index is built at project
+ * load/reindex time and is not refreshed on every save, so it can be stale
+ * until the next reindex.
+ */
+function buildExistingVoiceIds(
+  filePath: string
+): Record<string, Array<{ filePath: string; functionName: string }>> | undefined {
+  const { projectPath, voiceIdIndex } = useProjectStore.getState();
+  if (!projectPath) {
+    return undefined;
+  }
+  const existingVoiceIds: Record<string, Array<{ filePath: string; functionName: string }>> = {};
+  for (const [id, entries] of Object.entries(voiceIdIndex)) {
+    const otherFiles = entries.filter((entry) => entry.filePath !== filePath);
+    if (otherFiles.length > 0) {
+      existingVoiceIds[id] = otherFiles;
+    }
+  }
+  return existingVoiceIds;
 }
 
 export const useFileStore = create<FileStore>()(immer((set, get) => ({
@@ -690,9 +715,11 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       throw new Error('File not open');
     }
 
+    const existingVoiceIds = buildExistingVoiceIds(filePath);
     const validationResult = await window.editorAPI.validateModel(
       fileState.semanticModel,
-      state.codeSettings
+      state.codeSettings,
+      existingVoiceIds ? { existingVoiceIds } : undefined
     );
 
     set((state) => {
@@ -733,7 +760,11 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         filePath,
         savedModel,
         state.codeSettings,
-        { forceOnErrors: options?.forceOnErrors, overwriteExternal: options?.overwriteExternal }
+        {
+          forceOnErrors: options?.forceOnErrors,
+          overwriteExternal: options?.overwriteExternal,
+          existingVoiceIds: buildExistingVoiceIds(filePath)
+        }
       );
 
       const stillCurrent = get().openFiles.get(filePath)?.semanticModel === savedModel;

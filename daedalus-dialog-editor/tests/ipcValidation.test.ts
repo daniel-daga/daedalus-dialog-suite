@@ -100,6 +100,24 @@ describe('assertSaveFileOptions', () => {
     expect(() => assertSaveFileOptions({ skipValidation: 'yes' })).toThrow(/option/i);
   });
 
+  it('accepts a well-formed existingVoiceIds map (and undefined)', () => {
+    expect(() =>
+      assertSaveFileOptions({
+        existingVoiceIds: {
+          DIA_ALRIK_HALLO_15_00: [{ filePath: '/mod/DIA_Alrik.d', functionName: 'DIA_Alrik_Hallo_Info' }]
+        }
+      })
+    ).not.toThrow();
+    expect(() => assertSaveFileOptions({ existingVoiceIds: undefined })).not.toThrow();
+  });
+
+  it('rejects a malformed existingVoiceIds value', () => {
+    expect(() => assertSaveFileOptions({ existingVoiceIds: true })).toThrow(/existingVoiceIds/i);
+    expect(() =>
+      assertSaveFileOptions({ existingVoiceIds: { DIA_X_15_00: [{ filePath: 42 }] } })
+    ).toThrow(/existingVoiceIds/i);
+  });
+
   it('rejects a non-object', () => {
     expect(() => assertSaveFileOptions('x')).toThrow(/option/i);
   });

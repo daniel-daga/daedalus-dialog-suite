@@ -959,6 +959,156 @@ describe('ValidationService', () => {
     });
   });
 
+  describe('Voice ID Validation (AI_Output ids)', () => {
+    const modelWithFunctions = (functions: Record<string, any[]>) => ({
+      dialogs: {},
+      functions: Object.fromEntries(
+        Object.entries(functions).map(([name, actions]) => [
+          name,
+          { name, returnType: 'VOID', actions, conditions: [], calls: [] }
+        ])
+      ),
+      hasErrors: false,
+      errors: []
+    });
+
+    const line = (id: string, extra: Record<string, any> = {}) => ({
+      type: 'DialogLine',
+      speaker: 'self',
+      text: 'Hello',
+      id,
+      ...extra
+    });
+
+    test('warns on duplicate voice ids within the same file (case-insensitive)', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [line('DIA_Test_15_00')],
+        DIA_Test_Other: [line('dia_test_15_00')]
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({
+          type: 'duplicate_voice_id',
+          message: expect.stringContaining('DIA_Test_15_00')
+        })
+      );
+      // Warnings must never block saves
+      expect(result.isValid).toBe(true);
+      expect(result.errors.filter(e => (e.type as string).includes('voice_id'))).toHaveLength(0);
+    });
+
+    test('warns on duplicates nested inside conditional actions', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [
+          line('DIA_Test_15_00'),
+          {
+            type: 'ConditionalAction',
+            condition: 'MIS_Test == LOG_RUNNING',
+            thenActions: [line('DIA_Test_15_00')],
+            elseActions: []
+          }
+        ]
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({ type: 'duplicate_voice_id' })
+      );
+    });
+
+    test('warns on cross-file duplicates naming the other file and function', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [line('DIA_Test_15_00')]
+      });
+
+      const result = await validationService.validate(model, defaultSettings, {
+        existingVoiceIds: {
+          DIA_TEST_15_00: [{ filePath: '/mod/DIA_Other.d', functionName: 'DIA_Other_Info' }]
+        }
+      });
+
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({
+          type: 'duplicate_voice_id',
+          message: expect.stringContaining('DIA_Other.d')
+        })
+      );
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({
+          type: 'duplicate_voice_id',
+          message: expect.stringContaining('DIA_Other_Info')
+        })
+      );
+      expect(result.isValid).toBe(true);
+    });
+
+    test('warns on malformed voice id not ending in two numeric segments', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [line('DIA_Test_Hello')]
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({
+          type: 'malformed_voice_id',
+          message: expect.stringContaining('DIA_Test_Hello')
+        })
+      );
+      expect(result.isValid).toBe(true);
+    });
+
+    test('skips expression-valued ids entirely', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [
+          line('ConcatStrings(name, "_15_00")', { idIsExpression: true }),
+          line('ConcatStrings(name, "_15_00")', { idIsExpression: true })
+        ]
+      });
+
+      const result = await validationService.validate(model, defaultSettings, {
+        existingVoiceIds: {
+          'CONCATSTRINGS(NAME, "_15_00")': [{ filePath: '/mod/DIA_Other.d', functionName: 'DIA_Other_Info' }]
+        }
+      });
+
+      expect(result.warnings.filter(w => w.type === 'duplicate_voice_id')).toHaveLength(0);
+      expect(result.warnings.filter(w => w.type === 'malformed_voice_id')).toHaveLength(0);
+    });
+
+    test('does not report an empty id as malformed (covered by required-field validation)', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [line('')]
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.warnings.filter(w => w.type === 'malformed_voice_id')).toHaveLength(0);
+      // The missing id is still reported as an error by the required-field check
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({ type: 'missing_required_property' })
+      );
+    });
+
+    test('clean model produces no voice-id warnings', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [line('DIA_Test_15_00'), line('DIA_Test_15_01')]
+      });
+
+      const result = await validationService.validate(model, defaultSettings, {
+        existingVoiceIds: {
+          DIA_OTHER_15_00: [{ filePath: '/mod/DIA_Other.d', functionName: 'DIA_Other_Info' }]
+        }
+      });
+
+      expect(result.warnings.filter(w => (w.type as string).includes('voice_id'))).toHaveLength(0);
+      expect(result.isValid).toBe(true);
+    });
+  });
+
   describe('String Content Validation (Daedalus has no escape sequences)', () => {
     const modelWithAction = (action: any) => ({
       dialogs: {},

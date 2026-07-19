@@ -35,7 +35,9 @@ const getErrorTypeLabel = (type: string): string => {
     missing_function: 'Missing Function',
     missing_required_property: 'Missing Property',
     circular_dependency: 'Circular Dependency',
-    invalid_string_content: 'Invalid Text'
+    invalid_string_content: 'Invalid Text',
+    duplicate_voice_id: 'Duplicate Voice ID',
+    malformed_voice_id: 'Malformed Voice ID'
   };
   return labels[type] || type;
 };
@@ -47,7 +49,9 @@ const getErrorTypeColor = (type: string): 'error' | 'warning' | 'info' => {
     missing_function: 'warning',
     missing_required_property: 'warning',
     circular_dependency: 'error',
-    invalid_string_content: 'error'
+    invalid_string_content: 'error',
+    duplicate_voice_id: 'warning',
+    malformed_voice_id: 'warning'
   };
   return colors[type] || 'error';
 };
