@@ -1,9 +1,10 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { LogEntryAction } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { createRowTabHandlers } from './rowTabNavigation';
 
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const TOPIC_FIELD_SX = { minWidth: 180 };
@@ -31,21 +32,9 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
     [handleUpdate, typedAction]
   );
 
-  // Topic field: Tab moves naturally to Text, Shift+Tab goes to previous action
-  const handleTopicKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Tab' && !e.shiftKey) {
-      return; // Let browser Tab naturally to the Text field
-    }
-    handleKeyDown(e);
-  }, [handleKeyDown]);
-
-  // Text field: Tab goes to next action, Shift+Tab moves naturally back to Topic
-  const handleTextKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Tab' && e.shiftKey) {
-      return; // Let browser Shift+Tab naturally back to the Topic field
-    }
-    handleKeyDown(e);
-  };
+  // #183 follow-up: Tab walks Topic -> Text; only the row edges hand off to
+  // card-to-card navigation.
+  const fieldKeyDown = useMemo(() => createRowTabHandlers(handleKeyDown, 2), [handleKeyDown]);
 
   return (
     <ActionFieldContainer>
@@ -54,7 +43,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.topic || ''}
         onChange={handleTopicChange}
         onFlush={flushUpdate}
-        onKeyDown={handleTopicKeyDown}
+        onKeyDown={fieldKeyDown[0]}
         isMainField
         mainFieldRef={mainFieldRef}
         sx={TOPIC_FIELD_SX}
@@ -66,7 +55,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.text || ''}
         onChange={(value) => handleUpdate({ ...typedAction, text: value })}
         onFlush={flushUpdate}
-        onKeyDown={handleTextKeyDown}
+        onKeyDown={fieldKeyDown[1]}
         multiline
         rows={2}
       />

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { TeachActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
+import { createRowTabHandlers } from './rowTabNavigation';
 
 const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -14,6 +15,10 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
   const typedAction = action as TeachActionType;
   const argsText = Array.isArray(typedAction.teachArgs) ? typedAction.teachArgs.join(', ') : '';
 
+  // #183 follow-up: Tab walks Teach Function -> Arguments; only the row edges
+  // hand off to card-to-card navigation.
+  const fieldKeyDown = useMemo(() => createRowTabHandlers(handleKeyDown, 2), [handleKeyDown]);
+
   return (
     <ActionFieldContainer>
       <ActionTextField
@@ -21,7 +26,7 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.teachFunctionName || ''}
         onChange={(value) => handleUpdate({ ...typedAction, teachFunctionName: value })}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[0]}
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 260 }}
@@ -37,7 +42,7 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
           })
         }
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[1]}
       />
       <ActionDeleteButton onClick={handleDelete} />
     </ActionFieldContainer>

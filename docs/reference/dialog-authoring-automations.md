@@ -58,8 +58,17 @@ regression tests live next to the cited modules in
 - In multi-field renderers, Tab walks the fields of the row natively; only Tab
   on the last field / Shift+Tab on the first fall back to card-to-card
   navigation (#183). Helper:
-  `components/actionRenderers/rowTabNavigation.ts` (currently wired into Give
-  Inventory Items only).
+  `components/actionRenderers/rowTabNavigation.ts`, wired into every flat
+  multi-field renderer: Give Inventory Items, Remove Inventory Items, Create
+  Inventory Items, Attack, Set Variable, Start Other Routine, Pickpocket
+  (field count follows the mode: `C_Beklauen` adds Min/Max), Log Entry, Create
+  Topic, Log Set Status, Chapter Transition, Exchange Routine, Play Animation,
+  Insert NPC, Refuse Talk, Set Attitude, and Teach. Only keyboard-focusable
+  inputs count as row fields — `tabIndex={-1}` icon buttons and plain labels do
+  not shift the indices. Intentionally excluded: Choice (bespoke #118
+  dive-into-sub-dialog Tab handling), Conditional (nested branches, not a flat
+  row), Dialog Line (line-specific card semantics), and single-field renderers
+  (nothing to walk).
 - Give Inventory Items has a mouse-only swap button (Giver ↔ Receiver), and
   the action factory pre-fills the Item from the dialog's `Npc_HasItems`
   condition when one exists (#183). Buttons that are mouse-only affordances

@@ -5,6 +5,7 @@ import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import { TextField, MenuItem } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { createRowTabHandlers } from './rowTabNavigation';
 
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const VARIABLE_FIELD_SX = { minWidth: 200 };
@@ -18,6 +19,10 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   const typedAction = action as SetVariableAction;
+
+  // #183 follow-up: Tab walks Variable -> Op -> Value; only the row edges hand
+  // off to card-to-card navigation.
+  const fieldKeyDown = useMemo(() => createRowTabHandlers(handleKeyDown, 3), [handleKeyDown]);
 
   const handleVariableNameChange = useCallback(
     (value: string) => handleUpdate({ ...typedAction, variableName: value }),
@@ -37,7 +42,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.variableName || ''}
         onChange={handleVariableNameChange}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[0]}
         isMainField
         mainFieldRef={mainFieldRef}
         sx={VARIABLE_FIELD_SX}
@@ -52,7 +57,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
             handleUpdate({ ...typedAction, operator: e.target.value });
             flushUpdate();
         }}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[1]}
         sx={{ width: 80, mx: 1 }}
         size="small"
         variant="outlined"
@@ -73,7 +78,7 @@ const SetVariableActionRenderer: React.FC<BaseActionRendererProps> = ({
           handleUpdate({ ...typedAction, value: isNum ? num : value });
         }}
         onBlur={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[2]}
         size="small"
         variant="outlined"
       />
