@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import {
   Code as CodeIcon,
+  Difference as DifferenceIcon,
   Undo as UndoIcon,
   Redo as RedoIcon,
   Delete as DeleteIcon,
@@ -22,6 +23,8 @@ import * as historyActions from '../store/historyActions';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ValidationErrorDialog from './ValidationErrorDialog';
 import DialogSourceViewDialog from './DialogSourceViewDialog';
+import ReviewChangesDialog from './ReviewChangesDialog';
+import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import DialogPropertiesSection from './DialogPropertiesSection';
 import ConditionSection from './ConditionSection';
 import DialogActionsSection from './DialogActionsSection';
@@ -60,6 +63,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
 
   const uiState = useDialogEditorUIState();
   const { registerActionRef, focusAction, trimRefs } = useFocusNavigation();
+  const [reviewChangesOpen, setReviewChangesOpen] = useState(false);
 
   // The editor pane now stays mounted across dialog switches (it no longer
   // unmounts/remounts, which used to reset this UI state for free). Reset
@@ -70,6 +74,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   useEffect(() => {
     uiState.setPropertiesExpanded(false);
     uiState.setSourceViewOpen(false);
+    setReviewChangesOpen(false);
     uiState.setSnackbar({ open: false, message: '', severity: 'info' });
     uiState.setValidationDialog({ open: false, validationResult: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,6 +86,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     addActionToEnd,
     handleDialogPropertyChange,
     handleConditionFunctionUpdate,
+    handleSave,
     handleSaveAnyway,
     handleCancelValidation
   } = useDialogEditorCommands({
@@ -172,6 +178,24 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               </IconButton>
             </Tooltip>
           )}
+          <Tooltip title="Review the changes that a save would write to disk">
+            <span>
+              <Button
+                variant="outlined"
+                disabled={!filePath || !fileState}
+                onClick={() => {
+                  // Drain any debounced edit so the diff reflects the latest
+                  // keystroke (same flush the save path performs).
+                  flushAllPendingEdits();
+                  setReviewChangesOpen(true);
+                }}
+                startIcon={<DifferenceIcon />}
+                data-testid="review-changes-button"
+              >
+                Review Changes
+              </Button>
+            </span>
+          </Tooltip>
           <Button
             variant="outlined"
             onClick={() => uiState.setSourceViewOpen(true)}
@@ -230,6 +254,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         onSaveAnyway={handleSaveAnyway}
         onCancel={handleCancelValidation}
       />
+
+      {fileState && (
+        <ReviewChangesDialog
+          open={reviewChangesOpen}
+          originalCode={fileState.originalCode || ''}
+          semanticModel={fileState.semanticModel}
+          onSave={() => handleSave()}
+          onClose={() => setReviewChangesOpen(false)}
+        />
+      )}
 
       {semanticModel && (
         <DialogSourceViewDialog
