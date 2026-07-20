@@ -8,6 +8,7 @@ import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { useProjectStore } from '../../store/projectStore';
 import RegisterTopicDialog from '../RegisterTopicDialog';
+import { createRowTabHandlers } from './rowTabNavigation';
 
 const normalizeTopicName = (value: string): string => {
   const normalized = value.replace(/ /g, '_');
@@ -37,6 +38,11 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
     [handleUpdate, typedAction]
   );
 
+  // #183 follow-up: Tab walks Topic -> Topic Type (the tabIndex=-1 book icon is
+  // not part of the row); only the row edges hand off to card-to-card
+  // navigation.
+  const fieldKeyDown = React.useMemo(() => createRowTabHandlers(handleKeyDown, 2), [handleKeyDown]);
+
   return (
     <ActionFieldContainer>
       <VariableAutocomplete
@@ -44,7 +50,7 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.topic || ''}
         onChange={handleTopicChange}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[0]}
         isMainField
         mainFieldRef={mainFieldRef}
         sx={TOPIC_FIELD_SX}
@@ -57,7 +63,7 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.topicType || 'LOG_MISSION'}
         onChange={(e) => handleUpdate({ ...typedAction, topicType: e.target.value })}
         onBlur={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[1]}
         size="small"
       >
         <MenuItem value="LOG_MISSION">LOG_MISSION</MenuItem>

@@ -16,6 +16,7 @@ export interface MetadataResult {
   prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
   routines: string[];
+  voiceIds: Array<{ id: string; functionName: string }>;
 }
 
 // ProjectService.buildProjectIndex surfaces this failure shape to the project
@@ -133,6 +134,7 @@ export class MetadataWorkerPool {
       prototypes?: Array<{ name: string; parent: string }>;
       isQuestFile?: boolean;
       routines?: string[];
+      voiceIds?: Array<{ id: string; functionName: string }>;
       error?: string;
     }) => {
       this.handleMessage(worker, message);
@@ -161,9 +163,10 @@ export class MetadataWorkerPool {
     prototypes?: Array<{ name: string; parent: string }>;
     isQuestFile?: boolean;
     routines?: string[];
+    voiceIds?: Array<{ id: string; functionName: string }>;
     error?: string;
   }) {
-    const { id, dialogs, instances, prototypes, isQuestFile, routines, error } = message;
+    const { id, dialogs, instances, prototypes, isQuestFile, routines, voiceIds, error } = message;
 
     const inFlight = this.inFlightByWorker.get(worker);
     if (inFlight && inFlight.id === id) {
@@ -184,6 +187,7 @@ export class MetadataWorkerPool {
           prototypes: prototypes || [],
           isQuestFile: !!isQuestFile,
           routines: routines || [],
+          voiceIds: voiceIds || [],
         });
       }
     }

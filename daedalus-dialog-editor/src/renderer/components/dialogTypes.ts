@@ -83,4 +83,5 @@ export interface DialogTreeProps {
   buildFunctionTree: (funcName: string, ancestorPath?: string[]) => FunctionTreeNode | null;
   onAddDialog?: (dialogName: string) => Promise<void> | void;
   onCreateTeacherDialog?: (config: import('../utils/teacherDialogTemplate').TeacherDialogConfig) => Promise<void> | void;
+  onCreateTraderDialog?: (config: import('../utils/traderDialogTemplate').TraderDialogConfig) => Promise<void> | void;
 }

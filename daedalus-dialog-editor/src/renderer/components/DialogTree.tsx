@@ -12,19 +12,27 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  MenuItem
+  MenuItem,
+  ListSubheader
 } from '@mui/material';
 import {
   FilterList as FilterListIcon,
   Clear as ClearIcon,
   Add as AddIcon,
-  School as SchoolIcon
+  School as SchoolIcon,
+  Storefront as StorefrontIcon
 } from '@mui/icons-material';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { DialogTreeProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
-import { TEACHER_SKILLS, getTeacherSkill, type TeacherSkillId } from '../utils/teacherDialogTemplate';
+import {
+  TEACHER_SKILL_GROUPS,
+  getTeacherSkill,
+  skillHasMaxLevel,
+  type TeacherSkillId
+} from '../utils/teacherDialogTemplate';
+import { TRADER_DEFAULT_DESCRIPTION } from '../utils/traderDialogTemplate';
 import DialogTreeItem from './DialogTreeItem';
 import ChoiceTreeItem from './ChoiceTreeItem';
 import { flattenDialogs } from './dialogTreeUtils';
@@ -106,6 +114,7 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   buildFunctionTree,
   onAddDialog,
   onCreateTeacherDialog,
+  onCreateTraderDialog,
 }) => {
   const dialogFilter = useSearchStore((s) => s.dialogFilter);
   const setDialogFilter = useSearchStore((s) => s.setDialogFilter);
@@ -121,8 +130,15 @@ const DialogTree: React.FC<DialogTreeProps> = ({
   const [teacherMaxLevel, setTeacherMaxLevel] = React.useState('30');
   const [teacherDescription, setTeacherDescription] = React.useState('');
   const [isTeacherDescriptionEdited, setIsTeacherDescriptionEdited] = React.useState(false);
+  const [isTeacherMaxLevelEdited, setIsTeacherMaxLevelEdited] = React.useState(false);
   const [isCreatingTeacher, setIsCreatingTeacher] = React.useState(false);
   const [teacherError, setTeacherError] = React.useState<string | null>(null);
+
+  // Trader dialog form state (feature-suggestions item 5)
+  const [isTraderOpen, setIsTraderOpen] = React.useState(false);
+  const [traderDescription, setTraderDescription] = React.useState('');
+  const [isCreatingTrader, setIsCreatingTrader] = React.useState(false);
+  const [traderError, setTraderError] = React.useState<string | null>(null);
 
   const sortedDialogs = useMemo(() => {
     return [...dialogsForNPC].sort((a, b) => {
@@ -199,20 +215,33 @@ const DialogTree: React.FC<DialogTreeProps> = ({
     setTeacherMaxLevel('30');
     setTeacherDescription(getTeacherSkill('1H').defaultDescription);
     setIsTeacherDescriptionEdited(false);
+    setIsTeacherMaxLevelEdited(false);
     setTeacherError(null);
     setIsTeacherOpen(true);
   };
 
   const handleTeacherSkillChange = (skillId: TeacherSkillId) => {
+    const skill = getTeacherSkill(skillId);
     setTeacherSkillId(skillId);
     if (!isTeacherDescriptionEdited) {
-      setTeacherDescription(getTeacherSkill(skillId).defaultDescription);
+      setTeacherDescription(skill.defaultDescription);
+    }
+    if (!isTeacherMaxLevelEdited) {
+      setTeacherMaxLevel(skill.defaultMaxLevel != null ? String(skill.defaultMaxLevel) : '');
     }
   };
 
+  const teacherSkill = getTeacherSkill(teacherSkillId);
+  const teacherNeedsMaxLevel = skillHasMaxLevel(teacherSkill);
+
   const handleCreateTeacherDialog = async () => {
-    const maxLevel = parseInt(teacherMaxLevel, 10);
-    if (!onCreateTeacherDialog || !Number.isFinite(maxLevel) || maxLevel <= 0 || !teacherDescription.trim()) {
+    // One-shot talent teachers (hunting/alchemy/thief) have no level cap.
+    const maxLevel = teacherNeedsMaxLevel ? parseInt(teacherMaxLevel, 10) : 0;
+    if (
+      !onCreateTeacherDialog ||
+      (teacherNeedsMaxLevel && (!Number.isFinite(maxLevel) || maxLevel <= 0)) ||
+      !teacherDescription.trim()
+    ) {
       return;
     }
 
@@ -229,6 +258,29 @@ const DialogTree: React.FC<DialogTreeProps> = ({
       setTeacherError(error instanceof Error ? error.message : 'Failed to create teacher dialog.');
     } finally {
       setIsCreatingTeacher(false);
+    }
+  };
+
+  const handleOpenTraderDialog = () => {
+    setTraderDescription(TRADER_DEFAULT_DESCRIPTION);
+    setTraderError(null);
+    setIsTraderOpen(true);
+  };
+
+  const handleCreateTraderDialog = async () => {
+    if (!onCreateTraderDialog || !traderDescription.trim()) {
+      return;
+    }
+
+    setIsCreatingTrader(true);
+    setTraderError(null);
+    try {
+      await onCreateTraderDialog({ description: traderDescription.trim() });
+      setIsTraderOpen(false);
+    } catch (error) {
+      setTraderError(error instanceof Error ? error.message : 'Failed to create trader dialog.');
+    } finally {
+      setIsCreatingTrader(false);
     }
   };
 
@@ -251,6 +303,18 @@ const DialogTree: React.FC<DialogTreeProps> = ({
                   disabled={!selectedNPC || !onCreateTeacherDialog}
                 >
                   <SchoolIcon fontSize='small' />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title={selectedNPC ? 'Create Trader Dialog' : 'Select an NPC first'}>
+              <span>
+                <IconButton
+                  size='small'
+                  aria-label='Create Trader Dialog'
+                  onClick={handleOpenTraderDialog}
+                  disabled={!selectedNPC || !onCreateTraderDialog}
+                >
+                  <StorefrontIcon fontSize='small' />
                 </IconButton>
               </span>
             </Tooltip>
@@ -356,20 +420,32 @@ const DialogTree: React.FC<DialogTreeProps> = ({
             onChange={(e) => handleTeacherSkillChange(e.target.value as TeacherSkillId)}
             disabled={isCreatingTeacher}
           >
-            {TEACHER_SKILLS.map((skill) => (
-              <MenuItem key={skill.id} value={skill.id}>{skill.label}</MenuItem>
-            ))}
+            {TEACHER_SKILL_GROUPS.flatMap((group) => [
+              <ListSubheader key={group.label}>{group.label}</ListSubheader>,
+              ...group.skills.map((skill) => (
+                <MenuItem key={skill.id} value={skill.id}>{skill.label}</MenuItem>
+              ))
+            ])}
           </TextField>
-          <TextField
-            margin='dense'
-            fullWidth
-            label='Max Level'
-            type='number'
-            value={teacherMaxLevel}
-            onChange={(e) => setTeacherMaxLevel(e.target.value)}
-            disabled={isCreatingTeacher}
-            helperText='Highest skill value this teacher can train to'
-          />
+          {teacherNeedsMaxLevel && (
+            <TextField
+              margin='dense'
+              fullWidth
+              label='Max Level'
+              type='number'
+              value={teacherMaxLevel}
+              onChange={(e) => {
+                setTeacherMaxLevel(e.target.value);
+                setIsTeacherMaxLevelEdited(true);
+              }}
+              disabled={isCreatingTeacher}
+              helperText={
+                teacherSkill.category === 'attribute'
+                  ? 'Highest attribute value this teacher can train to'
+                  : 'Highest skill value this teacher can train to'
+              }
+            />
+          )}
           <TextField
             margin='dense'
             fullWidth
@@ -396,8 +472,45 @@ const DialogTree: React.FC<DialogTreeProps> = ({
             disabled={
               isCreatingTeacher ||
               !teacherDescription.trim() ||
-              !(parseInt(teacherMaxLevel, 10) > 0)
+              (teacherNeedsMaxLevel && !(parseInt(teacherMaxLevel, 10) > 0))
             }
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={isTraderOpen} onClose={() => !isCreatingTrader && setIsTraderOpen(false)} fullWidth maxWidth='sm'>
+        <DialogTitle>Create Trader Dialog</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin='dense'
+            fullWidth
+            label='Description'
+            value={traderDescription}
+            onChange={(e) => setTraderDescription(e.target.value)}
+            disabled={isCreatingTrader}
+            helperText='Shown in the dialog menu; opens the trade screen'
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void handleCreateTraderDialog();
+              }
+            }}
+          />
+          {traderError && (
+            <Typography variant='caption' color='error' sx={{ mt: 1, display: 'block' }}>
+              {traderError}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsTraderOpen(false)} disabled={isCreatingTrader}>Cancel</Button>
+          <Button
+            onClick={() => void handleCreateTraderDialog()}
+            variant='contained'
+            disabled={isCreatingTrader || !traderDescription.trim()}
           >
             Create
           </Button>

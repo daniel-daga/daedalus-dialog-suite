@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // Code Generator API
   generateCode: (model: any, settings: any) => ipcRenderer.invoke('generator:generateCode', model, settings),
   generateDialogCode: (model: any, dialogName: string, settings: any) => ipcRenderer.invoke('generator:generateDialogCode', model, dialogName, settings),
-  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean }) =>
+  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean; existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>> }) =>
     ipcRenderer.invoke('generator:saveFile', filePath, model, settings, options),
 
   // File I/O API

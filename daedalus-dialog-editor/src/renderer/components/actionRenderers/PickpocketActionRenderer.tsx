@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MenuItem, TextField } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
 import type { PickpocketActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
+import { createRowTabHandlers } from './rowTabNavigation';
 
 const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -15,6 +16,15 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
   const typedAction = action as PickpocketActionType;
   const mode = typedAction.pickpocketMode || 'B_Beklauen';
 
+  // #183 follow-up: Tab walks Mode -> Min -> Max in C_Beklauen mode (B_Beklauen
+  // renders the Mode field alone); only the row edges hand off to card-to-card
+  // navigation.
+  const fieldCount = mode === 'C_Beklauen' ? 3 : 1;
+  const fieldKeyDown = useMemo(
+    () => createRowTabHandlers(handleKeyDown, fieldCount),
+    [handleKeyDown, fieldCount]
+  );
+
   return (
     <ActionFieldContainer>
       <TextField
@@ -26,7 +36,7 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
           handleUpdate({ ...typedAction, pickpocketMode: nextMode });
           flushUpdate();
         }}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[0]}
         size="small"
         sx={{ minWidth: 180 }}
         inputRef={mainFieldRef}
@@ -42,7 +52,7 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
             value={typedAction.minChance || ''}
             onChange={(value) => handleUpdate({ ...typedAction, minChance: value })}
             onFlush={flushUpdate}
-            onKeyDown={handleKeyDown}
+            onKeyDown={fieldKeyDown[1]}
             sx={{ width: 100 }}
           />
           <ActionTextField
@@ -50,7 +60,7 @@ const PickpocketActionRenderer: React.FC<BaseActionRendererProps> = ({
             value={typedAction.maxChance || ''}
             onChange={(value) => handleUpdate({ ...typedAction, maxChance: value })}
             onFlush={flushUpdate}
-            onKeyDown={handleKeyDown}
+            onKeyDown={fieldKeyDown[2]}
             sx={{ width: 100 }}
           />
         </>

@@ -56,6 +56,26 @@ reads "Save anyway (drops unparsed content)"; `generator:saveFile` passes
 `allowPartialModel: options?.forceOnErrors === true`. The dialog view shows a
 persistent banner while editing a parse-errored file.
 
+## Voice-ID validation (warnings only)
+
+`ValidationService.validateVoiceIds` warns about duplicate and malformed
+`AI_Output` voice IDs (`duplicate_voice_id`, `malformed_voice_id`) — the
+in-game failure mode for a duplicate is a silently skipped line. These are
+**warnings, never errors**: they must not block saves or flip `isValid`.
+Comparison is case-insensitive (Daedalus is case-insensitive); expression-valued
+ids (`idIsExpression`) are skipped, and empty ids are already covered by the
+DialogLine required-field error.
+
+Cross-file context comes from `ProjectIndex.voiceIds` — built by the metadata
+pipeline (`extractFileMetadataFromSource` → metadata worker →
+`ProjectService.buildProjectIndex`), keyed by UPPERCASED id. The renderer
+(`fileStore.validateFile`/`saveFile`) passes it as
+`ValidationOptions.existingVoiceIds`, excluding entries from the file being
+validated; outside project mode the option is omitted and validation degrades
+to intra-file checks. **Known staleness:** the index is built at project
+load/reindex time, not refreshed on every save, so cross-file warnings can lag
+until the next reindex.
+
 ## Atomic writes (FileService)
 
 `FileService.writeFile` stages to a sibling temp file

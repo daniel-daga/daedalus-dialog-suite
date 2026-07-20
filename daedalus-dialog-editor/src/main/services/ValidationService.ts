@@ -11,7 +11,9 @@ export type ValidationErrorType =
   | 'missing_function'
   | 'missing_required_property'
   | 'circular_dependency'
-  | 'invalid_string_content';
+  | 'invalid_string_content'
+  | 'duplicate_voice_id'
+  | 'malformed_voice_id';
 
 /**
  * A single validation error
@@ -42,6 +44,11 @@ export interface ValidationOptions {
   existingDialogs?: string[];
   /** Skip syntax validation (round-trip parsing) */
   skipSyntaxValidation?: boolean;
+  /**
+   * Project-wide AI_Output voice ids (excluding the file being validated),
+   * keyed by UPPERCASED id — same shape as ProjectIndex.voiceIds.
+   */
+  existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>;
 }
 
 /**
@@ -221,6 +228,9 @@ export class ValidationService {
     // Step 8: Quoted string content validation
     const stringErrors = this.validateStringContent(semanticModel);
     errors.push(...stringErrors);
+
+    // Step 9: Voice ID validation (warnings only — must never block saves)
+    warnings.push(...this.validateVoiceIds(semanticModel, options.existingVoiceIds));
 
     return {
       isValid: errors.length === 0,
@@ -477,6 +487,95 @@ export class ValidationService {
     }
 
     return errors;
+  }
+
+  /**
+   * Warn about duplicate or malformed AI_Output voice IDs. A duplicate voice ID
+   * makes the game silently skip the line, so these are surfaced as warnings —
+   * never errors, so they cannot block saves. Expression-valued ids are skipped
+   * entirely; empty ids are already reported by the DialogLine required-field
+   * validator.
+   */
+  private validateVoiceIds(
+    model: any,
+    existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>
+  ): ValidationWarning[] {
+    const warnings: ValidationWarning[] = [];
+
+    // Collect literal-id dialog lines from all functions, including lines
+    // nested inside conditional actions.
+    const lines: Array<{ id: string; functionName: string }> = [];
+    const collect = (actions: any[], functionName: string): void => {
+      for (const action of actions || []) {
+        if (!action) {
+          continue;
+        }
+        if (action.type === 'DialogLine') {
+          if (typeof action.id === 'string' && action.id && !action.idIsExpression) {
+            lines.push({ id: action.id, functionName });
+          }
+          continue;
+        }
+        if (Array.isArray(action.thenActions) || Array.isArray(action.elseActions)) {
+          collect(action.thenActions || [], functionName);
+          collect(action.elseActions || [], functionName);
+        }
+      }
+    };
+    for (const funcName in model.functions) {
+      collect(model.functions[funcName].actions || [], funcName);
+    }
+
+    // Daedalus is case-insensitive: group by uppercased id.
+    const byUpperId = new Map<string, Array<{ id: string; functionName: string }>>();
+    for (const line of lines) {
+      const key = line.id.toUpperCase();
+      const entries = byUpperId.get(key);
+      if (entries) {
+        entries.push(line);
+      } else {
+        byUpperId.set(key, [line]);
+      }
+    }
+
+    for (const [key, entries] of byUpperId) {
+      // (a) Intra-file duplicates
+      if (entries.length > 1) {
+        const locations = entries.map((entry) => `'${entry.functionName}'`).join(', ');
+        warnings.push({
+          type: 'duplicate_voice_id',
+          message: `Voice ID '${entries[0].id}' is used ${entries.length} times in this file (functions ${locations}) — the game silently skips lines with a duplicate voice ID`,
+          functionName: entries[0].functionName
+        });
+      }
+
+      // (b) Cross-file duplicates against the project-wide index
+      const external = existingVoiceIds?.[key];
+      if (external && external.length > 0) {
+        const locations = external
+          .map((entry) => `'${entry.functionName}' in ${entry.filePath}`)
+          .join(', ');
+        warnings.push({
+          type: 'duplicate_voice_id',
+          message: `Voice ID '${entries[0].id}' is already used elsewhere in the project (${locations}) — the game silently skips lines with a duplicate voice ID`,
+          functionName: entries[0].functionName
+        });
+      }
+    }
+
+    // (c) Malformed ids: the vanilla convention ends in two numeric segments
+    // (e.g. DIA_Alrik_Teach_15_00).
+    for (const line of lines) {
+      if (!/_\d+_\d+$/.test(line.id)) {
+        warnings.push({
+          type: 'malformed_voice_id',
+          message: `Voice ID '${line.id}' in function '${line.functionName}' does not end in two numeric segments (expected the vanilla convention, e.g. DIA_Alrik_Teach_15_00)`,
+          functionName: line.functionName
+        });
+      }
+    }
+
+    return warnings;
   }
 
   /**

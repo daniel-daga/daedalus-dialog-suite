@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -6,8 +6,11 @@ import {
   DialogActions,
   Button,
   Typography,
+  Box,
+  CircularProgress,
 } from '@mui/material';
 import { useFileStore } from '../store/fileStore';
+import CodeDiffView from './common/CodeDiffView';
 
 const basename = (filePath: string): string =>
   filePath.split(/[\\/]/).pop() || filePath;
@@ -33,6 +36,49 @@ const ExternalChangeConflictDialog: React.FC = () => {
   const conflict = activeFileState?.externalConflict;
   const open = !!activeFile && !!conflict;
   const fileMissing = !!conflict?.fileMissing;
+
+  // On-disk diff (feature-suggestions item 6): when the dialog opens for a
+  // changed-on-disk conflict, load both sides so the user can see exactly what
+  // differs before choosing a resolution. Any load failure falls back to the
+  // text-only dialog — the diff is an aid, never a gate.
+  const [diff, setDiff] = useState<{ disk: string; mine: string } | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || fileMissing || !activeFile) {
+      setDiff(null);
+      setDiffLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setDiff(null);
+    setDiffLoading(true);
+
+    void (async () => {
+      try {
+        const state = useFileStore.getState();
+        const fileState = state.openFiles.get(activeFile);
+        if (!fileState) {
+          return;
+        }
+        const disk = await window.editorAPI.readFile(activeFile);
+        const mine = fileState.workingCode
+          ?? await window.editorAPI.generateCode(fileState.semanticModel, state.codeSettings);
+        if (!cancelled) {
+          setDiff({ disk, mine });
+        }
+      } catch (error) {
+        console.error('Failed to build on-disk conflict diff:', error);
+      } finally {
+        if (!cancelled) {
+          setDiffLoading(false);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [open, fileMissing, activeFile, conflict?.detectedAt]);
 
   const resolve = async (resolution: 'keepMine' | 'reloadTheirs') => {
     if (!activeFile) {
@@ -60,6 +106,27 @@ const ExternalChangeConflictDialog: React.FC = () => {
         {fileMissing ? 'File deleted on disk' : 'File changed on disk'}
       </DialogTitle>
       <DialogContent>
+        {!fileMissing && diffLoading && (
+          <Box
+            sx={{ display: 'flex', justifyContent: 'center', py: 2 }}
+            data-testid="external-conflict-diff-loading"
+          >
+            <CircularProgress size={24} />
+          </Box>
+        )}
+        {!fileMissing && diff && (
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+              − version on disk · + your unsaved version
+            </Typography>
+            <CodeDiffView
+              beforeCode={diff.disk}
+              afterCode={diff.mine}
+              maxHeight={320}
+              data-testid="external-conflict-diff"
+            />
+          </Box>
+        )}
         <Typography variant="body2">
           {fileMissing
             ? `${fileName} was deleted or moved on disk while you have unsaved changes.`

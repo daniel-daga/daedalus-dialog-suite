@@ -213,7 +213,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean }) => {
+  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean; existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>> }) => {
     const expectUnchanged = !options?.overwriteExternal;
     try {
       // Validate payload shapes before touching services
@@ -226,7 +226,9 @@ function setupIpcHandlers() {
 
       // Validate model unless explicitly skipped
       if (!options?.skipValidation) {
-        const validationResult = await validationService.validate(model, settings);
+        const validationResult = await validationService.validate(model, settings, {
+          existingVoiceIds: options?.existingVoiceIds
+        });
 
         // If validation failed and not forcing save, return validation result
         if (!validationResult.isValid && !options?.forceOnErrors) {

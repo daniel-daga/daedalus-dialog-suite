@@ -74,6 +74,7 @@ class ProjectService {
     const allNpcs = new Set<string>();
     const questFiles: string[] = [];
     const allRoutines = new Set<string>();
+    const voiceIds: Record<string, Array<{ filePath: string; functionName: string }>> = {};
     const metadataFailures: Array<{ filePath: string; error: string }> = [];
     let npcPrototypes: string[] = [];
 
@@ -89,7 +90,7 @@ class ProjectService {
       )).map((result) => {
         if ('ok' in result) {
           metadataFailures.push({ filePath: result.filePath, error: result.error });
-          return { dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [] };
+          return { dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [], voiceIds: [] };
         }
         return result;
       });
@@ -160,6 +161,16 @@ class ProjectService {
         for (const routine of result.routines || []) {
           allRoutines.add(routine);
         }
+
+        // Aggregate AI_Output voice ids, keyed case-insensitively (Daedalus is
+        // case-insensitive); entries keep the original casing.
+        for (const voiceId of result.voiceIds || []) {
+          const key = voiceId.id.toUpperCase();
+          if (!voiceIds[key]) {
+            voiceIds[key] = [];
+          }
+          voiceIds[key].push({ filePath, functionName: voiceId.functionName });
+        }
       }
     } finally {
       pool.terminate();
@@ -175,6 +186,7 @@ class ProjectService {
       questFiles,
       routines: Array.from(allRoutines).sort(),
       npcPrototypes,
+      voiceIds,
       metadataFailures
     };
   }

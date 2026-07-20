@@ -22,6 +22,8 @@ import type { SemanticModel } from '../types/global';
 import { extractFunctionName } from '../utils/pathAndIdentifierUtils';
 import { createTeacherDialogForNpc } from '../utils/teacherDialogFactory';
 import type { TeacherDialogConfig } from '../utils/teacherDialogTemplate';
+import { createTraderDialogForNpc } from '../utils/traderDialogFactory';
+import type { TraderDialogConfig } from '../utils/traderDialogTemplate';
 import { collectDialogOwnedFunctions, computeDialogDeletionSet } from './dialogUtils';
 import * as historyActions from '../store/historyActions';
 
@@ -237,6 +239,45 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       setOperationError(`Failed to create teacher dialog: ${message}`);
+      throw error;
+    }
+  }, [
+    selectedNPC,
+    dialogIndex,
+    projectPath,
+    addProjectFile,
+    getSemanticModel,
+    addDialogToIndex,
+    selectNpc,
+    loadAndMergeNpcModels,
+    setSelectedNPC,
+    finalizeDialogSelection,
+  ]);
+
+  // Feature-suggestions item 5: generate the standard trade dialog boilerplate
+  const handleCreateTraderDialog = useCallback(async (config: TraderDialogConfig) => {
+    setOperationError(null);
+    if (!selectedNPC) {
+      throw new Error('Select an NPC first.');
+    }
+    try {
+      const { dialogName, infoFunctionName } = await createTraderDialogForNpc(selectedNPC, config, {
+        dialogIndex,
+        projectPath,
+        readFile: (path) => window.editorAPI.readFile(path),
+        writeFile: (path, content) => window.editorAPI.writeFile(path, content),
+        addProjectFile,
+        getSemanticModel,
+        addDialogToIndex,
+        selectNpc,
+        loadAndMergeNpcModels,
+      });
+      setSelectedNPC(selectedNPC);
+      setExpandedDialogs((prev) => new Set([...prev, dialogName]));
+      finalizeDialogSelection(dialogName, infoFunctionName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setOperationError(`Failed to create trader dialog: ${message}`);
       throw error;
     }
   }, [
@@ -495,6 +536,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
         onToggleDialogExpand={handleToggleDialogExpand}
         onAddDialog={handleAddDialog}
         onCreateTeacherDialog={isProjectMode ? handleCreateTeacherDialog : undefined}
+        onCreateTraderDialog={isProjectMode ? handleCreateTraderDialog : undefined}
         dialogIndex={dialogIndex}
         setIngestedFilesOpen={setIngestedFilesOpen}
       />

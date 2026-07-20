@@ -10,6 +10,12 @@ export interface DialogEditorSnackbarState {
 export interface DialogEditorValidationDialogState {
   open: boolean;
   validationResult: ValidationResult | null;
+  /**
+   * 'save-blocked' (default): validation errors stopped the save — offer
+   * Save Anyway. 'saved-with-warnings': the save succeeded but produced
+   * warnings (e.g. duplicate voice IDs) — informational, Close only.
+   */
+  mode?: 'save-blocked' | 'saved-with-warnings';
 }
 
 export function useDialogEditorUIState() {

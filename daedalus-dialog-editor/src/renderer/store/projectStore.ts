@@ -59,6 +59,9 @@ interface ProjectState {
   questFiles: string[];
   // Prototype names (normalized uppercase) whose parent chain reaches C_NPC
   npcPrototypes: string[];
+  // AI_Output voice ids across the project, keyed by UPPERCASED id (built at
+  // project load/reindex time — can be stale until the next reindex)
+  voiceIdIndex: Record<string, Array<{ filePath: string; functionName: string }>>;
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
 
@@ -300,6 +303,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   allDialogFiles: [],
   questFiles: [],
   npcPrototypes: [],
+  voiceIdIndex: {},
   metadataFailures: [],
   parsedFiles: new Map(),
   parseGeneration: 0,
@@ -341,6 +345,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         allDialogFiles: rawIndex.allFiles || [],
         questFiles: rawIndex.questFiles || [],
         npcPrototypes: rawIndex.npcPrototypes || [],
+        voiceIdIndex: rawIndex.voiceIds || {},
         metadataFailures: rawIndex.metadataFailures || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
@@ -497,6 +502,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       dialogIndex: new Map(),
       allDialogFiles: [],
       npcPrototypes: [],
+      voiceIdIndex: {},
       metadataFailures: [],
       parsedFiles: new Map(),
       parseGeneration: get().parseGeneration + 1,

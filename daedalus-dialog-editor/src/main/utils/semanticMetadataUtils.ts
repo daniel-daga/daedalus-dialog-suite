@@ -10,6 +10,8 @@ export interface ParsedFileMetadata {
   prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
   routines: string[];
+  /** Literal AI_Output voice ids (expression-valued ids are skipped). */
+  voiceIds: Array<{ id: string; functionName: string }>;
 }
 
 const hasQuestTopicConstants = (semanticModel: SemanticModel): boolean => {
@@ -79,6 +81,36 @@ const extractDailyRoutines = (semanticModel: SemanticModel): string[] => {
   return routines;
 };
 
+const collectDialogLineVoiceIds = (
+  actions: any[],
+  functionName: string,
+  collected: Array<{ id: string; functionName: string }>
+): void => {
+  for (const action of actions || []) {
+    if (!action) {
+      continue;
+    }
+    if (action.type === 'DialogLine') {
+      if (typeof action.id === 'string' && action.id && !action.idIsExpression) {
+        collected.push({ id: action.id, functionName });
+      }
+      continue;
+    }
+    if (Array.isArray(action.thenActions) || Array.isArray(action.elseActions)) {
+      collectDialogLineVoiceIds(action.thenActions || [], functionName, collected);
+      collectDialogLineVoiceIds(action.elseActions || [], functionName, collected);
+    }
+  }
+};
+
+const extractVoiceIds = (semanticModel: SemanticModel): Array<{ id: string; functionName: string }> => {
+  const voiceIds: Array<{ id: string; functionName: string }> = [];
+  for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+    collectDialogLineVoiceIds(func.actions || [], functionName, voiceIds);
+  }
+  return voiceIds;
+};
+
 export function extractFileMetadataFromSource(sourceCode: string, filePath: string): ParsedFileMetadata {
   const parseResult = daedalusWrapper.parse(sourceCode);
   const tree = parseResult.tree;
@@ -101,6 +133,7 @@ export function extractFileMetadataFromSource(sourceCode: string, filePath: stri
     instances: extractInstanceDeclarations(parseResult),
     prototypes: extractPrototypeDeclarations(parseResult),
     isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel),
-    routines: extractDailyRoutines(semanticModel)
+    routines: extractDailyRoutines(semanticModel),
+    voiceIds: extractVoiceIds(semanticModel)
   };
 }

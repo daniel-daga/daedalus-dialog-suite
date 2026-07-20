@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   Alert,
   Button,
@@ -9,6 +9,7 @@ import {
   Stack,
   Typography
 } from '@mui/material';
+import CodeDiffView from '../../common/CodeDiffView';
 
 interface QuestDiffPreviewDialogProps {
   open: boolean;
@@ -28,30 +29,6 @@ interface QuestDiffPreviewDialogProps {
   }>;
 }
 
-const buildLineDiff = (beforeCode: string, afterCode: string): string => {
-  const beforeLines = beforeCode.split('\n');
-  const afterLines = afterCode.split('\n');
-  const max = Math.max(beforeLines.length, afterLines.length);
-  const output: string[] = [];
-
-  for (let index = 0; index < max; index += 1) {
-    const beforeLine = beforeLines[index];
-    const afterLine = afterLines[index];
-    if (beforeLine === afterLine) {
-      output.push(` ${beforeLine ?? ''}`);
-      continue;
-    }
-    if (beforeLine !== undefined) {
-      output.push(`-${beforeLine}`);
-    }
-    if (afterLine !== undefined) {
-      output.push(`+${afterLine}`);
-    }
-  }
-
-  return output.join('\n');
-};
-
 const QuestDiffPreviewDialog: React.FC<QuestDiffPreviewDialogProps> = ({
   open,
   beforeCode,
@@ -62,14 +39,7 @@ const QuestDiffPreviewDialog: React.FC<QuestDiffPreviewDialogProps> = ({
   isApplying,
   warnings = []
 }) => {
-  const preview = useMemo(() => buildLineDiff(beforeCode, afterCode), [beforeCode, afterCode]);
-  const previewsByFile = useMemo(() => (
-    fileDiffs.map((entry) => ({
-      filePath: entry.filePath,
-      preview: buildLineDiff(entry.beforeCode, entry.afterCode)
-    }))
-  ), [fileDiffs]);
-  const hasFileDiffs = previewsByFile.length > 0;
+  const hasFileDiffs = fileDiffs.length > 0;
   const hasBlockingWarnings = warnings.some((warning) => warning.blocking);
 
   return (
@@ -88,47 +58,19 @@ const QuestDiffPreviewDialog: React.FC<QuestDiffPreviewDialogProps> = ({
               {warning.message}
             </Alert>
           ))}
-          {hasFileDiffs ? previewsByFile.map((entry) => (
+          {hasFileDiffs ? fileDiffs.map((entry) => (
             <Stack key={entry.filePath} spacing={0.5}>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 {entry.filePath}
               </Typography>
-              <Typography
-                component="pre"
-                sx={{
-                  m: 0,
-                  p: 1.5,
-                  borderRadius: 1,
-                  bgcolor: '#111',
-                  color: '#ddd',
-                  maxHeight: 240,
-                  overflow: 'auto',
-                  fontFamily: 'Consolas, Monaco, monospace',
-                  fontSize: 12,
-                  lineHeight: 1.4
-                }}
-              >
-                {entry.preview}
-              </Typography>
+              <CodeDiffView
+                beforeCode={entry.beforeCode}
+                afterCode={entry.afterCode}
+                maxHeight={240}
+              />
             </Stack>
           )) : (
-            <Typography
-              component="pre"
-              sx={{
-                m: 0,
-                p: 1.5,
-                borderRadius: 1,
-                bgcolor: '#111',
-                color: '#ddd',
-                maxHeight: 480,
-                overflow: 'auto',
-                fontFamily: 'Consolas, Monaco, monospace',
-                fontSize: 12,
-                lineHeight: 1.4
-              }}
-            >
-              {preview}
-            </Typography>
+            <CodeDiffView beforeCode={beforeCode} afterCode={afterCode} maxHeight={480} />
           )}
         </Stack>
       </DialogContent>

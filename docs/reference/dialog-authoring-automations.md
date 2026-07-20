@@ -58,8 +58,17 @@ regression tests live next to the cited modules in
 - In multi-field renderers, Tab walks the fields of the row natively; only Tab
   on the last field / Shift+Tab on the first fall back to card-to-card
   navigation (#183). Helper:
-  `components/actionRenderers/rowTabNavigation.ts` (currently wired into Give
-  Inventory Items only).
+  `components/actionRenderers/rowTabNavigation.ts`, wired into every flat
+  multi-field renderer: Give Inventory Items, Remove Inventory Items, Create
+  Inventory Items, Attack, Set Variable, Start Other Routine, Pickpocket
+  (field count follows the mode: `C_Beklauen` adds Min/Max), Log Entry, Create
+  Topic, Log Set Status, Chapter Transition, Exchange Routine, Play Animation,
+  Insert NPC, Refuse Talk, Set Attitude, and Teach. Only keyboard-focusable
+  inputs count as row fields — `tabIndex={-1}` icon buttons and plain labels do
+  not shift the indices. Intentionally excluded: Choice (bespoke #118
+  dive-into-sub-dialog Tab handling), Conditional (nested branches, not a flat
+  row), Dialog Line (line-specific card semantics), and single-field renderers
+  (nothing to walk).
 - Give Inventory Items has a mouse-only swap button (Giver ↔ Receiver), and
   the action factory pre-fills the Item from the dialog's `Npc_HasItems`
   condition when one exists (#183). Buttons that are mouse-only affordances
@@ -86,15 +95,44 @@ regression tests live next to the cited modules in
 ## Teacher Dialogs
 
 - "Create Teacher Dialog" (school icon in the Dialogs pane, project mode)
-  scaffolds a full fight-skill teacher into a new `DIA_<Short>_Teach.d`:
-  permanent instance, info function remembering `other.HitChance[<talent>]`,
-  +1/+5 learn choices via `B_BuildLearnString`/`B_GetLearnCostTalent`,
-  per-step `B_TeachFightTalentPercent` functions with the configured max
-  level as cap, and a level-gated Back function (#147). Skills: 1H, 2H, Bow,
-  Crossbow (`TEACHER_SKILLS` table — other categories use different teach
-  builtins and would extend this table). The condition returns `TRUE`; costs
-  are engine-standard. Sources: `utils/teacherDialogTemplate.ts`,
-  `utils/teacherDialogFactory.ts`, `components/DialogTree.tsx`.
+  scaffolds a full teacher into a new `DIA_<Short>_Teach.d`: permanent
+  instance, condition returning `TRUE`, engine-standard costs (#147). The
+  skill select is grouped by category (`TEACHER_SKILL_GROUPS`); each category
+  emits the matching vanilla NotR teach builtin:
+  - **Fight talents** (1H, 2H, Bow, Crossbow — `TEACHER_SKILLS` table): info
+    function remembers `other.HitChance[<talent>]`, +1/+5 learn choices via
+    `B_BuildLearnString`/`B_GetLearnCostTalent`, per-step
+    `B_TeachFightTalentPercent` functions with the configured max level as
+    cap, and a level-gated Back function.
+  - **Attributes** (STR, DEX, MANA): same leveled shape over
+    `other.attribute[ATR_*]`; +1/+5 costs via `B_GetLearnCostAttribute`
+    (`* 5` for the +5 step) and per-step `B_TeachAttributePoints` with the
+    configured cap (vanilla pattern: `DIA_VLK_461_Carl.d`).
+  - **One-shot talents** (no Max Level field — learned once): each choice
+    calls its builtin, which handles LP cost and failure messages itself.
+    Hunting emits `B_TeachPlayerTalentTakeAnimalTrophy` for the Grom trophy
+    set (fur, teeth, claws, heart, mandibles, shadowbeast horn); alchemy
+    emits `B_TeachPlayerTalentAlchemy` for the health/mana 1–3 and speed
+    recipes; thief emits `B_TeachThiefTalent` for sneak, picklock and
+    pickpocket. Choice labels are vanilla `Text.d` constants
+    (`NAME_LEARN_*`, `NAME_*Potion*`, `NAME_TALENT_PICKPOCKET`).
+
+  Sources: `utils/teacherDialogTemplate.ts`, `utils/teacherDialogFactory.ts`,
+  `components/DialogTree.tsx`.
+
+## Trader Dialogs
+
+- "Create Trader Dialog" (storefront icon in the Dialogs pane, project mode)
+  scaffolds the standard merchant dialog into a new `DIA_<Short>_Trade.d`:
+  permanent instance with `trade = TRUE` and `nr = 700` (before the EXIT
+  entry at 999), condition returning `TRUE`, and an info function calling
+  `B_GiveTradeInv (self);` (vanilla shape: `DIA_VLK_413_Bosper.d`). The form
+  only asks for the menu description (default `"Zeig mir Deine Waren."`); no
+  `AI_Output` lines are emitted because voice numbers are unknowable at
+  scaffold time. Name collisions get a numeric suffix; file resolution,
+  overwrite guard and project indexing follow the teacher factory. Sources:
+  `utils/traderDialogTemplate.ts`, `utils/traderDialogFactory.ts`,
+  `components/DialogTree.tsx`.
 
 ## Testing Constraint: Native Parser in Jest
 

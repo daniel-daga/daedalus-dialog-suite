@@ -68,11 +68,28 @@ export function sanitizeRendererErrorPayload(
   return { message };
 }
 
-const SAVE_FILE_OPTION_KEYS = ['skipValidation', 'forceOnErrors', 'overwriteExternal'] as const;
+const SAVE_FILE_OPTION_KEYS = ['skipValidation', 'forceOnErrors', 'overwriteExternal', 'existingVoiceIds'] as const;
+
+/** Structural check for the ProjectIndex.voiceIds-shaped validation context. */
+function isVoiceIdIndex(value: unknown): boolean {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return Object.values(value).every(
+    (entries) =>
+      Array.isArray(entries) &&
+      entries.every(
+        (entry) =>
+          isPlainObject(entry) &&
+          typeof entry.filePath === 'string' &&
+          typeof entry.functionName === 'string'
+      )
+  );
+}
 
 /**
  * Assert a saveFile options payload is undefined or a plain object whose only
- * keys are the known boolean flags.
+ * keys are the known options.
  */
 export function assertSaveFileOptions(options: unknown): void {
   if (options === undefined) return;
@@ -86,7 +103,16 @@ export function assertSaveFileOptions(options: unknown): void {
     // Callers spread optional flags (`{ forceOnErrors: options?.forceOnErrors }`),
     // so absent flags arrive as keys with undefined values over structured
     // clone. Treat them as "not set" rather than malformed.
-    if (options[key] !== undefined && typeof options[key] !== 'boolean') {
+    if (options[key] === undefined) {
+      continue;
+    }
+    if (key === 'existingVoiceIds') {
+      if (!isVoiceIdIndex(options[key])) {
+        throw new Error('Invalid options payload: option "existingVoiceIds" must map ids to {filePath, functionName} arrays');
+      }
+      continue;
+    }
+    if (typeof options[key] !== 'boolean') {
       throw new Error(`Invalid options payload: option "${key}" must be a boolean`);
     }
   }

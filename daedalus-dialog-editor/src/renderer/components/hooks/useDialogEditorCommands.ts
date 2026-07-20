@@ -203,6 +203,14 @@ export function useDialogEditorCommands({
           open: true,
           validationResult: result.validationResult
         });
+      } else if (result.validationResult && result.validationResult.warnings.length > 0) {
+        // Warnings never block a save, so this is the only chance to surface
+        // them (e.g. duplicate voice IDs — silently skipped lines in-game).
+        setValidationDialog({
+          open: true,
+          validationResult: result.validationResult,
+          mode: 'saved-with-warnings'
+        });
       } else {
         setSnackbar({
           open: true,
