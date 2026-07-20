@@ -14,7 +14,7 @@ Established with review fixes F4–F6 (see git history of `docs/plans/parser-rev
 | Non-dialog instances (`C_Item`, `C_NPC`, …) | Modeled shallowly (`GlobalInstance`: name, parent, displayName, dailyRoutine) **plus** verbatim `sourceText` | `sourceText` when present; `instance Name(Parent) {};` otherwise |
 | Local `var` declarations in function bodies | Preserved textually as raw `Action` entries (raw condition mode in condition functions) | Verbatim |
 | Unsupported statements | Preserved textually as raw `Action` entries | Verbatim |
-| `class` / `prototype` declarations | **Not modeled, not emitted** — out of scope | Lost on regeneration |
+| `class` / `prototype` declarations | Modeled (`GlobalClass`/`GlobalPrototype`) **plus** verbatim `sourceText` | `sourceText` when present; canonical form (`class Name {};` / `prototype Name(Parent) {};`) otherwise |
 
 ## String semantics
 

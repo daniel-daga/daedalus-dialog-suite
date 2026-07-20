@@ -92,6 +92,10 @@ export interface SaveOptions {
   // When true, bypass the main-process external-modification precondition
   // (E4 phase 2) and overwrite the file even if it changed on disk.
   overwriteExternal?: boolean;
+  // Project-wide AI_Output voice ids (excluding the file being saved), keyed
+  // by UPPERCASED id — same shape as ProjectIndex.voiceIds. Feeds the
+  // duplicate-voice-id validation warnings.
+  existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>;
 }
 
 export interface EditorAPI {

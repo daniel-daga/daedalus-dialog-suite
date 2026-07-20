@@ -1,10 +1,11 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { TextField, MenuItem, Box, Chip } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
 import type { LogSetTopicStatusAction } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton } from '../common';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { createRowTabHandlers } from './rowTabNavigation';
 
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const TOPIC_FIELD_SX = { minWidth: 180 };
@@ -30,6 +31,10 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
 
   const typedAction = action as LogSetTopicStatusAction;
 
+  // #183 follow-up: Tab walks Topic -> Status; only the row edges hand off to
+  // card-to-card navigation.
+  const fieldKeyDown = useMemo(() => createRowTabHandlers(handleKeyDown, 2), [handleKeyDown]);
+
   const handleTopicChange = useCallback(
     (value: string) => handleUpdate({ ...typedAction, topic: value }),
     [handleUpdate, typedAction]
@@ -42,7 +47,7 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.topic || ''}
         onChange={handleTopicChange}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[0]}
         isMainField
         mainFieldRef={mainFieldRef}
         sx={TOPIC_FIELD_SX}
@@ -55,7 +60,7 @@ const LogSetTopicStatusRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.status || 'LOG_RUNNING'}
         onChange={(e) => handleUpdate({ ...typedAction, status: e.target.value })}
         onBlur={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[1]}
         size="small"
       >
         {['LOG_RUNNING', 'LOG_SUCCESS', 'LOG_FAILED', 'LOG_OBSOLETE'].map((status) => (

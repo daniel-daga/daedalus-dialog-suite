@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MenuItem, TextField } from '@mui/material';
 import type { BaseActionRendererProps } from './types';
 import type { RemoveInventoryItemsActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
+import { createRowTabHandlers } from './rowTabNavigation';
 
 const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -13,6 +14,10 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
   mainFieldRef
 }) => {
   const typedAction = action as RemoveInventoryItemsActionType;
+
+  // #183 follow-up: Tab walks Function -> NPC -> Item -> Quantity; only the
+  // row edges hand off to card-to-card navigation.
+  const fieldKeyDown = useMemo(() => createRowTabHandlers(handleKeyDown, 4), [handleKeyDown]);
 
   return (
     <ActionFieldContainer>
@@ -27,7 +32,7 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
           });
           flushUpdate();
         }}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[0]}
         size="small"
         sx={{ minWidth: 200 }}
       >
@@ -39,7 +44,7 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.removeNpc || ''}
         onChange={(value) => handleUpdate({ ...typedAction, removeNpc: value })}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[1]}
         isMainField
         mainFieldRef={mainFieldRef}
         sx={{ minWidth: 140 }}
@@ -49,7 +54,7 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.removeItem || ''}
         onChange={(value) => handleUpdate({ ...typedAction, removeItem: value })}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[2]}
         sx={{ minWidth: 180 }}
       />
       <ActionTextField
@@ -57,7 +62,7 @@ const RemoveInventoryItemsActionRenderer: React.FC<BaseActionRendererProps> = ({
         value={typedAction.removeQuantity || ''}
         onChange={(value) => handleUpdate({ ...typedAction, removeQuantity: value })}
         onFlush={flushUpdate}
-        onKeyDown={handleKeyDown}
+        onKeyDown={fieldKeyDown[3]}
         sx={{ minWidth: 180 }}
       />
       <ActionDeleteButton onClick={handleDelete} />
