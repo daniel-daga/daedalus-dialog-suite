@@ -17,6 +17,7 @@ interface DialogTreeColumnProps {
   onToggleDialogExpand: (dialogName: string) => void;
   onAddDialog: (dialogName: string) => Promise<void>;
   onCreateTeacherDialog?: (config: import('../utils/teacherDialogTemplate').TeacherDialogConfig) => Promise<void>;
+  onCreateTraderDialog?: (config: import('../utils/traderDialogTemplate').TraderDialogConfig) => Promise<void>;
   dialogIndex: Map<string, DialogMetadata[]>;
   setIngestedFilesOpen: (open: boolean) => void;
 }
@@ -34,6 +35,7 @@ const DialogTreeColumn: React.FC<DialogTreeColumnProps> = ({
   onToggleDialogExpand,
   onAddDialog,
   onCreateTeacherDialog,
+  onCreateTraderDialog,
   dialogIndex,
   setIngestedFilesOpen,
 }) => {
@@ -101,6 +103,7 @@ const DialogTreeColumn: React.FC<DialogTreeColumnProps> = ({
         buildFunctionTree={buildFunctionTree}
         onAddDialog={onAddDialog}
         onCreateTeacherDialog={onCreateTeacherDialog}
+        onCreateTraderDialog={onCreateTraderDialog}
       />
     </Box>
   );
