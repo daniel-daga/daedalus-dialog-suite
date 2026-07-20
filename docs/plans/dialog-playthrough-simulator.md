@@ -1,5 +1,7 @@
 # Dialog Playthrough Simulator — Implementation Plan
 
+> **For Claude:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task.
+
 Status: **active plan**. Implements P1 item 1 from [`docs/feature-suggestions.md`](../feature-suggestions.md).
 
 ## Goal
@@ -11,11 +13,13 @@ sub-functions, and a scratch state of `MIS_*` variables and known infos is
 tracked so C_INFO conditions evaluate live. The writer can branch, back up,
 and reset — all without starting Gothic 2.
 
-Everything the simulator needs is already in the semantic model
+The semantic model carries the data needed for the supported subset
 (`DialogLine`, `Choice`, `ClearChoicesAction`, `ConditionalAction`,
 `SetVariableAction`, condition types, the `functions` map). This is
 **renderer-only, non-mutating** work — no engine integration, no writes to the
 model or disk.
+The semantic model has no variable initializer field, so declared `MIS_*`
+variables always start as an explicit **assumed 0**.
 
 ## Non-goals
 
@@ -27,6 +31,9 @@ model or disk.
 - No voice playback / WAV lookup (that is P1 item 3).
 - No new parser work. If a needed shape is missing we surface it as an
   unsupported node, not a parser change.
+- No execution of arbitrary Daedalus helper functions or side effects.
+- No automatic execution of `important` dialogs in v1; show an explicit badge
+  so this simulator simplification remains visible.
 
 ## Architecture
 
@@ -38,11 +45,12 @@ UI → application → domain.
    The interpreter, its state machine, and the condition evaluator live here.
    Fully Jest-testable in isolation. This is the bulk of the feature.
 2. **`src/renderer/simulator/application/`** — a thin `SimulatorSession`
-   orchestrator that pulls the live `SemanticModel` for the selected NPC from
-   the stores (`useFileStore` in single-file mode, `useProjectStore`
-   `mergedSemanticModel` in project mode) and adapts it into the read-only
-   inputs the domain needs. No store writes.
-3. **`src/renderer/components/Simulator/`** — the UI: a launcher and a
+   orchestrator that accepts an already-created read-only `SimulatorModel` and
+   owns scratch state, the unknown-assumption policy, and history. It does not
+   import or read Zustand stores.
+3. **`src/renderer/components/Simulator/`** — selects the live semantic-model
+   snapshot from `useFileStore` or `useProjectStore`, projects it once through
+   `createSimulatorModel`, and renders a launcher plus a
    `SimulatorDialog` (MUI modal, copy the `QuestDiffPreviewDialog.tsx`
    template) with a transcript pane, choice buttons, and a scratch-state
    inspector.
@@ -62,38 +70,54 @@ NPC + dialog as the entry point. Revisit the modal-vs-view choice only if the
 ### Inputs (read-only projection of the model)
 
 ```
+interface SimDialogEntry {
+  name: string;
+  npc: string;
+  nr: number;
+  conditionFunction?: string;
+  informationFunction?: string;
+  important: boolean;
+  permanent: boolean;
+}
+
 interface SimulatorModel {
-  functions: { [name: string]: DialogFunction };   // for resolving targets
-  dialogsByEntry: DialogMetadata[];                 // C_INFO gate candidates
-  variables: { [name: string]: GlobalVariable };    // MIS_* declarations/defaults
-  // constants map optional — for resolving symbolic condition RHS values
+  functions: ReadonlyMap<string, DialogFunction>; // canonical function name
+  dialogs: readonly SimDialogEntry[];
+  declaredMisVariables: ReadonlySet<string>;
+  constants: ReadonlyMap<string, string | number | boolean>;
 }
 ```
 
-Resolution is **case-insensitive** throughout (Daedalus is). Reuse
-`daedalus-parser` `name-utils` (`resolveCaseInsensitive`, `namesEqual`) and the
-renderer `questIdentity` helpers (`getQuestMisVariableName`,
-`isCaseInsensitiveMatch`, `getCanonicalQuestKey`). Never key a plain JS object
-by a raw identifier without normalizing.
+Resolution is **case-insensitive** throughout. Add a pure
+`simulator/domain/identifier.ts` helper whose canonical form is
+`value.trim().toLowerCase()`. Do not deep-import `daedalus-parser` `name-utils`:
+it is not a public package export, and parser changes are out of scope. The
+application projection may reuse renderer `questIdentity` helpers for
+TOPIC-to-MIS conversion. Retain original names for display, but key every
+simulator map/set by the canonical form.
+
+Project full dialog properties, not the lightweight `DialogMetadata` index.
 
 ### Scratch state
 
 ```
+type UnknownValue = { kind: 'unknown'; expression: string };
+
 interface SimState {
-  misVars: Map<string, number>;      // canonicalized MIS_ name -> value
+  misVars: Map<string, number | UnknownValue>;
+  assumedMisVars: Set<string>;
   knownInfos: Set<string>;           // canonicalized dialogRefs the player "knows"
   transcript: TranscriptEntry[];     // rendered lines + chosen options, in order
   pendingChoices: SimChoice[];       // current Info_AddChoice set (order preserved)
   status: 'running' | 'awaiting-choice' | 'ended';
-  callStack: string[];               // for cycle detection across sub-functions
 }
 ```
 
-`misVars` seed from `variables` defaults where available, else treated as `0`
-(shown as "assumed 0" in the inspector). `knownInfos` starts empty; a dialog's
-info is marked known when its info function runs to completion (models
-`Npc_KnowsInfo` becoming true), matching the analysis pattern in
-`quest/domain/analysis.ts`.
+Seed every declared `MIS_*` variable to `0` and add it to `assumedMisVars`.
+An assignment removes it from that set. `knownInfos` starts empty. Mark the
+selected C_INFO known when its information function finishes its initial
+synchronous action list, including when that leaves the session awaiting a
+choice. Running a choice target does not mark a new C_INFO known.
 
 ### Stepping semantics — an interpreter over `DialogAction[]`
 
@@ -105,15 +129,25 @@ Execute a function's `actions` sequentially. Per action `type`:
 | `Choice` (`Info_AddChoice`) | append to `pendingChoices` (`{ text, targetFunction, dialogRef }`). |
 | `ClearChoicesAction` (`Info_ClearChoices`) | clear `pendingChoices`. |
 | `ConditionalAction` | evaluate `.condition` (raw string, see evaluator); recurse into `thenActions` or `elseActions`. |
-| `SetVariableAction` | if `MIS_*`, update `misVars` (respect `operator`); reference `quest/domain/commands/setMisState.ts` semantics. |
+| `SetVariableAction` | if `MIS_*`, update scratch state for supported numeric operators; unresolved values become `UnknownValue`. |
 | `StopProcessInfosAction` (`AI_StopProcessInfos`) | set `status='ended'`. |
 | others (topic/log/inventory/npc actions) | record as a neutral "side-effect" transcript note where useful; no state change. Never crash on an unmodeled action. |
 
+Resolve numeric literals, `TRUE`/`FALSE`, built-in `LOG_*` states, and
+case-insensitive constants. Support `=`, `+=`, `-=`, `*=`, and `/=` for numeric
+operands. Division by zero, unknown operators, and unresolved symbolic values
+produce visible `UnknownValue` state. Do not reuse `setMisState.ts` as operator
+semantics; that editor command intentionally supports only `=`.
 When execution reaches the end of a function with `pendingChoices` non-empty,
-`status='awaiting-choice'` and the UI renders the buttons. Selecting a choice
-pushes the chosen text to the transcript, clears `pendingChoices` **unless the
-sub-function re-adds** (real `Info_AddChoice` semantics: choices persist until
-`Info_ClearChoices`), and runs `functions[choice.targetFunction]`.
+
+`status='awaiting-choice'` and the UI renders the buttons. Selecting a choice:
+
+1. pushes the chosen text to the transcript;
+2. preserves the current `pendingChoices`;
+3. runs the resolved target function; and
+4. applies any `Info_ClearChoices`/`Info_AddChoice` actions it encounters.
+
+Choices persist until an executed `Info_ClearChoices` removes them.
 
 **Choices nested in `ConditionalAction` branches must be reached** — do not
 flat-filter for top-level `Choice` only (the bug latent in
@@ -121,9 +155,10 @@ flat-filter for top-level `Choice` only (the bug latent in
 `forEachChoice` traversal in `daedalus-parser` `cross-references.ts` as the
 reference for descent into `then/elseActions`.
 
-**Cycle safety**: guard `callStack` so a choice graph that loops back
-(`cross-references.ts` `collectReachableFunctions` is cycle-guarded — mirror it)
-cannot infinite-loop the interpreter.
+**Cycle safety**: do not reject a repeated choice target or graph cycle. Choice
+targets run only after user input, so revisiting a menu is valid behavior. Guard
+only synchronous recursive action walking with an action budget/depth limit;
+do not copy the static traversal's `visited` semantics into the interpreter.
 
 ### Entry-point selection — which dialogs are "available"
 
@@ -135,8 +170,20 @@ filePath}`. The simulator must read the full parsed `SemanticModel`
 (`dialogs[name].properties` → `condition`, `information`, `nr`, `important`,
 `permanent`) via `useProjectStore.mergedSemanticModel` (project mode) or the
 open `FileState.semanticModel` (single-file mode). Normalize
-`information`/`condition` with `extractFunctionName` — they may be a string or a
-live `DialogFunction`.
+`information`/`condition` with `extractFunctionName` — they may be a string or a live `DialogFunction`.
+
+Availability rules, in order:
+
+1. A known non-permanent dialog is unavailable even if its condition passes.
+2. A permanent dialog may remain available after becoming known.
+3. A missing or unsupported condition is `unknown`, not an implicit pass.
+4. Otherwise evaluate the condition function against scratch state.
+5. Sort by `nr` ascending and preserve source order for ties.
+
+The picker hides `false` entries. It shows `unknown` entries with their reason
+and the current assume-unknown true/false policy. `important` entries receive a
+badge but are not auto-run in v1. Recompute availability after known-info,
+MIS-state, or assumption-policy changes.
 
 ### Condition evaluator (`simulator/domain/conditionEvaluator.ts`)
 
@@ -152,13 +199,25 @@ A pure evaluator over `SimState`. Two shapes to handle:
 2. **Raw expression strings** on `ConditionalAction.condition` and generic
    `Condition` → parse with the existing
    `quest/domain/commands/conditionExpressionCodec.ts`
-   (`parseConditionExpressionToConditions`), then evaluate the parsed clauses
+   (`parseConditionExpressionToConditions`), then evaluate structured clauses
    with the same evaluator.
+
+If the codec fails, return `unknown` with the parse error. If it returns
+`mode: 'generic-expression'`, return `unknown` with the raw expression; do not
+feed the unchanged generic `Condition` back into the evaluator. Only structured
+clauses are evaluated recursively. Tests must cover mixed `&&`/`||`, negated
+calls, custom functions, malformed expressions, and unresolved constants.
+Use three-valued AND/OR truth tables before applying the session's explicit
+unknown-assumption policy.
 
 Evaluation is **three-valued**: `true | false | unknown`. `unknown` clauses do
 not silently pass or fail — the UI shows the branch as "condition unknown
 (assumed true)" with the assumption configurable, so the writer always knows
 when they've left modeled territory. This is the core trust property.
+
+Use explicit three-valued logic: AND is `false` if any clause is false and
+otherwise `unknown` if any clause is unknown; OR is `true` if any clause is true
+and otherwise `unknown` if any clause is unknown.
 
 ## UI design (`components/Simulator/`)
 
@@ -172,9 +231,12 @@ when they've left modeled territory. This is the core trust property.
      When `status==='ended'`, show an "end of dialog" marker + Restart.
   3. **State inspector** (collapsible side panel) — current `MIS_*` values
      (with "assumed" badges), known infos, and the active function name.
-- **Controls**: Restart, Back one step (pop transcript + restore prior
+- **Controls**: Restart, Back one step (restore the prior complete
   `SimState` snapshot — keep a snapshot stack in the session), and the
   available-dialogs picker for choosing a different entry info.
+  Snapshot before launching/switching an entry, selecting a choice, or changing
+  an assumption that changes the path. Clone maps/sets; Back restores exactly
+  one full snapshot and must not separately pop a transcript entry.
 - `data-testid`s on launch, each choice button, transcript lines, and the
   restart control so Playwright can drive the real flow.
 
@@ -184,31 +246,41 @@ Each slice: failing test first → minimal implementation → `npm test` +
 `npm run lint` + `npm run typecheck:renderer` green for
 `daedalus-dialog-editor`.
 
-1. **Interpreter core over a linear function** → Jest: given a function with
-   `DialogLine`s + `SetVariableAction` + `StopProcessInfos`, assert transcript
-   order, `misVars`, and `ended`. Verify: `simulatorEngine.test.ts` passes.
-2. **Choices + sub-function traversal + ClearChoices** → Jest: `Info_AddChoice`
-   into a target function, choosing advances, `Info_ClearChoices` clears;
-   include a choice nested in a `ConditionalAction`. Verify: choice-graph test
-   passes, incl. cycle guard.
-3. **Condition evaluator (structured + raw-string)** → Jest against the
-   three-valued table above, including an `unknown` case. Verify:
-   `conditionEvaluator.test.ts` passes.
-4. **Entry-point gating & ordering** → Jest: from a small multi-dialog model,
-   assert the available list respects C_INFO conditions + `nr` order and updates
-   as `knownInfos`/`misVars` change. Verify: gating test passes.
-5. **Application session adapter** → Jest: `SimulatorSession` reads a mock
-   store model and exposes domain inputs without mutating it. Verify: session
-   test passes; assert no store setters called.
-6. **UI wiring + Playwright** → Per editor TDD rule, write the failing
-   **Playwright E2E** first (`tests/e2e/dialog-simulator.spec.ts`) against the
-   mock-API browser harness with a fixture dialog that has a branch: launch,
-   read the first line, click a choice, assert the branched line appears, reset.
-   Then implement `SimulatorDialog` + launcher. **Manually confirm** the spec
-   drives the real UI (harness note: mock codegen round-trips only properties +
-   AI_Output lines, so assert on rendered transcript/DOM, not saved bytes).
-7. **Full-suite gate** → `pnpm --filter daedalus-dialog-editor test`, `lint`,
-   `typecheck:renderer`, and `test:e2e` green.
+1. **Projection + canonical identifiers** → Jest in
+   `tests/simulatorModel.test.ts`: project full dialog properties, linked/string
+   function refs, canonical maps, constants, and declared MIS variables without
+   mutating the source model.
+2. **Linear interpreter + assignments** → Jest in
+   `tests/simulatorEngine.test.ts`: assert transcript order, assumed-zero state,
+   supported numeric operators, unresolved `UnknownValue`, action-budget safety,
+   and `StopProcessInfos` termination.
+3. **Persistent choices + interactive revisits** → Jest in
+   `tests/simulatorChoices.test.ts`: selecting a target that does not clear or
+   add choices preserves the menu; clear removes it; clear-then-add replaces it;
+   nested choices work; repeatedly revisiting a target remains valid.
+4. **Three-valued condition evaluator** → Jest in
+   `tests/simulatorConditionEvaluator.test.ts`: cover structured AND/OR truth
+   tables, raw structured expressions, generic-expression fallback, malformed
+   expressions, mixed operators, negation, and unresolved constants.
+5. **Availability** → Jest in `tests/simulatorDialogAvailability.test.ts`:
+   cover condition gating, missing-condition unknown, stable `nr` ordering,
+   known/non-permanent exclusion, known/permanent inclusion, and recomputation.
+6. **Application session** → Jest in `tests/SimulatorSession.test.ts`:
+   accept a projected model rather than stores; assert deep snapshot isolation,
+   choice/back restoration, entry switching, restart, assumption notes, and zero
+   source-model/store mutations.
+7. **UI wiring + Playwright** → Write the failing
+   `tests/e2e/dialog-simulator.spec.ts` first using the mock API's
+   `//__MOCK_MODEL__` seam. Drive launch → persistent menu → choice → Back →
+   alternate choice → Restart. Include one unknown condition and one known
+   non-permanent entry. Assert rendered DOM/transcript state, not saved bytes.
+8. **Full-suite gate** → from the repository root run:
+
+   - `npm test --workspace daedalus-dialog-editor`
+   - `npm run lint --workspace daedalus-dialog-editor`
+   - `npm run typecheck:renderer --workspace daedalus-dialog-editor`
+   - `npm run test:e2e --workspace daedalus-dialog-editor`
+   - `npm run build --workspace daedalus-dialog-editor`
 
 ## Extension (out of scope for v1, noted for design headroom)
 
@@ -219,8 +291,13 @@ dialog-editor-specific assumptions so this stays a pure application-layer add.
 
 ## Risks / gotchas (from codebase survey)
 
-- **Case-insensitivity** everywhere — use `name-utils` / `questIdentity`, never
-  raw object keys.
+- **Case-insensitivity** everywhere — use the simulator's local canonical
+  identifier helper and renderer `questIdentity` utilities, never raw keys or a
+  private parser deep import.
+- **Choice persistence** — selection does not clear the tray; only an executed
+  `Info_ClearChoices` does.
+- **Interactive cycles are valid** — guard synchronous action depth, not graph
+  revisits after user input.
 - **Nested choices** inside `ConditionalAction` — recursive walk, not flat
   filter.
 - **`information`/`condition` are `string | DialogFunction`** — normalize with
@@ -236,9 +313,14 @@ dialog-editor-specific assumptions so this stays a pure application-layer add.
 
 ## Done criteria
 
-- Domain + application + UI landed under the three-layer boundary.
-- Jest unit tests for interpreter, evaluator, gating, session; one verified
-  Playwright E2E driving the real branch-and-choose flow.
+- Domain + application + UI landed under the three-layer boundary; the session
+  accepts a projected model and has no Zustand dependency.
+- Choices persist until `Info_ClearChoices`; interactive graph revisits work.
+- Known non-permanent and permanent C_INFO availability follows the specified
+  rules, and unsupported conditions/assignments remain visibly `unknown`.
+- Back restores one complete deep snapshot without extra transcript mutation.
+- Jest unit tests cover projection, interpreter, choices, evaluator, gating,
+  and session; Playwright drives branch, Back, alternate choice, and Restart.
 - `test` / `lint` / `typecheck:renderer` / `test:e2e` green for the editor.
 - On completion, extract the durable design (three-layer boundary, three-valued
   evaluation contract) into `docs/architecture/` and delete this plan file, per
