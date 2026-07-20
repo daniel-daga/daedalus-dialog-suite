@@ -59,7 +59,9 @@ can't; compounds the value of every other feature. **Effort:** medium
 cutscene library (`OU.csl`/`OU.bin`), and WAV files — and the editor knows every
 line and its subtitle text. Independently shippable pieces, in order:
 
-1. project-wide duplicate/malformed voice-ID validation (fold into item 2)
+1. ✅ **Implemented** — project-wide duplicate/malformed voice-ID validation
+   (warnings-only step in `ValidationService` fed by a `ProjectIndex.voiceIds`
+   index; surfaced via the validation dialog, including after successful saves)
 2. voice-actor script export: all lines grouped by NPC/voice number to
    CSV/XLSX, with a "WAV exists" column when pointed at the sound folder
 3. OU generation, or at least a consistency check between scripts and an
@@ -71,7 +73,7 @@ line and its subtitle text. Independently shippable pieces, in order:
 
 ## P2 — Proven demand and trust
 
-### 4. Extend the teacher scaffolder
+### 4. ✅ Extend the teacher scaffolder (implemented)
 
 #147 explicitly asked for "Kampfskills, Jagd, Alchemie", but `TEACHER_SKILLS`
 (`utils/teacherDialogTemplate.ts`) shipped with only 1H/2H/Bow/Crossbow; the
@@ -83,13 +85,13 @@ docs note other categories use different teach builtins. Natural next entries:
 
 **Effort:** small–medium per category (template machinery exists).
 
-### 5. Merchant/trader scaffolder
+### 5. ✅ Merchant/trader scaffolder (implemented)
 
 Same pattern as the teacher: a "Create Trader Dialog" that emits the standard
 `B_GiveTradeInv` setup and trade dialog instance. The other NPC archetype every
 mod needs; reuses the `teacherDialogTemplate.ts` pattern. **Effort:** small.
 
-### 6. On-disk diff before save / after external change
+### 6. ✅ On-disk diff before save / after external change (implemented)
 
 #150 ("tool scrambles my file") was a trust breaker; #121 asked for VS Code
 coexistence. The only diff surface today is `QuestDiffPreviewDialog`. A general
@@ -145,9 +147,7 @@ export. **Effort:** small–medium.
 
 ## Housekeeping
 
-- `docs/reference/parser-roundtrip-scope.md` still says `class`/`prototype` are
-  "not modeled, not emitted", which contradicts
-  `docs/architecture/parser-fidelity.md` and `src/codegen/generator.ts` (they
-  are modeled with verbatim `sourceText` and emitted). One-line doc fix.
-- Row-Tab navigation helper (`rowTabNavigation.ts`) is wired into Give
-  Inventory Items only (#183); apply to the other multi-field renderers.
+Both items done: the `parser-roundtrip-scope.md` `class`/`prototype` row now
+matches `parser-fidelity.md`, and the Row-Tab navigation helper is wired into
+every flat multi-field action renderer (see
+`docs/reference/dialog-authoring-automations.md`).
