@@ -23,6 +23,12 @@ import type { ValidationResult, ValidationError, ValidationWarning } from '../ty
 interface ValidationErrorDialogProps {
   open: boolean;
   validationResult: ValidationResult | null;
+  /**
+   * 'save-blocked' (default): errors stopped the save — offer Save Anyway.
+   * 'saved-with-warnings': the save succeeded but produced warnings —
+   * informational, Close only.
+   */
+  mode?: 'save-blocked' | 'saved-with-warnings';
   onClose: () => void;
   onSaveAnyway: () => void;
   onCancel: () => void;
@@ -59,6 +65,7 @@ const getErrorTypeColor = (type: string): 'error' | 'warning' | 'info' => {
 const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
   open,
   validationResult,
+  mode = 'save-blocked',
   onClose,
   onSaveAnyway,
   onCancel
@@ -66,6 +73,7 @@ const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
   if (!validationResult) return null;
 
   const { errors, warnings } = validationResult;
+  const savedWithWarnings = mode === 'saved-with-warnings';
   const hasCriticalErrors = errors.some(e =>
     e.type === 'syntax_error' || e.type === 'circular_dependency'
   );
@@ -83,13 +91,19 @@ const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
       fullWidth
     >
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <ErrorIcon color="error" />
-        Validation Failed
+        {savedWithWarnings ? <WarningIcon color="warning" /> : <ErrorIcon color="error" />}
+        {savedWithWarnings ? 'Saved with Warnings' : 'Validation Failed'}
       </DialogTitle>
       <DialogContent>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          The generated code has {errors.length} error{errors.length !== 1 ? 's' : ''} that should be fixed before saving.
-        </Alert>
+        {savedWithWarnings ? (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            The file was saved, but validation reported {warnings.length} warning{warnings.length !== 1 ? 's' : ''}.
+          </Alert>
+        ) : (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            The generated code has {errors.length} error{errors.length !== 1 ? 's' : ''} that should be fixed before saving.
+          </Alert>
+        )}
 
         {errors.length > 0 && (
           <Box sx={{ mb: 2 }}>
@@ -167,16 +181,24 @@ const ValidationErrorDialog: React.FC<ValidationErrorDialogProps> = ({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel} color="inherit">
-          Cancel
-        </Button>
-        <Button
-          onClick={onSaveAnyway}
-          color="warning"
-          variant="outlined"
-        >
-          {hasParseLossWarning ? 'Save anyway (drops unparsed content)' : 'Save Anyway'}
-        </Button>
+        {savedWithWarnings ? (
+          <Button onClick={onClose} variant="contained">
+            Close
+          </Button>
+        ) : (
+          <>
+            <Button onClick={onCancel} color="inherit">
+              Cancel
+            </Button>
+            <Button
+              onClick={onSaveAnyway}
+              color="warning"
+              variant="outlined"
+            >
+              {hasParseLossWarning ? 'Save anyway (drops unparsed content)' : 'Save Anyway'}
+            </Button>
+          </>
+        )}
       </DialogActions>
     </Dialog>
   );

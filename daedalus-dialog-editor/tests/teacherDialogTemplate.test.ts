@@ -389,3 +389,27 @@ describe('createTeacherDialogTemplate (one-shot talent teachers)', () => {
     expect(parsed.npc).toBe('BAU_981_Grom');
   });
 });
+
+/**
+ * Byte-identity pin for the generated output of EVERY skill category. The
+ * fight, attribute and one-shot emission paths share formatting helpers
+ * (banner, instance/condition blocks, learn choices); all other assertions in
+ * this suite are substring checks, so a formatting change to a shared helper
+ * would otherwise ship silently. Any intentional format change must update
+ * these snapshots explicitly.
+ */
+describe('generated output byte-identity (snapshot pin)', () => {
+  ALL_TEACHER_SKILLS.forEach((skill) => {
+    it(`pins the full generated source for ${skill.id}`, () => {
+      const source = createTeacherDialogTemplate({
+        npcInstanceName: 'VLK_438_Alrik',
+        dialogName: 'DIA_Alrik_Teach',
+        skillId: skill.id,
+        maxLevel: 30,
+        description: 'Trainier mich!'
+      });
+
+      expect(source).toMatchSnapshot();
+    });
+  });
+});

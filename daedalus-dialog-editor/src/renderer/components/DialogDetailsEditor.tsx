@@ -250,15 +250,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
       <ValidationErrorDialog
         open={uiState.validationDialog.open}
         validationResult={uiState.validationDialog.validationResult}
+        mode={uiState.validationDialog.mode}
         onClose={handleCancelValidation}
         onSaveAnyway={handleSaveAnyway}
         onCancel={handleCancelValidation}
       />
 
-      {fileState && (
+      {fileState && filePath && (
         <ReviewChangesDialog
           open={reviewChangesOpen}
-          originalCode={fileState.originalCode || ''}
+          filePath={filePath}
           semanticModel={fileState.semanticModel}
           onSave={() => handleSave()}
           onClose={() => setReviewChangesOpen(false)}

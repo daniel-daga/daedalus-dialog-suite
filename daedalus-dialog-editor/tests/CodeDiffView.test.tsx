@@ -27,6 +27,28 @@ describe('CodeDiffView', () => {
     expect(screen.getByTestId('code-diff-view').textContent).toBe(' a\n-b');
   });
 
+  it('keeps trailing lines aligned across a deletion instead of marking them all changed', () => {
+    render(
+      <CodeDiffView
+        beforeCode={'a\nb\nc\nd\ne'}
+        afterCode={'a\nc\nd\ne'}
+      />
+    );
+
+    expect(screen.getByTestId('code-diff-view').textContent).toBe(' a\n-b\n c\n d\n e');
+  });
+
+  it('keeps trailing lines aligned across an insertion instead of marking them all changed', () => {
+    render(
+      <CodeDiffView
+        beforeCode={'a\nc\nd\ne'}
+        afterCode={'a\nb\nc\nd\ne'}
+      />
+    );
+
+    expect(screen.getByTestId('code-diff-view').textContent).toBe(' a\n+b\n c\n d\n e');
+  });
+
   it('supports a custom data-testid', () => {
     render(<CodeDiffView beforeCode={'x'} afterCode={'x'} data-testid="my-diff" />);
 
