@@ -33,6 +33,7 @@ import { useActionManagement } from './hooks/useActionManagement';
 import { useDialogEditorUIState } from './hooks/useDialogEditorUIState';
 import { useDialogEditorCommands } from './hooks/useDialogEditorCommands';
 import { flattenActionPaths } from './nestedActionUtils';
+import SimulatorDialog from './Simulator/SimulatorDialog';
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
@@ -64,6 +65,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const uiState = useDialogEditorUIState();
   const { registerActionRef, focusAction, trimRefs } = useFocusNavigation();
   const [reviewChangesOpen, setReviewChangesOpen] = useState(false);
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
 
   // The editor pane now stays mounted across dialog switches (it no longer
   // unmounts/remounts, which used to reset this UI state for free). Reset
@@ -75,6 +77,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     uiState.setPropertiesExpanded(false);
     uiState.setSourceViewOpen(false);
     setReviewChangesOpen(false);
+    setSimulatorOpen(false);
     uiState.setSnackbar({ open: false, message: '', severity: 'info' });
     uiState.setValidationDialog({ open: false, validationResult: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,6 +201,14 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           </Tooltip>
           <Button
             variant="outlined"
+            disabled={!informationFunctionName || !semanticModel}
+            onClick={() => setSimulatorOpen(true)}
+            data-testid="simulator-launch"
+          >
+            Play dialog
+          </Button>
+          <Button
+            variant="outlined"
             onClick={() => uiState.setSourceViewOpen(true)}
             startIcon={<CodeIcon />}
           >
@@ -272,6 +283,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           onClose={() => uiState.setSourceViewOpen(false)}
           dialogName={dialogName}
           semanticModel={semanticModel}
+        />
+      )}
+
+      {semanticModel && dialog && (
+        <SimulatorDialog
+          open={simulatorOpen}
+          semanticModel={semanticModel}
+          dialogName={dialogName}
+          npcName={dialog.properties.npc || 'NPC'}
+          onClose={() => setSimulatorOpen(false)}
         />
       )}
 
