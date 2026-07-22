@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
-import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon } from '@mui/icons-material';
+import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
 import SourceEditsPendingBanner from './SourceEditsPendingBanner';
 import { useEditorStore } from '../store/editorStore';
@@ -14,6 +14,7 @@ import type { SemanticModel } from '../types/global';
 
 const QuestEditor = lazy(() => import('./QuestEditor'));
 const VariableManager = lazy(() => import('./VariableManager'));
+const ProblemsPanel = lazy(() => import('./Problems/ProblemsPanel'));
 
 interface MainLayoutProps {
   filePath: string | null;
@@ -127,6 +128,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                     <VariableIcon />
                 </ToggleButton>
             </Tooltip>
+            <Tooltip title="Problems" placement="right">
+                <ToggleButton value="problems" aria-label="Problems" data-testid="problems-toggle">
+                    <ProblemsIcon />
+                </ToggleButton>
+            </Tooltip>
             {/* <Tooltip title="Source Code" placement="right">
                 <ToggleButton value="source" aria-label="Source Code">
                     <CodeIcon />
@@ -170,6 +176,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
              <Box sx={{ height: '100%' }}>
                  <Suspense fallback={<LoadingView label="Loading variable manager..." />}>
                    <VariableManager />
+                 </Suspense>
+             </Box>
+         )}
+
+         {view === 'problems' && (
+             <Box sx={{ height: '100%' }}>
+                 <Suspense fallback={<LoadingView label="Loading problems..." />}>
+                   <ProblemsPanel />
                  </Suspense>
              </Box>
          )}

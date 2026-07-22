@@ -14,7 +14,9 @@ export const knowsInfoDanglingRule: LintRule = (view): Problem[] => {
 
   for (const file of view.files) {
     for (const func of Object.values(file.model.functions || {})) {
-      func.conditions.forEach((condition, i) => {
+      // `conditions` is guaranteed by the native parser but may be absent on
+      // partial/error models or the browser-harness mock — tolerate that.
+      (func.conditions || []).forEach((condition, i) => {
         if (condition.type !== 'NpcKnowsInfoCondition') {
           return;
         }
