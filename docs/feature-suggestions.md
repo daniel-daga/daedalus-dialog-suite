@@ -34,20 +34,22 @@ state of `MIS_*` variables and known infos so conditions evaluate live.
 - **Extension:** "simulate this quest path" from the quest graph.
 - **Effort:** medium (renderer-only; state machine over existing model).
 
-### 2. Project-wide "Problems" panel
+### 2. ✅ Project-wide "Problems" panel (first cut implemented)
 
-`ValidationService` validates the active file at save time; there is no
-cross-file lint surface. Cheap, high-value lints from data the `ProjectIndex`
-already has:
+`ValidationService` validated the active file at save time; there was no
+cross-file lint surface. A fourth left-sidebar view now aggregates project-wide
+problems into a navigable list (see `docs/architecture/problems-panel.md`).
+Shipped lints:
 
-- dialog references an NPC instance that doesn't exist
-- `Npc_KnowsInfo` pointing at a deleted dialog
-- undeclared `MIS_`/`TOPIC_` identifiers (the #174 confusion class)
-- choices with no `ClearChoices` path
-- dialogs whose condition can never be true
-- orphaned functions no dialog references
-- duplicate/malformed `AI_Output` voice IDs (see item 3 — the in-game failure
-  mode is a silently skipped line, the same class of bug as #115)
+- ✅ dialog references an NPC instance that doesn't exist
+- ✅ `Npc_KnowsInfo` pointing at a deleted dialog
+- ✅ choices with no `ClearChoices` path (reachability-aware)
+- ✅ orphaned functions no dialog references
+- ✅ duplicate/malformed `AI_Output` voice IDs
+- undeclared `MIS_`/`TOPIC_` identifiers (the #174 confusion class) — deferred
+  (raw condition/action text needs string scanning)
+- dialogs whose condition can never be true — deferred (only simple AND/OR
+  bodies are structurally analyzable)
 
 **Why now:** turns the editor into the thing that catches mistakes VS Code
 can't; compounds the value of every other feature. **Effort:** medium
