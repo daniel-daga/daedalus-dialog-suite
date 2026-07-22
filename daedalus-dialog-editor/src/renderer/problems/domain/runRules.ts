@@ -17,12 +17,44 @@ export const ALL_RULES: readonly LintRule[] = [
 const SEVERITY_ORDER: Record<Problem['severity'], number> = { error: 0, warning: 1 };
 
 /**
+ * Maps each function used as a dialog's `information` or `condition` back to that
+ * dialog's name (lowercased key → original dialog name). Lets a function-based
+ * problem (voice id, orphan, dangling KnowsInfo) navigate straight to the dialog
+ * that owns its function.
+ */
+function buildFunctionToDialogName(view: ProjectView): Map<string, string> {
+  const map = new Map<string, string>();
+  const record = (ref: string | { name?: string } | undefined, dialogName: string): void => {
+    const name = typeof ref === 'string' ? ref : ref?.name;
+    if (name) {
+      const key = name.trim().toLowerCase();
+      if (!map.has(key)) map.set(key, dialogName);
+    }
+  };
+  for (const { model } of view.files) {
+    for (const dialog of Object.values(model.dialogs || {})) {
+      record(dialog.properties?.information, dialog.name);
+      record(dialog.properties?.condition, dialog.name);
+    }
+  }
+  return map;
+}
+
+/**
  * Runs every rule over the project view and returns a stably-ordered list:
  * errors before warnings, then by file path, then by message. Stable ordering
  * keeps the panel from reshuffling between scans of an unchanged project.
+ * Function-based problems are enriched with the owning dialog so a click can
+ * navigate to it.
  */
 export function runRules(view: ProjectView): Problem[] {
-  const problems = ALL_RULES.flatMap((rule) => rule(view));
+  const functionToDialogName = buildFunctionToDialogName(view);
+
+  const problems = ALL_RULES.flatMap((rule) => rule(view)).map((problem) => {
+    if (problem.dialogName || !problem.functionName) return problem;
+    const dialogName = functionToDialogName.get(problem.functionName.trim().toLowerCase());
+    return dialogName ? { ...problem, dialogName } : problem;
+  });
 
   return problems.sort((a, b) => {
     if (SEVERITY_ORDER[a.severity] !== SEVERITY_ORDER[b.severity]) {

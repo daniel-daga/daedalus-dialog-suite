@@ -58,6 +58,35 @@ describe('runRules', () => {
     expect(lastErrorIndex).toBeLessThan(firstWarningIndex);
   });
 
+  it('enriches a function-based problem with the dialog that owns its function', () => {
+    const files: FileModel[] = [
+      {
+        filePath: 'ghost.d',
+        model: model({
+          dialogs: { DIA_Ghost: dialog('DIA_Ghost', 'Diego', 'DIA_Ghost_Info') },
+          functions: {
+            DIA_Ghost_Info: {
+              name: 'DIA_Ghost_Info',
+              returnType: 'VOID',
+              actions: [{ type: 'DialogLine', speaker: 'self', text: 'Hi', id: 'BadVoiceId' }],
+              conditions: [],
+              calls: []
+            }
+          }
+        })
+      }
+    ];
+
+    const problems = runRules(buildProjectView({ files, knownNpcNames: ['Diego'] }));
+
+    const voiceProblem = problems.find((p) => p.rule === 'voice-id-malformed');
+    expect(voiceProblem).toBeDefined();
+    expect(voiceProblem?.functionName).toBe('DIA_Ghost_Info');
+    // The malformed voice id lives in the dialog's info function, so the problem
+    // is navigable straight to DIA_Ghost.
+    expect(voiceProblem?.dialogName).toBe('DIA_Ghost');
+  });
+
   it('returns no problems for a clean project', () => {
     const files: FileModel[] = [
       {

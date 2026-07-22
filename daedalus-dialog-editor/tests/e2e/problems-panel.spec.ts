@@ -3,14 +3,16 @@ import { test, expect } from '@playwright/test';
 /**
  * E2E for the project-wide Problems panel.
  *
- * The fixture is crafted to produce exactly one problem: the dialog's `npc`
- * (SLD_MissingNpc) is never declared as a C_NPC, so the `npc-not-found` lint
- * fires. Its condition/info functions are referenced by the dialog (not
- * orphaned) and its voice id is well-formed, so no other lint triggers.
+ * The fixture produces exactly one problem: the info function's AI_Output voice
+ * id ("BadVoiceId") does not match the vanilla `…_<n>_<n>` pattern, so the
+ * `voice-id-malformed` lint fires. Because that function is the dialog's
+ * `information`, the problem is enriched with the owning dialog and clicking it
+ * navigates to DIA_Prob_Test. The dialog's condition/info functions are
+ * referenced (not orphaned) and its NPC is indexed (no npc-not-found).
  */
 const PROJECT_FILE_CONTENT = `INSTANCE DIA_Prob_Test(C_INFO)
 {
-\tnpc = SLD_MissingNpc;
+\tnpc = SLD_ProbNpc;
 \tnr = 1;
 \tcondition = DIA_Prob_Test_Condition;
 \tinformation = DIA_Prob_Test_Info;
@@ -24,7 +26,7 @@ FUNC INT DIA_Prob_Test_Condition()
 
 FUNC VOID DIA_Prob_Test_Info()
 {
-\tAI_Output(self, other, "DIA_Prob_Test_15_00"); //A test line.
+\tAI_Output(self, other, "BadVoiceId"); //A test line.
 };
 `;
 
@@ -46,7 +48,7 @@ test.describe('Problems panel', () => {
     });
 
     await page.getByRole('button', { name: /Open Project/i }).first().click();
-    await expect(page.getByText('SLD_MissingNpc')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('SLD_ProbNpc')).toBeVisible({ timeout: 15000 });
   });
 
   test('lists a project-wide problem and navigates to the offending dialog', async ({ page }) => {
@@ -55,8 +57,8 @@ test.describe('Problems panel', () => {
 
     const firstRow = page.getByTestId('problem-row-0');
     await expect(firstRow).toBeVisible({ timeout: 15000 });
-    await expect(firstRow).toContainText('SLD_MissingNpc');
-    await expect(firstRow).toContainText('Missing NPC');
+    await expect(firstRow).toContainText('BadVoiceId');
+    await expect(firstRow).toContainText('Malformed voice ID');
 
     // Clicking the problem jumps to the dialog view with the dialog selected.
     await firstRow.click();
@@ -68,6 +70,6 @@ test.describe('Problems panel', () => {
     await expect(page.getByTestId('problem-row-0')).toBeVisible({ timeout: 15000 });
 
     await page.getByTestId('problems-rescan').click();
-    await expect(page.getByTestId('problem-row-0')).toContainText('SLD_MissingNpc');
+    await expect(page.getByTestId('problem-row-0')).toContainText('BadVoiceId');
   });
 });
