@@ -1,0 +1,220 @@
+# Dialog Simulator — Code Review Findings
+
+Review of the dialog playthrough simulator feature (commits `f7ed1a2` "feat(editor):
+add dialog simulation engine" and `085d795` "Integrate dialog playthrough simulator
+into editor"). Scope: `daedalus-dialog-editor/src/renderer/simulator/` (domain +
+application), `src/renderer/components/Simulator/SimulatorDialog.tsx`, the
+`DialogDetailsEditor` integration, the Jest/Playwright suites, and
+`docs/architecture/dialog-simulator.md`.
+
+Status legend: **Open** — no fix landed yet.
+
+---
+
+## Summary
+
+The architecture is clean and the interpreter itself is well built: the domain
+layer honors the documented no-React/no-store boundary, three-valued condition
+logic is correct and directly tested, state is defensively cloned, execution has
+a budget guard and explicit termination reasons, and Back/Restart via deep
+snapshots is simple and correct.
+
+The gap is between this interpreter and the data the parser actually feeds it.
+All simulator tests hand-build `DialogFunction` objects with clean `conditions`
+arrays; nothing exercises real parser output for common condition-function
+shapes — and that is exactly where the two high-severity findings live. Until
+those are fixed, availability results are untrustworthy for typical real-world
+scripts.
+
+---
+
+## High severity
+
+### H1. Raw-mode condition functions evaluate as crisply "available" — silently wrong, not unknown
+
+**Status:** Open
+
+The parser's linking visitor bails to "raw mode" for any condition function
+containing a non-trivial top-level `return`, a local `var` declaration, or an
+`if/else` — and raw mode clears `conditions` to `[]`
+(`daedalus-parser/src/semantic/visitors/linking-visitor.ts:656`). These shapes
+are extremely common; the repo's own corpus fixture
+`daedalus-parser/test/fixtures/corpus/condition-idioms.d` contains two of them:
+
+```daedalus
+if (Npc_KnowsInfo (other, DIA_Foo)) { return TRUE; };
+return FALSE;                       // -> raw mode, conditions = []
+
+var int ok; ...                     // -> raw mode, conditions = []
+```
+
+The simulator evaluates that empty list in
+`src/renderer/simulator/domain/dialogAvailability.ts:64` via `combine([], 'AND')`,
+which returns **true** (`conditionEvaluator.ts:120`). A dialog gated on prior
+knowledge therefore shows as plainly available on a fresh session — no unknown
+badge, no reason, selectable. This directly contradicts the feature's own
+invariant ("Unknowns are never silently coerced",
+`docs/architecture/dialog-simulator.md`).
+
+**Suggested fix (simulator-side, self-contained):** treat a condition function
+with empty `conditions` but non-empty `actions` as unknown ("condition function
+is not structurally analyzable"). A fully structured condition function has
+extracted conditions and zero actions; raw mode always leaves the preserved
+body behind as actions, so the two states are distinguishable. Apply the same
+guard in `dialogAvailability.ts` and anywhere else `conditionFunction.conditions`
+is trusted to be complete.
+
+### H2. `!Npc_KnowsInfo(...)` is extracted as a positive condition — availability is inverted
+
+**Status:** Open (parser defect surfaced by the simulator)
+
+In a condition function, `parseUnaryExpression` handles `!identifier`,
+`!Npc_IsDead`, and `!Npc_IsInState`, but returns `null` for `!Npc_KnowsInfo`
+(`daedalus-parser/src/semantic/parsers/condition-parsers.ts:158-200`). The
+dropped-clause guard in the visitor, `isNegatedCallHandledByUnaryCondition`,
+only covers `npc_isdead`/`npc_isinstate`
+(`linking-visitor.ts:797-810`). Traversal then descends into the unary
+expression's child, hits the inner `Npc_KnowsInfo(...)` call, and records it as
+an **un-negated** `NpcKnowsInfoCondition`.
+
+The simulator evaluates that crisply
+(`src/renderer/simulator/domain/conditionEvaluator.ts:163-166`), so a dialog
+gated on "*hasn't* heard X yet" — the most common chain idiom in Gothic
+scripts — behaves exactly backwards: hidden at start, available after playing X.
+
+This is a pre-existing parser gap, but the simulator is the first consumer that
+turns it into wrong runtime behavior. It is also a latent codegen-fidelity risk:
+a structured regeneration of such a condition function would drop the `!`.
+There is no parser test or corpus fixture covering `!Npc_KnowsInfo`.
+
+Note: verified by code reading; the tree-sitter native build could not run in
+the review sandbox, so this should be confirmed with a failing parser test
+first (per TDD rules).
+
+**Suggested fix (parser-side):** add `negated` support to
+`NpcKnowsInfoCondition` (type, parser class, codegen), handle `npc_knowsinfo`
+in `parseUnaryExpression` and in `isNegatedCallHandledByUnaryCondition`, add a
+roundtrip corpus fixture for the negated form, then honor `negated` in the
+simulator's `evaluateCondition`.
+
+---
+
+## Medium severity
+
+### M1. `SimulatorDialog` does work while closed, against the repo's render-performance rule
+
+**Status:** Open
+
+`DialogDetailsEditor.tsx` mounts `SimulatorDialog` whenever
+`semanticModel && dialog` — not gated on `simulatorOpen`. Inside,
+`useMemo(() => createSimulatorModel(semanticModel), [semanticModel])`
+(`SimulatorDialog.tsx:40`) re-projects every function, constant, and dialog on
+**every** semantic-model identity change, even if the simulator was never
+opened. CLAUDE.md explicitly warns that `semanticModel` is large and recreated
+frequently. Gate the mount (or at least the projection) on `open`.
+
+### M2. A background reparse silently wipes a running session
+
+**Status:** Open
+
+The effect in `SimulatorDialog.tsx:44-53` depends on `model`, so any
+semantic-model update while the modal is open (e.g. a file-watcher reparse)
+recreates the session and discards the transcript, history, and scratch state
+without any notice to the user. Either keep the session pinned to the model
+snapshot taken at open time, or surface an explicit "model changed — restart?"
+affordance.
+
+### M3. Silent launch failures
+
+**Status:** Open
+
+`startDialog`'s return value is ignored in the mount effect
+(`SimulatorDialog.tsx:51`). If the edited dialog's condition is false at the
+initial scratch state — the typical case for mid-quest dialogs, since declared
+`MIS_*` variables start at a crisp `0` — the modal shows only "No dialog lines
+yet" with no explanation. Entries whose information function is missing render
+as enabled buttons in the availability list, but clicking them does nothing
+(`startDialog` returns `false`). Show a reason on failed launch and disable
+unlaunchable entries.
+
+---
+
+## Low severity / polish
+
+### L1. Integer-division fidelity
+
+**Status:** Open
+
+`/=` produces fractional results (`engine.ts:123`; e.g. `5 / 2 -> 2.5`) where
+Daedalus performs integer arithmetic. Truncate toward zero to match the engine.
+
+### L2. Permanent entries get marked known
+
+**Status:** Open
+
+`SimulatorSession.runEntry` adds every completed entry to `knownInfos`
+(`SimulatorSession.ts:170-172`). In the game, permanent C_INFOs never register
+as known, so an `Npc_KnowsInfo` gate on a permanent dialog would diverge from
+engine behavior. Skip the `knownInfos` add for `permanent` entries.
+
+### L3. Duplication across simulator modules
+
+**Status:** Open
+
+- `cloneState` is implemented twice (`engine.ts:28-36`,
+  `SimulatorSession.ts:27-35`).
+- `findConstant` in `conditionEvaluator.ts:38-47` does an O(n) scan per lookup
+  even though `createSimulatorModel` already canonicalizes keys; the `engine.ts`
+  twin (`engine.ts:52-63`) has the direct `get` plus a dead fallback loop.
+- `statusValue` (`conditionEvaluator.ts:28-36`) and `builtInNumber`
+  (`engine.ts:40-50`) overlap.
+
+Consolidate into shared domain helpers.
+
+### L4. Bare-variable branches inside information functions land as unknown
+
+**Status:** Open
+
+`if (MIS_X)` inside an information function goes through the quest
+condition-expression codec, whose clause regex requires a comparison operator
+(`conditionExpressionCodec.ts:120`), so the branch is unknown even though the
+evaluator supports operator-less variable conditions
+(`conditionEvaluator.ts:110-112`). Extend the codec (or pre-normalize the
+clause) so bare `MIS_*`/`!MIS_*` identifiers evaluate.
+
+---
+
+## Test-coverage observations
+
+- Domain and session Jest suites are thorough for hand-built inputs; the
+  Playwright spec genuinely drives launch → choice → back → alternate branch →
+  restart through the real UI.
+- No test feeds the simulator a semantic model produced by the actual parser,
+  which is where H1/H2 live. Add integration fixtures that run real Daedalus
+  source through `daedalus-parser` and assert availability (a raw-mode
+  condition function must not evaluate crisply true; a negated knows-info gate
+  must not invert).
+- No test covers the failed-launch UI path (M3).
+
+## Positives
+
+- Layer boundary honored exactly as documented (domain has no React/MUI/
+  Electron/store imports; imports flow UI → application → domain).
+- Three-valued AND/OR truth tables correct and directly tested.
+- Defensive deep clones everywhere state crosses a boundary; source semantic
+  model is never mutated (asserted in tests).
+- Action budget prevents runaway synchronous walks; termination reasons are
+  explicit (`completed` / `stopped` / `budget-exceeded` / `missing-function`).
+- Choice-menu persistence matches Gothic's `Info_ClearChoices` model.
+- `docs/architecture/dialog-simulator.md` is honest about deliberate
+  limitations.
+
+## Suggested fix order
+
+1. H1 (simulator-side guard; self-contained in the editor workspace)
+2. M1 + M3 (small UI changes, same component)
+3. H2 (parser change + corpus fixture + simulator `negated` handling)
+4. M2, then L1–L4 as cleanup
+
+Per repo convention, delete this file once the findings are resolved and any
+durable decisions are extracted into `docs/architecture/dialog-simulator.md`.
