@@ -244,6 +244,7 @@ jobs:
             reports/dialog-roundtrip-corpus-details.json
             reports/dialog-roundtrip-corpus-byte-idempotence.json
           if-no-files-found: warn
+          retention-days: 7
 
 
 
