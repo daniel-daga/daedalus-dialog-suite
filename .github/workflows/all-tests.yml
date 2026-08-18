@@ -68,8 +68,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shardIndex: [1, 2, 3, 4]
-        shardTotal: [4]
+        shardIndex: ${{ github.event_name == 'pull_request' && fromJSON('[1, 2]') || fromJSON('[1, 2, 3, 4]') }}
+        shardTotal: ${{ github.event_name == 'pull_request' && fromJSON('[2, 2]') || fromJSON('[4, 4, 4, 4]') }}
     steps:
       - uses: actions/checkout@v4
 
