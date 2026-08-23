@@ -175,7 +175,7 @@ content byte-stable (the parser-fidelity invariant).
 | `get_editor_state` | → open project, open file, selected dialog, `hasUnsavedChanges`, parse-error state |
 | `open_in_editor` | path (+ dialog name) → editor navigates there (path must already be whitelisted; MCP cannot open new roots) |
 | `create_quest` | title, internal name, topic/variable file paths → routed through `projectStore.createQuest` + `registerTopicInLogFiles` so history/undo and index updates behave exactly like a UI-created quest |
-| `check_quest_guardrails` | quest edits spec → `quest/domain` guardrail warnings (domain layer is pure; runs wherever the import boundary allows — main-side if the shared build permits, else via the bridge) |
+| `check_quest_guardrails` | ~~quest edits spec → `quest/domain` guardrail warnings~~ **Blocked (2026-08-23):** `quest/domain/guardrails.ts` was deleted with the quest Flow view (production-readiness review §1 Option B) — it existed only to gate that view's write path. Reviving this tool means reimplementing the guardrail rules, so treat it as new work, not as wiring up an existing module. |
 | `simulate_dialog` | npc + dialog + scripted choice/assumption sequence → transcript, termination reason, condition assumptions (reusing `simulator/domain` + `SimulatorSession`; same placement rule as guardrails) |
 
 Bridge-routed edits go through the stores, so they respect

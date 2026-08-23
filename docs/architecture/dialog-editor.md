@@ -32,17 +32,16 @@ Established by the March 2026 review (see git history of
 
 ## Undo/Redo History
 
-- There is a single per-file edit history (`historyStore.editHistory`) shared
-  by all editing surfaces (dialog editing and quest editing). Parallel undo
-  stacks that restore full-model snapshots of the same file are not allowed —
-  undo on one surface must not silently revert the other surface's edits.
+- There is a single per-file edit history (`historyStore.editHistory`).
+  Parallel undo stacks that restore full-model snapshots of the same file are
+  not allowed — undo on one surface must not silently revert another surface's
+  edits. (The quest-batch history that once shared this store went away with
+  the quest Flow view — see `quest-editor.md`.)
 - Snapshots (`EditSnapshot`) hold the semantic model **by reference**, never
   deep-cloned. This is safe only because fileStore state is Immer-produced
   (copy-on-write, auto-frozen). If fileStore ever stops producing frozen
   immutable state, history snapshots would alias live state.
-- Snapshots also capture and restore quest `nodePositions`; the timestamp
-  coalesces rapid edits into one undo step (quest-surface snapshots use
-  timestamp 0 so later edits never coalesce into them).
+- The snapshot timestamp coalesces rapid edits into one undo step.
 - Undo/redo is phased so no Immer draft proxy can escape into fileStore:
   **plan** (built from plain, non-draft store state) → **commit** (stack moves
   inside the Immer draft) → **apply** (restore the planned snapshot into
@@ -72,24 +71,11 @@ Durable decisions from remediation slice 5 (fix-05, 2026-07-03):
   the coalescing path's `future = []` wipe, so a no-op edit can no longer consume a
   Ctrl+Z or destroy the redo stack. Reference equality is sound because fileStore
   is Immer-produced (a real change always allocates a new model object).
-- **Quest batch validity (behavior change).** Quest batch entries record
-  `{ filePath, snapshotId }` per member, not just file paths. A batch is
-  **valid** for undo only if every member's top `past` snapshot id still matches
-  the recorded id; batch redo validates each member's `future[0]` id symmetrically.
-  Invalid entries (a member got a newer dialog edit, its snapshot was consumed by
-  per-file undo, evicted, or cleared) are pruned lazily and
-  `canUndoLastQuestBatch`/`canRedoLastQuestBatch` return false — the QuestFlow
-  toolbar button **disables** instead of popping whatever is on top and reverting
-  the wrong edits. User-facing consequence: after a member file diverges, atomic
-  batch undo is unavailable, but per-file Ctrl+Z remains for everything. (The two
-  slice-4 tests that codified the old "reverts most recent state" behavior were
-  rewritten.)
-- **No save-wipe of batch history.** The fileStore save-detection branch no longer
-  calls a global `resetBatchHistory()` — saving one file must not wipe quest batch
-  undo for all other files. `clearHistoryForFile(savedFile)` already removes
-  batches containing that file; with id-validation this is belt-and-braces.
-- **Flush before undo/redo.** The Ctrl+Z/Ctrl+Y handler and the QuestFlow batch
-  buttons call `flushAllPendingEdits()` (see the pending-edit flush registry in
+- **No save-wipe of other files' history.** The fileStore save-detection branch
+  clears only the saved file's history (`clearHistoryForFile(savedFile)`) —
+  saving one file must not wipe undo state for other files.
+- **Flush before undo/redo.** The Ctrl+Z/Ctrl+Y handler
+  calls `flushAllPendingEdits()` (see the pending-edit flush registry in
   [save-pipeline.md](./save-pipeline.md)) inside `flushSync` before invoking
   undo/redo, so a 300 ms-debounced in-flight edit commits as a normal history step
   *first* — the first Ctrl+Z then reverts the in-flight typing and redo can restore

@@ -7,8 +7,8 @@
  *
  * `useEditorStore` is kept as an alias for `useFileStore` so that existing
  * consumers that only use file-management operations continue to work without
- * changes.  Components that also need history operations (e.g. QuestFlow)
- * should import `useHistoryStore` directly.
+ * changes.  Components that also need history operations should import
+ * `useHistoryStore` directly.
  */
 
 export { useFileStore, useFileStore as useEditorStore } from './fileStore';

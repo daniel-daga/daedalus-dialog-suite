@@ -33,15 +33,6 @@ window.addEventListener('unhandledrejection', (event) => {
   });
 });
 
-// Expose the quest-graph debug surface only in dev/test builds (Vite dev server,
-// including the Playwright `dev:browser` harness). `import.meta.env.DEV` is false
-// for production `vite build` output, so the hook never ships. Set here — the only
-// place `import.meta` is safe (this Vite entry is never imported by ts-jest).
-const viteEnv = (import.meta as unknown as { env?: { DEV?: boolean; MODE?: string } }).env;
-if (viteEnv?.DEV || viteEnv?.MODE === 'test') {
-  (window as unknown as { __questGraphDebugEnabled?: boolean }).__questGraphDebugEnabled = true;
-}
-
 const getInitialTheme = (): ThemeMode => {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
   if (stored === 'light' || stored === 'dark' || stored === 'gothic') {

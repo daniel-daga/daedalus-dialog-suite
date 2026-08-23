@@ -71,8 +71,7 @@ test.describe('View Switching', () => {
       // Either the quest editor loaded or loading text is visible
       const hasQuestContent = await page.locator('text=Quest Editor').count() > 0
         || await page.locator('text=Loading quest editor').count() > 0
-        || await page.getByRole('combobox').count() > 0
-        || await page.locator('[data-testid="node-editor-quest-select"]').count() > 0;
+        || await page.getByRole('combobox').count() > 0;
       expect(hasQuestContent).toBeTruthy();
     }).toPass({ timeout: 15000 });
   });

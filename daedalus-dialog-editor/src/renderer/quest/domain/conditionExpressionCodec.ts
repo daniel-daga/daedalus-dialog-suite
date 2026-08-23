@@ -1,4 +1,4 @@
-import type { DialogCondition } from '../../../types/global';
+import type { DialogCondition } from '../../types/global';
 
 type ParseSuccess = {
   ok: true;

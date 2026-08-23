@@ -50,8 +50,6 @@ const resetStores = (initialModel: SemanticModel = makeModel('initial')) => {
 
   useHistoryStore.setState({
     editHistory: new Map(),
-    questBatchHistory: { past: [], future: [] },
-    questNodePositions: new Map(),
   });
 };
 
@@ -354,10 +352,10 @@ describe('historyStore – subscription: auto-clear on file close', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Subscription: saving one file must NOT wipe other files' quest batches (F-B)
+// Subscription: saving one file must NOT wipe other files' history (F-B)
 // ---------------------------------------------------------------------------
 
-describe('historyStore – save does not reset unrelated quest batches (F-B)', () => {
+describe('historyStore – save does not reset unrelated files\' history (F-B)', () => {
   const fileA = 'C:/tmp/A.d';
   const fileB = 'C:/tmp/B.d';
 
@@ -379,18 +377,16 @@ describe('historyStore – save does not reset unrelated quest batches (F-B)', (
     });
     useHistoryStore.setState({
       editHistory: new Map(),
-      questBatchHistory: { past: [], future: [] },
-      questNodePositions: new Map(),
     });
   };
 
-  it('keeps file B\'s quest batch undoable after file A is saved', () => {
+  it('keeps file B\'s history undoable after file A is saved', () => {
     openTwoFiles();
 
-    // Quest batch on A, then a quest batch on B (B on top).
-    useHistoryStore.getState().applyQuestModelWithHistory(fileA, makeModel('A1'));
-    useHistoryStore.getState().applyQuestModelWithHistory(fileB, makeModel('B1'));
-    expect(useHistoryStore.getState().canUndoLastQuestBatch()).toBe(true);
+    useHistoryStore.getState().pushSnapshot(fileA);
+    useHistoryStore.getState().pushSnapshot(fileB);
+    expect(useHistoryStore.getState().canUndo(fileA)).toBe(true);
+    expect(useHistoryStore.getState().canUndo(fileB)).toBe(true);
 
     // Simulate a source save of file A only: originalCode changes, isDirty=false.
     useFileStore.setState((state) => {
@@ -400,11 +396,8 @@ describe('historyStore – save does not reset unrelated quest batches (F-B)', (
       return { openFiles: next };
     });
 
-    // B's quest batch must survive (only batches containing A are cleared).
-    expect(useHistoryStore.getState().canUndoLastQuestBatch()).toBe(true);
-    useHistoryStore.getState().undoLastQuestBatch();
-    expect(
-      useFileStore.getState().getFileState(fileB)?.semanticModel.dialogs?.DIA_Test?.properties?.npc
-    ).toBe('B0');
+    // Only the saved file's history is cleared; B's survives.
+    expect(useHistoryStore.getState().canUndo(fileA)).toBe(false);
+    expect(useHistoryStore.getState().canUndo(fileB)).toBe(true);
   });
 });

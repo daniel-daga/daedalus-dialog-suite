@@ -107,10 +107,5 @@ the substance of each item below; these are the human passes CI can't do.
   typing into a dialog line commits only the edited card's subtree; the ingestion
   window doesn't re-render App-rooted; Variable Manager doesn't re-render on a
   dialog keystroke.
-- [ ] **Quest editor desktop eyeball.** Literal click-through in the packaged /
-  `npm run dev` Electron app, plus a DevTools heap/Performance snapshot (single
-  `LGraphCanvas`/`LGraph` pair, one `document keyup` after N edits, no 250 ms idle
-  activity — all also asserted by the Jest lifecycle suite).
-- [ ] **Node-editor playground pass.** `npm run dev:node-editor` →
-  `http://localhost:5173/node-editor.html`; confirm the quests render live graphs,
-  guardrail warnings show, and the graph-exec overlay stays `T: 0.00s`.
+- [ ] **Quest editor desktop eyeball.** Literal click-through of the quest
+  list/details/create surface in the packaged / `npm run dev` Electron app.

@@ -9,7 +9,7 @@
 import type { DialogCondition, SemanticModel } from '../../types/global';
 import type { QuestGraphConditionType, QuestGraphSourceKind } from '../../types/questGraph';
 import type { EffectiveConditionEntry } from './questGraphInternalTypes';
-import { serializeConditionsToExpression } from './commands/conditionExpressionCodec';
+import { serializeConditionsToExpression } from './conditionExpressionCodec';
 
 export const isStateNode = (type: string, description?: string): boolean => {
   const desc = description || '';

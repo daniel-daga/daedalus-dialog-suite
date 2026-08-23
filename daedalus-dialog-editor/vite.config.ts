@@ -3,12 +3,6 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const isLitegraphEvalWarning = (warning: { code?: string; id?: string; message?: string }): boolean => {
-  if (warning.code !== 'EVAL') return false;
-  const location = `${warning.id || ''} ${warning.message || ''}`.toLowerCase();
-  return location.includes('litegraph.js');
-};
-
 export default defineConfig({
   plugins: [react()],
   root: path.join(__dirname, 'src/renderer'),
@@ -24,21 +18,17 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./src/renderer/index.html', import.meta.url)),
-        nodeEditor: fileURLToPath(new URL('./src/renderer/node-editor.html', import.meta.url)),
       },
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/litegraph.js')) return 'quest-litegraph';
-          if (id.includes('node_modules/dagre')) return 'quest-graph';
           if (id.includes('node_modules/@mui/icons-material')) return 'mui-icons';
+          // With the node-editor entry gone there is no second entry point to
+          // make Vite split shared vendor code automatically; carve MUI out of
+          // the main chunk to stay under the CI chunk-size guard.
+          if (id.includes('node_modules/@mui/')) return 'mui';
+          if (id.includes('node_modules/@emotion/')) return 'emotion';
           return undefined;
         },
-      },
-      onwarn(warning, warn) {
-        if (isLitegraphEvalWarning(warning)) {
-          return;
-        }
-        warn(warning);
       },
     },
   },

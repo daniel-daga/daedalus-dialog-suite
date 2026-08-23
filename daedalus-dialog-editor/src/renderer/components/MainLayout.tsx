@@ -8,7 +8,6 @@ import { useEditorStore } from '../store/editorStore';
 import { useHistoryStore } from '../store/historyStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { useProjectStore } from '../store/projectStore';
-import { isWritableQuestEditorEnabled } from '../config/features';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import type { SemanticModel } from '../types/global';
 
@@ -53,7 +52,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
 
   const isProjectMode = !!projectPath;
   const semanticModel = isProjectMode ? mergedSemanticModel : (fileState?.semanticModel || {});
-  const writableQuestEditorEnabled = isWritableQuestEditorEnabled();
 
   // E3: the active file was opened with parse errors — a partial model that
   // visual edits cannot fully see. Warn persistently in the dialog view.
@@ -164,10 +162,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
          {view === 'quest' && (
              <Box sx={{ height: '100%' }}>
                  <Suspense fallback={<LoadingView label="Loading quest editor..." />}>
-                   <QuestEditor
-                     semanticModel={semanticModel as SemanticModel}
-                     writableEnabled={writableQuestEditorEnabled}
-                   />
+                   <QuestEditor semanticModel={semanticModel as SemanticModel} />
                  </Suspense>
              </Box>
          )}

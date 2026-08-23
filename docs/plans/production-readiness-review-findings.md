@@ -7,8 +7,9 @@ carries a file reference.
 
 ## Status (2026-08-23)
 
-Review complete; the first remediation slice has landed. Branch:
-`claude/production-readiness-review-dw28l0` (no PR opened yet).
+Review complete; the first remediation slice has landed on `master`
+(branches `claude/production-readiness-review-dw28l0` and
+`claude/remove-quest-flow-view-l47ye1`, both merged).
 
 Landed:
 
@@ -18,10 +19,14 @@ Landed:
 | `32a36f0` | Writable quest editing opt-in (flag default off) — §1 Option A |
 | `b5c5e3d` | Deleted stale editor `pnpm-lock.yaml` (EOL Electron 29 pin) + unused npm shadow lockfiles |
 | `44b1ff5` | Ctrl+S / AppBar Save button + Close Project → welcome screen (F1, F5) |
+| (2026-08-23) | §1 Option B: quest Flow view removed (litegraph canvas + inspector + command write path, quest batch history, node-editor playground, `litegraph.js`/`dagre` deps, writable-quest flag). Codec promoted to `quest/domain/conditionExpressionCodec.ts`; quest surface is list/details/create. |
 
-Verified on the combined tree: full Jest suite (1138 tests), browser-harness
-Playwright suite (171 tests), `build:main`, `typecheck:renderer`, and lint
-(0 errors; 8 pre-existing warnings in untouched files) all green.
+Verified on the merged tree after Option B: full Jest suite (1019 tests in 151
+suites), browser-harness Playwright suite (163 tests), `build:main`,
+`typecheck:renderer`, `build:renderer` (no chunk-size or eval warnings), and
+lint (0 errors; 7 pre-existing warnings in untouched files) all green. The test
+counts dropped because Option B deleted ~20 quest-flow Jest suites and 2
+Playwright specs along with the code they covered.
 
 Everything else in this document is still open — §5 is the working priority
 list. Owner decisions still outstanding: app icons, the Dandelion vs.
@@ -130,7 +135,10 @@ the quest list; and the codec powers the simulator.
    `tests/features.test.ts` and `node-editor.spec.ts`). Buys: eliminates the
    multi-file write path (guardrails/batch-history/TOCTOU surface) from the
    first release. Costs: nothing removed; litegraph still ships.
-2. **Option B — remove the Flow view (recommended).** Delete `QuestFlow.tsx`,
+2. **Option B — remove the Flow view (recommended). DONE 2026-08-23** (as
+   specified below; `quest/domain/guardrails.ts` went with the write path it
+   guarded, and `historyUtils.ts` was folded into `historyStore.ts`; the
+   renderer bundle shrank from 1,663 kB to 962 kB). Delete `QuestFlow.tsx`,
    `components/QuestEditor/` (canvas + inspector), `quest/domain/commands/`
    (except `conditionExpressionCodec`, promoted to a shared location for the
    simulator), quest batch history in `historyStore` (~120 lines), the
@@ -198,8 +206,9 @@ any later date; nothing in B forecloses C.
    npm shadows; stray `debug_file.ts` (broken import) and `win1250.d` are
    git-tracked at the editor root.
 6. **No CSP; error-boundary gaps.** No CSP meta or `onHeadersReceived` handler
-   anywhere (litegraph would need `unsafe-eval`, but `default-src 'self'` is
-   still worth having for a `file://` renderer). The single React error
+   anywhere. **Option B unblocked the strict version:** litegraph was the only
+   thing that needed `unsafe-eval`, so a plain `default-src 'self'` with no
+   eval escape hatch is now achievable for the `file://` renderer. The single React error
    boundary wraps only `MainLayout`/welcome (`App.tsx:401`); AppBar, close
    guard, conflict/update dialogs are outside it, and
    `ErrorBoundary.componentDidCatch` never writes to the log file.
@@ -300,7 +309,8 @@ findings below are in paths the doc does not cover.
   ingestion that is every 500 ms over a growing file set — O(n²) across the
   ingestion window, blocking. Fix: debounce, skip while `isIngesting` + run
   once at completion, per-file rule-output cache keyed on model identity.
-- **`QuestList` is O(quests × all functions)** (`QuestList.tsx:149-161`,
+- **`QuestList` is O(quests × all functions)** — still open, and now the
+  quest view's only perf risk since Option B (`QuestList.tsx:149-161`,
   `analysis.ts:88-116`), with `findCaseInsensitiveSymbol` falling back to
   `Object.entries` over ~15k constants per miss (`analysis.ts:33-42`), memoized
   on whole-model identity. 200 quests × large corpus ⇒ multi-second stall per
@@ -334,9 +344,8 @@ findings below are in paths the doc does not cover.
 
 ### P3
 
-- Litegraph canvas render loop free-runs at 60 fps while the quest view is
-  mounted (no `skip_render`; `QuestLiteGraphCanvas.tsx:281`) — moot under §1
-  Option B.
+- ~~Litegraph canvas render loop free-runs at 60 fps while the quest view is
+  mounted.~~ **RESOLVED 2026-08-23** by §1 Option B (canvas deleted).
 - No failing bundle-size guard (rollup's 500 kB warning is grepped in
   `all-tests.yml` but list of lazied components is incomplete:
   `SimulatorDialog`, `DialogSourceViewDialog`, `ReviewChangesDialog` are
@@ -370,11 +379,12 @@ findings below are in paths the doc does not cover.
   removals** (no `onConnectionChange`, no key handling;
   `QuestLiteGraphCanvas.tsx:286-379`) — the link exists until the next rebuild
   wipes it. (Resolved by §1 Option B.)
-- **F4 — Quest editor cannot author end-to-end**: command set is
+- **F4 — Quest editor cannot author end-to-end**: command set was
   edit-and-remove only (no add-node/add-transition/add-condition); fit/zoom
-  test-gated; every mutation routes through a per-field "Preview Diff" modal;
-  most inspector fields render one of four read-only excuses. (Feeds the §1
-  decision.)
+  test-gated; every mutation routed through a per-field "Preview Diff" modal;
+  most inspector fields rendered one of four read-only excuses. (Fed the §1
+  decision; **RESOLVED 2026-08-23** by Option B — the half-built authoring
+  surface is gone rather than finished.)
 - **F5 — A project can never be closed.** Nothing clears `projectPath`
   (`App.tsx:402`); welcome screen, recent-projects list, and single-file open
   are unreachable after the first open; recent projects can never be used to
@@ -385,9 +395,10 @@ findings below are in paths the doc does not cover.
 - **F6** — Ctrl+F outside the dialog view opens the search panel in a
   `display:none` subtree (`useSearchNavigation.ts:36` on the always-mounted
   `ThreeColumnLayout`): no feedback, panel surprises the user later.
-- **F7** — Two undo stacks, one binding: Ctrl+Z always drives *file* history
-  (`MainLayout.tsx:97-98`) even in the quest view, where the visible Undo
-  button drives *quest-batch* history. Three Undo buttons, two meanings.
+- ~~**F7** — Two undo stacks, one binding: Ctrl+Z always drives *file* history
+  even in the quest view, where the visible Undo button drives *quest-batch*
+  history.~~ **RESOLVED 2026-08-23** by §1 Option B: quest batch history was
+  deleted, so Ctrl+Z and the per-file history are the single undo model.
 - **F8** — `window.confirm` for the project-switch dirty guard
   (`App.tsx:132-145`) vs. the excellent window-close guard
   (`useWindowCloseGuard.tsx`); `VariableManager` uses raw `confirm()`/
@@ -397,28 +408,31 @@ findings below are in paths the doc does not cover.
 - **F10/F11** — Zero context menus (`onContextMenu` grep: 0 hits); no Electron
   application menu or accelerators; the rich action-card keyboard grammar
   (`ActionCard.tsx:211-238`) is entirely undiscoverable.
-- **F12** — No settings dialog; `autoSaveEnabled`/`autoSaveInterval`,
-  `codeSettings`, and the quest feature flag are all persisted or defined but
-  have no UI.
+- **F12** — No settings dialog; `autoSaveEnabled`/`autoSaveInterval` and
+  `codeSettings` are persisted or defined but have no UI. (The quest feature
+  flag that was also listed here was deleted with Option B.)
 
 ### P2/P3
 
-- **F13** — Quest flow + `CodeDiffView` + `DialogSourceViewDialog` hardcode a
-  dark palette; visually broken in the shipped Light and Gothic themes.
-- **F14/F15** — Three editing paradigms (forms / read-only Monaco / node
-  canvas) with no hand-off in one direction and three separate undo models;
-  duplicate conflict-resolution UIs with different labels; three parse-error
-  surfaces.
+- **F13** — `CodeDiffView` + `DialogSourceViewDialog` hardcode a dark palette;
+  visually broken in the shipped Light and Gothic themes. (Narrowed by Option
+  B — the quest flow palette went with the view; these two remain.)
+- **F14/F15** — Narrowed by Option B to two editing paradigms (forms /
+  read-only Monaco) and one undo model; the node canvas and its separate undo
+  model are gone. Still open: duplicate conflict-resolution UIs with different
+  labels, and three parse-error surfaces.
 - **F16** — Feedback is inconsistent: two Snackbars, 18 components with inline
   Alerts, hover-only error surfaces (`App.tsx:245-266`), one native `alert()`.
-- **F17** — Developer vocabulary leaks into product copy ("ComfyUI-style node
-  editor defaults", "disabled by feature flag", "only VariableCondition fields
-  are editable").
+- ~~**F17** — Developer vocabulary leaks into product copy ("ComfyUI-style
+  node editor defaults", "disabled by feature flag", "only VariableCondition
+  fields are editable").~~ **RESOLVED 2026-08-23** by §1 Option B — all three
+  strings lived in the Flow view / inspector; none survives in `src/`.
 - **F18** — Problems panel silently empty in single-file mode (scans
   `projectStore.parsedFiles` only) with no explanation; `isScanning` tracked
   but never rendered.
-- **F19-F22 (a11y)** — litegraph canvas has no role/label/tabIndex/keyboard
-  path; global `html { fontSize: 80% }` (`theme.ts:9-16`) shrinks `body2` to
+- **F19-F22 (a11y)** — the inaccessible litegraph canvas (no
+  role/label/tabIndex/keyboard path) went with Option B; the rest stands:
+  global `html { fontSize: 80% }` (`theme.ts:9-16`) shrinks `body2` to
   ~11px with explicit 9px labels on top; highest-stakes dialogs (close guard,
   conflict, delete confirm) lack `autoFocus`/`aria-describedby`; clickable
   `Box` headers without button semantics.
@@ -443,7 +457,7 @@ Pre-release (gates first public build):
 2. **DONE 2026-08-23** — Ctrl+S + actionable AppBar Save button
    (`useManualSave`, honest tooltips) and Close Project → welcome screen
    (`closeProject` now also resets `questFiles`) (F1 + F5).
-3. Quest decision §1: Option A **done**; schedule Option B.
+3. Quest decision §1: Option A **done**; Option B **done 2026-08-23**.
 4. Icons + naming decision (Dandelion vs. Daedalus Dialog Editor) — still
    open. **DONE 2026-08-23**: stale editor `pnpm-lock.yaml` and npm shadow
    lockfiles deleted.

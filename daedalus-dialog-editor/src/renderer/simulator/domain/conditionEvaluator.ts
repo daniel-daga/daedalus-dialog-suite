@@ -1,5 +1,5 @@
 import type { DialogCondition } from '../../../shared/types';
-import { parseConditionExpressionToConditions } from '../../quest/domain/commands/conditionExpressionCodec';
+import { parseConditionExpressionToConditions } from '../../quest/domain/conditionExpressionCodec';
 import { canonicalizeIdentifier } from './identifier';
 import type { SimState, SimulatorModel, UnknownValue } from './types';
 

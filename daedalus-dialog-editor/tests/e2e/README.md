@@ -8,8 +8,7 @@ the entire main process, with a mock parser and a mock code generator.
 
 Use it for UI-flow iteration — action/choice/condition editing, drag-reorder,
 dialog properties, focus management, search, variable manager, theming, view
-switching, reload-confirmation UX, node-editor playground — where the backend
-is irrelevant.
+switching, reload-confirmation UX — where the backend is irrelevant.
 
 ## Harness contract
 
