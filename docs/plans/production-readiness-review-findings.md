@@ -20,17 +20,23 @@ Landed:
 | `b5c5e3d` | Deleted stale editor `pnpm-lock.yaml` (EOL Electron 29 pin) + unused npm shadow lockfiles |
 | `44b1ff5` | Ctrl+S / AppBar Save button + Close Project → welcome screen (F1, F5) |
 | (2026-08-23) | §1 Option B: quest Flow view removed (litegraph canvas + inspector + command write path, quest batch history, node-editor playground, `litegraph.js`/`dagre` deps, writable-quest flag). Codec promoted to `quest/domain/conditionExpressionCodec.ts`; quest surface is list/details/create. |
+| `635cdd8` | §3 both P0 performance items: single-parse project open (metadata-worker model hand-off, `parsedFiles` LRU cap) + file-watcher change batching via `updateFileModels` |
+| `1db5ce1` | §3 all three P1 performance items: Problems-panel scan deferral/debounce + per-file fact cache, `QuestList` single-pass batch analysis, fileStore coarse-selector coverage + memoized layouts |
 
-Verified on the merged tree after Option B: full Jest suite (1019 tests in 151
-suites), browser-harness Playwright suite (163 tests), `build:main`,
+Verified on the merged tree after the P1 slice: full Jest suite (1059 tests in
+159 suites), browser-harness Playwright suite (163 tests), `build:main`,
 `typecheck:renderer`, `build:renderer` (no chunk-size or eval warnings), and
-lint (0 errors; 7 pre-existing warnings in untouched files) all green. The test
-counts dropped because Option B deleted ~20 quest-flow Jest suites and 2
-Playwright specs along with the code they covered.
+lint (0 errors; 7 pre-existing warnings in untouched files) all green. Earlier
+counts in this document (1019 tests in 151 suites after Option B) dropped
+because Option B deleted ~20 quest-flow Jest suites and 2 Playwright specs
+along with the code they covered; the P0/P1 perf slices added the guard suites
+back up to 159.
 
-Everything else in this document is still open — §5 is the working priority
-list. Owner decisions still outstanding: app icons, the Dandelion vs.
-"Daedalus Dialog Editor" naming split, and code signing.
+**§3 Performance is now closed down to P2** — both P0 items and all three P1
+items are done; §3 P2/P3 are the remaining perf work. Everything else in this
+document is still open — §5 is the working priority list. Owner decisions still
+outstanding: app icons, the Dandelion vs. "Daedalus Dialog Editor" naming
+split, and code signing.
 
 ### Environment note for a fresh session
 
