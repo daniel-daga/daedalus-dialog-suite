@@ -37,9 +37,20 @@ list. Owner decisions still outstanding: app icons, the Dandelion vs.
 The e2e suites run through `pnpm --filter daedalus-dialog-editor exec playwright`
 (a bare `npx playwright` resolves a mismatched runner copy in the remote
 container). In this container `/opt/pw-browsers` held Chromium rev 1194 while
-Playwright 1.58.1 expected rev 1208; the fix is symlinking the expected
-revision directories to the installed binaries. Never run `playwright install`
-(`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` is set).
+Playwright 1.58.1 expected rev 1208. Never run `playwright install`
+(`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` is set); bridge the revisions instead.
+Note the two browsers need *different* treatment — the headless shell changed
+its internal layout between revisions, so a plain directory symlink is not
+enough for it:
+
+```sh
+ln -sfn /opt/pw-browsers/chromium-1194 /opt/pw-browsers/chromium-1208
+mkdir -p /opt/pw-browsers/chromium_headless_shell-1208/chrome-headless-shell-linux64
+ln -sf /opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell \
+  /opt/pw-browsers/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell
+```
+
+Substitute the revision numbers the error message names.
 
 ---
 
