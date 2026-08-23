@@ -18,6 +18,7 @@ Landed:
 | `32a36f0` | Writable quest editing opt-in (flag default off) — §1 Option A |
 | `b5c5e3d` | Deleted stale editor `pnpm-lock.yaml` (EOL Electron 29 pin) + unused npm shadow lockfiles |
 | `44b1ff5` | Ctrl+S / AppBar Save button + Close Project → welcome screen (F1, F5) |
+| (2026-08-23) | §1 Option B: quest Flow view removed (litegraph canvas + inspector + command write path, quest batch history, node-editor playground, `litegraph.js`/`dagre` deps, writable-quest flag). Codec promoted to `quest/domain/conditionExpressionCodec.ts`; quest surface is list/details/create. |
 
 Verified on the combined tree: full Jest suite (1138 tests), browser-harness
 Playwright suite (171 tests), `build:main`, `typecheck:renderer`, and lint
@@ -130,7 +131,10 @@ the quest list; and the codec powers the simulator.
    `tests/features.test.ts` and `node-editor.spec.ts`). Buys: eliminates the
    multi-file write path (guardrails/batch-history/TOCTOU surface) from the
    first release. Costs: nothing removed; litegraph still ships.
-2. **Option B — remove the Flow view (recommended).** Delete `QuestFlow.tsx`,
+2. **Option B — remove the Flow view (recommended). DONE 2026-08-23** (as
+   specified below; `quest/domain/guardrails.ts` went with the write path it
+   guarded, and `historyUtils.ts` was folded into `historyStore.ts`; the
+   renderer bundle shrank from 1,663 kB to 962 kB). Delete `QuestFlow.tsx`,
    `components/QuestEditor/` (canvas + inspector), `quest/domain/commands/`
    (except `conditionExpressionCodec`, promoted to a shared location for the
    simulator), quest batch history in `historyStore` (~120 lines), the
@@ -443,7 +447,7 @@ Pre-release (gates first public build):
 2. **DONE 2026-08-23** — Ctrl+S + actionable AppBar Save button
    (`useManualSave`, honest tooltips) and Close Project → welcome screen
    (`closeProject` now also resets `questFiles`) (F1 + F5).
-3. Quest decision §1: Option A **done**; schedule Option B.
+3. Quest decision §1: Option A **done**; Option B **done 2026-08-23**.
 4. Icons + naming decision (Dandelion vs. Daedalus Dialog Editor) — still
    open. **DONE 2026-08-23**: stale editor `pnpm-lock.yaml` and npm shadow
    lockfiles deleted.

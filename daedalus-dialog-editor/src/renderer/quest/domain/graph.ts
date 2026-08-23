@@ -5,9 +5,9 @@
  *   1. NodeIdentifier  (`questNodeIdentification`) — walk the semantic model and
  *      collect every function relevant to the selected quest
  *   2. EdgeBuilder     (`questEdgeBuilding`)       — emit edges between those nodes
- *   3. LayoutFilter    (`questLayout.filterGraph`) — prune nodes/edges per options
- *   4. LayoutCalculator(`questLayout.calculateDagreLayout`) — run Dagre and produce
- *      quest graph node positions
+ *   3. GraphFilter     (`questLayout.filterGraph`) — prune nodes/edges per options
+ *   4. NodeMaterializer(`questLayout.materializeQuestNodes`) — produce the public
+ *      quest graph node array (structural model only; no visual layout)
  *
  * Only `buildQuestGraph` and `getNpcForFunction` are public exports; all internal
  * types and helpers live in the sibling modules.
@@ -16,7 +16,7 @@
 import type { SemanticModel } from '../../types/global';
 import type { QuestGraphBuildOptions, QuestGraphData } from '../../types/questGraph';
 import { buildQuestEdges } from './questEdgeBuilding';
-import { calculateDagreLayout, filterGraph } from './questLayout';
+import { filterGraph, materializeQuestNodes } from './questLayout';
 import { identifyQuestNodes } from './questNodeIdentification';
 import { getDialogContextForFunction } from './questGraphSharedHelpers';
 
@@ -41,7 +41,7 @@ export const buildQuestGraph = (
   );
   const { edges } = buildQuestEdges(semanticModel, nodeDataMap, producersByVariableAndValue, misVarName);
   const filtered = filterGraph(nodeDataMap, edges, options);
-  const nodes = calculateDagreLayout(semanticModel, filtered.nodeDataMap, filtered.edges, misVarName);
+  const nodes = materializeQuestNodes(semanticModel, filtered.nodeDataMap, misVarName);
 
   return {
     nodes,

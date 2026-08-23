@@ -1,6 +1,5 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { Box, ToggleButton, ToggleButtonGroup, Paper, Alert, LinearProgress, CircularProgress, Typography } from '@mui/material';
-import { FormatListBulleted, AccountTree } from '@mui/icons-material';
+import React, { useMemo } from 'react';
+import { Box, Paper, Alert, LinearProgress } from '@mui/material';
 import { shallow } from 'zustand/shallow';
 import QuestList from './QuestList';
 import QuestDetails from './QuestDetails';
@@ -8,16 +7,11 @@ import { useProjectStore } from '../store/projectStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import type { SemanticModel } from '../types/global';
 
-const QuestFlow = lazy(() => import('./QuestFlow'));
-
 interface QuestEditorProps {
   semanticModel: SemanticModel;
-  writableEnabled?: boolean;
 }
 
-const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnabled = true }) => {
-  const [viewMode, setViewMode] = useState<'details' | 'flow'>('details');
-
+const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel }) => {
   const { getQuestUsage, isIngesting, parseGeneration, projectPath } = useProjectStore((state) => ({
       getQuestUsage: state.getQuestUsage,
       isIngesting: state.isIngesting,
@@ -59,65 +53,22 @@ const QuestEditor: React.FC<QuestEditorProps> = ({ semanticModel, writableEnable
             />
         </Box>
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <Paper square elevation={0} sx={{ p: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Box sx={{ flexGrow: 1, mr: 2 }}>
-                    {isIngesting && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Alert severity="info" sx={{ py: 0, '& .MuiAlert-message': { overflow: 'visible' } }}>
-                                Scanning project files...
-                            </Alert>
-                            <Box sx={{ width: 100 }}>
-                                <LinearProgress />
-                            </Box>
-                        </Box>
-                    )}
-                </Box>
-                <ToggleButtonGroup
-                    value={viewMode}
-                    exclusive
-                    onChange={(_, newMode) => newMode && setViewMode(newMode)}
-                    size="small"
-                >
-                    <ToggleButton value="details" aria-label="Details View">
-                        <FormatListBulleted fontSize="small" />
-                    </ToggleButton>
-                    <ToggleButton value="flow" aria-label="Flow View">
-                        <AccountTree fontSize="small" />
-                    </ToggleButton>
-                </ToggleButtonGroup>
-            </Paper>
+            {isIngesting && (
+                <Paper square elevation={0} sx={{ p: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Alert severity="info" sx={{ py: 0, '& .MuiAlert-message': { overflow: 'visible' } }}>
+                        Scanning project files...
+                    </Alert>
+                    <Box sx={{ width: 100 }}>
+                        <LinearProgress />
+                    </Box>
+                </Paper>
+            )}
 
             <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
-                {viewMode === 'details' ? (
-                    <QuestDetails
-                        semanticModel={activeModel}
-                        questName={selectedQuest}
-                    />
-                ) : (
-                    <Suspense
-                      fallback={
-                        <Box
-                          sx={{
-                            height: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexDirection: 'column',
-                            gap: 1
-                          }}
-                        >
-                          <CircularProgress size={24} />
-                          <Typography variant="body2" color="text.secondary">Loading quest graph...</Typography>
-                        </Box>
-                      }
-                    >
-                      <QuestFlow
-                          semanticModel={activeModel}
-                          questName={selectedQuest}
-                          writableEnabled={writableEnabled}
-                      />
-                    </Suspense>
-                )}
+                <QuestDetails
+                    semanticModel={activeModel}
+                    questName={selectedQuest}
+                />
             </Box>
         </Box>
     </Box>

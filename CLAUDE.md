@@ -161,7 +161,6 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 - **Vite** — bundler for renderer
 - **Zustand + Immer** — state management (`src/renderer/store/`)
 - **MUI (Material UI)** — component library and theming
-- **litegraph.js** — node graph visualization
 - **Monaco Editor** — code editing
 - **Playwright** — E2E tests (active in CI, sharded across 4 workers)
 - **Jest** — unit/integration tests
@@ -178,13 +177,11 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/components/conditions/` | Condition field components per condition type |
 | `src/renderer/components/actionRenderers/` | Per-action-type render components |
 | `src/renderer/components/common/` | Shared UI primitives (`VariableAutocomplete`, `autocompletePolicies.ts`, etc.) |
-| `src/renderer/components/QuestEditor/` | Quest graph editor UI (litegraph canvas, Inspector) |
-| `src/renderer/quest/domain/` | Pure quest logic (graph model, commands, guardrails) |
-| `src/renderer/quest/application/` | Orchestration layer (`QuestEditingService.ts`) |
+| `src/renderer/quest/domain/` | Pure quest logic (analysis, graph inference, condition codec) |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
 | `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`) |
-| `tests/e2e/` | 19 Playwright E2E spec files |
+| `tests/e2e/` | Playwright browser-harness spec files |
 
 ### State Management Stores
 
@@ -216,13 +213,13 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 
 ### Quest Editor Architecture
 
-The quest editor follows a strict three-layer boundary (see `docs/architecture/quest-editor.md`):
+The quest surface is read-only — list/details/create backed by pure analysis
+(see `docs/architecture/quest-editor.md`; the litegraph Flow view was removed):
 
-1. `src/renderer/quest/domain/` — pure logic: graph model transforms, command validation, guardrails. No React/MUI/Electron imports.
-2. `src/renderer/quest/application/` — orchestration: store adapters, history wiring, apply/cancel flow.
-3. `src/renderer/components/QuestEditor/` — UI: `QuestFlow`, litegraph canvas, inspector (`Inspector/`).
+1. `src/renderer/quest/domain/` — pure logic: analysis, graph inference, condition-expression codec. No React/MUI/Electron imports.
+2. `src/renderer/components/QuestEditor.tsx` + `QuestList.tsx` / `QuestDetails.tsx` / `CreateQuestDialog.tsx` — UI.
 
-Import direction is one-way: UI → application → domain.
+Import direction is one-way: UI → domain.
 
 ### Development Rules
 
@@ -231,18 +228,13 @@ Import direction is one-way: UI → application → domain.
    - For logic, store, or component-level changes without a new end-to-end flow, a Jest test is sufficient.
    - **Playwright tests must be verified**: after writing and running a Playwright E2E test, manually confirm it exercises the actual UI behavior — not just that it passes. A green Playwright test that doesn't interact with the real feature is not acceptable.
 2. Run focused tests during iteration; run full workspace checks before completion.
-3. When changing node editor UI, do a smoke pass:
-   - Start with `npm run dev:node-editor`
-   - Open `http://localhost:5173/node-editor.html`
-   - Confirm key controls render (e.g. `data-testid="node-editor-quest-select"`)
-4. **Performance**: `semanticModel` is large and recreated frequently — do not pass the full object to deeply memoized components; prefer stable sub-properties and granular comparisons with `React.memo`.
+3. **Performance**: `semanticModel` is large and recreated frequently — do not pass the full object to deeply memoized components; prefer stable sub-properties and granular comparisons with `React.memo`.
 
 ### Editor Commands
 
 | Command | Description |
 |---|---|
 | `npm run dev` | Full dev environment (main + renderer) |
-| `npm run dev:node-editor` | Node editor playground (Vite only) |
 | `npm run build` | Compile main + renderer |
 | `npm run build:main` | Compile main process only |
 | `npm run typecheck:renderer` | TypeScript check renderer only |
@@ -276,7 +268,7 @@ Import direction is one-way: UI → application → domain.
 Notes:
 - `all-tests.yml` triggers include `workflow_call` so it can gate releases
 - Editor CI typechecks both main process and renderer separately
-- Editor CI build is guarded against chunk-size and `eval` warnings (litegraph.js eval is whitelisted)
+- Editor CI build is guarded against chunk-size and `eval` warnings
 
 ---
 
@@ -286,7 +278,7 @@ The code-review remediation effort is complete — all code landed and CI-green.
 
 Production-hardening work that only matters at first release (code signing, strict update verifier, release-dispatch QA, manual desktop passes) is parked in `docs/release-checklist.md`.
 
-**Active plan:** [`docs/plans/production-readiness-review-findings.md`](docs/plans/production-readiness-review-findings.md) — production-readiness / performance / UI-UX review, including the decision to deprecate the quest Flow view (Option A landed: writable quest editing is now opt-in; Option B — removing the litegraph Flow view — is scheduled). Its §5 tracks what has landed and what remains.
+**Active plan:** [`docs/plans/production-readiness-review-findings.md`](docs/plans/production-readiness-review-findings.md) — production-readiness / performance / UI-UX review, including the decision to deprecate the quest Flow view (Option A and Option B both landed: the litegraph Flow view has been removed; the quest surface is the read-only list/details/create panel). Its §5 tracks what has landed and what remains.
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 

@@ -8,6 +8,10 @@ after extracting durable outcomes into `docs/architecture/` (per docs hygiene ru
 Conventions for every item: failing test first (Jest for logic/stores, Playwright for UI flows),
 minimal fix, then workspace-level `npm test` + `npm run lint` + typecheck before marking done.
 
+**2026-08-23 note:** the quest Flow view was removed (production-readiness review §1
+Option B), which makes the quest-flow items here obsolete: 4.4, 4.7–4.10, the quest
+parts of 5.2 and 5.7, and 6.1's quest-model history aliases. Do not act on them.
+
 ---
 
 ## P0 — Data-integrity bugs (small fixes, real corruption/loss vectors)

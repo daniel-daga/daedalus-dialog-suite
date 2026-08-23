@@ -183,8 +183,8 @@ Call sites:
 
 - **Save/discard:** `handleSave`, `performAutoSave`, `App.confirmDiscardChanges`,
   the window-close guard (slice 2).
-- **Undo/redo (slice 5):** the `MainLayout` Ctrl+Z/Ctrl+Y keydown handler and the
-  QuestFlow batch undo/redo buttons, wrapped in `flushSync` so the flushed edit
+- **Undo/redo (slice 5):** the `MainLayout` Ctrl+Z/Ctrl+Y keydown handler,
+  wrapped in `flushSync` so the flushed edit
   commits *before* the undo runs (otherwise a same-batch flush+undo leaves stale
   local text in the edited card). This makes the first Ctrl+Z after typing revert
   the in-flight burst rather than a late timer clobbering the redo stack — see the

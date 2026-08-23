@@ -104,11 +104,12 @@ makes the round-trip pipeline's fidelity *visible* instead of asserted.
 
 ### 7. Dialog flow graph view
 
-litegraph.js and dagre auto-layout are already vendored for quests. Reuse the
-canvas to render a *conversation*: info function as root, choices as branch
+Render a *conversation* as a graph: info function as root, choices as branch
 nodes, `KnowsInfo` links between dialogs. Gives writers the whole-conversation
 overview that #111 (accordion choices) was groping toward, at a scale the
-accordion can't reach. **Effort:** medium.
+accordion can't reach. Note: the litegraph.js/dagre canvas that once served the
+quest Flow view was removed with that view, so this would need a fresh
+rendering choice. **Effort:** medium–large.
 
 ---
 

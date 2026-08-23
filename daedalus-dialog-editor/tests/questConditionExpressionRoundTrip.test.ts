@@ -1,9 +1,8 @@
 import { buildQuestGraph } from '../src/renderer/quest/domain/graph';
-import { executeQuestGraphCommand } from '../src/renderer/quest/domain/commands';
 import {
   parseConditionExpressionToConditions,
   serializeConditionsToExpression
-} from '../src/renderer/quest/domain/commands/conditionExpressionCodec';
+} from '../src/renderer/quest/domain/conditionExpressionCodec';
 import type { DialogCondition, SemanticModel } from '../src/renderer/types/global';
 
 const createMockModel = (functions: any[], dialogs: any[]): SemanticModel => {
@@ -76,63 +75,6 @@ describe('quest dialog condition-expression editing does not round-trip display 
     expect(parsed.conditions).toEqual(OWNER_CONDITIONS);
   });
 
-  it('applies an unedited prefill as a no-op: owner conditions preserved, info function untouched', () => {
-    const model = buildSeparateConditionFunctionModel();
-    const data = getDialogNodeData(model);
-
-    const result = executeQuestGraphCommand(
-      { questName: 'TOPIC_Q', model },
-      {
-        type: 'setConditionExpression',
-        targetFunctionName: data.conditionOwnerFunctionName,
-        expression: data.editableConditionExpression
-      }
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    // No degradation: the condition function still holds the exact structured conditions.
-    expect(result.updatedModel.functions.DIA_Q_Cond.conditions).toEqual(OWNER_CONDITIONS);
-
-    // No duplication: the info function is untouched (reference-shared) and still has no
-    // conditions copied onto it.
-    expect(result.updatedModel.functions.DIA_Q_Info).toBe(model.functions.DIA_Q_Info);
-    expect(result.updatedModel.functions.DIA_Q_Info.conditions).toEqual([]);
-  });
-
-  it('editing one clause preserves the other conditions unchanged', () => {
-    const model = buildSeparateConditionFunctionModel();
-    const data = getDialogNodeData(model);
-
-    const editedExpression = String(data.editableConditionExpression).replace('LOG_RUNNING', 'LOG_SUCCESS');
-    const result = executeQuestGraphCommand(
-      { questName: 'TOPIC_Q', model },
-      {
-        type: 'setConditionExpression',
-        targetFunctionName: data.conditionOwnerFunctionName,
-        expression: editedExpression
-      }
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const updated = result.updatedModel.functions.DIA_Q_Cond.conditions;
-    expect(updated[0]).toEqual({
-      type: 'VariableCondition',
-      variableName: 'MIS_Q',
-      operator: '==',
-      value: 'LOG_SUCCESS',
-      negated: false
-    });
-    // Untouched siblings survive intact.
-    expect(updated[1]).toEqual(OWNER_CONDITIONS[1]);
-    expect(updated[2]).toEqual(OWNER_CONDITIONS[2]);
-
-    // The info function is still free of any copied conditions.
-    expect(result.updatedModel.functions.DIA_Q_Info.conditions).toEqual([]);
-  });
 });
 
 describe('serializeConditionsToExpression is a strict inverse of the condition codec', () => {

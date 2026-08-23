@@ -11,7 +11,7 @@ const RENDERER_DIR = path.join(__dirname, '..', 'src', 'renderer');
 const DOMAIN_DIR = path.join(RENDERER_DIR, 'quest', 'domain');
 const QUEST_GRAPH_TYPES = path.join(RENDERER_DIR, 'types', 'questGraph.ts');
 
-const FORBIDDEN_MODULES = ['react', 'react-dom', 'reactflow', '@mui', 'litegraph.js', 'electron', 'zustand'];
+const FORBIDDEN_MODULES = ['react', 'react-dom', 'reactflow', '@mui', 'litegraph.js', 'dagre', 'electron', 'zustand'];
 
 const collectFiles = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -34,7 +34,14 @@ describe('quest domain boundary', () => {
   const domainFiles = collectFiles(DOMAIN_DIR);
 
   it('contains the quest logic modules (not just shims)', () => {
-    expect(domainFiles.length).toBeGreaterThanOrEqual(10);
+    expect(domainFiles.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('carries no command write path (removed with the Flow view)', () => {
+    const commandFiles = domainFiles.filter((file) =>
+      file.includes(`${path.sep}commands${path.sep}`)
+    );
+    expect(commandFiles).toEqual([]);
   });
 
   it('does not import UI libraries from domain modules or graph types', () => {

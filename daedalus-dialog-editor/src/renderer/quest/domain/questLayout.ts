@@ -1,20 +1,18 @@
 /**
- * LayoutCalculator — graph filtering and Dagre layout for the quest graph.
+ * Graph filtering and node materialization for the quest graph.
  *
  * Owns two responsibilities:
- * - `filterGraph`: prunes nodes/edges according to display options before layout
- * - `calculateDagreLayout`: runs the Dagre algorithm and converts internal node
- *   data to the `QuestGraphNode` array consumed by the canvas
+ * - `filterGraph`: prunes nodes/edges according to display options
+ * - `materializeQuestNodes`: converts internal node data to the
+ *   `QuestGraphNode` array of the public graph model
+ *
+ * Positions are not computed: the litegraph Flow view (the only consumer of
+ * visual layout) was removed, so every node carries a zero position and the
+ * graph is a pure structural model (nodes + edges).
  */
 
-import dagre from 'dagre';
 import type { SemanticModel } from '../../types/global';
 import type { QuestGraphBuildOptions, QuestGraphEdge, QuestGraphNode } from '../../types/questGraph';
-import {
-  DAGRE_LAYOUT,
-  NODE_HEIGHT,
-  NODE_WIDTH,
-} from './questGraphConstants';
 import type { InternalNodeData } from './questGraphInternalTypes';
 import { isStateNode } from './questGraphSharedHelpers';
 
@@ -106,77 +104,15 @@ export const filterGraph = (
   return { nodeDataMap: selectedNodeDataMap, edges: selectedEdges };
 };
 
-// ── Dagre layout ──────────────────────────────────────────────────────────────
+// ── Node materialization ──────────────────────────────────────────────────────
 
-export const calculateDagreLayout = (
+export const materializeQuestNodes = (
   semanticModel: SemanticModel,
   nodeDataMap: Map<string, InternalNodeData>,
-  edges: QuestGraphEdge[],
   misVarName: string
 ): QuestGraphNode[] => {
-  const g = new dagre.graphlib.Graph({ compound: true });
-  g.setGraph(DAGRE_LAYOUT);
-  g.setDefaultEdgeLabel(() => ({}));
-
-  const npcNodes = new Map<string, string[]>();
-
-  nodeDataMap.forEach((data, id) => {
-    if (!npcNodes.has(data.npc)) {
-      npcNodes.set(data.npc, []);
-    }
-    npcNodes.get(data.npc)!.push(id);
-  });
-
-  npcNodes.forEach((_, npc) => {
-    const clusterId = `swimlane-${npc}`;
-    g.setNode(clusterId, { label: npc, clusterLabelPos: 'top' });
-  });
-
-  nodeDataMap.forEach((data, id) => {
-    const clusterId = `swimlane-${data.npc}`;
-    g.setNode(id, { width: NODE_WIDTH, height: NODE_HEIGHT });
-    g.setParent(id, clusterId);
-  });
-
-  edges.forEach((edge) => {
-    if (nodeDataMap.has(edge.source) && nodeDataMap.has(edge.target)) {
-      g.setEdge(edge.source, edge.target);
-    }
-  });
-
-  dagre.layout(g);
-
   const nodes: QuestGraphNode[] = [];
-  g.nodes().forEach((nodeId: string) => {
-    const node = g.node(nodeId);
-    if (nodeId.startsWith('swimlane-')) {
-      nodes.push({
-        id: nodeId,
-        type: 'group',
-        position: { x: node.x - node.width / 2, y: node.y - node.height / 2 },
-        style: {
-          width: node.width,
-          height: node.height,
-          backgroundColor: 'rgba(255, 255, 255, 0.02)',
-          border: '1px dashed #444',
-          zIndex: -1,
-          padding: 10,
-          color: '#666'
-        },
-        data: {
-          label: nodeId.replace('swimlane-', ''),
-          npc: nodeId.replace('swimlane-', ''),
-          kind: 'dialog'
-        },
-        selectable: false,
-        draggable: false
-      });
-      return;
-    }
-
-    const data = nodeDataMap.get(nodeId);
-    if (!data) return;
-
+  nodeDataMap.forEach((data, nodeId) => {
     let nodeType: 'dialog' | 'questState' | 'condition' | 'logical' = 'dialog';
     if (data.kind === 'condition') {
       nodeType = 'condition';
@@ -194,7 +130,7 @@ export const calculateDagreLayout = (
 
     nodes.push({
       id: nodeId,
-      position: { x: node.x - node.width / 2, y: node.y - node.height / 2 },
+      position: { x: 0, y: 0 },
       type: nodeType,
       data: {
         label: data.label,

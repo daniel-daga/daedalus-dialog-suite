@@ -85,8 +85,6 @@ describe('ThreeColumnLayout - dialog creation routes through history (item 0.4)'
 
     useHistoryStore.setState({
       editHistory: new Map(),
-      questBatchHistory: { past: [], future: [] },
-      questNodePositions: new Map(),
     } as never);
 
     mockOnAddDialogRef.current = null;

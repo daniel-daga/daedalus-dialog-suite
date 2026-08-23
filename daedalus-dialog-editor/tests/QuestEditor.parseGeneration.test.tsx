@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import QuestEditor from '../src/renderer/components/QuestEditor';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import type { SemanticModel } from '../src/renderer/types/global';
@@ -12,13 +12,6 @@ jest.mock('../src/renderer/components/QuestList', () => ({
 jest.mock('../src/renderer/components/QuestDetails', () => ({
   __esModule: true,
   default: () => <div data-testid="quest-details" />
-}));
-
-// QuestFlow is lazily imported by QuestEditor; the default (details) view never
-// mounts it, but mocking keeps the lazy import cheap if the view ever switches.
-jest.mock('../src/renderer/components/QuestFlow', () => ({
-  __esModule: true,
-  default: () => <div data-testid="quest-flow" />
 }));
 
 jest.mock('../src/renderer/store/uiSelectionStore', () => {
@@ -94,5 +87,26 @@ describe('QuestEditor activeModel recomputation (PF3)', () => {
     });
 
     expect(getQuestUsageSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('QuestEditor surface (Flow view removed)', () => {
+  beforeEach(() => {
+    useProjectStore.setState({
+      projectPath: '/project',
+      isIngesting: false,
+      parseGeneration: 0,
+      parsedFiles: new Map(),
+      getQuestUsage: getQuestUsageSpy as unknown as (questName: string) => SemanticModel
+    });
+  });
+
+  it('renders list and details directly, with no Flow view toggle', () => {
+    render(<QuestEditor semanticModel={createModel()} />);
+
+    expect(screen.getByTestId('quest-list')).toBeInTheDocument();
+    expect(screen.getByTestId('quest-details')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Flow View')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Details View')).not.toBeInTheDocument();
   });
 });
