@@ -350,11 +350,22 @@ findings below are in paths the doc does not cover.
   equivalence + single-pass proxy counters) and
   `tests/QuestList.perf.test.tsx`; documented in
   `docs/architecture/render-performance.md`.
-- **`App` subscribes to the whole `openFiles` Map** (`App.tsx:55-60`) — new Map
+- ~~**`App` subscribes to the whole `openFiles` Map** (`App.tsx:55-60`) — new Map
   identity per edit flush re-renders the entire tree; `MainLayout`/
   `ThreeColumnLayout` are not memo-wrapped. Contradicts the doc's
-  coarse-selector rule (applied to projectStore/historyStore, not fileStore).
-  Fix: per-active-file selector + derived conflict count + `React.memo`.
+  coarse-selector rule (applied to projectStore/historyStore, not fileStore).~~
+  **RESOLVED 2026-08-23** — fixed as suggested, and widened to every other
+  render-time whole-Map subscription that would have kept the tree
+  re-rendering: App selects the active file's entry + a shallow-compared
+  conflict-path array; `MainLayout`/`ThreeColumnLayout` are memo-wrapped
+  behind the primitive `filePath` prop; `useAutoSave` moved to a transient
+  `store.subscribe`, `useWindowCloseGuard` subscribes only while its dialog
+  is open, `ExternalChangeConflictDialog`/`SourceEditsPendingBanner` use
+  per-file selectors, `useDialogFactory` reads live `getFileState`. Guarded
+  by render-count probes in `tests/App.fileStoreSubscription.test.tsx`,
+  `tests/MainLayout.rerender.test.tsx`,
+  `tests/ThreeColumnLayout.rerender.test.tsx`; documented in
+  `docs/architecture/render-performance.md`.
 
 ### P2
 
@@ -501,5 +512,8 @@ Pre-release (gates first public build):
 Post-release fast follows: ~~watcher batching + double-parse collapse (P0
 perf)~~ **DONE 2026-08-23** (both §3 P0 items — single-parse project open with
 model hand-off + `parsedFiles` cap, and watcher batching via
-`updateFileModels`), Problems-panel debounce, `App` `openFiles` selector, F2
-dead source-view cleanup, F6/F7 shortcut scoping, CSP.
+`updateFileModels`), ~~Problems-panel debounce, `App` `openFiles` selector~~
+**DONE 2026-08-23** (all three §3 P1 items — Problems-panel scan
+deferral/debounce + fact cache, QuestList single-pass batch analysis, and
+fileStore coarse-selector coverage with memoized layouts), F2 dead
+source-view cleanup, F6/F7 shortcut scoping, CSP.

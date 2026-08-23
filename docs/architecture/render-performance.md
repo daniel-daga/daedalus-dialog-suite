@@ -138,6 +138,22 @@ across the renderer:
   model selector on `open` (the `IngestedFilesDialog` idiom). Render-count
   probes live in the respective component test files.
 
+**fileStore coverage (P1, 2026-08-23).** The coarse-selector rule now covers
+fileStore: nothing subscribes to the whole `openFiles` Map during render,
+because every edit flush gives it a fresh identity in the immer store. App,
+MainLayout, ThreeColumnLayout, `SourceEditsPendingBanner`, and
+`ExternalChangeConflictDialog` select only the relevant file's entry (plus a
+`shallow`-compared conflict-path array for App's chip); `useAutoSave`
+reschedules its debounce through a transient `store.subscribe` (zero
+renders); `useWindowCloseGuard` subscribes to the Map only while its dialog
+is showing; `useDialogFactory` reads the live `getFileState` instead of a
+render-captured Map. MainLayout and ThreeColumnLayout are `React.memo`-wrapped
+behind the primitive `filePath` prop, so an edit flush touching an inactive
+file no longer re-renders App's tree while active-file changes still
+propagate. Render-count probes: `tests/App.fileStoreSubscription.test.tsx`,
+`tests/MainLayout.rerender.test.tsx`,
+`tests/ThreeColumnLayout.rerender.test.tsx`.
+
 **Navigation-hook template.** `useNavigation` / `useDialogNavigation` are pure
 event-handler hooks: they hold **no store subscriptions** and read
 `useProjectStore.getState()` / `useFileStore.getState()` /
