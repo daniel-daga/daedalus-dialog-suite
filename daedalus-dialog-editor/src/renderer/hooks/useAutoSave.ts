@@ -33,7 +33,6 @@ export function useAutoSave(): AutoSaveStatus {
   const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const openFiles = useEditorStore((state) => state.openFiles);
   const autoSaveEnabled = useEditorStore((state) => state.autoSaveEnabled);
   const autoSaveInterval = useEditorStore((state) => state.autoSaveInterval);
 
@@ -176,47 +175,63 @@ export function useAutoSave(): AutoSaveStatus {
     }
   }, []);
 
-  // Watch for dirty file changes and schedule auto-save
+  // Watch for dirty file changes and schedule auto-save.
+  //
+  // §3 P1: this is a transient store subscription, NOT a render subscription —
+  // a `useEditorStore((s) => s.openFiles)` hook here would re-render the host
+  // component (App) on every edit flush to any open file. The debounce
+  // semantics are unchanged: every `openFiles` change clears the pending timer
+  // and re-arms it while any auto-save candidate exists.
   useEffect(() => {
-    if (!autoSaveEnabled) {
-      // Clear any pending auto-save when disabled
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      return;
-    }
-
-    // Check if any files are auto-save candidates
-    let hasDirtyFiles = false;
-    openFiles.forEach((fileState) => {
-      if (isAutoSaveCandidate(fileState)) {
-        hasDirtyFiles = true;
-      }
-    });
-
-    if (!hasDirtyFiles) {
-      return;
-    }
-
-    // Clear previous timeout and set new one (debounce)
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    timeoutRef.current = setTimeout(() => {
-      performAutoSave();
-      timeoutRef.current = null;
-    }, autoSaveInterval);
-
-    // Cleanup on unmount or dependency change
-    return () => {
+    const clearPending = () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
     };
-  }, [openFiles, autoSaveEnabled, autoSaveInterval, performAutoSave]);
+
+    if (!autoSaveEnabled) {
+      // Clear any pending auto-save when disabled
+      clearPending();
+      return;
+    }
+
+    const reschedule = (openFiles: Map<string, FileState>) => {
+      // Clear previous timeout; re-arm only while a candidate exists (debounce)
+      clearPending();
+
+      let hasDirtyFiles = false;
+      openFiles.forEach((fileState) => {
+        if (isAutoSaveCandidate(fileState)) {
+          hasDirtyFiles = true;
+        }
+      });
+
+      if (!hasDirtyFiles) {
+        return;
+      }
+
+      timeoutRef.current = setTimeout(() => {
+        performAutoSave();
+        timeoutRef.current = null;
+      }, autoSaveInterval);
+    };
+
+    // Cover files that are already dirty when the hook mounts / re-arms
+    reschedule(useEditorStore.getState().openFiles);
+
+    const unsubscribe = useEditorStore.subscribe((state, prevState) => {
+      if (state.openFiles !== prevState.openFiles) {
+        reschedule(state.openFiles);
+      }
+    });
+
+    // Cleanup on unmount or dependency change
+    return () => {
+      unsubscribe();
+      clearPending();
+    };
+  }, [autoSaveEnabled, autoSaveInterval, performAutoSave]);
 
   return {
     isAutoSaving,

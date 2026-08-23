@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect } from 'react';
+import React, { Suspense, lazy, memo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon } from '@mui/icons-material';
@@ -187,4 +187,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   );
 };
 
-export default MainLayout;
+// §3 P1: memo-wrapped so a parent re-render with the same `filePath` (a
+// primitive prop) does not cascade into the layout; store-driven updates still
+// arrive through the granular subscriptions above.
+export default memo(MainLayout);

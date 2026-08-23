@@ -45,10 +45,14 @@ interface CloseFailure {
  *      Otherwise open the dialog.
  */
 export function useWindowCloseGuard(): React.ReactElement | null {
-  const openFiles = useFileStore((s) => s.openFiles);
   // The set of file paths captured when the close was requested. `null` means
   // the dialog is closed (idle).
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
+  // §3 P1: subscribe to `openFiles` only while the dialog is showing — while
+  // idle (the common case) the selector yields a constant `null`, so edit
+  // flushes (which give the Map a fresh identity) do not re-render the host
+  // component (App). The open dialog still tracks live file states.
+  const openFiles = useFileStore((s) => (pendingPaths ? s.openFiles : null));
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<CloseFailure | null>(null);
 
@@ -169,9 +173,10 @@ export function useWindowCloseGuard(): React.ReactElement | null {
   }
 
   // Render live file states so a conflict resolution (which mutates the store)
-  // updates the dialog immediately.
+  // updates the dialog immediately. (`openFiles` is non-null whenever
+  // `pendingPaths` is set — the selector above keys on it.)
   const liveStates = pendingPaths
-    .map((filePath) => openFiles.get(filePath))
+    .map((filePath) => openFiles?.get(filePath))
     .filter((fs): fs is FileState => !!fs);
 
   const conflictedFiles = liveStates.filter((fs) => fs.externalConflict);
