@@ -24,15 +24,17 @@ Landed:
 | `1db5ce1` | §3 all three P1 performance items: Problems-panel scan deferral/debounce + per-file fact cache, `QuestList` single-pass batch analysis, fileStore coarse-selector coverage + memoized layouts |
 | `6322a0b` | §3 all three P2 performance items: condition-subtree memo boundary + `conditionsExpanded` reset, `IngestedFilesDialog` virtualization + memoized row derivation, `ParserService` idle-worker dispatch |
 
-Verified on the merged tree after the P2 slice: full Jest suite (**1066 tests in
-160 suites** — current baseline), browser-harness Playwright suite (163 tests),
+Verified on the merged tree after the P2 slice: full Jest suite (**1068 tests in
+161 suites** — current baseline, including the native-runtime regression suite
+added by the CI fix below), browser-harness Playwright suite (163 tests),
 `build:main`, `typecheck:renderer`, `build:renderer` (no chunk-size or eval
 warnings), and lint (0 errors; 7 pre-existing warnings in untouched files) all
 green. Earlier counts in this document (1019 tests in 151 suites after Option B)
 dropped because Option B deleted ~20 quest-flow Jest suites and 2 Playwright
 specs along with the code they covered; the P0/P1 perf slices brought the guard
 suites back up to 159/1059, and the P2 slice added
-`tests/ConditionEditor.rerender.test.tsx` plus 6 tests across existing suites.
+`tests/ConditionEditor.rerender.test.tsx` plus 6 tests across existing suites;
+the native-runtime fix then added `tests/nativeParserModuleRegistry.test.ts`.
 
 **§3 Performance is now closed down to P3** — the P0, P1, and P2 items are all
 done; only the §3 P3 measure-first items remain. Everything else in this
@@ -60,16 +62,32 @@ ln -sf /opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell
 
 Substitute the revision numbers the error message names.
 
-**Known container flake (not a regression — do not chase it).** Full-suite Jest
-runs in this container intermittently fail `tests/ProjectService.test.ts` and/or
-`tests/ProjectService.modelHandoff.test.ts` with the native tree-sitter parser
-returning an undefined tree (`TypeError: Cannot read properties of undefined
-(reading 'hasError')` at `daedalus-parser/src/core/parser.js`, or an empty
-`index.npcs`). It reproduces on unmodified `master` (verified at `ce3d27e`
-across repeated runs) and disappears when either suite is run alone, so it is
-environmental — the native binding under Jest's parallel workers, worsened by
-concurrent load. Run the full suite on an otherwise idle machine and re-run
-before treating a ProjectService failure as real.
+**Native tree-sitter runtime must load once per process (fixed 2026-08-23).**
+An earlier revision of this note claimed intermittent `ProjectService` failures
+were an environmental flake to be ignored. That was wrong, and the note is
+corrected here: it was a real, reproducible bug that turned CI red on master.
+`tree-sitter@0.21.1`'s JS wrapper is not idempotent — it reads the native
+members off `Tree.prototype` and replaces them with accessors closing over what
+it read. The `.node` addon is cached once per process but JS module registries
+are not (Jest gives every test file its own), so a second evaluation reads
+`rootNode` back through the first evaluation's accessor with
+`this === Tree.prototype`, fails its `this instanceof Tree` guard, captures
+`undefined`, and reinstalls the accessor over it — after which `tree.rootNode`
+is `undefined` for every parse in the process, including parsers created
+earlier. `ProjectService.buildProjectIndex` swallows the resulting per-file
+errors into `metadataFailures`, so it surfaced as an inexplicably empty index.
+Fixed in `daedalus-parser/src/core/parser.js` by anchoring the single
+`require('tree-sitter')` on the daedalus native binding (a `Symbol.for` key on
+the one genuinely process-global object), so the wrapper evaluates exactly once
+per process. Guarded by `daedalus-parser/test/parser.test.js` ("native runtime
+across module registries") and
+`daedalus-dialog-editor/tests/nativeParserModuleRegistry.test.ts`, which uses
+`jest.isolateModules` to reproduce it deterministically rather than depending on
+how Jest packs files into workers.
+
+Lesson for a fresh session: suite-ordering-dependent failures here are worth
+root-causing, not writing off. A green full-suite run proves little on its own —
+re-run it, and vary `--maxWorkers`/`--runInBand`, which is what exposed this.
 
 ---
 

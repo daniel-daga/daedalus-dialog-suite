@@ -101,6 +101,10 @@ describe('project-open single-parse hand-off', () => {
     const service = new ProjectService();
     const index = await service.buildProjectIndex(tempDir);
 
+    // buildProjectIndex swallows per-file metadata errors into metadataFailures
+    // and substitutes empty metadata, so assert on it first: otherwise a broken
+    // metadata pass shows up only as an inexplicably empty index below.
+    expect(index.metadataFailures).toEqual([]);
     // Both instances and prototypes must still be extracted…
     expect(index.npcs).toContain('SLD_99003_Farim');
     expect(index.npcPrototypes).toContain('MST_DEFAULT_SLD');

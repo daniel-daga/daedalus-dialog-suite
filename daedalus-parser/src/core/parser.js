@@ -1,5 +1,23 @@
-const Parser = require('tree-sitter');
 const Daedalus = require('../../bindings/node');
+
+// tree-sitter's JS wrapper patches the *native* prototypes it gets from the
+// addon: it reads the native members off e.g. `Tree.prototype`, then replaces
+// them with accessors that close over what it just read. The native addon is
+// cached once per process, but JS module registries are not — Jest gives every
+// test file its own, and a Vite/Electron bundle can produce more than one too.
+// A second evaluation of the wrapper therefore re-reads `Tree.prototype.rootNode`
+// through the accessor the first evaluation installed, with `this` bound to
+// `Tree.prototype`; that fails the getter's `this instanceof Tree` guard and
+// yields `undefined`. The wrapper then reinstalls the getter closing over that
+// `undefined`, so `tree.rootNode` silently returns `undefined` for every parse
+// in the process from then on — including for parsers created earlier.
+//
+// The native binding object is the one thing that is genuinely process-global
+// here, so anchor the wrapper on it: `tree-sitter` is required exactly once per
+// process regardless of how many module registries evaluate this file.
+const TREE_SITTER_RUNTIME = Symbol.for('daedalus-parser.tree-sitter-runtime');
+const Parser = Daedalus[TREE_SITTER_RUNTIME]
+  || (Daedalus[TREE_SITTER_RUNTIME] = require('tree-sitter'));
 
 class DaedalusParser {
   constructor() {

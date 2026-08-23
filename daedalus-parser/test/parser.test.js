@@ -499,3 +499,49 @@ Prototype SpecialWeapon(BasicItem)
     assert.equal(declarations[0].childForFieldName('name').text, 'x');
   });
 });
+
+describe('native runtime across module registries', () => {
+  // Jest hands every test file its own module registry while Node caches the
+  // native addon per process, so `tree-sitter`'s JS wrapper gets evaluated more
+  // than once against one set of native prototypes. That wrapper is not
+  // idempotent: the second evaluation reads `Tree.prototype.rootNode` through
+  // the accessor the first installed (with `this === Tree.prototype`, which
+  // fails its `this instanceof Tree` guard), captures `undefined`, and
+  // reinstalls the accessor over it — after which every parse in the process
+  // has an undefined `rootNode`. Re-evaluating the JS module graph while
+  // leaving the `.node` addon cached reproduces exactly that situation.
+  const reevaluateJsModuleGraph = () => {
+    const jsEntryPoints = [
+      require.resolve('tree-sitter'),
+      require.resolve('../bindings/node'),
+      require.resolve('../src/core/parser')
+    ];
+    for (const entryPoint of jsEntryPoints) {
+      delete require.cache[entryPoint];
+    }
+    return require('../src/core/parser');
+  };
+
+  test('parse results still expose rootNode after the module graph is re-evaluated', () => {
+    const source = 'instance Test (Base) { name = "test"; };';
+    const parserFromFirstEvaluation = new DaedalusParser();
+    assert.ok(
+      parserFromFirstEvaluation.parse(source).rootNode,
+      'baseline parse should expose a rootNode'
+    );
+
+    const ReloadedDaedalusParser = reevaluateJsModuleGraph();
+    const reloadedResult = new ReloadedDaedalusParser().parse(source);
+
+    assert.ok(reloadedResult.rootNode, 'rootNode should survive a second module evaluation');
+    assert.equal(reloadedResult.hasErrors, false, 'reloaded parser should parse cleanly');
+    assert.equal(reloadedResult.rootNode.type, 'program');
+
+    // The damage is process-global, so parsers created before the re-evaluation
+    // are the clearest signal that the native prototypes were left intact.
+    assert.ok(
+      parserFromFirstEvaluation.parse(source).rootNode,
+      'a parser created before the re-evaluation should keep working'
+    );
+  });
+});
