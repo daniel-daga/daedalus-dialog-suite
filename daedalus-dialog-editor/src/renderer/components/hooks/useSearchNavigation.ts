@@ -21,6 +21,13 @@ export interface UseSearchNavigationResult {
  * Manages the search panel open/close state, the Ctrl+F / Escape keyboard
  * shortcuts that toggle it, and the result-click handler that navigates to
  * the selected NPC, dialog, or function.
+ *
+ * The Ctrl+F handler is scoped to the dialog view (F6). This hook lives on
+ * `ThreeColumnLayout`, which stays mounted under `display: none` while another
+ * view is active, so an unscoped handler opened the panel where it could not
+ * be seen — silently at the time, and waiting for the user when they returned
+ * to the dialog view. The active view is read live rather than subscribed to,
+ * so switching views does not re-run this effect.
  */
 export function useSearchNavigation({
   semanticModel,
@@ -34,6 +41,9 @@ export function useSearchNavigation({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        if (useUISelectionStore.getState().activeView !== 'dialog') {
+          return;
+        }
         e.preventDefault();
         setIsSearchOpen(true);
       }
