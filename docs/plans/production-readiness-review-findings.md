@@ -22,16 +22,17 @@ Landed:
 | (2026-08-23) | §1 Option B: quest Flow view removed (litegraph canvas + inspector + command write path, quest batch history, node-editor playground, `litegraph.js`/`dagre` deps, writable-quest flag). Codec promoted to `quest/domain/conditionExpressionCodec.ts`; quest surface is list/details/create. |
 | `635cdd8` | §3 both P0 performance items: single-parse project open (metadata-worker model hand-off, `parsedFiles` LRU cap) + file-watcher change batching via `updateFileModels` |
 | `1db5ce1` | §3 all three P1 performance items: Problems-panel scan deferral/debounce + per-file fact cache, `QuestList` single-pass batch analysis, fileStore coarse-selector coverage + memoized layouts |
-| (2026-08-23) | §3 all three P2 performance items: condition-subtree memo boundary + `conditionsExpanded` reset, `IngestedFilesDialog` virtualization + memoized row derivation, `ParserService` idle-worker dispatch |
+| `6322a0b` | §3 all three P2 performance items: condition-subtree memo boundary + `conditionsExpanded` reset, `IngestedFilesDialog` virtualization + memoized row derivation, `ParserService` idle-worker dispatch |
 
-Verified on the merged tree after the P1 slice: full Jest suite (1059 tests in
-159 suites), browser-harness Playwright suite (163 tests), `build:main`,
-`typecheck:renderer`, `build:renderer` (no chunk-size or eval warnings), and
-lint (0 errors; 7 pre-existing warnings in untouched files) all green. Earlier
-counts in this document (1019 tests in 151 suites after Option B) dropped
-because Option B deleted ~20 quest-flow Jest suites and 2 Playwright specs
-along with the code they covered; the P0/P1 perf slices added the guard suites
-back up to 159.
+Verified on the merged tree after the P2 slice: full Jest suite (**1066 tests in
+160 suites** — current baseline), browser-harness Playwright suite (163 tests),
+`build:main`, `typecheck:renderer`, `build:renderer` (no chunk-size or eval
+warnings), and lint (0 errors; 7 pre-existing warnings in untouched files) all
+green. Earlier counts in this document (1019 tests in 151 suites after Option B)
+dropped because Option B deleted ~20 quest-flow Jest suites and 2 Playwright
+specs along with the code they covered; the P0/P1 perf slices brought the guard
+suites back up to 159/1059, and the P2 slice added
+`tests/ConditionEditor.rerender.test.tsx` plus 6 tests across existing suites.
 
 **§3 Performance is now closed down to P3** — the P0, P1, and P2 items are all
 done; only the §3 P3 measure-first items remain. Everything else in this
@@ -58,6 +59,17 @@ ln -sf /opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell
 ```
 
 Substitute the revision numbers the error message names.
+
+**Known container flake (not a regression — do not chase it).** Full-suite Jest
+runs in this container intermittently fail `tests/ProjectService.test.ts` and/or
+`tests/ProjectService.modelHandoff.test.ts` with the native tree-sitter parser
+returning an undefined tree (`TypeError: Cannot read properties of undefined
+(reading 'hasError')` at `daedalus-parser/src/core/parser.js`, or an empty
+`index.npcs`). It reproduces on unmodified `master` (verified at `ce3d27e`
+across repeated runs) and disappears when either suite is run alone, so it is
+environmental — the native binding under Jest's parallel workers, worsened by
+concurrent load. Run the full suite on an otherwise idle machine and re-run
+before treating a ProjectService failure as real.
 
 ---
 
