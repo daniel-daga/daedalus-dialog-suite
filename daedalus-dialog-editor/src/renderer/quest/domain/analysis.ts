@@ -30,16 +30,31 @@ export interface QuestReference {
     details: string;
 }
 
+// Lazily-built lowercased index per symbols-object identity so repeated
+// case-insensitive misses don't re-enumerate the (potentially huge) table.
+// First-match semantics for case-insensitive duplicates follow Object.entries
+// order, matching the previous linear scan.
+const loweredSymbolIndexCache = new WeakMap<object, Map<string, unknown>>();
+
+const getLoweredSymbolIndex = <T,>(symbols: Record<string, T>): Map<string, T> => {
+    let index = loweredSymbolIndexCache.get(symbols) as Map<string, T> | undefined;
+    if (!index) {
+        index = new Map<string, T>();
+        for (const [key, value] of Object.entries(symbols)) {
+            const lowered = key.toLowerCase();
+            if (!index.has(lowered)) {
+                index.set(lowered, value);
+            }
+        }
+        loweredSymbolIndexCache.set(symbols, index);
+    }
+    return index;
+};
+
 const findCaseInsensitiveSymbol = <T,>(symbols: Record<string, T> | undefined, name: string): T | undefined => {
     if (!symbols) return undefined;
     if (symbols[name]) return symbols[name];
-    const lowered = name.toLowerCase();
-    for (const [key, value] of Object.entries(symbols)) {
-        if (key.toLowerCase() === lowered) {
-            return value;
-        }
-    }
-    return undefined;
+    return getLoweredSymbolIndex(symbols).get(name.toLowerCase());
 };
 
 export const analyzeQuest = (semanticModel: SemanticModel, questName: string): QuestAnalysis => {
@@ -173,6 +188,169 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
     };
 };
 
+interface QuestLifecycleSignals {
+    hasStart: boolean;
+    hasSuccess: boolean;
+    hasFailed: boolean;
+    hasObsolete: boolean;
+    hasLifecycleSignal: boolean;
+    terminalStates: Set<'success' | 'failed' | 'obsolete'>;
+    /** MIS-side only: `=` assignments or VariableCondition checks were seen. */
+    hasExplicitChecks: boolean;
+}
+
+const createLifecycleSignals = (): QuestLifecycleSignals => ({
+    hasStart: false,
+    hasSuccess: false,
+    hasFailed: false,
+    hasObsolete: false,
+    hasLifecycleSignal: false,
+    terminalStates: new Set(),
+    hasExplicitChecks: false
+});
+
+const applyLifecycleSignal = (signals: QuestLifecycleSignals, rawValue: unknown) => {
+    const state = normalizeQuestLifecycleState(rawValue);
+    signals.hasLifecycleSignal = true;
+    signals.hasStart = true;
+
+    if (state === 'success') {
+        signals.hasSuccess = true;
+        signals.terminalStates.add('success');
+    } else if (state === 'failed') {
+        signals.hasFailed = true;
+        signals.terminalStates.add('failed');
+    } else if (state === 'obsolete') {
+        signals.hasObsolete = true;
+        signals.hasFailed = true;
+        signals.terminalStates.add('obsolete');
+    }
+};
+
+/**
+ * Batch variant of `analyzeQuest`: analyzes all quests in a SINGLE pass over
+ * `semanticModel.functions`, accumulating per-quest signals keyed by canonical
+ * topic/MIS-variable keys. Produces results identical to calling
+ * `analyzeQuest` once per quest.
+ *
+ * Note on `logicMethod`: per-quest `analyzeQuest` has an 'implicit' branch
+ * driven by `getQuestReferences`, but its predicate (a condition ref whose
+ * details do not include the MIS variable name) can never be true — condition
+ * refs are only pushed for the MIS variable and always embed its name in
+ * details. So without explicit checks the method is always 'unknown', which
+ * this batch path returns directly, avoiding the O(functions + dialogs)
+ * `getQuestReferences` walk per quest.
+ */
+export const analyzeQuests = (
+    semanticModel: Pick<SemanticModel, 'functions' | 'constants' | 'variables'>,
+    questNames: string[]
+): Map<string, QuestAnalysis> => {
+    const topicSignalsByKey = new Map<string, QuestLifecycleSignals>();
+    const misSignalsByKey = new Map<string, QuestLifecycleSignals>();
+
+    const questInfos = questNames.map((questName) => {
+        const misVarName = getQuestMisVariableName(questName);
+        // Falsy names never match in isCaseInsensitiveMatch — don't index them.
+        const questKey = questName ? getCanonicalQuestKey(questName) : null;
+        const misKey = misVarName ? getCanonicalQuestKey(misVarName) : null;
+        if (questKey && !topicSignalsByKey.has(questKey)) {
+            topicSignalsByKey.set(questKey, createLifecycleSignals());
+        }
+        if (misKey && !misSignalsByKey.has(misKey)) {
+            misSignalsByKey.set(misKey, createLifecycleSignals());
+        }
+        return { questName, misVarName, questKey, misKey };
+    });
+
+    // Single pass over all functions, accumulating signals for every quest.
+    Object.values(semanticModel.functions || {}).forEach(func => {
+        func.actions?.forEach((action: DialogAction) => {
+            if ('topic' in action && action.topic) {
+                const signals = topicSignalsByKey.get(getCanonicalQuestKey(action.topic));
+                if (signals) {
+                    if (action.type === 'CreateTopic') {
+                        signals.hasStart = true;
+                    } else if (action.type === 'LogSetTopicStatus') {
+                        applyLifecycleSignal(signals, action.status);
+                    }
+                }
+            }
+
+            if (action.type === 'SetVariableAction' && action.operator === '=' && action.variableName) {
+                const signals = misSignalsByKey.get(getCanonicalQuestKey(action.variableName));
+                if (signals) {
+                    applyLifecycleSignal(signals, action.value);
+                    signals.hasExplicitChecks = true;
+                }
+            }
+        });
+
+        func.conditions?.forEach((cond: DialogCondition) => {
+            if (cond.type === 'VariableCondition' && cond.variableName) {
+                const signals = misSignalsByKey.get(getCanonicalQuestKey(cond.variableName));
+                if (signals) {
+                    signals.hasExplicitChecks = true;
+                }
+            }
+        });
+    });
+
+    const result = new Map<string, QuestAnalysis>();
+    questInfos.forEach(({ questName, misVarName, questKey, misKey }) => {
+        const topicConstant = findCaseInsensitiveSymbol(semanticModel.constants, questName);
+        const misVariable = findCaseInsensitiveSymbol(semanticModel.variables, misVarName);
+        const topic = (questKey && topicSignalsByKey.get(questKey)) || createLifecycleSignals();
+        const mis = (misKey && misSignalsByKey.get(misKey)) || createLifecycleSignals();
+
+        const hasStart = topic.hasStart || mis.hasStart;
+        const hasSuccess = topic.hasSuccess || mis.hasSuccess;
+        const hasFailed = topic.hasFailed || mis.hasFailed;
+        const hasObsolete = topic.hasObsolete || mis.hasObsolete;
+        const hasExplicitChecks = !!misVariable || mis.hasExplicitChecks;
+
+        let lifecycleSource: QuestAnalysis['lifecycleSource'] = 'none';
+        if (topic.hasLifecycleSignal && mis.hasLifecycleSignal) {
+            lifecycleSource = 'mixed';
+        } else if (mis.hasLifecycleSignal) {
+            lifecycleSource = 'mis';
+        } else if (topic.hasLifecycleSignal) {
+            lifecycleSource = 'topic';
+        }
+
+        const hasLifecycleConflict =
+            topic.terminalStates.size > 0 &&
+            mis.terminalStates.size > 0 &&
+            !Array.from(topic.terminalStates).some(state => mis.terminalStates.has(state));
+
+        let status: QuestAnalysis['status'] = 'not_started';
+        if (hasSuccess || hasFailed || hasObsolete) {
+            status = 'implemented';
+        } else if (hasStart) {
+            status = 'wip';
+        }
+
+        result.set(questName, {
+            status,
+            logicMethod: hasExplicitChecks ? 'explicit' : 'unknown',
+            misVariableExists: !!misVariable,
+            misVariableName: misVarName,
+            hasStart,
+            hasSuccess,
+            hasFailed,
+            hasObsolete,
+            lifecycleSource,
+            hasLifecycleConflict,
+            description: topicConstant ? String(topicConstant.value).replace(/^"|"$/g, '') : '',
+            filePaths: {
+                topic: topicConstant?.filePath || null,
+                variable: misVariable?.filePath || null
+            }
+        });
+    });
+
+    return result;
+};
+
 export const getQuestReferences = (semanticModel: SemanticModel, questName: string): QuestReference[] => {
     if (!questName) return [];
     const misVarName = getQuestMisVariableName(questName);
@@ -243,7 +421,7 @@ export const getQuestReferences = (semanticModel: SemanticModel, questName: stri
     return refs;
 };
 
-export const getUsedQuestTopics = (semanticModel: SemanticModel): Set<string> => {
+export const getUsedQuestTopics = (semanticModel: Pick<SemanticModel, 'functions'>): Set<string> => {
     const used = new Set<string>();
 
     // Check all functions for Log_* calls

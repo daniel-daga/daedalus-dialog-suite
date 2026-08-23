@@ -1,4 +1,4 @@
-import { analyzeQuest, getQuestReferences, getUsedQuestTopics, findDialogNameForFunction } from '../src/renderer/quest/domain/analysis';
+import { analyzeQuest, analyzeQuests, getQuestReferences, getUsedQuestTopics, findDialogNameForFunction } from '../src/renderer/quest/domain/analysis';
 import type { SemanticModel } from '../src/renderer/types/global';
 import { isQuestTopicConstantByPolicy } from '../src/renderer/utils/questIdentity';
 
@@ -209,6 +209,176 @@ describe('questAnalysis', () => {
             expect(result.status).toBe('implemented');
             expect(result.lifecycleSource).toBe('mixed');
             expect(result.hasLifecycleConflict).toBe(true);
+        });
+    });
+
+    describe('analyzeQuests (batch)', () => {
+        // One fixture covering every status, lifecycle source, conflicts,
+        // case-insensitive matches, and no-signal quests.
+        const buildBatchFixture = () => {
+            const constants = [
+                { name: 'TOPIC_IMPL', value: '"Implemented"', filePath: 'A.d' },
+                { name: 'TOPIC_WIPQ', value: '"WIP"', filePath: 'A.d' },
+                { name: 'TOPIC_RUNNING', value: '"Running"', filePath: 'A.d' },
+                { name: 'TOPIC_EMPTY', value: '"Empty"', filePath: 'A.d' },
+                { name: 'TOPIC_MISONLY', value: '"MIS only"', filePath: 'A.d' },
+                { name: 'TOPIC_MIXED', value: '"Mixed"', filePath: 'A.d' },
+                { name: 'TOPIC_CONFLICT', value: '"Conflict"', filePath: 'A.d' },
+                { name: 'TOPIC_CaseMix', value: '"Case mix"', filePath: 'B.d' },
+                { name: 'TOPIC_CONDONLY', value: '"Cond only"', filePath: 'B.d' },
+                { name: 'TOPIC_ENTRYONLY', value: '"Entry only"', filePath: 'B.d' },
+                { name: 'TOPIC_ODDCOND', value: '"Odd cond"', filePath: 'B.d' },
+                { name: 'TOPIC_PLUS', value: '"Compound assign"', filePath: 'B.d' },
+                // Case-insensitive duplicate: first Object.entries match must win.
+                { name: 'TOPIC_DupCase', value: '"Dup first"', filePath: 'C.d' },
+                { name: 'TOPIC_DUPCASE', value: '"Dup second"', filePath: 'D.d' }
+            ];
+            const variables = [
+                { name: 'MIS_IMPL', type: 'int', filePath: 'G.d' },
+                { name: 'MIS_MISONLY', type: 'int', filePath: 'G.d' },
+                { name: 'MIS_MIXED', type: 'int', filePath: 'G.d' },
+                { name: 'MIS_CONFLICT', type: 'int', filePath: 'G.d' },
+                // Deliberately different casing than getQuestMisVariableName('TOPIC_CaseMix') → 'MIS_CaseMix'
+                { name: 'MIS_CASEMIX', type: 'int', filePath: 'G.d' }
+            ];
+            const functions = [
+                {
+                    name: 'F_Impl',
+                    actions: [
+                        { type: 'CreateTopic', topic: 'TOPIC_IMPL' },
+                        { type: 'LogSetTopicStatus', topic: 'TOPIC_IMPL', status: 'LOG_SUCCESS' }
+                    ]
+                },
+                { name: 'F_Wip', actions: [{ type: 'CreateTopic', topic: 'TOPIC_WIPQ' }] },
+                { name: 'F_Running', actions: [{ type: 'LogSetTopicStatus', topic: 'TOPIC_RUNNING', status: 'LOG_RUNNING' }] },
+                {
+                    name: 'F_MisOnly',
+                    actions: [{ type: 'SetVariableAction', variableName: 'MIS_MISONLY', operator: '=', value: 'LOG_FAILED' }]
+                },
+                {
+                    name: 'F_Mixed',
+                    actions: [
+                        { type: 'LogSetTopicStatus', topic: 'TOPIC_MIXED', status: 'LOG_SUCCESS' },
+                        { type: 'SetVariableAction', variableName: 'MIS_MIXED', operator: '=', value: 'LOG_SUCCESS' }
+                    ]
+                },
+                {
+                    name: 'F_Conflict',
+                    actions: [
+                        { type: 'LogSetTopicStatus', topic: 'TOPIC_CONFLICT', status: 'LOG_SUCCESS' },
+                        { type: 'SetVariableAction', variableName: 'MIS_CONFLICT', operator: '=', value: 'LOG_OBSOLETE' }
+                    ]
+                },
+                {
+                    name: 'F_CaseMix',
+                    actions: [
+                        { type: 'CreateTopic', topic: 'topic_casemix' },
+                        { type: 'LogSetTopicStatus', topic: 'TOPIC_CASEMIX', status: 'LOG_SUCCESS' }
+                    ],
+                    conditions: [{ type: 'VariableCondition', variableName: 'mis_casemix', operator: '==', value: '1', negated: false }]
+                },
+                {
+                    name: 'F_CondOnly',
+                    conditions: [{ type: 'VariableCondition', variableName: 'MIS_CONDONLY', operator: '==', value: '0', negated: true }]
+                },
+                { name: 'F_EntryOnly', actions: [{ type: 'LogEntry', topic: 'TOPIC_ENTRYONLY', text: '...' }] },
+                {
+                    // Non-VariableCondition carrying a matching variableName: must NOT count
+                    // as an explicit check, and must not flip logicMethod to 'implicit'.
+                    name: 'F_OddCond',
+                    conditions: [{ type: 'SomeOtherCondition', variableName: 'MIS_ODDCOND' }]
+                },
+                {
+                    // Compound assignment operator: not a lifecycle signal per current rules.
+                    name: 'F_Plus',
+                    actions: [{ type: 'SetVariableAction', variableName: 'MIS_PLUS', operator: '+=', value: '1' }]
+                }
+            ];
+            const dialogs = [
+                { name: 'DIA_Impl', properties: { information: 'F_Impl', npc: 'NPC_A' } }
+            ];
+            return createMockModel(functions, dialogs, constants, variables);
+        };
+
+        const batchQuestNames = [
+            'TOPIC_IMPL',
+            'TOPIC_WIPQ',
+            'TOPIC_RUNNING',
+            'TOPIC_EMPTY',
+            'TOPIC_MISONLY',
+            'TOPIC_MIXED',
+            'TOPIC_CONFLICT',
+            'TOPIC_CaseMix',
+            'TOPIC_CONDONLY',
+            'TOPIC_ENTRYONLY',
+            'TOPIC_ODDCOND',
+            'TOPIC_PLUS',
+            'TOPIC_Dupcase', // exact-miss: exercises case-insensitive first-match on duplicates
+            'TOPIC_UNDECLARED' // no constant, no signals at all
+        ];
+
+        it('produces results identical to per-quest analyzeQuest for every quest shape', () => {
+            const model = buildBatchFixture();
+
+            const batch = analyzeQuests(model, batchQuestNames);
+
+            expect(batch.size).toBe(batchQuestNames.length);
+            batchQuestNames.forEach((name) => {
+                expect(batch.get(name)).toEqual(analyzeQuest(model, name));
+            });
+
+            // Spot-check the fixture actually covers the interesting shapes
+            // (guards against the equivalence test passing vacuously).
+            expect(batch.get('TOPIC_IMPL')?.status).toBe('implemented');
+            expect(batch.get('TOPIC_WIPQ')?.status).toBe('wip');
+            expect(batch.get('TOPIC_EMPTY')?.status).toBe('not_started');
+            expect(batch.get('TOPIC_IMPL')?.lifecycleSource).toBe('topic');
+            expect(batch.get('TOPIC_MISONLY')?.lifecycleSource).toBe('mis');
+            expect(batch.get('TOPIC_MIXED')?.lifecycleSource).toBe('mixed');
+            expect(batch.get('TOPIC_MIXED')?.hasLifecycleConflict).toBe(false);
+            expect(batch.get('TOPIC_CONFLICT')?.hasLifecycleConflict).toBe(true);
+            expect(batch.get('TOPIC_CaseMix')?.status).toBe('implemented');
+            expect(batch.get('TOPIC_CaseMix')?.logicMethod).toBe('explicit');
+            expect(batch.get('TOPIC_CONDONLY')?.logicMethod).toBe('explicit');
+            // Dead 'implicit' branch: entry-only and non-VariableCondition quests stay 'unknown'.
+            expect(batch.get('TOPIC_ENTRYONLY')?.logicMethod).toBe('unknown');
+            expect(batch.get('TOPIC_ODDCOND')?.logicMethod).toBe('unknown');
+            expect(batch.get('TOPIC_PLUS')?.status).toBe('not_started');
+            // First Object.entries match wins for case-insensitive duplicates.
+            expect(batch.get('TOPIC_Dupcase')?.description).toBe('Dup first');
+            expect(batch.get('TOPIC_Dupcase')?.filePaths.topic).toBe('C.d');
+            expect(batch.get('TOPIC_UNDECLARED')?.status).toBe('not_started');
+        });
+
+        it('walks functions exactly once for N quests, never walks dialogs, and enumerates constants at most once', () => {
+            const model = buildBatchFixture();
+
+            let functionPasses = 0;
+            let dialogPasses = 0;
+            let constantPasses = 0;
+            const countingProxy = <T extends object>(target: T, onEnumerate: () => void): T =>
+                new Proxy(target, {
+                    ownKeys(t) {
+                        onEnumerate();
+                        return Reflect.ownKeys(t);
+                    }
+                });
+
+            const proxiedModel = {
+                ...model,
+                functions: countingProxy(model.functions, () => { functionPasses += 1; }),
+                dialogs: countingProxy(model.dialogs, () => { dialogPasses += 1; }),
+                constants: countingProxy(model.constants!, () => { constantPasses += 1; })
+            } as SemanticModel;
+
+            // Every name case-misses the constants table so the old per-miss
+            // Object.entries fallback would enumerate constants once per quest.
+            const caseMissedNames = batchQuestNames.map((name) => name.toUpperCase() === name ? name.toLowerCase() : name.toUpperCase());
+            analyzeQuests(proxiedModel, caseMissedNames);
+
+            expect(functionPasses).toBe(1);
+            expect(dialogPasses).toBe(0);
+            expect(constantPasses).toBeLessThanOrEqual(1);
         });
     });
 
