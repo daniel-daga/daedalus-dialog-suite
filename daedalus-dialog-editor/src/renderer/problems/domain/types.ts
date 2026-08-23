@@ -1,4 +1,4 @@
-import type { DialogFunction, SemanticModel } from '../../../shared/types';
+import type { SemanticModel } from '../../../shared/types';
 
 /**
  * Domain types for the project-wide Problems panel.
@@ -41,19 +41,71 @@ export interface FileModel {
   model: SemanticModel;
 }
 
-/** A dialog function together with the file that declares it. */
+/**
+ * Everything the lint rules need to know about one dialog, precomputed from its
+ * model object. Reference properties are resolved to plain function names.
+ */
+export interface DialogFacts {
+  name: string;
+  /** Raw `npc` property when it is a string (may be empty/whitespace). */
+  npc?: string;
+  /** Function name of the `information` property, when present. */
+  informationRef?: string;
+  /** Function name of the `condition` property, when present. */
+  conditionRef?: string;
+}
+
+/**
+ * Everything the lint rules need to know about one function, precomputed by a
+ * single walk over its (possibly nested) actions and conditions.
+ */
+export interface FunctionFacts {
+  name: string;
+  /** True when the function contains at least one `Choice` action. */
+  hasChoice: boolean;
+  /** True when the function contains at least one `ClearChoicesAction`. */
+  hasClearChoices: boolean;
+  /** Raw `Choice.targetFunction` names in encounter order. */
+  choiceTargets: string[];
+  /** The function's `calls` list. */
+  calls: string[];
+  /** Non-empty `Npc_KnowsInfo` dialog refs with their condition index. */
+  knowsInfoRefs: Array<{ index: number; dialogRef: string }>;
+  /** Literal, non-empty voice ids in encounter order. */
+  voiceIds: string[];
+}
+
+/**
+ * Per-file lint inputs derived from a semantic model. Pure function of the
+ * model object, so it can be cached against the model's identity — everything
+ * cross-file (name sets, reference graph, duplicates) is aggregated later.
+ */
+export interface FileFacts {
+  dialogs: DialogFacts[];
+  functions: FunctionFacts[];
+  /** Names of file-local C_NPC instances plus `npcs` entries. */
+  npcNames: string[];
+}
+
+/** One file's facts together with its path. */
+export interface FileFactsEntry {
+  filePath: string;
+  facts: FileFacts;
+}
+
+/** A dialog function's facts together with the file that declares it. */
 export interface FunctionEntry {
-  func: DialogFunction;
+  func: FunctionFacts;
   filePath: string;
 }
 
 /**
  * Aggregated, case-insensitive project view built from every parsed file.
  * The `*Keys` sets hold lowercased names for existence checks; the original
- * casing is preserved on the underlying model objects for display.
+ * casing is preserved on the underlying facts for display.
  */
 export interface ProjectView {
-  files: FileModel[];
+  fileFacts: FileFactsEntry[];
   /** Lowercased names of every dialog across the project. */
   dialogNameKeys: ReadonlySet<string>;
   /** Lowercased names of every known NPC (C_NPC instances + prototypes). */

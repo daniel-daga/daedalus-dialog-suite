@@ -24,17 +24,16 @@ const SEVERITY_ORDER: Record<Problem['severity'], number> = { error: 0, warning:
  */
 function buildFunctionToDialogName(view: ProjectView): Map<string, string> {
   const map = new Map<string, string>();
-  const record = (ref: string | { name?: string } | undefined, dialogName: string): void => {
-    const name = typeof ref === 'string' ? ref : ref?.name;
+  const record = (name: string | undefined, dialogName: string): void => {
     if (name) {
       const key = name.trim().toLowerCase();
       if (!map.has(key)) map.set(key, dialogName);
     }
   };
-  for (const { model } of view.files) {
-    for (const dialog of Object.values(model.dialogs || {})) {
-      record(dialog.properties?.information, dialog.name);
-      record(dialog.properties?.condition, dialog.name);
+  for (const { facts } of view.fileFacts) {
+    for (const dialog of facts.dialogs) {
+      record(dialog.informationRef, dialog.name);
+      record(dialog.conditionRef, dialog.name);
     }
   }
   return map;

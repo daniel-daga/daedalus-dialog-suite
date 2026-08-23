@@ -1,4 +1,5 @@
-import type { FileModel, Problem } from '../domain/types';
+import type { SemanticModel } from '../../../shared/types';
+import type { FileFacts, FileModel, Problem } from '../domain/types';
 import { buildProjectView } from '../domain/projectView';
 import { runRules } from '../domain/runRules';
 
@@ -11,6 +12,12 @@ import { runRules } from '../domain/runRules';
 export interface ProjectScanInput {
   files: FileModel[];
   knownNpcNames: string[];
+  /**
+   * Optional per-model facts cache carried across scans by the caller: files
+   * whose model object is unchanged since the last scan skip re-extraction
+   * (see {@link buildProjectView}).
+   */
+  factsCache?: WeakMap<SemanticModel, FileFacts>;
 }
 
 export interface ProjectScanResult {
@@ -20,6 +27,10 @@ export interface ProjectScanResult {
 }
 
 export function scanProject(input: ProjectScanInput): ProjectScanResult {
-  const view = buildProjectView({ files: input.files, knownNpcNames: input.knownNpcNames });
+  const view = buildProjectView({
+    files: input.files,
+    knownNpcNames: input.knownNpcNames,
+    factsCache: input.factsCache
+  });
   return { problems: runRules(view), scannedFileCount: input.files.length };
 }

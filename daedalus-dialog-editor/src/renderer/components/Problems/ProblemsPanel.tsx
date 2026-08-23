@@ -24,13 +24,18 @@ const ProblemsPanel: React.FC = () => {
   const scannedFileCount = useProblemsStore((s) => s.scannedFileCount);
   const totalFileCount = useProblemsStore((s) => s.totalFileCount);
   const runScan = useProblemsStore((s) => s.runScan);
+  const requestScan = useProblemsStore((s) => s.requestScan);
   // parsedFiles are ingested in the background; re-scan whenever they change.
+  // The store schedules the actual scan: deferred to a single scan while
+  // ingestion runs, debounced otherwise. The isIngesting dependency makes the
+  // effect fire on the completion flip even without a parseGeneration bump.
   const parseGeneration = useProjectStore((s) => s.parseGeneration);
+  const isIngesting = useProjectStore((s) => s.isIngesting);
   const { navigateToDialog, navigateToSymbol } = useNavigation();
 
   useEffect(() => {
-    runScan();
-  }, [runScan, parseGeneration]);
+    requestScan();
+  }, [requestScan, parseGeneration, isIngesting]);
 
   const { errorCount, warningCount } = useMemo(() => {
     let errors = 0;

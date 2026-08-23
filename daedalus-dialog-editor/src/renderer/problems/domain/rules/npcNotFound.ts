@@ -8,9 +8,9 @@ import type { LintRule, Problem } from '../types';
 export const npcNotFoundRule: LintRule = (view) => {
   const problems: Problem[] = [];
 
-  for (const file of view.files) {
-    for (const dialog of Object.values(file.model.dialogs || {})) {
-      const npc = dialog.properties.npc;
+  for (const file of view.fileFacts) {
+    for (const dialog of file.facts.dialogs) {
+      const npc = dialog.npc;
       if (typeof npc !== 'string' || npc.trim() === '') {
         continue;
       }

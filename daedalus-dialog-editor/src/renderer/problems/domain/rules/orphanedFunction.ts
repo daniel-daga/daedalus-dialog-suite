@@ -1,5 +1,4 @@
 import type { LintRule, Problem } from '../types';
-import { forEachAction } from '../walk';
 
 /**
  * `orphaned-function`: flags dialog functions that nothing references.
@@ -7,7 +6,8 @@ import { forEachAction } from '../walk';
  * A function is considered referenced when it is named by a dialog's
  * `information` or `condition` property, targeted by a `Choice` action (including
  * choices nested in conditional branches), or listed in another function's
- * `calls` array. Matching is case-insensitive across the whole project.
+ * `calls` array. Matching is case-insensitive across the whole project; all of
+ * these references are pre-extracted into the per-file facts.
  */
 export const orphanedFunctionRule: LintRule = (view): Problem[] => {
   const referencedKeys = new Set<string>();
@@ -18,19 +18,16 @@ export const orphanedFunctionRule: LintRule = (view): Problem[] => {
     }
   };
 
-  for (const file of view.files) {
-    for (const dialog of Object.values(file.model.dialogs || {})) {
-      const { information, condition } = dialog.properties;
-      addRef(typeof information === 'string' ? information : information?.name);
-      addRef(typeof condition === 'string' ? condition : condition?.name);
+  for (const file of view.fileFacts) {
+    for (const dialog of file.facts.dialogs) {
+      addRef(dialog.informationRef);
+      addRef(dialog.conditionRef);
     }
-    for (const func of Object.values(file.model.functions || {})) {
-      forEachAction(func.actions, (action) => {
-        if (action.type === 'Choice') {
-          addRef(action.targetFunction);
-        }
-      });
-      for (const call of func.calls || []) {
+    for (const func of file.facts.functions) {
+      for (const target of func.choiceTargets) {
+        addRef(target);
+      }
+      for (const call of func.calls) {
         addRef(call);
       }
     }

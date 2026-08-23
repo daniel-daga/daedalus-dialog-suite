@@ -4,14 +4,22 @@
  * Reads the parsed per-file models the project store already caches, runs the
  * lint rules via the store-agnostic application layer, and holds the resulting
  * navigable problem list. The heavy logic lives in `problems/domain` and
- * `problems/application`; this store is just the Zustand seam.
+ * `problems/application`; this store is just the Zustand seam plus the scan
+ * scheduling (defer-during-ingestion + debounce) and the cross-scan facts cache.
  */
 
 import { create } from 'zustand';
-import type { Problem } from '../problems/domain/types';
-import type { FileModel } from '../problems/domain/types';
+import type { SemanticModel } from '../../shared/types';
+import type { FileFacts, FileModel, Problem } from '../problems/domain/types';
 import { scanProject } from '../problems/application/scanProject';
 import { useProjectStore } from './projectStore';
+
+/**
+ * Trailing delay for parsed-model-driven scans, so watcher batches and
+ * keystroke syncs coalesce into one scan instead of one per parseGeneration
+ * bump. Manual rescans bypass it via `runScan`.
+ */
+const SCAN_DEBOUNCE_MS = 300;
 
 interface ProblemsState {
   problems: Problem[];
@@ -25,8 +33,16 @@ interface ProblemsState {
 }
 
 interface ProblemsActions {
-  /** Re-run every lint rule over the currently-parsed project files. */
+  /** Immediately re-run every lint rule over the currently-parsed project files. */
   runScan: () => void;
+  /**
+   * Schedule a scan in response to parsed-model churn. While background
+   * ingestion runs this is a no-op that arms exactly one scan for when it
+   * completes (a scan per parseGeneration bump over the growing file set would
+   * be O(n²)); outside ingestion the scan is debounced by
+   * {@link SCAN_DEBOUNCE_MS}.
+   */
+  requestScan: () => void;
   /** Reset to the empty state (e.g. when a project closes). */
   clear: () => void;
 }
@@ -41,29 +57,71 @@ const initialState: ProblemsState = {
   totalFileCount: 0
 };
 
-export const useProblemsStore = create<ProblemsStore>((set) => ({
-  ...initialState,
+export const useProblemsStore = create<ProblemsStore>((set, get) => {
+  // Scheduling state and the facts cache live outside the reactive state —
+  // nothing renders from them. The WeakMap lets each scan reuse the extracted
+  // facts of every file whose model object is unchanged, and drops entries
+  // automatically when models are evicted or replaced.
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let scanPendingAfterIngestion = false;
+  let factsCache = new WeakMap<SemanticModel, FileFacts>();
 
-  runScan: () => {
-    set({ isScanning: true });
+  const cancelScheduledScan = (): void => {
+    if (debounceTimer !== null) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    scanPendingAfterIngestion = false;
+  };
 
-    const project = useProjectStore.getState();
-    const files: FileModel[] = Array.from(project.parsedFiles.values()).map((cache) => ({
-      filePath: cache.filePath,
-      model: cache.semanticModel
-    }));
-    const knownNpcNames = [...project.npcList, ...project.npcPrototypes];
+  return {
+    ...initialState,
 
-    const { problems, scannedFileCount } = scanProject({ files, knownNpcNames });
+    runScan: () => {
+      cancelScheduledScan();
+      set({ isScanning: true });
 
-    set({
-      problems,
-      isScanning: false,
-      hasScanned: true,
-      scannedFileCount,
-      totalFileCount: project.allDialogFiles.length
-    });
-  },
+      const project = useProjectStore.getState();
+      const files: FileModel[] = Array.from(project.parsedFiles.values()).map((cache) => ({
+        filePath: cache.filePath,
+        model: cache.semanticModel
+      }));
+      const knownNpcNames = [...project.npcList, ...project.npcPrototypes];
 
-  clear: () => set({ ...initialState })
-}));
+      const { problems, scannedFileCount } = scanProject({ files, knownNpcNames, factsCache });
+
+      set({
+        problems,
+        isScanning: false,
+        hasScanned: true,
+        scannedFileCount,
+        totalFileCount: project.allDialogFiles.length
+      });
+    },
+
+    requestScan: () => {
+      if (useProjectStore.getState().isIngesting) {
+        scanPendingAfterIngestion = true;
+        return;
+      }
+      if (scanPendingAfterIngestion) {
+        // Ingestion just completed: run the single deferred scan right away.
+        get().runScan();
+        return;
+      }
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        get().runScan();
+      }, SCAN_DEBOUNCE_MS);
+    },
+
+    clear: () => {
+      cancelScheduledScan();
+      factsCache = new WeakMap();
+      set({ ...initialState });
+    }
+  };
+});

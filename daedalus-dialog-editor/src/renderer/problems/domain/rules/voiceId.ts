@@ -1,6 +1,4 @@
 import type { LintRule, Problem } from '../types';
-import { forEachAction } from '../walk';
-import type { DialogLineAction } from '../../../../shared/types';
 
 /** One literal, non-empty voice id and where it was written. */
 interface VoiceIdOccurrence {
@@ -17,26 +15,20 @@ const VANILLA_PATTERN = /_\d+_\d+$/;
  * `DialogLine` voice id.
  *
  * Only literal, non-empty ids are considered (expression-valued ids are skipped
- * because their runtime value is unknown). Duplicates are grouped
- * case-insensitively across files and functions, emitting one navigable problem
- * per occurrence; malformed ids are flagged independently, so a single id can
- * raise both a duplicate and a malformed warning.
+ * because their runtime value is unknown); the ids are pre-extracted into the
+ * per-file facts. Duplicates are grouped case-insensitively across files and
+ * functions, emitting one navigable problem per occurrence; malformed ids are
+ * flagged independently, so a single id can raise both a duplicate and a
+ * malformed warning.
  */
 export const voiceIdRule: LintRule = (view): Problem[] => {
   const occurrences: VoiceIdOccurrence[] = [];
 
-  for (const file of view.files) {
-    for (const func of Object.values(file.model.functions || {})) {
-      forEachAction(func.actions, (action) => {
-        if (action.type !== 'DialogLine') {
-          return;
-        }
-        const line = action as DialogLineAction;
-        if (typeof line.id !== 'string' || line.id.trim() === '' || line.idIsExpression) {
-          return;
-        }
-        occurrences.push({ id: line.id, filePath: file.filePath, functionName: func.name });
-      });
+  for (const file of view.fileFacts) {
+    for (const func of file.facts.functions) {
+      for (const id of func.voiceIds) {
+        occurrences.push({ id, filePath: file.filePath, functionName: func.name });
+      }
     }
   }
 
