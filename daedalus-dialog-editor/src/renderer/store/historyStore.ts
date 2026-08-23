@@ -256,7 +256,7 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
 /**
  * Subscribe to fileStore changes to automatically clean up history when:
  *  - a file is closed (removed from openFiles)
- *  - source code is saved via saveSource (originalCode changes + isDirty=false)
+ *  - the file is reloaded from disk (originalCode changes + isDirty=false)
  *
  * This wires historyStore to fileStore without creating a circular dependency.
  */

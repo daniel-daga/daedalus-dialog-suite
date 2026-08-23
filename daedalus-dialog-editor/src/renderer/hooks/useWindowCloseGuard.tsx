@@ -16,7 +16,6 @@ import {
 import {
   useFileStore,
   hasUnsavedChanges,
-  isSourceDirty,
   type FileState,
 } from '../store/fileStore';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
@@ -129,10 +128,7 @@ export function useWindowCloseGuard(): React.ReactElement | null {
           return;
         }
 
-        if (isSourceDirty(fileState)) {
-          // Source-dirty: persist the typed source. saveSource throws on failure.
-          await store.saveSource(filePath, fileState.workingCode as string);
-        } else if (fileState.isDirty) {
+        if (fileState.isDirty) {
           const result = await store.saveFile(filePath);
           if (!result.success) {
             // A validation failure returns without throwing; a classifiable
@@ -230,9 +226,7 @@ export function useWindowCloseGuard(): React.ReactElement | null {
                 secondary={
                   fs.externalConflict
                     ? 'Changed on disk — resolve before saving'
-                    : isSourceDirty(fs)
-                      ? 'Unsaved source edits'
-                      : 'Unsaved changes'
+                    : 'Unsaved changes'
                 }
               />
             </ListItem>

@@ -2,8 +2,8 @@
  * External-change conflict dialog: on-disk diff (feature-suggestions item 6).
  *
  * When the dialog opens for a changed-on-disk conflict it loads the on-disk
- * content and the editor's version (workingCode, or code generated from the
- * semantic model) and renders a line diff. If either load fails it falls back
+ * content and the editor's version (code generated from the semantic model)
+ * and renders a line diff. If either load fails it falls back
  * to the previous text-only dialog — the resolution buttons must stay usable.
  */
 
@@ -57,17 +57,6 @@ describe('ExternalChangeConflictDialog on-disk diff', () => {
     expect(diff.textContent).toBe(' shared\n-disk line\n+mine line');
     expect(readFileSpy).toHaveBeenCalledWith(FILE_PATH);
     expect(generateCodeSpy).toHaveBeenCalledWith(model, useFileStore.getState().codeSettings);
-  });
-
-  test('prefers workingCode over generated code for the editor side', async () => {
-    readFileSpy.mockResolvedValue('disk line');
-    seedConflict({ workingCode: 'typed line' });
-
-    render(<ExternalChangeConflictDialog />);
-
-    const diff = await screen.findByTestId('external-conflict-diff');
-    expect(diff.textContent).toBe('-disk line\n+typed line');
-    expect(generateCodeSpy).not.toHaveBeenCalled();
   });
 
   test('falls back to the text-only dialog when reading the disk content fails', async () => {

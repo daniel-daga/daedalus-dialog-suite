@@ -9,9 +9,8 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
  * assert the bytes on disk are token-identical to the original (fix-01 Tier-1).
  *
  * TRIGGER NOTE — "save with zero edits" is unreachable through the visual
- * editor UI: there is no manual Save button or Ctrl+S in the dialog view (the
- * SourceCodeEditor's Ctrl+S is unmounted, see save-pipeline.md), and auto-save
- * only fires on a dirty file. Per the plan this spec therefore uses the
+ * editor UI: manual save (Ctrl+S / the app-bar Save button) is a no-op on a
+ * clean file, and auto-save only fires on a dirty file. Per the plan this spec therefore uses the
  * sanctioned fallback — a trivial edit followed by an undo back to the pristine
  * snapshot — which leaves the file model-dirty (undo sets isDirty) with a model
  * reference-equal to the one produced by openFile. Auto-save then serializes

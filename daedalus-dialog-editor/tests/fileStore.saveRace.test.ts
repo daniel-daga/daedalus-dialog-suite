@@ -1,19 +1,17 @@
 /**
- * Mid-save race guards for saveFile / saveSource (E7 + N2).
+ * Mid-save race guard for saveFile (E7).
  *
  * An edit that lands while the save IPC is in flight must not be marked clean:
- * it is not on disk yet. saveSource must additionally keep source keystrokes
- * typed during the write so the file stays source-dirty (E2a semantics).
+ * it is not on disk yet.
  *
- * TDD: these tests are red before the guards are added.
+ * The companion saveSource (N2) race guard was removed with the source-editing
+ * state machine (F2) — there is no source buffer to race against any more.
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 import { useEditorStore } from '../src/renderer/store/editorStore';
 
 const mockSaveFile = jest.spyOn(window.editorAPI, 'saveFile');
-const mockWriteFile = jest.spyOn(window.editorAPI, 'writeFile');
-const mockParseSource = jest.spyOn(window.editorAPI, 'parseSource');
 
 const baseState = {
   activeFile: null as string | null,
@@ -118,71 +116,5 @@ describe('fileStore.saveFile mid-save race guard (E7)', () => {
     await savePromise;
 
     expect(useEditorStore.getState().pendingValidation).toBeNull();
-  });
-});
-
-describe('fileStore.saveSource mid-save race guard (N2)', () => {
-  beforeEach(() => {
-    useEditorStore.setState({ ...baseState, openFiles: new Map() });
-    mockWriteFile.mockReset();
-    mockParseSource.mockReset();
-    mockParseSource.mockResolvedValue({ dialogs: {}, functions: {}, hasErrors: false, errors: [] } as any);
-  });
-
-  test('keeps workingCode when the user types during the save (file stays source-dirty)', async () => {
-    const filePath = 'source-race.d';
-    useEditorStore.setState({
-      openFiles: new Map([[filePath, {
-        filePath,
-        semanticModel: { dialogs: {}, functions: {}, hasErrors: false, errors: [] },
-        isDirty: false,
-        lastSaved: new Date(),
-        originalCode: 'old code',
-        workingCode: 'saved snapshot',
-      }]]),
-      activeFile: filePath,
-    });
-
-    let resolveWrite!: (value: unknown) => void;
-    mockWriteFile.mockImplementationOnce(
-      () => new Promise((resolve) => { resolveWrite = resolve; }) as any
-    );
-
-    const savePromise = useEditorStore.getState().saveSource(filePath, 'saved snapshot');
-
-    // Keystrokes land during the write
-    useEditorStore.getState().setWorkingCode(filePath, 'newer typed code');
-
-    resolveWrite({ success: true });
-    await savePromise;
-
-    const fileState = useEditorStore.getState().getFileState(filePath);
-    expect(fileState?.workingCode).toBe('newer typed code');
-    expect(fileState?.originalCode).toBe('saved snapshot');
-    expect(fileState?.workingCode).not.toBe(fileState?.originalCode);
-    expect(fileState?.isDirty).toBe(false);
-  });
-
-  test('clears workingCode when nothing changed during the save', async () => {
-    const filePath = 'source-clean.d';
-    useEditorStore.setState({
-      openFiles: new Map([[filePath, {
-        filePath,
-        semanticModel: { dialogs: {}, functions: {}, hasErrors: false, errors: [] },
-        isDirty: false,
-        lastSaved: new Date(),
-        originalCode: 'old code',
-        workingCode: 'saved snapshot',
-      }]]),
-      activeFile: filePath,
-    });
-
-    mockWriteFile.mockResolvedValueOnce({ success: true } as any);
-
-    await useEditorStore.getState().saveSource(filePath, 'saved snapshot');
-
-    const fileState = useEditorStore.getState().getFileState(filePath);
-    expect(fileState?.workingCode).toBeUndefined();
-    expect(fileState?.originalCode).toBe('saved snapshot');
   });
 });

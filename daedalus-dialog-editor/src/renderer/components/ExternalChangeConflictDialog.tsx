@@ -65,8 +65,7 @@ const ExternalChangeConflictDialog: React.FC = () => {
           return;
         }
         const disk = await window.editorAPI.readFile(activeFile);
-        const mine = fileState.workingCode
-          ?? await window.editorAPI.generateCode(fileState.semanticModel, state.codeSettings);
+        const mine = await window.editorAPI.generateCode(fileState.semanticModel, state.codeSettings);
         if (!cancelled) {
           setDiff({ disk, mine });
         }

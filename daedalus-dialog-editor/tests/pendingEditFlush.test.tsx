@@ -15,7 +15,6 @@ import '@testing-library/jest-dom';
 
 // Keep MainLayout's render tree light — we only need its window keydown effect.
 jest.mock('../src/renderer/components/ThreeColumnLayout', () => () => null);
-jest.mock('../src/renderer/components/SourceEditsPendingBanner', () => () => null);
 
 import MainLayout from '../src/renderer/components/MainLayout';
 import { useFileStore } from '../src/renderer/store/fileStore';
@@ -89,7 +88,6 @@ describe('pending-edit flush before undo/redo (U4)', () => {
           isDirty: false,
           lastSaved: new Date(),
           originalCode: '',
-          workingCode: '',
           hasErrors: false,
           errors: [],
           validationResult: null,

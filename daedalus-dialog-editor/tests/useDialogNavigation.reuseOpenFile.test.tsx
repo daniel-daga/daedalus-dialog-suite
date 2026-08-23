@@ -97,13 +97,12 @@ describe('useDialogNavigation reuses already-open files', () => {
     expect(finalizeDialogSelection).toHaveBeenCalledWith('D1', null);
   });
 
-  test('handleSelectDialog: already-open dirty file keeps its model, isDirty, and workingCode', async () => {
+  test('handleSelectDialog: already-open dirty file keeps its model and isDirty', async () => {
     const dirtyModel = { dialogs: { Kept: {} }, functions: {}, hasErrors: false, errors: [] } as any;
     const dirtyFileState = makeFileState({
       filePath: 'file1.d',
       semanticModel: dirtyModel,
       isDirty: true,
-      workingCode: 'in-flight edits not yet saved',
       originalCode: 'disk content',
     });
 
@@ -129,7 +128,6 @@ describe('useDialogNavigation reuses already-open files', () => {
     expect(useEditorStore.getState().activeFile).toBe('file1.d');
     expect(fileState?.semanticModel).toBe(dirtyModel);
     expect(fileState?.isDirty).toBe(true);
-    expect(fileState?.workingCode).toBe('in-flight edits not yet saved');
   });
 
   test('handleSelectRecentDialog: file already open → setActiveFile, no readFile/parseSource', async () => {

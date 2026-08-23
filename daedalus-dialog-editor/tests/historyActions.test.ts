@@ -40,7 +40,6 @@ const resetStores = () => {
         isDirty: false,
         lastSaved: new Date(),
         originalCode: '',
-        workingCode: '',
         hasErrors: false,
         errors: [],
         validationResult: null,
@@ -299,7 +298,6 @@ describe('historyActions – removeDialog', () => {
           isDirty: false,
           lastSaved: new Date(),
           originalCode: '',
-          workingCode: '',
           hasErrors: false,
           errors: [],
         }]
@@ -363,7 +361,6 @@ describe('historyActions – removeDialog', () => {
           isDirty: false,
           lastSaved: new Date(),
           originalCode: '',
-          workingCode: '',
           hasErrors: false,
           errors: [],
         }]
@@ -458,7 +455,6 @@ describe('historyActions – renameDialog', () => {
           isDirty: false,
           lastSaved: new Date(),
           originalCode: '',
-          workingCode: '',
           hasErrors: false,
           errors: [],
         }]

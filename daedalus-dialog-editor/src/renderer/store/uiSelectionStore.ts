@@ -4,7 +4,7 @@ import { immer } from 'zustand/middleware/immer';
 /**
  * Pure UI selection state: which NPC / dialog / quest / function / action the
  * user currently has selected, and which main view (dialog, quest, variable,
- * source) is active.
+ * problems) is active.
  *
  * Extracted from editorStore so that file-lifecycle and history concerns are
  * not co-located with ephemeral UI cursor state.
@@ -16,14 +16,14 @@ interface UISelectionStore {
   selectedQuest: string | null;
   selectedFunctionName: string | null;
   selectedAction: number | null;
-  activeView: 'dialog' | 'quest' | 'variable' | 'problems' | 'source';
+  activeView: 'dialog' | 'quest' | 'variable' | 'problems';
 
   setSelectedNPC: (npcName: string | null) => void;
   setSelectedDialog: (dialogName: string | null) => void;
   setSelectedQuest: (questName: string | null) => void;
   setSelectedFunctionName: (functionName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
-  setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'problems' | 'source') => void;
+  setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'problems') => void;
   /** Reset all selection state to initial values (called by editorStore.resetEditorSession). */
   resetUISelection: () => void;
 }
