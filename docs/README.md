@@ -27,6 +27,10 @@ This directory is the canonical home for repository-level documentation.
 - [reference/dialog-authoring-automations.md](reference/dialog-authoring-automations.md)
 - [reference/parser-roundtrip-scope.md](reference/parser-roundtrip-scope.md)
 
+## Active Plans
+
+- [plans/production-readiness-review-findings.md](plans/production-readiness-review-findings.md) — production-readiness, performance and UI/UX review findings; quest Flow-view deprecation decision and remaining work.
+
 ## Release
 
 - [release-checklist.md](release-checklist.md) — release/QA work (code signing, update verifier, desktop passes) parked until the first release

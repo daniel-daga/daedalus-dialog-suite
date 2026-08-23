@@ -3,7 +3,38 @@
 Review pass over the editor workspace covering production readiness, performance,
 UI/UX, and a scoped decision analysis for the quest node viewer/editor
 (deprecate vs. extract). Findings are ranked within each section; every claim
-carries a file reference. This is a findings document — no code was changed.
+carries a file reference.
+
+## Status (2026-08-23)
+
+Review complete; the first remediation slice has landed. Branch:
+`claude/production-readiness-review-dw28l0` (no PR opened yet).
+
+Landed:
+
+| Commit | Change |
+|---|---|
+| `b352fb2` | Backup (`<name>.d.bak`) before force-on-errors saves; corrected encoding-error advice |
+| `32a36f0` | Writable quest editing opt-in (flag default off) — §1 Option A |
+| `b5c5e3d` | Deleted stale editor `pnpm-lock.yaml` (EOL Electron 29 pin) + unused npm shadow lockfiles |
+| `44b1ff5` | Ctrl+S / AppBar Save button + Close Project → welcome screen (F1, F5) |
+
+Verified on the combined tree: full Jest suite (1138 tests), browser-harness
+Playwright suite (171 tests), `build:main`, `typecheck:renderer`, and lint
+(0 errors; 8 pre-existing warnings in untouched files) all green.
+
+Everything else in this document is still open — §5 is the working priority
+list. Owner decisions still outstanding: app icons, the Dandelion vs.
+"Daedalus Dialog Editor" naming split, and code signing.
+
+### Environment note for a fresh session
+
+The e2e suites run through `pnpm --filter daedalus-dialog-editor exec playwright`
+(a bare `npx playwright` resolves a mismatched runner copy in the remote
+container). In this container `/opt/pw-browsers` held Chromium rev 1194 while
+Playwright 1.58.1 expected rev 1208; the fix is symlinking the expected
+revision directories to the installed binaries. Never run `playwright install`
+(`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` is set).
 
 ---
 
