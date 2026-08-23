@@ -9,7 +9,7 @@
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import type { DialogMetadata, ProjectIndex } from '../../shared/types';
+import type { DialogMetadata, ProjectIndex, SemanticModel } from '../../shared/types';
 
 // Re-export types for consumers of this service
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
@@ -22,7 +22,51 @@ function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
 }
 
+// Upper bound on models held between the index pass and the renderer's
+// background ingestion. Beyond it the oldest primed entries are dropped and
+// those files simply re-parse on demand (bounded memory beats a second parse
+// for every file, which is what the cap trades against).
+const MAX_PRIMED_MODELS = 512;
+
 class ProjectService {
+  /**
+   * Hand-off cache for the P0 double-parse fix: the index pass's metadata
+   * workers already build a full semantic model per file, so buildProjectIndex
+   * primes it here keyed on path+mtime and the project:parseDialogFile IPC
+   * handler serves it via takeParsedModel instead of parsing a second time.
+   * Entries are served at most once (take semantics) so the main process does
+   * not duplicate the renderer's model cache at steady state.
+   */
+  private primedModels = new Map<string, { mtimeMs: number; model: SemanticModel }>();
+
+  primeParsedModel(filePath: string, mtimeMs: number, model: SemanticModel): void {
+    if (!model || model.hasErrors) return;
+    this.primedModels.delete(filePath);
+    this.primedModels.set(filePath, { mtimeMs, model });
+    while (this.primedModels.size > MAX_PRIMED_MODELS) {
+      const oldest = this.primedModels.keys().next().value;
+      if (oldest === undefined) break;
+      this.primedModels.delete(oldest);
+    }
+  }
+
+  /**
+   * Remove and return the primed model for a file, but only when the on-disk
+   * mtime still matches the one captured at parse time; any external change
+   * since the index pass makes this return undefined (fall back to a parse).
+   */
+  async takeParsedModel(filePath: string): Promise<SemanticModel | undefined> {
+    const entry = this.primedModels.get(filePath);
+    if (!entry) return undefined;
+    this.primedModels.delete(filePath);
+    try {
+      const stat = await fs.stat(filePath);
+      if (stat.mtimeMs !== entry.mtimeMs) return undefined;
+    } catch {
+      return undefined;
+    }
+    return entry.model;
+  }
   /**
    * Recursively scan directory for .d files (async)
    */
@@ -66,6 +110,9 @@ class ProjectService {
    * Build complete project index from directory (async)
    */
   async buildProjectIndex(rootPath: string): Promise<ProjectIndex> {
+    // A reindex invalidates every previously primed model.
+    this.primedModels.clear();
+
     // Scan for all .d files
     const allFiles = await this.scanDirectory(rootPath);
 
@@ -130,6 +177,12 @@ class ProjectService {
       for (let i = 0; i < allFiles.length; i++) {
         const result = results[i];
         const filePath = allFiles[i];
+
+        // Persist the model the metadata pass already built so background
+        // ingestion is a cache read instead of a second parse.
+        if (result.semanticModel && result.mtimeMs !== undefined) {
+          this.primeParsedModel(filePath, result.mtimeMs, result.semanticModel);
+        }
 
         // Track NPC instances from dialogs and prototype inheritance chains.
         result.instances.forEach((instance) => {

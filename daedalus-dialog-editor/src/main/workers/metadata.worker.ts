@@ -8,9 +8,13 @@ if (parentPort) {
     const { id, filePath } = message;
 
     try {
+      // Stat BEFORE reading: any write racing the read makes the on-disk mtime
+      // diverge from the recorded one, so the stale primed model is rejected.
+      const stat = await fs.stat(filePath);
       const buffer = await fs.readFile(filePath);
       const { content } = decodeBuffer(buffer);
-      const { dialogs, instances, prototypes, isQuestFile, routines, voiceIds } = extractFileMetadataFromSource(content, filePath);
+      const { dialogs, instances, prototypes, isQuestFile, routines, voiceIds, semanticModel } =
+        extractFileMetadataFromSource(content, filePath);
 
       parentPort!.postMessage({
         id,
@@ -19,7 +23,9 @@ if (parentPort) {
         prototypes,
         isQuestFile,
         routines,
-        voiceIds
+        voiceIds,
+        semanticModel,
+        mtimeMs: stat.mtimeMs
       });
     } catch (error) {
       parentPort!.postMessage({

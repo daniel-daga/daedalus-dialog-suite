@@ -4,6 +4,36 @@ import { useFileStore, hasUnsavedChanges } from '../store/fileStore';
 import { planExitDialogsForAddedFile } from '../utils/npcExitDialog';
 import type { FileChangeEvent, SemanticModel } from '../types/global';
 
+// Batch window for external 'change' events. A bulk operation (git checkout,
+// branch switch) fires one event per touched file; handling each immediately
+// used to cost an O(project) store cascade per event. Changes are buffered for
+// this window, deduped by path, re-parsed with bounded concurrency, and
+// applied through a single projectStore.updateFileModels call — one
+// parsedFiles clone, one parseGeneration bump, at most one re-merge.
+const CHANGE_BATCH_WINDOW_MS = 250;
+const CHANGE_PARSE_CONCURRENCY = 8;
+
+const pendingChangedPaths = new Set<string>();
+let changeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearPendingChanges(): void {
+  pendingChangedPaths.clear();
+  if (changeFlushTimer !== null) {
+    clearTimeout(changeFlushTimer);
+    changeFlushTimer = null;
+  }
+}
+
+function queueChangedFile(filePath: string): void {
+  pendingChangedPaths.add(filePath);
+  if (changeFlushTimer === null) {
+    changeFlushTimer = setTimeout(() => {
+      changeFlushTimer = null;
+      void flushChangedFiles();
+    }, CHANGE_BATCH_WINDOW_MS);
+  }
+}
+
 /**
  * Hook that watches the project directory for external file changes.
  *
@@ -34,9 +64,11 @@ export function useFileWatcher(): void {
     unsubscribeRef.current = unsubscribe;
 
     return () => {
-      // Clean up on unmount or project change
+      // Clean up on unmount or project change; buffered changes belong to the
+      // watcher subscription that just ended, so drop them.
       unsubscribe();
       unsubscribeRef.current = null;
+      clearPendingChanges();
       window.editorAPI.stopFileWatcher().catch(() => {});
     };
   }, [projectPath]);
@@ -49,36 +81,64 @@ async function handleFileChange(event: FileChangeEvent): Promise<void> {
 
   switch (type) {
     case 'change':
-      await handleFileModified(filePath, projectStore, fileStore);
+      queueChangedFile(filePath);
       break;
 
     case 'add':
+      // A queued change is subsumed by the add's own parse.
+      pendingChangedPaths.delete(filePath);
       await handleFileAdded(filePath, projectStore);
       break;
 
     case 'unlink':
+      // A queued change must not resurrect the removed file.
+      pendingChangedPaths.delete(filePath);
       handleFileRemoved(filePath, projectStore, fileStore);
       break;
   }
 }
 
+/** Inject the source file path into symbols for cross-file tracking. */
+function injectFilePathIntoSymbols(semanticModel: SemanticModel, filePath: string): void {
+  if (semanticModel.constants) {
+    Object.values(semanticModel.constants).forEach((c: any) => { c.filePath = filePath; });
+  }
+  if (semanticModel.variables) {
+    Object.values(semanticModel.variables).forEach((v: any) => { v.filePath = filePath; });
+  }
+}
+
 /**
- * A file was modified externally — re-parse it and update caches.
+ * Flush the buffered 'change' events: open files are reloaded or marked
+ * conflicted individually (their state is read at flush time, not event
+ * time); background files are re-parsed with bounded concurrency and applied
+ * in one batched store update.
  */
-async function handleFileModified(
-  filePath: string,
-  projectStore: ReturnType<typeof useProjectStore.getState>,
-  fileStore: ReturnType<typeof useFileStore.getState>
-): Promise<void> {
-  // If the file is currently open in the editor, reload it
-  const openFileState = fileStore.openFiles.get(filePath);
-  if (openFileState) {
+async function flushChangedFiles(): Promise<void> {
+  const paths = Array.from(pendingChangedPaths);
+  pendingChangedPaths.clear();
+  if (paths.length === 0) return;
+
+  const fileStore = useFileStore.getState();
+  if (!useProjectStore.getState().projectPath) {
+    // Project closed while the batch was buffered — nothing to update.
+    return;
+  }
+
+  const backgroundPaths: string[] = [];
+  for (const filePath of paths) {
+    const openFileState = fileStore.openFiles.get(filePath);
+    if (!openFileState) {
+      backgroundPaths.push(filePath);
+      continue;
+    }
+
     // If the file has unsaved changes in the editor (model- or source-dirty, or
     // already in conflict), record an external conflict instead of overwriting
     // the user's work — the conflict dialog then drives resolution (E4).
     if (hasUnsavedChanges(openFileState)) {
       fileStore.markExternalConflict(filePath);
-      return;
+      continue;
     }
 
     // Clean file: reload in place (preserves activeFile, reuses the slot — N3).
@@ -87,24 +147,31 @@ async function handleFileModified(
     } catch (err) {
       console.error('[FileWatcher] Failed to reload open file:', filePath, err);
     }
-    return;
   }
 
-  // Otherwise, invalidate and re-parse in the project cache
-  try {
-    const semanticModel = await window.editorAPI.parseDialogFile(filePath);
-
-    // Inject file path into constants and variables for tracking
-    if (semanticModel.constants) {
-      Object.values(semanticModel.constants).forEach((c: any) => { c.filePath = filePath; });
+  // Re-parse background files with bounded concurrency and apply as one batch.
+  const updates: Array<{ filePath: string; model: SemanticModel }> = [];
+  let nextIndex = 0;
+  const parseNext = async (): Promise<void> => {
+    while (nextIndex < backgroundPaths.length) {
+      const filePath = backgroundPaths[nextIndex++];
+      try {
+        const semanticModel = await window.editorAPI.parseDialogFile(filePath);
+        injectFilePathIntoSymbols(semanticModel, filePath);
+        updates.push({ filePath, model: semanticModel });
+      } catch (err) {
+        console.error('[FileWatcher] Failed to re-parse file:', filePath, err);
+      }
     }
-    if (semanticModel.variables) {
-      Object.values(semanticModel.variables).forEach((v: any) => { v.filePath = filePath; });
-    }
+  };
+  await Promise.all(
+    Array(Math.min(CHANGE_PARSE_CONCURRENCY, backgroundPaths.length))
+      .fill(null)
+      .map(() => parseNext())
+  );
 
-    projectStore.updateFileModel(filePath, semanticModel);
-  } catch (err) {
-    console.error('[FileWatcher] Failed to re-parse file:', filePath, err);
+  if (updates.length > 0) {
+    useProjectStore.getState().updateFileModels(updates);
   }
 }
 
@@ -121,13 +188,7 @@ async function handleFileAdded(
   // Parse and cache it
   try {
     const semanticModel = await window.editorAPI.parseDialogFile(filePath);
-
-    if (semanticModel.constants) {
-      Object.values(semanticModel.constants).forEach((c: any) => { c.filePath = filePath; });
-    }
-    if (semanticModel.variables) {
-      Object.values(semanticModel.variables).forEach((v: any) => { v.filePath = filePath; });
-    }
+    injectFilePathIntoSymbols(semanticModel, filePath);
 
     projectStore.updateFileModel(filePath, semanticModel);
 

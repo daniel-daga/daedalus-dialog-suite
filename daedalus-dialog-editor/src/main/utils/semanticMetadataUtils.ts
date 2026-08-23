@@ -12,6 +12,13 @@ export interface ParsedFileMetadata {
   routines: string[];
   /** Literal AI_Output voice ids (expression-valued ids are skipped). */
   voiceIds: Array<{ id: string; functionName: string }>;
+  /**
+   * The full semantic model the metadata pass already built — present only
+   * when the parse was clean and both visitor passes completed, so it can be
+   * handed to the renderer instead of a second parse (P0 double-parse fix).
+   * Error files stay on the parse path, which returns an errors-only model.
+   */
+  semanticModel?: SemanticModel;
 }
 
 const hasQuestTopicConstants = (semanticModel: SemanticModel): boolean => {
@@ -43,30 +50,24 @@ const extractDialogs = (semanticModel: SemanticModel, filePath: string): DialogM
   return dialogs;
 };
 
-const extractInstanceDeclarations = (parseResult: any): Array<{ name: string; parent: string }> => {
+const extractInstanceAndPrototypeDeclarations = (
+  parseResult: any
+): { instances: Array<{ name: string; parent: string }>; prototypes: Array<{ name: string; parent: string }> } => {
   const declarations = typeof daedalusWrapper.extractDeclarations === 'function'
     ? daedalusWrapper.extractDeclarations(parseResult)
     : [];
 
-  return declarations
-    .filter((declaration: any) => declaration?.type === 'instance' && declaration.name && declaration.parent)
-    .map((declaration: any) => ({
-      name: declaration.name,
-      parent: declaration.parent
-    }));
-};
-
-const extractPrototypeDeclarations = (parseResult: any): Array<{ name: string; parent: string }> => {
-  const declarations = typeof daedalusWrapper.extractDeclarations === 'function'
-    ? daedalusWrapper.extractDeclarations(parseResult)
-    : [];
-
-  return declarations
-    .filter((declaration: any) => declaration?.type === 'prototype' && declaration.name && declaration.parent)
-    .map((declaration: any) => ({
-      name: declaration.name,
-      parent: declaration.parent
-    }));
+  const instances: Array<{ name: string; parent: string }> = [];
+  const prototypes: Array<{ name: string; parent: string }> = [];
+  for (const declaration of declarations) {
+    if (!declaration?.name || !declaration.parent) continue;
+    if (declaration.type === 'instance') {
+      instances.push({ name: declaration.name, parent: declaration.parent });
+    } else if (declaration.type === 'prototype') {
+      prototypes.push({ name: declaration.name, parent: declaration.parent });
+    }
+  }
+  return { instances, prototypes };
 };
 
 const extractDailyRoutines = (semanticModel: SemanticModel): string[] => {
@@ -119,21 +120,25 @@ export function extractFileMetadataFromSource(sourceCode: string, filePath: stri
   visitor.checkForSyntaxErrors(tree.rootNode as any, sourceCode);
 
   // Try to build as much semantic state as possible, even if syntax errors exist.
+  let modelComplete = false;
   try {
     visitor.pass1_createObjects(tree.rootNode as any);
     visitor.pass2_analyzeAndLink(tree.rootNode as any);
+    modelComplete = true;
   } catch {
     // Keep partial semantic model for metadata extraction.
   }
 
   const semanticModel = visitor.semanticModel as SemanticModel;
+  const { instances, prototypes } = extractInstanceAndPrototypeDeclarations(parseResult);
 
   return {
     dialogs: extractDialogs(semanticModel, filePath),
-    instances: extractInstanceDeclarations(parseResult),
-    prototypes: extractPrototypeDeclarations(parseResult),
+    instances,
+    prototypes,
     isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel),
     routines: extractDailyRoutines(semanticModel),
-    voiceIds: extractVoiceIds(semanticModel)
+    voiceIds: extractVoiceIds(semanticModel),
+    semanticModel: modelComplete && !semanticModel.hasErrors ? semanticModel : undefined
   };
 }

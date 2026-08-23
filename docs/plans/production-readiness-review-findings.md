@@ -284,34 +284,41 @@ it covers (merge cache, ActionCard memo boundary, autocomplete pools,
 subscription rules — all verified still in place and test-guarded). The
 findings below are in paths the doc does not cover.
 
-### P0 — Project open parses every file twice; models retained forever
+### P0 — Project open parses every file twice; models retained forever — **RESOLVED 2026-08-23**
 
-- `ProjectService.buildProjectIndex` (`ProjectService.ts:68-96`) full-parses
-  every `.d` file (metadata pass, model discarded);
-  `startBackgroundIngestion` (`projectStore.ts:356-485`) then re-parses every
-  file through a *different* worker pool and ships full semantic models over
-  IPC. `semanticMetadataUtils.ts:46-69` additionally walks declarations twice
-  per file.
-- `parsedFiles` grows without bound: `clearCache`/`clearMergedModel` have zero
-  external callers; only `closeProject` shrinks it. A 500-file project ⇒
-  ~1,000 parses + 500 full-model structured clones + 500 models resident for
-  the session.
-- Fix direction: single declaration walk; have the index pass return/persist
-  the model (keyed path+mtime) so ingestion is a cache read — or drop eager
-  ingestion behind `getSemanticModel`'s existing dedup; LRU-cap `parsedFiles`
-  with merged-model contributors pinned.
+- ~~`ProjectService.buildProjectIndex` full-parses every `.d` file (metadata
+  pass, model discarded); `startBackgroundIngestion` then re-parses every file
+  through a *different* worker pool; `semanticMetadataUtils` additionally walks
+  declarations twice per file. `parsedFiles` grows without bound.~~
+- **Fixed as suggested**: single declaration walk
+  (`extractInstanceAndPrototypeDeclarations`); the metadata worker returns the
+  model it already built plus the file's mtime, `ProjectService` primes a
+  path+mtime hand-off cache (take-once semantics, cap 512, error files never
+  primed), and `project:parseDialogFile` serves from it — background ingestion
+  is now a cache read, so a 500-file open costs ~500 parses instead of ~1,000.
+  `parsedFiles` is LRU-capped at `PARSED_FILES_CAP` (512) with merged-model
+  contributors (globals, selected NPC files, quest files) pinned; eviction
+  self-heals via NPC-select `getSemanticModel`. Guarded by
+  `tests/ProjectService.modelHandoff.test.ts` and
+  `tests/projectStore.parsedFilesCap.test.ts`; documented in
+  `docs/architecture/render-performance.md`.
 
-### P0 — File-watcher changes unbatched; each costs O(project)
+### P0 — File-watcher changes unbatched; each costs O(project) — **RESOLVED 2026-08-23**
 
-- Every `fileWatcher:changed` event immediately re-parses and calls
-  `projectStore.updateFileModel` (`useFileWatcher.ts:31-63, 95-105`), which
-  clones the whole `parsedFiles` Map, scans `dialogIndex` twice (including an
-  un-memoized inline rebuild of `filesWithDialogs` at `projectStore.ts:927-930`
-  duplicating the WeakMap-cached helper at `:207-217`), and re-merges.
-- A `git checkout` touching 500 files fires 500 unbatched O(project) cascades
-  with no concurrency cap ⇒ renderer freeze.
-- Fix direction: ~250 ms buffer window in `useFileWatcher`, dedupe by path,
-  batch store action doing clone/scan/merge once.
+- ~~Every `fileWatcher:changed` event immediately re-parses and calls
+  `projectStore.updateFileModel`, which clones the whole `parsedFiles` Map,
+  scans `dialogIndex` twice (including an un-memoized inline rebuild of
+  `filesWithDialogs` duplicating the WeakMap-cached helper), and re-merges —
+  500 unbatched O(project) cascades on a 500-file `git checkout`.~~
+- **Fixed as suggested**: `useFileWatcher` buffers 'change' events for 250 ms,
+  dedupes by path, re-parses with bounded concurrency (8), and applies the
+  batch via the new `projectStore.updateFileModels` — one `parsedFiles` clone,
+  one dialog-set scan, one `parseGeneration` bump, at most one re-merge; the
+  inline `filesWithDialogs` rebuild now uses the WeakMap-cached helper.
+  `updateFileModel` (the storeSync keystroke path) delegates with one entry.
+  Guarded by `tests/useFileWatcher.batching.test.ts` and
+  `tests/projectStore.updateFileModels.test.ts`; documented in
+  `docs/architecture/render-performance.md`.
 
 ### P1
 
@@ -476,6 +483,8 @@ Pre-release (gates first public build):
 6. Packaged-app smoke that opens a real project and parses (closes the
    asar/native-module blind spot).
 
-Post-release fast follows: watcher batching + double-parse collapse (P0 perf),
-Problems-panel debounce, `App` `openFiles` selector, F2 dead source-view
-cleanup, F6/F7 shortcut scoping, CSP.
+Post-release fast follows: ~~watcher batching + double-parse collapse (P0
+perf)~~ **DONE 2026-08-23** (both §3 P0 items — single-parse project open with
+model hand-off + `parsedFiles` cap, and watcher batching via
+`updateFileModels`), Problems-panel debounce, `App` `openFiles` selector, F2
+dead source-view cleanup, F6/F7 shortcut scoping, CSP.

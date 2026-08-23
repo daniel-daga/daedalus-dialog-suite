@@ -153,6 +153,10 @@ interface ProjectActions {
   // Update a cached semantic model for a file
   updateFileModel: (filePath: string, model: SemanticModel) => void;
 
+  // Batch variant: apply many file models with a single parsedFiles clone,
+  // dialogIndex scan, parseGeneration bump, and (conditional) re-merge
+  updateFileModels: (updates: Array<{ filePath: string; model: SemanticModel }>) => void;
+
   // Register a newly created dialog in the project index
   addDialogToIndex: (metadata: DialogMetadata) => void;
 
@@ -180,6 +184,15 @@ const MERGE_CATEGORY_KEYS = [
 
 type MergeCategoryKey = typeof MERGE_CATEGORY_KEYS[number];
 type CategoryMap = Record<string, unknown>;
+
+// Upper bound on cached parsed models (P0: parsedFiles previously grew without
+// bound — only closeProject ever shrank it). Merged-model contributors are
+// pinned (global dialog-less files, the selected NPC's files, quest files);
+// everything else is evicted least-recently-touched first. Evicted files
+// self-heal: NPC selection re-parses its files via getSemanticModel before
+// merging. On projects larger than the cap, whole-corpus consumers (Problems
+// panel, quest usage) see at most this many files.
+export const PARSED_FILES_CAP = 512;
 
 export const useProjectStore = create<ProjectStore>((set, get) => {
   // In-flight parse dedup: concurrent getSemanticModel calls for the same path
@@ -216,9 +229,52 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     return filesWithDialogs;
   };
 
+  // Recency bookkeeping for the PARSED_FILES_CAP eviction. Kept outside the
+  // store so read-touches (getSemanticModel cache hits) do not churn state.
+  let parsedFileRecencyTick = 0;
+  const parsedFileRecency = new Map<string, number>();
+  const touchParsedFile = (filePath: string) => {
+    parsedFileRecency.set(filePath, ++parsedFileRecencyTick);
+  };
+  const resetParsedFileRecency = () => {
+    parsedFileRecency.clear();
+  };
+
+  /**
+   * Evict least-recently-touched unpinned entries from `cache` (mutating it)
+   * until it fits PARSED_FILES_CAP. Pinned: quest files, global (dialog-less)
+   * project files, and the selected NPC's dialog files — the merged-model
+   * contributors that loadAndMergeNpcModels/loadQuestData read from the cache.
+   */
+  const enforceParsedFilesCap = (
+    cache: Map<string, ParsedFileCache>,
+    state: Pick<ProjectState, 'allDialogFiles' | 'questFiles' | 'selectedNpc'>,
+    dialogIndex: Map<string, DialogMetadata[]>
+  ): Map<string, ParsedFileCache> => {
+    if (cache.size <= PARSED_FILES_CAP) return cache;
+    const pinned = new Set<string>(state.questFiles);
+    const filesWithDialogs = getFilesWithDialogs(dialogIndex);
+    for (const filePath of state.allDialogFiles) {
+      if (!filesWithDialogs.has(filePath)) pinned.add(filePath);
+    }
+    if (state.selectedNpc) {
+      for (const meta of dialogIndex.get(state.selectedNpc) || []) pinned.add(meta.filePath);
+    }
+    const evictable = Array.from(cache.keys())
+      .filter((filePath) => !pinned.has(filePath))
+      .sort((a, b) => (parsedFileRecency.get(a) ?? 0) - (parsedFileRecency.get(b) ?? 0));
+    for (const filePath of evictable) {
+      if (cache.size <= PARSED_FILES_CAP) break;
+      cache.delete(filePath);
+      parsedFileRecency.delete(filePath);
+    }
+    return cache;
+  };
+
   /** Remove a single file from the parsed-files cache. */
   const invalidateCacheForFile = (filePath: string) => {
     inFlight.delete(filePath);
+    parsedFileRecency.delete(filePath);
     set((state) => {
       const newCache = new Map(state.parsedFiles);
       newCache.delete(filePath);
@@ -336,6 +392,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // Recent projects are persisted main-side inside project:openFolderDialog;
       // the renderer no longer whitelists or records recents (security item 1.1).
 
+      resetParsedFileRecency();
       set({
         projectPath: folderPath,
         projectName,
@@ -395,7 +452,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       if (pendingUpdates.size > 0) {
         set((state) => {
           const newCache = new Map(state.parsedFiles);
-          pendingUpdates.forEach((value, key) => newCache.set(key, value));
+          pendingUpdates.forEach((value, key) => {
+            newCache.set(key, value);
+            touchParsedFile(key);
+          });
+          enforceParsedFilesCap(newCache, state, state.dialogIndex);
           return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
         });
         pendingUpdates.clear();
@@ -493,6 +554,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     inFlight.clear();
     resetMergeCache();
+    resetParsedFileRecency();
 
     set({
       projectPath: null,
@@ -531,6 +593,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     // Check if already cached
     const cached = parsedFiles.get(filePath);
     if (cached) {
+      touchParsedFile(filePath);
       return cached.semanticModel;
     }
 
@@ -560,6 +623,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           semanticModel,
           lastParsed: new Date()
         });
+        touchParsedFile(filePath);
+        enforceParsedFilesCap(newCache, state, state.dialogIndex);
         return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
       });
 
@@ -858,79 +923,110 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   clearCache: () => {
     inFlight.clear();
     resetMergeCache();
+    resetParsedFileRecency();
     set((state) => ({ parsedFiles: new Map(), parseGeneration: state.parseGeneration + 1 }));
   },
 
   updateFileModel: (filePath: string, model: SemanticModel) => {
+    get().updateFileModels([{ filePath, model }]);
+  },
+
+  updateFileModels: (updates: Array<{ filePath: string; model: SemanticModel }>) => {
+    if (updates.length === 0) return;
     const { parsedFiles, dialogIndex } = get();
 
     if (!(parsedFiles instanceof Map)) return;
 
     const newCache = new Map(parsedFiles);
-    newCache.set(filePath, {
-      filePath,
-      semanticModel: model,
-      lastParsed: new Date()
-    });
+    for (const { filePath, model } of updates) {
+      newCache.set(filePath, {
+        filePath,
+        semanticModel: model,
+        lastParsed: new Date()
+      });
+      touchParsedFile(filePath);
+    }
 
     // The dialog index only depends on each dialog's name + owning NPC. Action
     // and condition edits (the common keystroke case) leave that set unchanged,
-    // so rebuilding the whole index every edit is pure O(project) waste. Only
-    // rebuild when the file's (dialogName, npc) set actually changed.
-    const nextFileEntries = Object.entries(model.dialogs || {}).map(([dialogName, dialog]) => ({
-      dialogName,
-      npc: (dialog.properties?.npc as string) || 'Unknown NPC',
-      filePath
-    }));
-    const prevFileEntries: Array<{ dialogName: string; npc: string }> = [];
+    // so rebuilding the whole index every update is pure O(project) waste. Only
+    // rebuild — once per batch — for the files whose (dialogName, npc) set
+    // actually changed.
+    const entryKey = (e: { dialogName: string; npc: string }) => `${e.npc}\u0000${e.dialogName}`;
+    const nextEntriesByFile = new Map<string, DialogMetadata[]>();
+    for (const { filePath, model } of updates) {
+      nextEntriesByFile.set(filePath, Object.entries(model.dialogs || {}).map(([dialogName, dialog]) => ({
+        dialogName,
+        npc: (dialog.properties?.npc as string) || 'Unknown NPC',
+        filePath
+      })));
+    }
+    const prevKeysByFile = new Map<string, Set<string>>();
+    for (const filePath of nextEntriesByFile.keys()) {
+      prevKeysByFile.set(filePath, new Set());
+    }
     for (const dialogs of dialogIndex.values()) {
       for (const d of dialogs) {
-        if (d.filePath === filePath) prevFileEntries.push({ dialogName: d.dialogName, npc: d.npc });
+        prevKeysByFile.get(d.filePath)?.add(entryKey(d));
       }
     }
-    const entryKey = (e: { dialogName: string; npc: string }) => `${e.npc} ${e.dialogName}`;
-    const prevKeys = new Set(prevFileEntries.map(entryKey));
-    const nextKeys = new Set(nextFileEntries.map(entryKey));
-    const dialogSetChanged =
-      prevKeys.size !== nextKeys.size || [...nextKeys].some((k) => !prevKeys.has(k));
+    const changedFiles = new Set<string>();
+    for (const [filePath, nextEntries] of nextEntriesByFile) {
+      const prevKeys = prevKeysByFile.get(filePath)!;
+      const nextKeys = new Set(nextEntries.map(entryKey));
+      if (prevKeys.size !== nextKeys.size || [...nextKeys].some((k) => !prevKeys.has(k))) {
+        changedFiles.add(filePath);
+      }
+    }
 
+    const dialogSetChanged = changedFiles.size > 0;
     let newDialogIndex = dialogIndex;
     if (dialogSetChanged) {
       newDialogIndex = new Map(dialogIndex);
+      // NPC lists cloned (or freshly filtered) in this batch — safe to push into.
+      const rebuiltNpcs = new Set<string>();
       for (const [npc, dialogs] of newDialogIndex.entries()) {
-        const filtered = dialogs.filter(d => d.filePath !== filePath);
+        const filtered = dialogs.filter(d => !changedFiles.has(d.filePath));
         if (filtered.length !== dialogs.length) {
           if (filtered.length === 0) newDialogIndex.delete(npc);
           else newDialogIndex.set(npc, filtered);
+          rebuiltNpcs.add(npc);
         }
       }
-      for (const entry of nextFileEntries) {
-        const existing = newDialogIndex.get(entry.npc) || [];
-        newDialogIndex.set(entry.npc, [...existing, entry]);
+      for (const filePath of changedFiles) {
+        for (const entry of nextEntriesByFile.get(filePath)!) {
+          if (!rebuiltNpcs.has(entry.npc) || !newDialogIndex.has(entry.npc)) {
+            newDialogIndex.set(entry.npc, [...(newDialogIndex.get(entry.npc) || [])]);
+            rebuiltNpcs.add(entry.npc);
+          }
+          newDialogIndex.get(entry.npc)!.push(entry);
+        }
       }
     }
+
+    enforceParsedFilesCap(newCache, get(), newDialogIndex);
 
     set((state) => (dialogSetChanged
       ? { parsedFiles: newCache, dialogIndex: newDialogIndex, parseGeneration: state.parseGeneration + 1 }
       : { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 }));
 
     // Re-merge the semantic model for the currently selected NPC so that
-    // description changes, renames, and deletes are reflected immediately.
-    // Skip the (full) re-merge when the changed file does not participate in
-    // the selected NPC's merged model — i.e. it is neither one of that NPC's
-    // dialog files nor a global (dialog-less) file. This avoids rebuilding the
-    // merged model on background file-watcher updates to unrelated NPC files.
+    // description changes, renames, and deletes are reflected immediately —
+    // once for the whole batch. Skip the (full) re-merge when no updated file
+    // participates in the selected NPC's merged model — i.e. none is one of
+    // that NPC's dialog files or a global (dialog-less) file. This avoids
+    // rebuilding the merged model on background file-watcher updates to
+    // unrelated NPC files.
     const { selectedNpc } = get();
     if (selectedNpc) {
       const selectedNpcFiles = new Set(
         (newDialogIndex.get(selectedNpc) || []).map(d => d.filePath)
       );
-      const filesWithDialogs = new Set<string>();
-      for (const dialogs of newDialogIndex.values()) {
-        for (const d of dialogs) filesWithDialogs.add(d.filePath);
-      }
-      const isGlobalFile = !filesWithDialogs.has(filePath);
-      if (selectedNpcFiles.has(filePath) || isGlobalFile) {
+      const filesWithDialogs = getFilesWithDialogs(newDialogIndex);
+      const relevant = updates.some(
+        ({ filePath }) => selectedNpcFiles.has(filePath) || !filesWithDialogs.has(filePath)
+      );
+      if (relevant) {
         get().loadAndMergeNpcModels(selectedNpc);
       }
     }

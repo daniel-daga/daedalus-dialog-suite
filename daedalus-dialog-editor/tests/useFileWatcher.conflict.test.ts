@@ -111,6 +111,12 @@ async function emitFileChange(event: FileChangeEvent): Promise<void> {
     capturedOnFileChanged!(event);
     await Promise.resolve();
   });
+  if (event.type === 'change') {
+    // 'change' events are buffered for a batch window before being handled.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+  }
 }
 
 describe('useFileWatcher — external conflict (change)', () => {

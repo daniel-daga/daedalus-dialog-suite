@@ -409,6 +409,13 @@ function setupIpcHandlers() {
       // Validate file path before parsing (symlink-resolved)
       await pathValidator.validatePathResolved(filePath);
 
+      // The index build already parsed this file and primed the model
+      // (path+mtime checked); serve it instead of parsing a second time.
+      const primed = await projectService.takeParsedModel(filePath);
+      if (primed) {
+        return primed;
+      }
+
       const content = await fileService.readFile(filePath);
       return await parserService.parseSource(content);
     } catch (error) {

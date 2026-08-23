@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import type { DialogMetadata } from '../../shared/types';
+import type { DialogMetadata, SemanticModel } from '../../shared/types';
 import { promises as fsPromises } from 'fs';
 import { decodeBuffer } from '../utils/encodingUtils';
 import { WorkerRequestError } from './WorkerRequestError';
@@ -17,6 +17,10 @@ export interface MetadataResult {
   isQuestFile: boolean;
   routines: string[];
   voiceIds: Array<{ id: string; functionName: string }>;
+  /** Full semantic model, present only for clean parses (see ParsedFileMetadata). */
+  semanticModel?: SemanticModel;
+  /** File mtime captured before the content read — the hand-off cache key. */
+  mtimeMs?: number;
 }
 
 // ProjectService.buildProjectIndex surfaces this failure shape to the project
@@ -135,6 +139,8 @@ export class MetadataWorkerPool {
       isQuestFile?: boolean;
       routines?: string[];
       voiceIds?: Array<{ id: string; functionName: string }>;
+      semanticModel?: SemanticModel;
+      mtimeMs?: number;
       error?: string;
     }) => {
       this.handleMessage(worker, message);
@@ -164,9 +170,11 @@ export class MetadataWorkerPool {
     isQuestFile?: boolean;
     routines?: string[];
     voiceIds?: Array<{ id: string; functionName: string }>;
+    semanticModel?: SemanticModel;
+    mtimeMs?: number;
     error?: string;
   }) {
-    const { id, dialogs, instances, prototypes, isQuestFile, routines, voiceIds, error } = message;
+    const { id, dialogs, instances, prototypes, isQuestFile, routines, voiceIds, semanticModel, mtimeMs, error } = message;
 
     const inFlight = this.inFlightByWorker.get(worker);
     if (inFlight && inFlight.id === id) {
@@ -188,6 +196,8 @@ export class MetadataWorkerPool {
           isQuestFile: !!isQuestFile,
           routines: routines || [],
           voiceIds: voiceIds || [],
+          semanticModel,
+          mtimeMs,
         });
       }
     }
@@ -329,6 +339,8 @@ export class MetadataWorkerPool {
 
   private async processFileInline(filePath: string): Promise<ProcessFileResult> {
     try {
+      // Stat before read: mirrors the worker path (see metadata.worker.ts).
+      const stat = await fsPromises.stat(filePath);
       const buffer = await fsPromises.readFile(filePath);
       const { content } = decodeBuffer(buffer);
       // Lazy require: semanticMetadataUtils loads the native tree-sitter
@@ -337,7 +349,7 @@ export class MetadataWorkerPool {
       // the same process corrupts it).
       // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require, see comment above
       const { extractFileMetadataFromSource } = require('../utils/semanticMetadataUtils');
-      return extractFileMetadataFromSource(content, filePath);
+      return { ...extractFileMetadataFromSource(content, filePath), mtimeMs: stat.mtimeMs };
     } catch (error) {
       // Match worker-path behavior: tolerate per-file processing failures.
       return { ok: false, filePath, error: error instanceof Error ? error.message : String(error) };

@@ -91,8 +91,9 @@ expected: a single `Object.assign` pass over even 50k entries is single-digit
 milliseconds. Per-symbol contribution tracking was rejected as the primary fix
 because last-wins merge semantics make case-drift collisions (real in mod
 corpora) correctness-sensitive. Same measure-first status applies to
-`updateFileModel`'s per-flush O(project) bookkeeping (`parsedFiles` Map clone,
-two `dialogIndex` scans) and Enter's O(dialog functions) line-id scan
+`updateFileModels`' per-flush O(project) bookkeeping (`parsedFiles` Map clone,
+one `dialogIndex` scan; the former second scan now hits the memoized
+`getFilesWithDialogs`) and Enter's O(dialog functions) line-id scan
 (`collectAllDialogLineActionsFromModel`) — likely single-digit ms; profile
 against the perf fixture before touching either.
 
@@ -189,6 +190,87 @@ condition fields, `DialogPropertiesSection`, `QuestInspectorPanel`) follow
 this; new call sites must too — an inline `sx={{…}}` or `onChange={(v) => …}`
 silently defeats the memo. Render-probe precedent:
 `tests/SetVariableActionRenderer.rerender.test.tsx`.
+
+## Project open: single parse per file (P0, 2026-08-23)
+
+Project open used to parse every `.d` file twice: `ProjectService.buildProjectIndex`
+full-parsed each file in the metadata worker pool and discarded the model, then
+`startBackgroundIngestion` re-parsed every file through the parser worker pool.
+The metadata pass additionally walked top-level declarations twice per file
+(instances and prototypes each called `extractDeclarations`). Fixed as:
+
+- **Single declaration walk.** `semanticMetadataUtils.extractInstanceAndPrototypeDeclarations`
+  calls `extractDeclarations` once and partitions the result. Guarded by
+  `tests/ProjectService.modelHandoff.test.ts` (call-count assertion).
+- **Model hand-off cache (main process).** The metadata worker already builds
+  the full semantic model; it now returns it (plus the file's `mtimeMs`,
+  stat'ed *before* the content read so any racing write invalidates the entry).
+  `ProjectService` primes a `path → {mtimeMs, model}` map (cap 512 entries,
+  oldest dropped; cleared on reindex), and the `project:parseDialogFile` IPC
+  handler serves from it via `takeParsedModel` before falling back to
+  `FileService.readFile` + `ParserService.parseSource`. Background ingestion is
+  therefore a cache read, not a second parse.
+- **Take semantics.** `takeParsedModel` removes the entry when served (and on
+  mtime mismatch), so the main process does not duplicate the renderer's model
+  cache at steady state. A second request for the same unchanged file re-parses
+  — that was the status quo for every request before this change.
+- **Error files are never primed** (`ParsedFileMetadata.semanticModel` is only
+  set for clean, fully-linked parses): `parser.worker` returns an errors-only
+  model without running the visitor passes, while the metadata pass builds a
+  partial model even on errors — the parse path stays authoritative for the
+  error shape.
+
+## parsedFiles cap (P0, 2026-08-23)
+
+`projectStore.parsedFiles` previously grew without bound — `clearCache`/
+`clearMergedModel` had no external callers and only `closeProject` shrank it.
+It is now capped at `PARSED_FILES_CAP` (512) entries:
+
+- **Pinned (never evicted): the merged-model contributors** that
+  `loadAndMergeNpcModels`/`loadQuestData` read from the cache — global
+  (dialog-less) files in `allDialogFiles`, the selected NPC's dialog files, and
+  quest files.
+- **Eviction order**: least-recently-touched first. Recency lives in a
+  store-closure map (`touchParsedFile`) updated on every cache write *and* on
+  `getSemanticModel` cache hits, so reads refresh recency without churning
+  store state. Reset on `openProject`/`clearCache`/`closeProject`.
+- **Self-healing**: NPC selection always runs `getSemanticModel` over the
+  NPC's files before merging (`useNavigation`/`useDialogNavigation`), so an
+  evicted file is transparently re-parsed on demand.
+- **Documented degradation**: on projects larger than the cap, whole-corpus
+  consumers (Problems panel scan, `getQuestUsage`) see at most
+  `PARSED_FILES_CAP` files.
+
+Guarded by `tests/projectStore.parsedFilesCap.test.ts`.
+
+## File-watcher change batching (P0, 2026-08-23)
+
+Every `fileWatcher:changed` event used to trigger an immediate re-parse plus a
+full `updateFileModel` cascade (Map clone, two `dialogIndex` scans, re-merge) —
+a `git checkout` touching 500 files fired 500 unbatched O(project) cascades
+with no concurrency cap. Now:
+
+- **`useFileWatcher` buffers 'change' events** for `CHANGE_BATCH_WINDOW_MS`
+  (250 ms), deduped by path. Open-file handling (conflict vs. reload) is
+  decided per file *at flush time*; background files are re-parsed with
+  bounded concurrency (8) and applied in one batch. An 'add'/'unlink' for a
+  buffered path drops the queued change (the add parses anyway; the unlink
+  must not resurrect the file). Buffered changes are discarded on unmount /
+  project switch.
+- **`projectStore.updateFileModels(updates)`** applies the whole batch with a
+  single `parsedFiles` clone, a single dialog-set change scan (index rebuilt
+  once, only for files whose `(dialogName, npc)` set changed — the
+  `dialogSetChanged` guard survives batching), one `parseGeneration` bump, and
+  at most one `loadAndMergeNpcModels` re-merge (skipped when no updated file
+  participates in the selected NPC's model). Untouched cache entries and an
+  unchanged `dialogIndex` keep their identities. It also uses the
+  WeakMap-memoized `getFilesWithDialogs` instead of the former inline
+  O(project) rebuild. `updateFileModel` (storeSync's per-edit-flush entry
+  point) delegates with a single entry — the keystroke path is unchanged.
+
+Guarded by `tests/useFileWatcher.batching.test.ts` (N events → one parse per
+unique path, one cascade, one merge) and
+`tests/projectStore.updateFileModels.test.ts`.
 
 ## PF5 ingestion / parse guards
 
