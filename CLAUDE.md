@@ -280,7 +280,7 @@ Production-hardening work that only matters at first release (code signing, stri
 
 **Proposed plan:** [`docs/plans/mcp-server.md`](docs/plans/mcp-server.md) — built-in MCP server so AI clients can verify, create, and control dialog/quest content through the editor's validated pipelines (no code landed yet).
 
-**Active plan:** [`docs/plans/production-readiness-review-findings.md`](docs/plans/production-readiness-review-findings.md) — production-readiness / performance / UI-UX review, including the decision to deprecate the quest Flow view (Option A and Option B both landed: the litegraph Flow view has been removed; the quest surface is the read-only list/details/create panel). Its §5 tracks what has landed and what remains.
+**Active plan:** [`docs/plans/production-readiness-review-findings.md`](docs/plans/production-readiness-review-findings.md) — production-readiness / performance / UI-UX review, including the decision to deprecate the quest Flow view (Option A and Option B both landed: the litegraph Flow view has been removed; the quest surface is the read-only list/details/create panel). §3 Performance is closed down to P2 (both P0 items and all three P1 items landed; durable outcomes in `docs/architecture/render-performance.md`). Its §5 tracks what has landed and what remains.
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 

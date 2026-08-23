@@ -20,17 +20,23 @@ Landed:
 | `b5c5e3d` | Deleted stale editor `pnpm-lock.yaml` (EOL Electron 29 pin) + unused npm shadow lockfiles |
 | `44b1ff5` | Ctrl+S / AppBar Save button + Close Project → welcome screen (F1, F5) |
 | (2026-08-23) | §1 Option B: quest Flow view removed (litegraph canvas + inspector + command write path, quest batch history, node-editor playground, `litegraph.js`/`dagre` deps, writable-quest flag). Codec promoted to `quest/domain/conditionExpressionCodec.ts`; quest surface is list/details/create. |
+| `635cdd8` | §3 both P0 performance items: single-parse project open (metadata-worker model hand-off, `parsedFiles` LRU cap) + file-watcher change batching via `updateFileModels` |
+| `1db5ce1` | §3 all three P1 performance items: Problems-panel scan deferral/debounce + per-file fact cache, `QuestList` single-pass batch analysis, fileStore coarse-selector coverage + memoized layouts |
 
-Verified on the merged tree after Option B: full Jest suite (1019 tests in 151
-suites), browser-harness Playwright suite (163 tests), `build:main`,
+Verified on the merged tree after the P1 slice: full Jest suite (1059 tests in
+159 suites), browser-harness Playwright suite (163 tests), `build:main`,
 `typecheck:renderer`, `build:renderer` (no chunk-size or eval warnings), and
-lint (0 errors; 7 pre-existing warnings in untouched files) all green. The test
-counts dropped because Option B deleted ~20 quest-flow Jest suites and 2
-Playwright specs along with the code they covered.
+lint (0 errors; 7 pre-existing warnings in untouched files) all green. Earlier
+counts in this document (1019 tests in 151 suites after Option B) dropped
+because Option B deleted ~20 quest-flow Jest suites and 2 Playwright specs
+along with the code they covered; the P0/P1 perf slices added the guard suites
+back up to 159.
 
-Everything else in this document is still open — §5 is the working priority
-list. Owner decisions still outstanding: app icons, the Dandelion vs.
-"Daedalus Dialog Editor" naming split, and code signing.
+**§3 Performance is now closed down to P2** — both P0 items and all three P1
+items are done; §3 P2/P3 are the remaining perf work. Everything else in this
+document is still open — §5 is the working priority list. Owner decisions still
+outstanding: app icons, the Dandelion vs. "Daedalus Dialog Editor" naming
+split, and code signing.
 
 ### Environment note for a fresh session
 
@@ -322,24 +328,50 @@ findings below are in paths the doc does not cover.
 
 ### P1
 
-- **Problems panel full-corpus synchronous lint on every `parseGeneration`
+- ~~**Problems panel full-corpus synchronous lint on every `parseGeneration`
   bump** (`ProblemsPanel.tsx:27-33`, `problemsStore.ts:46-64`): during
   ingestion that is every 500 ms over a growing file set — O(n²) across the
-  ingestion window, blocking. Fix: debounce, skip while `isIngesting` + run
-  once at completion, per-file rule-output cache keyed on model identity.
-- **`QuestList` is O(quests × all functions)** — still open, and now the
+  ingestion window, blocking.~~ **RESOLVED 2026-08-23** — fixed as suggested
+  with one refinement: scans are deferred while `isIngesting` (one scan at
+  completion) and debounced 300 ms outside it (`problemsStore.requestScan`;
+  manual Rescan stays synchronous), but the per-file cache holds *facts*
+  (the expensive per-file walks, `problems/domain/fileFacts.ts`, WeakMap on
+  model identity), not rule output — every rule has cross-file inputs, so
+  cross-file aggregation re-runs per scan and results stay byte-identical.
+  Guarded by `tests/problemsStore.scanScheduling.test.ts` and
+  `tests/ProblemsPanel.scanScheduling.test.tsx`; documented in
+  `docs/architecture/render-performance.md`. (F18 single-file-mode emptiness
+  left as-is, per scope.)
+- ~~**`QuestList` is O(quests × all functions)** — still open, and now the
   quest view's only perf risk since Option B (`QuestList.tsx:149-161`,
   `analysis.ts:88-116`), with `findCaseInsensitiveSymbol` falling back to
   `Object.entries` over ~15k constants per miss (`analysis.ts:33-42`), memoized
   on whole-model identity. 200 quests × large corpus ⇒ multi-second stall per
-  merged-model identity change. Fix: invert to one pass over functions
-  building a quest→signals Map; lazily-built lowercased symbol index; memo on
-  category identities.
-- **`App` subscribes to the whole `openFiles` Map** (`App.tsx:55-60`) — new Map
+  merged-model identity change.~~ **RESOLVED 2026-08-23** — fixed as
+  suggested: `analyzeQuests` batch API (one pass over functions, no dialog
+  walk — the per-quest `getQuestReferences` fallback fed a provably
+  unreachable `'implicit'` branch), WeakMap-cached lowercased symbol index,
+  and QuestList memos keyed on `constants`/`variables`/`functions`
+  identities. Guarded by `tests/questAnalysis.test.ts` (batch/per-quest
+  equivalence + single-pass proxy counters) and
+  `tests/QuestList.perf.test.tsx`; documented in
+  `docs/architecture/render-performance.md`.
+- ~~**`App` subscribes to the whole `openFiles` Map** (`App.tsx:55-60`) — new Map
   identity per edit flush re-renders the entire tree; `MainLayout`/
   `ThreeColumnLayout` are not memo-wrapped. Contradicts the doc's
-  coarse-selector rule (applied to projectStore/historyStore, not fileStore).
-  Fix: per-active-file selector + derived conflict count + `React.memo`.
+  coarse-selector rule (applied to projectStore/historyStore, not fileStore).~~
+  **RESOLVED 2026-08-23** — fixed as suggested, and widened to every other
+  render-time whole-Map subscription that would have kept the tree
+  re-rendering: App selects the active file's entry + a shallow-compared
+  conflict-path array; `MainLayout`/`ThreeColumnLayout` are memo-wrapped
+  behind the primitive `filePath` prop; `useAutoSave` moved to a transient
+  `store.subscribe`, `useWindowCloseGuard` subscribes only while its dialog
+  is open, `ExternalChangeConflictDialog`/`SourceEditsPendingBanner` use
+  per-file selectors, `useDialogFactory` reads live `getFileState`. Guarded
+  by render-count probes in `tests/App.fileStoreSubscription.test.tsx`,
+  `tests/MainLayout.rerender.test.tsx`,
+  `tests/ThreeColumnLayout.rerender.test.tsx`; documented in
+  `docs/architecture/render-performance.md`.
 
 ### P2
 
@@ -486,5 +518,8 @@ Pre-release (gates first public build):
 Post-release fast follows: ~~watcher batching + double-parse collapse (P0
 perf)~~ **DONE 2026-08-23** (both §3 P0 items — single-parse project open with
 model hand-off + `parsedFiles` cap, and watcher batching via
-`updateFileModels`), Problems-panel debounce, `App` `openFiles` selector, F2
-dead source-view cleanup, F6/F7 shortcut scoping, CSP.
+`updateFileModels`), ~~Problems-panel debounce, `App` `openFiles` selector~~
+**DONE 2026-08-23** (all three §3 P1 items — Problems-panel scan
+deferral/debounce + fact cache, QuestList single-pass batch analysis, and
+fileStore coarse-selector coverage with memoized layouts), F2 dead
+source-view cleanup, F6/F7 shortcut scoping, CSP.

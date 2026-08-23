@@ -20,7 +20,6 @@ export interface DialogFactoryConfig {
   filePath: string | null;
   allDialogFiles: string[];
   isProjectMode: boolean;
-  openFiles: Map<string, unknown>;
   semanticModel: SemanticModel;
   dialogIndex: Map<string, DialogMetadata[]>;
   selectedNPC: string | null;
@@ -41,7 +40,6 @@ export function useDialogFactory(config: DialogFactoryConfig) {
     filePath,
     allDialogFiles,
     isProjectMode,
-    openFiles,
     semanticModel,
     dialogIndex,
     selectedNPC,
@@ -115,7 +113,9 @@ export function useDialogFactory(config: DialogFactoryConfig) {
         }
       }
 
-      if (!openFiles.has(targetFilePath)) {
+      // Live store lookup (§3 P1): checking a render-captured `openFiles` Map
+      // would require subscribing the layout to every open file's changes.
+      if (!getFileState(targetFilePath)) {
         await openFile(targetFilePath);
       }
 
@@ -219,7 +219,6 @@ export function useDialogFactory(config: DialogFactoryConfig) {
       resolveTargetFilePath,
       allDialogFiles,
       isProjectMode,
-      openFiles,
       semanticModel,
       openFile,
       getFileState,

@@ -18,14 +18,14 @@ interface SourceEditsPendingBannerProps {
  * Renders nothing unless the file is source-dirty.
  */
 const SourceEditsPendingBanner: React.FC<SourceEditsPendingBannerProps> = ({ filePath }) => {
-  const openFiles = useFileStore((s) => s.openFiles);
+  // §3 P1: subscribe to this file's entry only — the whole `openFiles` Map
+  // gets a fresh identity on every edit flush to any open file.
+  const fileState = useFileStore((s) => (filePath ? s.openFiles.get(filePath) : undefined));
   const adoptWorkingCode = useFileStore((s) => s.adoptWorkingCode);
   const setWorkingCode = useFileStore((s) => s.setWorkingCode);
 
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<ParseError[] | null>(null);
-
-  const fileState = filePath ? openFiles.get(filePath) : undefined;
   if (!filePath || !fileState || !isSourceDirty(fileState)) {
     return null;
   }

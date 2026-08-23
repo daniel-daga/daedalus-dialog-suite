@@ -27,12 +27,14 @@ const basename = (filePath: string): string =>
  */
 const ExternalChangeConflictDialog: React.FC = () => {
   const activeFile = useFileStore((s) => s.activeFile);
-  const openFiles = useFileStore((s) => s.openFiles);
+  // §3 P1: subscribe to the active file's entry, not the whole `openFiles` Map
+  // (which gets a fresh identity on every edit flush to any open file).
+  const activeFileState = useFileStore((s) =>
+    s.activeFile ? s.openFiles.get(s.activeFile) : undefined
+  );
   const resolveExternalConflict = useFileStore((s) => s.resolveExternalConflict);
 
   const [resolving, setResolving] = useState(false);
-
-  const activeFileState = activeFile ? openFiles.get(activeFile) : undefined;
   const conflict = activeFileState?.externalConflict;
   const open = !!activeFile && !!conflict;
   const fileMissing = !!conflict?.fileMissing;

@@ -54,10 +54,9 @@ const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }
 ];
 
 const App: React.FC = () => {
-  const { openFile, activeFile, openFiles, resetEditorSession } = useEditorStore((state) => ({
+  const { openFile, activeFile, resetEditorSession } = useEditorStore((state) => ({
     openFile: state.openFile,
     activeFile: state.activeFile,
-    openFiles: state.openFiles,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
   const { openProject, closeProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
@@ -81,7 +80,14 @@ const App: React.FC = () => {
 
   const setActiveFile = useEditorStore((state) => state.setActiveFile);
 
-  const activeFileState = activeFile ? openFiles.get(activeFile) : null;
+  // §3 P1: never subscribe to the whole `openFiles` Map — every edit flush
+  // gives it a fresh identity in the immer store, which would re-render App
+  // (and the whole tree under it) on every keystroke flush. Subscribe only to
+  // the active file's entry; anything not needed reactively goes through
+  // `useEditorStore.getState()` (see confirmDiscardChanges).
+  const activeFileState = useEditorStore((state) =>
+    state.activeFile ? state.openFiles.get(state.activeFile) ?? null : null
+  );
   const autoSaveError = activeFileState?.autoSaveError;
   const saveError = activeFileState?.saveError;
   const activeSourceDirty = activeFileState ? isSourceDirty(activeFileState) : false;
@@ -90,12 +96,14 @@ const App: React.FC = () => {
 
   // Files in external conflict that are not the active file: the active file's
   // conflict opens the modal dialog; background conflicts surface as an app-bar
-  // chip so they are not lost (E4).
-  const backgroundConflicts = useMemo(
-    () => Array.from(openFiles.values()).filter(
-      (fileState) => fileState.externalConflict && fileState.filePath !== activeFile
-    ),
-    [openFiles, activeFile]
+  // chip so they are not lost (E4). Derived as an array of paths compared with
+  // `shallow`, so its identity is stable while the conflict set is unchanged.
+  const backgroundConflictPaths = useEditorStore(
+    (state) =>
+      Array.from(state.openFiles.values())
+        .filter((fileState) => fileState.externalConflict && fileState.filePath !== state.activeFile)
+        .map((fileState) => fileState.filePath),
+    shallow
   );
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
@@ -311,16 +319,16 @@ const App: React.FC = () => {
               </Tooltip>
             </>
           )}
-          {backgroundConflicts.length > 0 && (
+          {backgroundConflictPaths.length > 0 && (
             <Tooltip
               title={
                 <Box>
                   <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
                     Files changed on disk with unsaved changes:
                   </Typography>
-                  {backgroundConflicts.map((fileState) => (
-                    <Typography key={fileState.filePath} variant="caption" sx={{ display: 'block' }}>
-                      - {fileState.filePath}
+                  {backgroundConflictPaths.map((conflictPath) => (
+                    <Typography key={conflictPath} variant="caption" sx={{ display: 'block' }}>
+                      - {conflictPath}
                     </Typography>
                   ))}
                 </Box>
@@ -329,8 +337,8 @@ const App: React.FC = () => {
               <Chip
                 icon={<ErrorIcon />}
                 color="error"
-                label={`Conflicts: ${backgroundConflicts.length}`}
-                onClick={() => setActiveFile(backgroundConflicts[0].filePath)}
+                label={`Conflicts: ${backgroundConflictPaths.length}`}
+                onClick={() => setActiveFile(backgroundConflictPaths[0])}
                 sx={{ mr: 2, cursor: 'pointer' }}
                 data-testid="background-conflict-chip"
               />

@@ -32,7 +32,7 @@ import { FixedSizeList as VirtualizedList, ListChildComponentProps, areEqual } f
 import type { SemanticModel, GlobalConstant } from '../types/global';
 import CreateQuestDialog from './CreateQuestDialog';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest, getUsedQuestTopics, QuestAnalysis } from '../quest/domain';
+import { analyzeQuests, getUsedQuestTopics, QuestAnalysis } from '../quest/domain';
 import {
   DEFAULT_QUEST_TOPIC_FILTER_POLICY,
   getCanonicalQuestKey,
@@ -141,22 +141,21 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
   const [statusFilter, setStatusFilter] = useState<'all' | 'broken' | 'wip' | 'implemented' | 'not_started'>('all');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
+  // Key memos on the model categories the analysis actually reads — not the
+  // whole-model identity, which changes on every merged-model rebuild.
+  const { constants, variables, functions } = semanticModel;
+
   const quests = useMemo(() => {
-    const constants = semanticModel.constants || {};
-    return Object.values(constants).filter(c => isQuestTopicConstantByPolicy(c.name, DEFAULT_QUEST_TOPIC_FILTER_POLICY));
-  }, [semanticModel.constants]);
+    return Object.values(constants || {}).filter(c => isQuestTopicConstantByPolicy(c.name, DEFAULT_QUEST_TOPIC_FILTER_POLICY));
+  }, [constants]);
 
   const questAnalysisMap = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof analyzeQuest>>();
-    quests.forEach((q) => {
-      map.set(q.name, analyzeQuest(semanticModel, q.name));
-    });
-    return map;
-  }, [quests, semanticModel]);
+    return analyzeQuests({ constants, variables, functions }, quests.map((q) => q.name));
+  }, [quests, constants, variables, functions]);
 
   const usedTopics = useMemo(() => {
-    return getUsedQuestTopics(semanticModel);
-  }, [semanticModel]);
+    return getUsedQuestTopics({ functions });
+  }, [functions]);
 
   const usedTopicKeys = useMemo(() => {
     return new Set(Array.from(usedTopics).map(topic => getCanonicalQuestKey(topic)));

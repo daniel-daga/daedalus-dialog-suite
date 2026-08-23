@@ -33,7 +33,6 @@ describe('useDialogFactory.createDialogForNpc', () => {
         filePath: FILE,
         allDialogFiles: [FILE],
         isProjectMode: false,
-        openFiles: new Map([[FILE, {}]]),
         semanticModel: model as any,
         dialogIndex: new Map(),
         selectedNPC: 'PC_Fremder',

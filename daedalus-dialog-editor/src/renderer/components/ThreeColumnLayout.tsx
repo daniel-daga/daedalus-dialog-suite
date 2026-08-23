@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, useDeferredValue } from 'react';
+import React, { memo, useState, useCallback, useMemo, useEffect, useDeferredValue } from 'react';
 import { useFunctionTreeBuilder } from './hooks/useFunctionTreeBuilder';
 import { useRecentDialogTabs } from './hooks/useRecentDialogTabs';
 import { useDialogFactory } from './hooks/useDialogFactory';
@@ -40,16 +40,20 @@ const EMPTY_SEMANTIC_MODEL: SemanticModel = {
 
 const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const {
-    openFiles,
     openFile,
     getFileState,
     activeFile,
   } = useEditorStore((state) => ({
-    openFiles: state.openFiles,
     openFile: state.openFile,
     getFileState: state.getFileState,
     activeFile: state.activeFile,
   }), shallow);
+  // §3 P1: subscribe only to THIS layout's file entry — the whole `openFiles`
+  // Map gets a fresh identity on every edit flush to any open file, which
+  // would re-render the layout (and its columns) on unrelated files' flushes.
+  const fileState = useEditorStore((state) =>
+    filePath ? state.openFiles.get(filePath) ?? null : null
+  );
   const {
     selectedNPC,
     selectedDialog,
@@ -93,7 +97,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // dialog/function edits still reach the editor.
   const mergedDialogs = useProjectStore((state) => state.mergedSemanticModel.dialogs);
   const mergedFunctions = useProjectStore((state) => state.mergedSemanticModel.functions);
-  const fileState = filePath ? openFiles.get(filePath) : null;
 
   const [expandedDialogs, setExpandedDialogs] = useState<Set<string>>(new Set());
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -184,7 +187,6 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     filePath,
     allDialogFiles,
     isProjectMode,
-    openFiles,
     semanticModel,
     dialogIndex,
     selectedNPC,
@@ -591,4 +593,8 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   );
 };
 
-export default ThreeColumnLayout;
+// §3 P1: memo-wrapped — MainLayout passes only the primitive `filePath`, so a
+// MainLayout re-render for unrelated reasons (view switch, merged-model churn)
+// does not cascade into the columns; store updates arrive via the granular
+// subscriptions above.
+export default memo(ThreeColumnLayout);
