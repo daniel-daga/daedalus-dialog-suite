@@ -17,12 +17,14 @@ import {
   AutoAwesome as AutoAwesomeIcon,
   Undo as UndoIcon,
   Redo as RedoIcon,
-  Description as DescriptionIcon
+  Description as DescriptionIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useHistoryStore } from './store/historyStore';
 import { useProjectStore } from './store/projectStore';
 import { useAutoSave } from './hooks/useAutoSave';
+import { useManualSave } from './hooks/useManualSave';
 import { useFileWatcher } from './hooks/useFileWatcher';
 import MainLayout from './components/MainLayout';
 import ExternalChangeConflictDialog from './components/ExternalChangeConflictDialog';
@@ -58,8 +60,9 @@ const App: React.FC = () => {
     openFiles: state.openFiles,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
-  const { openProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
+  const { openProject, closeProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
     openProject: state.openProject,
+    closeProject: state.closeProject,
     projectPath: state.projectPath,
     projectName: state.projectName,
     isIngesting: state.isIngesting,
@@ -82,6 +85,8 @@ const App: React.FC = () => {
   const autoSaveError = activeFileState?.autoSaveError;
   const saveError = activeFileState?.saveError;
   const activeSourceDirty = activeFileState ? isSourceDirty(activeFileState) : false;
+  const activeModelDirty = !!activeFileState?.isDirty;
+  const activeDirty = activeSourceDirty || activeModelDirty;
 
   // Files in external conflict that are not the active file: the active file's
   // conflict opens the modal dialog; background conflicts surface as an app-bar
@@ -95,6 +100,7 @@ const App: React.FC = () => {
 
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [appError, setAppError] = useState<string | null>(null);
+  const { saveActiveFile, isManualSaving } = useManualSave(setAppError);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isProjectOpening, setIsProjectOpening] = useState(false);
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
@@ -186,6 +192,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCloseProject = () => {
+    if (!confirmDiscardChanges('close the project')) {
+      return;
+    }
+
+    resetEditorSession();
+    closeProject();
+  };
+
   const handleReload = async () => {
     if (projectPath) {
       await openProjectWithReset(projectPath);
@@ -241,16 +256,12 @@ const App: React.FC = () => {
                   </IconButton>
                 </span>
               </Tooltip>
-              {saveError ? (
-                <Tooltip title={
+              <Tooltip title={
+                saveError ? (
                   <Typography variant="caption" sx={{ display: 'block' }}>
                     {describeSaveError(saveError)}
                   </Typography>
-                }>
-                  <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />
-                </Tooltip>
-              ) : autoSaveError ? (
-                <Tooltip title={
+                ) : autoSaveError ? (
                   <Box>
                     <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
                       Validation errors prevented auto-save:
@@ -261,22 +272,43 @@ const App: React.FC = () => {
                       </Typography>
                     ))}
                   </Box>
-                }>
-                  <ErrorIcon sx={{ color: 'error.light', mr: 1 }} />
-                </Tooltip>
-              ) : activeSourceDirty ? (
-                <Tooltip title="Unsaved source changes — Ctrl+S to save">
-                  <SaveIcon sx={{ color: 'warning.light', mr: 1 }} />
-                </Tooltip>
-              ) : isAutoSaving ? (
-                <Tooltip title="Saving...">
-                  <SaveIcon sx={{ color: 'rgba(255,255,255,0.7)', mr: 1 }} />
-                </Tooltip>
-              ) : lastAutoSaveTime ? (
-                <Tooltip title={`Last saved: ${lastAutoSaveTime.toLocaleTimeString()}`}>
-                  <SaveIcon sx={{ color: 'rgba(255,255,255,0.4)', mr: 1 }} />
-                </Tooltip>
-              ) : null}
+                ) : activeSourceDirty ? (
+                  'Unsaved source changes — Ctrl+S to save'
+                ) : (isAutoSaving || isManualSaving) ? (
+                  'Saving...'
+                ) : activeModelDirty ? (
+                  'Unsaved changes — Ctrl+S to save'
+                ) : lastAutoSaveTime ? (
+                  `Last saved: ${lastAutoSaveTime.toLocaleTimeString()}`
+                ) : (
+                  'All changes saved'
+                )
+              }>
+                <span>
+                  <IconButton
+                    color="inherit"
+                    aria-label="Save"
+                    data-testid="appbar-save-button"
+                    disabled={!activeDirty}
+                    onClick={() => void saveActiveFile()}
+                    sx={{ mr: 1 }}
+                  >
+                    {(saveError || autoSaveError) ? (
+                      <ErrorIcon sx={{ color: 'error.light' }} />
+                    ) : (
+                      <SaveIcon sx={{
+                        color: activeSourceDirty
+                          ? 'warning.light'
+                          : (isAutoSaving || isManualSaving)
+                            ? 'rgba(255,255,255,0.7)'
+                            : activeModelDirty
+                              ? 'warning.light'
+                              : 'rgba(255,255,255,0.4)'
+                      }} />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
             </>
           )}
           {backgroundConflicts.length > 0 && (
@@ -386,6 +418,18 @@ const App: React.FC = () => {
               </IconButton>
             </span>
           </Tooltip>
+          {projectPath && (
+            <Tooltip title="Close Project">
+              <IconButton
+                color="inherit"
+                aria-label="Close Project"
+                data-testid="close-project-button"
+                onClick={handleCloseProject}
+              >
+                <CloseIcon />
+              </IconButton>
+            </Tooltip>
+          )}
         </Toolbar>
       </AppBar>
 

@@ -98,6 +98,11 @@ const debug = {
 
 /** Seeds the mock project, opens it, and drives the UI to the live quest flow canvas. */
 async function openQuestFlow(page: Page): Promise<void> {
+  // Writable quest editing is opt-in (flag default off); these tests exercise the
+  // write flows, so seed the feature flag before the app loads.
+  await page.addInitScript(() => {
+    window.localStorage.setItem('feature.writableQuestEditor', '1');
+  });
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
 

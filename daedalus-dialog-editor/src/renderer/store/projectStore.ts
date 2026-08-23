@@ -501,6 +501,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       routineList: [],
       dialogIndex: new Map(),
       allDialogFiles: [],
+      questFiles: [],
       npcPrototypes: [],
       voiceIdIndex: {},
       metadataFailures: [],

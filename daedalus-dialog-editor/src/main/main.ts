@@ -215,6 +215,9 @@ function setupIpcHandlers() {
 
   ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean; existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>> }) => {
     const expectUnchanged = !options?.overwriteExternal;
+    // Force-on-errors overwrites drop content the parser could not read, so
+    // FileService first snapshots the on-disk file to `<name>.d.bak`.
+    const backupBeforeWrite = options?.forceOnErrors === true;
     try {
       // Validate payload shapes before touching services
       assertModelShape(model);
@@ -241,7 +244,7 @@ function setupIpcHandlers() {
 
         // Use pre-generated code from validation if available
         if (validationResult.generatedCode) {
-          const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode, { expectUnchanged });
+          const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode, { expectUnchanged, backupBeforeWrite });
           // Arm self-write suppression only after an actual write succeeds
           fileWatcherService.notifySelfWrite(filePath);
           return {
@@ -274,7 +277,7 @@ function setupIpcHandlers() {
           };
       }
 
-      const writeResult = await fileService.writeFile(filePath, code, { expectUnchanged });
+      const writeResult = await fileService.writeFile(filePath, code, { expectUnchanged, backupBeforeWrite });
       // Arm self-write suppression only after an actual write succeeds
       fileWatcherService.notifySelfWrite(filePath);
       return writeResult;

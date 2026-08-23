@@ -47,7 +47,7 @@ export function describeSaveError(saveError: SaveError): string {
     case 'worker-crashed':
       return 'Save failed: the parser worker crashed. Your changes are kept in the editor — retry with Ctrl+S.';
     case 'encoding':
-      return 'Save failed: this file’s encoding cannot represent some characters you typed. Your changes are kept in the editor — remove the characters or convert the file to UTF-8 externally.';
+      return 'Save failed: the characters named in the error cannot be represented in this file’s encoding (windows-1252, the format Gothic tooling requires). Your changes are kept in the editor — remove or replace those characters, then retry with Ctrl+S.';
     case 'external-conflict':
       return 'Save failed: the file changed on disk since it was opened. Your changes are kept in the editor — reload to see the external version or overwrite it.';
     default:

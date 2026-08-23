@@ -93,8 +93,12 @@ test.describe('File Opening and Dialog Selection', () => {
     // Verify action button is present (opens a menu to add any action type)
     await expect(page.getByRole('button', { name: 'Add action' })).toBeVisible();
 
-    // Auto-save is enabled, so there is no explicit Save button in the editor toolbar
-    await expect(page.getByRole('button', { name: /Save/i })).toHaveCount(0);
+    // The app-bar Save button (Ctrl+S) is present but passive while the file
+    // is clean — auto-save still covers the routine case (manual-save.spec.ts
+    // covers the active states).
+    const saveButton = page.getByTestId('appbar-save-button');
+    await expect(saveButton).toBeVisible();
+    await expect(saveButton).toBeDisabled();
   });
 
   test('should display dialog actions', async ({ page }) => {

@@ -101,3 +101,73 @@ describe('FileService atomic write (E5)', () => {
     expect(entries.filter((e) => e.endsWith('.tmp'))).toHaveLength(0);
   });
 });
+
+describe('FileService backup before destructive force-save', () => {
+  let tempDir: string;
+  let service: FileService;
+  let target: string;
+  let backup: string;
+
+  beforeEach(async () => {
+    tempDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'force-backup-'));
+    service = new FileService();
+    service.clearEncodingCache();
+    target = path.join(tempDir, 'DIA_Test.d');
+    backup = `${target}.bak`;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    if (fsSync.existsSync(tempDir)) {
+      fsSync.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('copies the original bytes to <name>.d.bak before a backup-requested write', async () => {
+    // Non-ASCII windows-1252 bytes (e.g. 0xE4 'ä') so an encode/decode
+    // roundtrip in the backup path would be detectable.
+    const originalBytes = Buffer.from([
+      0x2f, 0x2f, 0x20, 0xe4, 0xf6, 0xfc, 0x0d, 0x0a, 0x66, 0x75, 0x6e, 0x63,
+    ]);
+    await fs.writeFile(target, originalBytes);
+    await service.readFile(target);
+
+    await service.writeFile(target, 'forced content', { backupBeforeWrite: true });
+
+    expect(await fs.readFile(target, 'utf8')).toBe('forced content');
+    expect(Buffer.compare(await fs.readFile(backup), originalBytes)).toBe(0);
+  });
+
+  it('does not create a backup on a normal save', async () => {
+    await fs.writeFile(target, 'original content');
+    await service.readFile(target);
+
+    await service.writeFile(target, 'updated content');
+
+    expect(fsSync.existsSync(backup)).toBe(false);
+  });
+
+  it('skips the backup when the target file does not exist yet', async () => {
+    await service.writeFile(target, 'brand new file', { backupBeforeWrite: true });
+
+    expect(await fs.readFile(target, 'utf8')).toBe('brand new file');
+    expect(fsSync.existsSync(backup)).toBe(false);
+  });
+
+  it('fails the save and leaves the original untouched when the backup copy fails', async () => {
+    await fs.writeFile(target, 'original content');
+    await service.readFile(target);
+
+    jest.spyOn(fs, 'copyFile').mockImplementation(async () => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    });
+
+    await expect(
+      service.writeFile(target, 'never persists', { backupBeforeWrite: true })
+    ).rejects.toMatchObject({ name: 'FileServiceError', code: 'BACKUP_FAILED' });
+    jest.restoreAllMocks();
+
+    expect(await fs.readFile(target, 'utf8')).toBe('original content');
+    expect(fsSync.existsSync(backup)).toBe(false);
+  });
+});
