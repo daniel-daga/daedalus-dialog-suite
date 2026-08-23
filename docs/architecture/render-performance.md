@@ -272,6 +272,70 @@ Guarded by `tests/useFileWatcher.batching.test.ts` (N events → one parse per
 unique path, one cascade, one merge) and
 `tests/projectStore.updateFileModels.test.ts`.
 
+## Problems panel: deferred, debounced, fact-cached scans (P1, 2026-08-23)
+
+The Problems panel used to re-run a full-corpus synchronous lint on every
+`parseGeneration` bump — during background ingestion that is every 500 ms over
+a growing file set, O(n²) blocking work across the ingestion window. Now:
+
+- **Scheduling seam.** `problemsStore.requestScan()` is the panel's
+  generation-driven entry point (the effect also keys on `isIngesting` so the
+  completion flip fires it). While `projectStore.isIngesting` is true, requests
+  are deferred and exactly **one** scan runs when ingestion completes; outside
+  ingestion, generation-driven scans debounce (300 ms trailing) so watcher
+  batches and keystroke syncs coalesce. The manual Rescan button still calls
+  `runScan()` synchronously, which also cancels any pending scheduled scan.
+  Scheduler state lives in non-reactive store-closure state.
+- **Per-file fact cache.** Every lint rule has cross-file inputs (aggregated
+  dialog/NPC name sets, the project-wide function graph, cross-file voice-id
+  duplicates), so caching per-file *problems* keyed on model identity would go
+  stale when a *different* file changes. Instead the expensive pure per-file
+  walks are extracted into `problems/domain/fileFacts.ts`
+  (`extractFileFacts(model)`) and cached in a `WeakMap` keyed on
+  semantic-model identity; cross-file aggregation and rule judgment (cheap
+  set/map work) re-run every scan, so outputs stay byte-identical. A typical
+  single-file edit re-walks one file instead of the whole project.
+
+Guarded by `tests/problemsStore.scanScheduling.test.ts` (scan-call counts
+across an ingestion window, debounce coalescing, extraction counts per model
+identity, changed-cross-file-input soundness) and
+`tests/ProblemsPanel.scanScheduling.test.tsx`.
+
+## QuestList: single-pass batch quest analysis (P1, 2026-08-23)
+
+`QuestList` used to map every quest constant through `analyzeQuest` — a full
+walk of all functions *per quest*, with `getQuestReferences` re-walking
+functions and dialogs whenever no explicit checks were found — and
+`findCaseInsensitiveSymbol` fell back to `Object.entries` over ~15k constants
+per case-miss, all memoized on whole-model identity. Now:
+
+- **`analyzeQuests(model, questNames)`** (`quest/domain/analysis.ts`)
+  pre-indexes canonical topic keys and MIS-variable keys per quest, makes a
+  **single pass** over `semanticModel.functions` accumulating per-quest
+  lifecycle signals, and derives each `QuestAnalysis` from the accumulators.
+  It never touches dialogs: the per-quest `getQuestReferences` fallback fed a
+  provably unreachable `logicMethod: 'implicit'` branch (condition refs are
+  only pushed when the variable matches `misVarName` and always embed it in
+  `details`), so the batch path returns `'unknown'` directly with identical
+  observable behavior. Batch-vs-per-quest equivalence is test-enforced.
+- **Lazy lowercased symbol index.** `findCaseInsensitiveSymbol` builds a
+  lowercased `Map` once per symbols-object identity (`WeakMap` cache) instead
+  of re-enumerating on every miss, preserving the exact-match fast path and
+  first-match duplicate semantics. This assumes symbols objects are replaced,
+  not mutated, across model rebuilds — the same identity contract the memos
+  rely on.
+- **Category-keyed memos.** `QuestList`'s memos key on the categories actually
+  read (`constants`, `variables`, `functions`) rather than whole-model
+  identity, so merged-model rebuilds that only change other categories no
+  longer re-run quest analysis. `QuestDetails` keeps per-quest `analyzeQuest`
+  (one quest at a time).
+
+Guarded by `tests/questAnalysis.test.ts` (deep equivalence over all quest
+shapes; Proxy `ownKeys` counters proving one functions pass, zero dialog
+walks, ≤1 constants enumeration) and `tests/QuestList.perf.test.tsx`
+(no re-analysis when an unrelated category changes identity; re-analysis when
+`functions` changes).
+
 ## PF5 ingestion / parse guards
 
 **Ingestion abort + flush contract** (`startBackgroundIngestion`): the run

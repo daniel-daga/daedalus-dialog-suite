@@ -322,19 +322,34 @@ findings below are in paths the doc does not cover.
 
 ### P1
 
-- **Problems panel full-corpus synchronous lint on every `parseGeneration`
+- ~~**Problems panel full-corpus synchronous lint on every `parseGeneration`
   bump** (`ProblemsPanel.tsx:27-33`, `problemsStore.ts:46-64`): during
   ingestion that is every 500 ms over a growing file set — O(n²) across the
-  ingestion window, blocking. Fix: debounce, skip while `isIngesting` + run
-  once at completion, per-file rule-output cache keyed on model identity.
-- **`QuestList` is O(quests × all functions)** — still open, and now the
+  ingestion window, blocking.~~ **RESOLVED 2026-08-23** — fixed as suggested
+  with one refinement: scans are deferred while `isIngesting` (one scan at
+  completion) and debounced 300 ms outside it (`problemsStore.requestScan`;
+  manual Rescan stays synchronous), but the per-file cache holds *facts*
+  (the expensive per-file walks, `problems/domain/fileFacts.ts`, WeakMap on
+  model identity), not rule output — every rule has cross-file inputs, so
+  cross-file aggregation re-runs per scan and results stay byte-identical.
+  Guarded by `tests/problemsStore.scanScheduling.test.ts` and
+  `tests/ProblemsPanel.scanScheduling.test.tsx`; documented in
+  `docs/architecture/render-performance.md`. (F18 single-file-mode emptiness
+  left as-is, per scope.)
+- ~~**`QuestList` is O(quests × all functions)** — still open, and now the
   quest view's only perf risk since Option B (`QuestList.tsx:149-161`,
   `analysis.ts:88-116`), with `findCaseInsensitiveSymbol` falling back to
   `Object.entries` over ~15k constants per miss (`analysis.ts:33-42`), memoized
   on whole-model identity. 200 quests × large corpus ⇒ multi-second stall per
-  merged-model identity change. Fix: invert to one pass over functions
-  building a quest→signals Map; lazily-built lowercased symbol index; memo on
-  category identities.
+  merged-model identity change.~~ **RESOLVED 2026-08-23** — fixed as
+  suggested: `analyzeQuests` batch API (one pass over functions, no dialog
+  walk — the per-quest `getQuestReferences` fallback fed a provably
+  unreachable `'implicit'` branch), WeakMap-cached lowercased symbol index,
+  and QuestList memos keyed on `constants`/`variables`/`functions`
+  identities. Guarded by `tests/questAnalysis.test.ts` (batch/per-quest
+  equivalence + single-pass proxy counters) and
+  `tests/QuestList.perf.test.tsx`; documented in
+  `docs/architecture/render-performance.md`.
 - **`App` subscribes to the whole `openFiles` Map** (`App.tsx:55-60`) — new Map
   identity per edit flush re-renders the entire tree; `MainLayout`/
   `ThreeColumnLayout` are not memo-wrapped. Contradicts the doc's
