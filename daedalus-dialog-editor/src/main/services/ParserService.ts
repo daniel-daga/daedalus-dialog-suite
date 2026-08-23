@@ -11,7 +11,15 @@ const MAX_RESTARTS_IN_WINDOW = 5;
 interface PendingRequest {
   resolve: (value: any) => void;
   reject: (reason?: any) => void;
-  worker: Worker;
+}
+
+interface QueuedRequest {
+  id: string;
+  sourceCode: string;
+}
+
+interface InFlight {
+  id: string;
   timer: NodeJS.Timeout;
 }
 
@@ -23,8 +31,10 @@ export interface ParserServiceOptions {
 
 export class ParserService {
   private workers: Worker[] = [];
+  private idleWorkers: Worker[] = [];
+  private requestQueue: QueuedRequest[] = [];
+  private inFlightByWorker: Map<Worker, InFlight> = new Map();
   private pendingRequests: Map<string, PendingRequest> = new Map();
-  private nextWorkerIndex = 0;
   private readonly workerPath: string;
   private readonly timeoutMs: number;
   private restartTimestamps: number[] = [];
@@ -43,7 +53,8 @@ export class ParserService {
     console.log(`[ParserService] Initializing worker pool with ${workerCount} workers`);
 
     for (let i = 0; i < workerCount; i++) {
-      this.spawnWorker();
+      const worker = this.spawnWorker();
+      this.idleWorkers.push(worker);
     }
   }
 
@@ -55,7 +66,7 @@ export class ParserService {
     });
 
     worker.on('message', (message: { id: string; result?: any; error?: string }) => {
-      this.handleMessage(message);
+      this.handleMessage(worker, message);
     });
 
     worker.on('error', (err) => {
@@ -78,32 +89,61 @@ export class ParserService {
     return worker;
   }
 
-  private handleMessage(message: { id: string; result?: any; error?: string }) {
+  private handleMessage(worker: Worker, message: { id: string; result?: any; error?: string }) {
     const { id, result, error } = message;
+
+    const inFlight = this.inFlightByWorker.get(worker);
+    if (inFlight && inFlight.id === id) {
+      clearTimeout(inFlight.timer);
+      this.inFlightByWorker.delete(worker);
+    }
+
     const pending = this.pendingRequests.get(id);
-    if (!pending) return;
+    if (pending) {
+      this.pendingRequests.delete(id);
+      if (error) {
+        pending.reject(new Error(error));
+      } else {
+        pending.resolve(result);
+      }
+    }
 
-    clearTimeout(pending.timer);
-    this.pendingRequests.delete(id);
+    this.workerBecameIdle(worker);
+  }
 
-    if (error) {
-      pending.reject(new Error(error));
+  private assignRequest(worker: Worker, request: QueuedRequest) {
+    const timer = setTimeout(() => this.handleTimeout(worker, request.id), this.timeoutMs);
+    this.inFlightByWorker.set(worker, { id: request.id, timer });
+    worker.postMessage({ id: request.id, sourceCode: request.sourceCode });
+  }
+
+  private workerBecameIdle(worker: Worker) {
+    if (!this.workers.includes(worker)) return; // retired worker
+
+    const request = this.requestQueue.shift();
+    if (request) {
+      this.assignRequest(worker, request);
     } else {
-      pending.resolve(result);
+      this.idleWorkers.push(worker);
     }
   }
 
-  private handleTimeout(id: string) {
-    const pending = this.pendingRequests.get(id);
-    if (!pending) return;
+  private handleTimeout(worker: Worker, id: string) {
+    const inFlight = this.inFlightByWorker.get(worker);
+    if (!inFlight || inFlight.id !== id) return; // already settled
 
-    this.pendingRequests.delete(id);
-    pending.reject(new WorkerRequestError('Parser request timed out', 'timeout'));
+    this.inFlightByWorker.delete(worker);
+
+    const pending = this.pendingRequests.get(id);
+    if (pending) {
+      this.pendingRequests.delete(id);
+      pending.reject(new WorkerRequestError('Parser request timed out', 'timeout'));
+    }
 
     // A hung native parse cannot be cancelled; terminate() is best-effort (a
     // thread wedged inside tree-sitter native code may not die until it
     // returns). Removing the worker from rotation is the real protection.
-    this.retireWorker(pending.worker, 'Parser worker terminated after a request timed out');
+    this.retireWorker(worker, 'Parser worker terminated after a request timed out');
   }
 
   private handleWorkerDeath(worker: Worker, reason: string) {
@@ -117,15 +157,17 @@ export class ParserService {
     if (index === -1) return;
 
     this.workers.splice(index, 1);
-    if (this.nextWorkerIndex >= this.workers.length) {
-      this.nextWorkerIndex = 0;
-    }
+    const idleIndex = this.idleWorkers.indexOf(worker);
+    if (idleIndex !== -1) this.idleWorkers.splice(idleIndex, 1);
 
-    // Requests queued behind the dead/hung worker can never be answered.
-    for (const [id, pending] of this.pendingRequests) {
-      if (pending.worker === worker) {
-        clearTimeout(pending.timer);
-        this.pendingRequests.delete(id);
+    // The request in flight on the dead/hung worker can never be answered.
+    const inFlight = this.inFlightByWorker.get(worker);
+    if (inFlight) {
+      clearTimeout(inFlight.timer);
+      this.inFlightByWorker.delete(worker);
+      const pending = this.pendingRequests.get(inFlight.id);
+      if (pending) {
+        this.pendingRequests.delete(inFlight.id);
         pending.reject(new WorkerRequestError(crashMessage, 'worker-crashed'));
       }
     }
@@ -138,23 +180,24 @@ export class ParserService {
 
     if (this.restartTimestamps.length > MAX_RESTARTS_IN_WINDOW) {
       this.degraded = true;
+      for (const [, orphan] of this.inFlightByWorker) {
+        clearTimeout(orphan.timer);
+      }
+      this.inFlightByWorker.clear();
+      // Reject every request still awaiting (in-flight + queued share pendingRequests).
       for (const [, pending] of this.pendingRequests) {
-        clearTimeout(pending.timer);
         pending.reject(
           new WorkerRequestError('Parser workers are crash-looping — restart the app', 'worker-crashed'),
         );
       }
       this.pendingRequests.clear();
+      this.requestQueue = [];
       return;
     }
 
-    this.spawnWorker();
-  }
-
-  private getNextWorker(): Worker {
-    const worker = this.workers[this.nextWorkerIndex];
-    this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-    return worker;
+    const replacement = this.spawnWorker();
+    // Restore the pool lane so queued requests keep draining.
+    this.workerBecameIdle(replacement);
   }
 
   /**
@@ -170,20 +213,28 @@ export class ParserService {
 
     return new Promise((resolve, reject) => {
       const id = randomUUID();
-      const worker = this.getNextWorker();
-      const timer = setTimeout(() => this.handleTimeout(id), this.timeoutMs);
-      this.pendingRequests.set(id, { resolve, reject, worker, timer });
-      worker.postMessage({ id, sourceCode });
+      this.pendingRequests.set(id, { resolve, reject });
+
+      const request: QueuedRequest = { id, sourceCode };
+      const worker = this.idleWorkers.pop();
+      if (worker) {
+        this.assignRequest(worker, request);
+      } else {
+        this.requestQueue.push(request);
+      }
     });
   }
 
   /** Terminate all workers and clear pending state (test/teardown helper). */
   dispose() {
-    for (const [, pending] of this.pendingRequests) {
-      clearTimeout(pending.timer);
+    for (const [, inFlight] of this.inFlightByWorker) {
+      clearTimeout(inFlight.timer);
     }
+    this.inFlightByWorker.clear();
     this.pendingRequests.clear();
+    this.requestQueue = [];
     this.workers.forEach((w) => void w.terminate());
     this.workers = [];
+    this.idleWorkers = [];
   }
 }

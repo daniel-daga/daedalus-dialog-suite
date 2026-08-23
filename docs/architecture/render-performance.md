@@ -192,8 +192,26 @@ Two mechanisms uphold it:
   a genuine render input); the wrapper set's identity changes only when the set of
   defined keys changes.
 
-Deviation: `VariableAutocomplete` **keeps** its `semanticModel` prop — it serves
-quest-inspector and condition callers that pass a *different* model. Single-file
+**Condition subtree (P2, 2026-08-23).** The same invariant now holds for the
+condition-editing subtree, which was its mirror-image violation:
+`ConditionEditor` and `ConditionCard` are `React.memo` with default
+comparators, and both used to take the churning `semanticModel` prop —
+so once conditions were expanded, every keystroke-path model churn
+re-rendered every condition field and re-derived the full autocomplete
+option pool. The prop is removed from `ConditionEditor`, `ConditionCard`,
+`ConditionFieldsProps`, and all condition field components;
+`ConditionSection` uses the model only to resolve the condition function
+object (an Immer-stable reference). The autocomplete leaves already read
+model data through `useVariableOptions`' per-category pooled store
+subscriptions (the prop was the active file's model — a deduped, benign
+superset of what the hook reads itself), and the remaining memo props are
+identity-stable by construction (`handleConditionFunctionUpdate` is
+`useCallback`-wrapped in `useDialogEditorCommands`). Render probes:
+`tests/ConditionEditor.rerender.test.tsx`.
+
+Deviation: `VariableAutocomplete` **keeps** its optional `semanticModel` prop
+for callers that pass a *different* model (the condition fields no longer use
+it — see above). Single-file
 dialog mode folds the active file's own symbols into autocomplete via
 `useVariableOptions`' per-category active-file reads (a deduped, benign superset).
 
@@ -352,6 +370,46 @@ walks, ≤1 constants enumeration) and `tests/QuestList.perf.test.tsx`
 (no re-analysis when an unrelated category changes identity; re-analysis when
 `functions` changes).
 
+## IngestedFilesDialog: virtualized, memoized rows (P2, 2026-08-23)
+
+`IngestedFilesDialog` used to render an unvirtualized full-project MUI `<List>`
+and rebuild + `localeCompare`-sort its row Map inside render — while subscribed
+to `parsedFiles`, which is replaced every 500 ms during background ingestion,
+i.e. exactly when the dialog is watched. Now:
+
+- **Virtualized** with the established `react-window` idiom (`AutoSizer` +
+  `FixedSizeList`, a module-level `React.memo` row component, rows keyed on
+  `filePath`) — the same pattern as `QuestList` and the search panes, so DOM
+  cost per flush is bounded by the viewport, not the project.
+- **Row derivation hoisted out of render**: the metadata-failure map and the
+  file-list build + priority sort + parsed count are `useMemo`s keyed on the
+  identities they read (`parsedFiles`, `allDialogFiles`, `metadataFailures`).
+  A re-render without a `parsedFiles` change rebuilds nothing; each ingestion
+  flush costs exactly one build.
+- The **open-gated `parsedFiles` subscription is unchanged** (the
+  coarse-identity selector rule above).
+
+Guarded by a bounded-row-count probe (500-file project) and a
+derivation-counter probe in `tests/IngestedFilesDialog.rerender.test.tsx`.
+
+## ParserService: idle-worker dispatch (P2, 2026-08-23)
+
+Main-process companion to the ingestion path: `ParserService` used to
+round-robin parse requests across its worker threads with no idle tracking, so
+~20 concurrent ingestion requests piled onto ≤8 workers and one big file
+head-of-line blocked every request queued behind it while other workers sat
+idle. It now uses the same idle-set + shared-FIFO-queue pattern as
+`MetadataWorkerPool`: a request takes an idle worker when one exists, otherwise
+waits in a single queue drained as workers finish (or as a crashed worker's
+replacement spawns). Request timeouts start at **assignment**, not enqueue, so
+a queued request cannot expire merely because it waited; at most one request is
+in flight per worker, so a crash or timeout rejects only that request and
+queued work drains to the replacement. Crash/respawn, restart-window
+degradation, and `dispose()` behavior are unchanged. Guarded by
+`tests/services/ParserService.test.ts` — a deterministic head-of-line-blocking
+scenario (an `Atomics.wait` stub worker) where queued requests must resolve via
+the idle worker, plus a queue-longer-than-pool drain test.
+
 ## PF5 ingestion / parse guards
 
 **Ingestion abort + flush contract** (`startBackgroundIngestion`): the run
@@ -428,7 +486,9 @@ every click. It now uses `useTransition`:
   dialog / missing function) are unchanged.
 - Because the editor no longer remounts, per-dialog UI state that mounting used
   to reset for free is reset **explicitly** via an effect keyed on `dialogName`
-  (`propertiesExpanded`, `sourceViewOpen`, `snackbar`, `validationDialog`);
+  (`propertiesExpanded`, `sourceViewOpen`, `snackbar`, `validationDialog`, and —
+  P2, 2026-08-23 — `conditionsExpanded` inside `ConditionEditor` itself, which
+  previously survived dialog switches);
   transient in-flight flags (`isSaving`/`isResetting`) are intentionally left
   alone. Scroll-to-top is an effect keyed on the committed selection.
 

@@ -10,7 +10,7 @@ type C = { type: 'NpcIsInStateCondition'; npc: string; state: string; negated?: 
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const NPC_FIELD_SX = { flex: '1 1 35%', minWidth: 130 };
 
-export default function NpcIsInStateFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
+export default function NpcIsInStateFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
   const upd = React.useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
@@ -42,7 +42,6 @@ export default function NpcIsInStateFields({ condition, handleUpdate, handleImme
         isMainField
         mainFieldRef={mainFieldRef}
         sx={NPC_FIELD_SX}
-        semanticModel={semanticModel}
       />
       <TextField
         label="State"

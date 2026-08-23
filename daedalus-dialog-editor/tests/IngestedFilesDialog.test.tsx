@@ -3,6 +3,12 @@ import { render, screen } from '@testing-library/react';
 import { IngestedFilesDialog } from '../src/renderer/components/IngestedFilesDialog';
 import '@testing-library/jest-dom';
 
+// Mock react-virtualized-auto-sizer to provide dimensions in JSDOM
+jest.mock('react-virtualized-auto-sizer', () => ({
+  __esModule: true,
+  default: ({ children }: any) => children({ height: 500, width: 800 }),
+}));
+
 const mockParsedFiles = new Map();
 mockParsedFiles.set('C:/test/file1.d', {
   filePath: 'C:/test/file1.d',

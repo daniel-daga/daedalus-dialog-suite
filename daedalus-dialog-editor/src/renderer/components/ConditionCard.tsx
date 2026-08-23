@@ -3,9 +3,11 @@ import { Box, Chip, IconButton, Tooltip } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import { useConditionUpdate } from './hooks/useConditionUpdate';
 import { CONDITION_REGISTRY, FALLBACK_ENTRY, getConditionType } from './conditions/conditionRegistry';
-import type { SemanticModel } from '../types/global';
 import type { ConditionEditorCondition } from './dialogTypes';
 
+// Memo-boundary invariant (docs/architecture/render-performance.md): model
+// data must not cross this boundary — no `semanticModel` prop. The condition
+// fields' autocomplete leaves subscribe to model data themselves.
 interface ConditionCardProps {
   condition: ConditionEditorCondition;
   index: number;
@@ -14,7 +16,6 @@ interface ConditionCardProps {
   updateCondition: (index: number, updated: ConditionEditorCondition) => void;
   deleteCondition: (index: number) => void;
   focusCondition: (index: number) => void;
-  semanticModel?: SemanticModel;
 }
 
 const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCardProps>(({
@@ -24,8 +25,7 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
   operator = 'AND',
   updateCondition,
   deleteCondition,
-  focusCondition: _focusCondition,
-  semanticModel
+  focusCondition: _focusCondition
 }, ref) => {
   const mainFieldRef = useRef<HTMLInputElement>(null);
   const { localCondition, handleUpdate, handleImmediateUpdate, flushUpdate, markDeleted } = useConditionUpdate(
@@ -93,7 +93,6 @@ const ConditionCard = React.memo(React.forwardRef<HTMLInputElement, ConditionCar
         handleImmediateUpdate={handleImmediateUpdate}
         flushUpdate={flushUpdate}
         mainFieldRef={mainFieldRef}
-        semanticModel={semanticModel}
       />
     </Box>
   );

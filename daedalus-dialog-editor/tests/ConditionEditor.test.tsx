@@ -297,7 +297,6 @@ describe('ConditionEditor Raw Condition Display', () => {
       <ConditionEditor
         conditionFunction={conditionFunction}
         onUpdateFunction={jest.fn()}
-        semanticModel={{ dialogs: {}, functions: {} }}
         filePath={'test.d'}
         dialogName={'DIA_Hubert_TinteAmt'}
       />

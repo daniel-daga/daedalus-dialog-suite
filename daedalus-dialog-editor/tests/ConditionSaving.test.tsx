@@ -144,7 +144,6 @@ const ConditionSaveHarness: React.FC = () => {
       <ConditionEditor
         conditionFunction={(model as any).functions.TestCondition}
         onUpdateFunction={commands.handleConditionFunctionUpdate}
-        semanticModel={model as any}
         filePath={FILE_PATH}
         dialogName={DIALOG_NAME}
       />

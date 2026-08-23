@@ -11,7 +11,7 @@ type C = { type: 'NpcKnowsInfoCondition'; npc: string; dialogRef: string; getTyp
 const NPC_FIELD_SX = { flex: '1 1 30%', minWidth: 120 };
 const DIALOG_FIELD_SX = { flex: '1 1 60%', minWidth: 150 };
 
-export default function NpcKnowsInfoFields({ condition, handleUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
+export default function NpcKnowsInfoFields({ condition, handleUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
   const upd = useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
@@ -36,7 +36,6 @@ export default function NpcKnowsInfoFields({ condition, handleUpdate, flushUpdat
         isMainField
         mainFieldRef={mainFieldRef}
         sx={NPC_FIELD_SX}
-        semanticModel={semanticModel}
       />
       <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem', flexShrink: 0 }}>
         knows
@@ -48,7 +47,6 @@ export default function NpcKnowsInfoFields({ condition, handleUpdate, flushUpdat
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.npcKnowsDialog}
         sx={DIALOG_FIELD_SX}
-        semanticModel={semanticModel}
       />
     </Box>
   );
