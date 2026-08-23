@@ -22,6 +22,7 @@ Landed:
 | (2026-08-23) | §1 Option B: quest Flow view removed (litegraph canvas + inspector + command write path, quest batch history, node-editor playground, `litegraph.js`/`dagre` deps, writable-quest flag). Codec promoted to `quest/domain/conditionExpressionCodec.ts`; quest surface is list/details/create. |
 | `635cdd8` | §3 both P0 performance items: single-parse project open (metadata-worker model hand-off, `parsedFiles` LRU cap) + file-watcher change batching via `updateFileModels` |
 | `1db5ce1` | §3 all three P1 performance items: Problems-panel scan deferral/debounce + per-file fact cache, `QuestList` single-pass batch analysis, fileStore coarse-selector coverage + memoized layouts |
+| (2026-08-23) | §3 all three P2 performance items: condition-subtree memo boundary + `conditionsExpanded` reset, `IngestedFilesDialog` virtualization + memoized row derivation, `ParserService` idle-worker dispatch |
 
 Verified on the merged tree after the P1 slice: full Jest suite (1059 tests in
 159 suites), browser-harness Playwright suite (163 tests), `build:main`,
@@ -32,8 +33,8 @@ because Option B deleted ~20 quest-flow Jest suites and 2 Playwright specs
 along with the code they covered; the P0/P1 perf slices added the guard suites
 back up to 159.
 
-**§3 Performance is now closed down to P2** — both P0 items and all three P1
-items are done; §3 P2/P3 are the remaining perf work. Everything else in this
+**§3 Performance is now closed down to P3** — the P0, P1, and P2 items are all
+done; only the §3 P3 measure-first items remain. Everything else in this
 document is still open — §5 is the working priority list. Owner decisions still
 outstanding: app icons, the Dandelion vs. "Daedalus Dialog Editor" naming
 split, and code signing.
@@ -373,24 +374,41 @@ findings below are in paths the doc does not cover.
   `tests/ThreeColumnLayout.rerender.test.tsx`; documented in
   `docs/architecture/render-performance.md`.
 
-### P2
+### P2 — **RESOLVED 2026-08-23**
 
-- **Condition-editing subtree defeats its memos**: `ConditionEditor`/
+- ~~**Condition-editing subtree defeats its memos**: `ConditionEditor`/
   `ConditionCard` are `React.memo` with default comparators but take the
-  churning `semanticModel` prop (`ConditionEditor.tsx:12,17`,
-  `ConditionCard.tsx:17-20`), forcing full ~11k-symbol option re-derivation +
-  `localeCompare` sort per keystroke once conditions are expanded
-  (`useVariableOptions.ts:677-680`); `conditionsExpanded` is never reset on
-  dialog switch. Mirror-image of the ActionCard invariant the doc enshrines.
-- **`IngestedFilesDialog`**: unvirtualized full-project `<List>` with in-render
+  churning `semanticModel` prop, forcing full ~11k-symbol option re-derivation +
+  `localeCompare` sort per keystroke once conditions are expanded;
+  `conditionsExpanded` is never reset on dialog switch. Mirror-image of the
+  ActionCard invariant the doc enshrines.~~ **RESOLVED** — fixed per the
+  ActionCard template: the `semanticModel` prop is removed from
+  `ConditionEditor`/`ConditionCard`/`ConditionFieldsProps` and all condition
+  field components (`ConditionSection` uses it only to resolve the condition
+  function); the autocomplete leaves read model data via `useVariableOptions`'
+  per-category pooled subscriptions; `conditionsExpanded` resets via an effect
+  keyed on `dialogName` (the `propertiesExpanded` idiom). Guarded by
+  `tests/ConditionEditor.rerender.test.tsx`; documented in
+  `docs/architecture/render-performance.md`.
+- ~~**`IngestedFilesDialog`**: unvirtualized full-project `<List>` with in-render
   Map build + sort, subscribed to `parsedFiles` (replaced every 500 ms during
-  ingestion — exactly when the dialog is watched)
-  (`IngestedFilesDialog.tsx:52-94, 132-201`).
-- **`ParserService` round-robin without idle tracking**
-  (`ParserService.ts:154-177`): 20 concurrent ingestion requests pile onto ≤8
-  workers; one big file head-of-line blocks its queue while others idle.
-  `MetadataWorkerPool` already has the correct idle-set + queue pattern to
-  port.
+  ingestion — exactly when the dialog is watched).~~ **RESOLVED** — virtualized
+  with the `QuestList` `react-window` idiom (`AutoSizer` + `FixedSizeList`,
+  memoized row, path-keyed); Map build + sort hoisted into `useMemo`s keyed on
+  the identities read; open-gated subscription unchanged. Guarded by
+  bounded-row-count and derivation-counter probes in
+  `tests/IngestedFilesDialog.rerender.test.tsx`; documented in
+  `docs/architecture/render-performance.md`.
+- ~~**`ParserService` round-robin without idle tracking**: 20 concurrent
+  ingestion requests pile onto ≤8 workers; one big file head-of-line blocks its
+  queue while others idle. `MetadataWorkerPool` already has the correct
+  idle-set + queue pattern to port.~~ **RESOLVED** — ported as suggested:
+  idle-set + single shared FIFO queue; timeouts start at assignment; at most
+  one in-flight request per worker so crash/timeout rejects only that request;
+  crash/respawn, restart-cap degradation, and dispose semantics preserved.
+  Guarded by a deterministic head-of-line-blocking test in
+  `tests/services/ParserService.test.ts`; documented in
+  `docs/architecture/render-performance.md`.
 
 ### P3
 
@@ -521,5 +539,8 @@ model hand-off + `parsedFiles` cap, and watcher batching via
 `updateFileModels`), ~~Problems-panel debounce, `App` `openFiles` selector~~
 **DONE 2026-08-23** (all three §3 P1 items — Problems-panel scan
 deferral/debounce + fact cache, QuestList single-pass batch analysis, and
-fileStore coarse-selector coverage with memoized layouts), F2 dead
-source-view cleanup, F6/F7 shortcut scoping, CSP.
+fileStore coarse-selector coverage with memoized layouts), ~~§3 P2 perf
+items~~ **DONE 2026-08-23** (condition-subtree memo boundary +
+`conditionsExpanded` reset, IngestedFilesDialog virtualization, ParserService
+idle-worker dispatch), F2 dead source-view cleanup, F6/F7 shortcut scoping,
+CSP.
