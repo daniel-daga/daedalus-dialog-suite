@@ -10,7 +10,7 @@ type C = { type: 'NpcIsDeadCondition'; npc: string; negated?: boolean; getTypeNa
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const NPC_FIELD_SX = { flex: 1 };
 
-export default function NpcIsDeadFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
+export default function NpcIsDeadFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
   const upd = React.useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
@@ -42,7 +42,6 @@ export default function NpcIsDeadFields({ condition, handleUpdate, handleImmedia
         isMainField
         mainFieldRef={mainFieldRef}
         sx={NPC_FIELD_SX}
-        semanticModel={semanticModel}
       />
     </Box>
   );

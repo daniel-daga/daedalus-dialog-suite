@@ -17,7 +17,7 @@ type C = {
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const NPC_FIELD_SX = { flex: '1 1 25%', minWidth: 120 };
 
-export default function NpcGetDistToWpFields({ condition, handleUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
+export default function NpcGetDistToWpFields({ condition, handleUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
   const upd = React.useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
@@ -38,7 +38,6 @@ export default function NpcGetDistToWpFields({ condition, handleUpdate, flushUpd
         isMainField
         mainFieldRef={mainFieldRef}
         sx={NPC_FIELD_SX}
-        semanticModel={semanticModel}
       />
       <TextField
         label="Waypoint"

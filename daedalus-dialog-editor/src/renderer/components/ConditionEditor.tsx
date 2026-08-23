@@ -1,15 +1,19 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
 import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
 import { ToggleButton, ToggleButtonGroup } from '@mui/material';
 import ConditionCard from './ConditionCard';
-import type { DialogCondition, DialogFunction, SemanticModel } from '../types/global';
+import type { DialogCondition, DialogFunction } from '../types/global';
 import type { ConditionEditorCondition, FunctionUpdater } from './dialogTypes';
 
+// Memo-boundary invariant (docs/architecture/render-performance.md): model
+// data must not cross this boundary. ConditionEditor deliberately takes no
+// `semanticModel` prop — the condition fields' autocomplete leaves read model
+// data through `useVariableOptions`' own per-category store subscriptions, so
+// merged/file-model identity churn never re-renders the condition subtree.
 interface ConditionEditorProps {
   conditionFunction: DialogFunction;
   onUpdateFunction: (funcOrUpdater: FunctionUpdater) => void;
-  semanticModel?: SemanticModel;
   filePath: string | null;
   dialogName: string;
 }
@@ -17,12 +21,18 @@ interface ConditionEditorProps {
 const ConditionEditor = React.memo<ConditionEditorProps>(({
   conditionFunction,
   onUpdateFunction,
-  semanticModel,
   filePath: _filePath,
-  dialogName: _dialogName
+  dialogName
 }) => {
   const [conditionsExpanded, setConditionsExpanded] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] = useState<null | HTMLElement>(null);
+
+  // The editor pane stays mounted across dialog switches (render-performance.md
+  // "Editor stays mounted across dialog switches"), so per-dialog UI state is
+  // reset explicitly — same idiom as `propertiesExpanded` in DialogDetailsEditor.
+  useEffect(() => {
+    setConditionsExpanded(false);
+  }, [dialogName]);
   const conditionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Stable synthetic identities for ConditionCard keys (fix-05 §2.4 stage 2).
@@ -408,7 +418,6 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
                     updateCondition={updateCondition}
                     deleteCondition={deleteCondition}
                     focusCondition={focusCondition}
-                    semanticModel={semanticModel}
                   />
                 ))}
               </Stack>

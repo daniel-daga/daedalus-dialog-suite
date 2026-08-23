@@ -1,6 +1,5 @@
 import React from 'react';
 import { Info as InfoIcon, Check as CheckIcon, Code as CodeIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
-import type { SemanticModel } from '../../types/global';
 import type { ConditionEditorCondition } from '../dialogTypes';
 import NpcKnowsInfoFields from './NpcKnowsInfoFields';
 import VariableConditionFields from './VariableConditionFields';
@@ -12,13 +11,15 @@ import NpcGetTalentSkillFields from './NpcGetTalentSkillFields';
 import QuestStateFields from './QuestStateFields';
 import ExpressionConditionFields from './ExpressionConditionFields';
 
+// No `semanticModel` prop (memo-boundary invariant, render-performance.md):
+// fields that need model data get it via `useVariableOptions`' own
+// per-category store subscriptions inside VariableAutocomplete.
 export interface ConditionFieldsProps {
   condition: ConditionEditorCondition;
   handleUpdate: (updated: ConditionEditorCondition) => void;
   handleImmediateUpdate: (updated: ConditionEditorCondition) => void;
   flushUpdate: () => void;
   mainFieldRef: React.RefObject<HTMLInputElement>;
-  semanticModel?: SemanticModel;
 }
 
 interface RegistryEntry {

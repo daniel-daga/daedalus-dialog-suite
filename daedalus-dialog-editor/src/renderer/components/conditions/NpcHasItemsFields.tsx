@@ -18,7 +18,7 @@ type C = {
 const NPC_FIELD_SX = { flex: '1 1 30%', minWidth: 120 };
 const ITEM_FIELD_SX = { flex: '1 1 35%', minWidth: 140 };
 
-export default function NpcHasItemsFields({ condition, handleUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
+export default function NpcHasItemsFields({ condition, handleUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
   const upd = React.useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
@@ -43,7 +43,6 @@ export default function NpcHasItemsFields({ condition, handleUpdate, flushUpdate
         isMainField
         mainFieldRef={mainFieldRef}
         sx={NPC_FIELD_SX}
-        semanticModel={semanticModel}
       />
       <VariableAutocomplete
         label="Item"
@@ -52,7 +51,6 @@ export default function NpcHasItemsFields({ condition, handleUpdate, flushUpdate
         onFlush={flushUpdate}
         {...AUTOCOMPLETE_POLICIES.conditions.item}
         sx={ITEM_FIELD_SX}
-        semanticModel={semanticModel}
       />
       <TextField
         label="Op"

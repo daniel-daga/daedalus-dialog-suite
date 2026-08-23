@@ -11,7 +11,7 @@ type C = { type: 'QuestStateCondition'; questVariable: string; state: QuestState
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const QUEST_VARIABLE_FIELD_SX = { flex: '1 1 55%', minWidth: 180 };
 
-export default function QuestStateFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef, semanticModel }: ConditionFieldsProps) {
+export default function QuestStateFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
   const upd = useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
@@ -33,7 +33,6 @@ export default function QuestStateFields({ condition, handleUpdate, handleImmedi
         mainFieldRef={mainFieldRef}
         sx={QUEST_VARIABLE_FIELD_SX}
         placeholder="e.g. MIS_Addon_Greg_ClearCanyon"
-        semanticModel={semanticModel}
       />
       <FormControl size="small" sx={{ flex: '1 1 35%', minWidth: 140 }}>
         <InputLabel>Zustand</InputLabel>

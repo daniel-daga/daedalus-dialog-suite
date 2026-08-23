@@ -26,11 +26,13 @@ const ConditionSection: React.FC<ConditionSectionProps> = ({
     return null;
   }
 
+  // `semanticModel` is only used to resolve the condition function here — it is
+  // deliberately NOT threaded through ConditionEditor's memo boundary
+  // (render-performance.md, "Memo-boundary invariant").
   return (
     <ConditionEditor
       conditionFunction={semanticModel.functions[conditionFunctionName]}
       onUpdateFunction={onUpdateFunction}
-      semanticModel={semanticModel}
       filePath={filePath}
       dialogName={dialogName}
     />
