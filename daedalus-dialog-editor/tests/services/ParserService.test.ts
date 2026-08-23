@@ -108,6 +108,39 @@ describe('ParserService worker lifecycle', () => {
     }
   });
 
+  it('dispatches to an idle worker instead of queueing behind a busy one', async () => {
+    const svc = makeService('block.worker.js', { timeoutMs: 1000 });
+
+    // Occupy one worker with a slow job that blocks its thread until well past
+    // the timeout; it eventually settles as a timeout rejection.
+    const slow = svc.parseSource('__SLOW__').then(
+      () => {
+        throw new Error('expected the slow request to reject');
+      },
+      (e) => e,
+    );
+
+    // With idle-worker dispatch all of these drain through the free worker.
+    // Round-robin would send one of them to the blocked worker, where it
+    // times out instead of resolving.
+    const fast = await Promise.all(Array.from({ length: 3 }, () => svc.parseSource('fast')));
+    expect(fast).toHaveLength(3);
+
+    // Settle the slow request before teardown.
+    const slowErr = await slow;
+    expect(slowErr).toBeInstanceOf(WorkerRequestError);
+    expect(slowErr.kind).toBe('timeout');
+  });
+
+  it('drains a queue longer than the pool', async () => {
+    const svc = makeService('echo.worker.js');
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => svc.parseSource(`source-${i}`)),
+    );
+    expect(results).toHaveLength(10);
+  });
+
   it('enters a degraded state after the restart cap and rejects immediately', async () => {
     const svc = makeService('exit.worker.js');
 
