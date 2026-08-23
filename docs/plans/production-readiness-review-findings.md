@@ -406,12 +406,16 @@ grammar; Problems panel matching its spec.
 ## 5. Suggested priority order
 
 Pre-release (gates first public build):
-1. Backup-on-save (or at minimum for the `forceOnErrors` path).
-2. Ctrl+S + visible Save (F1) and project close/switch (F5) — the two
-   workflow-breaking UX holes.
-3. Quest decision §1: Option A immediately; schedule Option B.
-4. Icons + naming decision (Dandelion vs. Daedalus Dialog Editor); delete the
-   stale editor `pnpm-lock.yaml` and npm shadow lockfiles.
+1. **DONE 2026-08-23** — Backup-on-save for the `forceOnErrors` path
+   (`<name>.d.bak`, refuse save on backup failure; see
+   `docs/architecture/save-pipeline.md`).
+2. **DONE 2026-08-23** — Ctrl+S + actionable AppBar Save button
+   (`useManualSave`, honest tooltips) and Close Project → welcome screen
+   (`closeProject` now also resets `questFiles`) (F1 + F5).
+3. Quest decision §1: Option A **done**; schedule Option B.
+4. Icons + naming decision (Dandelion vs. Daedalus Dialog Editor) — still
+   open. **DONE 2026-08-23**: stale editor `pnpm-lock.yaml` and npm shadow
+   lockfiles deleted.
 5. Signing + R1 release sequencing per the existing release checklist.
 6. Packaged-app smoke that opens a real project and parses (closes the
    asar/native-module blind spot).
