@@ -3,6 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Strict renderer CSP (docs/architecture/security-model.md). The renderer
+      loads over file:// in production, where onHeadersReceived never fires, so
+      the policy has to travel in the document itself.
+
+      No 'unsafe-eval': litegraph was the only consumer and went with the quest
+      Flow view. Monaco is served from this origin, not a CDN, so script-src
+      needs no remote host. 'unsafe-inline' for style-src is required by
+      emotion/MUI and Monaco, which both inject <style> at runtime; it does not
+      weaken script execution. worker-src covers Monaco's language worker under
+      both the same-origin and blob shim shapes.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    />
     <title>Dandelion</title>
   </head>
   <body>

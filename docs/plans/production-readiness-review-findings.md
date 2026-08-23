@@ -23,10 +23,10 @@ Landed:
 | `635cdd8` | §3 both P0 performance items: single-parse project open (metadata-worker model hand-off, `parsedFiles` LRU cap) + file-watcher change batching via `updateFileModels` |
 | `1db5ce1` | §3 all three P1 performance items: Problems-panel scan deferral/debounce + per-file fact cache, `QuestList` single-pass batch analysis, fileStore coarse-selector coverage + memoized layouts |
 | `6322a0b` | §3 all three P2 performance items: condition-subtree memo boundary + `conditionsExpanded` reset, `IngestedFilesDialog` virtualization + memoized row derivation, `ParserService` idle-worker dispatch |
+| (2026-08-23) | Post-release fast-follows: **F2** dead source-view state machine deleted; **F6** Ctrl+F scoped to the dialog view; **CSP** strict `default-src 'self'` meta, with Monaco moved off the jsdelivr CDN to the app's own origin (and `DialogSourceViewDialog` lazied, closing part of §3 P3) |
 
-Verified on the merged tree after the P2 slice: full Jest suite (**1068 tests in
-161 suites** — current baseline, including the native-runtime regression suite
-added by the CI fix below), browser-harness Playwright suite (163 tests),
+Verified after the fast-follow slice: full Jest suite (**1065 tests in 160
+suites** — current baseline), browser-harness Playwright suite (**166 tests**),
 `build:main`, `typecheck:renderer`, `build:renderer` (no chunk-size or eval
 warnings), and lint (0 errors; 7 pre-existing warnings in untouched files) all
 green. Earlier counts in this document (1019 tests in 151 suites after Option B)
@@ -34,13 +34,22 @@ dropped because Option B deleted ~20 quest-flow Jest suites and 2 Playwright
 specs along with the code they covered; the P0/P1 perf slices brought the guard
 suites back up to 159/1059, and the P2 slice added
 `tests/ConditionEditor.rerender.test.tsx` plus 6 tests across existing suites;
-the native-runtime fix then added `tests/nativeParserModuleRegistry.test.ts`.
+the native-runtime fix then added `tests/nativeParserModuleRegistry.test.ts`
+(1068/161). The fast-follow slice then removed 10 tests and 2 suites with the
+F2 state machine (5 banner, 2 marker, 2 saveSource-race, 1 conflict-diff — all
+lost their premise with the code they covered) and added
+`tests/contentSecurityPolicy.test.ts` (7 tests), plus 3 Playwright specs (2 for
+F6, 1 asserting Monaco mounts under the CSP). **Lint is now 0 errors and 5
+warnings, down from 7** — both dropped warnings were in the deleted
+`SourceCodeEditor.tsx`; that drop is expected, not a regression.
 
 **§3 Performance is now closed down to P3** — the P0, P1, and P2 items are all
-done; only the §3 P3 measure-first items remain. Everything else in this
-document is still open — §5 is the working priority list. Owner decisions still
-outstanding: app icons, the Dandelion vs. "Daedalus Dialog Editor" naming
-split, and code signing.
+done; only the §3 P3 measure-first items remain. **The §5 post-release
+fast-follow list is now empty too** (F2, F6, and CSP landed 2026-08-23 — see
+the table row below). What is still open: the §5 pre-release items, §3 P3, and
+the §4 UI/UX findings from F8 onward. Owner decisions still outstanding: app
+icons, the Dandelion vs. "Daedalus Dialog Editor" naming split, and code
+signing.
 
 ### Environment note for a fresh session
 
@@ -253,12 +262,26 @@ any later date; nothing in B forecloses C.
    `package-lock.json` + `daedalus-parser/package-lock.json` are unmaintained
    npm shadows; stray `debug_file.ts` (broken import) and `win1250.d` are
    git-tracked at the editor root.
-6. **No CSP; error-boundary gaps.** No CSP meta or `onHeadersReceived` handler
-   anywhere. **Option B unblocked the strict version:** litegraph was the only
-   thing that needed `unsafe-eval`, so a plain `default-src 'self'` with no
-   eval escape hatch is now achievable for the `file://` renderer. The single React error
-   boundary wraps only `MainLayout`/welcome (`App.tsx:401`); AppBar, close
-   guard, conflict/update dialogs are outside it, and
+6. **~~No CSP~~ (DONE 2026-08-23); error-boundary gaps (still open).**
+   ~~No CSP meta or `onHeadersReceived` handler anywhere.~~ A strict
+   `default-src 'self'` with no eval escape hatch now ships as a `<meta>` tag in
+   `src/renderer/index.html`; documented in
+   `docs/architecture/security-model.md`, guarded by
+   `tests/contentSecurityPolicy.test.ts` and a Playwright spec that asserts
+   Monaco actually mounts under it.
+
+   Two corrections to this item as written. **(a)** The eval half of the claim
+   was right and is now verified empirically (zero `eval(`/`new Function(` in
+   every emitted chunk), but eval was never the blocker: `@monaco-editor/react`
+   is used *without* a bundled `monaco-editor`, so it fetched Monaco from the
+   jsdelivr CDN at runtime — the real blocker was a remote **`script-src`**
+   origin. Resolved by serving Monaco from the app's own origin rather than by
+   widening the policy, which also removes the offline stall. **(b)**
+   `onHeadersReceived` was never a viable delivery mechanism here — it does not
+   fire for `file://`, which is how production loads the renderer.
+
+   Still open: the single React error boundary wraps only `MainLayout`/welcome
+   (`App.tsx`); AppBar, close guard, conflict/update dialogs are outside it, and
    `ErrorBoundary.componentDidCatch` never writes to the log file.
 
 ### Solid (verified against `docs/architecture/security-model.md` — claims true)
@@ -446,9 +469,16 @@ findings below are in paths the doc does not cover.
   mounted.~~ **RESOLVED 2026-08-23** by §1 Option B (canvas deleted).
 - No failing bundle-size guard (rollup's 500 kB warning is grepped in
   `all-tests.yml` but list of lazied components is incomplete:
-  `SimulatorDialog`, `DialogSourceViewDialog`, `ReviewChangesDialog` are
+  `SimulatorDialog` and `ReviewChangesDialog` are
   static imports; `mockAPI.ts` (635 lines) ships in the production Electron
-  bundle for the `!window.editorAPI` branch).
+  bundle for the `!window.editorAPI` branch). **Partially addressed
+  2026-08-23**: `DialogSourceViewDialog` is now `React.lazy` + `open`-gated
+  (entry chunk 416 kB → 397 kB), landed alongside the CSP work. Measured while
+  doing it, and worth recording against the assumption in the old Monaco note:
+  lazy-splitting does **not** satisfy the chunk-size guard for an over-size
+  dependency — the limit is per emitted chunk, so a bundled Monaco simply became
+  a 3,825 kB lazy chunk. That is why Monaco ships as static assets instead of
+  being bundled at all (see `docs/architecture/render-performance.md`).
 - `ensureActionIds` is O(functions × dialogs) on every `openFile`
   (`fileStore.ts:88-97, 367-372`), including cache-hit opens.
 - Unbounded module-level `fileEncodingCache`/`fileStatCache` in `FileService`
@@ -468,11 +498,22 @@ findings below are in paths the doc does not cover.
   exactly when the user most needs to force a save (`hasErrors`,
   `autoSaveError`, `externalConflict` — `useAutoSave.ts:19-25`). The app-bar
   tooltip advertises "Ctrl+S to save" (`App.tsx:268`) and Ctrl+S does nothing.
-- **F2 — Source Code view commented out, its state machine still live.**
+- ~~**F2 — Source Code view commented out, its state machine still live.**
   `MainLayout.tsx:136-162` JSX is commented; `SourceCodeEditor.tsx` (228
   lines) is imported nowhere — but `SourceEditsPendingBanner`, `isSourceDirty`
   close-guard gating, and the app-bar warning icon all remain wired: an
-  unreachable-but-blocking state.
+  unreachable-but-blocking state.~~ **RESOLVED 2026-08-23** — the state machine
+  was deleted rather than the view restored (the view was deliberately commented
+  out, and read-only source viewing already exists via
+  `DialogSourceViewDialog`). Gone: `SourceCodeEditor.tsx`,
+  `SourceEditsPendingBanner.tsx`, `sourceEditorMarkers.ts` (orphaned by the
+  first), `fileStore`'s `workingCode` / `blockedBySourceEdit` / `isSourceDirty` /
+  `refuseMutationIfSourceDirty` (10 guard sites + 10 buffer resets) /
+  `setWorkingCode` / `adoptWorkingCode` / `saveSource`, the `saveSource` branches
+  in `useManualSave` and `useWindowCloseGuard`, App's source-dirty tooltip/icon
+  branches, and the `'source'` `activeView` variant. `hasUnsavedChanges` is now
+  `isDirty || externalConflict`. Guarded by the removal assertions in
+  `tests/fileStore.dirtyTracking.test.ts`.
 - **F3 — Quest canvas silently discards user-drawn edges and Delete-key node
   removals** (no `onConnectionChange`, no key handling;
   `QuestLiteGraphCanvas.tsx:286-379`) — the link exists until the next rebuild
@@ -490,9 +531,16 @@ findings below are in paths the doc does not cover.
 
 ### P1
 
-- **F6** — Ctrl+F outside the dialog view opens the search panel in a
+- ~~**F6** — Ctrl+F outside the dialog view opens the search panel in a
   `display:none` subtree (`useSearchNavigation.ts:36` on the always-mounted
-  `ThreeColumnLayout`): no feedback, panel surprises the user later.
+  `ThreeColumnLayout`): no feedback, panel surprises the user later.~~
+  **RESOLVED 2026-08-23** — the handler reads `activeView` live (`getState`, not
+  a subscription, so a view switch does not re-run the effect) and ignores
+  Ctrl+F outside the dialog view. Guarded by two specs in
+  `tests/e2e/search.spec.ts`: the regression asserts the panel is absent both
+  while another view is active *and* after switching back (that second
+  assertion is the one that was red — the "surprises the user later" half), plus
+  a positive control that the shortcut still works after a view round-trip.
 - ~~**F7** — Two undo stacks, one binding: Ctrl+Z always drives *file* history
   even in the quest view, where the visible Undo button drives *quest-batch*
   history.~~ **RESOLVED 2026-08-23** by §1 Option B: quest batch history was
@@ -572,5 +620,13 @@ deferral/debounce + fact cache, QuestList single-pass batch analysis, and
 fileStore coarse-selector coverage with memoized layouts), ~~§3 P2 perf
 items~~ **DONE 2026-08-23** (condition-subtree memo boundary +
 `conditionsExpanded` reset, IngestedFilesDialog virtualization, ParserService
-idle-worker dispatch), F2 dead source-view cleanup, F6/F7 shortcut scoping,
-CSP.
+idle-worker dispatch), ~~F2 dead source-view cleanup, F6/F7 shortcut scoping,
+CSP~~ **DONE 2026-08-23** (F2: the source-editing state machine deleted, not
+restored; F6: Ctrl+F scoped to the dialog view — F7 was already closed by
+Option B; CSP: strict `default-src 'self'` meta, which required moving Monaco
+off the jsdelivr CDN to the app's own origin).
+
+**The post-release fast-follow list is now empty.** What remains in this
+document is the pre-release list above (icons + naming, signing + R1
+sequencing, packaged-app parse smoke), §3's P3 measure-first items, and the
+§4 P1-P3 UI/UX findings from F8 onward.

@@ -12,9 +12,23 @@ import {
   Typography
 } from '@mui/material';
 import { Close as CloseIcon, ContentCopy as CopyIcon } from '@mui/icons-material';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+
 import { useEditorStore } from '../store/editorStore';
 import { SemanticModel } from '../types/global';
+
+// Load Monaco from the app's own origin instead of @monaco-editor/loader's
+// default jsdelivr CDN. The `min/vs` tree is copied into the renderer output
+// by the `monaco-local-assets` plugin in vite.config.ts, so this resolves to
+// http://localhost:5173/monaco/vs in dev and file://.../dist/renderer/monaco/vs
+// in the packaged app. Two reasons, both load-bearing:
+//   1. The renderer's CSP is `default-src 'self'` (see security-model.md).
+//      A remote script origin would have to be carved out of it.
+//   2. Viewing source no longer needs the network, so it cannot stall (or fail)
+//      offline.
+// Resolved against document.baseURI rather than left relative: the AMD loader
+// uses this as its module base URL, where a bare relative path is ambiguous.
+loader.config({ paths: { vs: new URL('monaco/vs', document.baseURI).href } });
 
 interface DialogSourceViewDialogProps {
   open: boolean;

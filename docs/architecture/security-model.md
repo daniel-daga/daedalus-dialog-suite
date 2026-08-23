@@ -74,6 +74,54 @@ same-URL `file:` reloads. The self-described placeholder "Open in new window"
 button was removed with it. Baseline was already sound (contextIsolation on,
 nodeIntegration off, invoke-only preload).
 
+## Content Security Policy
+
+The renderer ships a strict policy in `src/renderer/index.html`:
+
+```
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+font-src 'self' data:; img-src 'self' data:; worker-src 'self' blob:;
+connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';
+frame-src 'none'
+```
+
+**Why a `<meta>` tag and not `onHeadersReceived`.** Production loads the
+renderer with `loadFile` over `file://` (`main.ts`), and `onHeadersReceived`
+never fires for `file://` requests — a `session.webRequest` handler would be a
+no-op in exactly the build that matters. The policy therefore travels in the
+document. Note this is also why `windowSecurity.ts` does not cover it:
+`will-navigate` fires for navigations, not subresource loads, so it never saw
+the script fetches this policy governs.
+
+**No `unsafe-eval`.** litegraph was the only consumer and went with the quest
+Flow view. Verified rather than assumed: the emitted renderer chunks contain
+zero `eval(` / `new Function(`, and CI's renderer build step fails on a Rollup
+eval warning.
+
+**No remote origin.** Monaco was the one thing the renderer fetched from the
+network — `@monaco-editor/react` defaults to loading it from jsdelivr at
+runtime by appending a `<script>` to the document. Carving
+`https://cdn.jsdelivr.net` out of `script-src` would have kept a remote
+script-execution origin in a `file://` renderer, so Monaco is served from the
+app's own origin instead; see
+[`render-performance.md`](./render-performance.md) for how, and why bundling it
+was not the answer. **`script-src` is deliberately `'self'` with no host list:
+if a future dependency wants a CDN, the fix is to vendor it, not to widen this.**
+
+**The two concessions, and why they are not script execution.**
+`style-src 'unsafe-inline'` is required by emotion/MUI and Monaco, which both
+inject `<style>` at runtime; inline *style* cannot execute code. `worker-src`
+allows `blob:` alongside `'self'` because Monaco's worker bootstrap uses either
+shape depending on origin. Nothing grants inline or remote *script*.
+
+`tests/contentSecurityPolicy.test.ts` guards all of the above, including the
+two ways the policy silently rots: an eval hole, and a renderer source file
+reaching for a remote origin (it asserts every `@monaco-editor/react` call site
+is pinned to the local path, so a new one cannot quietly reinstate the CDN).
+
+**Not covered by this policy.** It governs the renderer only. Main-process
+network access (the updater) is unaffected — see *Update integrity* below.
+
 ## Update integrity (landed R1 behavior)
 
 `update-meta.json` carries `sha256` + `size`; the updater:
