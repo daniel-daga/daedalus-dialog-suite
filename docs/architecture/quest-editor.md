@@ -70,6 +70,15 @@ From completed quest planning tracks, the implemented baseline is:
   - `MIS_*` transition-aware quest lifecycle inference and usage analysis.
   - Requires-link support beyond strict equality checks.
 
+## Writable Editing Flag (Opt-In)
+
+Writable quest editing is opt-in: `isWritableQuestEditorEnabled()`
+(`src/renderer/config/features.ts`) defaults to **false**, as the first step of the
+Flow-view deprecation decided in the production-readiness review (Option A). Users and
+tests opt in via the `VITE_WRITABLE_QUEST_EDITOR` env flag or the
+`feature.writableQuestEditor` localStorage key; with the flag off, the Flow view mounts
+read-only with a fallback banner.
+
 ## Canvas Interaction Contract (litegraph 0.7.18)
 
 The quest graph renders on a vendored, pinned litegraph.js 0.7.18 canvas

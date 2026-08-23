@@ -33,5 +33,5 @@ export const isWritableQuestEditorEnabled = (): boolean => {
     // Ignore unavailable localStorage.
   }
 
-  return true;
+  return false;
 };

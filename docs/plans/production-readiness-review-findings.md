@@ -87,8 +87,12 @@ the quest list; and the codec powers the simulator.
 
 ### Options ladder
 
-1. **Option A — flag off (immediate, ~free).** `isWritableQuestEditorEnabled()`
-   currently defaults to **true** (`config/features.ts:40`); no `.env` or CI
+1. **Option A — flag off (immediate, ~free). DONE 2026-08-23:** the default in
+   `config/features.ts` is now **false** — writable quest editing is opt-in via
+   `VITE_WRITABLE_QUEST_EDITOR` or the `feature.writableQuestEditor`
+   localStorage key; write-path Playwright coverage opts in explicitly.
+   Original rationale: `isWritableQuestEditorEnabled()`
+   previously defaulted to **true** (`config/features.ts:40`); no `.env` or CI
    job sets `VITE_WRITABLE_QUEST_EDITOR`. Changing the default to false makes
    the Flow view read-only (write gate only — the canvas still mounts;
    read-only banner at `QuestFlow.tsx:768-772`, behavior already covered by

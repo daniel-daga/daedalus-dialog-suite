@@ -5,8 +5,8 @@ describe('feature flags', () => {
     window.localStorage.removeItem('feature.writableQuestEditor');
   });
 
-  it('defaults writable quest editor to enabled', () => {
-    expect(isWritableQuestEditorEnabled()).toBe(true);
+  it('defaults writable quest editor to disabled (opt-in)', () => {
+    expect(isWritableQuestEditorEnabled()).toBe(false);
   });
 
   it('respects localStorage false toggle', () => {
