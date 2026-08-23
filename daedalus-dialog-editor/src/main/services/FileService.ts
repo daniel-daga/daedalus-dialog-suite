@@ -201,7 +201,7 @@ export class FileService {
   async writeFile(
     filePath: string,
     content: string,
-    opts?: { expectUnchanged?: boolean }
+    opts?: { expectUnchanged?: boolean; backupBeforeWrite?: boolean }
   ): Promise<{ success: boolean; encoding?: string }> {
     return acquireLock(filePath, async () => {
       // --- External-modification precondition (E4 phase 2) ------------------
@@ -260,6 +260,30 @@ export class FileService {
             'ENCODING_LOSS',
             filePath
           );
+        }
+      }
+
+      // --- Backup before destructive write ----------------------------------
+      // Requested only on the force-on-errors save path, where the generated
+      // code silently drops content the parser could not read. Copy the
+      // current on-disk bytes verbatim to `<name>.d.bak` (raw byte copy — no
+      // encode/decode roundtrip; the suffix keeps it invisible to the `.d`
+      // watcher and project scanner) before overwriting. A missing original
+      // means there is nothing to lose; any other backup failure refuses the
+      // save — better to refuse than to destroy without a backup.
+      if (opts?.backupBeforeWrite) {
+        try {
+          await fs.copyFile(filePath, `${filePath}.bak`);
+        } catch (error) {
+          const err = error as NodeJS.ErrnoException;
+          if (err.code !== 'ENOENT') {
+            throw new FileServiceError(
+              `BACKUP_FAILED: could not back up ${filePath} before overwriting: ${err.message}`,
+              'BACKUP_FAILED',
+              filePath,
+              err
+            );
+          }
         }
       }
 

@@ -88,6 +88,18 @@ fast `change` event lands well inside the watcher's 2 s self-write suppression
 window (residual risk: an event stabilizing >2 s after `notifySelfWrite` is
 still misclassified as external — accepted).
 
+**Backup before destructive force-save:** the force-on-errors path overwrites
+the file with generated code that silently drops content the parser could not
+read, so it is the one save that can destroy hand-written script. When
+`generator:saveFile` runs with `forceOnErrors`, it passes
+`backupBeforeWrite: true` to `FileService.writeFile`, which first copies the
+current on-disk file verbatim to `<name>.d.bak` (raw byte copy via
+`fs.copyFile` — no encode/decode roundtrip; the `.bak` suffix keeps it
+invisible to the `.d`-only watcher and project scanner). A missing original is
+skipped (nothing to lose); any other backup failure refuses the save with a
+`BACKUP_FAILED` FileServiceError — better to refuse than to destroy without a
+backup. Normal saves never write a backup.
+
 ## Encoding write policy
 
 Before writing, `encodeWithRoundtripCheck` (in
