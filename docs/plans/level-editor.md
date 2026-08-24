@@ -181,7 +181,9 @@ precisely so that swap touches neither the domain nor the data layer.
 Facts verified against upstream (2026-08):
 
 - **ZenKit** ([GothicKit/ZenKit](https://github.com/GothicKit/ZenKit)) is MIT
-  (logo CC BY-NC), C++17, actively maintained, v1.3 line.
+  (logo CC BY-NC), **C++20** (the brief says C++17 — that is outdated;
+  CMakeLists requires C++20, so MSVC 2019+/GCC 10+/Clang 10+),
+  actively maintained, v1.3 line.
 - **Saving is supported.** v1.3.0 implemented `save` for `World`, `Mesh`,
   `VirtualObject` and descendants, `MultiResolutionMesh`, `ModelMesh`,
   `Model`, `Texture`, `Font` and `Vfs`, and added the `WriteArchive` API for
@@ -456,6 +458,11 @@ Anything beyond this is out of scope.
 Each phase lands TDD (Jest for `zen-world` and binding-level tests;
 Playwright browser-harness for UI flows; viewport correctness via scene-graph
 and pixel-snapshot assertions where DOM assertions can't reach).
+
+Phase 0 has its own task-level breakdown:
+[`level-editor-phase-0.md`](level-editor-phase-0.md) — fixture/oracle
+strategy, the `normalizeWorld` schema, build integration, and the test
+list in TDD order.
 
 - **Phase 0 — data layer (blocking, = brief Gate 1).** `zenkit-node` binding;
   `zen-roundtrip` corpus harness green against all G1+G2 originals including
