@@ -19,21 +19,13 @@
 
 #include "encoding.hh"
 #include "fixture.hh"
+#include "normalize.hh"
+#include "world_handle.hh"
 #include "zenkit-version.h"
 
 namespace {
 
-// Everything needed to later re-save the world faithfully: the parsed world,
-// the game version it was loaded as, the archive format of the source file and
-// the top-level "oCWorld:zCWorld" wrapper object's name + version word.
-struct WorldHandle {
-  std::shared_ptr<zenkit::World> world;
-  zenkit::GameVersion version;
-  zenkit::ArchiveFormat format;
-  std::string root_object_name;
-  std::string root_class_name;
-  std::uint16_t root_version;
-};
+using zenkit_node::WorldHandle;
 
 zenkit::GameVersion ParseGameVersion(Napi::Env env, Napi::Value value) {
   if (!value.IsString()) {
@@ -210,6 +202,20 @@ Napi::Value VobNames(Napi::CallbackInfo const& info) {
   return names;
 }
 
+// The phase-0 §3 dump. Reads only from ZenKit's parsed load-path structs;
+// see src/normalize.cc.
+Napi::Value NormalizeWorld(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  try {
+    return zenkit_node::NormalizeWorld(env, *handle);
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to normalize world: "} + e.what());
+  }
+}
+
 zenkit::ArchiveFormat ParseArchiveFormat(Napi::Env env, Napi::Value value) {
   if (!value.IsString()) {
     throw Napi::TypeError::New(env, "format must be 'binary', 'binsafe' or 'ascii'");
@@ -244,6 +250,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("loadWorld", Napi::Function::New(env, LoadWorld));
   exports.Set("worldStats", Napi::Function::New(env, WorldStats));
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
+  exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   return exports;
 }

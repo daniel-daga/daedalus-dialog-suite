@@ -23,3 +23,11 @@ const handle = zenkit.loadWorld(fixture, 'g2');
 const stats = zenkit.worldStats(handle);
 console.log(`wrote ${fixture}`);
 console.log(`stats: ${JSON.stringify(stats)}`);
+
+// The golden normalizeWorld dump of the fixture just written (phase-0 §3).
+// JSON.stringify preserves the binding's fixed key-insertion order, so the
+// file is byte-stable across regenerations of an unchanged world.
+const golden = path.join(FIXTURE_DIR, 'minimal.g2.golden.json');
+const dump = zenkit.normalizeWorld(zenkit.loadWorld(fixture, 'g2'));
+fs.writeFileSync(golden, JSON.stringify(dump, null, 2) + '\n');
+console.log(`wrote ${golden}`);
