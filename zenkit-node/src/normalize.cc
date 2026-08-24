@@ -1172,4 +1172,71 @@ Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle) {
   return dump;
 }
 
+Napi::Object DrillMesh(Napi::Env env,
+                       WorldHandle const& handle,
+                       std::size_t offset,
+                       std::size_t limit) {
+  auto const& mesh = handle.world->world_mesh;
+  bool const is_g2 = handle.version == GameVersion::GOTHIC_2;
+
+  auto result = Napi::Object::New(env);
+  result.Set("polyCount", NumI(env, mesh.geometry.size()));
+  result.Set("offset", NumI(env, offset));
+
+  std::size_t const end =
+      offset >= mesh.geometry.size() ? offset : std::min(mesh.geometry.size(), offset + limit);
+  auto geometry = Napi::Array::New(env, offset < end ? end - offset : 0);
+
+  for (std::size_t index = offset; index < end; ++index) {
+    auto const& poly = mesh.geometry[index];
+    auto entry = Napi::Object::New(env);
+    entry.Set("material", NumI(env, poly.material));
+    entry.Set("lightmap", NumI(env, poly.lightmap));
+
+    // The packed on-disk flag byte(s), version-appropriate (see Mesh.cc load).
+    // G1 packs normal_axis across two bytes; emitted here as one integer.
+    auto const& flags = poly.flags;
+    std::uint32_t bits;
+    if (is_g2) {
+      bits = static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
+                                        ((flags.is_sector & 1) << 3) |
+                                        ((flags.should_relight & 1) << 4) |
+                                        ((flags.is_outdoor & 1) << 5) |
+                                        ((flags.is_ghost_occluder & 1) << 6) |
+                                        ((flags.is_dynamically_lit & 1) << 7));
+    } else {
+      bits = static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
+                                        ((flags.is_sector & 1) << 3) | ((flags.is_lod & 1) << 4) |
+                                        ((flags.is_outdoor & 1) << 5) |
+                                        ((flags.is_ghost_occluder & 1) << 6) |
+                                        ((flags.normal_axis & 1) << 7) |
+                                        ((flags.normal_axis & 2) << 8));
+    }
+    entry.Set("flagsBits", NumI(env, bits));
+    entry.Set("sectorIndex", NumI(env, flags.sector_index));
+
+    auto vertex_indices = Napi::Array::New(env, poly.index_count);
+    auto feature_indices = Napi::Array::New(env, poly.index_count);
+    for (std::uint32_t i = 0; i < poly.index_count; ++i) {
+      vertex_indices.Set(i, NumI(env, mesh.polygon_vertex_indices[poly.index_offset + i]));
+      feature_indices.Set(i, NumI(env, mesh.polygon_feature_indices[poly.index_offset + i]));
+    }
+    entry.Set("vertexIndices", vertex_indices);
+    entry.Set("featureIndices", feature_indices);
+
+    // [planeDistance, normalX, normalY, normalZ] — on-disk field order.
+    auto plane = Napi::Array::New(env, 4);
+    plane.Set(0u, NumF(env, poly.plane_distance));
+    plane.Set(1u, NumF(env, poly.plane_normal.x));
+    plane.Set(2u, NumF(env, poly.plane_normal.y));
+    plane.Set(3u, NumF(env, poly.plane_normal.z));
+    entry.Set("plane", plane);
+
+    geometry.Set(static_cast<std::uint32_t>(index - offset), entry);
+  }
+
+  result.Set("geometry", geometry);
+  return result;
+}
+
 }  // namespace zenkit_node

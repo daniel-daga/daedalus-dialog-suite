@@ -76,9 +76,9 @@ void BuildMesh(Mesh& mesh) {
     for (uint32_t idx : {a, b, c}) {
       mesh.polygon_vertex_indices.push_back(idx);
       mesh.polygon_feature_indices.push_back(idx);
-      // Mesh::save reads Gothic 2 indices from the triangulated PolygonList,
-      // so keep it in sync with the raw per-polygon arrays (all-triangle mesh:
-      // the two are identical).
+      // Also fill the derived triangulated PolygonList, mirroring what
+      // Mesh::load + triangulate() would produce (all-triangle mesh: the two
+      // are identical).
       mesh.polygons.vertex_indices.push_back(idx);
       mesh.polygons.feature_indices.push_back(idx);
     }

@@ -218,6 +218,46 @@ Napi::Value NormalizeWorld(Napi::CallbackInfo const& info) {
   }
 }
 
+// T7 drill — _drillMesh(handle, {offset, limit}?). Windowed per-polygon mesh
+// geometry; see src/normalize.cc DrillMesh.
+Napi::Value DrillMesh(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+
+  std::size_t offset = 0;
+  std::size_t limit = handle->world->world_mesh.geometry.size();
+  if (!(info[1].IsUndefined() || info[1].IsNull())) {
+    if (!info[1].IsObject()) {
+      throw Napi::TypeError::New(env, "window must be an object like {offset, limit}");
+    }
+    auto window = info[1].As<Napi::Object>();
+    auto read_size = [&env, &window](char const* key, std::size_t fallback) {
+      Napi::Value const value = window.Get(key);
+      if (value.IsUndefined() || value.IsNull()) return fallback;
+      if (!value.IsNumber()) {
+        throw Napi::TypeError::New(env, std::string {"window."} + key +
+                                            " must be a non-negative number");
+      }
+      double const number = value.As<Napi::Number>().DoubleValue();
+      if (number < 0) {
+        throw Napi::TypeError::New(env, std::string {"window."} + key +
+                                            " must be a non-negative number");
+      }
+      return static_cast<std::size_t>(number);
+    };
+    offset = read_size("offset", offset);
+    limit = read_size("limit", limit);
+  }
+
+  try {
+    return zenkit_node::DrillMesh(env, *handle, offset, limit);
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to drill mesh: "} + e.what());
+  }
+}
+
 // T6 — saveWorld(handle, path). Serializes with the same archive format, game
 // version and wrapper object name captured at load, writes to a temp file in
 // the destination directory and renames it into place.
@@ -456,6 +496,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("worldStats", Napi::Function::New(env, WorldStats));
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
+  exports.Set("_drillMesh", Napi::Function::New(env, DrillMesh));
   exports.Set("saveWorld", Napi::Function::New(env, SaveWorld));
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
