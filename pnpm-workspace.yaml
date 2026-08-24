@@ -1,9 +1,11 @@
 packages:
   - daedalus-dialog-editor
   - daedalus-parser
+  - zenkit-node
 
 onlyBuiltDependencies:
   - electron
+  - zenkit-node
   - esbuild
   - tree-sitter
   - tree-sitter-cli
