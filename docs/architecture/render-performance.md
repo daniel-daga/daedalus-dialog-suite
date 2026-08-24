@@ -581,9 +581,40 @@ packages the copy; the cost is ~16 MB of static assets in the installer.
 
 `DialogSourceViewDialog` **stays** `React.lazy` (gated on `open`, so the chunk
 is fetched when the user first views source, not on first paint): worth 19 kB
-off the entry chunk on its own, and it closes part of the §3 P3 "lazied
-components list is incomplete" item. `SimulatorDialog` and `ReviewChangesDialog`
-are still static imports.
+off the entry chunk on its own.
+
+## Entry-chunk contents (bundle split, 2026-08-24)
+
+Two rules, both guarded by `tests/rendererBundleSplit.test.ts` — a render test
+cannot catch either regression, because a statically-imported component renders
+exactly like a lazy one.
+
+**Heavyweight, rarely-opened dialogs are `React.lazy` *and* mounted only while
+open.** `DialogSourceViewDialog`, `ReviewChangesDialog` and `SimulatorDialog`
+all follow this shape. The `open`-gate is the half that matters: `lazy` alone
+still pulls the chunk at first paint if the element is always rendered with
+`open={false}`, because mounting is what triggers the import. Splitting the
+latter two took the entry chunk 397 kB → **372 kB**, emitting an 18 kB
+`SimulatorDialog` chunk and a 1.9 kB `ReviewChangesDialog` chunk.
+
+**`mockAPI.ts` does not ship.** The 635-line browser-harness fake main process
+was statically imported by `main.tsx` for the `!window.editorAPI` branch, so it
+rode into the production Electron bundle — where that branch can never be
+taken, since the preload always installs the real bridge. It cannot simply be
+deleted: it is what the Playwright browser harness runs against. It also cannot
+just be made a dynamic `import()`, which would only move it into a lazy chunk
+that still ships in the asar.
+
+The harness runs the Vite **dev** server (`webServer: npm run dev:browser` in
+`playwright.config.ts`), so the injection is gated on `import.meta.env.DEV` and
+the import is dynamic behind that gate. Vite substitutes the literal `false`
+there in `vite build`, and Rollup drops the branch together with the module —
+so the chunk is never emitted at all rather than merely deferred. Verified by
+the marker the harness writes into localStorage keys: `mockapi_file_` appears
+in no file under `dist/renderer/assets/` after a production build. The gate
+makes bootstrap async (`installBrowserMockAPI().then(...)` around
+`createRoot().render()`), which is why the root render is wrapped in a promise
+callback.
 
 ## Measurement tooling
 

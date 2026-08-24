@@ -28,7 +28,7 @@ import { useManualSave } from './hooks/useManualSave';
 import { useFileWatcher } from './hooks/useFileWatcher';
 import MainLayout from './components/MainLayout';
 import ExternalChangeConflictDialog from './components/ExternalChangeConflictDialog';
-import ErrorBoundary from './components/ErrorBoundary';
+import ErrorBoundary, { CrashProbe } from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
 import UpdateNotification from './components/UpdateNotification';
@@ -40,7 +40,7 @@ import { shallow } from 'zustand/shallow';
 import { describeSaveError } from './utils/saveError';
 import { hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
 import { flushAllPendingEdits } from './utils/pendingEditFlushRegistry';
-import { useWindowCloseGuard } from './hooks/useWindowCloseGuard';
+import { useWindowCloseGuard, CloseGuardCrashNotice } from './hooks/useWindowCloseGuard';
 
 // Wire up the cross-store model sync once at module load.
 // editorStore pushes semantic model changes to projectStore's parsed-files
@@ -76,7 +76,7 @@ const App: React.FC = () => {
   const canRedo = useHistoryStore((state) => (activeFile ? (state.editHistory.get(activeFile)?.future.length ?? 0) > 0 : false));
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   useFileWatcher();
-  const closeGuardDialog = useWindowCloseGuard();
+  const { dialog: closeGuardDialog, abort: abortCloseGuard } = useWindowCloseGuard();
 
   const setActiveFile = useEditorStore((state) => state.setActiveFile);
 
@@ -110,6 +110,12 @@ const App: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isProjectOpening, setIsProjectOpening] = useState(false);
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
+  // A caught close-guard crash: the boundary has already cancelled the close,
+  // and `closeGuardBoundaryKey` remounts (and so resets) that boundary once the
+  // user dismisses the notice, so a later close request is guarded normally
+  // instead of silently rendering nothing.
+  const [closeGuardCrashed, setCloseGuardCrashed] = useState(false);
+  const [closeGuardBoundaryKey, setCloseGuardBoundaryKey] = useState(0);
   const { mode, setMode } = useThemeMode();
 
   const ingestionProgress = useMemo(() => {
@@ -230,221 +236,269 @@ const App: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Dandelion
-          </Typography>
-          {activeFile && (
-            <>
-              <Tooltip title="Undo (Ctrl+Z)">
-                <span>
-                  <IconButton
-                    color="inherit"
-                    aria-label="Undo"
-                    disabled={!canUndo}
-                    onClick={() => undo(activeFile)}
-                  >
-                    <UndoIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title="Redo (Ctrl+Y)">
-                <span>
-                  <IconButton
-                    color="inherit"
-                    aria-label="Redo"
-                    disabled={!canRedo}
-                    onClick={() => redo(activeFile)}
-                    sx={{ mr: 1 }}
-                  >
-                    <RedoIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title={
-                saveError ? (
-                  <Typography variant="caption" sx={{ display: 'block' }}>
-                    {describeSaveError(saveError)}
-                  </Typography>
-                ) : autoSaveError ? (
+      <ErrorBoundary
+        label="chrome"
+        fallback={
+          <Alert severity="error" square data-testid="chrome-crash-notice">
+            The toolbar stopped working. The editor below is still usable — reload
+            the application to restore it.
+          </Alert>
+        }
+      >
+        <AppBar position="static">
+          <Toolbar>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+              Dandelion
+            </Typography>
+            {activeFile && (
+              <>
+                <Tooltip title="Undo (Ctrl+Z)">
+                  <span>
+                    <IconButton
+                      color="inherit"
+                      aria-label="Undo"
+                      disabled={!canUndo}
+                      onClick={() => undo(activeFile)}
+                    >
+                      <UndoIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title="Redo (Ctrl+Y)">
+                  <span>
+                    <IconButton
+                      color="inherit"
+                      aria-label="Redo"
+                      disabled={!canRedo}
+                      onClick={() => redo(activeFile)}
+                      sx={{ mr: 1 }}
+                    >
+                      <RedoIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title={
+                  saveError ? (
+                    <Typography variant="caption" sx={{ display: 'block' }}>
+                      {describeSaveError(saveError)}
+                    </Typography>
+                  ) : autoSaveError ? (
+                    <Box>
+                      <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                        Validation errors prevented auto-save:
+                      </Typography>
+                      {autoSaveError.errors.map((err, i) => (
+                        <Typography key={i} variant="caption" sx={{ display: 'block' }}>
+                          - {err.message}
+                        </Typography>
+                      ))}
+                    </Box>
+                  ) : (isAutoSaving || isManualSaving) ? (
+                    'Saving...'
+                  ) : activeDirty ? (
+                    'Unsaved changes — Ctrl+S to save'
+                  ) : lastAutoSaveTime ? (
+                    `Last saved: ${lastAutoSaveTime.toLocaleTimeString()}`
+                  ) : (
+                    'All changes saved'
+                  )
+                }>
+                  <span>
+                    <IconButton
+                      color="inherit"
+                      aria-label="Save"
+                      data-testid="appbar-save-button"
+                      disabled={!activeDirty}
+                      onClick={() => void saveActiveFile()}
+                      sx={{ mr: 1 }}
+                    >
+                      {(saveError || autoSaveError) ? (
+                        <ErrorIcon sx={{ color: 'error.light' }} />
+                      ) : (
+                        <SaveIcon sx={{
+                          color: (isAutoSaving || isManualSaving)
+                            ? 'rgba(255,255,255,0.7)'
+                            : activeDirty
+                              ? 'warning.light'
+                              : 'rgba(255,255,255,0.4)'
+                        }} />
+                      )}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </>
+            )}
+            {backgroundConflictPaths.length > 0 && (
+              <Tooltip
+                title={
                   <Box>
                     <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                      Validation errors prevented auto-save:
+                      Files changed on disk with unsaved changes:
                     </Typography>
-                    {autoSaveError.errors.map((err, i) => (
-                      <Typography key={i} variant="caption" sx={{ display: 'block' }}>
-                        - {err.message}
+                    {backgroundConflictPaths.map((conflictPath) => (
+                      <Typography key={conflictPath} variant="caption" sx={{ display: 'block' }}>
+                        - {conflictPath}
                       </Typography>
                     ))}
                   </Box>
-                ) : (isAutoSaving || isManualSaving) ? (
-                  'Saving...'
-                ) : activeDirty ? (
-                  'Unsaved changes — Ctrl+S to save'
-                ) : lastAutoSaveTime ? (
-                  `Last saved: ${lastAutoSaveTime.toLocaleTimeString()}`
-                ) : (
-                  'All changes saved'
-                )
-              }>
-                <span>
-                  <IconButton
-                    color="inherit"
-                    aria-label="Save"
-                    data-testid="appbar-save-button"
-                    disabled={!activeDirty}
-                    onClick={() => void saveActiveFile()}
-                    sx={{ mr: 1 }}
-                  >
-                    {(saveError || autoSaveError) ? (
-                      <ErrorIcon sx={{ color: 'error.light' }} />
-                    ) : (
-                      <SaveIcon sx={{
-                        color: (isAutoSaving || isManualSaving)
-                          ? 'rgba(255,255,255,0.7)'
-                          : activeDirty
-                            ? 'warning.light'
-                            : 'rgba(255,255,255,0.4)'
-                      }} />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </>
-          )}
-          {backgroundConflictPaths.length > 0 && (
-            <Tooltip
-              title={
-                <Box>
-                  <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                    Files changed on disk with unsaved changes:
-                  </Typography>
-                  {backgroundConflictPaths.map((conflictPath) => (
-                    <Typography key={conflictPath} variant="caption" sx={{ display: 'block' }}>
-                      - {conflictPath}
-                    </Typography>
-                  ))}
-                </Box>
-              }
-            >
-              <Chip
-                icon={<ErrorIcon />}
-                color="error"
-                label={`Conflicts: ${backgroundConflictPaths.length}`}
-                onClick={() => setActiveFile(backgroundConflictPaths[0])}
-                sx={{ mr: 2, cursor: 'pointer' }}
-                data-testid="background-conflict-chip"
-              />
-            </Tooltip>
-          )}
-          {projectName && (
-            <Chip
-              icon={<FolderIcon />}
-              label={`Project: ${projectName}`}
-              sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
-            />
-          )}
-           <Tooltip title={isIngesting ? `Ingesting files: ${Math.round(ingestionProgress)}%` : 'Ingested Files'}>
-            <Box sx={{ position: 'relative', display: 'inline-flex', mr: 1, alignItems: 'center', justifyContent: 'center' }}>
-              {isIngesting && (
-                <>
-                  <CircularProgress
-                    variant="determinate"
-                    value={100}
-                    size={42}
-                    thickness={4}
-                    sx={{
-                      color: 'rgba(255, 255, 255, 0.1)',
-                      position: 'absolute',
-                      zIndex: 0,
-                    }}
-                  />
-                  <CircularProgress
-                    variant="determinate"
-                    value={ingestionProgress}
-                    size={42}
-                    thickness={4}
-                    sx={{
-                      color: 'white',
-                      position: 'absolute',
-                      zIndex: 0,
-                      transition: 'stroke-dashoffset 0.3s ease-in-out',
-                    }}
-                  />
-                </>
-              )}
-              <IconButton
-                color="inherit"
-                onClick={() => setIngestedFilesOpen(true)}
-                sx={{ zIndex: 1 }}
+                }
               >
-                <Badge badgeContent={metadataFailures.length} color="warning">
-                  <ListAltIcon />
-                </Badge>
-              </IconButton>
-            </Box>
-          </Tooltip>
-          <Stack direction="row" spacing={0.5} sx={{ mr: 2 }}>
-            {themeOptions.map((option) => (
-              <Tooltip key={option.value} title={`${option.label} theme`}>
                 <Chip
-                  onClick={() => setMode(option.value)}
-                  icon={option.icon}
-                  label={option.label}
-                  size="small"
-                  variant={mode === option.value ? 'filled' : 'outlined'}
-                  color={mode === option.value ? 'primary' : 'default'}
-                  sx={{
-                    cursor: 'pointer',
-                    color: mode === option.value ? 'primary.contrastText' : 'white',
-                    bgcolor: mode === option.value ? 'primary.main' : 'rgba(255,255,255,0.08)',
-                    '& .MuiChip-icon': { color: 'inherit' },
-                  }}
+                  icon={<ErrorIcon />}
+                  color="error"
+                  label={`Conflicts: ${backgroundConflictPaths.length}`}
+                  onClick={() => setActiveFile(backgroundConflictPaths[0])}
+                  sx={{ mr: 2, cursor: 'pointer' }}
+                  data-testid="background-conflict-chip"
                 />
               </Tooltip>
-            ))}
-          </Stack>
-          <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
-            Open Project
-          </Button>
-          <Tooltip title="Reload">
-            <span>
-              <IconButton
-                color="inherit"
-                aria-label="Reload"
-                onClick={() => void handleReload()}
-                disabled={!projectPath && !activeFile}
-              >
-                <RefreshIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-          {projectPath && (
-            <Tooltip title="Close Project">
-              <IconButton
-                color="inherit"
-                aria-label="Close Project"
-                data-testid="close-project-button"
-                onClick={handleCloseProject}
-              >
-                <CloseIcon />
-              </IconButton>
+            )}
+            {projectName && (
+              <Chip
+                icon={<FolderIcon />}
+                label={`Project: ${projectName}`}
+                sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
+              />
+            )}
+             <Tooltip title={isIngesting ? `Ingesting files: ${Math.round(ingestionProgress)}%` : 'Ingested Files'}>
+              <Box sx={{ position: 'relative', display: 'inline-flex', mr: 1, alignItems: 'center', justifyContent: 'center' }}>
+                {isIngesting && (
+                  <>
+                    <CircularProgress
+                      variant="determinate"
+                      value={100}
+                      size={42}
+                      thickness={4}
+                      sx={{
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        position: 'absolute',
+                        zIndex: 0,
+                      }}
+                    />
+                    <CircularProgress
+                      variant="determinate"
+                      value={ingestionProgress}
+                      size={42}
+                      thickness={4}
+                      sx={{
+                        color: 'white',
+                        position: 'absolute',
+                        zIndex: 0,
+                        transition: 'stroke-dashoffset 0.3s ease-in-out',
+                      }}
+                    />
+                  </>
+                )}
+                <IconButton
+                  color="inherit"
+                  onClick={() => setIngestedFilesOpen(true)}
+                  sx={{ zIndex: 1 }}
+                >
+                  <Badge badgeContent={metadataFailures.length} color="warning">
+                    <ListAltIcon />
+                  </Badge>
+                </IconButton>
+              </Box>
             </Tooltip>
-          )}
-        </Toolbar>
-      </AppBar>
+            <Stack direction="row" spacing={0.5} sx={{ mr: 2 }}>
+              {themeOptions.map((option) => (
+                <Tooltip key={option.value} title={`${option.label} theme`}>
+                  <Chip
+                    onClick={() => setMode(option.value)}
+                    icon={option.icon}
+                    label={option.label}
+                    size="small"
+                    variant={mode === option.value ? 'filled' : 'outlined'}
+                    color={mode === option.value ? 'primary' : 'default'}
+                    sx={{
+                      cursor: 'pointer',
+                      color: mode === option.value ? 'primary.contrastText' : 'white',
+                      bgcolor: mode === option.value ? 'primary.main' : 'rgba(255,255,255,0.08)',
+                      '& .MuiChip-icon': { color: 'inherit' },
+                    }}
+                  />
+                </Tooltip>
+              ))}
+            </Stack>
+            <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
+              Open Project
+            </Button>
+            <Tooltip title="Reload">
+              <span>
+                <IconButton
+                  color="inherit"
+                  aria-label="Reload"
+                  onClick={() => void handleReload()}
+                  disabled={!projectPath && !activeFile}
+                >
+                  <RefreshIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+            {projectPath && (
+              <Tooltip title="Close Project">
+                <IconButton
+                  color="inherit"
+                  aria-label="Close Project"
+                  data-testid="close-project-button"
+                  onClick={handleCloseProject}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            <CrashProbe id="chrome" />
+          </Toolbar>
+        </AppBar>
+      </ErrorBoundary>
 
-      <IngestedFilesDialog
-        open={isIngestedFilesOpen}
-        onClose={() => setIngestedFilesOpen(false)}
-      />
+      <ErrorBoundary
+        label="overlays"
+        fallback={
+          <Alert severity="error" square data-testid="overlays-crash-notice">
+            A dialog failed to open. Reload the application to restore it; your
+            open files are unaffected.
+          </Alert>
+        }
+      >
+        <CrashProbe id="overlays" />
+        <IngestedFilesDialog
+          open={isIngestedFilesOpen}
+          onClose={() => setIngestedFilesOpen(false)}
+        />
+        <ExternalChangeConflictDialog />
+      </ErrorBoundary>
 
-      <ExternalChangeConflictDialog />
-      {closeGuardDialog}
+      {/* The close guard gets its own boundary because its failure mode is the
+          dangerous one: it crashes mid close-request, after the ack cancelled
+          the main-process force-close timer, with the unsaved work living only
+          in the store. `abortCloseGuard` resolves it as a cancel — a fallback
+          that let the close proceed would turn a failed save into a silent data
+          loss, which is exactly what the guard exists to prevent. */}
+      <ErrorBoundary
+        key={closeGuardBoundaryKey}
+        label="close-guard"
+        onError={() => {
+          abortCloseGuard();
+          setCloseGuardCrashed(true);
+        }}
+        fallback={null}
+      >
+        {closeGuardDialog}
+        {closeGuardDialog && <CrashProbe id="close-guard" />}
+      </ErrorBoundary>
+      {closeGuardCrashed && (
+        <CloseGuardCrashNotice
+          onDismiss={() => {
+            setCloseGuardCrashed(false);
+            setCloseGuardBoundaryKey((key) => key + 1);
+          }}
+        />
+      )}
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
-        <ErrorBoundary>
+        <ErrorBoundary label="workspace">
+          <CrashProbe id="workspace" />
           {activeFile || projectPath ? (
             <MainLayout filePath={activeFile} />
           ) : (
@@ -536,7 +590,17 @@ const App: React.FC = () => {
             bgcolor: 'background.paper',
           }}
         >
-          <UpdateNotification triggerCheck={triggerUpdateCheck} />
+          <ErrorBoundary
+            label="updates"
+            fallback={
+              <Alert severity="error" data-testid="updates-crash-notice" sx={{ py: 0, mr: 1 }}>
+                Update check unavailable
+              </Alert>
+            }
+          >
+            <CrashProbe id="updates" />
+            <UpdateNotification triggerCheck={triggerUpdateCheck} />
+          </ErrorBoundary>
           <Tooltip title="Show log file">
             <IconButton
               size="small"

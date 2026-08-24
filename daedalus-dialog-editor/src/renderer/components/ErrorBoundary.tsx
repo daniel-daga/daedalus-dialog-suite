@@ -7,6 +7,11 @@ void React;
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
+  /**
+   * Names the guarded subtree in the crash log. Every mounted boundary passes
+   * one, so a log line says *which* part of the window failed.
+   */
+  label?: string;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
@@ -36,6 +41,18 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
+
+    // Record the crash before anything else. `window.onerror` in main.tsx does
+    // not see errors a boundary catches, so without this a caught crash leaves
+    // no trace at all in the log file. Same channel the window-level handlers
+    // use; logging lives here rather than in an `onError` prop so a boundary
+    // cannot be added without it.
+    const where = this.props.label ? ` [${this.props.label}]` : '';
+    window.editorAPI?.logRendererError?.({
+      message: `React render crash${where}: ${error.message}`,
+      stack: `${error.stack ?? ''}\n${errorInfo.componentStack ?? ''}`,
+    });
+
     this.props.onError?.(error, errorInfo);
   }
 
@@ -144,5 +161,25 @@ class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+
+/**
+ * Render-crash injector for the boundary tests.
+ *
+ * Boundary behaviour is only provable by actually throwing inside the guarded
+ * subtree, so each boundary mounts one of these and the Playwright harness
+ * arms it with `?crash=<id>`. Vite substitutes the literal `"production"` for
+ * `process.env.NODE_ENV` in the renderer build, so the whole body folds away
+ * in shipped bundles; the guard is also what keeps this inert in the packaged
+ * app, where a query string cannot be supplied anyway.
+ */
+export const CrashProbe: React.FC<{ id: string }> = ({ id }) => {
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
+  if (new URLSearchParams(window.location.search).get('crash') === id) {
+    throw new Error(`CrashProbe: forced render crash in "${id}"`);
+  }
+  return null;
+};
 
 export default ErrorBoundary;

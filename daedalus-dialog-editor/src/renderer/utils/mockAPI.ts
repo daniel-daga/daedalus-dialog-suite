@@ -576,9 +576,16 @@ export const mockEditorAPI: EditorAPI = {
     return '0.0.0-mock';
   },
 
-  // Crash logging (fix-08 §5). No-ops in the browser harness so window.onerror
-  // forwarding is inert and the mock stays unaffected.
-  async logRendererError(_payload: { message: string; stack?: string }): Promise<void> {},
+  // Crash logging (fix-08 §5). There is no log file in the browser harness, so
+  // the payloads are recorded on `window.__rendererErrorLog` instead — that is
+  // how the error-boundary E2E asserts a caught crash is actually reported.
+  async logRendererError(payload: { message: string; stack?: string }): Promise<void> {
+    if (typeof window !== 'undefined') {
+      const w = window as any;
+      w.__rendererErrorLog = w.__rendererErrorLog || [];
+      w.__rendererErrorLog.push(payload);
+    }
+  },
   async getLogPath(): Promise<string> {
     return '';
   },

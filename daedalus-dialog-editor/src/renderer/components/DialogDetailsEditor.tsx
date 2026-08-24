@@ -22,7 +22,6 @@ import { useHistoryStore } from '../store/historyStore';
 import * as historyActions from '../store/historyActions';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ValidationErrorDialog from './ValidationErrorDialog';
-import ReviewChangesDialog from './ReviewChangesDialog';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import DialogPropertiesSection from './DialogPropertiesSection';
 import ConditionSection from './ConditionSection';
@@ -32,11 +31,15 @@ import { useActionManagement } from './hooks/useActionManagement';
 import { useDialogEditorUIState } from './hooks/useDialogEditorUIState';
 import { useDialogEditorCommands } from './hooks/useDialogEditorCommands';
 import { flattenActionPaths } from './nestedActionUtils';
-import SimulatorDialog from './Simulator/SimulatorDialog';
 
 // Monaco lives behind this dialog and is the heaviest thing the renderer can
 // load; keep it out of the entry chunk and off the first paint (§3 P3).
+// Heavyweight, rarely-opened dialogs are code-split and mounted only while
+// open, so their chunks are fetched on first use rather than at first paint
+// (§3 P3 bundle-size finding).
 const DialogSourceViewDialog = lazy(() => import('./DialogSourceViewDialog'));
+const ReviewChangesDialog = lazy(() => import('./ReviewChangesDialog'));
+const SimulatorDialog = lazy(() => import('./Simulator/SimulatorDialog'));
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
@@ -270,14 +273,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         onCancel={handleCancelValidation}
       />
 
-      {fileState && filePath && (
-        <ReviewChangesDialog
-          open={reviewChangesOpen}
-          filePath={filePath}
-          semanticModel={fileState.semanticModel}
-          onSave={() => handleSave()}
-          onClose={() => setReviewChangesOpen(false)}
-        />
+      {fileState && filePath && reviewChangesOpen && (
+        <Suspense fallback={null}>
+          <ReviewChangesDialog
+            open
+            filePath={filePath}
+            semanticModel={fileState.semanticModel}
+            onSave={() => handleSave()}
+            onClose={() => setReviewChangesOpen(false)}
+          />
+        </Suspense>
       )}
 
       {semanticModel && uiState.sourceViewOpen && (
@@ -291,14 +296,16 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         </Suspense>
       )}
 
-      {semanticModel && dialog && (
-        <SimulatorDialog
-          open={simulatorOpen}
-          semanticModel={semanticModel}
-          dialogName={dialogName}
-          npcName={dialog.properties.npc || 'NPC'}
-          onClose={() => setSimulatorOpen(false)}
-        />
+      {semanticModel && dialog && simulatorOpen && (
+        <Suspense fallback={null}>
+          <SimulatorDialog
+            open
+            semanticModel={semanticModel}
+            dialogName={dialogName}
+            npcName={dialog.properties.npc || 'NPC'}
+            onClose={() => setSimulatorOpen(false)}
+          />
+        </Suspense>
       )}
 
       <Snackbar

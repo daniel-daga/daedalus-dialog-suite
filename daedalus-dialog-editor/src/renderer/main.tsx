@@ -1,14 +1,29 @@
+/// <reference types="vite/client" />
 import React, { useMemo, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import App from './App';
-import { mockEditorAPI } from './utils/mockAPI';
+import ErrorBoundary, { CrashProbe } from './components/ErrorBoundary';
 import { themes, THEME_STORAGE_KEY, ThemeMode } from './theme';
 import { ThemeModeContext } from './themeContext';
 
-// Browser mode detection: inject mock API if running outside Electron
-if (!window.editorAPI) {
+/**
+ * Browser mode: the Playwright harness runs the renderer in plain Chromium with
+ * no preload, so `window.editorAPI` has to come from the mock.
+ *
+ * The import is dynamic and gated on `import.meta.env.DEV` because the harness
+ * runs the *dev* server (`vite`, see playwright.config.ts) — production never
+ * takes this path, since the preload always installs the real bridge. Vite
+ * substitutes the literal `false` for `import.meta.env.DEV` in `vite build`, so
+ * Rollup drops the branch and mockAPI.ts is never emitted into the shipped
+ * bundle at all (it used to ride along in the entry chunk).
+ */
+async function installBrowserMockAPI(): Promise<void> {
+  if (!import.meta.env.DEV || window.editorAPI) {
+    return;
+  }
+  const { mockEditorAPI } = await import('./utils/mockAPI');
   window.editorAPI = mockEditorAPI;
 }
 
@@ -64,8 +79,16 @@ const Root: React.FC = () => {
   );
 };
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>,
-);
+void installBrowserMockAPI().then(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      {/* Outermost boundary. The boundaries inside App cannot catch App's own
+          render (its store selectors, its hooks), so without this one a throw
+          there still blanks the window. */}
+      <ErrorBoundary label="app-root">
+        <CrashProbe id="app-root" />
+        <Root />
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+});

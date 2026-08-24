@@ -122,6 +122,64 @@ is pinned to the local path, so a new one cannot quietly reinstate the CDN).
 **Not covered by this policy.** It governs the renderer only. Main-process
 network access (the updater) is unaffected — see *Update integrity* below.
 
+## Renderer crash containment (error boundaries, 2026-08-24)
+
+A React render throw with no boundary above it unmounts the whole root. In an
+Electron app that is a **blank white window** with the user's unsaved work still
+sitting in the Zustand store, unreachable — the worst available outcome. The
+renderer therefore carries a boundary map rather than a single boundary, sized
+by what each subtree's failure costs.
+
+| Boundary (`label`) | Guards | Fallback |
+|---|---|---|
+| `app-root` (`main.tsx`) | `<App/>` | default panel |
+| `chrome` | AppBar / Toolbar | inline notice, workspace keeps running |
+| `overlays` | IngestedFiles + ExternalChangeConflict dialogs | inline notice |
+| `close-guard` | the window-close guard dialog | **cancels the close** (below) |
+| `workspace` | MainLayout / welcome screen | default panel |
+| `updates` | UpdateNotification | inline notice |
+
+`app-root` lives in `main.tsx` rather than inside `App` on purpose: no boundary
+inside a component can catch that component's *own* render, so a throw in
+`App`'s selectors or hooks would still blank the window without it. The inner
+boundaries exist so the blast radius matches the stakes — a crashing update
+toast must not take the editor with it, and a crashing editor must not take the
+toolbar (and its Save button) with it.
+
+**The close guard fails safe, and that is the one boundary rule that is not
+negotiable.** By the time the guard can crash it has already acked the close
+request, which cancels the main process's force-close safety timer, and the
+unsaved work exists only in the renderer store. A fallback that let the close
+proceed would convert a render bug into silent data loss — precisely what the
+guard exists to prevent. So its `onError` calls
+`useWindowCloseGuard`'s `abort()`, which **cancels** the close and stands the
+guard down, and the user gets a notice saying plainly that nothing was saved and
+their changes are still in the editor. That notice deliberately offers neither
+"close anyway" nor "reload application"; both would discard the work. Dismissing
+it remounts the boundary, so the next close request is guarded normally instead
+of silently doing nothing.
+
+**Every caught crash is logged.** `window.onerror` and `unhandledrejection` in
+`main.tsx` never see an error a boundary catches — React swallows it into
+`componentDidCatch` — so before this the app could degrade in front of the user
+while the log file recorded nothing. `ErrorBoundary.componentDidCatch` now
+reports through the existing `window.editorAPI.logRendererError` channel
+(no new IPC), tagged with the boundary `label` and carrying the component stack.
+The reporting lives in the boundary itself rather than in a per-call-site
+`onError` prop, so a boundary cannot be added without it.
+
+**How this is tested.** A boundary assertion is worthless unless something
+actually throws inside the subtree it guards, so each boundary mounts a
+`CrashProbe` (exported from `ErrorBoundary.tsx`) that throws when the document
+URL carries `?crash=<label>`. `tests/e2e/error-boundaries.spec.ts` arms it and
+drives the real UI, asserting both the fallback *and* the containment (the rest
+of the window still works); the close-guard test makes a real unsaved edit,
+injects a real close request, and asserts `approveClose` was never called. The
+probe is dead code in shipped bundles — Vite substitutes the literal
+`"production"` for `process.env.NODE_ENV`, folding its body away (verified: the
+probe's throw string appears in no emitted chunk).
+`tests/errorBoundaryLogging.test.tsx` guards the logging contract.
+
 ## Update integrity (landed R1 behavior)
 
 `update-meta.json` carries `sha256` + `size`; the updater:

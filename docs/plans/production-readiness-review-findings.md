@@ -5,7 +5,7 @@ UI/UX, and a scoped decision analysis for the quest node viewer/editor
 (deprecate vs. extract). Findings are ranked within each section; every claim
 carries a file reference.
 
-## Status (2026-08-23)
+## Status (2026-08-24)
 
 Review complete; the first remediation slice has landed on `master`
 (branches `claude/production-readiness-review-dw28l0` and
@@ -24,12 +24,22 @@ Landed:
 | `1db5ce1` | §3 all three P1 performance items: Problems-panel scan deferral/debounce + per-file fact cache, `QuestList` single-pass batch analysis, fileStore coarse-selector coverage + memoized layouts |
 | `6322a0b` | §3 all three P2 performance items: condition-subtree memo boundary + `conditionsExpanded` reset, `IngestedFilesDialog` virtualization + memoized row derivation, `ParserService` idle-worker dispatch |
 | (2026-08-23) | Post-release fast-follows: **F2** dead source-view state machine deleted; **F6** Ctrl+F scoped to the dialog view; **CSP** strict `default-src 'self'` meta, with Monaco moved off the jsdelivr CDN to the app's own origin (and `DialogSourceViewDialog` lazied, closing part of §3 P3) |
+| (2026-08-24) | §2 blocker 6 remainder — six labelled error boundaries (root + chrome/overlays/close-guard/workspace/updates), close guard fails safe by cancelling the close, and `componentDidCatch` reports through the existing `logRendererError` channel. **Blocker 6 is now fully closed.** |
+| (2026-08-24) | §3 P3 bundle items — `SimulatorDialog`/`ReviewChangesDialog` lazied + `open`-gated, `mockAPI.ts` gated out of the production bundle via `import.meta.env.DEV`. Entry chunk 397 kB → 372 kB. |
 
-Verified after the fast-follow slice: full Jest suite (**1065 tests in 160
-suites** — current baseline), browser-harness Playwright suite (**166 tests**),
+Verified after the 2026-08-24 slice: full Jest suite (**1083 tests in 162
+suites** — current baseline), browser-harness Playwright suite (**172 tests**),
 `build:main`, `typecheck:renderer`, `build:renderer` (no chunk-size or eval
-warnings), and lint (0 errors; 7 pre-existing warnings in untouched files) all
-green. Earlier counts in this document (1019 tests in 151 suites after Option B)
+warnings), and lint (0 errors; **5** pre-existing warnings in untouched files)
+all green. The preceding fast-follow slice measured 1065/160 Jest and 166
+Playwright; this slice added `tests/rendererBundleSplit.test.ts` (12) and
+`tests/errorBoundaryLogging.test.tsx` (6) plus
+`tests/e2e/error-boundaries.spec.ts` (6 specs). Note the **5**-warning lint
+figure supersedes the "7 warnings" quoted below and elsewhere in this document:
+the two that disappeared were in the deleted `SourceCodeEditor.tsx`, so the drop
+is expected, not a regression.
+
+Earlier counts in this document (1019 tests in 151 suites after Option B)
 dropped because Option B deleted ~20 quest-flow Jest suites and 2 Playwright
 specs along with the code they covered; the P0/P1 perf slices brought the guard
 suites back up to 159/1059, and the P2 slice added
@@ -39,17 +49,19 @@ the native-runtime fix then added `tests/nativeParserModuleRegistry.test.ts`
 F2 state machine (5 banner, 2 marker, 2 saveSource-race, 1 conflict-diff — all
 lost their premise with the code they covered) and added
 `tests/contentSecurityPolicy.test.ts` (7 tests), plus 3 Playwright specs (2 for
-F6, 1 asserting Monaco mounts under the CSP). **Lint is now 0 errors and 5
-warnings, down from 7** — both dropped warnings were in the deleted
-`SourceCodeEditor.tsx`; that drop is expected, not a regression.
+F6, 1 asserting Monaco mounts under the CSP).
 
-**§3 Performance is now closed down to P3** — the P0, P1, and P2 items are all
-done; only the §3 P3 measure-first items remain. **The §5 post-release
-fast-follow list is now empty too** (F2, F6, and CSP landed 2026-08-23 — see
-the table row below). What is still open: the §5 pre-release items, §3 P3, and
-the §4 UI/UX findings from F8 onward. Owner decisions still outstanding: app
-icons, the Dandelion vs. "Daedalus Dialog Editor" naming split, and code
-signing.
+**§2's blockers are now down to the four owner/release-sequencing items**
+(1 backup-on-save and 5 lockfiles are done; 6 closed 2026-08-24 — what remains
+is 2 signing, 3 packaged-app parse smoke, 4 icons/naming). **§3 Performance is
+closed except for the two remaining P3 measure-first items** — the P0, P1 and
+P2 items are all done, and the P3 bundle-size item closed 2026-08-24; the
+`ensureActionIds` O(functions × dialogs) open cost and the unbounded
+`FileService` caches are what is left, both explicitly measure-first. **The §5
+post-release fast-follow list is empty.** What is still open: the §5 pre-release
+items, the two §3 P3 leftovers, and the §4 UI/UX findings from F8 onward. Owner
+decisions still outstanding: app icons, the Dandelion vs. "Daedalus Dialog
+Editor" naming split, and code signing.
 
 ### Environment note for a fresh session
 
@@ -262,7 +274,7 @@ any later date; nothing in B forecloses C.
    `package-lock.json` + `daedalus-parser/package-lock.json` are unmaintained
    npm shadows; stray `debug_file.ts` (broken import) and `win1250.d` are
    git-tracked at the editor root.
-6. **~~No CSP~~ (DONE 2026-08-23); error-boundary gaps (still open).**
+6. **~~No CSP~~ (DONE 2026-08-23); ~~error-boundary gaps~~ (DONE 2026-08-24) — blocker closed.**
    ~~No CSP meta or `onHeadersReceived` handler anywhere.~~ A strict
    `default-src 'self'` with no eval escape hatch now ships as a `<meta>` tag in
    `src/renderer/index.html`; documented in
@@ -280,9 +292,29 @@ any later date; nothing in B forecloses C.
    `onHeadersReceived` was never a viable delivery mechanism here — it does not
    fire for `file://`, which is how production loads the renderer.
 
-   Still open: the single React error boundary wraps only `MainLayout`/welcome
-   (`App.tsx`); AppBar, close guard, conflict/update dialogs are outside it, and
-   `ErrorBoundary.componentDidCatch` never writes to the log file.
+   **The error-boundary half landed 2026-08-24.** Both defects are fixed and
+   the blocker is closed. *Coverage*: six labelled boundaries instead of one —
+   `app-root` (in `main.tsx`, so a throw in `App`'s own render is caught too),
+   `chrome`, `overlays`, `close-guard`, `workspace`, `updates` — sized by what
+   each subtree's failure costs rather than blanket-wrapped. *Logging*:
+   `componentDidCatch` now reports through the existing
+   `window.editorAPI.logRendererError` channel (no new IPC), tagged with the
+   boundary label and carrying the component stack; the reporting sits in the
+   boundary, not in per-call-site `onError` props, so a boundary cannot be
+   added un-logged.
+
+   The close guard is deliberately **not** a normal boundary. It can only crash
+   after it has acked the close request — which cancels the main process's
+   force-close safety timer — with the unsaved work living only in the store, so
+   its `onError` cancels the close (`useWindowCloseGuard().abort()`) and never
+   approves it; the notice offers neither "close anyway" nor "reload", both of
+   which would discard exactly the work the guard protects. Guarded by
+   `tests/e2e/error-boundaries.spec.ts` (six specs; each arms a real
+   `CrashProbe` inside the guarded subtree and asserts both the fallback and
+   the containment — the close-guard spec makes a real unsaved edit, injects a
+   real close request and asserts `approveClose` was never called) and
+   `tests/errorBoundaryLogging.test.tsx`. Design recorded in
+   `docs/architecture/security-model.md` (*Renderer crash containment*).
 
 ### Solid (verified against `docs/architecture/security-model.md` — claims true)
 
@@ -467,18 +499,29 @@ findings below are in paths the doc does not cover.
 
 - ~~Litegraph canvas render loop free-runs at 60 fps while the quest view is
   mounted.~~ **RESOLVED 2026-08-23** by §1 Option B (canvas deleted).
-- No failing bundle-size guard (rollup's 500 kB warning is grepped in
+- ~~No failing bundle-size guard (rollup's 500 kB warning is grepped in
   `all-tests.yml` but list of lazied components is incomplete:
   `SimulatorDialog` and `ReviewChangesDialog` are
   static imports; `mockAPI.ts` (635 lines) ships in the production Electron
-  bundle for the `!window.editorAPI` branch). **Partially addressed
-  2026-08-23**: `DialogSourceViewDialog` is now `React.lazy` + `open`-gated
-  (entry chunk 416 kB → 397 kB), landed alongside the CSP work. Measured while
-  doing it, and worth recording against the assumption in the old Monaco note:
-  lazy-splitting does **not** satisfy the chunk-size guard for an over-size
-  dependency — the limit is per emitted chunk, so a bundled Monaco simply became
-  a 3,825 kB lazy chunk. That is why Monaco ships as static assets instead of
-  being bundled at all (see `docs/architecture/render-performance.md`).
+  bundle for the `!window.editorAPI` branch).~~ **RESOLVED — `DialogSourceViewDialog`
+  2026-08-23, the rest 2026-08-24.** `SimulatorDialog` and `ReviewChangesDialog`
+  are now `React.lazy` + `open`-gated like `DialogSourceViewDialog` (entry chunk
+  416 kB → 397 kB → **372 kB**). `mockAPI.ts` no longer ships at all: it cannot
+  be deleted (the Playwright browser harness runs against it) and a plain
+  dynamic `import()` would only defer it into a chunk that still lands in the
+  asar, so the injection is gated on `import.meta.env.DEV` — the harness runs
+  the Vite *dev* server, and `vite build` substitutes the literal `false`, so
+  Rollup drops the branch and never emits the module. Verified: `mockapi_file_`
+  appears in no `dist/renderer/assets/` chunk after a production build. Guarded
+  by `tests/rendererBundleSplit.test.ts` (a render test cannot catch either
+  regression — a static import renders exactly like a lazy one). Recorded in
+  `docs/architecture/render-performance.md` (*Entry-chunk contents*).
+
+  Measured while doing the first half, and worth recording against the
+  assumption in the old Monaco note: lazy-splitting does **not** satisfy the
+  chunk-size guard for an over-size dependency — the limit is per emitted chunk,
+  so a bundled Monaco simply became a 3,825 kB lazy chunk. That is why Monaco
+  ships as static assets instead of being bundled at all.
 - `ensureActionIds` is O(functions × dialogs) on every `openFile`
   (`fileStore.ts:88-97, 367-372`), including cache-hit opens.
 - Unbounded module-level `fileEncodingCache`/`fileStatCache` in `FileService`

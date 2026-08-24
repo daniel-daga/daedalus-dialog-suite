@@ -43,7 +43,7 @@ jest.spyOn(window.editorAPI, 'onCloseRequested').mockImplementation((cb) => {
 });
 
 const Harness: React.FC = () => {
-  const dialog = useWindowCloseGuard();
+  const { dialog } = useWindowCloseGuard();
   return <>{dialog}</>;
 };
 

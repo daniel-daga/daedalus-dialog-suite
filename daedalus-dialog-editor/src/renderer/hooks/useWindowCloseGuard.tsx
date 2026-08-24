@@ -29,6 +29,17 @@ interface CloseFailure {
   message: string;
 }
 
+export interface WindowCloseGuard {
+  /** The guard dialog, or `null` when idle. */
+  dialog: React.ReactElement | null;
+  /**
+   * Stand the guard down without approving the close. Used by the guard's
+   * error boundary: a render crash must resolve in the fail-safe direction
+   * (cancel), never by approving a close whose files were never saved.
+   */
+  abort: () => void;
+}
+
 /**
  * Window-close guard (E1). Renders the confirm/save dialog when the main
  * process asks the renderer to close with unsaved work. Mounted once in App;
@@ -43,7 +54,7 @@ interface CloseFailure {
  *   3. Compute the unsaved set (`hasUnsavedChanges`). Empty → approve the close.
  *      Otherwise open the dialog.
  */
-export function useWindowCloseGuard(): React.ReactElement | null {
+export function useWindowCloseGuard(): WindowCloseGuard {
   // The set of file paths captured when the close was requested. `null` means
   // the dialog is closed (idle).
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
@@ -164,8 +175,15 @@ export function useWindowCloseGuard(): React.ReactElement | null {
     setPendingPaths(null);
   }, []);
 
+  const abort = useCallback(() => {
+    window.editorAPI.cancelClose();
+    setPendingPaths(null);
+    setBusy(false);
+    setFailure(null);
+  }, []);
+
   if (pendingPaths === null) {
-    return null;
+    return { dialog: null, abort };
   }
 
   // Render live file states so a conflict resolution (which mutates the store)
@@ -178,7 +196,7 @@ export function useWindowCloseGuard(): React.ReactElement | null {
   const conflictedFiles = liveStates.filter((fs) => fs.externalConflict);
   const hasConflicts = conflictedFiles.length > 0;
 
-  return (
+  const dialog = (
     <Dialog
       open
       maxWidth="sm"
@@ -272,4 +290,39 @@ export function useWindowCloseGuard(): React.ReactElement | null {
       </DialogActions>
     </Dialog>
   );
+
+  return { dialog, abort };
 }
+
+/**
+ * Fallback for the close-guard error boundary.
+ *
+ * A crash here is not like a crash in a toast. The guard has already acked the
+ * close request — which cancels the main process's force-close safety timer —
+ * and the unsaved work exists only in the renderer's store. So the boundary
+ * cancels the close (see `abort` above) and this says so plainly. It
+ * deliberately offers no "close anyway" and no "reload application": both would
+ * throw away exactly the work the guard exists to protect.
+ */
+export const CloseGuardCrashNotice: React.FC<{ onDismiss: () => void }> = ({ onDismiss }) => (
+  <Dialog open maxWidth="sm" fullWidth data-testid="close-guard-crash-notice">
+    <DialogTitle>Close cancelled — nothing was saved</DialogTitle>
+    <DialogContent>
+      <Alert severity="error">
+        The unsaved-changes dialog failed to open, so the window was kept open and
+        no file was written. Your changes are still in the editor. Save them
+        (Ctrl+S, or the Save button in the toolbar) and then close the window
+        again.
+      </Alert>
+    </DialogContent>
+    <DialogActions>
+      <Button
+        variant="contained"
+        onClick={onDismiss}
+        data-testid="close-guard-crash-dismiss"
+      >
+        Back to the editor
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
