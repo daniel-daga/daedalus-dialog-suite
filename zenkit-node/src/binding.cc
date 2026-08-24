@@ -5,6 +5,7 @@
 #include <zenkit/Misc.hh>
 #include <zenkit/Stream.hh>
 #include <zenkit/World.hh>
+#include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/VirtualObject.hh>
 #include <zenkit/world/WayNet.hh>
 
@@ -19,6 +20,7 @@
 
 #include "encoding.hh"
 #include "fixture.hh"
+#include "msvc_crt_guard.hh"
 #include "normalize.hh"
 #include "world_handle.hh"
 #include "zenkit-version.h"
@@ -216,6 +218,209 @@ Napi::Value NormalizeWorld(Napi::CallbackInfo const& info) {
   }
 }
 
+// T6 — saveWorld(handle, path). Serializes with the same archive format, game
+// version and wrapper object name captured at load, writes to a temp file in
+// the destination directory and renames it into place.
+Napi::Value SaveWorld(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto path = PathFromValue(env, info[1]);
+
+  try {
+    // Serialize to memory first: zenkit::Write::to(path) never reports I/O
+    // failures (writes to a failed ofstream succeed silently), so the file
+    // write below is done by hand with explicit error checks.
+    std::vector<std::byte> bytes;
+    {
+      // See msvc_crt_guard.hh: keeps ZenKit's glibc-only strftime format from
+      // fail-fasting the process on Windows while the header is stamped.
+      zenkit_node::ScopedCrtInvalidParameterGuard crt_guard;
+      auto w = zenkit::Write::to(&bytes);
+      auto archive = zenkit::WriteArchive::to(w.get(), handle->format);
+      archive->write_object(handle->root_object_name,
+                            std::static_pointer_cast<zenkit::Object>(handle->world),
+                            handle->version);
+      archive->write_header();
+    }
+
+    auto tmp = path;
+    tmp += ".tmp";
+    {
+      std::ofstream out {tmp, std::ios::binary | std::ios::trunc};
+      if (out) {
+        out.write(reinterpret_cast<char const*>(bytes.data()),
+                  static_cast<std::streamsize>(bytes.size()));
+        out.flush();
+      }
+      if (!out) {
+        std::error_code ignored;
+        std::filesystem::remove(tmp, ignored);
+        throw Napi::Error::New(env, "failed to write world file: " + path.string());
+      }
+    }
+
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+      std::error_code ignored;
+      std::filesystem::remove(tmp, ignored);
+      throw Napi::Error::New(env,
+                             "failed to move saved world into place: " + path.string() + " (" +
+                                 ec.message() + ")");
+    }
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to save world: "} + e.what());
+  }
+  return env.Undefined();
+}
+
+// ---------------------------------------------------------------------------
+// §1 minimal mutations — index paths use the same '0/2' convention as
+// normalizeWorld's `path` field.
+
+std::vector<std::size_t> ParseIndexPath(Napi::Env env, Napi::Value value, char const* label) {
+  if (!value.IsString()) {
+    throw Napi::TypeError::New(env, std::string {label} + " must be a string like '0/2'");
+  }
+  std::string const str = value.As<Napi::String>().Utf8Value();
+  std::vector<std::size_t> indices;
+  std::size_t start = 0;
+  while (true) {
+    std::size_t const end = str.find('/', start);
+    std::string const segment = str.substr(start, end - start);
+    if (segment.empty() || segment.find_first_not_of("0123456789") != std::string::npos) {
+      throw Napi::Error::New(env, std::string {"invalid "} + label + ": '" + str + "'");
+    }
+    indices.push_back(static_cast<std::size_t>(std::stoull(segment)));
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return indices;
+}
+
+std::shared_ptr<zenkit::VirtualObject> ResolveVob(Napi::Env env,
+                                                  WorldHandle const& handle,
+                                                  std::vector<std::size_t> const& indices,
+                                                  char const* label) {
+  auto const* list = &handle.world->world_vobs;
+  std::shared_ptr<zenkit::VirtualObject> vob;
+  for (std::size_t const index : indices) {
+    if (index >= list->size() || (*list)[index] == nullptr) {
+      throw Napi::Error::New(env, std::string {"no vob at "} + label);
+    }
+    vob = (*list)[index];
+    list = &vob->children;
+  }
+  return vob;
+}
+
+zenkit::Vec3 Vec3FromValue(Napi::Env env, Napi::Value value, char const* label) {
+  if (!value.IsArray()) {
+    throw Napi::TypeError::New(env, std::string {label} + " must be an array of 3 numbers");
+  }
+  auto arr = value.As<Napi::Array>();
+  if (arr.Length() != 3) {
+    throw Napi::TypeError::New(env, std::string {label} + " must have exactly 3 elements");
+  }
+  float components[3];
+  for (std::uint32_t i = 0; i < 3; ++i) {
+    Napi::Value const element = arr.Get(i);
+    if (!element.IsNumber()) {
+      throw Napi::TypeError::New(env, std::string {label} + " elements must be numbers");
+    }
+    components[i] = static_cast<float>(element.As<Napi::Number>().DoubleValue());
+  }
+  return zenkit::Vec3 {components[0], components[1], components[2]};
+}
+
+// setVobPosition(handle, indexPath, [x, y, z]) — sets the position and
+// translates the bbox by the same delta (the engine culls by bbox; a moved
+// vob with a stale bbox may vanish).
+Napi::Value SetVobPosition(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto indices = ParseIndexPath(env, info[1], "indexPath");
+  auto position = Vec3FromValue(env, info[2], "position");
+
+  auto vob = ResolveVob(env, *handle, indices, "indexPath");
+  // zenkit::Vec3 has no +/- operators; translate componentwise.
+  zenkit::Vec3 const delta {position.x - vob->position.x, position.y - vob->position.y,
+                            position.z - vob->position.z};
+  vob->position = position;
+  vob->bbox.min = zenkit::Vec3 {vob->bbox.min.x + delta.x, vob->bbox.min.y + delta.y,
+                                vob->bbox.min.z + delta.z};
+  vob->bbox.max = zenkit::Vec3 {vob->bbox.max.x + delta.x, vob->bbox.max.y + delta.y,
+                                vob->bbox.max.z + delta.z};
+  return env.Undefined();
+}
+
+std::string RequiredCp1252String(Napi::Env env, Napi::Object opts, char const* key) {
+  Napi::Value const value = opts.Get(key);
+  if (!value.IsString()) {
+    throw Napi::TypeError::New(env, std::string {"opts."} + key + " must be a string");
+  }
+  try {
+    return zenkit_node::Utf16ToWindows1252(value.As<Napi::String>().Utf16Value());
+  } catch (zenkit_node::EncodingError const& e) {
+    throw Napi::Error::New(env, std::string {"opts."} + key + ": " + e.what());
+  }
+}
+
+// insertItemVob(handle, parentPath | null, {name, instance, position}) —
+// appends a new oCItem vob and returns its index path. The visual is left
+// empty: the engine derives item visuals from the script instance.
+Napi::Value InsertItemVob(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+
+  std::vector<std::size_t> parent_indices;
+  bool const has_parent = !(info[1].IsNull() || info[1].IsUndefined());
+  if (has_parent) {
+    parent_indices = ParseIndexPath(env, info[1], "parentPath");
+  }
+
+  if (!info[2].IsObject()) {
+    throw Napi::TypeError::New(env, "opts must be an object with name, instance and position");
+  }
+  auto opts = info[2].As<Napi::Object>();
+  auto name = RequiredCp1252String(env, opts, "name");
+  auto instance = RequiredCp1252String(env, opts, "instance");
+  auto position = Vec3FromValue(env, opts.Get("position"), "opts.position");
+
+  // Mirrors the fixture's VItem construction (src/fixture.cc): every field it
+  // initializes is initialized here; ZenKit structs have uninitialized fields.
+  auto item = std::make_shared<zenkit::VItem>();
+  item->type = zenkit::VirtualObjectType::oCItem;
+  item->vob_name = std::move(name);
+  item->instance = std::move(instance);
+  item->position = position;
+  item->rotation = zenkit::Mat3::identity();
+  item->show_visual = true;
+  constexpr float kItemBboxHalfExtent = 10.0f;  // engine units (cm)
+  item->bbox = zenkit::AxisAlignedBoundingBox {
+      zenkit::Vec3 {position.x - kItemBboxHalfExtent, position.y - kItemBboxHalfExtent,
+                    position.z - kItemBboxHalfExtent},
+      zenkit::Vec3 {position.x + kItemBboxHalfExtent, position.y + kItemBboxHalfExtent,
+                    position.z + kItemBboxHalfExtent}};
+  // Save-game only fields, not default-initialized in ZenKit.
+  item->s_amount = 0;
+  item->s_flags = 0;
+
+  std::string child_path;
+  if (has_parent) {
+    auto parent = ResolveVob(env, *handle, parent_indices, "parentPath");
+    parent->children.push_back(item);
+    child_path = info[1].As<Napi::String>().Utf8Value() + "/" +
+                 std::to_string(parent->children.size() - 1);
+  } else {
+    handle->world->world_vobs.push_back(item);
+    child_path = std::to_string(handle->world->world_vobs.size() - 1);
+  }
+  return Napi::String::New(env, child_path);
+}
+
 zenkit::ArchiveFormat ParseArchiveFormat(Napi::Env env, Napi::Value value) {
   if (!value.IsString()) {
     throw Napi::TypeError::New(env, "format must be 'binary', 'binsafe' or 'ascii'");
@@ -251,6 +456,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("worldStats", Napi::Function::New(env, WorldStats));
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
+  exports.Set("saveWorld", Napi::Function::New(env, SaveWorld));
+  exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));
+  exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   return exports;
 }

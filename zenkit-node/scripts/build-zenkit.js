@@ -56,9 +56,30 @@ function zenkitVersion() {
   return match[1];
 }
 
+// Local fixes against the pinned ZenKit commit (upstreamable; see patches/).
+// Applied idempotently to the submodule working tree before every build so a
+// fresh clone builds the same bytes without a fork.
+function applyPatches() {
+  const patchDir = path.join(ROOT, 'patches');
+  if (!fs.existsSync(patchDir)) return;
+  for (const name of fs.readdirSync(patchDir).filter((f) => f.endsWith('.patch')).sort()) {
+    const patch = path.join(patchDir, name);
+    try {
+      // Already applied? (--reverse --check succeeds only if it is.)
+      execFileSync('git', ['apply', '--reverse', '--check', patch], { cwd: ZENKIT_SRC, stdio: 'ignore' });
+      continue;
+    } catch {
+      // not applied yet
+    }
+    execFileSync('git', ['apply', patch], { cwd: ZENKIT_SRC, stdio: 'inherit' });
+    console.log(`applied ${name}`);
+  }
+}
+
 function main() {
   const cmake = findCMake();
   fs.mkdirSync(OUT_DIR, { recursive: true });
+  applyPatches();
 
   const version = zenkitVersion();
   fs.writeFileSync(
