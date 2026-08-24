@@ -283,7 +283,17 @@ through the load→save cycle untouched inside ZenKit's model.
    synthetic fixture ZENs authored in-repo (no game assets, brief §7).
 3. Output is a report artifact like the parser corpus job.
 
-The harness decides the passthrough question objectively:
+The harness is one of **two** instruments. It answers *what changed*; the
+in-engine acceptance pass (Phase 0 task T10, `level-editor-phase-0.md` §5)
+answers *whether it matters*. Neither alone is sufficient — a conservative
+diff flags benign noise as drift, and a clean diff can still hide a broken
+world, because ZenGin uses the BSP tree for **collision**, not just rendering.
+Together they turn the passthrough call into a lookup (matrix in
+`level-editor-phase-0.md` §5), including the case that matters most: a clean
+diff with a broken world means the *measuring instrument* is wrong and must be
+fixed before deciding anything.
+
+The two candidate strategies:
 
 - **Plan A (default): whole-world re-serialization through ZenKit.** If the
   corpus is clean (semantically identical, byte diffs explainable), untouched
@@ -298,8 +308,11 @@ The harness decides the passthrough question objectively:
   active MIT project and the backend of OpenGothic; fixes benefit both sides.
 
 No editing feature merges before its formats pass the harness. Gate 2
-(playability: an edited world runs in OpenGothic *and* original Gothic)
-closes Phase 1.
+(playability) is **split**: its original-engine half moves into Phase 0 as the
+in-engine pass, because that half is what can invalidate the project and it
+costs days rather than months to run there. What remains in Phase 1b is the
+cross-platform half — the same worlds under OpenGothic — plus re-running the
+checklist against worlds edited through the real UI.
 
 ---
 
@@ -464,10 +477,14 @@ Phase 0 has its own task-level breakdown:
 strategy, the `normalizeWorld` schema, build integration, and the test
 list in TDD order.
 
-- **Phase 0 — data layer (blocking, = brief Gate 1).** `zenkit-node` binding;
-  `zen-roundtrip` corpus harness green against all G1+G2 originals including
-  parts (developer-local) and synthetic fixtures (CI). Decides Plan A vs
-  Plan B passthrough. *No editor UI before this gate.*
+- **Phase 0 — data layer (blocking, = brief Gate 1 + the original-engine half
+  of Gate 2).** `zenkit-node` binding; `zen-roundtrip` corpus harness green
+  against all G1+G2 originals including parts (developer-local) and synthetic
+  fixtures (CI); **and the in-engine acceptance pass** — an untouched re-save
+  and a minimally edited world both load and behave in original Gothic. An
+  early one-world engine check (T6.5) runs before the harness is even built,
+  since a re-save the engine refuses would make the harness moot too.
+  Decides Plan A vs Plan B passthrough. *No editor UI before this gate.*
 - **Phase 1a — read-only world viewer.** Opens with the **viewport perf
   spike** (§3): full G2 NewWorld against the written frame/draw-call/pick
   budget, before any viewport UI is built on Three.js. Then: load ZEN, render
@@ -475,8 +492,9 @@ list in TDD order.
   asset browser (VFS). Already useful on its own.
 - **Phase 1b — VOB editing.** Gizmos, multi-select, batch property edit,
   drag-&-drop reparenting, undo/redo, dirty-part save with lighting/savegame
-  warnings. Closes with **Gate 2**: an edited world (VOB moved, item added)
-  runs in OpenGothic *and* original Gothic.
+  warnings. Closes with the **remainder of Gate 2**: worlds edited through the
+  real UI re-run the Phase 0 engine checklist, and the same worlds are
+  verified under OpenGothic for the cross-platform claim.
 - **Phase 1c — Daedalus overlay.** NPC/item rendering from static spawns,
   time slider, occupancy/gap/overlap checks, cross-validation in the problems
   panel, go-to-definition both directions.
@@ -502,6 +520,7 @@ validates portal metadata; it never recompiles worlds.
 | Risk | Severity | Mitigation |
 |---|---|---|
 | ZenKit save fidelity gaps on some world/format (the load→save→compare corpus fails) | **High — the project's kill criterion** | Phase 0 gate before any UI investment; Plan B chunk splice; upstream fixes (active MIT project, OpenGothic's backend) |
+| A ZenKit-written world the **engine refuses to load**, invisible to any file-level diff | **High — the hardest stop** | Pulled forward to Phase 0: one-world engine check (T6.5) before the harness is built, full checklist (T10) before Phase 1 is scheduled — days to discover instead of months |
 | Native addon build/distribution pain (Electron ABI, Windows toolchains, pnpm) | Medium | N-API (ABI-stable), `prebuildify` prebuilds, exact precedent in `daedalus-parser`; worker-thread isolation contains native crashes |
 | Viewport performance on full outdoor worlds | Medium | Measured Phase 1a entry spike against a written budget (§3); material-chunked world mesh, instanced VOBs, `three-mesh-bvh` picking; editor-grade rendering only — no engine-parity goal. No public Three.js ZEN viewer exists as proof, hence the spike |
 | Bloating the shipping dialog editor | Medium | Lazy-loaded surface, `zenkit-node` loaded on demand, domain isolated in `zen-world`; tripwire: split into a separate app shell if startup/size/stability regress |

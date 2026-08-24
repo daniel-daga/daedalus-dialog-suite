@@ -17,13 +17,18 @@ implement against.
 around ZenKit, plus a `zen-roundtrip` harness that loads and re-saves worlds
 and reports whether anything drifted.
 
-**Out of scope:** every editing operation, `zen-world/`, and all UI. The
-binding surface built here is *read + save-unchanged only* — `applyOps`,
-mesh extraction for rendering, and VFS browsing arrive in Phase 1a/1b. Adding
-them now would mean writing editing code against a data layer not yet proven
-trustworthy.
+**Out of scope:** the editing op system, `zen-world/`, and all UI. The
+binding surface is *read + save + one minimal mutation* — full `applyOps`,
+mesh extraction for rendering, and VFS browsing arrive in Phase 1a/1b.
 
-**Exit criteria (all four):**
+The single mutation (set one VOB's position; insert one item VOB) is a
+deliberate, small scope increase over "read and save-unchanged", and it exists
+only to feed the in-engine pass (§5). Without it, the cheapest possible
+end-to-end proof of the project's thesis — *the engine accepts a world we
+edited* — could not run until Phase 1b, by which point the viewport, gizmos,
+and op system would already be built on an unproven assumption.
+
+**Exit criteria (all five):**
 
 1. `pnpm --filter zenkit-node test` green on Linux, Windows, and macOS.
 2. `zen-roundtrip` run against a developer-local Gothic 1 + Gothic 2/NotR
@@ -32,8 +37,11 @@ trustworthy.
 3. Every drift the harness *does* report is classified and explained —
    `float-noise` and `reordered` are acceptable-with-rationale, anything
    unexplained is a blocker.
-4. A written **Plan A / Plan B verdict** (whole-world re-serialization vs.
-   chunk splice — `level-editor.md` §5) with the harness report as evidence.
+4. **The in-engine acceptance checklist (§5) passes in original Gothic** for
+   both a plain re-save and a minimally edited world.
+5. A written **Plan A / Plan B verdict** (whole-world re-serialization vs.
+   chunk splice — `level-editor.md` §5) supported by *both* the harness report
+   and the engine result, per the decision matrix in §5.
 
 ---
 
@@ -90,10 +98,10 @@ core. Genuinely independent readers:
 
 **Decision:** the Phase 0 oracle is **byte/semantic self-comparison against
 the untouched original file** — which needs no oracle at all, since the
-original ZEN *is* the reference — backed by **one manual Spacer/engine load**
-of a re-saved world per game version as a smoke check. ZenLib is a useful
-tiebreaker when a specific structure is disputed, not a routine gate. The
-full independent-runtime check is Gate 2 (Phase 1b), not Phase 0.
+original ZEN *is* the reference — backed by the **in-engine acceptance pass** (§5), which
+is now a first-class Phase 0 gate rather than an afterthought. ZenLib is a
+useful tiebreaker when a specific structure is disputed, not a routine gate.
+The *cross-platform* runtime check (OpenGothic) remains Gate 2 in Phase 1b.
 
 This is the key simplification: Gate 1 compares our output to the *input
 file*, so the oracle problem only exists for the CI fixtures (C2), where we
@@ -231,7 +239,96 @@ manual re-sync is a worse recurring cost than a two-stage build.
 
 ---
 
-## 5. Task list, in TDD order
+## 5. Decision — the in-engine acceptance pass
+
+### Why the semantic diff is not enough on its own
+
+The `normalizeWorld` diff answers *what changed*. It cannot answer *whether it
+matters*. Those come apart in both directions, and both directions are
+dangerous:
+
+- **Drift that is harmless.** Float noise or a reordered structure may be
+  flagged `semantic-drift` by a conservative schema while the engine does not
+  care at all. Treating that as a blocker would trigger Plan B (chunk splice)
+  and a task-set of extra work for nothing.
+- **Identity that is not enough.** A dump can come back clean while the
+  re-saved world still fails in the engine, because the schema does not encode
+  the property that actually broke. The BSP tree is the obvious candidate:
+  ZenGin uses it **for physics and collision**, not only for rendering (brief
+  §3), so a structurally-valid-but-subtly-different tree can mean falling
+  through the floor with every hash matching.
+
+The engine is the only ground truth for "does this world still work". It is
+also, conveniently, very cheap to consult: copy a file in, launch, walk
+around.
+
+### The decision matrix this creates
+
+Running both instruments turns the Plan A / Plan B call from a judgement into
+a lookup:
+
+| Diff | Engine | Verdict |
+|---|---|---|
+| clean | OK | **Plan A.** Done — proceed to Phase 1. |
+| drift | OK | **Plan A, probably.** The drift is benign; document each class and why. Do not pay for Plan B on a cosmetic diff. |
+| clean | **broken** | **The instrument is wrong.** Fix the `normalizeWorld` schema until it can see the breakage, *then* re-decide. The most valuable cell — it is the only way to learn the diff has a blind spot. |
+| drift | broken | **Plan B**, and the drift report localizes what to splice. |
+
+Without the engine column, the middle two rows are indistinguishable from the
+first and last — which is how a project ends up either doing Plan B
+unnecessarily or shipping on a measurement that never looked at the thing that
+breaks.
+
+### Two passes, deliberately placed
+
+**E-early (task T6.5) — one world, before the harness exists.** As soon as a
+single world can be loaded and saved unchanged, put it in the game and see if
+it loads. This runs *before* the `zen-roundtrip` harness (T7) and the full
+corpus run (T8) are built, because if the engine rejects a plain re-save, the
+harness investment is wasted too. Hours of work; retires the project's largest
+risk earliest.
+
+**E-full (task T10) — the checklist below, after the corpus is green.**
+Breadth across worlds and game versions, plus the minimal-edit case.
+
+### The checklist
+
+Manual, Windows, and recorded — this cannot be CI'd, so it is a written
+procedure with results committed to
+`zenkit-node/docs/engine-acceptance-<date>.md`, per world and game version.
+
+| # | Check | What it proves |
+|---|---|---|
+| 1 | World loads in **Spacer** without error | Structural acceptance by the original toolchain |
+| 2 | World loads in the **game**, hero spawns | Archive + BSP accepted at load |
+| 3 | Walk terrain and interiors; jump, fall | **Collision** — the BSP-as-physics check no hash can make |
+| 4 | NPCs spawn, walk their routines | Waynet intact and reachable |
+| 5 | Screenshots at ~5 fixed positions vs. the same build on the original ZEN | **Vertex lighting** preserved (baked into the mesh) |
+| 6 | Enter/exit a building, look across a sector boundary | Portals/sectors still cull correctly |
+| 7 | Use a bed, chest, and one other mobsi | VOB flags and interaction data intact |
+| 8 | Trigger one sound/zone VOB | Non-visual VOB classes survived |
+| 9 | Save, reload the savegame | No latent corruption surfacing on serialize |
+| 10 | **Minimal edit:** move one VOB, insert one item; both appear correctly and the item is takeable | The actual project thesis, end to end |
+
+Rows 1–9 run on an untouched re-save. Row 10 is the one that needs the
+minimal mutation from §1.
+
+### Which engine counts
+
+**Original Gothic (and Spacer) — not OpenGothic.** OpenGothic is built *on*
+ZenKit, so it shares the code under test: it may happily accept a file the
+original engine rejects, which is exactly the failure this pass exists to
+catch. The same disqualification as for format oracles (§2) applies here for
+the same reason. OpenGothic remains useful for convenience and for the
+cross-platform Gate 2 later; it cannot stand in for the original engine now.
+
+This does mean Phase 0 needs a Windows machine with a legal Gothic 1 and
+Gothic 2/NotR installation. Given the target audience, that is an acceptable
+prerequisite rather than a new constraint.
+
+---
+
+## 6. Task list, in TDD order
 
 Repo rule: failing test first, minimal implementation, green. Tests are
 `node --test` to match `daedalus-parser`.
@@ -266,39 +363,64 @@ so it is written before the harness that consumes it.
 **T6 — save unchanged.** `saveWorld(handle, path)`. *Test:* golden fixture →
 load → save → byte-identical to the fixture (C2 regression claim).
 
+**T6.5 — E-EARLY: the first engine gate.** Not a unit test — a manual run.
+Take one real G2 world, load and save it unchanged through the binding, drop
+it into a Gothic install, launch, and walk around (checklist §5 rows 1–4).
+
+**This is the cheapest kill-check in the whole project and it comes before the
+harness is built.** If the engine refuses a plain re-save, then T7–T9 would
+have been built on sand, and the response is to stop and reconsider Plan B (or
+the project) rather than to keep investing. Record the result even when it
+passes — it is the baseline the full pass is compared against.
+
 **T7 — the `zen-roundtrip` harness.** CLI per §3, report artifact, `--strict`
 exit codes, `--drill`. *Test:* against fixtures, a seeded corrupt fixture
 exits non-zero and names the offending structure.
 
 **T8 — run against real worlds.** Developer-local G1 + G2/NotR, all parts.
-Not a CI test; produces the report that decides **Plan A vs Plan B** and the
-manual Spacer smoke check (§2). Output is a written verdict appended to
-`level-editor.md` §5.
+Not a CI test; produces the drift report that forms the *diff* column of the
+§5 decision matrix. The verdict is written only after T10 supplies the
+*engine* column, then appended to `level-editor.md` §5.
 
 **T9 — CI wiring.** Path-filtered job running T1–T7 on the three OSes.
+(T6.5, T8 and T10 are manual/local by nature and never gate a PR.)
 
-T1–T7 are ordinary TDD. **T8 is the actual gate** — the first point where
-reality can contradict the plan.
+**T10 — E-FULL: the in-engine acceptance pass.** The full §5 checklist across
+both games and a representative set of worlds including parts, plus the
+minimal-edit case (row 10), which needs the one mutation from §1. Results
+committed as `zenkit-node/docs/engine-acceptance-<date>.md`. Feeds the
+decision matrix in §5 together with T8's report.
+
+T1–T7 and T9 are ordinary TDD. **T6.5, T8 and T10 are the gates** — the points
+where reality can contradict the plan, ordered cheapest-first so the most
+expensive work is the last to be committed to.
 
 ---
 
-## 6. Deferred, with reasons
+## 7. Deferred, with reasons
 
 - **Prebuild matrix / release packaging** → Phase 1a; nothing ships from
   Phase 0.
 - **Mesh + texture extraction, VFS browsing, `applyOps`** → Phase 1a/1b; not
   needed to prove fidelity, and building them against an unproven data layer
   is exactly the risk Phase 0 exists to retire.
-- **OpenGothic launch interface** (Gate 2) → Phase 1b.
+- **OpenGothic launch interface and the cross-platform runtime check**
+  (Gate 2) → Phase 1b. Phase 0 now covers the *original-engine* half of that
+  question (§5), which is the half that can invalidate the project.
 - **VFS/mod override resolution order** → Phase 1a, with the asset browser.
 - **G1 vs G2 archive-version matrix** → partially covered by T2/T8 fixtures;
   full matrix once real-world coverage shows which combinations occur.
 
-## 7. What could still invalidate Phase 0
+## 8. What could still invalidate Phase 0
 
 - ZenKit's `World::save` may not reproduce BSP/mesh faithfully — it is
   implemented (v1.3.0) but never advertised as byte-preserving. This is the
   expected trigger for **Plan B** (chunk splice), and the reason T8 exists.
+- **The engine may reject a plain re-save outright** (T6.5). That is the
+  project's hardest stop: it means ZenKit's writer cannot currently produce
+  engine-loadable worlds, and the options narrow to Plan B, upstream work, or
+  abandoning the approach. Discovering this in week one costs days; discovering
+  it in Phase 1b costs months.
 - A ZenKit fidelity bug may need upstreaming (MIT, active) — budget for the
   round trip, or carry a patched submodule pin meanwhile.
 - If Plan B is needed, the binding gains byte-range bookkeeping and Phase 0
