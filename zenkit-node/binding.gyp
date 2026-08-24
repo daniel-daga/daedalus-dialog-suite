@@ -6,10 +6,9 @@
       "include_dirs": [
         "<!(node -p \"require('node-addon-api').include_dir\")",
         "vendor/ZenKit/include",
-        "vendor/ZenKit/vendor/glm",
         "vendor-build/zenkit"
       ],
-      "defines": ["NAPI_CPP_EXCEPTIONS", "ZK_FUTURE=1"],
+      "defines": ["NAPI_CPP_EXCEPTIONS"],
       "cflags_cc": ["-std=c++17", "-fexceptions"],
       "conditions": [
         ["OS=='win'", {

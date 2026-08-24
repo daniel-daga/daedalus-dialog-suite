@@ -77,11 +77,7 @@ function main() {
     '-DZK_ENABLE_ASAN=OFF',
     '-DZK_ENABLE_INSTALL=OFF',
     '-DZK_ENABLE_MMAP=ON',
-    // Required: without ZK_FUTURE, World::save silently drops the waynet
-    // (v1.3.0 src/World.cc gates the WayNet block behind #ifdef ZK_FUTURE).
-    '-DZK_ENABLE_FUTURE=ON',
-    // No-op at the v1.3.0 pin (compressed-VDF support only exists on main);
-    // kept so the option is already correct when the pin advances. See README.
+    // Mods ship compressed VDFs (phase-0 §4); requires the post-v1.3.0 pin.
     '-DZK_ENABLE_ZIPPED_VDF=ON',
     '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
   ];
