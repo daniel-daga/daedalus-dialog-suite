@@ -126,15 +126,53 @@ the 3D view. Both are bounded, well-trodden Three.js territory — an *editor*
 visualization, not an OpenGothic-quality renderer (vertex lighting can be
 displayed from the baked mesh data; no dynamic lighting pipeline).
 
-### Renderer feasibility
+### Renderer feasibility — and its own gate
 
 Gothic worlds are early-2000s scale: the full G2 outdoor world mesh is on the
-order of a few hundred thousand polygons plus a few thousand VOBs — small for
-WebGL2 *if* draw calls are managed: world mesh split into chunks by material,
-VOB visuals instanced per mesh (`InstancedMesh`) with per-instance transforms,
-frustum culling on chunks. Textures decode from ZTEX to compressed GPU formats
-or RGBA once, cached. This is standard Three.js practice, and the repo already
-has a render-performance discipline doc to extend.
+order of a few hundred thousand to ~1M triangles plus O(10^4) VOBs whose
+visuals repeat heavily (the same barrel, tree, and torch hundreds of times).
+Textures are 256–512px era, so VRAM is a non-issue. The bar is an *editor
+viewport*, not engine parity: baked vertex lighting arrives free as vertex
+colors, and there are no dynamic shadows or runtime animation to drive.
+
+**The bottleneck is never triangles — it is draw calls and CPU-side scene-graph
+overhead.** Two rules follow, and both are day-one decisions rather than
+retrofits:
+
+1. **Never one `Mesh` per VOB.** 10–15k individual `Object3D`s with material
+   switches means 10k+ draw calls and heavy per-frame CPU work — the one
+   reliable way to make this slow. Instead: `InstancedMesh` per unique visual
+   (thousands of VOBs collapse into a few hundred draw calls), world mesh
+   pre-chunked by material inside `zenkit-node`, `matrixAutoUpdate` off for
+   everything static, frustum culling on chunks. Target: ~500–1500 draw calls
+   for a full scene.
+2. **Picking needs a BVH.** Stock Three.js raycasting is linear over triangles
+   and will stutter against a 500k-triangle world mesh. Use `three-mesh-bvh`
+   for the world mesh; GPU ID-picking for instanced VOBs.
+
+**Prior art is indirect but real.** [Gothic-UnZENity](https://github.com/GothicKit)
+renders ZenKit-loaded Gothic worlds in Unity at VR framerates — a far stricter
+budget than an editor viewport — and [ZenRen](https://github.com/Katharsas/ZenRen)
+does it in DirectX 11. Both prove the *data* poses no exotic problem. What does
+not exist publicly is a Three.js/WebGL ZEN viewer, so "this works in Three.js
+specifically" currently rests on workload arithmetic, not on a demo.
+
+**Therefore: Phase 1a opens with a throwaway viewport spike, decided by
+measurement like Gate 1.** As soon as the Phase 0 binding can emit mesh
+payloads, load the full G2 NewWorld with all VOB visuals and measure against a
+written budget:
+
+| Metric | Budget |
+|---|---|
+| Orbit/fly framerate, mid-range GPU | 60fps sustained (frame < 16ms) |
+| Draw calls, full scene | < 1500 |
+| Pick latency (click → selection) | < 1 frame |
+| Reload after an edit | < 2s |
+
+If the budget fails on real data, the fallback is the same architecture with a
+different projection layer (WebGPU renderer; native viewport in the worst
+case). The "renderer is a projection, never the model" rule (§5, §7) exists
+precisely so that swap touches neither the domain nor the data layer.
 
 ---
 
@@ -144,10 +182,32 @@ Facts verified against upstream (2026-08):
 
 - **ZenKit** ([GothicKit/ZenKit](https://github.com/GothicKit/ZenKit)) is MIT
   (logo CC BY-NC), C++17, actively maintained, v1.3 line.
-- **Saving is supported**: since the 1.2/1.3 line ZenKit can load, modify and
-  save worlds including the VOb tree; XZEN-encoded worlds are supported. This
-  is the capability the whole project stands on — and Phase 0 verifies it
-  empirically (§5) rather than trusting the changelog.
+- **Saving is supported.** v1.3.0 implemented `save` for `World`, `Mesh`,
+  `VirtualObject` and descendants, `MultiResolutionMesh`, `ModelMesh`,
+  `Model`, `Texture`, `Font` and `Vfs`, and added the `WriteArchive` API for
+  creating ZenGin archives; XZEN-encoded worlds are supported. The header
+  confirms the shape the architecture needs — one `World` object carrying all
+  four structures we care about, and an explicit game version on both ends:
+
+  ```cpp
+  struct World {
+    std::vector<std::shared_ptr<VirtualObject>> world_vobs;
+    Mesh world_mesh;
+    BspTree world_bsp_tree;
+    std::shared_ptr<WayNet> way_net;
+    // ...
+    ZKAPI void load(Read* r, GameVersion version);
+    ZKAPI void save(WriteArchive& w, GameVersion version) const override;
+  };
+  ```
+
+  Note `save` *requires* a `GameVersion` — the per-project explicit target
+  version (§9) is not a nicety, it is a mandatory parameter of the data layer.
+
+  **What this does not prove** is round-trip *fidelity*: that loading and
+  re-saving an original G1/G2 world reproduces the BSP tree, mesh, materials
+  and waynet semantically unchanged. No documentation can establish that;
+  only the Phase 0 corpus harness (§5) can, which is why it gates everything.
 - **No Node binding exists** (official bindings: C#, Java, Python; plus
   [ZenKitCAPI](https://github.com/GothicKit/ZenKitCAPI), the official
   C wrapper). We build our own.
@@ -401,9 +461,11 @@ and pixel-snapshot assertions where DOM assertions can't reach).
   `zen-roundtrip` corpus harness green against all G1+G2 originals including
   parts (developer-local) and synthetic fixtures (CI). Decides Plan A vs
   Plan B passthrough. *No editor UI before this gate.*
-- **Phase 1a — read-only world viewer.** Load ZEN, render world mesh +
-  VOB visuals + waynet graph, scene tree, property inspection, asset browser
-  (VFS). Already useful on its own.
+- **Phase 1a — read-only world viewer.** Opens with the **viewport perf
+  spike** (§3): full G2 NewWorld against the written frame/draw-call/pick
+  budget, before any viewport UI is built on Three.js. Then: load ZEN, render
+  world mesh + VOB visuals + waynet graph, scene tree, property inspection,
+  asset browser (VFS). Already useful on its own.
 - **Phase 1b — VOB editing.** Gizmos, multi-select, batch property edit,
   drag-&-drop reparenting, undo/redo, dirty-part save with lighting/savegame
   warnings. Closes with **Gate 2**: an edited world (VOB moved, item added)
@@ -434,7 +496,7 @@ validates portal metadata; it never recompiles worlds.
 |---|---|---|
 | ZenKit save fidelity gaps on some world/format (the load→save→compare corpus fails) | **High — the project's kill criterion** | Phase 0 gate before any UI investment; Plan B chunk splice; upstream fixes (active MIT project, OpenGothic's backend) |
 | Native addon build/distribution pain (Electron ABI, Windows toolchains, pnpm) | Medium | N-API (ABI-stable), `prebuildify` prebuilds, exact precedent in `daedalus-parser`; worker-thread isolation contains native crashes |
-| Viewport performance on full outdoor worlds | Medium | Material-chunked world mesh, instanced VOBs, frustum culling; editor-grade rendering only — no engine-parity goal |
+| Viewport performance on full outdoor worlds | Medium | Measured Phase 1a entry spike against a written budget (§3); material-chunked world mesh, instanced VOBs, `three-mesh-bvh` picking; editor-grade rendering only — no engine-parity goal. No public Three.js ZEN viewer exists as proof, hence the spike |
 | Bloating the shipping dialog editor | Medium | Lazy-loaded surface, `zenkit-node` loaded on demand, domain isolated in `zen-world`; tripwire: split into a separate app shell if startup/size/stability regress |
 | Effort underestimation (Phase 1 is the repo's biggest feature yet) | Medium | Phase 0/1a/1b/1c each ship standalone value; stopping after any phase leaves a useful tool |
 | G1/G2/NotR format divergence | Medium | Explicit per-project target version; corpus covers both games; binding refuses version mismatches |
