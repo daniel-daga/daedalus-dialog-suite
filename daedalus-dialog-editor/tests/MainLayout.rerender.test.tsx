@@ -19,7 +19,6 @@ jest.mock('../src/renderer/components/ThreeColumnLayout', () => ({
     return null;
   },
 }));
-jest.mock('../src/renderer/components/SourceEditsPendingBanner', () => () => null);
 
 const emptyModel = {
   dialogs: {}, functions: {}, constants: {}, variables: {},

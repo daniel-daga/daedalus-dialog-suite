@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useFileStore, isSourceDirty } from '../store/fileStore';
+import { useFileStore } from '../store/fileStore';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import { classifySaveError, describeSaveError } from '../utils/saveError';
 
@@ -13,11 +13,10 @@ interface ManualSave {
  * button). Registers a window-level keydown handler, so it works in every view.
  *
  * Routes through the existing explicit-save pipeline: flush pending debounced
- * edits first (N4), then `saveSource` for a source-dirty file or `saveFile`
- * for a model-dirty one — the same split the window-close guard uses. A clean
- * file, no active file, or an unresolved external conflict (owned by the
- * conflict dialog, E4) is a silent no-op. Failures are reported through
- * `onError` so App surfaces them in its error snackbar.
+ * edits first (N4), then `saveFile` — the same path the window-close guard
+ * uses. A clean file, no active file, or an unresolved external conflict
+ * (owned by the conflict dialog, E4) is a silent no-op. Failures are reported
+ * through `onError` so App surfaces them in its error snackbar.
  */
 export function useManualSave(onError: (message: string) => void): ManualSave {
   const [isManualSaving, setIsManualSaving] = useState(false);
@@ -30,30 +29,20 @@ export function useManualSave(onError: (message: string) => void): ManualSave {
     const store = useFileStore.getState();
     const filePath = store.activeFile;
     const fileState = filePath ? store.openFiles.get(filePath) : undefined;
-    if (!filePath || !fileState || fileState.externalConflict) {
-      return;
-    }
-
-    const sourceDirty = isSourceDirty(fileState);
-    if (!sourceDirty && !fileState.isDirty) {
+    if (!filePath || !fileState || fileState.externalConflict || !fileState.isDirty) {
       return;
     }
 
     setIsManualSaving(true);
     try {
-      if (sourceDirty) {
-        // Source-dirty: persist the typed source. saveSource throws on failure.
-        await store.saveSource(filePath, fileState.workingCode as string);
-      } else {
-        const result = await store.saveFile(filePath);
-        if (!result.success) {
-          const messages = (result.validationResult?.errors ?? []).map((err) => err.message);
-          onError(
-            messages.length > 0
-              ? `Save failed: ${messages.join('; ')}`
-              : 'Save failed: validation errors prevented saving this file. Your changes are kept in the editor.'
-          );
-        }
+      const result = await store.saveFile(filePath);
+      if (!result.success) {
+        const messages = (result.validationResult?.errors ?? []).map((err) => err.message);
+        onError(
+          messages.length > 0
+            ? `Save failed: ${messages.join('; ')}`
+            : 'Save failed: validation errors prevented saving this file. Your changes are kept in the editor.'
+        );
       }
     } catch (error) {
       const saveError = classifySaveError(error);

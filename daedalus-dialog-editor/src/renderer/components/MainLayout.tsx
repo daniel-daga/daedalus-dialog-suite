@@ -3,7 +3,6 @@ import { flushSync } from 'react-dom';
 import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
-import SourceEditsPendingBanner from './SourceEditsPendingBanner';
 import { useEditorStore } from '../store/editorStore';
 import { useHistoryStore } from '../store/historyStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
@@ -131,11 +130,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                     <ProblemsIcon />
                 </ToggleButton>
             </Tooltip>
-            {/* <Tooltip title="Source Code" placement="right">
-                <ToggleButton value="source" aria-label="Source Code">
-                    <CodeIcon />
-                </ToggleButton>
-            </Tooltip> */}
          </ToggleButtonGroup>
       </Paper>
 
@@ -143,7 +137,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
       <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
          {/* We use Box with display toggle to preserve state of ThreeColumnLayout when switching views */}
          <Box sx={{ display: view === 'dialog' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-             <SourceEditsPendingBanner filePath={filePath} />
              {activeFileHasParseErrors && (
                  <Alert severity="warning" square sx={{ borderRadius: 0 }}>
                      Opened with {activeParseErrorCount} parse error{activeParseErrorCount === 1 ? '' : 's'} — visual edits cannot see all of this file. Saving from the visual editor will drop the content the parser could not read.
@@ -153,11 +146,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                  <ThreeColumnLayout filePath={filePath} />
              </Box>
          </Box>
-
-         {/* Source Code Editor (preserved in DOM for undo history) */}
-         {/* <Box sx={{ display: view === 'source' ? 'block' : 'none', height: '100%' }}>
-             {filePath && <SourceCodeEditor filePath={filePath} />}
-         </Box> */}
 
          {view === 'quest' && (
              <Box sx={{ height: '100%' }}>

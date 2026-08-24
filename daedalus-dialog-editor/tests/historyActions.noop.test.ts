@@ -41,7 +41,6 @@ const resetStores = () => {
         isDirty: false,
         lastSaved: new Date(),
         originalCode: '',
-        workingCode: '',
         hasErrors: false,
         errors: [],
         validationResult: null,

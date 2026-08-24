@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -22,7 +22,6 @@ import { useHistoryStore } from '../store/historyStore';
 import * as historyActions from '../store/historyActions';
 import { DialogDetailsEditorProps } from './dialogTypes';
 import ValidationErrorDialog from './ValidationErrorDialog';
-import DialogSourceViewDialog from './DialogSourceViewDialog';
 import ReviewChangesDialog from './ReviewChangesDialog';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import DialogPropertiesSection from './DialogPropertiesSection';
@@ -34,6 +33,10 @@ import { useDialogEditorUIState } from './hooks/useDialogEditorUIState';
 import { useDialogEditorCommands } from './hooks/useDialogEditorCommands';
 import { flattenActionPaths } from './nestedActionUtils';
 import SimulatorDialog from './Simulator/SimulatorDialog';
+
+// Monaco lives behind this dialog and is the heaviest thing the renderer can
+// load; keep it out of the entry chunk and off the first paint (§3 P3).
+const DialogSourceViewDialog = lazy(() => import('./DialogSourceViewDialog'));
 
 const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   dialogName,
@@ -277,13 +280,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
         />
       )}
 
-      {semanticModel && (
-        <DialogSourceViewDialog
-          open={uiState.sourceViewOpen}
-          onClose={() => uiState.setSourceViewOpen(false)}
-          dialogName={dialogName}
-          semanticModel={semanticModel}
-        />
+      {semanticModel && uiState.sourceViewOpen && (
+        <Suspense fallback={null}>
+          <DialogSourceViewDialog
+            open
+            onClose={() => uiState.setSourceViewOpen(false)}
+            dialogName={dialogName}
+            semanticModel={semanticModel}
+          />
+        </Suspense>
       )}
 
       {semanticModel && dialog && (

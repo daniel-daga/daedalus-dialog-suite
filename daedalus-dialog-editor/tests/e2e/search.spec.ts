@@ -90,3 +90,49 @@ test.describe('Search Panel', () => {
     }).toPass({ timeout: 5000 });
   });
 });
+
+/**
+ * F6: the Ctrl+F handler lives on the always-mounted ThreeColumnLayout, which
+ * the other views hide with `display: none` rather than unmounting. Pressing
+ * Ctrl+F outside the dialog view therefore opened the panel inside a hidden
+ * subtree — no feedback at the time, and the panel was waiting for the user
+ * when they next returned to the dialog view. The shortcut is scoped to the
+ * view that can actually show it.
+ */
+test.describe('Search Panel shortcut scoping (F6)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate((content) => {
+      localStorage.setItem('mockapi_file_test-dialog.d', content);
+    }, SAMPLE_DIALOG_CONTENT);
+
+    page.on('dialog', async (d) => await d.accept('test-dialog.d'));
+    await page.getByRole('button', { name: /Open Single File/i }).click();
+    await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
+  });
+
+  test('Ctrl+F outside the dialog view does not open the panel, then or later', async ({ page }) => {
+    await page.getByRole('button', { name: 'Variable Manager' }).click();
+    await expect(page.getByRole('heading', { name: 'Variable Manager' })).toBeVisible({ timeout: 10000 });
+
+    await page.keyboard.press('Control+f');
+    await expect(page.getByText('Global Search')).not.toBeVisible();
+
+    // The ambush: returning to the dialog view must not reveal a panel the
+    // user never saw open.
+    await page.getByRole('button', { name: 'Dialog Editor' }).click();
+    await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible();
+    await expect(page.getByText('Global Search')).not.toBeVisible();
+  });
+
+  test('Ctrl+F still opens the panel after returning to the dialog view', async ({ page }) => {
+    await page.getByRole('button', { name: 'Variable Manager' }).click();
+    await expect(page.getByRole('heading', { name: 'Variable Manager' })).toBeVisible({ timeout: 10000 });
+
+    await page.getByRole('button', { name: 'Dialog Editor' }).click();
+    await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible();
+
+    await page.keyboard.press('Control+f');
+    await expect(page.getByText('Global Search')).toBeVisible({ timeout: 5000 });
+  });
+});

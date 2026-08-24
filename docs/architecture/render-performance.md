@@ -552,16 +552,38 @@ top. DevTools no longer auto-open on dev launch — set `DEVTOOLS=1` to get the
 old behavior (`src/main/main.ts`). Judge latency in a packaged/production
 build before reaching for further fixes.
 
-**Monaco stays on the jsdelivr CDN (decision, 2026-07-12).** Bundling
-`monaco-editor` locally via `loader.config({ monaco })` was implemented and
-reverted: the static import grows the renderer entry chunk from ~374 kB to
-~4.2 MB, tripping CI's chunk-size warning guard. Landing it requires either
-`React.lazy` code-splitting of the two editor call sites
-(`SourceCodeEditor.tsx`, `DialogSourceViewDialog.tsx` via `MainLayout.tsx` /
-`DialogDetailsEditor.tsx`) or a `vite.config.ts` `manualChunks` entry plus a
-warning-limit change — a deliberate trade-off against the guard, not a
-mechanical fix. Until then, first Monaco open needs network and can stall for
-seconds.
+**Monaco is served from the app's own origin (decision, 2026-08-23 — reverses
+the 2026-07-12 "stays on the jsdelivr CDN" decision).** The CDN was the last
+remote origin the renderer touched, and it blocked the strict
+`default-src 'self'` CSP (see
+[`security-model.md`](./security-model.md#content-security-policy)); it also
+meant the first source-view open needed network and could stall for seconds.
+
+The earlier note assumed `React.lazy` code-splitting the editor call sites
+would be enough to bundle Monaco under CI's 500 kB chunk-size guard. **It is
+not, and that was measured rather than assumed:** F2 removed `SourceCodeEditor`
+so only `DialogSourceViewDialog` remained, and lazy-splitting it moved Monaco
+out of the entry chunk (416 kB → 397 kB) into a **3,825 kB lazy chunk** — still
+far over the limit, so the guard still failed. The limit is per emitted chunk;
+deferring an over-size chunk does not shrink it. No ESM bundling shape passes,
+because Monaco's editor core alone exceeds 500 kB.
+
+What landed instead keeps Monaco out of Rollup entirely: the
+`monaco-local-assets` plugin in `vite.config.ts` serves `monaco-editor/min/vs`
+from node_modules in dev and copies it to `dist/renderer/monaco/vs` on build,
+and `DialogSourceViewDialog` points the AMD loader at it with
+`loader.config({ paths: { vs: new URL('monaco/vs', document.baseURI).href } })`.
+One `document.baseURI`-relative path covers both the dev server and the
+packaged `file://` renderer. This preserves the exact runtime loading mechanism
+Monaco already used — only the origin changes — so no new worker or bundling
+semantics come with it. `electron-builder`'s existing `dist/renderer/**` rule
+packages the copy; the cost is ~16 MB of static assets in the installer.
+
+`DialogSourceViewDialog` **stays** `React.lazy` (gated on `open`, so the chunk
+is fetched when the user first views source, not on first paint): worth 19 kB
+off the entry chunk on its own, and it closes part of the §3 P3 "lazied
+components list is incomplete" item. `SimulatorDialog` and `ReviewChangesDialog`
+are still static imports.
 
 ## Measurement tooling
 

@@ -1,19 +1,25 @@
 /**
- * workingCode dirty semantics (E2a).
+ * Dirty semantics after the source-editing state machine was removed (F2).
  *
- * A source-dirty file (workingCode differs from originalCode) counts as unsaved
- * and its typed source must never be silently wiped by a model mutation. The
- * only way to reconcile is the explicit adoptWorkingCode action.
+ * The Source Code view was commented out of `MainLayout` but its state machine
+ * stayed wired, so in the shipped app `workingCode` was permanently undefined,
+ * `isSourceDirty` permanently false, and every branch keyed on it unreachable.
+ * The machine is deleted: a file is unsaved when its model is dirty or it is in
+ * external conflict, and a model mutation is never refused.
  *
- * TDD: the mutation-no-op and adopt cases are red before the rework.
+ * TDD: the removal guard and the always-applies mutation case are red before
+ * the deletion lands.
  */
 
-import { describe, test, expect, beforeEach, jest } from '@jest/globals';
+import * as fs from 'fs';
+import * as path from 'path';
+import { describe, test, expect, beforeEach } from '@jest/globals';
 import { useEditorStore } from '../src/renderer/store/editorStore';
-import { isSourceDirty, hasUnsavedChanges } from '../src/renderer/store/fileStore';
+import * as fileStoreModule from '../src/renderer/store/fileStore';
+import { hasUnsavedChanges } from '../src/renderer/store/fileStore';
 import type { FileState } from '../src/renderer/store/fileStore';
 
-const mockParseSource = jest.spyOn(window.editorAPI, 'parseSource');
+const RENDERER_DIR = path.join(__dirname, '..', 'src', 'renderer');
 
 const makeFileState = (over: Partial<FileState>): FileState => ({
   filePath: 'x.d',
@@ -37,57 +43,59 @@ const baseState = {
   autoSaveInterval: 2000,
 };
 
-describe('isSourceDirty / hasUnsavedChanges derivation', () => {
-  test('isSourceDirty is true only when workingCode differs from originalCode', () => {
-    expect(isSourceDirty(makeFileState({ originalCode: 'a', workingCode: undefined }))).toBe(false);
-    expect(isSourceDirty(makeFileState({ originalCode: 'a', workingCode: 'a' }))).toBe(false);
-    expect(isSourceDirty(makeFileState({ originalCode: 'a', workingCode: 'b' }))).toBe(true);
-  });
-
-  test('hasUnsavedChanges covers model-dirty, source-dirty, and external conflict', () => {
+describe('hasUnsavedChanges derivation', () => {
+  test('covers model-dirty and external conflict, and nothing else', () => {
     expect(hasUnsavedChanges(makeFileState({ isDirty: false }))).toBe(false);
     expect(hasUnsavedChanges(makeFileState({ isDirty: true }))).toBe(true);
-    expect(hasUnsavedChanges(makeFileState({ originalCode: 'a', workingCode: 'b' }))).toBe(true);
     expect(hasUnsavedChanges(makeFileState({ externalConflict: { detectedAt: 'now' } }))).toBe(true);
+    // A file that merely differs from its on-disk snapshot is not unsaved —
+    // there is no source buffer any more.
+    expect(hasUnsavedChanges(makeFileState({ isDirty: false, originalCode: 'a' }))).toBe(false);
   });
 });
 
-describe('model mutation while source-dirty', () => {
+describe('source-editing state machine is removed (F2)', () => {
+  test('the source-editing components are gone', () => {
+    expect(fs.existsSync(path.join(RENDERER_DIR, 'components', 'SourceCodeEditor.tsx'))).toBe(false);
+    expect(fs.existsSync(path.join(RENDERER_DIR, 'components', 'SourceEditsPendingBanner.tsx'))).toBe(false);
+  });
+
+  test('fileStore exposes no source-buffer actions or predicate', () => {
+    expect('isSourceDirty' in fileStoreModule).toBe(false);
+    const store = useEditorStore.getState() as Record<string, unknown>;
+    expect(store.setWorkingCode).toBeUndefined();
+    expect(store.adoptWorkingCode).toBeUndefined();
+    expect(store.saveSource).toBeUndefined();
+  });
+
+  test('fileStore carries no source-buffer state or mutation guard', () => {
+    const source = fs.readFileSync(path.join(RENDERER_DIR, 'store', 'fileStore.ts'), 'utf8');
+    expect(source).not.toContain('workingCode');
+    expect(source).not.toContain('blockedBySourceEdit');
+    expect(source).not.toContain('refuseMutationIfSourceDirty');
+  });
+
+  test('the dead source view is gone from the layout and the view union', () => {
+    const layout = fs.readFileSync(path.join(RENDERER_DIR, 'components', 'MainLayout.tsx'), 'utf8');
+    expect(layout).not.toContain('SourceCodeEditor');
+    expect(layout).not.toContain('SourceEditsPendingBanner');
+    const uiSelection = fs.readFileSync(path.join(RENDERER_DIR, 'store', 'uiSelectionStore.ts'), 'utf8');
+    expect(uiSelection).not.toContain("'source'");
+  });
+});
+
+describe('model mutation', () => {
   beforeEach(() => {
     useEditorStore.setState({ ...baseState, openFiles: new Map() });
   });
 
-  test('no-ops and preserves workingCode, flags blockedBySourceEdit', () => {
-    const filePath = 'src-dirty.d';
+  test('always applies and marks the file dirty — nothing can refuse it', () => {
+    const filePath = 'mutate.d';
     useEditorStore.setState({
       openFiles: new Map([[filePath, makeFileState({
         filePath,
         semanticModel: { dialogs: { D1: { properties: { npc: 'NPC1' } } }, functions: {}, hasErrors: false, errors: [] },
         originalCode: 'original source',
-        workingCode: 'edited source in the code editor',
-      })]]),
-      activeFile: filePath,
-    });
-
-    useEditorStore.getState().updateDialog(filePath, 'D1', { properties: { npc: 'NPC2' } });
-
-    const fileState = useEditorStore.getState().getFileState(filePath);
-    // Mutation was refused
-    expect(fileState?.semanticModel.dialogs.D1).toEqual({ properties: { npc: 'NPC1' } });
-    expect(fileState?.isDirty).toBe(false);
-    // Typed source preserved
-    expect(fileState?.workingCode).toBe('edited source in the code editor');
-    expect(fileState?.blockedBySourceEdit).toBe(true);
-  });
-
-  test('clears workingCode on mutation when it is not source-dirty', () => {
-    const filePath = 'clean-source.d';
-    useEditorStore.setState({
-      openFiles: new Map([[filePath, makeFileState({
-        filePath,
-        semanticModel: { dialogs: { D1: { properties: { npc: 'NPC1' } } }, functions: {}, hasErrors: false, errors: [] },
-        originalCode: 'same',
-        workingCode: 'same', // equal → not source-dirty
       })]]),
       activeFile: filePath,
     });
@@ -97,65 +105,5 @@ describe('model mutation while source-dirty', () => {
     const fileState = useEditorStore.getState().getFileState(filePath);
     expect(fileState?.semanticModel.dialogs.D1).toEqual({ properties: { npc: 'NPC2' } });
     expect(fileState?.isDirty).toBe(true);
-    expect(fileState?.workingCode).toBeUndefined();
-  });
-});
-
-describe('adoptWorkingCode', () => {
-  beforeEach(() => {
-    useEditorStore.setState({ ...baseState, openFiles: new Map() });
-    mockParseSource.mockReset();
-  });
-
-  test('success adopts the parsed model, marks dirty, clears workingCode', async () => {
-    const filePath = 'adopt-ok.d';
-    useEditorStore.setState({
-      openFiles: new Map([[filePath, makeFileState({
-        filePath,
-        semanticModel: { dialogs: {}, functions: {}, hasErrors: false, errors: [] },
-        originalCode: 'old',
-        workingCode: 'new source',
-        blockedBySourceEdit: true,
-      })]]),
-      activeFile: filePath,
-    });
-
-    const parsed = { dialogs: { DNew: { properties: { npc: 'NPC1' } } }, functions: {}, hasErrors: false, errors: [] };
-    mockParseSource.mockResolvedValueOnce(parsed as any);
-
-    const result = await useEditorStore.getState().adoptWorkingCode(filePath);
-
-    expect(result.ok).toBe(true);
-    const fileState = useEditorStore.getState().getFileState(filePath);
-    expect(fileState?.semanticModel.dialogs.DNew).toBeDefined();
-    expect(fileState?.isDirty).toBe(true);
-    expect(fileState?.workingCode).toBeUndefined();
-    expect(fileState?.blockedBySourceEdit).toBeUndefined();
-  });
-
-  test('parse errors keep workingCode and return the errors', async () => {
-    const filePath = 'adopt-bad.d';
-    useEditorStore.setState({
-      openFiles: new Map([[filePath, makeFileState({
-        filePath,
-        semanticModel: { dialogs: { Keep: { properties: { npc: 'NPC1' } } }, functions: {}, hasErrors: false, errors: [] },
-        originalCode: 'old',
-        workingCode: 'broken source {',
-      })]]),
-      activeFile: filePath,
-    });
-
-    const errors = [{ type: 'syntax_error', message: 'unexpected {', position: { row: 1, column: 1 } }];
-    mockParseSource.mockResolvedValueOnce({ dialogs: {}, functions: {}, hasErrors: true, errors } as any);
-
-    const result = await useEditorStore.getState().adoptWorkingCode(filePath);
-
-    expect(result.ok).toBe(false);
-    expect(result.errors).toEqual(errors);
-    const fileState = useEditorStore.getState().getFileState(filePath);
-    // Old model untouched, typed source retained
-    expect(fileState?.semanticModel.dialogs.Keep).toBeDefined();
-    expect(fileState?.workingCode).toBe('broken source {');
-    expect(fileState?.isDirty).toBe(false);
   });
 });

@@ -38,7 +38,7 @@ import { useThemeMode } from './themeContext';
 import { initStoreSync } from './store/storeSync';
 import { shallow } from 'zustand/shallow';
 import { describeSaveError } from './utils/saveError';
-import { isSourceDirty, hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
+import { hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
 import { flushAllPendingEdits } from './utils/pendingEditFlushRegistry';
 import { useWindowCloseGuard } from './hooks/useWindowCloseGuard';
 
@@ -90,9 +90,7 @@ const App: React.FC = () => {
   );
   const autoSaveError = activeFileState?.autoSaveError;
   const saveError = activeFileState?.saveError;
-  const activeSourceDirty = activeFileState ? isSourceDirty(activeFileState) : false;
-  const activeModelDirty = !!activeFileState?.isDirty;
-  const activeDirty = activeSourceDirty || activeModelDirty;
+  const activeDirty = !!activeFileState?.isDirty;
 
   // Files in external conflict that are not the active file: the active file's
   // conflict opens the modal dialog; background conflicts surface as an app-bar
@@ -280,11 +278,9 @@ const App: React.FC = () => {
                       </Typography>
                     ))}
                   </Box>
-                ) : activeSourceDirty ? (
-                  'Unsaved source changes — Ctrl+S to save'
                 ) : (isAutoSaving || isManualSaving) ? (
                   'Saving...'
-                ) : activeModelDirty ? (
+                ) : activeDirty ? (
                   'Unsaved changes — Ctrl+S to save'
                 ) : lastAutoSaveTime ? (
                   `Last saved: ${lastAutoSaveTime.toLocaleTimeString()}`
@@ -305,13 +301,11 @@ const App: React.FC = () => {
                       <ErrorIcon sx={{ color: 'error.light' }} />
                     ) : (
                       <SaveIcon sx={{
-                        color: activeSourceDirty
-                          ? 'warning.light'
-                          : (isAutoSaving || isManualSaving)
-                            ? 'rgba(255,255,255,0.7)'
-                            : activeModelDirty
-                              ? 'warning.light'
-                              : 'rgba(255,255,255,0.4)'
+                        color: (isAutoSaving || isManualSaving)
+                          ? 'rgba(255,255,255,0.7)'
+                          : activeDirty
+                            ? 'warning.light'
+                            : 'rgba(255,255,255,0.4)'
                       }} />
                     )}
                   </IconButton>

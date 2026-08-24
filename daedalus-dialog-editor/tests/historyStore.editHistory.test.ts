@@ -39,7 +39,6 @@ const resetStores = (initialModel: SemanticModel = makeModel('initial')) => {
         isDirty: false,
         lastSaved: new Date(),
         originalCode: '',
-        workingCode: '',
         hasErrors: false,
         errors: [],
         validationResult: null,
@@ -364,13 +363,11 @@ describe('historyStore – save does not reset unrelated files\' history (F-B)',
       openFiles: new Map([
         [fileA, {
           filePath: fileA, semanticModel: makeModel('A0'), isDirty: false,
-          lastSaved: new Date(), originalCode: 'A-src-0', workingCode: '',
-          hasErrors: false, errors: [], validationResult: null,
+          lastSaved: new Date(), originalCode: 'A-src-0',          hasErrors: false, errors: [], validationResult: null,
         }],
         [fileB, {
           filePath: fileB, semanticModel: makeModel('B0'), isDirty: false,
-          lastSaved: new Date(), originalCode: 'B-src-0', workingCode: '',
-          hasErrors: false, errors: [], validationResult: null,
+          lastSaved: new Date(), originalCode: 'B-src-0',          hasErrors: false, errors: [], validationResult: null,
         }],
       ]),
       activeFile: fileA,

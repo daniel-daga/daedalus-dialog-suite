@@ -1,10 +1,57 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 
+/**
+ * Serve and ship Monaco from the app's own origin.
+ *
+ * `@monaco-editor/react` otherwise pulls Monaco off the jsdelivr CDN at
+ * runtime, which the renderer's `default-src 'self'` CSP forbids (and which
+ * makes the source view need the network). Monaco's `min/vs` AMD tree is far
+ * over the 500 kB chunk-size guard, and bundling it — even behind React.lazy —
+ * only moves that over-size chunk rather than removing it, so it is copied as
+ * static assets instead of going through Rollup at all.
+ *
+ * Dev serves it straight out of node_modules; the build copies it next to the
+ * renderer output, where electron-builder's `dist/renderer/**` rule packages it.
+ */
+function monacoLocalAssets(): Plugin {
+  const require = createRequire(import.meta.url);
+  const vsDir = path.join(path.dirname(require.resolve('monaco-editor/package.json')), 'min/vs');
+  const PREFIX = '/monaco/vs/';
+
+  return {
+    name: 'monaco-local-assets',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url?.split('?')[0];
+        if (!url?.startsWith(PREFIX)) return next();
+        // Contain the join to vsDir: the path is attacker-influenced only by
+        // the local dev server's own client, but a traversal here would serve
+        // arbitrary files off disk.
+        const target = path.join(vsDir, url.slice(PREFIX.length));
+        if (!target.startsWith(vsDir) || !fs.existsSync(target)) return next();
+        const type = target.endsWith('.css') ? 'text/css'
+          : target.endsWith('.js') ? 'text/javascript'
+          : target.endsWith('.ttf') ? 'font/ttf'
+          : 'application/octet-stream';
+        res.setHeader('Content-Type', type);
+        fs.createReadStream(target).pipe(res);
+      });
+    },
+    closeBundle() {
+      const outDir = path.join(__dirname, 'dist/renderer/monaco/vs');
+      fs.rmSync(outDir, { recursive: true, force: true });
+      fs.cpSync(vsDir, outDir, { recursive: true });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), monacoLocalAssets()],
   root: path.join(__dirname, 'src/renderer'),
   base: './',
   optimizeDeps: {
