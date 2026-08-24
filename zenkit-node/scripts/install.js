@@ -16,6 +16,14 @@ try {
   // no usable prebuild — fall through to a source build
 }
 
+// In CI, only the path-filtered zenkit-node workflow needs the addon; every
+// other job's root `pnpm install` must not pay for a C++ build. Locally the
+// source build always runs.
+if (process.env.CI && process.env.ZENKIT_NODE_FORCE_BUILD !== '1') {
+  console.log('zenkit-node: no prebuild and CI without ZENKIT_NODE_FORCE_BUILD=1 — skipping source build');
+  process.exit(0);
+}
+
 execFileSync(process.execPath, [path.join(__dirname, 'build-zenkit.js')], { stdio: 'inherit' });
 const nodeGyp = require.resolve('node-gyp/bin/node-gyp.js', { paths: [ROOT] });
 execFileSync(process.execPath, [nodeGyp, 'rebuild'], { stdio: 'inherit', cwd: ROOT });
