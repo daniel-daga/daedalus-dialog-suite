@@ -1,0 +1,55 @@
+diff --git a/src/vobs/Sound.cc b/src/vobs/Sound.cc
+index d0e0712..10cc203 100644
+--- a/src/vobs/Sound.cc
++++ b/src/vobs/Sound.cc
+@@ -32,15 +32,15 @@ namespace zenkit {
+ 	void VSound::save(WriteArchive& w, GameVersion version) const {
+ 		VirtualObject::save(w, version);
+ 		w.write_float("sndVolume", this->volume);
+-		w.write_enum("sndVolume", static_cast<std::uint32_t>(this->mode));
+-		w.write_float("sndVolume", this->random_delay);
+-		w.write_float("sndVolume", this->random_delay_var);
+-		w.write_bool("sndVolume", this->initially_playing);
+-		w.write_bool("sndVolume", this->ambient3d);
+-		w.write_bool("sndVolume", this->obstruction);
+-		w.write_float("sndVolume", this->cone_angle);
+-		w.write_enum("sndVolume", static_cast<std::uint32_t>(this->volume_type));
+-		w.write_float("sndVolume", this->radius);
++		w.write_enum("sndMode", static_cast<std::uint32_t>(this->mode));
++		w.write_float("sndRandDelay", this->random_delay);
++		w.write_float("sndRandDelayVar", this->random_delay_var);
++		w.write_bool("sndStartOn", this->initially_playing);
++		w.write_bool("sndAmbient3D", this->ambient3d);
++		w.write_bool("sndObstruction", this->obstruction);
++		w.write_float("sndConeAngle", this->cone_angle);
++		w.write_enum("sndVolType", static_cast<std::uint32_t>(this->volume_type));
++		w.write_float("sndRadius", this->radius);
+ 		w.write_string("sndName", this->sound_name);
+ 
+ 		if (w.is_save_game()) {
+diff --git a/src/vobs/Trigger.cc b/src/vobs/Trigger.cc
+index 23f9c29..649e9ff 100644
+--- a/src/vobs/Trigger.cc
++++ b/src/vobs/Trigger.cc
+@@ -135,9 +135,9 @@ namespace zenkit {
+ 	void VMover::save(WriteArchive& w, GameVersion version) const {
+ 		VTrigger::save(w, version);
+ 		w.write_enum("moverBehavior", static_cast<std::uint32_t>(this->behavior));
+-		w.write_float("autoLinkEnabled", this->touch_blocker_damage);
+-		w.write_float("autoLinkEnabled", this->stay_open_time_sec);
+-		w.write_bool("autoLinkEnabled", this->locked);
++		w.write_float("touchBlockerDamage", this->touch_blocker_damage);
++		w.write_float("stayOpenTimeSec", this->stay_open_time_sec);
++		w.write_bool("moverLocked", this->locked);
+ 		w.write_bool("autoLinkEnabled", this->auto_link);
+ 
+ 		if (version == GameVersion::GOTHIC_2) {
+@@ -219,7 +219,7 @@ namespace zenkit {
+ 		VTrigger::save(w, version);
+ 		w.write_enum("listProcess", static_cast<std::uint32_t>(this->mode));
+ 
+-		w.write_byte("numTargets", this->targets.size());
++		w.write_byte("numTarget", this->targets.size());
+ 		for (auto i = 0u; i < this->targets.size(); ++i) {
+ 			w.write_string("triggerTarget" + std::to_string(i), targets[i].name);
+ 			w.write_float("fireDelay" + std::to_string(i), targets[i].delay);
