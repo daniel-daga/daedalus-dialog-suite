@@ -379,13 +379,32 @@ Still session-temporary in the scratchpad, one-off probes not worth promoting:
 ## 8. What remains: T10 / E-full
 
 Row 1 of the plan's §5 checklist has run (Spacer, §3.5). Rows 2–10 need the
-game and a person at the keyboard, and are **not** claimed by this record:
+game and a person at the keyboard, and are **not** claimed by this record.
+
+**What they can still find has narrowed.** `tools/bytediff.js` accounts for
+every byte of the file — the number that matters is the coverage gap, because a
+diff that silently skips a region can call a broken file clean:
+
+```
+COVERAGE: 75387729 of 75387729 bytes accounted for, gap 0
+identical event bytes: 74952502
+hash table identical:  true (434980 B)
+differing events: 4 — all zCVobLight.colorAniList
+```
+
+So the engine reads a bit-identical mesh, BSP tree and VOB tree. On an
+*untouched* re-save, collision, lighting, portals and waynet cannot differ —
+that is deduction from identical input plus a deterministic loader, not a
+prior. Rows 2–9 are therefore a smoke test against a process error (the wrong
+file installed, a bad copy), not a fidelity probe. **Row 10 is the informative
+one**, and Phase 1b's UI-edited worlds are where the checklist regains its full
+force.
 
 | # | Check | Status |
 |---|---|---|
 | 1 | Loads in Spacer | ✅ §3.5 |
 | 2 | Loads in the game, hero spawns | ⏸ |
-| 3 | Walk terrain/interiors, jump, fall — **collision** | ⏸ — the BSP tree is byte-identical, which is the strongest available prior, but no byte comparison can certify collision |
+| 3 | Walk terrain/interiors, jump, fall — **collision** | ⏸ — but the BSP tree and mesh are bit-identical, so nothing can differ here on an untouched re-save |
 | 4 | NPCs spawn and walk routines | ⏸ |
 | 5 | Screenshots at ~5 fixed positions vs. the original — vertex lighting | ⏸ |
 | 6 | Enter/exit a building, sector boundary — portals | ⏸ |

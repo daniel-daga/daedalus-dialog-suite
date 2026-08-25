@@ -21,6 +21,10 @@ section; these CLIs are thin front-ends over it. See
   differences by class and entry. This is the instrument that found the ten
   byte-fidelity defects in `patches/0010`–`0019`; a byte difference that no
   struct dump can see shows up here immediately.
+  **Read the `COVERAGE` line first.** It accounts for every byte of the file
+  (text header + every event span + hash table) and reports the gap; only with
+  `gap 0` does "everything else is identical" mean anything, because a diff that
+  silently skips a region will call a broken file clean.
 - `splice.js <orig> <variant> <out> <groups>` — builds a world from the
   original's bytes with only selected groups taken from a re-save (`header`,
   `blob`, `vobtree`, `locked`, `dataRaw`, `colorAni`, `hashtable`,

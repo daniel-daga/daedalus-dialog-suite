@@ -371,12 +371,35 @@ mod-specific world need it.
 
 **What this verdict does not cover.** T6.5 is the plan's *E-early* pass — "does
 the engine accept it" — and only checklist row 1 (Spacer) has run. Rows 2–10
-(game load, collision, NPC routines, vertex-lighting screenshots, portals,
-mobsis, sound VOBs, savegame reload, and the minimal edit) remain as **T10 /
-E-full**, after the T7 harness and the T8 corpus. Collision in particular cannot
-be certified by any byte comparison — though a byte-identical BSP tree is the
-strongest possible prior. Gothic 1 is not installed on the Phase 0 machine, so
-G1 coverage is still open.
+remain as **T10 / E-full**, after the T7 harness and the T8 corpus. Gothic 1 is
+not installed on the Phase 0 machine, so G1 coverage is still open.
+
+But their *purpose has changed*, and §5's original worry about collision no
+longer applies to an untouched re-save. The concern was written on the
+assumption that the re-save would differ from the original in ways a semantic
+diff might wave through. It does not. Accounting for **every byte** of NewWorld
+(`tools/bytediff.js`, coverage gap 0 — the whole file, not a sampled subset):
+
+```
+COVERAGE: 75387729 of 75387729 bytes accounted for, gap 0
+identical event bytes: 74952502
+hash table identical:  true (434980 B)
+differing events: 4 — all zCVobLight.colorAniList
+text header: date/user writer stamps only
+```
+
+The engine therefore reads **bit-identical mesh, BSP tree, and VOB tree** — the
+inputs collision is computed from. Given a deterministic loader, identical input
+bytes cannot produce different collision; there is nothing left for row 3 to
+discover on an untouched re-save. Rows 2–9 are now an end-to-end smoke test
+(they would catch a mistake in *which file got installed*, not a fidelity
+defect), and even the four differing light entries were engine-tested in
+isolation.
+
+Where the checklist still earns its keep is **row 10 and Phase 1b**: worlds the
+editor has actually changed. There, bytes legitimately differ, and collision
+becomes a live question the moment anything the BSP indexes is touched — which
+is precisely why Phase 1 never edits mesh or BSP.
 
 ---
 
