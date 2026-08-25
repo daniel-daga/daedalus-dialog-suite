@@ -405,6 +405,64 @@ corrupts every raw entry and cannot be re-opened is worse than no save at all.
 Evidence, the four named defects and the full corpus table:
 `zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.
 
+#### What the `*_Part_*` files actually are, and why we are downstream of them
+
+Called out because "the parts are Spacer's source layers" above is true but
+undersells the consequence. Measured in the retail G2 install:
+
+| | |
+|---|---|
+| Every `*_Part_*.zen` carries a `MeshAndBsp` blob | 67–94% of the file — they are **compiled** sub-worlds, not raw geometry |
+| The 4 blob-less `.zen` (`FireTree_*`, `ItLsTorchBurning`) | **uncompiled** ZENs: the VOB tree only, no terrain |
+| 11 NewWorld part blobs sum to 85,134,700 B | vs. the whole `NewWorld.zen` blob's 69,146,243 B — **the whole is 23% smaller than the sum of its parts** |
+| 25,236 VOBs across the 11 parts | vs. 23,288 in the compiled `NewWorld.zen` |
+
+The community documentation explains all four rows. Parts exist because **the
+`.3ds` format caps an object at 65,536 triangles** (GMC also advises keeping a
+submesh under 50k for performance) — a modelling-format limit, not a ZenGin
+one; the modern alternative is one world mesh internally split into submeshes,
+which removes the need for parts entirely. Parts are joined by a **Spacer
+macro that recompiles**, not by concatenation:
+
+```
+Load world oldworld\SURFACE.ZEN
+Load world oldworld\OLDCAMP.ZEN
+compile world outdoor
+compile light high
+```
+
+which is why the merged blob is smaller than its inputs — a global re-BSP and a
+global light bake. And VOBs live in the **source** layer: GMC states the part
+ZENs "are filled with VOBs separately and the world is compiled as a final
+step", which the 25,236 → 23,288 count corroborates.
+
+**So our output is a leaf, not a source.** VOB edits this editor makes to a
+compiled world sit downstream of that macro: re-running the merge rebuilds the
+world from the parts and our work is gone. Two things make that acceptable
+rather than fatal, and they should be stated to users rather than discovered:
+
+1. Re-merging is explicitly a **one-time final step** — GMC warns it "will
+   cause issues with culling and stop interiors from rendering" — so mods do
+   not re-run it casually. Editing the compiled world *is* the normal VOB
+   workflow, which is exactly the position this editor takes.
+2. Terrain is out of reach regardless of the archiver. `compile world` and
+   `compile light` are a mesh compiler, a BSP builder and a lightmap baker;
+   ZenKit implements **none** of them and we are not writing them. So fixing
+   the four ASCII defects would let us round-trip a part file and still not let
+   us do anything useful with one. The ASCII series buys VOB editing in the
+   source layer — nothing more.
+
+Still open, and not to be reasoned about: whether the merge macro *preserves*
+VOBs already present on a compiled target or rebuilds the tree purely from the
+loaded parts (GMC does not say, and the count above is consistent with either);
+and whether "uncompiled ZEN" — a plausible future export path for exchanging
+VOB sets — is always ASCII, which would put it behind A1–A4 too. Every sample
+in the retail install is.
+
+Sources: [GMC — Worlds](https://gothic-modding-community.github.io/gmc/zengin/worlds/),
+[GMC — Spacer](https://gothic-modding-community.github.io/gmc/zengin/worlds/spacer/),
+[GMC — Meshes](https://gothic-modding-community.github.io/gmc/zengin/meshes/).
+
 **What this verdict does not cover.** T6.5 is the plan's *E-early* pass — "does
 the engine accept it" — and only checklist row 1 (Spacer) has run. Rows 2–10
 remain as **T10 / E-full**. Gothic 1 is not installed on the Phase 0 machine, so
