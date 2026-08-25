@@ -10,9 +10,11 @@ save-path defects were found and patched to get there; two were independently
 fatal to the original engine. Verdict: **Plan A, scoped to the BinSafe path** —
 T8 measured the ASCII writer and found it unusable (§6, T8).
 
-**The one exit criterion still open is criterion 1** — CI green on macOS and
-Windows. Everything else is met, criterion 2 with a measured and deliberate
-scope-down and criterion 4 with four checklist rows unrun and named.
+**The one exit criterion still open is criterion 1** — CI green on **Windows**,
+which is now the only platform the criterion covers (narrowed 2026-08-25;
+Linux and macOS were both green when they were dropped). Everything else is
+met, criterion 2 with a measured and deliberate scope-down and criterion 4 with
+four checklist rows unrun and named.
 Full record and evidence:
 [`zenkit-node/docs/engine-acceptance-2026-08-25.md`](../../zenkit-node/docs/engine-acceptance-2026-08-25.md).
 
@@ -42,13 +44,18 @@ and op system would already be built on an unproven assumption.
 
 **Exit criteria (all five):**
 
-1. `pnpm --filter zenkit-node test` green on Linux, Windows, and macOS.
-   — ⚠️ green locally (88 tests) and **green in CI on Linux**; macOS and Windows
-   fail in the build step on toolchain issues, not on this code — acceptance
-   record §9. The macOS cause (libsquish's unguarded `-msse2` on arm64) is
-   **fixed but not yet observed green in CI**; Windows (node-gyp's Visual
-   Studio finder overflowing its stdio buffer while installing the *parser*
-   workspace) is untouched. **Still not met.**
+1. ~~`pnpm --filter zenkit-node test` green on Linux, Windows, and macOS.~~
+   **Narrowed 2026-08-25 to Windows only** — the editor's users are on Windows,
+   and so is the only usable fidelity oracle (Gothic and Spacer are Windows
+   binaries). Linux and macOS are explicitly out of scope for now; re-adding
+   them is a one-line matrix change.
+   — ⚠️ **not met.** Run `32903532421` was **ubuntu ✅, macOS ✅, windows ❌**,
+   so the two platforms being dropped were *both green* when dropped (the macOS
+   `-msse2` fix is confirmed working, not merely written). Windows fails before
+   any of our code runs: `windows-latest` now ships **Visual Studio 18**, which
+   node-gyp 11.5.0 cannot identify, so the `daedalus-parser` workspace's install
+   dies at configure. `zenkit-node`'s own CMake pre-step is unaffected — it uses
+   `vswhere`. Pinned to `windows-2022` as the fix; **not yet observed green.**
 2. `zen-roundtrip` run against a developer-local Gothic 1 + Gothic 2/NotR
    installation reports **no `semantic-drift`** on any original world,
    including all parts (see §3 for what that means precisely).

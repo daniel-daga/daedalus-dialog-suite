@@ -27,7 +27,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Windows only, deliberately (2026-08-25). The editor's users are on
+        # Windows, and so is the only engine that can act as the fidelity
+        # oracle — Gothic and Spacer are Windows binaries — so Windows is the
+        # platform that has to stay green.
+        #
+        # ubuntu-latest and macos-latest were BOTH GREEN when they were removed
+        # (run 32903532421), so nothing broken is being hidden here and adding
+        # them back is a one-line change against a known-good baseline. The
+        # arm64 `-msse2` fix in scripts/build-zenkit.js stays in the code: it is
+        # correct, it costs nothing, and it is what made macOS pass.
+        #
+        # windows-2022, not windows-latest: the latest image ships Visual
+        # Studio 18, which node-gyp 11.5.0 cannot identify ("unknown version
+        # undefined found at ...\Microsoft Visual Studio\18\Enterprise"), so it
+        # fails to configure before any of our code runs. zenkit-node's own
+        # CMake pre-step is unaffected — it finds the toolchain through vswhere
+        # — but the daedalus-parser workspace's install goes through node-gyp
+        # and dies first. Revisit when node-gyp knows VS 18.
+        os: [windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
