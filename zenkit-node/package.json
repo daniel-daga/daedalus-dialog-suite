@@ -8,7 +8,7 @@
     "install": "node scripts/install.js",
     "build:zenkit": "node scripts/build-zenkit.js",
     "build": "node scripts/build-zenkit.js && node-gyp rebuild",
-    "test": "node --test test/*.test.js",
+    "test": "node --test",
     "fixtures:regen": "node scripts/fixtures-regen.js",
     "lint": "eslint \"lib/**/*.js\" \"scripts/**/*.js\" \"test/**/*.js\" --max-warnings 0",
     "zen-roundtrip": "node scripts/zen-roundtrip.js",

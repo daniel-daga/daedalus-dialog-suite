@@ -57,6 +57,13 @@ pnpm install            # uses a prebuild if present, else builds from source
 pnpm --filter zenkit-node test
 ```
 
+The `test` script is bare `node --test`, which discovers `test/*.test.js`
+itself. **Do not "fix" it back to `node --test test/*.test.js`**: that relies on
+the *shell* expanding the glob, so it works under bash and fails under
+PowerShell — which is how it failed the first time CI ever ran the tests on
+Windows, our primary platform. `node --test test/` is not a substitute either;
+Node tries to load the directory as a module.
+
 Requirements for a source build: CMake ≥3.10 (a Visual Studio-bundled CMake
 is found automatically on Windows), a C++20 compiler, git submodules
 initialized recursively.
