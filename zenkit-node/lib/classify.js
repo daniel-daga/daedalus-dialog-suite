@@ -169,6 +169,20 @@ function compareEdges(a, b, findings) {
   }
 }
 
+// Archive-container facts (lib/container.js) are byte-level: ANY difference is
+// semantic-drift — epsilon 0 so a number is never float-noise, and every array
+// is order-sensitive so nothing is ever `reordered`. The only benign values
+// are the header `date`/`user` writer stamps.
+function compareContainer(a, b, findings) {
+  if (a === undefined && b === undefined) return;
+  if (a === undefined || b === undefined) {
+    addFinding(findings, 'semantic-drift', 'container', a === undefined ? 'only in re-saved dump' : 'only in original dump');
+    return;
+  }
+  const strip = ({ header: { date: _date, user: _user, ...header }, ...rest }) => ({ ...rest, header });
+  deepCompare(strip(a), strip(b), 'container', findings, 0);
+}
+
 function classifyDumps(originalDump, resavedDump, options = {}) {
   const epsilon = options.epsilon !== undefined ? options.epsilon : DEFAULT_EPSILON;
   const findings = [];
@@ -179,6 +193,7 @@ function classifyDumps(originalDump, resavedDump, options = {}) {
   compareBsp(originalDump.bsp, resavedDump.bsp, findings, epsilon);
   compareWaypoints(originalDump.waynet.waypoints, resavedDump.waynet.waypoints, findings, epsilon);
   compareEdges(originalDump.waynet.edges, resavedDump.waynet.edges, findings);
+  compareContainer(originalDump.container, resavedDump.container, findings);
 
   let classification = 'identical';
   for (const finding of findings) {

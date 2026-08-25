@@ -1,7 +1,5 @@
 #include "fixture.hh"
 
-#include "msvc_crt_guard.hh"
-
 #include <zenkit/Material.hh>
 #include <zenkit/Mesh.hh>
 #include <zenkit/Stream.hh>
@@ -22,8 +20,10 @@ using namespace zenkit;
 
 void BuildMesh(Mesh& mesh) {
   // Deterministic creation date; the archive header's own date/user stamp is
-  // written by ZenKit's archive writer and is expected to vary.
-  mesh.date = Date {2024, 1, 1, 0, 0, 0};
+  // written by ZenKit's archive writer and is expected to vary. The pad word
+  // is non-zero on purpose: retail world meshes carry garbage there and it
+  // must survive a round-trip.
+  mesh.date = Date {2024, 1, 1, 0, 0, 0, 0x4A01};
   mesh.name = "MINIMAL_FIXTURE";
   mesh.bbox = AxisAlignedBoundingBox {Vec3 {0.0f, -1.0f, 0.0f}, Vec3 {100.0f, 1.0f, 100.0f}};
   mesh.obb = OrientedBoundingBox {};
@@ -89,6 +89,24 @@ void BuildMesh(Mesh& mesh) {
 
   add_triangle(0, 0, 1, 2);
   add_triangle(1, 0, 2, 3);
+
+  // Three 1x1 light-map textures shared by four light-maps in the order
+  // A, B, A, C: the LIGHTMAPS_SHARED chunk must list the textures in
+  // first-reference order, i.e. the light-maps reference indices 0, 1, 0, 2.
+  std::shared_ptr<Texture> lightmap_textures[3];
+  for (auto i = 0u; i < 3; ++i) {
+    std::vector<std::uint8_t> pixel {static_cast<std::uint8_t>(0x10 * (i + 1)), 0x20, 0x30, 0xFF};
+    lightmap_textures[i] = std::make_shared<Texture>(
+        TextureBuilder {1, 1}.add_mipmap(pixel, TextureFormat::R8G8B8A8).build(TextureFormat::R8G8B8A8));
+  }
+  for (auto i : {0, 1, 0, 2}) {
+    LightMap lightmap {};
+    lightmap.image = lightmap_textures[i];
+    lightmap.normals[0] = Vec3 {1.0f, 0.0f, 0.0f};
+    lightmap.normals[1] = Vec3 {0.0f, 0.0f, 1.0f};
+    lightmap.origin = Vec3 {static_cast<float>(i), 0.0f, 0.0f};
+    mesh.lightmaps.push_back(lightmap);
+  }
 }
 
 void BuildBspTree(BspTree& bsp, AxisAlignedBoundingBox const& bbox) {
@@ -124,6 +142,9 @@ std::shared_ptr<VirtualObject> BuildVobTree() {
   spot->position = Vec3 {10.0f, 0.0f, 20.0f};
   spot->rotation = Mat3 {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 0.0f};
   spot->bbox = AxisAlignedBoundingBox {Vec3 {9.0f, -1.0f, 19.0f}, Vec3 {11.0f, 1.0f, 21.0f}};
+  // Bit 15 of the packed G2 flag word carries engine memory garbage in retail
+  // worlds; set it here so the round-trip of that bit is covered.
+  spot->packed_reserved_bit = true;
 
   auto item = std::make_shared<VItem>();
   item->type = VirtualObjectType::oCItem;
@@ -195,10 +216,6 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
   BuildBspTree(world->world_bsp_tree, world->world_mesh.bbox);
   world->world_vobs.push_back(BuildVobTree());
   world->way_net = BuildWayNet();
-
-  // See msvc_crt_guard.hh: keeps ZenKit's glibc-only strftime format from
-  // fail-fasting the process on Windows while the archive header is stamped.
-  ScopedCrtInvalidParameterGuard crt_guard;
 
   auto w = Write::to(path);
   auto archive = WriteArchive::to(w.get(), format);

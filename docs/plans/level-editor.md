@@ -314,6 +314,70 @@ costs days rather than months to run there. What remains in Phase 1b is the
 cross-platform half — the same worlds under OpenGothic — plus re-running the
 checklist against worlds edited through the real UI.
 
+### Verdict — Plan A (decided 2026-08-25, Phase 0 task T6.5)
+
+**Plan A holds: whole-world re-serialization through ZenKit produces
+engine-loadable worlds.** Decision-matrix cell: **clean diff / engine OK**.
+Full record and evidence: `zenkit-node/docs/engine-acceptance-2026-08-25.md`.
+
+The gate did its job — it failed three times first, and the reason was real.
+Nineteen ZenKit writer defects had to be fixed to get here (`zenkit-node/patches/`,
+all upstreamable); two of them were independently fatal to the original engine.
+
+**What settled it.** The plan's "clean diff / broken engine" cell came up, so the
+instrument was widened (`lib/container.js`: a `container` section computed from
+the archive *bytes* — hash-table physical order, per-object frame versions,
+per-class entry schema, RAW/BOOL payload hashes, the mesh/BSP chunk table — all
+classified `semantic-drift`, never benign). It immediately saw what the struct
+dump could not. In parallel, a **single-variable engine bisect** localised the
+failure instead of theorising about it: worlds built from the original's bytes
+with exactly one structure replaced by ZenKit's output.
+
+| Candidate | Engine |
+|---|---|
+| original + re-serialized VobTree (all 23,289 VOBs) / waynet / header / hash table | **loads** |
+| original + re-serialized **MeshAndBsp blob** | **fails** — `sSize<READ_BUFFER_SIZE` |
+| full re-save with the original blob spliced back | **loads** |
+
+The blob was both necessary and sufficient. Isolating it chunk-by-chunk named
+the two fatal defects exactly: a missing per-mesh alpha-test byte in chunk
+0xB020 and a hard-coded BSP header version (`2` where retail G2 has `3`) in
+0xC000. Both desynchronised the archive cursor — the engine *consumes* the blob
+rather than seeking past it by the declared size — which is why an error inside
+the mesh surfaced as a string-length assertion in the VOB tree.
+
+**Where the writer now stands** — all three retail G2 BinSafe worlds
+(NewWorld 75 MB, OldWorld 15 MB, AddonWorld 45 MB), re-saved and compared
+byte-for-byte over every archive event:
+
+- the **entire mesh/BSP blob is byte-identical** (69,146,243 / 12,962,396 /
+  42,540,421 bytes, matching SHA-256)
+- the hash table is byte-identical; the stream ends exactly at `hashTableOffset`
+- saving twice is byte-identical (the writer was nondeterministic before)
+- `classifyDumps`: **`identical`, 0 findings** on all three
+- the only byte residual is `zCVobLight.colorAniList` (4/2/16 entries): the
+  original writes ZenGin's greyscale shorthand `255 `, ZenKit expands it to
+  `(255 255 255)`. Semantically identical, ZenGin's parser wrote and accepts both
+  forms, and it was **A/B tested in the engine in isolation** — that candidate
+  loads. Documented, not assumed.
+- **Spacer II loads the re-saved NewWorld**, with the pristine original as the
+  control in the same session.
+
+**Consequences for the plan.** Plan B is not needed: untouched structures are
+preserved by construction, as §5 assumed. Its splice machinery was nonetheless
+built (it *was* the bisect) and is kept as diagnostic tooling — a working
+fallback that has now been demonstrated end to end, should a later format or a
+mod-specific world need it.
+
+**What this verdict does not cover.** T6.5 is the plan's *E-early* pass — "does
+the engine accept it" — and only checklist row 1 (Spacer) has run. Rows 2–10
+(game load, collision, NPC routines, vertex-lighting screenshots, portals,
+mobsis, sound VOBs, savegame reload, and the minimal edit) remain as **T10 /
+E-full**, after the T7 harness and the T8 corpus. Collision in particular cannot
+be certified by any byte comparison — though a byte-identical BSP tree is the
+strongest possible prior. Gothic 1 is not installed on the Phase 0 machine, so
+G1 coverage is still open.
+
 ---
 
 ## 6. Workspace layout and app integration

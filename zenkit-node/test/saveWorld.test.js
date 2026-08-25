@@ -47,13 +47,20 @@ test('saveWorld reproduces the fixture bytes except the header date/user stamps'
   });
 });
 
+// This is the SEMANTIC half of the C2 claim. The `container` section is
+// byte-level by design (it sees the writer's header stamps and the fixture's
+// pre-patch `childs<N>` numbering — see the byte test above), so it is set
+// aside here rather than compared against the golden.
 test('saveWorld output re-loads and normalizes to the golden dump', () => {
   withTmpDir((dir) => {
     const out = path.join(dir, 'resaved.zen');
     zenkit.saveWorld(zenkit.loadWorld(FIXTURE, 'g2'), out);
 
     const golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
-    assert.deepStrictEqual(zenkit.normalizeWorld(zenkit.loadWorld(out, 'g2')), golden);
+    const resaved = zenkit.normalizeWorld(zenkit.loadWorld(out, 'g2'));
+    delete golden.container;
+    delete resaved.container;
+    assert.deepStrictEqual(resaved, golden);
   });
 });
 
@@ -113,5 +120,227 @@ test('saveWorld leaves no temp file behind on failure', () => {
     const bad = path.join(dir, 'missing', 'out.zen');
     assert.throws(() => zenkit.saveWorld(handle, bad), Error);
     assert.deepStrictEqual(fs.readdirSync(dir), []);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Byte-fidelity tests for the ZenKit writer patches 0010-0018 (patches/). Each
+// one inspects the saved bytes directly, the way ZenGin's own reader would.
+
+// Physical hash-table rows in file order: { keyLength, insertionIndex, hash, key }.
+function binSafeHashTableRows(buffer) {
+  let pos = 0;
+  for (;;) {
+    const nl = buffer.indexOf(0x0a, pos);
+    const line = buffer.toString('latin1', pos, nl).replace(/\r$/, '');
+    pos = nl + 1;
+    if (line === 'END') break;
+  }
+  let p = buffer.readUInt32LE(pos + 8);
+  const count = buffer.readUInt32LE(p);
+  p += 4;
+  const rows = [];
+  for (let i = 0; i < count; i += 1) {
+    const keyLength = buffer.readUInt16LE(p);
+    rows.push({
+      keyLength,
+      insertionIndex: buffer.readUInt16LE(p + 2),
+      hash: buffer.readUInt32LE(p + 4),
+      key: buffer.toString('latin1', p + 8, p + 8 + keyLength),
+    });
+    p += 8 + keyLength;
+  }
+  return rows;
+}
+
+// Every BinSafe entry named `key` with the given type byte: the payload bytes
+// following the fixed-size entry head (0x12, name index u32, type u8).
+function binSafeEntries(buffer, key, type, fixedSize) {
+  const row = binSafeHashTableRows(buffer).find((r) => r.key === key);
+  assert.ok(row, `hash table has no key ${key}`);
+  const head = Buffer.alloc(6);
+  head[0] = 0x12;
+  head.writeUInt32LE(row.insertionIndex, 1);
+  head[5] = type;
+  const found = [];
+  for (let at = buffer.indexOf(head); at >= 0; at = buffer.indexOf(head, at + 1)) {
+    if (fixedSize !== undefined) {
+      found.push(buffer.subarray(at + 6, at + 6 + fixedSize));
+    } else {
+      const size = buffer.readUInt16LE(at + 6);
+      found.push(buffer.subarray(at + 8, at + 8 + size));
+    }
+  }
+  return found;
+}
+
+// The MeshAndBsp blob's chunk table: Map<chunkId, payload>.
+function meshChunks(buffer) {
+  const marker = '[MeshAndBsp % 0 0]';
+  const at = buffer.indexOf(marker, 0, 'latin1');
+  assert.ok(at >= 0, 'no MeshAndBsp object');
+  let p = at + marker.length + 4; // skip the bsp version
+  const end = p + 4 + buffer.readUInt32LE(p);
+  p += 4;
+  const chunks = new Map();
+  while (p + 6 <= end) {
+    const id = buffer.readUInt16LE(p);
+    const len = buffer.readUInt32LE(p + 2);
+    chunks.set(id, buffer.subarray(p + 6, p + 6 + len));
+    p += 6 + len;
+  }
+  assert.strictEqual(p, end, 'MeshAndBsp chunk walk must end exactly at the declared size');
+  return chunks;
+}
+
+function withAuthoredFixture(fn) {
+  withTmpDir((dir) => {
+    const authored = path.join(dir, 'authored.zen');
+    zenkit._authorFixtureWorld(authored, 'binsafe', 'g2');
+    const resaved = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(authored, 'g2'), resaved);
+    fn(fs.readFileSync(authored), fs.readFileSync(resaved));
+  });
+}
+
+test('saveWorld is deterministic: two saves of one world are byte-identical', () => {
+  withTmpDir((dir) => {
+    const handle = zenkit.loadWorld(FIXTURE, 'g2');
+    const a = path.join(dir, 'a.zen');
+    const b = path.join(dir, 'b.zen');
+    zenkit.saveWorld(handle, a);
+    zenkit.saveWorld(handle, b);
+    assert.deepStrictEqual(normalizeHeaderStamps(fs.readFileSync(b)), normalizeHeaderStamps(fs.readFileSync(a)));
+  });
+});
+
+test('saveWorld writes the BinSafe hash table in ascending-hash, descending-index order', () => {
+  withTmpDir((dir) => {
+    const out = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(FIXTURE, 'g2'), out);
+    const rows = binSafeHashTableRows(fs.readFileSync(out));
+
+    let sameHashNeighbours = 0;
+    for (let i = 1; i < rows.length; i += 1) {
+      const prev = rows[i - 1];
+      const cur = rows[i];
+      assert.ok(prev.hash <= cur.hash, `row ${i}: hash ${cur.hash} after ${prev.hash}`);
+      if (prev.hash === cur.hash) {
+        sameHashNeighbours += 1;
+        assert.ok(prev.insertionIndex > cur.insertionIndex,
+          `row ${i}: index ${cur.insertionIndex} after ${prev.insertionIndex} in bucket ${cur.hash}`);
+      }
+    }
+    // ZenGin's hash has only 97 buckets, so a world's key set always collides;
+    // make sure the tie rule was actually exercised.
+    assert.ok(sameHashNeighbours > 0, 'expected at least one hash collision in the table');
+  });
+});
+
+test('saveWorld stamps the header date in ZenGin shape (d.m.yyyy hh:mm:ss)', () => {
+  withTmpDir((dir) => {
+    const before = new Date();
+    const out = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(FIXTURE, 'g2'), out);
+    const after = new Date();
+
+    const header = fs.readFileSync(out).toString('latin1', 0, 256);
+    const match = header.match(/\ndate ([^\n]*)\n/);
+    assert.ok(match, 'header has a date line');
+    assert.match(match[1], /^\d{1,2}\.\d{1,2}\.\d{4} \d{2}:\d{2}:\d{2}$/);
+    const day = (d) => `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+    assert.ok([day(before), day(after)].includes(match[1].split(' ')[0]), `unexpected date ${match[1]}`);
+  });
+});
+
+test('saveWorld writes oCMobContainer.locked=true as the BOOL raw value 0xFFFFFFFF', () => {
+  withTmpDir((dir) => {
+    const out = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(FIXTURE, 'g2'), out);
+    const values = binSafeEntries(fs.readFileSync(out), 'locked', 0x06, 4).map((b) => b.readUInt32LE(0));
+    assert.deepStrictEqual(values, [0xffffffff]);
+  });
+});
+
+test('saveWorld writes the nested material-list archive header like ZenGin', () => {
+  withTmpDir((dir) => {
+    const out = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(FIXTURE, 'g2'), out);
+    const matlist = meshChunks(fs.readFileSync(out)).get(0xb020).toString('latin1');
+    const materialCount = zenkit.normalizeWorld(zenkit.loadWorld(FIXTURE, 'g2')).mesh.materials.length;
+    const objects = `objects ${materialCount}`.padEnd('objects '.length + 9, ' ');
+    assert.ok(matlist.startsWith(
+      `ZenGin Archive\nver 1\nzCArchiverGeneric\nBINARY\nsaveGame 0\nEND\n${objects}\nEND\n\n`),
+    JSON.stringify(matlist.slice(0, 96)));
+  });
+});
+
+test('saveWorld appends the G2 alpha-test byte after the last material object', () => {
+  withAuthoredFixture((authored, resaved) => {
+    for (const buffer of [authored, resaved]) {
+      const matlist = meshChunks(buffer).get(0xb020);
+      const text = matlist.toString('latin1');
+      const body = matlist.subarray(text.indexOf('END\n', text.indexOf('END\n') + 4) + 5);
+      const count = body.readUInt32LE(0);
+      let p = 4;
+      for (let i = 0; i < count; i += 1) {
+        p = body.indexOf(0, p) + 1; // material name
+        p += body.readUInt32LE(p); // object record (self-sized)
+      }
+      assert.strictEqual(body.length, p + 1, 'exactly one byte follows the last material');
+      assert.strictEqual(body[p], 1);
+    }
+  });
+});
+
+test('saveWorld preserves the mesh date pad word and the BSP header version', () => {
+  withAuthoredFixture((authored, resaved) => {
+    for (const buffer of [authored, resaved]) {
+      const chunks = meshChunks(buffer);
+      const marker = chunks.get(0xb000);
+      // version u16, then the 16-byte date whose last word is the pad.
+      assert.strictEqual(marker.readUInt16LE(2 + 14), 0x4a01);
+      assert.strictEqual(chunks.get(0xc000).readUInt16LE(0), 3);
+    }
+  });
+});
+
+test('saveWorld lists shared light-map textures in first-reference order', () => {
+  withAuthoredFixture((authored, resaved) => {
+    for (const buffer of [authored, resaved]) {
+      const chunk = meshChunks(buffer).get(0xb026);
+      const textureCount = chunk.readUInt32LE(0);
+      assert.strictEqual(textureCount, 3);
+      let p = 4;
+      const firstPixelBytes = [];
+      for (let i = 0; i < textureCount; i += 1) {
+        assert.strictEqual(chunk.toString('latin1', p, p + 4), 'ZTEX');
+        p += 4 + 8 * 4; // signature + version, format, w, h, mipmaps, refw, refh, avg colour
+        firstPixelBytes.push(chunk[p]);
+        p += 4; // one 1x1 RGBA8 mipmap
+      }
+      const lightmapCount = chunk.readUInt32LE(p);
+      p += 4;
+      const indices = [];
+      for (let i = 0; i < lightmapCount; i += 1) {
+        indices.push(chunk.readUInt32LE(p + 9 * 4));
+        p += 9 * 4 + 4;
+      }
+      assert.strictEqual(p, chunk.length);
+      // Fixture: textures A, B, C referenced by light-maps in the order A, B, A, C.
+      assert.deepStrictEqual(indices, [0, 1, 0, 2]);
+      assert.deepStrictEqual(firstPixelBytes, [0x10, 0x20, 0x30]);
+    }
+  });
+});
+
+test('saveWorld round-trips bit 15 of the packed zCVob flag word', () => {
+  withAuthoredFixture((authored, resaved) => {
+    const payloads = (buffer) => binSafeEntries(buffer, 'dataRaw', 0x09);
+    const a = payloads(authored);
+    const b = payloads(resaved);
+    assert.ok(a.length >= 4, `expected the fixture's vobs, got ${a.length} dataRaw entries`);
+    assert.strictEqual(a.filter((raw) => raw.length === 83 && (raw[74] & 0x80) !== 0).length, 1);
+    assert.deepStrictEqual(b, a);
   });
 });

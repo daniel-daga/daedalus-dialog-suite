@@ -359,5 +359,644 @@
         "WP_FIXTURE_C"
       ]
     ]
+  },
+  "container": {
+    "header": {
+      "lines": [
+        "ZenGin Archive",
+        "ver 1",
+        "zCArchiverBinSafe",
+        "BIN_SAFE",
+        "saveGame 0",
+        "date",
+        "user",
+        "END"
+      ],
+      "date": "",
+      "user": "Daniel"
+    },
+    "hashTable": {
+      "count": 37,
+      "keys": [
+        {
+          "key": "childs0",
+          "index": 0,
+          "hash": 86
+        },
+        {
+          "key": "pack",
+          "index": 1,
+          "hash": 5
+        },
+        {
+          "key": "dataRaw",
+          "index": 2,
+          "hash": 12
+        },
+        {
+          "key": "vobName",
+          "index": 3,
+          "hash": 38
+        },
+        {
+          "key": "childs1",
+          "index": 4,
+          "hash": 87
+        },
+        {
+          "key": "itemInstance",
+          "index": 5,
+          "hash": 37
+        },
+        {
+          "key": "childs2",
+          "index": 6,
+          "hash": 88
+        },
+        {
+          "key": "focusName",
+          "index": 7,
+          "hash": 72
+        },
+        {
+          "key": "hitpoints",
+          "index": 8,
+          "hash": 25
+        },
+        {
+          "key": "damage",
+          "index": 9,
+          "hash": 85
+        },
+        {
+          "key": "moveable",
+          "index": 10,
+          "hash": 15
+        },
+        {
+          "key": "takeable",
+          "index": 11,
+          "hash": 22
+        },
+        {
+          "key": "focusOverride",
+          "index": 12,
+          "hash": 78
+        },
+        {
+          "key": "soundMaterial",
+          "index": 13,
+          "hash": 62
+        },
+        {
+          "key": "visualDestroyed",
+          "index": 14,
+          "hash": 66
+        },
+        {
+          "key": "owner",
+          "index": 15,
+          "hash": 0
+        },
+        {
+          "key": "ownerGuild",
+          "index": 16,
+          "hash": 69
+        },
+        {
+          "key": "isDestroyed",
+          "index": 17,
+          "hash": 2
+        },
+        {
+          "key": "stateNum",
+          "index": 18,
+          "hash": 0
+        },
+        {
+          "key": "triggerTarget",
+          "index": 19,
+          "hash": 17
+        },
+        {
+          "key": "useWithItem",
+          "index": 20,
+          "hash": 20
+        },
+        {
+          "key": "conditionFunc",
+          "index": 21,
+          "hash": 40
+        },
+        {
+          "key": "onStateFunc",
+          "index": 22,
+          "hash": 8
+        },
+        {
+          "key": "rewind",
+          "index": 23,
+          "hash": 72
+        },
+        {
+          "key": "locked",
+          "index": 24,
+          "hash": 37
+        },
+        {
+          "key": "keyInstance",
+          "index": 25,
+          "hash": 13
+        },
+        {
+          "key": "pickLockStr",
+          "index": 26,
+          "hash": 90
+        },
+        {
+          "key": "contains",
+          "index": 27,
+          "hash": 6
+        },
+        {
+          "key": "childs3",
+          "index": 28,
+          "hash": 89
+        },
+        {
+          "key": "waynetVersion",
+          "index": 29,
+          "hash": 31
+        },
+        {
+          "key": "numWaypoints",
+          "index": 30,
+          "hash": 40
+        },
+        {
+          "key": "wpName",
+          "index": 31,
+          "hash": 89
+        },
+        {
+          "key": "waterDepth",
+          "index": 32,
+          "hash": 8
+        },
+        {
+          "key": "underWater",
+          "index": 33,
+          "hash": 53
+        },
+        {
+          "key": "position",
+          "index": 34,
+          "hash": 12
+        },
+        {
+          "key": "direction",
+          "index": 35,
+          "hash": 2
+        },
+        {
+          "key": "numWays",
+          "index": 36,
+          "hash": 35
+        }
+      ],
+      "physicalOrder": "sha256:447867507f1e430ccb3bf651c20100e9a09c6ecee75eb69e282ec7340aedbc50"
+    },
+    "frames": {
+      "total": 17,
+      "sequenceHash": "sha256:3d3b3995c6aae39d758941e89693478ed5a39cb722d6564e4fa2a56957c73293",
+      "classes": {
+        "EndMarker": {
+          "count": 1,
+          "versions": {
+            "0": 1
+          }
+        },
+        "MeshAndBsp": {
+          "count": 1,
+          "versions": {
+            "0": 1
+          }
+        },
+        "VobTree": {
+          "count": 1,
+          "versions": {
+            "0": 1
+          }
+        },
+        "WayNet": {
+          "count": 1,
+          "versions": {
+            "0": 1
+          }
+        },
+        "oCItem:zCVob": {
+          "count": 1,
+          "versions": {
+            "0": 1
+          }
+        },
+        "oCMobContainer:oCMobInter:oCMOB:zCVob": {
+          "count": 1,
+          "versions": {
+            "64513": 1
+          }
+        },
+        "oCWorld:zCWorld": {
+          "count": 1,
+          "versions": {
+            "64513": 1
+          }
+        },
+        "zCVob": {
+          "count": 1,
+          "versions": {
+            "52224": 1
+          }
+        },
+        "zCVobSpot:zCVob": {
+          "count": 1,
+          "versions": {
+            "52224": 1
+          }
+        },
+        "zCWayNet": {
+          "count": 1,
+          "versions": {
+            "0": 1
+          }
+        },
+        "zCWaypoint": {
+          "count": 4,
+          "versions": {
+            "0": 4
+          }
+        },
+        "§": {
+          "count": 3,
+          "versions": {
+            "0": 3
+          }
+        }
+      }
+    },
+    "schemas": {
+      "EndMarker": {
+        "entries": [],
+        "objects": 1,
+        "deviating": 0
+      },
+      "MeshAndBsp": {
+        "entries": [],
+        "objects": 1,
+        "deviating": 0
+      },
+      "VobTree": {
+        "entries": [
+          [
+            "childs0",
+            "INTEGER"
+          ],
+          [
+            "childs0",
+            "INTEGER"
+          ],
+          [
+            "childs1",
+            "INTEGER"
+          ],
+          [
+            "childs2",
+            "INTEGER"
+          ],
+          [
+            "childs3",
+            "INTEGER"
+          ]
+        ],
+        "objects": 1,
+        "deviating": 0
+      },
+      "WayNet": {
+        "entries": [],
+        "objects": 1,
+        "deviating": 0
+      },
+      "oCItem:zCVob": {
+        "entries": [
+          [
+            "pack",
+            "INTEGER"
+          ],
+          [
+            "dataRaw",
+            "RAW"
+          ],
+          [
+            "vobName",
+            "STRING"
+          ],
+          [
+            "itemInstance",
+            "STRING"
+          ]
+        ],
+        "objects": 1,
+        "deviating": 0
+      },
+      "oCMobContainer:oCMobInter:oCMOB:zCVob": {
+        "entries": [
+          [
+            "pack",
+            "INTEGER"
+          ],
+          [
+            "dataRaw",
+            "RAW"
+          ],
+          [
+            "vobName",
+            "STRING"
+          ],
+          [
+            "focusName",
+            "STRING"
+          ],
+          [
+            "hitpoints",
+            "INTEGER"
+          ],
+          [
+            "damage",
+            "INTEGER"
+          ],
+          [
+            "moveable",
+            "BOOL"
+          ],
+          [
+            "takeable",
+            "BOOL"
+          ],
+          [
+            "focusOverride",
+            "BOOL"
+          ],
+          [
+            "soundMaterial",
+            "ENUM"
+          ],
+          [
+            "visualDestroyed",
+            "STRING"
+          ],
+          [
+            "owner",
+            "STRING"
+          ],
+          [
+            "ownerGuild",
+            "STRING"
+          ],
+          [
+            "isDestroyed",
+            "BOOL"
+          ],
+          [
+            "stateNum",
+            "INTEGER"
+          ],
+          [
+            "triggerTarget",
+            "STRING"
+          ],
+          [
+            "useWithItem",
+            "STRING"
+          ],
+          [
+            "conditionFunc",
+            "STRING"
+          ],
+          [
+            "onStateFunc",
+            "STRING"
+          ],
+          [
+            "rewind",
+            "BOOL"
+          ],
+          [
+            "locked",
+            "BOOL"
+          ],
+          [
+            "keyInstance",
+            "STRING"
+          ],
+          [
+            "pickLockStr",
+            "STRING"
+          ],
+          [
+            "contains",
+            "STRING"
+          ]
+        ],
+        "objects": 1,
+        "deviating": 0
+      },
+      "oCWorld:zCWorld": {
+        "entries": [],
+        "objects": 1,
+        "deviating": 0
+      },
+      "zCVob": {
+        "entries": [
+          [
+            "pack",
+            "INTEGER"
+          ],
+          [
+            "dataRaw",
+            "RAW"
+          ],
+          [
+            "vobName",
+            "STRING"
+          ]
+        ],
+        "objects": 1,
+        "deviating": 0
+      },
+      "zCVobSpot:zCVob": {
+        "entries": [
+          [
+            "pack",
+            "INTEGER"
+          ],
+          [
+            "dataRaw",
+            "RAW"
+          ],
+          [
+            "vobName",
+            "STRING"
+          ]
+        ],
+        "objects": 1,
+        "deviating": 0
+      },
+      "zCWayNet": {
+        "entries": [
+          [
+            "waynetVersion",
+            "INTEGER"
+          ],
+          [
+            "numWaypoints",
+            "INTEGER"
+          ],
+          [
+            "numWays",
+            "INTEGER"
+          ]
+        ],
+        "objects": 1,
+        "deviating": 0
+      },
+      "zCWaypoint": {
+        "entries": [
+          [
+            "wpName",
+            "STRING"
+          ],
+          [
+            "waterDepth",
+            "INTEGER"
+          ],
+          [
+            "underWater",
+            "BOOL"
+          ],
+          [
+            "position",
+            "VEC3"
+          ],
+          [
+            "direction",
+            "VEC3"
+          ]
+        ],
+        "objects": 4,
+        "deviating": 0
+      }
+    },
+    "stream": {
+      "binSafeVersion": 2,
+      "declaredObjectCount": 10,
+      "events": 97,
+      "objects": 17,
+      "maxDepth": 4,
+      "endsAtHashTable": true
+    },
+    "payloads": {
+      "raw": {
+        "oCItem:zCVob/dataRaw": "sha256:ff204b3b83e9515c17ba25958e1bd4d29a23f6bfb74a0b51979dd51cda0b3b83",
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/dataRaw": "sha256:9160649f1c6c545bb25a9e2899a9657451afb5210c620e40cb36d11395c49bbc",
+        "zCVob/dataRaw": "sha256:932ae2f5cb001c08816c3ee181ea87d65ab8464df741eb9e08b30c06ffa74104",
+        "zCVobSpot:zCVob/dataRaw": "sha256:707618db767c2ea79a65f019b855e007ede1d98af7f8c250041670b9ff0d5a35"
+      },
+      "bool": {
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/focusOverride": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/isDestroyed": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/locked": "sha256:67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/moveable": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/rewind": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/takeable": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "zCWaypoint/underWater": "sha256:374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+      }
+    },
+    "meshAndBsp": {
+      "bspVersion": 67698688,
+      "size": 900,
+      "chunks": [
+        {
+          "id": "0xb000",
+          "length": 34,
+          "sha256": "sha256:1d8c653c14bc1312f57f210f3920e9955ed6b1485de8e2d8d2c33b0222555fbf"
+        },
+        {
+          "id": "0xb010",
+          "length": 86,
+          "sha256": "sha256:b89b42de2027c01443b38805c734f620ba2c0cae16ceedc2eb0767b352e72319"
+        },
+        {
+          "id": "0xb020",
+          "length": 357,
+          "sha256": "sha256:3f6a31ab2b2ae3f5653237e384a5251161b29d30597cf506387cbb4c77267790"
+        },
+        {
+          "id": "0xb026",
+          "length": 8,
+          "sha256": "sha256:af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        },
+        {
+          "id": "0xb030",
+          "length": 52,
+          "sha256": "sha256:72e4ac85829e796f4196747859d00e8a770fcc03fde3d38f989ce42e238c740c"
+        },
+        {
+          "id": "0xb040",
+          "length": 100,
+          "sha256": "sha256:1268d2aeae1009c7d3541f200a0537efdb6efd9f9ae0cb7969717ddbb7ac88ac"
+        },
+        {
+          "id": "0xb050",
+          "length": 100,
+          "sha256": "sha256:c8585a16ac2249ed3aa45bf7b63c58bd8a68f39e0eca48680a0b5d3628f67074"
+        },
+        {
+          "id": "0xb060",
+          "length": 0,
+          "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "id": "0xc000",
+          "length": 6,
+          "sha256": "sha256:8c765cd796a40f961d239dc8d469917b278e18316fe8ee9bbe2a5737e294204d"
+        },
+        {
+          "id": "0xc010",
+          "length": 12,
+          "sha256": "sha256:0db201e8371010e5cd3b719cf6c131cea86e18ef7c5bdd394e23b352b8e54f9e"
+        },
+        {
+          "id": "0xc040",
+          "length": 40,
+          "sha256": "sha256:4b32da0a486551c15a0da40b8c1ae58b65a0d777515e61c7461565e933590ade"
+        },
+        {
+          "id": "0xc045",
+          "length": 12,
+          "sha256": "sha256:6fe3223f5b607fd811a214cbf0fc14aa3282445d91676810f9978c06b946313b"
+        },
+        {
+          "id": "0xc050",
+          "length": 8,
+          "sha256": "sha256:af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        },
+        {
+          "id": "0xc0ff",
+          "length": 1,
+          "sha256": "sha256:df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c"
+        }
+      ],
+      "trailing": ""
+    }
   }
 }

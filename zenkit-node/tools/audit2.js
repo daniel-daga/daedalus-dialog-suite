@@ -1,5 +1,5 @@
 // Strict audit: no childs<N> normalization, plus hash-table childs key comparison.
-const fs=require('node:fs');const {walk}=require('./walk');
+const fs=require('node:fs');const {walk}=require('../lib/container');
 const A=process.argv[2],B=process.argv[3];
 const ba=fs.readFileSync(A),bb=fs.readFileSync(B);
 const ga=walk(ba),gb=walk(bb);

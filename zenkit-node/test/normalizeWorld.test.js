@@ -86,6 +86,28 @@ test('normalizeWorld bsp reports the single-leaf fixture tree', () => {
   assert.match(bsp.nodeHash, SHA256_RE);
 });
 
+test('normalizeWorld container section is computed from the archive bytes of the loaded path', () => {
+  const { containerFromBuffer } = require('../lib/container.js');
+  const { container } = dumpFixture();
+  assert.deepStrictEqual(container, containerFromBuffer(fs.readFileSync(FIXTURE)));
+  assert.strictEqual(container.stream.endsAtHashTable, true);
+  assert.strictEqual(container.hashTable.count, 37);
+});
+
+test('normalizeWorld reports no container section for a mutated handle', () => {
+  // The container section is read from the archive BYTES the handle was loaded
+  // from, so it cannot describe a handle whose structs have since been mutated.
+  // Reporting the source file's bytes there would be a lie; it must be null.
+  const handle = zenkit.loadWorld(FIXTURE, 'g2');
+  assert.notStrictEqual(zenkit.normalizeWorld(handle).container, null);
+
+  zenkit.setVobPosition(handle, '0/1', [1, 2, 3]);
+
+  const dump = zenkit.normalizeWorld(handle);
+  assert.strictEqual(dump.container, null);
+  assert.notDeepStrictEqual(dump.vobs, zenkit.normalizeWorld(zenkit.loadWorld(FIXTURE, 'g2')).vobs);
+});
+
 test('normalizeWorld waynet is sorted with pair-sorted edges', () => {
   const { waynet } = dumpFixture();
   assert.deepStrictEqual(

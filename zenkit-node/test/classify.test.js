@@ -274,6 +274,92 @@ test('reordered waypoints plus a within-epsilon move: classification reordered, 
   assert.ok(noise.path.includes('WP_C') || noise.path.includes('position'));
 });
 
+// --- container section: archive-container facts computed from the bytes ---
+
+function makeContainer() {
+  return {
+    header: { lines: ['ZenGin Archive', 'ver 1', 'zCArchiverBinSafe', 'BIN_SAFE', 'saveGame 0', 'date', 'user', 'END'], date: '', user: 'Daniel' },
+    hashTable: { count: 2, keys: [{ key: 'childs0', index: 0, hash: 86 }, { key: 'pack', index: 1, hash: 5 }], physicalOrder: 'sha256:aaa' },
+    frames: { total: 3, sequenceHash: 'sha256:bbb', classes: { zCVob: { count: 2, versions: { 52224: 2 } } } },
+    schemas: { zCVob: { entries: [['pack', 'INTEGER'], ['dataRaw', 'RAW']], objects: 2, deviating: 0 } },
+    stream: { binSafeVersion: 2, declaredObjectCount: 3, events: 20, objects: 3, maxDepth: 2, endsAtHashTable: true },
+    payloads: { raw: { 'zCVob/dataRaw': 'sha256:ccc' }, bool: { 'zCVob/showVisual': 'sha256:ddd' } },
+    meshAndBsp: { bspVersion: 0x04090000, size: 900, chunks: [{ id: '0xb000', length: 34, sha256: 'sha256:eee' }], trailing: '' },
+  };
+}
+
+function makeDumpWithContainer() {
+  const dump = makeDump();
+  dump.container = makeContainer();
+  return dump;
+}
+
+test('identical container sections classify identical', () => {
+  const result = classifyDumps(makeDumpWithContainer(), makeDumpWithContainer());
+  assert.strictEqual(result.classification, 'identical');
+  assert.deepStrictEqual(result.findings, []);
+});
+
+test('container header date/user values are benign metadata', () => {
+  const a = makeDumpWithContainer();
+  const b = makeDumpWithContainer();
+  b.container.header.date = '25.8.2026 10:00:00';
+  b.container.header.user = 'somebody-else';
+  const result = classifyDumps(a, b);
+  assert.strictEqual(result.classification, 'identical');
+  assert.deepStrictEqual(result.findings, []);
+});
+
+test('a differing hash-table physical order is semantic-drift naming container.hashTable.physicalOrder', () => {
+  const a = makeDumpWithContainer();
+  const b = makeDumpWithContainer();
+  b.container.hashTable.physicalOrder = 'sha256:zzz';
+  const result = classifyDumps(a, b);
+  assert.strictEqual(result.classification, 'semantic-drift');
+  assert.deepStrictEqual(result.findings.map((f) => [f.class, f.path]), [
+    ['semantic-drift', 'container.hashTable.physicalOrder'],
+  ]);
+});
+
+test('a numeric container difference within epsilon is still semantic-drift, never float-noise', () => {
+  const a = makeDumpWithContainer();
+  const b = makeDumpWithContainer();
+  b.container.stream.events = 20 + 1e-9;
+  const result = classifyDumps(a, b);
+  assert.strictEqual(result.classification, 'semantic-drift');
+  assert.deepStrictEqual(result.findings.map((f) => [f.class, f.path]), [
+    ['semantic-drift', 'container.stream.events'],
+  ]);
+});
+
+test('reordered container arrays are semantic-drift, never reordered', () => {
+  const a = makeDumpWithContainer();
+  const b = makeDumpWithContainer();
+  b.container.header.lines = ['ZenGin Archive', 'ver 1', 'BIN_SAFE', 'zCArchiverBinSafe', 'saveGame 0', 'date', 'user', 'END'];
+  b.container.hashTable.keys.reverse();
+  const result = classifyDumps(a, b);
+  assert.strictEqual(result.classification, 'semantic-drift');
+  assert.ok(result.findings.every((f) => f.class === 'semantic-drift'));
+  const paths = result.findings.map((f) => f.path);
+  assert.ok(paths.includes('container.header.lines[2]'));
+  assert.ok(paths.some((p) => p.startsWith('container.hashTable.keys[0]')));
+});
+
+test('a MeshAndBsp chunk hash difference names the chunk index', () => {
+  const a = makeDumpWithContainer();
+  const b = makeDumpWithContainer();
+  b.container.meshAndBsp.chunks[0].sha256 = 'sha256:fff';
+  const result = classifyDumps(a, b);
+  assert.strictEqual(result.classification, 'semantic-drift');
+  assert.strictEqual(result.findings[0].path, 'container.meshAndBsp.chunks[0].sha256');
+});
+
+test('a container section present on only one side is semantic-drift', () => {
+  const result = classifyDumps(makeDump(), makeDumpWithContainer());
+  assert.strictEqual(result.classification, 'semantic-drift');
+  assert.strictEqual(result.findings[0].path, 'container');
+});
+
 test('a waypoint missing from one dump is semantic-drift naming the waypoint', () => {
   const a = makeDump();
   const b = makeDump();

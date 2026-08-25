@@ -72,3 +72,22 @@ Differences are classified `identical` / `float-noise` / `reordered` /
 `semantic-drift` / `unreadable`; the last two block Gate 1 (plan §3). The
 in-engine acceptance pass (plan §5) is the second, independent instrument —
 results live in `docs/engine-acceptance-<date>.md`.
+
+### The `container` section
+
+A `normalizeWorld` dump has two halves. `meta`/`vobs`/`mesh`/`bsp`/`waynet`
+come from ZenKit's parsed structs. `container` is computed in JS from the
+archive **bytes** the handle was loaded from (`lib/container.js`), because
+ZenKit's positional, type-checked reader ignores facts ZenGin's name-addressed
+reader depends on: the archive header lines (verbatim; only the `date`/`user`
+values are split off), the hash-table key set with
+insertion index/hash **and physical order**, every object frame
+`[name class version index]` (per-class version counts + a sequence hash),
+the per-class ordered `(entryName, entryType)` schema, entry-stream counts,
+SHA-256s over every RAW/RAW_FLOAT payload and every raw BOOL word per
+`(class, entryName)`, and the `MeshAndBsp` chunk table `(id, length, sha256)`.
+The classifier treats **any** `container` difference as `semantic-drift` —
+never `float-noise`, never `reordered` — except the header `date`/`user`
+stamp values, which are benign (a missing or added stamp line is still
+drift). Golden fixtures carry the section too; regenerate
+only the JSON with `node scripts/fixtures-regen.js --golden-only`.

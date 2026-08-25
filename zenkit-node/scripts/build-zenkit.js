@@ -57,21 +57,16 @@ function zenkitVersion() {
 }
 
 // Local fixes against the pinned ZenKit commit (upstreamable; see patches/).
-// Applied idempotently to the submodule working tree before every build so a
-// fresh clone builds the same bytes without a fork.
+// The submodule working tree is reset to the pinned commit first, then every
+// patch is applied in order, so a fresh clone and a previously patched tree
+// build the same bytes. (Probing each patch with `git apply --reverse --check`
+// instead misjudges patches whose hunks overlap — 0003/0007 in Camera.cc.)
 function applyPatches() {
   const patchDir = path.join(ROOT, 'patches');
   if (!fs.existsSync(patchDir)) return;
+  execFileSync('git', ['checkout', '--', '.'], { cwd: ZENKIT_SRC, stdio: 'inherit' });
   for (const name of fs.readdirSync(patchDir).filter((f) => f.endsWith('.patch')).sort()) {
-    const patch = path.join(patchDir, name);
-    try {
-      // Already applied? (--reverse --check succeeds only if it is.)
-      execFileSync('git', ['apply', '--reverse', '--check', patch], { cwd: ZENKIT_SRC, stdio: 'ignore' });
-      continue;
-    } catch {
-      // not applied yet
-    }
-    execFileSync('git', ['apply', patch], { cwd: ZENKIT_SRC, stdio: 'inherit' });
+    execFileSync('git', ['apply', path.join(patchDir, name)], { cwd: ZENKIT_SRC, stdio: 'inherit' });
     console.log(`applied ${name}`);
   }
 }

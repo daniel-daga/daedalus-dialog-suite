@@ -20,7 +20,6 @@
 
 #include "encoding.hh"
 #include "fixture.hh"
-#include "msvc_crt_guard.hh"
 #include "normalize.hh"
 #include "world_handle.hh"
 #include "zenkit-version.h"
@@ -272,9 +271,6 @@ Napi::Value SaveWorld(Napi::CallbackInfo const& info) {
     // write below is done by hand with explicit error checks.
     std::vector<std::byte> bytes;
     {
-      // See msvc_crt_guard.hh: keeps ZenKit's glibc-only strftime format from
-      // fail-fasting the process on Windows while the header is stamped.
-      zenkit_node::ScopedCrtInvalidParameterGuard crt_guard;
       auto w = zenkit::Write::to(&bytes);
       auto archive = zenkit::WriteArchive::to(w.get(), handle->format);
       archive->write_object(handle->root_object_name,

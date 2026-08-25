@@ -1,0 +1,33 @@
+﻿BinSafe: store oCMobLockable's `locked` and oCMOB's `moveable` as 0xFFFFFFFF like ZenGin.
+
+WriteArchiveBinsafe::write_bool always wrote 1 for true. ZenGin declares those two
+flags as signed one-bit bit-fields, so reading a set flag yields -1 and its archiver
+stores 0xFFFFFFFF. A census of all 9,802 distinct (class, entry) BOOL keys across the
+three retail Gothic II BinSafe worlds (NewWorld, OldWorld, AddonWorld) finds exactly
+three keys with a non-0/1 value, and they never use 1 for true: oCMobContainer.locked
+(199), oCMobDoor.locked (31) and oCMobSwitch.moveable (5). The quirk is therefore keyed
+on the entry name. `takeable` sits in the same bit-field group but is false in every
+retail world, so no evidence exists either way and it is left writing 1. The ASCII
+writer already emits "1" there and is left alone.
+
+diff --git a/src/archive/ArchiveBinsafe.cc b/src/archive/ArchiveBinsafe.cc
+index f3aa39d..d81511f 100644
+--- a/src/archive/ArchiveBinsafe.cc
++++ b/src/archive/ArchiveBinsafe.cc
+@@ -351,7 +351,15 @@ namespace zenkit {
+ 
+ 	void WriteArchiveBinsafe::write_bool(std::string_view name, bool v) {
+ 		this->write_entry(name, ArchiveEntryType::BOOL);
+-		this->_m_write->write_uint(v ? 1 : 0);
++
++		// Quirk: ZenGin declares oCMobLockable's `locked` and oCMOB's `moveable` as signed
++		// one-bit bit-fields, so reading a set flag yields -1 and its archiver stores
++		// 0xFFFFFFFF rather than 1. Every other BOOL in the retail worlds is 0 or 1.
++		if (v && (name == "locked" || name == "moveable")) {
++			this->_m_write->write_uint(0xFFFFFFFFu);
++		} else {
++			this->_m_write->write_uint(v ? 1 : 0);
++		}
+ 	}
+ 
+ 	void WriteArchiveBinsafe::write_color(std::string_view name, Color v) {
