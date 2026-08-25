@@ -51,10 +51,14 @@ function eventDiff(A, B) {
   return { aligned: true, events: sa.length, differing: [...classes].map(([k, n]) => `${n}Ã— ${k}`) };
 }
 
+// The four BinSafe worlds. The other 24 .zen files under Worlds/ are
+// zCArchiverGeneric/ASCII — a writer path with no fidelity work yet (see the
+// acceptance record §9), so they are deliberately not listed here.
 const PATHS = {
   NewWorld: `${WORLDS}/NewWorld/NewWorld.zen`,
   OldWorld: `${WORLDS}/OldWorld/OldWorld.zen`,
   AddonWorld: `${WORLDS}/Addon/AddonWorld.zen`,
+  DragonIsland: `${WORLDS}/NewWorld/DragonIsland.zen`,
 };
 for (const name of targets) {
   const orig = PATHS[name];

@@ -91,3 +91,13 @@ never `float-noise`, never `reordered` — except the header `date`/`user`
 stamp values, which are benign (a missing or added stamp line is still
 drift). Golden fixtures carry the section too; regenerate
 only the JSON with `node scripts/fixtures-regen.js --golden-only`.
+
+It is `null` for a handle that has been mutated: the section describes the
+bytes the handle was loaded from, and after `setVobPosition` /
+`insertItemVob` those bytes no longer describe the handle. Save the world and
+load the result to get a container section back.
+
+The section is **BinSafe-only**. Only 4 of the 28 `.zen` files in a Gothic II
+install use that archiver; the rest are `zCArchiverGeneric`/ASCII, which has
+had no fidelity work — see the acceptance record §9 before trusting a
+round-trip of those.

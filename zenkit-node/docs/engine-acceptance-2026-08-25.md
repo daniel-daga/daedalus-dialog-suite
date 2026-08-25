@@ -195,26 +195,36 @@ The final build (with patch 0017 widened, §3.6) re-saves NewWorld to a file tha
 differs from the engine-accepted v5 **in 4 bytes — the header clock** — so this
 result carries over without a re-run.
 
-### 3.6 A defect the widened instrument caught after the gate passed
+### 3.6 Two defects the widened instrument caught after the gate passed
 
-Re-saving **OldWorld** with the v5 build classified `semantic-drift`, naming
-`container.payloads.bool.oCMobSwitch…/moveable`. Patch 0017 had been derived
-from NewWorld alone, where `moveable` is never true.
+Both were found by re-saving a world the engine pass never touched, and both
+were the *same mistake*: a rule derived from too small a corpus.
 
-A census of **all 9,802 distinct (class, entry) BOOL keys across all three
-retail BinSafe worlds** found exactly three keys that ever use a non-0/1 raw
-value, and none of them ever uses `1` for true:
+1. Re-saving **OldWorld** classified `semantic-drift`, naming
+   `container.payloads.bool.oCMobSwitch…/moveable`. Patch 0017 had been derived
+   from NewWorld alone, where `moveable` is never true.
+2. After widening it to `locked`+`moveable`, re-saving **DragonIsland** — the
+   *fourth* BinSafe world, missed because it does not follow the
+   `<Name>/<Name>.zen` layout — flagged `oCMOB/focusOverride` as well.
 
-| Key | false | true |
-|---|---|---|
-| `oCMobContainer.locked` | 0 ×95 | 0xFFFFFFFF ×199 |
-| `oCMobDoor.locked` | 0 ×217 | 0xFFFFFFFF ×31 |
-| `oCMobSwitch.moveable` | 0 ×35 | 0xFFFFFFFF ×5 |
+The rule is now derived from a census of **all 10,279 distinct (class, entry)
+BOOL keys across every retail BinSafe world**. Exactly three entry names ever
+hold a non-0/1 value, and none ever uses `1` for true:
 
-`takeable` sits in the same ZenGin bit-field group but is false in every retail
-world, so **no evidence exists either way and it was left writing 1** — noted
-rather than guessed. This is the widened instrument earning its keep on a world
-the gate never tested.
+| Entry name | Classes | false | true |
+|---|---|---|---|
+| `locked` | oCMobContainer, oCMobDoor | 0 ×326 | 0xFFFFFFFF ×249 |
+| `moveable` | oCMobSwitch | 0 ×44 | 0xFFFFFFFF ×5 |
+| `focusOverride` | oCMOB, oCMobSwitch | 0 ×171 | 0xFFFFFFFF ×4 |
+
+The other 10,274 keys are 0/1. `takeable` sits in the same ZenGin bit-field
+group but is false in every retail world, so **no evidence exists either way and
+it was left writing 1** — noted rather than guessed.
+
+The lesson is the corpus, not the rule: both misses were invisible to the engine
+gate (which tested one world) and to the struct dump (which cannot see a raw BOOL
+value). Only a byte-level instrument run over *every* world catches them — which
+is what `tools/breadth.js` now does in one command.
 
 ### 3.7 State of the re-save after patches 0010–0019
 
@@ -373,6 +383,38 @@ Still session-temporary in the scratchpad, one-off probes not worth promoting:
 `htdiff.js` (hash-table physical order), `lm.js` (0xB026 structure), `layout.js`,
 `inspect.js`, `bools.js`/`bools2.js` (the BOOL census of §3.6), and `mutate.js`
 (builds the row 10 world, §8 — reproduce it from the report there).
+
+---
+
+## 9. Known scope limits — read before T8
+
+**Only 4 of the 28 `.zen` files in a G2 install are BinSafe.** Everything this
+record establishes is about that path:
+
+| Archiver | Files |
+|---|---|
+| `zCArchiverBinSafe` / `BIN_SAFE` | `NewWorld.zen`, `OldWorld.zen`, `AddonWorld.zen`, `DragonIsland.zen` |
+| `zCArchiverGeneric` / `ASCII` | the other 24 — every `*_Part_*.zen`, `OldCamp`, `Surface`, and the small VOB-library ZENs |
+
+The plan's T8 says "every original world … **including all parts**". All the
+parts are **ASCII**, and `ArchiveAscii.cc` has had *no* fidelity work — patch
+0018 touched it only for the date format. Expect the ASCII writer to need its own
+patch series, and do not assume the BinSafe results transfer. `tools/bytediff.js`
+and `lib/container.js` are BinSafe-only and will need an ASCII sibling (or T8
+compares those worlds by dump + whole-file hash alone).
+
+Also open:
+
+- **`takeable`** — in the same ZenGin bit-field group as the three flags patch
+  0017 special-cases, but false in every retail world, so there is no evidence
+  either way. Left writing `1`. A mod world with a takeable mob would settle it.
+- **`colorAniList`** — the last byte residual on the BinSafe path. ZenGin writes
+  greyscale shorthand (`255 `), ZenKit expands to `(255 255 255)`. Patching
+  `VLight::save` to emit the shorthand when r==g==b would make BinSafe re-saves
+  byte-identical bar the header stamps. Engine-tested as harmless (§3.3
+  candidate 09), so this is fidelity polish, not a defect.
+- **T9 CI** — `.github/workflows/zenkit-node.yml` has never executed on GitHub.
+- **Gothic 1** is not installed; no G1 coverage of anything.
 
 ---
 
