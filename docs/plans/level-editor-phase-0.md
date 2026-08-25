@@ -3,12 +3,16 @@
 Companion to [`level-editor.md`](level-editor.md) (architecture) and
 [`level-editor-design-brief.md`](level-editor-design-brief.md) (source brief).
 
-Status: **in progress on `feature/level-editor-phase-0`** — T1–T9 landed,
-including **T6.5 (the in-engine gate), which PASSED**, and T7/T8. Nineteen
-ZenKit save-path defects were found and patched to get there; two were
-independently fatal to the original engine. Verdict: **Plan A, scoped to the
-BinSafe path** — T8 measured the ASCII writer and found it unusable (§6, T8).
-Only **T10 / E-full** remains, and it needs a person at the keyboard.
+Status: **T1–T10 all landed**, including both engine gates — **T6.5 (E-early)
+and T10 (E-full), both PASSED** (T10 on 2026-08-25: three candidates, control
+first, row 10 a full pass with the inserted item takeable). Nineteen ZenKit
+save-path defects were found and patched to get there; two were independently
+fatal to the original engine. Verdict: **Plan A, scoped to the BinSafe path** —
+T8 measured the ASCII writer and found it unusable (§6, T8).
+
+**The one exit criterion still open is criterion 1** — CI green on macOS and
+Windows. Everything else is met, criterion 2 with a measured and deliberate
+scope-down and criterion 4 with four checklist rows unrun and named.
 Full record and evidence:
 [`zenkit-node/docs/engine-acceptance-2026-08-25.md`](../../zenkit-node/docs/engine-acceptance-2026-08-25.md).
 
@@ -61,7 +65,15 @@ and op system would already be built on an unproven assumption.
    named down to four specific writer defects.
 4. **The in-engine acceptance checklist (§5) passes in original Gothic** for
    both a plain re-save and a minimally edited world.
-   — ⏸ row 1 only (Spacer). T10 is what remains of Phase 0.
+   — ✅ **met, with four rows unrun and said so.** T10 ran 2026-08-25 23:46:
+   all three candidates PASS with the pristine control first in the same
+   session, and **row 10 is a full pass — the inserted item was takeable**, not
+   merely visible. Rows 2, 3, 4 and 6 ran on the plain re-save; rows 5, 7, 8
+   and 9 did not and are not claimed. The engine was **not stock** — the game
+   never rendered on this machine until GD3D11 was installed — which also
+   degrades row 5 permanently to candidate-vs-control. Both facts, and the
+   argument for why the unrun rows are acceptable on a bit-identical re-save
+   but *not* for Phase 1b, are in acceptance record §8 and Environment.
 5. A written **Plan A / Plan B verdict** (whole-world re-serialization vs.
    chunk splice — `level-editor.md` §5) supported by *both* the harness report
    and the engine result, per the decision matrix in §5.

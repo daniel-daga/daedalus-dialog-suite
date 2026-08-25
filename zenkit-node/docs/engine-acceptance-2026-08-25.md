@@ -1,6 +1,6 @@
 # Engine acceptance record & session handoff — 2026-08-24/25
 
-Phase 0 tasks **T6.5** (§5 "E-early"), **T7** and **T8**
+Phase 0 tasks **T6.5** (§5 "E-early"), **T7**, **T8** and **T10**
 (`../../docs/plans/level-editor-phase-0.md`).
 Branch: `feature/level-editor-phase-0`. Nothing pushed to master.
 
@@ -20,7 +20,9 @@ scope: ZenKit cannot re-load its own ASCII output (a hard `0xC0000409` on all
 20 ASCII worlds) and every raw entry it writes is corrupt. Evidence, the four
 named defects and the scope decision are in §10.2 and §10.3.
 
-Remaining: T10 / E-full (checklist rows 2–10, §8).
+**T10 / E-full has now run and PASSED** — all three candidates, control
+included, row 10 a full pass with the inserted item takeable. Rows 5, 7, 8, 9
+were not exercised and are not claimed (§8).
 
 ---
 
@@ -42,7 +44,7 @@ classifier, the container-level instrument and the `zen-roundtrip` harness.
 | T6.5 engine gate | ✅ | Passed, §3.5. |
 | T7 `zen-roundtrip` harness | ✅ | `scripts/zen-roundtrip.js`, two modes, per-world child-process isolation, coverage-honest report — §10. |
 | T8 corpus run | ✅ | Ran; **scoped to BinSafe**, with the ASCII reason measured — §10.2, §10.3. |
-| T10 / E-full | ⏸ | Manual, needs the user at the keyboard — §8. |
+| T10 / E-full | ✅ | Ran 2026-08-25 23:46, all three candidates PASS; rows 5/7/8/9 not exercised — §8. |
 
 ### ZenKit pin
 
@@ -367,7 +369,8 @@ node --test test/*.test.js          # expect 88 pass / 0 fail
 npm run lint
 ```
 
-**Next:** T10 / E-full — §8. T7 and T8 are done (§10).
+**T10 / E-full is done** (§8). The only Phase-0 exit criterion still open is
+CI on macOS and Windows (§9).
 
 ### Environment
 
@@ -750,17 +753,50 @@ force.
 | # | Check | Status |
 |---|---|---|
 | 1 | Loads in Spacer | ✅ §3.5 |
-| 2 | Loads in the game, hero spawns | ⏸ |
-| 3 | Walk terrain/interiors, jump, fall — **collision** | ⏸ — but the BSP tree and mesh are bit-identical, so nothing can differ here on an untouched re-save |
-| 4 | NPCs spawn and walk routines | ⏸ |
-| 5 | Screenshots at ~5 fixed positions vs. the original — vertex lighting | ⏸ |
-| 6 | Enter/exit a building, sector boundary — portals | ⏸ |
+| 2 | Loads in the game, hero spawns | ✅ **all three candidates** |
+| 3 | Walk terrain/interiors, jump, fall — **collision** | ✅ |
+| 4 | NPCs spawn and walk routines | ✅ |
+| 5 | Screenshots at ~5 fixed positions vs. the original — vertex lighting | ⏸ **and degraded** — GD3D11 changes lighting by design, so this can now only be candidate-vs-control, never against the retail look (Environment) |
+| 6 | Enter/exit a building, sector boundary — portals | ✅ |
 | 7 | Use a bed, chest, one other mobsi | ⏸ |
 | 8 | Trigger one sound/zone VOB | ⏸ |
 | 9 | Save, reload the savegame | ⏸ |
-| 10 | **Minimal edit:** move one VOB, insert one item | ⏸ — world built and verified, below |
+| 10 | **Minimal edit:** move one VOB, insert one item | ✅ **full pass — both mutations, apple taken** |
 
 Rows 2–9 run on the untouched re-save, row 10 on the edited world.
+
+### The run — 2026-08-25 23:46, all three candidates, PASS
+
+`tools/engine-batch.ps1 -Exe Gothic2`, fullscreen (windowed crashes here —
+Environment), against the engine named in Environment (**not stock**: 2.6 fix +
+SystemPack + GD3D11). From `results.log`:
+
+```
+23:46:12  00-control-original.zen  sha b4dac867…  → ok
+23:46:59  01-resave.zen            sha a2f7b7b9…  → ok
+23:47:43  02-minimal-edit.zen      sha 27a137c5…  → ok
+23:48:48  restored pristine NewWorld.zen (hash verified)
+```
+
+**The control ran first and passed in the same session**, and the VDF layout
+was verified beforehand so the engine could only have read `_work` — both
+preconditions this record insists on.
+
+**Row 10 is a full pass and it is the one that carried information.** The moved
+VOB (`NW_CITY_TABLE_PEASANT_01`, +300 units) visibly hung in the air near
+`START`, and `ITEM_PHASE0_APPLE_01` was not merely visible but **picked up into
+the inventory**. Takeability is the half that could have failed silently: an
+`oCItem` whose archive representation is subtly wrong can still render. It did
+not.
+
+**What was NOT run, stated rather than implied.** Rows 5, 7, 8 and 9 were not
+exercised — the per-candidate wall-clock (47 s / 44 s / 65 s) does not fit a
+savegame round-trip, and they are not claimed. On an *untouched* re-save that
+is defensible on the argument above (bit-identical mesh, BSP and VOB tree, gap
+0), which makes rows 2–9 a smoke test against a process error rather than a
+fidelity probe — and rows 2, 3, 4 and 6 supplied that smoke test. It is **not**
+defensible for Phase 1b's UI-edited worlds, where the checklist regains its
+full force and rows 7–9 must actually run.
 
 ### Building the candidates
 
