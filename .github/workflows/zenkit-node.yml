@@ -1,0 +1,65 @@
+name: zenkit-node
+
+# Path-filtered so dialog-only PRs are not slowed down (level-editor-phase-0.md §4).
+#
+# NOTE: a green run here is a NO-REGRESSION claim against our own synthetic
+# golden fixtures (claim C2) — it is NOT a fidelity claim about real Gothic
+# worlds (claim C1). See zenkit-node/README.md.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'zenkit-node/**'
+      - '.github/workflows/zenkit-node.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'zenkit-node/**'
+      - '.github/workflows/zenkit-node.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      # pnpm install triggers the zenkit-node install hook, which runs the
+      # two-stage source build (CMake pre-step + node-gyp) when no prebuild
+      # matches — which is always the case in CI.
+      - name: Install dependencies (builds the addon)
+        run: pnpm install --frozen-lockfile
+        env:
+          ZENKIT_NODE_FORCE_BUILD: '1'
+
+      - name: Run zenkit-node tests
+        run: pnpm --filter zenkit-node test
+
+      # The harness itself, in its CI mode. Prints its own claim line, which
+      # says in as many words that this is C2 and not fidelity.
+      - name: zen-roundtrip (C2, fixtures)
+        run: pnpm --filter zenkit-node zen-roundtrip -- --fixtures --strict
+
+      - name: Lint
+        run: pnpm --filter zenkit-node run lint

@@ -1,0 +1,60 @@
+Mesh: write shared light-map textures in first-reference order.
+
+The LIGHTMAPS_SHARED (0xB026) writer collected the shared textures in an
+std::unordered_map keyed by pointer and emitted them in iteration order, so the
+texture list and every light-map's texture index depended on heap addresses:
+two saves of the same world produced different bytes, and neither matched the
+original. ZenGin lists each texture the first time a light-map references it,
+which is also the order Mesh::load restores, so the writer now assigns indices
+in first-reference order.
+
+diff --git a/src/Mesh.cc b/src/Mesh.cc
+index 627fc98..4766b51 100644
+--- a/src/Mesh.cc
++++ b/src/Mesh.cc
+@@ -260,29 +260,33 @@ namespace zenkit {
+ 		});
+ 
+ 		proto::write_chunk(w, MeshChunkType::LIGHTMAPS_SHARED, [this](Write* c) {
+-			std::unordered_map<Texture*, uint32_t> shared_textures {};
++			// Shared textures are written in the order they are first referenced by a
++			// light-map, which is the order load() found them in.
++			std::vector<Texture*> shared_textures {};
++			std::unordered_map<Texture*, uint32_t> shared_texture_indices {};
++			std::vector<uint32_t> lightmap_texture_indices {};
++			lightmap_texture_indices.reserve(this->lightmaps.size());
+ 
+ 			for (auto& lightmap : this->lightmaps) {
+-				// Record the shared image with in a separate set.
+-				shared_textures.try_emplace(lightmap.image.get(), 0);
++				auto [it, inserted] = shared_texture_indices.try_emplace(lightmap.image.get(), shared_textures.size());
++				if (inserted) {
++					shared_textures.push_back(lightmap.image.get());
++				}
++				lightmap_texture_indices.push_back(it->second);
+ 			}
+ 
+ 			c->write_uint(shared_textures.size());
+-
+-			uint32_t actual_index = 0;
+-			for (auto& item : shared_textures) {
+-				item.first->save(c);
+-				item.second = actual_index++;
++			for (auto* texture : shared_textures) {
++				texture->save(c);
+ 			}
+ 
+ 			c->write_uint(this->lightmaps.size());
+-			for (auto& lightmap : this->lightmaps) {
++			for (auto i = 0u; i < this->lightmaps.size(); ++i) {
++				auto& lightmap = this->lightmaps[i];
+ 				c->write_vec3(lightmap.origin);
+ 				c->write_vec3(lightmap.normals[0]);
+ 				c->write_vec3(lightmap.normals[1]);
+-
+-				auto it = shared_textures.find(lightmap.image.get());
+-				c->write_uint(it != shared_textures.end() ? it->second : 0);
++				c->write_uint(lightmap_texture_indices[i]);
+ 			}
+ 		});
+ 

@@ -314,6 +314,129 @@ costs days rather than months to run there. What remains in Phase 1b is the
 cross-platform half — the same worlds under OpenGothic — plus re-running the
 checklist against worlds edited through the real UI.
 
+### Verdict — Plan A (decided 2026-08-25, Phase 0 task T6.5)
+
+**Plan A holds: whole-world re-serialization through ZenKit produces
+engine-loadable worlds.** Decision-matrix cell: **clean diff / engine OK**.
+Full record and evidence: `zenkit-node/docs/engine-acceptance-2026-08-25.md`.
+
+The gate did its job — it failed three times first, and the reason was real.
+Nineteen ZenKit writer defects had to be fixed to get here (`zenkit-node/patches/`,
+all upstreamable); two of them were independently fatal to the original engine.
+
+**What settled it.** The plan's "clean diff / broken engine" cell came up, so the
+instrument was widened (`lib/container.js`: a `container` section computed from
+the archive *bytes* — hash-table physical order, per-object frame versions,
+per-class entry schema, RAW/BOOL payload hashes, the mesh/BSP chunk table — all
+classified `semantic-drift`, never benign). It immediately saw what the struct
+dump could not. In parallel, a **single-variable engine bisect** localised the
+failure instead of theorising about it: worlds built from the original's bytes
+with exactly one structure replaced by ZenKit's output.
+
+| Candidate | Engine |
+|---|---|
+| original + re-serialized VobTree (all 23,289 VOBs) / waynet / header / hash table | **loads** |
+| original + re-serialized **MeshAndBsp blob** | **fails** — `sSize<READ_BUFFER_SIZE` |
+| full re-save with the original blob spliced back | **loads** |
+
+The blob was both necessary and sufficient. Isolating it chunk-by-chunk named
+the two fatal defects exactly: a missing per-mesh alpha-test byte in chunk
+0xB020 and a hard-coded BSP header version (`2` where retail G2 has `3`) in
+0xC000. Both desynchronised the archive cursor — the engine *consumes* the blob
+rather than seeking past it by the declared size — which is why an error inside
+the mesh surfaced as a string-length assertion in the VOB tree.
+
+**Where the writer now stands** — all three retail G2 BinSafe worlds
+(NewWorld 75 MB, OldWorld 15 MB, AddonWorld 45 MB), re-saved and compared
+byte-for-byte over every archive event:
+
+- the **entire mesh/BSP blob is byte-identical** (69,146,243 / 12,962,396 /
+  42,540,421 bytes, matching SHA-256)
+- the hash table is byte-identical; the stream ends exactly at `hashTableOffset`
+- saving twice is byte-identical (the writer was nondeterministic before)
+- `classifyDumps`: **`identical`, 0 findings** on all three
+- the only byte residual is `zCVobLight.colorAniList` (4/2/16 entries): the
+  original writes ZenGin's greyscale shorthand `255 `, ZenKit expands it to
+  `(255 255 255)`. Semantically identical, ZenGin's parser wrote and accepts both
+  forms, and it was **A/B tested in the engine in isolation** — that candidate
+  loads. Documented, not assumed.
+- **Spacer II loads the re-saved NewWorld**, with the pristine original as the
+  control in the same session.
+
+**Consequences for the plan.** Plan B is not needed: untouched structures are
+preserved by construction, as §5 assumed. Its splice machinery was nonetheless
+built (it *was* the bisect) and is kept as diagnostic tooling — a working
+fallback that has now been demonstrated end to end, should a later format or a
+mod-specific world need it.
+
+### Scope of the verdict — BinSafe only (T8, 2026-08-25)
+
+**Plan A holds for `zCArchiverBinSafe` worlds. The ASCII path is out of Phase
+0's scope, and not because it was skipped — because it was measured and does
+not work.**
+
+Only 4 of the 28 `.zen` files in a retail G2 install are BinSafe: `NewWorld`,
+`OldWorld`, `AddonWorld`, `DragonIsland`. All four round-trip `identical` with
+a byte-identical mesh/BSP blob and a coverage gap of 0. The other 24 are
+`zCArchiverGeneric`/ASCII — 20 worlds plus 4 VOB libraries that are not worlds
+at all — and the T8 run over the whole install found:
+
+- **all 20 ASCII worlds abort the process when their own re-save is loaded
+  back** (`STATUS_STACK_BUFFER_OVERRUN`, `0xC0000409`). So does a 4 KB world
+  authored by ZenKit's own ASCII writer. ZenKit cannot read what it writes.
+- **every raw entry the ASCII writer produces is corrupt** — `write_raw` emits
+  a stale second hex digit for each byte below `0x10`, so a `vec3 0 0 0`
+  re-saves as `05 05 05 05 05 05 05 05 05 05 05 05`.
+- **VOB representation is not preserved**: all 1277 OldCamp VOBs go from
+  `pack=0` to `pack=1`, and the ASCII body loses 43.9%.
+- `write_mat3x3` writes `rawFloat:` where both `read_mat3x3` and ZenGin use
+  `raw:`.
+
+Fixing that is a patch series the size of 0010–0019 plus an engine A/B per
+patch — a second T6.5, not a finishing touch — and it is not what Phase 0 exists
+to answer. The blocking risk *is* retired: the four whole worlds the editor
+would actually open re-serialize and load. The `*_Part_*.zen` files are Spacer's
+compile-time source layers, not the worlds the engine loads.
+
+**The consequence for Phase 1a is a hard one and is not optional:** the binding
+must **refuse to save** a non-BinSafe world until that series lands. A save that
+corrupts every raw entry and cannot be re-opened is worse than no save at all.
+
+Evidence, the four named defects and the full corpus table:
+`zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.
+
+**What this verdict does not cover.** T6.5 is the plan's *E-early* pass — "does
+the engine accept it" — and only checklist row 1 (Spacer) has run. Rows 2–10
+remain as **T10 / E-full**. Gothic 1 is not installed on the Phase 0 machine, so
+G1 coverage is still open.
+
+But their *purpose has changed*, and §5's original worry about collision no
+longer applies to an untouched re-save. The concern was written on the
+assumption that the re-save would differ from the original in ways a semantic
+diff might wave through. It does not. Accounting for **every byte** of NewWorld
+(`tools/bytediff.js`, coverage gap 0 — the whole file, not a sampled subset):
+
+```
+COVERAGE: 75387729 of 75387729 bytes accounted for, gap 0
+identical event bytes: 74952502
+hash table identical:  true (434980 B)
+differing events: 4 — all zCVobLight.colorAniList
+text header: date/user writer stamps only
+```
+
+The engine therefore reads **bit-identical mesh, BSP tree, and VOB tree** — the
+inputs collision is computed from. Given a deterministic loader, identical input
+bytes cannot produce different collision; there is nothing left for row 3 to
+discover on an untouched re-save. Rows 2–9 are now an end-to-end smoke test
+(they would catch a mistake in *which file got installed*, not a fidelity
+defect), and even the four differing light entries were engine-tested in
+isolation.
+
+Where the checklist still earns its keep is **row 10 and Phase 1b**: worlds the
+editor has actually changed. There, bytes legitimately differ, and collision
+becomes a live question the moment anything the BSP indexes is touched — which
+is precisely why Phase 1 never edits mesh or BSP.
+
 ---
 
 ## 6. Workspace layout and app integration

@@ -1,0 +1,46 @@
+Date: round-trip the trailing padding word.
+
+Date::load skipped the 16th and 15th byte of the on-disk zDATE and Date::save
+wrote them as zero. ZenGin dumps the struct verbatim, and the world meshes of
+the retail Gothic II worlds carry uninitialised memory there (NewWorld's mesh
+chunk 0xB000 ends its date with 0x4A 0x01), so a re-saved world differed in the
+mesh header. Compiled .MSH files carry real dates with a zero pad word, so the
+default stays 0.
+
+diff --git a/include/zenkit/Date.hh b/include/zenkit/Date.hh
+index 6419434..bdf7043 100644
+--- a/include/zenkit/Date.hh
++++ b/include/zenkit/Date.hh
+@@ -20,5 +20,11 @@ namespace zenkit {
+ 		std::uint16_t hour;
+ 		std::uint16_t minute;
+ 		std::uint16_t second;
++
++		/// \brief The trailing alignment word of the on-disk structure.
++		///
++		/// ZenGin writes its 16-byte `zDATE` verbatim, padding included, and world meshes (whose date fields are
++		/// uninitialised memory) carry non-zero padding. Preserved so that re-saving reproduces the original bytes.
++		std::uint16_t padding {0};
+ 	};
+ } // namespace zenkit
+diff --git a/src/Date.cc b/src/Date.cc
+index 175514b..ca1e6c0 100644
+--- a/src/Date.cc
++++ b/src/Date.cc
+@@ -11,7 +11,7 @@ namespace zenkit {
+ 		this->hour = r->read_ushort();
+ 		this->minute = r->read_ushort();
+ 		this->second = r->read_ushort();
+-		(void) r->read_ushort(); // padding
++		this->padding = r->read_ushort();
+ 	}
+ 
+ 	void Date::save(Write* w) const {
+@@ -21,6 +21,6 @@ namespace zenkit {
+ 		w->write_ushort(this->hour);
+ 		w->write_ushort(this->minute);
+ 		w->write_ushort(this->second);
+-		w->write_ushort(0); // padding
++		w->write_ushort(this->padding);
+ 	}
+ } // namespace zenkit

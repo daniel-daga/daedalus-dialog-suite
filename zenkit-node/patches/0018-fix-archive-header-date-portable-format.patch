@@ -1,0 +1,68 @@
+Archive headers: format the date portably instead of strftime("%-d.%-m...").
+
+The BinSafe and ASCII writers stamped the header date with strftime and the
+"%-d"/"%-m" (no leading zero) flags, which are a glibc extension. MSVC's UCRT
+treats them as an invalid parameter and, by default, terminates the process; with
+the handler suppressed the buffer stays empty and the header carries `date `.
+The stamp is now built with snprintf from the broken-down time, producing
+ZenGin's exact shape (`31.7.2003 19:50:59`: no padding on day and month, two
+digits for the time) on every platform.
+
+diff --git a/src/archive/ArchiveBinsafe.cc b/src/archive/ArchiveBinsafe.cc
+index e83979f..cd6074f 100644
+--- a/src/archive/ArchiveBinsafe.cc
++++ b/src/archive/ArchiveBinsafe.cc
+@@ -7,6 +7,7 @@
+ 
+ #include <algorithm>
+ #include <charconv>
++#include <cstdio>
+ #include <cstring>
+ 
+ namespace zenkit {
+@@ -417,7 +418,15 @@ namespace zenkit {
+ 		std::time_t clk;
+ 		std::time(&clk);
+ 		auto* time = std::localtime(&clk);
+-		strftime(date_buffer, 20, "%-d.%-m.%Y %H:%M:%S", time);
++		std::snprintf(date_buffer,
++		              sizeof date_buffer,
++		              "%d.%d.%d %02d:%02d:%02d",
++		              time->tm_mday,
++		              time->tm_mon + 1,
++		              time->tm_year + 1900,
++		              time->tm_hour,
++		              time->tm_min,
++		              time->tm_sec);
+ 
+ 		this->_m_write->write_line("ZenGin Archive");
+ 		this->_m_write->write_line("ver 1");
+diff --git a/src/archive/ArchiveAscii.cc b/src/archive/ArchiveAscii.cc
+index baa3e39..4406037 100644
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -7,6 +7,7 @@
+ 
+ #include <array>
+ #include <charconv>
++#include <cstdio>
+ #include <cstring>
+ #include <ctime>
+ #include <sstream>
+@@ -428,7 +429,15 @@ namespace zenkit {
+ 		std::time_t clk;
+ 		std::time(&clk);
+ 		auto* time = std::localtime(&clk);
+-		strftime(date_buffer, 20, "%-d.%-m.%Y %H:%M:%S", time);
++		std::snprintf(date_buffer,
++		              sizeof date_buffer,
++		              "%d.%d.%d %02d:%02d:%02d",
++		              time->tm_mday,
++		              time->tm_mon + 1,
++		              time->tm_year + 1900,
++		              time->tm_hour,
++		              time->tm_min,
++		              time->tm_sec);
+ 
+ 		this->_m_write->write_line("ZenGin Archive");
+ 		this->_m_write->write_line("ver 1");

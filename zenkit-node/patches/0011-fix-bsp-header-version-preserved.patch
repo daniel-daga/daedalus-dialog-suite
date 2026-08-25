@@ -1,0 +1,55 @@
+BSP tree: preserve the header chunk's version stamp.
+
+BspTree::load discarded the leading ushort of chunk 0xC000 and BspTree::save
+wrote a hard-coded 2. Retail Gothic II worlds (NewWorld, OldWorld, AddonWorld)
+all carry 3, so every re-saved world came back with a different BSP header. The
+value is now kept on BspTree::version; when a tree was never loaded (version 0)
+save falls back to 3 for Gothic II and to the previous 2 for Gothic I.
+
+diff --git a/include/zenkit/world/BspTree.hh b/include/zenkit/world/BspTree.hh
+index 574e1cf..afcd438 100644
+--- a/include/zenkit/world/BspTree.hh
++++ b/include/zenkit/world/BspTree.hh
+@@ -55,6 +55,12 @@ namespace zenkit {
+ 		ZKINT void load(Read* r, std::uint32_t version);
+ 		ZKINT void save(Write* w, GameVersion version) const;
+ 
++		/// \brief The version stamp of the tree's header chunk.
++		///
++		/// Retail Gothic II worlds carry `3`. Zero means "not loaded"; #save then falls back to `3` for
++		/// Gothic II and `2` for Gothic I.
++		std::uint16_t version {0};
++
+ 		/// \brief The mode of the tree (either indoor or outdoor).
+ 		BspTreeType mode;
+ 
+diff --git a/src/world/BspTree.cc b/src/world/BspTree.cc
+index d82cf23..c8516f7 100644
+--- a/src/world/BspTree.cc
++++ b/src/world/BspTree.cc
+@@ -77,8 +77,7 @@ namespace zenkit {
+ 
+ 			switch (type) {
+ 			case BspChunkType::HEADER:
+-				// TODO(lmichaelis): Figure out what this is.
+-				(void) c->read_ushort();
++				this->version = c->read_ushort();
+ 				this->mode = static_cast<BspTreeType>(c->read_uint());
+ 				break;
+ 			case BspChunkType::POLYGONS:
+@@ -158,8 +157,13 @@ namespace zenkit {
+ 	}
+ 
+ 	void BspTree::save(Write* w, GameVersion version) const {
+-		proto::write_chunk(w, BspChunkType::HEADER, [this](Write* c) {
+-			c->write_ushort(2);
++		proto::write_chunk(w, BspChunkType::HEADER, [this, version](Write* c) {
++			std::uint16_t header_version = this->version;
++			if (header_version == 0) {
++				header_version = version == GameVersion::GOTHIC_1 ? 2 : 3;
++			}
++
++			c->write_ushort(header_version);
+ 			c->write_uint(static_cast<uint32_t>(this->mode));
+ 		});
+ 

@@ -1,0 +1,60 @@
+BinSafe hash table: write records in ZenGin's physical order.
+
+WriteArchiveBinsafe::write_header dumped the hash table in insertion order.
+ZenGin's zCArchiverBinSafe walks its bucket array (ascending hash value) and,
+within a bucket, the singly linked chain that new keys are prepended to, so the
+records come out sorted by (hash ascending, insertion index descending). Verified
+on the retail Gothic II NewWorld.zen: all 23,478 records are hash-sorted and every
+one of the 23,381 same-hash neighbours steps down in insertion index. Keys,
+indices and hash values were already correct; only the record order differed,
+so the table is now sorted that way before it is written.
+
+diff --git a/src/archive/ArchiveBinsafe.cc b/src/archive/ArchiveBinsafe.cc
+index 604a890..f3aa39d 100644
+--- a/src/archive/ArchiveBinsafe.cc
++++ b/src/archive/ArchiveBinsafe.cc
+@@ -436,20 +436,35 @@ namespace zenkit {
+ 
+ 		this->_m_write->write_uint(_m_hash_keys.size());
+ 
+-		std::vector<std::pair<std::string, size_t>> vc {_m_hash_keys.begin(), _m_hash_keys.end()};
+-		std::sort(vc.begin(), vc.end(), [](auto const& a, auto const& b) { return a.second < b.second; });
+-
+-		for (auto const& [key, value] : vc) {
+-			this->_m_write->write_ushort(key.length());
+-			this->_m_write->write_ushort(value);
+-
++		struct HashTableEntry {
++			std::string_view key;
++			std::uint16_t index;
++			std::uint32_t hash;
++		};
++
++		std::vector<HashTableEntry> vc;
++		vc.reserve(_m_hash_keys.size());
++		for (auto const& [key, value] : _m_hash_keys) {
+ 			uint32_t hash_value = 0u;
+ 			for (char c : key) {
+ 				hash_value = hash_value * 0x21 + c;
+ 			}
+ 
+-			this->_m_write->write_uint(hash_value % 0x61);
+-			this->_m_write->write_string(key);
++			vc.push_back({key, value, hash_value % 0x61});
++		}
++
++		// ZenGin dumps its hash table bucket by bucket (ascending hash) and each bucket
++		// is a singly linked list that new keys are prepended to, so within one bucket
++		// the entries come out in descending insertion order.
++		std::sort(vc.begin(), vc.end(), [](auto const& a, auto const& b) {
++			return a.hash != b.hash ? a.hash < b.hash : a.index > b.index;
++		});
++
++		for (auto const& entry : vc) {
++			this->_m_write->write_ushort(entry.key.length());
++			this->_m_write->write_ushort(entry.index);
++			this->_m_write->write_uint(entry.hash);
++			this->_m_write->write_string(entry.key);
+ 		}
+ 
+ 		// Place the cursor before the hash table.

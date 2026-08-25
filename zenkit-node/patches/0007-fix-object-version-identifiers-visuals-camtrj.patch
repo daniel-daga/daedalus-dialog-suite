@@ -1,0 +1,79 @@
+diff --git a/include/zenkit/vobs/Camera.hh b/include/zenkit/vobs/Camera.hh
+index dcf6568..fcccd1b 100644
+--- a/include/zenkit/vobs/Camera.hh
++++ b/include/zenkit/vobs/Camera.hh
+@@ -187,6 +187,8 @@ namespace zenkit {
+ 		/// \param w The archive to save to.
+ 		/// \param version The version of the game to save for.
+ 		ZKAPI void save(WriteArchive& w, GameVersion version) const override;
++
++		[[nodiscard]] ZKAPI uint16_t get_version_identifier(GameVersion game) const override;
+ 	};
+ 
+ 	/// \brief A VOb which defined the movement of the camera during a cutscene.
+diff --git a/include/zenkit/vobs/VirtualObject.hh b/include/zenkit/vobs/VirtualObject.hh
+index 325bed2..8f65a5f 100644
+--- a/include/zenkit/vobs/VirtualObject.hh
++++ b/include/zenkit/vobs/VirtualObject.hh
+@@ -100,10 +100,14 @@ namespace zenkit {
+ 
+ 	struct VisualMesh final : Visual {
+ 		ZK_OBJECT(ObjectType::zCMesh);
++
++		[[nodiscard]] ZKAPI uint16_t get_version_identifier(GameVersion game) const override;
+ 	};
+ 
+ 	struct VisualMultiResolutionMesh final : Visual {
+ 		ZK_OBJECT(ObjectType::zCProgMeshProto);
++
++		[[nodiscard]] ZKAPI uint16_t get_version_identifier(GameVersion game) const override;
+ 	};
+ 
+ 	struct VisualParticleEffect final : Visual {
+@@ -181,6 +185,8 @@ namespace zenkit {
+ 		/// \param w The archive to save to.
+ 		/// \param version The version of the game to save for.
+ 		ZKAPI void save(WriteArchive& w, GameVersion version) const override;
++
++		[[nodiscard]] ZKAPI uint16_t get_version_identifier(GameVersion game) const override;
+ 	};
+ 
+ 	struct RigidBody {
+diff --git a/src/vobs/Camera.cc b/src/vobs/Camera.cc
+index bc50832..8559aa2 100644
+--- a/src/vobs/Camera.cc
++++ b/src/vobs/Camera.cc
+@@ -50,6 +50,10 @@ namespace zenkit {
+ 		w.write_raw("originalPose", reinterpret_cast<std::byte const*>(pose.pointer()), 4 * 4 * sizeof(float));
+ 	}
+ 
++	uint16_t VCameraTrajectoryFrame::get_version_identifier(GameVersion game) const {
++		return game == GameVersion::GOTHIC_1 ? 12289 : 31489;
++	}
++
+ 	void VCutsceneCamera::parse(VCutsceneCamera& obj, ReadArchive& r, GameVersion version) {
+ 		obj.load(r, version);
+ 	}
+diff --git a/src/vobs/VirtualObject.cc b/src/vobs/VirtualObject.cc
+index a8ad4da..4d2ba1c 100644
+--- a/src/vobs/VirtualObject.cc
++++ b/src/vobs/VirtualObject.cc
+@@ -58,6 +58,18 @@ namespace zenkit {
+ 		}
+ 	}
+ 
++	uint16_t VisualDecal::get_version_identifier(GameVersion game) const {
++		return game == GameVersion::GOTHIC_1 ? 0 : 64513;
++	}
++
++	uint16_t VisualMesh::get_version_identifier(GameVersion game) const {
++		return game == GameVersion::GOTHIC_1 ? 0 : 64513;
++	}
++
++	uint16_t VisualMultiResolutionMesh::get_version_identifier(GameVersion game) const {
++		return game == GameVersion::GOTHIC_1 ? 0 : 64513;
++	}
++
+ 	void VirtualObject::parse(VirtualObject& obj, ReadArchive& in, GameVersion version) {
+ 		obj.load(in, version);
+ 	}
