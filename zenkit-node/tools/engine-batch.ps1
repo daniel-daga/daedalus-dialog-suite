@@ -52,9 +52,15 @@ function Sha($p) { (Get-FileHash -Algorithm SHA256 $p).Hash.ToLower() }
 # the world: a backup made once, and a restore in the finally. The .ini files are
 # windows-1252, and are read and written as bytes so no PowerShell edition's
 # default encoding can rewrite the rest of the file.
+# SystemPack is only live when its hook DLL is installed (it injects as
+# ddraw.dll next to the exe). Measured on this install: SystemPack.ini is
+# present, the DLL is not, and Gothic2.exe contains no reference to
+# SystemPack.ini/SimpleWindow/FixAppCompat/BorderlessWindow at all -- so
+# editing that file changes nothing. Skip it rather than pretend.
 $IniEdits = @(
   @{ File = Join-Path $Gothic 'System\Gothic.ini';     Key = 'zStartupWindowed'; Value = '1' }
-  @{ File = Join-Path $Gothic 'System\SystemPack.ini'; Key = 'SimpleWindow';     Value = '0' }
+  @{ File = Join-Path $Gothic 'System\SystemPack.ini'; Key = 'SimpleWindow';     Value = '0'
+     NeedsFile = Join-Path $Gothic 'System\ddraw.dll' }
 )
 $IniTouched = $false
 function ReadIni($p) { [System.Text.Encoding]::GetEncoding(1252).GetString([System.IO.File]::ReadAllBytes($p)) }
@@ -62,6 +68,10 @@ function WriteIni($p, $s) { [System.IO.File]::WriteAllBytes($p, [System.Text.Enc
 function EnableWindowed {
   foreach ($e in $IniEdits) {
     if (-not (Test-Path $e.File)) { Log "windowed: $($e.File) not present, skipped"; continue }
+    if ($e.NeedsFile -and -not (Test-Path $e.NeedsFile)) {
+      Log "windowed: $(Split-Path $e.File -Leaf) is inert without $(Split-Path $e.NeedsFile -Leaf), skipped"
+      continue
+    }
     $backup = "$($e.File).engine-batch-backup"
     # Only if absent: a backup left by a killed run is the pristine one, and the
     # file beside it is already modified. Never overwrite it with that.

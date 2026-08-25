@@ -44,7 +44,7 @@ section; these CLIs are thin front-ends over it. See
   discovers worlds itself, isolates each in a child process, writes a report
   artifact and counts coverage honestly. `breadth.js` is kept because it is two
   screens of code and quicker to hack a one-off variation into.
-- `engine-batch.ps1 [-Dir cand] [-Only 00,01] [-Exe Spacer2|Gothic2]` — the
+- `engine-batch.ps1 [-Dir cand] [-Only 00,01] [-Exe Spacer2|Gothic2] [-Windowed]` — the
   manual engine pass, automated as far as it can be. Verifies the pristine
   backup's hash before touching the install, installs each candidate, launches
   the engine, polls its top-level windows and auto-captures any assertion dialog
@@ -52,6 +52,12 @@ section; these CLIs are thin front-ends over it. See
   the backup — hash-verified, in a `finally`, so an interrupt cannot leave a
   modified world behind. **Load each world twice**: Spacer renders nothing on
   the first load of *any* world, including the retail original.
+  `-Windowed` sets `zStartupWindowed=1` in `Gothic.ini` for the run and restores
+  it afterwards (backed up like the world, restored in the same `finally`).
+  There is no command-line switch for windowed mode; it is an ini key. It also
+  clears SystemPack's `SimpleWindow`, which strips the window frame — but only
+  when SystemPack's hook DLL (`ddraw.dll`) is actually installed, because
+  without it `SystemPack.ini` is inert and editing it would be theatre.
 - `mutate.js <outDir>` — stages the three T10 / E-full candidates as flat
   `*.zen` files for `engine-batch.ps1`: `00-control-original` (the pristine
   world — **the control, never skip it**), `01-resave` (load → save, unchanged,
