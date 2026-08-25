@@ -13,7 +13,7 @@ $Backup  = "$Target.original-backup"
 $Spacer  = Join-Path $Gothic "System\$Exe.exe"
 # GothicStarter launches Gothic2.exe as a separate process; watch both.
 $Watch   = @($Exe, 'Gothic2', 'Spacer2') | Select-Object -Unique
-$CandDir = Join-Path $PSScriptRoot $Dir
+$CandDir = if ([System.IO.Path]::IsPathRooted($Dir)) { $Dir } else { Join-Path $PSScriptRoot $Dir }
 $Log     = Join-Path $CandDir 'results.log'
 $OrigSha = 'b4dac8674be44820d63e5bdaf63525b8e7ca1a0ad50d62a2e3e1fe905cb8d4b5'
 
