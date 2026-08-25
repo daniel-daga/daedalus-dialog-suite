@@ -2,7 +2,15 @@
 
 Companion to [`level-editor.md`](level-editor.md) (architecture) and
 [`level-editor-design-brief.md`](level-editor-design-brief.md) (source brief).
-Status: **proposed** — no code landed.
+
+Status: **in progress on `feature/level-editor-phase-0`** — T1–T6 and T9 landed;
+**T6.5 (the in-engine gate) is FAILING** and blocks T7/T8/T10. Nine ZenKit
+save-path defects found and patched so far; every instrument we have reports the
+re-save as identical, yet the original engine still rejects it — the §5
+"clean diff / broken engine" cell. Current state, evidence, ranked hypotheses
+and resume instructions:
+[`zenkit-node/docs/engine-acceptance-2026-08-25.md`](../../zenkit-node/docs/engine-acceptance-2026-08-25.md).
+**No Plan A / Plan B verdict may be written until the engine gate is settled.**
 
 Phase 0 is the blocking gate for the whole level-editor effort (brief §9,
 Gate 1). Nothing in the editor UI is built until it passes. This document
