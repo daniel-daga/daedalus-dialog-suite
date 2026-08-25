@@ -38,7 +38,7 @@ classifier, the container-level instrument and the `zen-roundtrip` harness.
 | T4 `normalizeWorld` | ✅ | Direct struct reads, never via the save path. All 44 VOB classes. Self-contained SHA-256. Checked-in golden. **Now also carries a `container` section** — §4. |
 | T5 classifier | ✅ | `lib/classify.js` — `identical` / `float-noise` / `reordered` / `semantic-drift`. Container facts are **always** `semantic-drift`. |
 | T6 `saveWorld` + minimal mutations | ✅ | Atomic temp+rename; `setVobPosition`, `insertItemVob`. |
-| T9 CI wiring | ⚠️ | `.github/workflows/zenkit-node.yml`, path-filtered, 3 OSes. **Never executed on GitHub** — unverified. |
+| T9 CI wiring | ⚠️ | `.github/workflows/zenkit-node.yml`, path-filtered, 3 OSes, now also running `zen-roundtrip --fixtures`. **First execution 2026-08-25: ubuntu ✅, macOS ❌ (`-msse2` on arm64), windows ❌ (node-gyp VS finder, in the *parser* workspace)** — §9. |
 | T6.5 engine gate | ✅ | Passed, §3.5. |
 | T7 `zen-roundtrip` harness | ✅ | `scripts/zen-roundtrip.js`, two modes, per-world child-process isolation, coverage-honest report — §10. |
 | T8 corpus run | ✅ | Ran; **scoped to BinSafe**, with the ASCII reason measured — §10.2, §10.3. |
@@ -629,8 +629,25 @@ Also open:
   plus an engine A/B per patch. Until it lands, the binding should **refuse to
   save** a non-BinSafe world (§10.3): a save that corrupts every raw entry and
   cannot be re-opened is worse than no save.
-- **T9 CI** — `.github/workflows/zenkit-node.yml` has never executed on GitHub,
-  and does not yet run `zen-roundtrip --fixtures`.
+- **T9 CI** — `.github/workflows/zenkit-node.yml` **has now executed**, on the
+  master merge of 2026-08-25 (run `32844871149`), and the result is
+  **ubuntu ✅ / macOS ❌ / windows ❌**. Both failures are in the *build* step,
+  neither in this workspace's code:
+  - **macOS**: `clang++: error: unsupported option '-msse2' for target
+    'arm64-apple-darwin'`. `macos-latest` is arm64 now, and
+    `vendor/ZenKit/vendor/libsquish/CMakeLists.txt:35` gates `-msse2` on
+    `BUILD_SQUISH_WITH_SSE2 AND NOT WIN32` with **no architecture check**. Fix:
+    pass `-DBUILD_SQUISH_WITH_SSE2=OFF` from `scripts/build-zenkit.js` on
+    non-x86, or guard it upstream (a 20th upstreamable patch).
+  - **windows**: `daedalus-parser install: gyp ERR! find VS … RangeError
+    [ERR_CHILD_PROCESS_STDIO_MAXBUFFER] … Could not find any Visual Studio
+    installation`. **Not zenkit-node** — its CMake step was progressing
+    normally; node-gyp's VS finder overflowed its stdio buffer while installing
+    the *parser* workspace. Pre-existing and environmental.
+
+  So the addon builds and its 82 tests and lint pass in CI on Linux; the other
+  two OSes are blocked on toolchain issues, not on this code. Exit criterion 1
+  ("green on Linux, Windows and macOS") is therefore **not** met.
 - **Gothic 1** is not installed; no G1 coverage of anything.
 
 ---
