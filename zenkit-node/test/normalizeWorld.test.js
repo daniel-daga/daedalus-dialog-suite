@@ -80,7 +80,7 @@ test('normalizeWorld bsp reports the single-leaf fixture tree', () => {
   assert.strictEqual(bsp.leafCount, 1);
   assert.strictEqual(bsp.treeDepth, 1);
   assert.deepStrictEqual(bsp.sectorNames, []);
-  assert.strictEqual(bsp.lightMapCount, 0);
+  assert.strictEqual(bsp.lightMapCount, 4);
   assert.match(bsp.portalPolyHash, SHA256_RE);
   assert.match(bsp.leafPolyHash, SHA256_RE);
   assert.match(bsp.nodeHash, SHA256_RE);
@@ -91,7 +91,7 @@ test('normalizeWorld container section is computed from the archive bytes of the
   const { container } = dumpFixture();
   assert.deepStrictEqual(container, containerFromBuffer(fs.readFileSync(FIXTURE)));
   assert.strictEqual(container.stream.endsAtHashTable, true);
-  assert.strictEqual(container.hashTable.count, 37);
+  assert.strictEqual(container.hashTable.count, 38);
 });
 
 test('normalizeWorld reports no container section for a mutated handle', () => {

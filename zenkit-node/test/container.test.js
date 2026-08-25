@@ -114,12 +114,14 @@ test('(c) one flipped byte in a RAW payload is semantic-drift naming the (class,
   assertDriftAt(result, /^container\.payloads\.raw\.zCVob\/dataRaw$/);
 });
 
-test('(d) a BOOL raw value 1 → 0xFFFFFFFF is semantic-drift naming the BOOL payload hash', () => {
+test('(d) a BOOL raw value 0xFFFFFFFF → 1 is semantic-drift naming the BOOL payload hash', () => {
   const result = classifyMutant((buf) => {
     const entry = events(buf).find((ev) => ev.kind === 'entry' && ev.entryName === 'locked');
     assert.strictEqual(entry.entryType, 'BOOL');
-    assert.strictEqual(buf.readUInt32LE(entry.payloadOffset), 1);
-    buf.writeUInt32LE(0xffffffff, entry.payloadOffset);
+    // The fixture holds ZenGin's signed-bit-field `true` (patch 0017); the
+    // mutant swaps in the naive `1`. Both read back as `true`.
+    assert.strictEqual(buf.readUInt32LE(entry.payloadOffset), 0xffffffff);
+    buf.writeUInt32LE(1, entry.payloadOffset);
     return buf;
   });
   assertDriftAt(result, /^container\.payloads\.bool\..*\/locked$/);
@@ -157,9 +159,10 @@ test('containerFromBuffer describes the fixture archive', () => {
   assert.deepStrictEqual(container.header.lines, [
     'ZenGin Archive', 'ver 1', 'zCArchiverBinSafe', 'BIN_SAFE', 'saveGame 0', 'date', 'user', 'END',
   ]);
-  assert.strictEqual(container.header.date, '');
+  // The stamp is written at authoring time, so only its ZenGin shape is fixed.
+  assert.match(container.header.date, /^\d{1,2}\.\d{1,2}\.\d{4} \d{2}:\d{2}:\d{2}$/);
   assert.strictEqual(container.header.user, 'Daniel');
-  assert.strictEqual(container.hashTable.count, 37);
+  assert.strictEqual(container.hashTable.count, 38);
   assert.deepStrictEqual(container.hashTable.keys[0], { key: 'childs0', index: 0, hash: 86 });
   assert.match(container.hashTable.physicalOrder, /^sha256:[0-9a-f]{64}$/);
   assert.strictEqual(container.frames.total, 17);
@@ -176,13 +179,13 @@ test('containerFromBuffer describes the fixture archive', () => {
   assert.match(container.payloads.raw['zCVob/dataRaw'], /^sha256:/);
   assert.match(container.payloads.bool['zCWaypoint/underWater'], /^sha256:/);
   assert.strictEqual(container.meshAndBsp.bspVersion, 0x04090000);
-  assert.strictEqual(container.meshAndBsp.size, 900);
+  assert.strictEqual(container.meshAndBsp.size, 1162);
   assert.deepStrictEqual(
     container.meshAndBsp.chunks.map((c) => c.id),
     ['0xb000', '0xb010', '0xb020', '0xb026', '0xb030', '0xb040', '0xb050', '0xb060',
       '0xc000', '0xc010', '0xc040', '0xc045', '0xc050', '0xc0ff']
   );
-  assert.strictEqual(container.meshAndBsp.chunks[2].length, 357);
+  assert.strictEqual(container.meshAndBsp.chunks[2].length, 339);
   assert.match(container.meshAndBsp.chunks[2].sha256, /^sha256:/);
   assert.strictEqual(container.meshAndBsp.trailing, '');
 });

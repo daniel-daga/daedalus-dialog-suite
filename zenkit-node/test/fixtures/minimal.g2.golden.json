@@ -276,7 +276,7 @@
     "portalPolyHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "leafPolyHash": "sha256:01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d",
     "nodeHash": "sha256:926bb53f9157c9a8972588b90fd3c5fe86d6736f52531fd7027abb8bebb1d367",
-    "lightMapCount": 0
+    "lightMapCount": 4
   },
   "waynet": {
     "waypoints": [
@@ -372,11 +372,11 @@
         "user",
         "END"
       ],
-      "date": "",
+      "date": "25.8.2026 13:14:03",
       "user": "Daniel"
     },
     "hashTable": {
-      "count": 37,
+      "count": 38,
       "keys": [
         {
           "key": "childs0",
@@ -404,167 +404,172 @@
           "hash": 87
         },
         {
-          "key": "itemInstance",
-          "index": 5,
-          "hash": 37
-        },
-        {
           "key": "childs2",
-          "index": 6,
+          "index": 5,
           "hash": 88
         },
         {
-          "key": "focusName",
+          "key": "itemInstance",
+          "index": 6,
+          "hash": 37
+        },
+        {
+          "key": "childs3",
           "index": 7,
+          "hash": 89
+        },
+        {
+          "key": "focusName",
+          "index": 8,
           "hash": 72
         },
         {
           "key": "hitpoints",
-          "index": 8,
+          "index": 9,
           "hash": 25
         },
         {
           "key": "damage",
-          "index": 9,
+          "index": 10,
           "hash": 85
         },
         {
           "key": "moveable",
-          "index": 10,
+          "index": 11,
           "hash": 15
         },
         {
           "key": "takeable",
-          "index": 11,
+          "index": 12,
           "hash": 22
         },
         {
           "key": "focusOverride",
-          "index": 12,
+          "index": 13,
           "hash": 78
         },
         {
           "key": "soundMaterial",
-          "index": 13,
+          "index": 14,
           "hash": 62
         },
         {
           "key": "visualDestroyed",
-          "index": 14,
+          "index": 15,
           "hash": 66
         },
         {
           "key": "owner",
-          "index": 15,
+          "index": 16,
           "hash": 0
         },
         {
           "key": "ownerGuild",
-          "index": 16,
+          "index": 17,
           "hash": 69
         },
         {
           "key": "isDestroyed",
-          "index": 17,
+          "index": 18,
           "hash": 2
         },
         {
           "key": "stateNum",
-          "index": 18,
+          "index": 19,
           "hash": 0
         },
         {
           "key": "triggerTarget",
-          "index": 19,
+          "index": 20,
           "hash": 17
         },
         {
           "key": "useWithItem",
-          "index": 20,
+          "index": 21,
           "hash": 20
         },
         {
           "key": "conditionFunc",
-          "index": 21,
+          "index": 22,
           "hash": 40
         },
         {
           "key": "onStateFunc",
-          "index": 22,
+          "index": 23,
           "hash": 8
         },
         {
           "key": "rewind",
-          "index": 23,
+          "index": 24,
           "hash": 72
         },
         {
           "key": "locked",
-          "index": 24,
+          "index": 25,
           "hash": 37
         },
         {
           "key": "keyInstance",
-          "index": 25,
+          "index": 26,
           "hash": 13
         },
         {
           "key": "pickLockStr",
-          "index": 26,
+          "index": 27,
           "hash": 90
         },
         {
           "key": "contains",
-          "index": 27,
+          "index": 28,
           "hash": 6
         },
         {
-          "key": "childs3",
-          "index": 28,
-          "hash": 89
+          "key": "childs4",
+          "index": 29,
+          "hash": 90
         },
         {
           "key": "waynetVersion",
-          "index": 29,
+          "index": 30,
           "hash": 31
         },
         {
           "key": "numWaypoints",
-          "index": 30,
+          "index": 31,
           "hash": 40
         },
         {
           "key": "wpName",
-          "index": 31,
+          "index": 32,
           "hash": 89
         },
         {
           "key": "waterDepth",
-          "index": 32,
+          "index": 33,
           "hash": 8
         },
         {
           "key": "underWater",
-          "index": 33,
+          "index": 34,
           "hash": 53
         },
         {
           "key": "position",
-          "index": 34,
+          "index": 35,
           "hash": 12
         },
         {
           "key": "direction",
-          "index": 35,
+          "index": 36,
           "hash": 2
         },
         {
           "key": "numWays",
-          "index": 36,
+          "index": 37,
           "hash": 35
         }
       ],
-      "physicalOrder": "sha256:447867507f1e430ccb3bf651c20100e9a09c6ecee75eb69e282ec7340aedbc50"
+      "physicalOrder": "sha256:0c68c8673c2b787b575ee59a8711b6e980bbd70b5875a0a2d1e701fd954e9f48"
     },
     "frames": {
       "total": 17,
@@ -662,10 +667,6 @@
             "INTEGER"
           ],
           [
-            "childs0",
-            "INTEGER"
-          ],
-          [
             "childs1",
             "INTEGER"
           ],
@@ -675,6 +676,10 @@
           ],
           [
             "childs3",
+            "INTEGER"
+          ],
+          [
+            "childs4",
             "INTEGER"
           ]
         ],
@@ -909,12 +914,12 @@
         "oCItem:zCVob/dataRaw": "sha256:ff204b3b83e9515c17ba25958e1bd4d29a23f6bfb74a0b51979dd51cda0b3b83",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/dataRaw": "sha256:9160649f1c6c545bb25a9e2899a9657451afb5210c620e40cb36d11395c49bbc",
         "zCVob/dataRaw": "sha256:932ae2f5cb001c08816c3ee181ea87d65ab8464df741eb9e08b30c06ffa74104",
-        "zCVobSpot:zCVob/dataRaw": "sha256:707618db767c2ea79a65f019b855e007ede1d98af7f8c250041670b9ff0d5a35"
+        "zCVobSpot:zCVob/dataRaw": "sha256:7e72d275a364222d7aac1d4661fd268915708fc5eca581b057ed9d4c59b464ed"
       },
       "bool": {
         "oCMobContainer:oCMobInter:oCMOB:zCVob/focusOverride": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/isDestroyed": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
-        "oCMobContainer:oCMobInter:oCMOB:zCVob/locked": "sha256:67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
+        "oCMobContainer:oCMobInter:oCMOB:zCVob/locked": "sha256:ad95131bc0b799c0b1af477fb14fcf26a6a9f76079e48bf090acb7e8367bfd0e",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/moveable": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/rewind": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/takeable": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
@@ -923,12 +928,12 @@
     },
     "meshAndBsp": {
       "bspVersion": 67698688,
-      "size": 900,
+      "size": 1162,
       "chunks": [
         {
           "id": "0xb000",
           "length": 34,
-          "sha256": "sha256:1d8c653c14bc1312f57f210f3920e9955ed6b1485de8e2d8d2c33b0222555fbf"
+          "sha256": "sha256:b47415a16f36494b9c338da42e6e760bfdb1d4477797b4f53fb30b9fb2ea508e"
         },
         {
           "id": "0xb010",
@@ -937,13 +942,13 @@
         },
         {
           "id": "0xb020",
-          "length": 357,
-          "sha256": "sha256:3f6a31ab2b2ae3f5653237e384a5251161b29d30597cf506387cbb4c77267790"
+          "length": 339,
+          "sha256": "sha256:6c88e4fd2358ab2923a617384c56a98dfa4b2c6f9f9536a079ef34f7a2a2f914"
         },
         {
           "id": "0xb026",
-          "length": 8,
-          "sha256": "sha256:af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+          "length": 288,
+          "sha256": "sha256:054678b8cbe0d2fd424e9deecabf0448668a5b409886ac1fb4cb22b5bd191257"
         },
         {
           "id": "0xb030",
@@ -968,7 +973,7 @@
         {
           "id": "0xc000",
           "length": 6,
-          "sha256": "sha256:8c765cd796a40f961d239dc8d469917b278e18316fe8ee9bbe2a5737e294204d"
+          "sha256": "sha256:525de7e2e4dc782d997a9e2eab1e5fe194a4961e42dba5da211a97d3d64ba594"
         },
         {
           "id": "0xc010",

@@ -18,8 +18,8 @@ and classify `identical`. Remaining: T7, T8, then T10 / E-full (checklist rows
 ## 1. What was built (T1–T6, T9 — all green)
 
 New workspace `zenkit-node/`: an N-API binding around ZenKit plus the drift
-classifier and the container-level instrument. 72 tests, 71 passing (the one
-failure is deliberate — §5).
+classifier and the container-level instrument. **73 tests, all passing** (the
+last known-failing one was resolved by the reviewed fixture regeneration — §5).
 
 | Task | State | Notes |
 |---|---|---|
@@ -288,24 +288,60 @@ proven blind spot of the struct dump.
 
 ---
 
-## 5. Known-failing test — do not "fix" it casually
+## 5. The golden fixture — regenerated, reviewed, 2026-08-25
 
 `test/saveWorld.test.js` → *"saveWorld reproduces the fixture bytes except the
-header date/user stamps"* **fails**.
+header date/user stamps"* failed for two sessions on purpose:
+`test/fixtures/minimal.g2.zen` was authored at commit `1b335e3`, i.e. by
+**unpatched** ZenKit *and* from an older `src/fixture.cc`, while
+`src/fixture.cc` itself had since been extended (at `623ca5d`) to cover
+patches 0012/0016/0019. The checked-in bytes were stale against both.
 
-`test/fixtures/minimal.g2.zen` was authored by **unpatched** ZenKit, so its own
-bytes encode the `childs` bug — and now also the pre-0010 hash-table order, the
-missing alpha-test byte and the nested-header stamps. The golden *dump* test
-passes; semantics are unchanged.
+**Decision: regenerated** (`npm run fixtures:regen`). The review that justifies
+it — every byte difference between the old fixture and a freshly authored one,
+each traced to a named cause. Nothing is unexplained.
 
-Regenerating the fixture is justified but is **an explicit reviewed act, never
-automatic**. It is now no longer "only the childs naming" — regenerating ratifies
-patches 0010–0019 as well, which is why it was left failing again rather than
-regenerated in passing. `pnpm --filter zenkit-node fixtures:regen` regenerates
-both files; `--golden-only` regenerates just the `.golden.json`.
+The entry stream aligns event-for-event (97 = 97, same names, types and object
+paths) once `childs<N>` is normalized, and **only two payloads differ**:
 
-The golden JSON *was* regenerated this session, deliberately and reviewed: the
-diff is **+639 / −0 lines**, purely the new additive `container` key.
+| Where | Old fixture | New fixture | Cause |
+|---|---|---|---|
+| text header | `date ` empty | `date 25.8.2026 13:14:03` | **0018** — the glibc-only `strftime` wrote nothing on MSVC |
+| hash table | 37 keys | 38 keys (`+childs4`) | **0008** — global `childs` counter (4 VOBs → `childs0..4`) |
+| hash table | physical = insertion order | ascending hash, descending index | **0010** |
+| `zCVobSpot/dataRaw` | `…1802 0000…` | `…1802 8000…` | **0016** + `fixture.cc` `packed_reserved_bit = true` |
+| `oCMobContainer/locked` | `01000000` | `ffffffff` | **0017** |
+| chunk 0xB000 (34 B) | pad word `0000` | pad word `014a` | **0012** + `fixture.cc` `Date{…, 0x4A01}` |
+| chunk 0xB020 (357→339 B) | nested header carries `date `/`user `, 10-char `objects` field | neither; 9-char field | **0013** |
+| chunk 0xB020 | ends at the last material | one trailing `01` byte | **0014** |
+| chunk 0xB026 (8→288 B) | 0 textures, 0 light-maps | 3 textures, 4 light-maps in first-reference order | `fixture.cc` light-map content (added at `623ca5d`), listed per **0015**/**0019** |
+| chunk 0xC000 (6 B) | version `2` | version `3` | **0011** |
+
+Patches 0001–0007, 0009 change nothing on this fixture — it has no camera
+trajectory, no sound/trigger VOBs, and its `texScale` values already round-trip.
+
+The new fixture **round-trips byte-identically** (`save(load(f))` equals `f`
+modulo the header stamps, 3515 B normalized on both sides), so the C2 regression
+claim is now anchored on a file the current writer actually produces.
+
+The `.golden.json` was regenerated with it. Its diff is confined to exactly the
+same causes: `bsp.lightMapCount` 0→4, `container.header.date`,
+`container.hashTable` (count 37→38, `+childs4`, permuted order,
+`physicalOrder` hash), the `childs0`→`childs4` schema entry, the `dataRaw` and
+`locked` payload hashes, and `container.meshAndBsp` (size 900→1162 plus the four
+chunk hashes above). **`vobs`, `mesh` (bar `lightMapCount`), and `waynet` are
+untouched** — the semantics did not move.
+
+Four other tests carried fixture-derived constants and were re-verified by hand
+against the table above rather than pasted from the failure output:
+`container.test.js` (d) now mutates `0xFFFFFFFF → 1` instead of `1 → 0xFFFFFFFF`
+(the fixture already holds ZenGin's signed-bit-field `true`), the header-date
+assertion became a shape match, and the hash-table count / mesh sizes were
+updated. **73 tests, 73 pass. Lint clean.**
+
+Regenerating a golden remains **an explicit reviewed act, never automatic**.
+`npm run fixtures:regen` regenerates both files; `--golden-only` regenerates
+just the `.golden.json`.
 
 ---
 
@@ -316,7 +352,7 @@ git checkout feature/level-editor-phase-0
 cd zenkit-node
 node scripts/build-zenkit.js        # resets the submodule, applies patches/*.patch
 npx node-gyp rebuild
-node --test test/*.test.js          # expect 71 pass / 1 fail (§5)
+node --test test/*.test.js          # expect 73 pass / 0 fail
 npm run lint
 ```
 
