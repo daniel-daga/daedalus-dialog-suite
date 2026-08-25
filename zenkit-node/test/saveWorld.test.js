@@ -57,6 +57,50 @@ test('saveWorld output re-loads and normalizes to the golden dump', () => {
   });
 });
 
+// The BinSafe archiver is name-addressed: every entry carries a hash-table index
+// of its name, and the engine reads properties back by name. The original ZenGin
+// numbers the VOB child-count entries with one global running counter in write
+// order — `childs0` for the VobTree-level count, then `childs1`, `childs2`, ...
+// depth-first, one per VOB — so a world with V VOBs holds exactly the key set
+// {childs0 .. childsV}. Verified against the retail NewWorld/OldWorld/AddonWorld
+// worlds, whose hash tables carry V+1 distinct, gap-free `childs<N>` keys.
+function binSafeHashTableKeys(buffer) {
+  let pos = 0;
+  for (;;) {
+    const nl = buffer.indexOf(0x0a, pos);
+    const line = buffer.toString('latin1', pos, nl).replace(/\r$/, '');
+    pos = nl + 1;
+    if (line === 'END') break;
+  }
+  let p = buffer.readUInt32LE(pos + 8); // hash table offset
+  const count = buffer.readUInt32LE(p);
+  p += 4;
+  const keys = [];
+  for (let i = 0; i < count; i += 1) {
+    const keyLength = buffer.readUInt16LE(p);
+    keys.push(buffer.toString('latin1', p + 8, p + 8 + keyLength));
+    p += 8 + keyLength;
+  }
+  return keys;
+}
+
+test('saveWorld numbers childs<N> entries with one gap-free global counter', () => {
+  withTmpDir((dir) => {
+    const out = path.join(dir, 'resaved.zen');
+    const handle = zenkit.loadWorld(FIXTURE, 'g2');
+    zenkit.saveWorld(handle, out);
+
+    const vobCount = zenkit.normalizeWorld(handle).vobs.length;
+    const childs = binSafeHashTableKeys(fs.readFileSync(out))
+      .filter((key) => /^childs\d+$/.test(key))
+      .map((key) => Number(key.slice('childs'.length)))
+      .sort((a, b) => a - b);
+
+    const expected = Array.from({ length: vobCount + 1 }, (_, i) => i);
+    assert.deepStrictEqual(childs, expected);
+  });
+});
+
 test('saveWorld throws a JS Error for an unwritable destination', () => {
   const handle = zenkit.loadWorld(FIXTURE, 'g2');
   const bad = path.join(__dirname, 'no-such-directory', 'nested', 'out.zen');

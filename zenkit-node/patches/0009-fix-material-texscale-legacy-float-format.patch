@@ -1,0 +1,65 @@
+diff --git a/src/Material.cc b/src/Material.cc
+index ecd9990..72d1206 100644
+--- a/src/Material.cc
++++ b/src/Material.cc
+@@ -6,12 +6,37 @@
+ 
+ #include "Internal.hh"
+ 
++#include <cstdio>
+ #include <sstream>
++#include <string>
+ 
+ namespace zenkit {
+ 	static constexpr auto MATERIAL_VERSION_G1 = 17408;
+ 	[[maybe_unused]] static constexpr auto MATERIAL_VERSION_G2 = 0x9c03;
+ 
++	/// \brief Formats a float the way the original ZenGin did.
++	///
++	/// ZenGin built the `texScale` and `texAniMapDir` strings with its MSVC 6 CRT, which
++	/// used eight significant digits and always printed at least three exponent digits
++	/// (`9.9999997e-005`). Modern CRTs print two (`9.9999997e-05`), and ZenKit asked for
++	/// nine digits on top of that, so every material chunk came out a few bytes longer
++	/// than the original with no change in value.
++	static std::string format_float_legacy(float value) {
++		char buf[64];
++		std::snprintf(buf, sizeof buf, "%.8g", static_cast<double>(value));
++
++		std::string out {buf};
++		auto e = out.find('e');
++		if (e != std::string::npos && out.size() - e == 4) {
++			out.insert(e + 2, 1, '0');
++		}
++		return out;
++	}
++
++	static std::string format_vec2_legacy(Vec2 const& v) {
++		return format_float_legacy(v.x) + " " + format_float_legacy(v.y);
++	}
++
+ 	Material Material::parse(ReadArchive& in) {
+ 		Material mat {};
+ 		mat.load(in);
+@@ -86,20 +111,12 @@ namespace zenkit {
+ 		w.write_float("smoothAngle", this->smooth_angle);
+ 		w.write_string("texture", this->texture);
+ 
+-		char buf[100];
+-
+-		{
+-			snprintf(buf, sizeof buf - 1, "%.9g %.9g", this->texture_scale.x, this->texture_scale.y);
+-			w.write_string("texScale", buf);
+-		}
++		w.write_string("texScale", format_vec2_legacy(this->texture_scale));
+ 
+ 		w.write_float("texAniFPS", this->texture_anim_fps);
+ 		w.write_enum("texAniMapMode", static_cast<uint32_t>(this->texture_anim_map_mode));
+ 
+-		{
+-			snprintf(buf, sizeof buf - 1, "%.9g %.9g", this->texture_anim_map_dir.x, this->texture_anim_map_dir.y);
+-			w.write_string("texAniMapDir", buf);
+-		}
++		w.write_string("texAniMapDir", format_vec2_legacy(this->texture_anim_map_dir));
+ 
+ 		w.write_bool("noCollDet", this->disable_collision);
+ 		w.write_bool("noLightmap", this->disable_lightmap);
