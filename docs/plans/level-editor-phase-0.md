@@ -39,9 +39,12 @@ and op system would already be built on an unproven assumption.
 **Exit criteria (all five):**
 
 1. `pnpm --filter zenkit-node test` green on Linux, Windows, and macOS.
-   — ⚠️ green locally (82 tests) and **green in CI on Linux**; macOS and Windows
+   — ⚠️ green locally (88 tests) and **green in CI on Linux**; macOS and Windows
    fail in the build step on toolchain issues, not on this code — acceptance
-   record §9.
+   record §9. The macOS cause (libsquish's unguarded `-msse2` on arm64) is
+   **fixed but not yet observed green in CI**; Windows (node-gyp's Visual
+   Studio finder overflowing its stdio buffer while installing the *parser*
+   workspace) is untouched. **Still not met.**
 2. `zen-roundtrip` run against a developer-local Gothic 1 + Gothic 2/NotR
    installation reports **no `semantic-drift`** on any original world,
    including all parts (see §3 for what that means precisely).

@@ -71,18 +71,15 @@ function applyPatches() {
   }
 }
 
-function main() {
-  const cmake = findCMake();
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  applyPatches();
-
-  const version = zenkitVersion();
-  fs.writeFileSync(
-    path.join(BUILD_DIR, 'zenkit-version.h'),
-    `#pragma once\n#define ZENKIT_NODE_ZENKIT_VERSION "${version}"\n`
-  );
-
-  const configureArgs = [
+// ZenKit's vendored libsquish adds `-msse2` gated on `BUILD_SQUISH_WITH_SSE2
+// AND NOT WIN32` with no architecture check (vendor/libsquish/CMakeLists.txt),
+// and the option defaults to ON. On arm64 macOS/Linux that is a hard clang
+// error ("unsupported option '-msse2' for target 'arm64-apple-darwin'"), which
+// is what failed the macOS CI job. libsquish is a nested submodule of ZenKit,
+// so patches/ cannot reach it — the option is turned off from here instead,
+// on every non-x86 target.
+function configureArgs(platform, arch) {
+  const args = [
     '-S', ZENKIT_SRC,
     '-B', BUILD_DIR,
     '-DCMAKE_BUILD_TYPE=Release',
@@ -97,16 +94,32 @@ function main() {
     '-DZK_ENABLE_ZIPPED_VDF=ON',
     '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
   ];
-  if (process.platform === 'win32') {
+  if (arch !== 'x64' && arch !== 'ia32') {
+    args.push('-DBUILD_SQUISH_WITH_SSE2=OFF');
+  }
+  if (platform === 'win32') {
     // node-gyp compiles the addon with the static MSVC runtime (/MT) in
     // Release; ZenKit must match or the final link fails with LNK2038.
-    configureArgs.push(
+    args.push(
       '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW',
       '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded'
     );
   }
+  return args;
+}
 
-  execFileSync(cmake, configureArgs, { stdio: 'inherit' });
+function main() {
+  const cmake = findCMake();
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  applyPatches();
+
+  const version = zenkitVersion();
+  fs.writeFileSync(
+    path.join(BUILD_DIR, 'zenkit-version.h'),
+    `#pragma once\n#define ZENKIT_NODE_ZENKIT_VERSION "${version}"\n`
+  );
+
+  execFileSync(cmake, configureArgs(process.platform, process.arch), { stdio: 'inherit' });
   execFileSync(cmake, ['--build', BUILD_DIR, '--config', 'Release', '--parallel'], {
     stdio: 'inherit',
   });
@@ -130,4 +143,6 @@ function main() {
   console.log(`zenkit ${version} staged: ${[...staged].join(', ')}`);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { configureArgs };

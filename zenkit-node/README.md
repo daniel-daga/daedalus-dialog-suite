@@ -20,6 +20,15 @@ VOB), `normalizeWorld` dumps, and the round-trip harness. No `applyOps`
 system, no mesh extraction for rendering, no VFS browsing, no UI — those are
 Phase 1.
 
+**Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
+was loaded from a `zCArchiverBinSafe` archive: that is the only writer path
+verified byte-for-byte against the retail corpus and in the original engine.
+ZenKit's ASCII writer corrupts every raw entry it emits and cannot re-load its
+own output at all, and the BINARY path has had no fidelity work
+(`docs/engine-acceptance-2026-08-25.md` §10.2, §10.3). Diagnostics that mean to
+measure those paths pass `saveWorld(handle, path, { allowNonBinSafe: true })`,
+as `scripts/zen-roundtrip.js` does.
+
 ## ZenKit pin
 
 The submodule `vendor/ZenKit` is pinned to commit `1ff081c` (upstream `main`,

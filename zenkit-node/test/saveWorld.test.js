@@ -344,3 +344,43 @@ test('saveWorld round-trips bit 15 of the packed zCVob flag word', () => {
     assert.deepStrictEqual(b, a);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The non-BinSafe guard (docs/engine-acceptance-2026-08-25.md §10.2, §10.3).
+//
+// Only the BinSafe writer path is verified — against the retail corpus and
+// against the original engine. The ASCII writer corrupts every raw entry it
+// emits and ZenKit cannot re-load its own ASCII output at all, and the BINARY
+// path has had no fidelity work either. A save that silently produces a file
+// nothing can re-open is worse than no save, so saveWorld refuses.
+//
+// The guard is exercised on a BINARY world because an ASCII one can never
+// reach it: loading ZenKit's own ASCII output aborts the process, so an ASCII
+// handle cannot be produced in-process at all. Both go through the same
+// `format != BINSAFE` check.
+function withBinaryWorld(fn) {
+  withTmpDir((dir) => {
+    const authored = path.join(dir, 'authored.zen');
+    zenkit._authorFixtureWorld(authored, 'binary', 'g2');
+    fn(zenkit.loadWorld(authored, 'g2'), dir);
+  });
+}
+
+test('saveWorld refuses a world that was not loaded from a BinSafe archive', () => {
+  withBinaryWorld((handle, dir) => {
+    const out = path.join(dir, 'out.zen');
+    assert.throws(() => zenkit.saveWorld(handle, out), /binsafe|BinSafe/);
+    assert.strictEqual(fs.existsSync(out), false);
+  });
+});
+
+// The diagnostic harness (scripts/zen-roundtrip.js) measures the unverified
+// paths on purpose — that is how §10.2's four ASCII defects were found — so
+// the refusal is overridable, explicitly and per call.
+test('saveWorld saves a non-BinSafe world when explicitly allowed', () => {
+  withBinaryWorld((handle, dir) => {
+    const out = path.join(dir, 'out.zen');
+    zenkit.saveWorld(handle, out, { allowNonBinSafe: true });
+    assert.ok(fs.statSync(out).size > 0);
+  });
+});
