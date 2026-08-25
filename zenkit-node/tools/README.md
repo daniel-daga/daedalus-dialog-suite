@@ -52,6 +52,13 @@ section; these CLIs are thin front-ends over it. See
   the backup — hash-verified, in a `finally`, so an interrupt cannot leave a
   modified world behind. **Load each world twice**: Spacer renders nothing on
   the first load of *any* world, including the retail original.
+- `mutate.js <outDir>` — stages the three T10 / E-full candidates as flat
+  `*.zen` files for `engine-batch.ps1`: `00-control-original` (the pristine
+  world — **the control, never skip it**), `01-resave` (load → save, unchanged,
+  for checklist rows 2–9) and `02-minimal-edit` (the two Phase-0 mutations, for
+  row 10). Reads `NewWorld.zen.original-backup` in preference to the installed
+  world and prints the source hash, so it cannot silently pick up a
+  mid-experiment file. See the acceptance record §8.
 - `dumpwin.ps1` — extracts the text of Spacer's/Gothic's error dialogs via
   Win32 `EnumWindows`, so an assertion can be read exactly rather than from a
   screenshot. Run while the dialogs are still open; the **"Assertion Failed"**

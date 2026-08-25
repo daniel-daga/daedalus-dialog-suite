@@ -428,10 +428,14 @@ them.
   harness; kept because it is a two-screen script that is quicker to hack on.
 - `tools/engine-batch.ps1`, `tools/dumpwin.ps1` — the engine harness.
 
+- `mutate.js <outDir>` — stages the three T10 candidates (§8): the pristine
+  control, an untouched re-save, and the row 10 world carrying the two Phase-0
+  mutations. **Promoted this session** — the previous handoff left it in a
+  scratchpad and it had to be rebuilt from prose.
+
 Still session-temporary in the scratchpad, one-off probes not worth promoting:
 `htdiff.js` (hash-table physical order), `lm.js` (0xB026 structure), `layout.js`,
-`inspect.js`, `bools.js`/`bools2.js` (the BOOL census of §3.6), and `mutate.js`
-(builds the row 10 world, §8 — reproduce it from the report there).
+`inspect.js`, and `bools.js`/`bools2.js` (the BOOL census of §3.6).
 
 ---
 
@@ -668,18 +672,40 @@ force.
 | 9 | Save, reload the savegame | ⏸ |
 | 10 | **Minimal edit:** move one VOB, insert one item | ⏸ — world built and verified, below |
 
-Rows 2–9 run on the untouched re-save, row 10 on the edited world. Both are
-staged in the scratchpad `cand3/` (`00-control-original`, `01-resave-v6`,
-`02-minimal-edit`); run them with
-`engine-batch.ps1 -Dir cand3 -Exe Gothic2`.
+Rows 2–9 run on the untouched re-save, row 10 on the edited world.
 
-The row 10 world was produced by `mutate.js` through the two Phase-0 mutations
-only, and verified on reload:
+### Building the candidates
+
+`tools/mutate.js` is now in the repo — the previous handoff left it in a
+scratchpad and it had to be rebuilt from prose. One command stages all three
+candidates as flat `*.zen` files, which is the layout `engine-batch.ps1`
+expects (it picks up `*.zen` in the directory, sorted by name):
+
+```
+node tools/mutate.js <outDir>
+pwsh tools/engine-batch.ps1 -Exe Gothic2 -Dir "<abs outDir>"
+```
+
+| Candidate | Size | Purpose |
+|---|---|---|
+| `00-control-original.zen` | 75,387,729 | the pristine retail world — **the control, never skip it** |
+| `01-resave.zen` | 75,387,803 | load → save, unchanged; rows 2–9 |
+| `02-minimal-edit.zen` | 75,388,011 | the two Phase-0 mutations; row 10 |
+
+It reads `NewWorld.zen.original-backup` in preference to the installed world,
+so it cannot pick up a mid-experiment file, and it prints the source hash
+(`b4dac867…`) to prove which one it used.
+
+The row 10 world is produced through the two Phase-0 mutations only, and
+verified against the control on reload — 4 findings in `vobs`, **0 in `mesh`,
+`bsp` and `waynet`**:
 
 - **moved** VOB `2/962` (`NW_CITY_TABLE_PEASANT_01.3DS`, the nearest visual VOB
-  to the `START` waypoint) 300 units up — it should visibly hang in the air.
-- **inserted** `oCItem` `ITFO_APPLE` named `ITEM_PHASE0_APPLE_01` 80 units above
-  `START` — at the hero's feet on a new game, and it must be takeable.
-- VOB count 23,288 → 23,289; **every other VOB byte-identical in the dump.**
+  to the `START` waypoint) 300 units up:
+  `y 5185.951 → 5485.951`, bounding box with it. It should visibly hang in the air.
+- **inserted** `oCItem` `ITFO_APPLE` named `ITEM_PHASE0_APPLE_01` at world path
+  `23`, 80 units above `START` (`29628.5, 5198.3, −15176.8`) — at the hero's
+  feet on a new game, and it must be takeable.
+- VOB count 23,288 → 23,289; **every other VOB identical in the dump.**
 
 G1 coverage remains unavailable (Gothic 1 is not installed).
