@@ -398,6 +398,43 @@ npm run lint
   `tools/startup-probe.ps1` is the unattended check: it launches an engine,
   watches for an error dialog and always kills what it started, without
   touching the install.
+
+#### The oracle for T10 is not stock — state it with every verdict
+
+`Gothic2.exe` **never rendered on this machine**. T6.5 (§3.5) was won with
+Spacer, which does render; the game showed a black screen with working audio in
+every stock configuration, so rows 2–10 could not run at all. What was measured,
+in order, each with a launch:
+
+| Configuration | Result |
+|---|---|
+| 800×600 fullscreen, stock | runs, music, **black** |
+| + `DWM8And16BitMitigation` compat shim | runs, **black** |
+| windowed (`zStartupWindowed=1`) + SystemPack `FixAppCompat=2` | window collapses to its title bar, exits |
+| windowed + `FixAppCompat=1`, 1024×768 | silent access violation, `0xC0000005` |
+| 1024×768 fullscreen, `FixAppCompat=1` | runs, **black** |
+| **+ GD3D11** | **renders** |
+
+So the engine that produces the T10 verdicts is **Gothic II 2.6 (fix) +
+SystemPack + GD3D11** (kirides fork, nightly `51efd73`, installed as
+`System\ddraw.dll`), not a stock install. Three consequences:
+
+1. **The gate still holds.** GD3D11 replaces the DirectDraw/D3D7 *rendering*
+   path by hooking; it does not touch ZEN parsing, the archiver or the BSP —
+   the code the fidelity claim is about. It is not ZenKit-derived either, so
+   the OpenGothic objection (shared code under test) does not apply.
+2. **Checklist row 5 is weakened.** "Screenshots at ~5 fixed positions vs. the
+   original — vertex lighting" is now candidate-vs-control only: GD3D11 changes
+   lighting by design, so the absolute look is not the retail look. Both sides
+   render through the same renderer, so the A/B is still valid — it just cannot
+   speak to whether our lighting matches *ZenGin's*.
+3. **`-Windowed` is unavailable here.** Windowed mode crashed the process
+   outright (row 4 of the table), so the batch must run fullscreen.
+
+SystemPack hooks through its own `Vdfs32g.dll` (not `ddraw.dll`), so it and
+GD3D11 coexist. GD3D11 declines to hook Spacer — "GD3D11 Renderer doesn't work
+with your game version" — and Spacer then runs normally on its own renderer, so
+**Spacer remains a stock oracle** and §3.5 is unaffected.
 - **Pristine backup: `_work\Data\Worlds\NewWorld\NewWorld.zen.original-backup`
   (75,387,729 B, sha256 `b4dac867…`).** The install is currently restored to the
   original (hash-verified). Never write into the Gothic directory without a
