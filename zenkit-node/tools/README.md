@@ -59,6 +59,16 @@ section; these CLIs are thin front-ends over it. See
   row 10). Reads `NewWorld.zen.original-backup` in preference to the installed
   world and prints the source hash, so it cannot silently pick up a
   mid-experiment file. See the acceptance record §8.
+- `startup-probe.ps1 [-Exe Gothic2|Spacer2] [-Seconds 45]` — **is the engine
+  itself healthy?** Launches it, watches its top-level windows for an error
+  dialog, and always kills what it started. Modifies **nothing** in the
+  install and needs nobody at the keyboard, so it is safe to run before a
+  candidate batch. It answers only "does this crash at startup" — never a
+  checklist row. Written to diagnose a broken install (acceptance record §6,
+  Environment): a Steam reinstall restores the six VDFs the MDK layout needs
+  renamed `.disabled`, which crashes `Gothic2.exe` ~5 s after launch **and**
+  can make the engine read `NewWorld.zen` out of `Worlds.vdf` instead of the
+  installed candidate, voiding any verdict taken in that state.
 - `dumpwin.ps1` — extracts the text of Spacer's/Gothic's error dialogs via
   Win32 `EnumWindows`, so an assertion can be read exactly rather than from a
   screenshot. Run while the dialogs are still open; the **"Assertion Failed"**

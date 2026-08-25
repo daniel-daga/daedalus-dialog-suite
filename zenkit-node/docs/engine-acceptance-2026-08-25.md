@@ -374,6 +374,30 @@ npm run lint
 - Gothic II: `C:\Program Files (x86)\Steam\steamapps\common\Gothic II` —
   extracted MDK-style install (`_work\Data\{Meshes,Textures,Scripts,Worlds}`).
   Install is healthy — verified.
+
+  **The MDK layout depends on six VDFs being renamed `.disabled`** —
+  `Worlds`, `Worlds_Addon`, `Meshes`, `Meshes_Addon`, `Textures`,
+  `Textures_Addon` — so that the engine reads loose files from `_work\Data`
+  instead. `vdfs.cfg` globs `Data\*.VDF`, so a Steam reinstall or a "verify
+  integrity" **restores all six and silently breaks this**, in two ways:
+
+  1. `Worlds.vdf` carries its own `NewWorld.zen`, so an engine run may not be
+     reading the candidate at all — **any T10 verdict taken in that state is
+     void**, pass or fail.
+  2. It also crashes the game. Measured on 2026-08-25 after a reinstall:
+     `Gothic2.exe` took an access violation ~5 s after launch, three runs out
+     of three, reading `[null+0x18]` in an ASLR-relocated DLL (`6E40A736`,
+     `6E50A736`, `71A5A736` — one offset, three bases), long before any world
+     load. Re-parking the six VDFs as `.disabled` fixed it: two clean 40 s and
+     30 s `Gothic2` runs and a clean `Spacer2` run, no error dialog.
+
+  The pairs were byte-identical, so re-parking loses nothing and is reversible
+  by renaming back. Check this **before** blaming a candidate — and note the
+  crash reproduced on candidate `00`, the pristine control, which is what made
+  it obvious the file was not implicated.
+  `tools/startup-probe.ps1` is the unattended check: it launches an engine,
+  watches for an error dialog and always kills what it started, without
+  touching the install.
 - **Pristine backup: `_work\Data\Worlds\NewWorld\NewWorld.zen.original-backup`
   (75,387,729 B, sha256 `b4dac867…`).** The install is currently restored to the
   original (hash-verified). Never write into the Gothic directory without a
