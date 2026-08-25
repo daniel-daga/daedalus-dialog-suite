@@ -179,20 +179,36 @@ function feed(hashes, key, ...parts) {
   for (const part of parts) h.update(part);
 }
 
-function containerFromBuffer(buf) {
-  const it = walk(buf);
-  const { header, hashTable } = it.next().value;
-
-  // Header lines verbatim; only the `date`/`user` VALUES are split off as
-  // benign writer stamps — the presence and position of those lines is a
-  // container fact (ZenGin omits them in nested archive headers).
+// Header lines verbatim; only the `date`/`user` VALUES are split off as benign
+// writer stamps — the presence and position of those lines is a container fact
+// (ZenGin omits them in nested archive headers).
+function headerSection(headerLines) {
   const lines = [];
   const stamps = { date: '', user: '' };
-  for (const line of header.lines) {
+  for (const line of headerLines) {
     const m = /^(date|user) ?(.*)$/.exec(line);
     if (m) stamps[m[1]] = m[2];
     lines.push(m ? m[1] : line);
   }
+  return { lines, ...stamps };
+}
+
+// Only the four BinSafe worlds in a retail G2 install have an entry stream this
+// module can walk; the other 24 .zen files are zCArchiverGeneric/ASCII, whose
+// container facts are a different (unbuilt) instrument. Saying so in the dump is
+// the point: an archive the walker cannot read must report reduced COVERAGE, not
+// a section that happens to match on both sides.
+function containerFromBuffer(buf) {
+  const raw = readHeader(buf);
+  const archiver = raw.lines[2];
+  const format = raw.lines[3];
+  if (format !== 'BIN_SAFE') {
+    return { archiver, format, covered: false, header: headerSection(raw.lines) };
+  }
+
+  const it = walk(buf);
+  const { header, hashTable } = it.next().value;
+  const { lines, ...stamps } = headerSection(header.lines);
 
   const keys = [];
   for (let i = 0; i < hashTable.entries.length; i++) {
@@ -248,6 +264,9 @@ function containerFromBuffer(buf) {
   }
 
   return {
+    archiver: lines[2],
+    format: lines[3],
+    covered: true,
     header: { lines, date: stamps.date, user: stamps.user },
     hashTable: { count: hashTable.count, keys, physicalOrder: sha256(hashTable.physical.join(',')) },
     frames: { total: objects, sequenceHash: `sha256:${frameHash.digest('hex')}`, classes: sortKeys(classes) },

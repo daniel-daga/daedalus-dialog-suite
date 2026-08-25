@@ -369,10 +369,46 @@ built (it *was* the bisect) and is kept as diagnostic tooling — a working
 fallback that has now been demonstrated end to end, should a later format or a
 mod-specific world need it.
 
+### Scope of the verdict — BinSafe only (T8, 2026-08-25)
+
+**Plan A holds for `zCArchiverBinSafe` worlds. The ASCII path is out of Phase
+0's scope, and not because it was skipped — because it was measured and does
+not work.**
+
+Only 4 of the 28 `.zen` files in a retail G2 install are BinSafe: `NewWorld`,
+`OldWorld`, `AddonWorld`, `DragonIsland`. All four round-trip `identical` with
+a byte-identical mesh/BSP blob and a coverage gap of 0. The other 24 are
+`zCArchiverGeneric`/ASCII — 20 worlds plus 4 VOB libraries that are not worlds
+at all — and the T8 run over the whole install found:
+
+- **all 20 ASCII worlds abort the process when their own re-save is loaded
+  back** (`STATUS_STACK_BUFFER_OVERRUN`, `0xC0000409`). So does a 4 KB world
+  authored by ZenKit's own ASCII writer. ZenKit cannot read what it writes.
+- **every raw entry the ASCII writer produces is corrupt** — `write_raw` emits
+  a stale second hex digit for each byte below `0x10`, so a `vec3 0 0 0`
+  re-saves as `05 05 05 05 05 05 05 05 05 05 05 05`.
+- **VOB representation is not preserved**: all 1277 OldCamp VOBs go from
+  `pack=0` to `pack=1`, and the ASCII body loses 43.9%.
+- `write_mat3x3` writes `rawFloat:` where both `read_mat3x3` and ZenGin use
+  `raw:`.
+
+Fixing that is a patch series the size of 0010–0019 plus an engine A/B per
+patch — a second T6.5, not a finishing touch — and it is not what Phase 0 exists
+to answer. The blocking risk *is* retired: the four whole worlds the editor
+would actually open re-serialize and load. The `*_Part_*.zen` files are Spacer's
+compile-time source layers, not the worlds the engine loads.
+
+**The consequence for Phase 1a is a hard one and is not optional:** the binding
+must **refuse to save** a non-BinSafe world until that series lands. A save that
+corrupts every raw entry and cannot be re-opened is worse than no save at all.
+
+Evidence, the four named defects and the full corpus table:
+`zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.
+
 **What this verdict does not cover.** T6.5 is the plan's *E-early* pass — "does
 the engine accept it" — and only checklist row 1 (Spacer) has run. Rows 2–10
-remain as **T10 / E-full**, after the T7 harness and the T8 corpus. Gothic 1 is
-not installed on the Phase 0 machine, so G1 coverage is still open.
+remain as **T10 / E-full**. Gothic 1 is not installed on the Phase 0 machine, so
+G1 coverage is still open.
 
 But their *purpose has changed*, and §5's original worry about collision no
 longer applies to an untouched re-save. The concern was written on the

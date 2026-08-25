@@ -189,3 +189,41 @@ test('containerFromBuffer describes the fixture archive', () => {
   assert.match(container.meshAndBsp.chunks[2].sha256, /^sha256:/);
   assert.strictEqual(container.meshAndBsp.trailing, '');
 });
+
+// The walker parses the BinSafe entry stream, which zCArchiverGeneric/ASCII
+// worlds do not have — and 24 of the 28 .zen files in a retail G2 install are
+// ASCII (acceptance record §9). Reading one used to throw out of
+// `readHashTable`, which took `normalizeWorld` down with it. The instrument
+// must instead say, in the dump, that it does not cover this archive: an
+// unreadable container section is a coverage fact, never silent agreement.
+test('containerFromBuffer reports a non-BinSafe archive as uncovered instead of throwing', () => {
+  withTmpDir((dir) => {
+    const ascii = path.join(dir, 'ascii.zen');
+    zenkit._authorFixtureWorld(ascii, 'ascii', 'g2');
+    const container = containerFromBuffer(fs.readFileSync(ascii));
+
+    assert.strictEqual(container.covered, false);
+    assert.strictEqual(container.archiver, 'zCArchiverGeneric');
+    assert.strictEqual(container.format, 'ASCII');
+    assert.deepStrictEqual(container.header.lines, [
+      'ZenGin Archive', 'ver 1', 'zCArchiverGeneric', 'ASCII', 'saveGame 0', 'date', 'user', 'END',
+    ]);
+    // Nothing beyond the text header may be claimed.
+    assert.deepStrictEqual(Object.keys(container).sort(), ['archiver', 'covered', 'format', 'header']);
+  });
+});
+
+// Two dumps whose container sections are both uncovered agree on nothing — the
+// instrument simply did not look. `identical` on such a pair is a claim about
+// the struct dump ALONE, so the caller has to be able to tell the two apart.
+test('classifyDumps reports whether the container instrument covered the pair', () => {
+  const baseline = baselineDump();
+  const covered = classifyDumps(baseline, JSON.parse(JSON.stringify(baseline)));
+  assert.strictEqual(covered.classification, 'identical');
+  assert.strictEqual(covered.containerCoverage, true);
+
+  const uncovered = { ...baseline, container: { archiver: 'zCArchiverGeneric', format: 'ASCII', covered: false, header: { lines: [], date: '', user: '' } } };
+  const result = classifyDumps(uncovered, JSON.parse(JSON.stringify(uncovered)));
+  assert.strictEqual(result.classification, 'identical');
+  assert.strictEqual(result.containerCoverage, false);
+});

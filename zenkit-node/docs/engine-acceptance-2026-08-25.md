@@ -1,25 +1,34 @@
 # Engine acceptance record & session handoff — 2026-08-24/25
 
-Phase 0 task **T6.5** (`../../docs/plans/level-editor-phase-0.md` §5, "E-early").
+Phase 0 tasks **T6.5** (§5 "E-early"), **T7** and **T8**
+(`../../docs/plans/level-editor-phase-0.md`).
 Branch: `feature/level-editor-phase-0`. Nothing pushed to master.
 
-**Status: T6.5 PASSED. Verdict: Plan A** (decision matrix cell *clean diff /
-engine OK*; written up in `../../docs/plans/level-editor.md` §5).
+**Status: T6.5 PASSED, T7 and T8 landed. Verdict: Plan A, scoped to the
+BinSafe path** (decision matrix cell *clean diff / engine OK*; written up in
+`../../docs/plans/level-editor.md` §5).
 
 A single-variable engine bisect (§3.3) localised the failure to the `MeshAndBsp`
 blob, chunk-level isolation (§3.4) named the two fatal defects, and after ten
 further ZenKit patches **Spacer loads a fully re-saved retail NewWorld** (§3.5).
-All three retail G2 worlds now re-save with a **byte-identical mesh/BSP blob**
-and classify `identical`. Remaining: T7, T8, then T10 / E-full (checklist rows
-2–10, §8).
+All four retail G2 BinSafe worlds re-save with a **byte-identical mesh/BSP blob**
+and classify `identical` — now confirmed by the T7 harness over the whole
+install (§10).
+
+**The ASCII path does not work at all** and is deliberately out of Phase 0's
+scope: ZenKit cannot re-load its own ASCII output (a hard `0xC0000409` on all
+20 ASCII worlds) and every raw entry it writes is corrupt. Evidence, the four
+named defects and the scope decision are in §10.2 and §10.3.
+
+Remaining: T10 / E-full (checklist rows 2–10, §8).
 
 ---
 
-## 1. What was built (T1–T6, T9 — all green)
+## 1. What was built (T1–T9 — all green)
 
 New workspace `zenkit-node/`: an N-API binding around ZenKit plus the drift
-classifier and the container-level instrument. **73 tests, all passing** (the
-last known-failing one was resolved by the reviewed fixture regeneration — §5).
+classifier, the container-level instrument and the `zen-roundtrip` harness.
+**82 tests, all passing.**
 
 | Task | State | Notes |
 |---|---|---|
@@ -30,8 +39,10 @@ last known-failing one was resolved by the reviewed fixture regeneration — §5
 | T5 classifier | ✅ | `lib/classify.js` — `identical` / `float-noise` / `reordered` / `semantic-drift`. Container facts are **always** `semantic-drift`. |
 | T6 `saveWorld` + minimal mutations | ✅ | Atomic temp+rename; `setVobPosition`, `insertItemVob`. |
 | T9 CI wiring | ⚠️ | `.github/workflows/zenkit-node.yml`, path-filtered, 3 OSes. **Never executed on GitHub** — unverified. |
-| T6.5 engine gate | 🔶 | Localised, §3. Final confirmation pending. |
-| T7, T8, T10 | ⏸ | Blocked on T6.5. |
+| T6.5 engine gate | ✅ | Passed, §3.5. |
+| T7 `zen-roundtrip` harness | ✅ | `scripts/zen-roundtrip.js`, two modes, per-world child-process isolation, coverage-honest report — §10. |
+| T8 corpus run | ✅ | Ran; **scoped to BinSafe**, with the ASCII reason measured — §10.2, §10.3. |
+| T10 / E-full | ⏸ | Manual, needs the user at the keyboard — §8. |
 
 ### ZenKit pin
 
@@ -337,7 +348,7 @@ against the table above rather than pasted from the failure output:
 `container.test.js` (d) now mutates `0xFFFFFFFF → 1` instead of `1 → 0xFFFFFFFF`
 (the fixture already holds ZenGin's signed-bit-field `true`), the header-date
 assertion became a shape match, and the hash-table count / mesh sizes were
-updated. **73 tests, 73 pass. Lint clean.**
+updated. **73 tests, 73 pass at that commit. Lint clean.**
 
 Regenerating a golden remains **an explicit reviewed act, never automatic**.
 `npm run fixtures:regen` regenerates both files; `--golden-only` regenerates
@@ -352,11 +363,11 @@ git checkout feature/level-editor-phase-0
 cd zenkit-node
 node scripts/build-zenkit.js        # resets the submodule, applies patches/*.patch
 npx node-gyp rebuild
-node --test test/*.test.js          # expect 73 pass / 0 fail
+node --test test/*.test.js          # expect 82 pass / 0 fail
 npm run lint
 ```
 
-**Next:** T7 (harness), T8 (corpus), then T10 / E-full — §8.
+**Next:** T10 / E-full — §8. T7 and T8 are done (§10).
 
 ### Environment
 
@@ -412,7 +423,9 @@ them.
 - `tools/bytediff.js` — the event-aligned byte diff that found defects 0010–0019.
 - `tools/splice.js`, `tools/chunksplice.js` — the bisect machinery (§3.3, §3.4),
   which is also Plan B's implementation should it ever be needed.
-- `tools/breadth.js` — the whole-corpus check in one command (§3.7).
+- `tools/breadth.js` — the whole-corpus check in one command (§3.7). Superseded
+  by `scripts/zen-roundtrip.js` (§10), which is the same measurement as a real
+  harness; kept because it is a two-screen script that is quicker to hack on.
 - `tools/engine-batch.ps1`, `tools/dumpwin.ps1` — the engine harness.
 
 Still session-temporary in the scratchpad, one-off probes not worth promoting:
@@ -422,10 +435,168 @@ Still session-temporary in the scratchpad, one-off probes not worth promoting:
 
 ---
 
-## 9. Known scope limits — read before T8
+## 10. T7 and T8 — the harness and the corpus run (2026-08-25)
+
+### T7 — `scripts/zen-roundtrip.js`
+
+`tools/breadth.js` did the work for one world; T7 is that as the harness the
+plan specifies (§3 CLI, §6 acceptance test), with three things breadth.js did
+not have.
+
+```
+# C1 — fidelity, developer-local. Every original ZEN is its own reference.
+node scripts/zen-roundtrip.js --root "<Gothic II>/_work/Data/Worlds" --game g2 \
+     --strict --report-dir reports/
+
+# C2 — regression, CI. The checked-in fixtures. NEVER a fidelity result.
+node scripts/zen-roundtrip.js --fixtures --strict
+```
+
+Per world: load → save → save again → re-load the first save → classify, plus
+blob identity, determinism and the event-aligned byte diff with its coverage
+gap. `--drill` adds the first differing bytes per structure; `--report-dir`
+writes `zen-roundtrip.json`; `--strict` exits 1 on `semantic-drift`,
+`unreadable` or `crashed`.
+
+Three things it does that the seed did not:
+
+1. **Every world is measured in a child process.** ZenKit aborts the process
+   outright on the ASCII path (§10.2), and a crash is a result to record, not
+   the end of the run. A crashed row still carries the file's archiver, format
+   and size, read by the parent, so "20 ASCII worlds crashed" is a finding
+   rather than "20 rows crashed".
+2. **Coverage is counted against every file found, not every file that
+   survived.** A run where 20 of 28 worlds never produced a measurement must
+   not print a full-coverage line. A world whose container the instrument
+   cannot read is reported `struct-only`, never as a fidelity pass — this is
+   the §3 ASCII problem faced rather than papered over.
+3. **The claim is printed.** `--fixtures` says in the summary that it is C2 and
+   not a fidelity result.
+
+Two instrument defects were fixed on the way, both found by pointing it at
+real data:
+
+- `containerFromBuffer` threw out of `readHashTable` on any non-BinSafe
+  archive, which took `normalizeWorld` down with it — so no ASCII world could
+  be dumped at all. It now returns `{ archiver, format, covered: false, header }`
+  and `classifyDumps` reports `containerCoverage`. An archive the walker cannot
+  read must report reduced coverage, never silent agreement.
+- The determinism check compared raw bytes, so two saves of NewWorld that
+  straddled a second read as `NONDETERMINISTIC`. It now compares
+  stamp-normalized bytes and reports `savesBitIdentical` separately; the
+  §3.7 determinism result stands.
+
+Covered by `test/roundtrip.test.js` (7 tests, driving the real CLI through
+`spawnSync`). The plan's acceptance test — "a seeded corrupt fixture exits
+non-zero and names the offending structure" — is seeded with a `locked` BOOL
+rewritten from `0xFFFFFFFF` to `1`: ZenKit reads both as `true`, so the struct
+dump stays clean and only the container instrument can catch it.
+
+### T8 — the corpus run
+
+Every `.zen` in the developer-local G2 install, 2026-08-25:
+
+```
+COVERAGE: 28 .zen found; 4 measured (4 container-instrumented, 0 struct-dump only),
+          20 crashed, 0 unreadable, 4 skipped (not worlds)
+VERDICTS: 20× crashed [ASCII], 4× identical [BIN_SAFE], 4× not-a-world [ASCII]
+```
+
+| World | Archiver | Verdict | Blob identical | Coverage gap | Byte residual |
+|---|---|---|---|---|---|
+| NewWorld | BinSafe | `identical` | ✅ | 0 | 4× `colorAniList` |
+| OldWorld | BinSafe | `identical` | ✅ | 0 | 2× `colorAniList` |
+| AddonWorld | BinSafe | `identical` | ✅ | 0 | 16× `colorAniList` |
+| DragonIsland | BinSafe | `identical` | ✅ | 0 | **none** |
+| 20 ASCII worlds | zCArchiverGeneric | **`crashed`** | — | — | — |
+| FireTree_Lamp/Lamp1/Medium, ItLsTorchBurning | zCArchiverGeneric | `not-a-world` | — | — | — |
+
+The four `not-a-world` files carry no `MeshAndBsp` — they are VOB libraries,
+not worlds, so a *world* round-trip has nothing to say about them. That is a
+skip with a reason, not a pass and not a failure.
+
+### 10.1 The BinSafe half is done
+
+All four retail BinSafe worlds re-save with a byte-identical mesh/BSP blob and
+hash table, deterministically, gap 0, classifying `identical`. This confirms
+§3.7 on a fourth world and through an independent code path.
+
+### 10.2 The ASCII half: the writer is not usable
+
+**All 20 ASCII worlds load and save, and then abort the process when the
+re-save is loaded back** — `STATUS_STACK_BUFFER_OVERRUN`, exit `0xC0000409`,
+every one of them. Isolated to the reload step:
+
+```
+load1 ok
+save ok
+exit=-1073740791          # 0xC0000409, loading the re-save
+```
+
+It is not a retail-content quirk: a 4 KB world authored by ZenKit's own ASCII
+writer (`_authorFixtureWorld(..., 'ascii', 'g2')`) crashes the same way.
+**ZenKit cannot read back what its ASCII writer produces.**
+
+Four writer defects were identified, three of them by direct file evidence
+from the retail `OldCamp.zen` re-save:
+
+```
+file       3979132 -> 3512001  (-11.7%)
+blob       2914946 -> 2914946  identical true
+ascii tail 1064002 ->  596878  (-43.9%)
+pack=0 / pack=1   original 1277 / 0   re-save 0 / 1277
+```
+
+| # | Defect | Evidence |
+|---|---|---|
+| **A1** | `WriteArchiveAscii::write_raw` emits a **stale second hex digit** for every byte below `0x10`. `std::to_chars` does not null-terminate, so `buf[1]` still holds the previous byte's low nibble and the `buf[1] == '\0'` branch is only ever taken on the first byte of the file. **Every raw entry the ASCII writer produces is corrupt.** | The LEVEL-VOB's `trafoOSToWSPos=vec3:0 0 0` re-saves as packed bytes `05 05 05 05 05 05 05 05 05 05 05 05` — `6.25e-36` per axis instead of `0` — and the identity rotation as `0505803f 0f0f0f0f…0f0f803f`. The filler byte is always the previous byte's low nibble. |
+| **A2** | `VirtualObject::save` writes VOBs **packed unconditionally** (a file-static `pack = true`), so a world loaded unpacked is written packed. | All 1277 OldCamp VOBs are `pack=int:0` in the original and `pack=int:1` in the re-save; the ASCII tail loses 43.9%. |
+| **A3** | `WriteArchiveAscii::write_mat3x3` writes a `rawFloat:` entry, but `ReadArchiveAscii::read_mat3x3` reads a `raw:` entry — and **ZenGin writes `raw:`**. The unpacked path could not be read back either. | All 1277 original `trafoOSToWSRot` entries are `raw:`; ZenKit's writer would emit `rawFloat:`. |
+| **A4** | The top-level ASCII header's `objects` field is padded to a different width than ZenGin's. | `objects 1835     ` (original) vs `objects 1835       ` (re-save). |
+
+The one piece of good news: **the `MeshAndBsp` blob is byte-identical on the
+ASCII path too** (2,914,946 B on OldCamp), because it is written by the same
+patched `Mesh`/`BspTree` code the BinSafe result already validates. Whatever
+an ASCII patch series would have to fix, it is all above the blob.
+
+### 10.3 Scope decision — Phase 0 covers the BinSafe path only
+
+**T8 is scoped down, deliberately.** Phase 0's fidelity claim covers
+`zCArchiverBinSafe` worlds: `NewWorld`, `OldWorld`, `AddonWorld`,
+`DragonIsland`. The 20 `zCArchiverGeneric`/ASCII worlds — which includes every
+`*_Part_*.zen` the plan's T8 asks for by name — are **out of scope, with the
+reason measured and named above**.
+
+Why scoped down rather than patched:
+
+- A1–A4 are a **patch series of their own**, of roughly the size of
+  0010–0019, in a writer path that has had no fidelity work at all. Landing
+  part of it while calling T8 done would be exactly the "unsupported claim of
+  coverage" the brief rules out.
+- Every one of those patches would then need its own engine A/B, because the
+  rule that has held all project long is that no byte difference is dismissed
+  by reasoning. That is a second T6.5, not a finishing touch.
+- **The blocking risk is already retired.** Phase 0 exists to answer "does the
+  engine accept a world we re-serialized". It does — for the four worlds the
+  editor would actually open, which are the four whole worlds. The `*_Part_*`
+  files are Spacer's compile-time source layers, not the shipped playable
+  worlds the engine loads.
+
+What this costs, stated plainly: the level editor cannot round-trip an ASCII
+world until that series lands, and **it must refuse to try** — a save that
+silently corrupts every raw entry and cannot be re-opened is worse than no
+save. `zen-roundtrip` already reports those worlds as `crashed`; the binding
+should reject a non-BinSafe world for *saving* in Phase 1a, and that is now
+the first item of ASCII work rather than the last.
+
+---
+
+## 9. Known scope limits
 
 **Only 4 of the 28 `.zen` files in a G2 install are BinSafe.** Everything this
-record establishes is about that path:
+record establishes is about that path. Written before T8; **§10.2 and §10.3
+are the measured answer** — the ASCII writer turned out not to work at all, and
+Phase 0's scope is now formally BinSafe-only.
 
 | Archiver | Files |
 |---|---|
@@ -434,10 +605,11 @@ record establishes is about that path:
 
 The plan's T8 says "every original world … **including all parts**". All the
 parts are **ASCII**, and `ArchiveAscii.cc` has had *no* fidelity work — patch
-0018 touched it only for the date format. Expect the ASCII writer to need its own
-patch series, and do not assume the BinSafe results transfer. `tools/bytediff.js`
-and `lib/container.js` are BinSafe-only and will need an ASCII sibling (or T8
-compares those worlds by dump + whole-file hash alone).
+0018 touched it only for the date format. This expectation was right and then
+some: T8 found four ASCII writer defects, one of which makes ZenKit unable to
+re-load its own output at all (§10.2). `lib/container.js` now says so in the
+dump (`covered: false`) instead of throwing; a real ASCII sibling for it and
+for `tools/bytediff.js` is the second half of that future work.
 
 Also open:
 
@@ -449,7 +621,12 @@ Also open:
   `VLight::save` to emit the shorthand when r==g==b would make BinSafe re-saves
   byte-identical bar the header stamps. Engine-tested as harmless (§3.3
   candidate 09), so this is fidelity polish, not a defect.
-- **T9 CI** — `.github/workflows/zenkit-node.yml` has never executed on GitHub.
+- **The ASCII writer** — four named defects, §10.2. A patch series of its own,
+  plus an engine A/B per patch. Until it lands, the binding should **refuse to
+  save** a non-BinSafe world (§10.3): a save that corrupts every raw entry and
+  cannot be re-opened is worse than no save.
+- **T9 CI** — `.github/workflows/zenkit-node.yml` has never executed on GitHub,
+  and does not yet run `zen-roundtrip --fixtures`.
 - **Gothic 1** is not installed; no G1 coverage of anything.
 
 ---

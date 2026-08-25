@@ -3,14 +3,14 @@
 Companion to [`level-editor.md`](level-editor.md) (architecture) and
 [`level-editor-design-brief.md`](level-editor-design-brief.md) (source brief).
 
-Status: **in progress on `feature/level-editor-phase-0`** — T1–T6 and T9 landed;
-**T6.5 (the in-engine gate) is FAILING** and blocks T7/T8/T10. Nine ZenKit
-save-path defects found and patched so far; every instrument we have reports the
-re-save as identical, yet the original engine still rejects it — the §5
-"clean diff / broken engine" cell. Current state, evidence, ranked hypotheses
-and resume instructions:
+Status: **in progress on `feature/level-editor-phase-0`** — T1–T9 landed,
+including **T6.5 (the in-engine gate), which PASSED**, and T7/T8. Nineteen
+ZenKit save-path defects were found and patched to get there; two were
+independently fatal to the original engine. Verdict: **Plan A, scoped to the
+BinSafe path** — T8 measured the ASCII writer and found it unusable (§6, T8).
+Only **T10 / E-full** remains, and it needs a person at the keyboard.
+Full record and evidence:
 [`zenkit-node/docs/engine-acceptance-2026-08-25.md`](../../zenkit-node/docs/engine-acceptance-2026-08-25.md).
-**No Plan A / Plan B verdict may be written until the engine gate is settled.**
 
 Phase 0 is the blocking gate for the whole level-editor effort (brief §9,
 Gate 1). Nothing in the editor UI is built until it passes. This document
@@ -39,17 +39,28 @@ and op system would already be built on an unproven assumption.
 **Exit criteria (all five):**
 
 1. `pnpm --filter zenkit-node test` green on Linux, Windows, and macOS.
+   — ✅ green locally (82 tests); the CI job has still never executed on GitHub.
 2. `zen-roundtrip` run against a developer-local Gothic 1 + Gothic 2/NotR
    installation reports **no `semantic-drift`** on any original world,
    including all parts (see §3 for what that means precisely).
+   — ⚠️ **met for BinSafe, not met for ASCII, and deliberately scoped down.**
+   All 4 BinSafe worlds are `identical`; the 20 ASCII worlds (every
+   `*_Part_*.zen` among them) crash on reload of their own re-save. Gothic 1 is
+   not installed, so its half is unavailable rather than green. Evidence and
+   the decision: acceptance record §10.
 3. Every drift the harness *does* report is classified and explained —
    `float-noise` and `reordered` are acceptable-with-rationale, anything
    unexplained is a blocker.
+   — ✅ the only BinSafe residual is `zCVobLight.colorAniList` (ZenGin's
+   greyscale shorthand), engine-tested in isolation; the ASCII failures are
+   named down to four specific writer defects.
 4. **The in-engine acceptance checklist (§5) passes in original Gothic** for
    both a plain re-save and a minimally edited world.
+   — ⏸ row 1 only (Spacer). T10 is what remains of Phase 0.
 5. A written **Plan A / Plan B verdict** (whole-world re-serialization vs.
    chunk splice — `level-editor.md` §5) supported by *both* the harness report
    and the engine result, per the decision matrix in §5.
+   — ✅ **Plan A, scoped to BinSafe** (`level-editor.md` §5).
 
 ---
 
@@ -381,14 +392,24 @@ have been built on sand, and the response is to stop and reconsider Plan B (or
 the project) rather than to keep investing. Record the result even when it
 passes — it is the baseline the full pass is compared against.
 
-**T7 — the `zen-roundtrip` harness.** CLI per §3, report artifact, `--strict`
-exit codes, `--drill`. *Test:* against fixtures, a seeded corrupt fixture
-exits non-zero and names the offending structure.
+**T7 — the `zen-roundtrip` harness.** ✅ `zenkit-node/scripts/zen-roundtrip.js`.
+CLI per §3, report artifact, `--strict` exit codes, `--drill`, two modes
+(`--fixtures` = C2/CI, `--root` = C1/developer-local). Each world is measured in
+a **child process**, because ZenKit can abort the process outright and a crash
+has to be a recorded result rather than the end of the run. The summary counts
+coverage against every file *found*, not every file that survived, and a world
+the container instrument cannot read is reported `struct-only`, never as a
+fidelity pass. *Test:* `test/roundtrip.test.js`, 7 tests driving the real CLI;
+the seeded corruption is a `locked` BOOL rewritten `0xFFFFFFFF → 1`, which the
+struct dump cannot see by construction.
 
-**T8 — run against real worlds.** Developer-local G1 + G2/NotR, all parts.
-Not a CI test; produces the drift report that forms the *diff* column of the
-§5 decision matrix. The verdict is written only after T10 supplies the
-*engine* column, then appended to `level-editor.md` §5.
+**T8 — run against real worlds.** ✅ Ran over the whole developer-local G2
+install (28 `.zen`), **and scoped down deliberately**: the 4 BinSafe worlds are
+`identical` with a byte-identical mesh/BSP blob and coverage gap 0; the 20
+ASCII worlds **crash the process when their own re-save is loaded back**, and
+four ASCII writer defects are named with evidence. G1 is not installed, so G1
+coverage is unavailable rather than clean. Report and reasoning:
+acceptance record §10; the scope decision is in `level-editor.md` §5.
 
 **T9 — CI wiring.** Path-filtered job running T1–T7 on the three OSes.
 (T6.5, T8 and T10 are manual/local by nature and never gate a PR.)

@@ -56,5 +56,10 @@ jobs:
       - name: Run zenkit-node tests
         run: pnpm --filter zenkit-node test
 
+      # The harness itself, in its CI mode. Prints its own claim line, which
+      # says in as many words that this is C2 and not fidelity.
+      - name: zen-roundtrip (C2, fixtures)
+        run: pnpm --filter zenkit-node zen-roundtrip -- --fixtures --strict
+
       - name: Lint
         run: pnpm --filter zenkit-node run lint

@@ -38,9 +38,12 @@ section; these CLIs are thin front-ends over it. See
   independently fatal to the original engine.
 - `breadth.js <World> [...]` — re-saves each retail world and reports blob
   byte-identity, determinism, the event-level byte residual and the classifier
-  verdict. The corpus check in one command; the seed of the T7 harness. Reads a
-  developer-local install (`ZENKIT_G2_WORLDS` overrides the path) and never
-  writes to it.
+  verdict. Reads a developer-local install (`ZENKIT_G2_WORLDS` overrides the
+  path) and never writes to it. **Superseded by
+  `../scripts/zen-roundtrip.js`** (the T7 harness, which it seeded): that one
+  discovers worlds itself, isolates each in a child process, writes a report
+  artifact and counts coverage honestly. `breadth.js` is kept because it is two
+  screens of code and quicker to hack a one-off variation into.
 - `engine-batch.ps1 [-Dir cand] [-Only 00,01] [-Exe Spacer2|Gothic2]` — the
   manual engine pass, automated as far as it can be. Verifies the pristine
   backup's hash before touching the install, installs each candidate, launches

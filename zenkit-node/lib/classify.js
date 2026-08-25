@@ -183,6 +183,10 @@ function compareContainer(a, b, findings) {
   deepCompare(strip(a), strip(b), 'container', findings, 0);
 }
 
+function covers(container) {
+  return !!container && container.covered !== false;
+}
+
 function classifyDumps(originalDump, resavedDump, options = {}) {
   const epsilon = options.epsilon !== undefined ? options.epsilon : DEFAULT_EPSILON;
   const findings = [];
@@ -195,13 +199,19 @@ function classifyDumps(originalDump, resavedDump, options = {}) {
   compareEdges(originalDump.waynet.edges, resavedDump.waynet.edges, findings);
   compareContainer(originalDump.container, resavedDump.container, findings);
 
+  // Whether the container instrument actually looked. `identical` on a pair it
+  // could not read is a claim about the struct dump alone, and the caller must
+  // be able to tell that apart from a fully instrumented `identical`.
+  const containerCoverage =
+    covers(originalDump.container) && covers(resavedDump.container);
+
   let classification = 'identical';
   for (const finding of findings) {
     if (SEVERITY[finding.class] > SEVERITY[classification]) {
       classification = finding.class;
     }
   }
-  return { classification, findings };
+  return { classification, findings, containerCoverage };
 }
 
 module.exports = { classifyDumps, SEVERITY };

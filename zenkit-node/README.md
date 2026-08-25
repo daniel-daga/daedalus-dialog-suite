@@ -63,14 +63,32 @@ whatever bug just landed.
 ## zen-roundtrip harness
 
 ```
+# C1 — fidelity, developer-local: every original ZEN is its own reference
 pnpm --filter zenkit-node zen-roundtrip -- \
   --root "C:\<Gothic II>\_work\Data\Worlds" --game g2 --strict --report-dir reports/
+
+# C2 — regression, CI: the checked-in fixtures. NEVER a fidelity result.
+pnpm --filter zenkit-node zen-roundtrip -- --fixtures --strict
 ```
 
-Loads every world, re-saves it, and compares `normalizeWorld` dumps.
-Differences are classified `identical` / `float-noise` / `reordered` /
-`semantic-drift` / `unreadable`; the last two block Gate 1 (plan §3). The
-in-engine acceptance pass (plan §5) is the second, independent instrument —
+Loads every world, saves it twice (determinism), re-loads the first save and
+compares `normalizeWorld` dumps. Differences are classified `identical` /
+`float-noise` / `reordered` / `semantic-drift` / `unreadable`; the last two
+block Gate 1 (plan §3), as do `crashed` and — outside the classifier —
+nothing else. `not-a-world` is a skip, not a failure: four of the install's
+`.zen` files are VOB libraries with no `MeshAndBsp`.
+
+Every world is measured **in a child process**. ZenKit can abort the process
+outright (`0xC0000409`) on the ASCII path, and a crash has to be recorded as a
+result rather than end the run.
+
+The summary always prints a `COVERAGE:` line counted against **every file
+found**, not every file that survived, plus the claim the run carries. A
+world the container instrument could not read is reported `struct-only` and is
+never a fidelity pass. `--drill` adds the first differing bytes per structure
+to the report; `--report-dir` writes `zen-roundtrip.json`.
+
+The in-engine acceptance pass (plan §5) is the second, independent instrument —
 results live in `docs/engine-acceptance-<date>.md`.
 
 ### The `container` section
@@ -97,7 +115,11 @@ bytes the handle was loaded from, and after `setVobPosition` /
 `insertItemVob` those bytes no longer describe the handle. Save the world and
 load the result to get a container section back.
 
-The section is **BinSafe-only**. Only 4 of the 28 `.zen` files in a Gothic II
-install use that archiver; the rest are `zCArchiverGeneric`/ASCII, which has
-had no fidelity work — see the acceptance record §9 before trusting a
-round-trip of those.
+The section is **BinSafe-only**, and says so in the dump: for any other
+archiver it is `{ archiver, format, covered: false, header }` and nothing more,
+and `classifyDumps` returns `containerCoverage: false` for the pair. Only 4 of
+the 28 `.zen` files in a Gothic II install use BinSafe; the other 24 are
+`zCArchiverGeneric`/ASCII. **The ASCII writer is not usable** — ZenKit cannot
+re-load its own ASCII output, and every raw entry it writes is corrupt. The
+evidence and the resulting scope decision are in the acceptance record §10;
+read it before trusting an ASCII round-trip.

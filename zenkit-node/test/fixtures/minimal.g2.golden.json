@@ -361,6 +361,9 @@
     ]
   },
   "container": {
+    "archiver": "zCArchiverBinSafe",
+    "format": "BIN_SAFE",
+    "covered": true,
     "header": {
       "lines": [
         "ZenGin Archive",
