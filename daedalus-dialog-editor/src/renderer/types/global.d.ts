@@ -4,6 +4,14 @@
  * Re-exports shared types and defines renderer-specific types like EditorAPI
  */
 
+export type {
+  OpenWorldRequest,
+  WorldSummary,
+  WorldMeshPayload,
+  InstancedPayload,
+  DecodedTexture,
+} from '../../shared/worldTypes';
+
 // Re-export all shared types
 export type {
   UpdateMetadata,
@@ -145,6 +153,17 @@ export interface EditorAPI {
   ackCloseRequest: () => void;
   approveClose: () => void;
   cancelClose: () => void;
+
+  // World API (level-editor.md §7). The world stays in the main process; what
+  // crosses is the lightweight VOB index plus geometry and texture buffers.
+  openWorldDialog: () => Promise<string | null>;
+  selectGothicInstall: () => Promise<string | null>;
+  getGothicInstall: () => Promise<string | null>;
+  openWorld: (request: OpenWorldRequest) => Promise<WorldSummary>;
+  getWorldMesh: () => Promise<WorldMeshPayload>;
+  getWorldVisuals: () => Promise<InstancedPayload>;
+  getWorldTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
+  closeWorld: () => Promise<void>;
 
   // Updater API
   checkForUpdate: () => Promise<UpdateCheckResult>;

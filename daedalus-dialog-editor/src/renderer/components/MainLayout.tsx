@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, memo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
-import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon } from '@mui/icons-material';
+import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon, Public as WorldIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
 import { useEditorStore } from '../store/editorStore';
 import { useHistoryStore } from '../store/historyStore';
@@ -13,6 +13,10 @@ import type { SemanticModel } from '../types/global';
 const QuestEditor = lazy(() => import('./QuestEditor'));
 const VariableManager = lazy(() => import('./VariableManager'));
 const ProblemsPanel = lazy(() => import('./Problems/ProblemsPanel'));
+// Lazily loaded on purpose (level-editor.md §6): three.js, three-mesh-bvh and
+// the world code are a chunk a dialog-only session never has to download or
+// parse, and `zenkit-node` loads in main only when a world is opened.
+const WorldSurface = lazy(() => import('./world/WorldSurface'));
 
 interface MainLayoutProps {
   filePath: string | null;
@@ -130,6 +134,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                     <ProblemsIcon />
                 </ToggleButton>
             </Tooltip>
+            <Tooltip title="World Editor" placement="right">
+                <ToggleButton value="world" aria-label="World Editor" data-testid="world-toggle">
+                    <WorldIcon />
+                </ToggleButton>
+            </Tooltip>
          </ToggleButtonGroup>
       </Paper>
 
@@ -167,6 +176,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
              <Box sx={{ height: '100%' }}>
                  <Suspense fallback={<LoadingView label="Loading problems..." />}>
                    <ProblemsPanel />
+                 </Suspense>
+             </Box>
+         )}
+
+         {view === 'world' && (
+             <Box sx={{ height: '100%' }}>
+                 <Suspense fallback={<LoadingView label="Loading world editor..." />}>
+                   <WorldSurface />
                  </Suspense>
              </Box>
          )}

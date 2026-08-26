@@ -10,20 +10,23 @@ import { immer } from 'zustand/middleware/immer';
  * not co-located with ephemeral UI cursor state.
  */
 
+/** The top-level views. `world` is the level editor (level-editor.md §6). */
+export type ActiveView = 'dialog' | 'quest' | 'variable' | 'problems' | 'world';
+
 interface UISelectionStore {
   selectedNPC: string | null;
   selectedDialog: string | null;
   selectedQuest: string | null;
   selectedFunctionName: string | null;
   selectedAction: number | null;
-  activeView: 'dialog' | 'quest' | 'variable' | 'problems';
+  activeView: ActiveView;
 
   setSelectedNPC: (npcName: string | null) => void;
   setSelectedDialog: (dialogName: string | null) => void;
   setSelectedQuest: (questName: string | null) => void;
   setSelectedFunctionName: (functionName: string | null) => void;
   setSelectedAction: (actionIndex: number | null) => void;
-  setActiveView: (view: 'dialog' | 'quest' | 'variable' | 'problems') => void;
+  setActiveView: (view: ActiveView) => void;
   /** Reset all selection state to initial values (called by editorStore.resetEditorSession). */
   resetUISelection: () => void;
 }

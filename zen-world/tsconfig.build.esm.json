@@ -1,0 +1,15 @@
+// The renderer half of the build. The CommonJS output is what the Electron
+// main process and Jest load; a bundler cannot see named exports through
+// TypeScript's `__exportStar` helper, so Rollup fails on `import { ROOT_MATRIX }
+// from 'zen-world'` unless there is a real ESM build to resolve to.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2020",
+    "outDir": "dist/esm",
+    "rootDir": "src",
+    "declaration": false,
+    "types": []
+  },
+  "include": ["src"]
+}

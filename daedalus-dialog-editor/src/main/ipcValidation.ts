@@ -117,3 +117,53 @@ export function assertSaveFileOptions(options: unknown): void {
     }
   }
 }
+
+/** The three explicit targets. Never inferred from the file (level-editor.md §9). */
+const GAME_VERSIONS = ['g1', 'g2'] as const;
+
+export interface OpenWorldRequestShape {
+  worldPath: string;
+  gameVersion: 'g1' | 'g2';
+  assetSources: string[];
+}
+
+/**
+ * Assert an open-world request. Beyond the usual boundary hygiene, the two
+ * path-bearing fields matter for a specific reason: the caller path-validates
+ * `worldPath` and every entry of `assetSources`, and a non-string in that array
+ * would pass straight through the validation loop and reach the VFS.
+ */
+export function assertOpenWorldRequest(request: unknown): asserts request is OpenWorldRequestShape {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid world request: expected a plain object');
+  }
+  if (typeof request.worldPath !== 'string' || request.worldPath === '') {
+    throw new Error('Invalid world request: worldPath must be a non-empty string');
+  }
+  if (!(GAME_VERSIONS as readonly unknown[]).includes(request.gameVersion)) {
+    throw new Error(`Invalid world request: gameVersion must be one of ${GAME_VERSIONS.join(', ')}`);
+  }
+  if (!Array.isArray(request.assetSources)
+    || !request.assetSources.every((source) => typeof source === 'string')) {
+    throw new Error('Invalid world request: assetSources must be an array of strings');
+  }
+}
+
+/**
+ * Assert a texture request. `maxSize` drives a mipmap-selection loop, so a
+ * zero, a negative or a NaN makes that loop's exit condition meaningless.
+ */
+export function assertTextureRequest(
+  request: unknown,
+): asserts request is { name: string; maxSize: number } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid texture request: expected a plain object');
+  }
+  if (typeof request.name !== 'string' || request.name === '') {
+    throw new Error('Invalid texture name: expected a non-empty string');
+  }
+  const { maxSize } = request;
+  if (typeof maxSize !== 'number' || !Number.isInteger(maxSize) || maxSize <= 0) {
+    throw new Error('Invalid texture request: maxSize must be a positive integer');
+  }
+}

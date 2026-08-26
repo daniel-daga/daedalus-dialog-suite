@@ -168,4 +168,28 @@ export class SettingsService {
       await this.writeSettings(settings);
     });
   }
+
+  /**
+   * The Gothic installation the World surface mounts assets from. Machine-local
+   * and non-committed by design (level-editor.md §9): the project file records
+   * the worlds and the target version, the install path belongs to the machine.
+   *
+   * It doubles as a path-whitelist seed, exactly like recent projects: only a
+   * main-process folder dialog ever writes it, so a compromised renderer cannot
+   * whitelist a directory by claiming it is the Gothic install.
+   */
+  async getGothicInstallPath(): Promise<string | null> {
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      return typeof settings.gothicInstallPath === 'string' ? settings.gothicInstallPath : null;
+    });
+  }
+
+  async setGothicInstallPath(installPath: string): Promise<void> {
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      settings.gothicInstallPath = installPath;
+      await this.writeSettings(settings);
+    });
+  }
 }

@@ -8,11 +8,14 @@ This is a monorepo with two workspaces:
 
 - `daedalus-dialog-editor/` - Electron + React visual editor
 - `daedalus-parser/` - Tree-sitter parser + semantic/codegen library
+- `zenkit-node/` - N-API binding around ZenKit, plus the `zen-roundtrip` fidelity harness
+- `zen-world/` - pure TS level-editor domain (no React/MUI/Electron/native imports)
 
 Use package-local instructions when working inside a workspace:
 
 - `daedalus-dialog-editor/AGENTS.md`
 - `daedalus-parser/AGENTS.md`
+- `zenkit-node/README.md`, `zen-world/README.md`
 
 ## Core Working Rules
 

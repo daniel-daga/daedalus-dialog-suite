@@ -168,4 +168,28 @@ describe('SettingsService', () => {
       expect(await settingsService.isKnownRecentProject(undefined)).toBe(false);
     });
   });
+
+  describe('gothicInstallPath', () => {
+    it('is null until a Gothic install has been chosen', async () => {
+      // Never a guess: an install that is not there must not be invented, or
+      // the World surface mounts nothing and blames the world for it.
+      expect(await settingsService.getGothicInstallPath()).toBeNull();
+    });
+
+    it('round-trips through the settings file', async () => {
+      await settingsService.setGothicInstallPath('C:/Gothic II');
+      expect(await settingsService.getGothicInstallPath()).toBe('C:/Gothic II');
+    });
+
+    it('does not disturb the recent projects it shares a file with', async () => {
+      // Both seed the path whitelist, and both are read-modify-write on one
+      // JSON file — dropping the other's field is a security regression, not
+      // just a lost preference.
+      await settingsService.addRecentProject('/projects/my-mod', 'My Mod');
+      await settingsService.setGothicInstallPath('C:/Gothic II');
+
+      expect(await settingsService.getRecentProjects()).toHaveLength(1);
+      expect(await settingsService.getGothicInstallPath()).toBe('C:/Gothic II');
+    });
+  });
 });

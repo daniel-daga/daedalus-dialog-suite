@@ -376,6 +376,65 @@ Result: **379 of 428 visuals**, up from 313, and **12,463 VOBs placed** instead
 of 11,548 — 1076 draw calls where the budget is 1500, with the framerate above
 measured on that fuller scene.
 
+#### The real viewport landed — and reproduces the spike's numbers exactly (2026-08-26)
+
+The spike's pipeline is now the app's: `zen-world` (`coords`, `render`, `scene`,
+`assets`), `zenkit.worker` + `WorldService` in the main process, and a lazily
+loaded **World** surface in the editor. Driving the *compiled worker* through
+the *real* `WorldService` against retail NewWorld — no spike code in the path —
+returns the same scene the spike measured, field for field:
+
+| | spike | real pipeline |
+|---|---|---|
+| Materials → world draw groups | 1400 → 352 | **1400 → 352** |
+| World-mesh triangles | 476,445 | **476,445** |
+| VOBs enumerated / placed | 23,288 / 12,463 | **23,288 / 12,463** |
+| Visuals seen / resolved | 428 / 379 | **428 / 379** |
+| Level compos skipped | 16 | **16** |
+| Instanced draw groups | 724 | **724** |
+| **Total draw calls** | 1076 | **1076** (budget 1500) |
+| Unique textures | 490 | **490** |
+
+Cold open is **637 ms** against the spike's 1.8 s, and the difference is exactly
+the two costs §3 said belonged elsewhere: textures are no longer decoded eagerly
+(549 ms — now one call per texture, on demand, at 1 ms each) and the BVH is no
+longer built on the main thread. Phase by phase: `loadWorld` 217, `vobIndex` 8,
+`openVfs` 33, `extractWorldMesh` 333, `visuals` 61.
+
+Two things the run found that no test had:
+
+1. **`open` must not transfer the VOB index.** Transferring its columns to the
+   renderer detaches them in the worker, and `visuals` reads exactly those
+   columns to decide what to place — "Construct on a detached ArrayBuffer", on
+   the first real world, after every unit test was green. The index is copied
+   (1.69 MB); transfer is for the 31 MB of geometry, which the worker really
+   does hand over.
+2. **`unresolvedByType` counts VOBs, not visual names** — 1,405 decal VOBs, not
+   23 decal visuals. The per-name figure is `visualsSeen - visualsResolved`,
+   which is 49, which is the 23 + 26 in the table above.
+
+What is **not** yet measured on the real thing: framerate, draw calls per frame
+and pick latency in the app's own viewport. Those still rest on the spike's
+numbers, which is why `zenkit-node/spike/viewport/` is **not** deleted yet — it
+is the reference the app's viewport has to be measured against, and it is still
+the only way to obtain the rAF corroboration §3 records as missing.
+
+Carried over into the real viewport, all of it measured rather than assumed:
+GPU ID-picking for instanced VOBs (`VobPicker`, ids shifted by one so a cleared
+black buffer is "nothing" rather than VOB 0), a BVH for the world mesh only and
+built off the main thread (`BvhBuilder` — deliberately *not*
+`GenerateMeshBVHWorker`, which transfers the live geometry's buffers away and
+would leave the viewport drawing a detached mesh), textures decoded on demand,
+level compos skipped, and one mirrored root node as the entire coordinate and
+winding decision.
+
+One build consequence worth recording: three.js is **517 kB** minified and
+irreducible — `WebGLRenderer` pulls in the whole shader library — so the CI
+chunk-size guard's 500 kB limit is raised to 550 kB in `vite.config.ts`. It
+still guards what it was written for (main 398 kB, MUI 468 kB). The World
+surface, three and three-mesh-bvh are separate chunks fetched only when the
+World view is opened.
+
 ---
 
 ## 4. Data layer — ZenKit binding (open question 3)

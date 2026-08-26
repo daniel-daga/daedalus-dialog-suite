@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
+import { gothicAssetSources } from 'zen-world';
 import { FileService } from './services/FileService';
 import { LogService } from './services/LogService';
 import { ParserService } from './services/ParserService';
@@ -10,12 +12,15 @@ import { PathValidationService, PathValidationError } from './services/PathValid
 import { SettingsService } from './services/SettingsService';
 import { FileWatcherService } from './services/FileWatcherService';
 import { UpdaterService } from './services/UpdaterService';
+import { WorldService } from './services/WorldService';
 import { applyWindowSecurity } from './windowSecurity';
 import {
   assertModelShape,
   assertDialogName,
   assertSaveFileSettings,
   assertSaveFileOptions,
+  assertOpenWorldRequest,
+  assertTextureRequest,
   sanitizeRendererErrorPayload,
 } from './ipcValidation';
 
@@ -41,6 +46,9 @@ const projectService = new ProjectService();
 const settingsService = new SettingsService();
 const fileWatcherService = new FileWatcherService();
 const updaterService = new UpdaterService(settingsService);
+// Constructed eagerly, but it does not spawn its worker — and therefore does
+// not load the native addon — until a world is actually opened (§6).
+const worldService = new WorldService();
 const logService = new LogService(app.getPath('userData'), app.getVersion());
 // Path validator starts empty - paths are added when user opens files/projects via dialogs
 const pathValidator = new PathValidationService([]);
@@ -558,5 +566,103 @@ function setupIpcHandlers() {
       console.error('[IPC] updater:installUpdate error:', error);
       throw new Error(`Failed to install update: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  });
+
+  // World handlers (level-editor.md §7). The world itself never crosses this
+  // boundary: the renderer gets the lightweight VobIndex plus geometry and
+  // texture buffers, and the authoritative model stays in the worker.
+  //
+  // Both directory dialogs below are the only writers of a whitelisted path, in
+  // the same pattern project:openFolderDialog uses — a compromised renderer
+  // cannot reach outside what the user has actually opened.
+  ipcMain.handle('world:openDialog', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        title: 'Open a ZenGin world',
+        filters: [{ name: 'ZenGin world', extensions: ['zen'] }],
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+
+      const worldPath = result.filePaths[0];
+      pathValidator.addAllowedPath(path.dirname(worldPath));
+      return worldPath;
+    } catch (error) {
+      console.error('[IPC] world:openDialog error:', error);
+      throw new Error(`Failed to open world dialog: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('world:selectGothicInstall', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Select the Gothic installation directory',
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+
+      const installPath = result.filePaths[0];
+      pathValidator.addAllowedPath(installPath);
+      await settingsService.setGothicInstallPath(installPath);
+      return installPath;
+    } catch (error) {
+      console.error('[IPC] world:selectGothicInstall error:', error);
+      throw new Error(`Failed to select Gothic install: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('world:getGothicInstall', async () => {
+    const installPath = await settingsService.getGothicInstallPath();
+    // A persisted install re-seeds the whitelist on launch, exactly as recent
+    // projects do — the user already chose it through a main-process dialog.
+    if (installPath) pathValidator.addAllowedPath(installPath);
+    return installPath;
+  });
+
+  ipcMain.handle('world:open', async (_event, request: unknown) => {
+    try {
+      assertOpenWorldRequest(request);
+      await pathValidator.validatePathResolved(request.worldPath);
+
+      // An empty list means "derive them from the configured install". The
+      // rule is `zen-world`'s and it is measured, not stylistic: archives beat
+      // the equivalent loose trees 15 ms to 2,170 ms. It runs here because it
+      // needs the filesystem and the persisted install path.
+      let { assetSources } = request;
+      if (assetSources.length === 0) {
+        const installPath = await settingsService.getGothicInstallPath();
+        if (!installPath) {
+          throw new Error('No Gothic installation is configured — select one before opening a world.');
+        }
+        assetSources = gothicAssetSources(installPath, fs.existsSync);
+        if (assetSources.length === 0) {
+          throw new Error(`No Gothic assets found under ${installPath} — neither archives nor compiled asset directories.`);
+        }
+      }
+
+      for (const source of assetSources) {
+        await pathValidator.validatePathResolved(source);
+      }
+      return await worldService.openWorld({ ...request, assetSources });
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] world:open - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] world:open error:', error);
+      throw new Error(`Failed to open world: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('world:mesh', async () => worldService.getWorldMesh());
+  ipcMain.handle('world:visuals', async () => worldService.getInstancedVisuals());
+
+  ipcMain.handle('world:texture', async (_event, request: unknown) => {
+    assertTextureRequest(request);
+    return worldService.getTexture(request.name, request.maxSize);
+  });
+
+  ipcMain.handle('world:close', () => {
+    worldService.close();
   });
 }

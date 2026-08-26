@@ -222,6 +222,14 @@ own output at all, and the BINARY path has had no fidelity work
 measure those paths pass `saveWorld(handle, path, { allowNonBinSafe: true })`,
 as `scripts/zen-roundtrip.js` does.
 
+### TypeScript consumers
+
+`lib/index.d.ts` describes the subset of the addon TypeScript callers use —
+`loadWorld`, `extractWorldMesh`, `vobIndex`, the asset layer. It is deliberately
+not a full description: `normalizeWorld`, the fixture authors and the harness
+are JS-only diagnostics. The payload *shapes* are `zen-world`'s, which is where
+they are tested.
+
 ## ZenKit pin
 
 The submodule `vendor/ZenKit` is pinned to commit `1ff081c` (upstream `main`,
@@ -273,8 +281,14 @@ whatever bug just landed.
 
 The Phase 1a gate from `../docs/plans/level-editor.md` §3: a real Three.js scene
 over retail NewWorld, to answer framerate and pick latency on measured data
-rather than arithmetic. Verdict and numbers live in §3; delete this directory
-when the Phase 1a viewport lands.
+rather than arithmetic. Verdict and numbers live in §3.
+
+**Still here even though the Phase 1a viewport has landed**, for two reasons
+that both end when someone measures the app's own viewport: it is the reference
+those numbers have to be compared against, and it is the only way to obtain the
+rAF corroboration §3 records as still missing (`node serve.js`, tab in front,
+~30 s, read `presented.valid`). Delete it once the World surface has been
+measured on screen.
 
 ```
 cd spike/viewport

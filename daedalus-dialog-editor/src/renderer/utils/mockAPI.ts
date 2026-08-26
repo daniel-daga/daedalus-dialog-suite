@@ -615,6 +615,25 @@ export const mockEditorAPI: EditorAPI = {
   onDownloadProgress(_callback: (percent: number) => void): () => void {
     return () => {};
   },
+
+  // World API. There is no browser-mode stand-in for a ZenGin world: it needs
+  // the native binding, a Gothic install and tens of megabytes of geometry.
+  // These report "no world" rather than fabricating one — a mock world would
+  // be a scene nobody could tell apart from a broken real one.
+  async openWorldDialog(): Promise<string | null> { return null; },
+  async selectGothicInstall(): Promise<string | null> { return null; },
+  async getGothicInstall(): Promise<string | null> { return null; },
+  async openWorld(): Promise<never> {
+    throw new Error('The world editor needs the desktop app — it is not available in browser mode.');
+  },
+  async getWorldMesh(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async getWorldVisuals(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async getWorldTexture(): Promise<null> { return null; },
+  async closeWorld(): Promise<void> {},
 };
 
 // Helper for tests to reset mock file system

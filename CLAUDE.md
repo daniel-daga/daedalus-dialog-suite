@@ -21,6 +21,8 @@ At the start of every session, read `AGENTS.md` in the repository root and follo
 daedalus-dialog-suite/
 ├── daedalus-parser/          Parser and semantic tooling
 ├── daedalus-dialog-editor/   Electron desktop editor
+├── zenkit-node/              N-API binding around ZenKit (ZenGin worlds) + fidelity harness
+├── zen-world/                Pure TS level-editor domain — no React/MUI/Electron/native imports
 ├── docs/                     Canonical documentation
 │   ├── architecture/         Durable design decisions
 │   ├── reference/            Behavior references
@@ -180,7 +182,9 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/quest/domain/` | Pure quest logic (analysis, graph inference, condition codec) |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
-| `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`) |
+| `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`, `zenkit.worker.ts`) |
+| `src/renderer/world/` | Three.js projection of a world (`WorldScene`, `VobPicker`, `BvhBuilder`) — no React |
+| `src/renderer/components/world/` | The World surface (`WorldSurface`, `WorldViewport`), lazily loaded |
 | `tests/e2e/` | Playwright browser-harness spec files |
 
 ### State Management Stores
@@ -194,6 +198,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `projectStore.ts` | Project-level index and metadata |
 | `searchStore.ts` | Search state |
 | `uiSelectionStore.ts` | UI selection state |
+| `worldStore.ts` | World summary + selection. No `immer`: the summary carries `ArrayBuffer` columns |
 | `storeSync.ts` | Cross-store synchronization |
 
 ### Main-Process Services
@@ -206,6 +211,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `CodeGeneratorService.ts` | Code generation from semantic model |
 | `FileWatcherService.ts` | File-change watching (chokidar) |
 | `MetadataWorkerPool.ts` | Parallel metadata extraction |
+| `WorldService.ts` | Owns the one stateful `zenkit.worker` holding a ZenGin world |
 | `ValidationService.ts` | Dialog/script validation |
 | `PathValidationService.ts` | File path validation |
 | `SettingsService.ts` | App settings persistence |
@@ -261,7 +267,7 @@ Import direction is one-way: UI → domain.
 
 | Workflow | Jobs |
 |---|---|
-| `all-tests.yml` | `editor-tests` (typecheck main + renderer, renderer build warning-guard, Jest, lint), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
+| `all-tests.yml` | `zen-world-tests` (jest + typecheck + lint), `editor-tests` (typecheck main + renderer, renderer build warning-guard, Jest, lint), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
 | `build-windows.yml` | Windows Electron build + installer; `build` job needs both the full `all-tests.yml` matrix (via `workflow_call`, job `tests`) and `e2e-electron-windows`; guarded to `refs/heads/master`; publishes serialized via `concurrency` group; stale re-runs rejected by comparing `github.sha` to live master head |
 | `deploy-pages.yml` | GitHub Pages deployment |
 

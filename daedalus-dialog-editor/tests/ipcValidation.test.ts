@@ -10,6 +10,8 @@ import {
   assertDialogName,
   assertSaveFileSettings,
   assertSaveFileOptions,
+  assertOpenWorldRequest,
+  assertTextureRequest,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
@@ -169,5 +171,65 @@ describe('sanitizeRendererErrorPayload', () => {
   it('drops a payload whose stack exceeds the cap', () => {
     const oversized = 'y'.repeat(RENDERER_ERROR_STACK_MAX + 1);
     expect(sanitizeRendererErrorPayload({ message: 'boom', stack: oversized })).toBeNull();
+  });
+});
+
+describe('assertOpenWorldRequest', () => {
+  const valid = {
+    worldPath: 'C:/Gothic II/_work/Data/Worlds/NewWorld/NewWorld.zen',
+    gameVersion: 'g2',
+    assetSources: ['C:/Gothic II/Data/Meshes.vdf'],
+  };
+
+  it('accepts a well-formed request', () => {
+    expect(() => assertOpenWorldRequest(valid)).not.toThrow();
+  });
+
+  it('rejects a game version that is not one of the three targets', () => {
+    // The target version is explicit and never guessed (level-editor.md §9) —
+    // `World::save` takes it as a mandatory parameter, so a wrong one here is
+    // a wrong file later.
+    expect(() => assertOpenWorldRequest({ ...valid, gameVersion: 'g3' })).toThrow(/gameVersion/);
+    expect(() => assertOpenWorldRequest({ ...valid, gameVersion: undefined })).toThrow(/gameVersion/);
+  });
+
+  it('rejects a non-string world path', () => {
+    expect(() => assertOpenWorldRequest({ ...valid, worldPath: 42 })).toThrow(/worldPath/);
+  });
+
+  it('rejects asset sources that are not a string array', () => {
+    // Every entry is path-validated by the caller; one non-string would slip
+    // through the loop untouched and be handed to the VFS.
+    expect(() => assertOpenWorldRequest({ ...valid, assetSources: 'Meshes.vdf' })).toThrow(/assetSources/);
+    expect(() => assertOpenWorldRequest({ ...valid, assetSources: ['ok', 7] })).toThrow(/assetSources/);
+  });
+
+  it('accepts an empty asset source list', () => {
+    // An install with neither archives nor loose trees is a real state, and
+    // it is the renderer's job to report it, not this validator's.
+    expect(() => assertOpenWorldRequest({ ...valid, assetSources: [] })).not.toThrow();
+  });
+
+  it('rejects a non-object payload', () => {
+    expect(() => assertOpenWorldRequest(null)).toThrow();
+    expect(() => assertOpenWorldRequest([valid])).toThrow();
+  });
+});
+
+describe('assertTextureRequest', () => {
+  it('accepts a name and a positive size', () => {
+    expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: 256 })).not.toThrow();
+  });
+
+  it('rejects a non-string name', () => {
+    expect(() => assertTextureRequest({ name: 42, maxSize: 256 })).toThrow(/texture name/i);
+  });
+
+  it('rejects a size that is not a positive integer', () => {
+    // maxSize picks a mipmap level in a loop; a zero, a negative or a NaN
+    // makes that loop's exit condition meaningless.
+    for (const bad of [0, -1, 1.5, NaN, Infinity, '256']) {
+      expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: bad })).toThrow(/maxSize/);
+    }
   });
 });
