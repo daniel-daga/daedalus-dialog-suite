@@ -552,6 +552,23 @@ Napi::Value AuthorFixtureWorld(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// Internal: authors the Phase 1a asset fixtures into a directory. Test-only,
+// like _authorFixtureWorld's 'mesh-extraction' variant — nothing here is
+// checked in.
+Napi::Value AuthorFixtureAssets(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto dir = PathFromValue(env, info[0]);
+
+  try {
+    zenkit_node::AuthorFixtureAssets(dir);
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to author fixture assets: "} + e.what());
+  }
+  return env.Undefined();
+}
+
 // The ABI-affecting ZenKit definitions THIS addon was compiled with. ZenKit
 // sets them as PUBLIC CMake compile definitions and `_ZK_WITH_MMAP` changes
 // the layout of `zenkit::Vfs`, so an addon built without them silently
@@ -587,6 +604,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
+  exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));
   return exports;
 }
 

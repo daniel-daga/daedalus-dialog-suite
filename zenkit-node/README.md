@@ -19,9 +19,10 @@ Phase 0 (complete): read + save + exactly one minimal mutation (set VOB
 position, insert item VOB), `normalizeWorld` dumps, and the round-trip
 harness. No `applyOps` system, no VFS browsing, no UI — those are Phase 1.
 
-Phase 1a adds `extractWorldMesh` (below). Everything Phase 1a adds is a
-**read-only projection**: it reads the same load-path structs `normalizeWorld`
-does, never the writer, and makes no fidelity claim of its own.
+Phase 1a adds `extractWorldMesh` and the asset layer (below). Everything Phase
+1a adds is a **read-only projection**: it reads the same load-path structs
+`normalizeWorld` does, never the writer, and makes no fidelity claim of its
+own.
 
 ### `extractWorldMesh(handle)`
 
@@ -69,6 +70,59 @@ Chunks are per *material*, but a renderer should merge chunks sharing a
 texture — NewWorld has 1400 materials and only 330 unique textures, and one
 draw call per material would exceed the whole viewport budget on its own
 (`../docs/plans/level-editor.md` §3).
+
+### The asset layer — `openVfs`, `vfsResolve`, `extractVisual`, `decodeTexture`
+
+```js
+const vfs = openVfs([vdfOrDirectory, ...], { overwrite: 'all' });
+vfsResolve(vfs, 'NW_CRATE.3DS');        // -> 'NW_CRATE.MRM' | null
+extractVisual(vfs, 'NW_CRATE.3DS');     // -> the chunk payload above | null
+decodeTexture(vfs, 'NW_WOOD.TGA', 0);   // -> { source, width, height, mipmaps, rgba } | null
+```
+
+`openVfs` mounts VDF/MOD archives and loose directories into one namespace, in
+order — later paths win, which is the load order ZenGin itself uses, so a mod
+directory listed after the retail VDFs overrides them.
+
+A VOB names its **source** asset (`.3DS`, `.ASC`, `.MDS`, `.MMS`, `.TGA`) while
+the VFS holds what the asset compiler produced. The mapping is spelled out
+rather than probed, because guessing is how the wrong mesh ends up on screen
+with nothing reporting a problem — `.3DS` → `.MRM`, else `.MSH`; `.ASC`/`.MDS`
+→ `.MDL`, else `.MDM`; `.MMS` → `.MMB`; `.TGA` → `-C.TEX`. Each was verified
+against the retail install before it was written down. A name nothing maps to
+is `null`, never an error: an unresolved visual is a normal fact about a world.
+
+`extractVisual` reuses the chunk shape above. A proto-mesh chunk carries **no
+`lights` and no `flags`** — its wedges are already de-duplicated render vertices
+and a VOB visual has no baked ZenGin light word. `decodeTexture` returns RGBA8
+through ZenKit's own ZTEX decoder, so the renderer never sees DXT.
+
+#### Triangle winding — measured, and still not applied here
+
+Indices are emitted in **stored order, unreversed**, and that order is now a
+known quantity rather than an open question. `scripts/check-visual-winding.js`
+compares each triangle's geometric normal in stored order against the normals
+ZenGin stored on its own corners — a comparison that needs no coordinate
+convention, since both live in the same basis:
+
+| corpus | agree | oppose | ambiguous | degenerate |
+|---|---|---|---|---|
+| 1351 loose `.MRM` | 0 | **230,395** | 0 | 0 |
+| NewWorld world mesh | 38 | **475,146** | 101 | 1160 |
+| OldWorld world mesh | 1 | **88,481** | 42 | 27 |
+
+Read right-handed, `(p1-p0)x(p2-p0)` points **against** the stored normals,
+uniformly, through two independent readers — MRM wedges and zCMesh's
+vertex/feature indirection. (The world-mesh outliers are hand-authored
+geometry; the compiler-produced `.MRM` corpus has none.) That is what a
+left-handed engine looks like from a right-handed reading, and it makes the
+flip a **single decision for the whole projection layer** rather than a
+per-mesh one — so the binding still does not make it. Run both halves before
+trusting the number: a unanimous result from one reader is as likely to be a
+sign error in the script as a fact about ZenGin.
+
+A live VFS keeps every mounted file memory-mapped, so **Windows refuses to
+delete a mounted file until the handle is garbage-collected.**
 
 **Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
 was loaded from a `zCArchiverBinSafe` archive: that is the only writer path

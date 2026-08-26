@@ -610,6 +610,17 @@ revisiting when the World surface ships; defer.
   ZenGin handedness). Conversion to Three.js space happens in exactly one
   module (`zen-world/coords/`), used at the render/gizmo boundary, with
   property-based round-trip tests. No scattered axis flips.
+- **Triangle winding belongs to that same single boundary (measured
+  2026-08-26).** `zenkit-node` emits indices in stored order and makes no
+  winding claim. Measured across the retail corpus with
+  `zenkit-node/scripts/check-visual-winding.js`, the geometric normal of a
+  triangle in stored order, read right-handed, points *against* the normals
+  ZenGin stored on its corners: 230,395 of 230,395 triangles over 1351 loose
+  `.MRM` visuals, and 475,146 of 475,184 decidable NewWorld world-mesh
+  triangles — two independent readers, one answer. So the flip is uniform and
+  is `coords`' job, exactly like the axis convention; it is never a per-mesh
+  or per-visual decision, and the spike must not sprinkle
+  `side: DoubleSide` over the problem instead.
 - **Multi-ZEN workspace (Phase 3):** parts are a storage format, not a work
   model (brief §4.2) — `WorldService` holds N part handles, the viewport
   renders their union with correct world transforms, every VOB knows its

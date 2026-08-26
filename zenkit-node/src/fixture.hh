@@ -28,4 +28,11 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
                         zenkit::GameVersion version,
                         FixtureVariant variant = FixtureVariant::kMinimal);
 
+// Writes the Phase 1a asset fixtures into `dir` — a proto mesh, a compiled
+// zCMesh visual, a two-mipmap ZTEX, and the empty files the name-mapping tests
+// need something to resolve to. Like the mesh-extraction world these are
+// authored into a temp directory at test time and never checked in: they back
+// no fidelity claim, so they are free to change with the extractor.
+void AuthorFixtureAssets(std::filesystem::path const& dir);
+
 }  // namespace zenkit_node

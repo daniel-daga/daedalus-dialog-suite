@@ -4,6 +4,7 @@
 #include <zenkit/Mesh.hh>
 #include <zenkit/World.hh>
 
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -159,7 +160,8 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
   float hi[3] = {0, 0, 0};
   bool seen = false;
 
-  for (auto const& sub : mesh.sub_meshes) {
+  for (std::size_t i = 0; i < mesh.sub_meshes.size(); ++i) {
+    auto const& sub = mesh.sub_meshes[i];
     if (sub.triangles.empty() || sub.wedges.empty()) continue;
 
     std::vector<float> positions;
@@ -189,16 +191,23 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
     }
 
     for (auto const& triangle : sub.triangles) {
-      // Stored order, unreversed. Winding is a rendering question: it is
-      // settled by comparing the geometric normal against the stored wedge
-      // normals (scripts/check-visual-winding.js), not asserted here.
+      // Stored order, unreversed. Winding is a rendering question, and the
+      // answer is now measured rather than assumed: across the retail corpus
+      // (p1-p0)x(p2-p0) read right-handed points *against* the stored normals
+      // — 230,395 of 230,395 proto-mesh triangles and 475,146 of 475,184
+      // decidable NewWorld world-mesh triangles (scripts/check-visual-winding.js).
+      // So the flip is one decision for the whole projection layer, not a
+      // per-mesh one, and it is not made here.
       indices.push_back(triangle.wedges[0]);
       indices.push_back(triangle.wedges[1]);
       indices.push_back(triangle.wedges[2]);
     }
 
     auto entry = Napi::Object::New(env);
-    entry.Set("materialIndex", Napi::Number::New(env, static_cast<double>(out_index)));
+    // The sub-mesh's own index, so the field means the same here as it does on
+    // an ExtractMesh chunk: an index into the mesh's material list. A sub-mesh
+    // skipped for having no triangles must not renumber the ones after it.
+    entry.Set("materialIndex", Napi::Number::New(env, static_cast<double>(i)));
     entry.Set("name", Str(env, sub.mat.name));
     entry.Set("texture", Str(env, sub.mat.texture));
     entry.Set("group", Napi::Number::New(env, static_cast<double>(sub.mat.group)));

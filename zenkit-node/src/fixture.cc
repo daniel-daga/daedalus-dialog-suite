@@ -2,7 +2,9 @@
 
 #include <zenkit/Material.hh>
 #include <zenkit/Mesh.hh>
+#include <zenkit/MultiResolutionMesh.hh>
 #include <zenkit/Stream.hh>
+#include <zenkit/Texture.hh>
 #include <zenkit/World.hh>
 #include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/MovableObject.hh>
@@ -10,7 +12,11 @@
 #include <zenkit/world/BspTree.hh>
 #include <zenkit/world/WayNet.hh>
 
+#include <cstdint>
+#include <fstream>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace zenkit_node {
 
@@ -189,6 +195,89 @@ void BuildMeshExtractionMesh(Mesh& mesh) {
   // never writes it, so the fixture leaves it empty.
 }
 
+// A proto mesh built to exercise what ExtractProtoMesh claims: one chunk per
+// sub-mesh, wedges as ready-made render vertices, triangle indices in stored
+// order, a sub-mesh with no triangles skipped entirely, and a bounding box
+// computed from the wedges actually emitted rather than copied off the mesh.
+void BuildAssetProtoMesh(MultiResolutionMesh& mesh) {
+  // Deliberately wrong: the extractor computes its own box from the wedges it
+  // emits, so copying this one would be visible immediately.
+  mesh.bbox = AxisAlignedBoundingBox {Vec3 {-999.0f, -999.0f, -999.0f},
+                                      Vec3 {999.0f, 999.0f, 999.0f}};
+  mesh.obbox = OrientedBoundingBox {};
+  mesh.obbox.axes[0] = Vec3 {1.0f, 0.0f, 0.0f};
+  mesh.obbox.axes[1] = Vec3 {0.0f, 1.0f, 0.0f};
+  mesh.obbox.axes[2] = Vec3 {0.0f, 0.0f, 1.0f};
+  mesh.alpha_test = 1;
+
+  mesh.positions = {
+      Vec3 {0.0f, 0.0f, 0.0f},   Vec3 {10.0f, 0.0f, 0.0f},   Vec3 {10.0f, 0.0f, 10.0f},
+      Vec3 {0.0f, 0.0f, 10.0f},  Vec3 {5.0f, 20.0f, 5.0f},
+      // Reachable only through the triangle-less sub-mesh, so it must not
+      // reach the emitted bounding box.
+      Vec3 {-100.0f, -100.0f, -100.0f},
+  };
+
+  auto add_sub_mesh = [&mesh](char const* name,
+                              Color color,
+                              std::vector<MeshWedge> wedges,
+                              std::vector<MeshTriangle> triangles) {
+    SubMesh sub {};
+    sub.mat.name = name;
+    sub.mat.texture = std::string {name} + ".TGA";
+    sub.mat.group = MaterialGroup::UNDEFINED;
+    sub.mat.color = color;
+    sub.wedges = std::move(wedges);
+    sub.triangles = std::move(triangles);
+    mesh.materials.push_back(sub.mat);
+    mesh.sub_meshes.push_back(std::move(sub));
+  };
+
+  add_sub_mesh("EX_WOOD",
+               Color {10, 20, 30, 255},
+               {
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {0.0f, 0.0f}, 0},
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {1.0f, 0.0f}, 1},
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {1.0f, 1.0f}, 2},
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {0.0f, 1.0f}, 3},
+               },
+               {MeshTriangle {{0, 1, 2}}, MeshTriangle {{0, 2, 3}}});
+
+  // Wedges but no triangles: contributes no chunk and no bounding box.
+  add_sub_mesh("EX_EMPTY",
+               Color {1, 2, 3, 4},
+               {MeshWedge {Vec3 {0.0f, -1.0f, 0.0f}, Vec2 {0.5f, 0.5f}, 5}},
+               {});
+
+  // Triangle corners in descending order, so "stored order, unreversed" is a
+  // claim the test can actually distinguish from a sorted or flipped emission.
+  add_sub_mesh("EX_IRON",
+               Color {200, 100, 50, 255},
+               {
+                   MeshWedge {Vec3 {1.0f, 0.0f, 0.0f}, Vec2 {0.25f, 0.75f}, 1},
+                   MeshWedge {Vec3 {1.0f, 0.0f, 0.0f}, Vec2 {0.5f, 0.5f}, 2},
+                   MeshWedge {Vec3 {1.0f, 0.0f, 0.0f}, Vec2 {0.75f, 0.25f}, 4},
+               },
+               {MeshTriangle {{2, 1, 0}}});
+}
+
+// Two mipmap levels so decodeTexture's `level` argument has something to
+// select between, and distinguishable pixels at each level.
+Texture BuildAssetTexture() {
+  std::vector<std::uint8_t> const level0 {
+      0xFF, 0x00, 0x00, 0xFF,  // red
+      0x00, 0xFF, 0x00, 0xFF,  // green
+      0x00, 0x00, 0xFF, 0xFF,  // blue
+      0xFF, 0xFF, 0x00, 0x80,  // yellow, half alpha
+  };
+  std::vector<std::uint8_t> const level1 {0x40, 0x50, 0x60, 0x70};
+
+  return TextureBuilder {2, 2}
+      .add_mipmap(level0, TextureFormat::R8G8B8A8)
+      .add_mipmap(level1, TextureFormat::R8G8B8A8)
+      .build(TextureFormat::R8G8B8A8);
+}
+
 void BuildBspTree(BspTree& bsp, AxisAlignedBoundingBox const& bbox, std::uint32_t polygon_count) {
   bsp.mode = BspTreeType::OUTDOOR;
   bsp.polygon_indices.resize(polygon_count);
@@ -313,6 +402,52 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
   // object count and emit the binsafe hash table.
   archive->write_object("%", std::static_pointer_cast<Object>(world), version);
   archive->write_header();
+}
+
+void AuthorFixtureAssets(std::filesystem::path const& dir) {
+  std::filesystem::create_directories(dir);
+
+  MultiResolutionMesh proto {};
+  BuildAssetProtoMesh(proto);
+
+  Mesh compiled {};
+  BuildMeshExtractionMesh(compiled);
+
+  auto const texture = BuildAssetTexture();
+
+  // EX_CRATE.3DS -> EX_CRATE.MRM, the primary proto-mesh mapping.
+  // EX_DUAL.3DS  -> EX_DUAL.MRM, with an .MSH also present so the candidate
+  //                 *order* is observable and not just the lookup.
+  // EX_PLATE.3DS -> EX_PLATE.MSH, the fallback, and the only compiled-zCMesh
+  //                 visual — deliberately the same mesh the world-mesh test
+  //                 uses, since the .MSH branch is meant to be that same
+  //                 projection.
+  for (auto const* stem : {"EX_CRATE", "EX_DUAL"}) {
+    auto w = Write::to(dir / (std::string {stem} + ".MRM"));
+    proto.save(w.get(), GameVersion::GOTHIC_2);
+  }
+  for (auto const* stem : {"EX_DUAL", "EX_PLATE"}) {
+    auto w = Write::to(dir / (std::string {stem} + ".MSH"));
+    compiled.save(w.get(), GameVersion::GOTHIC_2);
+  }
+  {
+    auto w = Write::to(dir / "EX_CRATE-C.TEX");
+    texture.save(w.get());
+  }
+
+  // Name resolution never opens the file it resolves to, so these hold no real
+  // asset: they exist for vfsResolve and must never be handed to extractVisual
+  // or decodeTexture. They do carry one byte, because `Vfs::mount_host` skips
+  // any host file of size zero.
+  //   EX_HERO.ASC/.MDS -> EX_HERO.MDL, with an .MDM present to make the order
+  //                       observable; EX_GOBBO.ASC -> the .MDM fallback.
+  //   EX_BLOB.MMS      -> EX_BLOB.MMB.
+  //   EX_LIT.TEX       -> itself: an already-compiled name is passed through.
+  for (auto const* name :
+       {"EX_HERO.MDL", "EX_HERO.MDM", "EX_GOBBO.MDM", "EX_BLOB.MMB", "EX_LIT.TEX"}) {
+    std::ofstream stream {dir / name, std::ios::binary | std::ios::trunc};
+    stream.put('\0');
+  }
 }
 
 }  // namespace zenkit_node
