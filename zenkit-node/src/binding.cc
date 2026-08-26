@@ -205,6 +205,19 @@ Napi::Value VobNames(Napi::CallbackInfo const& info) {
   return names;
 }
 
+// The waynet as a drawable graph; see src/normalize.cc.
+Napi::Value GetWaynet(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  try {
+    return zenkit_node::WayNetGraph(env, *handle);
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to read the waynet: "} + e.what());
+  }
+}
+
 // The VOB enumeration the render path uses instead of the dump; see
 // src/normalize.cc.
 Napi::Value VobIndex(Napi::CallbackInfo const& info) {
@@ -609,6 +622,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
   exports.Set("vobIndex", Napi::Function::New(env, VobIndex));
+  exports.Set("getWaynet", Napi::Function::New(env, GetWaynet));
   exports.Set("extractWorldMesh", Napi::Function::New(env, ExtractWorldMesh));
   exports.Set("openVfs", Napi::Function::New(env, zenkit_node::OpenVfs));
   exports.Set("vfsResolve", Napi::Function::New(env, zenkit_node::VfsResolve));

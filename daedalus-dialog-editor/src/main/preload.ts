@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldMesh: () => ipcRenderer.invoke('world:mesh'),
   getWorldVisuals: () => ipcRenderer.invoke('world:visuals'),
   listWorldAssets: (path: string) => ipcRenderer.invoke('world:assets', { path }),
+  getWorldWaynet: () => ipcRenderer.invoke('world:waynet'),
   getWorldTexture: (name: string, maxSize: number) =>
     ipcRenderer.invoke('world:texture', { name, maxSize }),
   closeWorld: () => ipcRenderer.invoke('world:close'),

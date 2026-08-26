@@ -636,6 +636,9 @@ export const mockEditorAPI: EditorAPI = {
   // Null is what the real call returns for a path with nothing to list, so an
   // asset browser in browser mode shows its empty state rather than an error.
   async listWorldAssets(): Promise<null> { return null; },
+  async getWorldWaynet(): Promise<never> {
+    throw new Error('No world is open');
+  },
   async closeWorld(): Promise<void> {},
 };
 

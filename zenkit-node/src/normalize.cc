@@ -1301,6 +1301,90 @@ Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle) {
   return out;
 }
 
+// The waynet the render path uses, as against `normalizeWorld`'s waynet
+// section. The dump sorts waypoints by name and sorts each edge pair, because
+// it is a diff instrument and order is noise there. This is the opposite: it
+// keeps the stored order and emits edges as **index pairs into that order**,
+// because an overlay draws a line buffer and a name lookup per edge would be
+// 8,000 string comparisons for a picture.
+//
+// Names are not interned, unlike `vobIndex`'s. Waypoint names are effectively
+// unique — that is what they are for — so a dictionary would be 1:1 and cost a
+// second array to say so.
+Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle) {
+  auto const* way_net = handle.world->way_net.get();
+
+  std::vector<std::shared_ptr<WayPoint>> points;
+  if (way_net != nullptr) {
+    for (auto const& point : way_net->points) {
+      if (point != nullptr) points.push_back(point);
+    }
+  }
+
+  std::vector<float> positions;
+  std::vector<float> directions;
+  std::vector<std::int32_t> water_depths;
+  std::vector<std::uint32_t> flags;
+  positions.reserve(points.size() * 3);
+  directions.reserve(points.size() * 3);
+  water_depths.reserve(points.size());
+  flags.reserve(points.size());
+
+  // Pointer identity, not name: the edge list holds the same shared_ptrs the
+  // point list does, and two waypoints may not share a name but nothing in the
+  // format enforces it either.
+  std::unordered_map<WayPoint const*, std::uint32_t> index_of;
+  index_of.reserve(points.size());
+
+  auto names = Napi::Array::New(env, points.size());
+  for (std::uint32_t i = 0; i < points.size(); ++i) {
+    auto const& point = points[i];
+    index_of.emplace(point.get(), i);
+
+    names.Set(i, Str(env, point->name));
+    positions.push_back(point->position.x);
+    positions.push_back(point->position.y);
+    positions.push_back(point->position.z);
+    directions.push_back(point->direction.x);
+    directions.push_back(point->direction.y);
+    directions.push_back(point->direction.z);
+    water_depths.push_back(point->water_depth);
+    flags.push_back(static_cast<std::uint32_t>(point->free_point ? 1u : 0u)
+                    | static_cast<std::uint32_t>(point->under_water ? 2u : 0u));
+  }
+
+  std::vector<std::uint32_t> edges;
+  if (way_net != nullptr) {
+    edges.reserve(way_net->edges.size() * 2);
+    for (auto const& edge : way_net->edges) {
+      if (edge.first == nullptr || edge.second == nullptr) continue;
+      auto const from = index_of.find(edge.first.get());
+      auto const to = index_of.find(edge.second.get());
+      // An endpoint that is not in the point list cannot be drawn and cannot be
+      // named; dropping it is the only honest option, and it is counted below.
+      if (from == index_of.end() || to == index_of.end()) continue;
+      edges.push_back(from->second);
+      edges.push_back(to->second);
+    }
+  }
+
+  auto out = Napi::Object::New(env);
+  out.Set("count", NumI(env, points.size()));
+  out.Set("names", names);
+  out.Set("positions", Buffer(env, positions));
+  out.Set("directions", Buffer(env, directions));
+  out.Set("waterDepths", Buffer(env, water_depths));
+  // bit 0 freePoint, bit 1 underWater.
+  out.Set("flags", Buffer(env, flags));
+  out.Set("edgeCount", NumI(env, edges.size() / 2));
+  out.Set("edges", Buffer(env, edges));
+  // Edges whose endpoints were not in the point list, so the caller can tell an
+  // empty overlay from a dropped one.
+  out.Set("danglingEdges",
+          NumI(env, way_net == nullptr ? 0 : way_net->edges.size() - edges.size() / 2));
+  return out;
+}
+
 Napi::Object DrillMesh(Napi::Env env,
                        WorldHandle const& handle,
                        std::size_t offset,

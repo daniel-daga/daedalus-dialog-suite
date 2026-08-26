@@ -468,7 +468,7 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   return root;
 }
 
-std::shared_ptr<WayNet> BuildWayNet() {
+std::shared_ptr<WayNet> BuildWayNet(FixtureVariant variant) {
   auto make_point = [](std::string name, Vec3 position, bool free_point) {
     auto wp = std::make_shared<WayPoint>();
     wp->name = std::move(name);
@@ -490,6 +490,18 @@ std::shared_ptr<WayNet> BuildWayNet() {
 
   waynet->points = {free, a, b, c};
   waynet->edges = {{a, b}, {b, c}, {c, a}};
+
+  // An underwater waypoint, authored only into the mesh-extraction variant so
+  // the checked-in golden dump is untouched. Without one, nothing distinguishes
+  // the underWater flag bit from the freePoint bit: a sabotage that packed both
+  // into bit 0 passed every test.
+  if (variant == FixtureVariant::kMeshExtraction) {
+    auto deep = make_point("WP_FIXTURE_DEEP", Vec3 {50.0f, -200.0f, 10.0f}, false);
+    deep->under_water = true;
+    deep->water_depth = 250;
+    waynet->points.push_back(deep);
+    waynet->edges.push_back({c, deep});
+  }
   return waynet;
 }
 
@@ -513,7 +525,7 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
   if (variant == FixtureVariant::kMeshExtraction) {
     world->world_vobs.push_back(BuildVisualVobTree());
   }
-  world->way_net = BuildWayNet();
+  world->way_net = BuildWayNet(variant);
 
   auto w = Write::to(path);
   auto archive = WriteArchive::to(w.get(), format);

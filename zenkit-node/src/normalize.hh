@@ -29,6 +29,10 @@ Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle);
 // and the flags that decide whether a VOB is drawn.
 Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle);
 
+// The waynet as a drawable graph: stored order, edges as index pairs. The
+// diff-oriented waynet section of normalizeWorld is a different thing.
+Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle);
+
 // _drillMesh(handle, {offset, limit}?) — per-polygon world-mesh geometry for
 // locating the first differing polygon between two worlds (T7 harness). Reads
 // the same load-path structs as NormalizeWorld; the optional window keeps the

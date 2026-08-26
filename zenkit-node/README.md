@@ -123,6 +123,36 @@ A VOB with no visual object interns as the empty string; `normalizeWorld`
 reports `null` there. `''` and "a visual named `''`" are the same thing to a
 renderer, and a dictionary column has no null.
 
+### `getWaynet(handle)`
+
+The waynet as a drawable graph, and the same kind of thing to
+`normalizeWorld`'s `waynet` section that `vobIndex` is to the VOB dump. The dump
+sorts waypoints by name and sorts each edge pair, because order is noise to a
+diff; this keeps the **stored order** and emits edges as **index pairs into it**,
+because an overlay builds a line buffer from indices and a name lookup per edge
+would be thousands of string comparisons for a picture.
+
+```js
+{
+  count,
+  names,          // string[] — NOT interned: waypoint names are effectively unique
+  positions,      // ArrayBuffer, Float32 ×3 — ZenGin space, unconverted
+  directions,     // ArrayBuffer, Float32 ×3
+  waterDepths,    // ArrayBuffer, Int32 ×1
+  flags,          // ArrayBuffer, Uint32 ×1 — bit 0 freePoint, bit 1 underWater
+  edgeCount,
+  edges,          // ArrayBuffer, Uint32 ×2 per edge — indices into the above
+  danglingEdges,  // edges whose endpoint was not in the point list
+}
+```
+
+Edges are matched to points by **pointer identity**, not by name: the edge list
+holds the same `shared_ptr`s the point list does, and nothing in the format
+promises names are unique. An edge whose endpoint is not in the point list is
+dropped — it cannot be drawn and cannot be named — and counted in
+`danglingEdges`, so an empty overlay is distinguishable from a silently emptied
+one.
+
 ### The asset layer — `openVfs`, `vfsResolve`, `extractVisual`, `decodeTexture`
 
 ```js

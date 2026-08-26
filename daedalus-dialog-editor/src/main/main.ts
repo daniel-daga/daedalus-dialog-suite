@@ -673,6 +673,8 @@ function setupIpcHandlers() {
     return worldService.listAssets(path);
   });
 
+  ipcMain.handle('world:waynet', async () => worldService.getWaynet());
+
   ipcMain.handle('world:close', () => {
     worldService.close();
   });

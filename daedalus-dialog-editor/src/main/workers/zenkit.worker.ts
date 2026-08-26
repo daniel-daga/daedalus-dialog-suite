@@ -14,6 +14,7 @@ import type {
   WorldMeshPayload,
   WorldSummary,
   VfsEntry,
+  WaynetPayload,
   WorldWorkerRequest,
 } from '../../shared/worldTypes';
 
@@ -144,6 +145,13 @@ function assets(payload: { path: string }): { result: VfsEntry[] | null; transfe
   return { result: zenkit.vfsList(vfs!, payload.path), transfer: [] };
 }
 
+/** The waynet as a drawable graph. Small next to the geometry — NewWorld's is
+ *  a few thousand points — so the buffers are copied rather than transferred,
+ *  and the worker keeps its own world intact. */
+function waynet(): { result: WaynetPayload; transfer: ArrayBuffer[] } {
+  return { result: phase('waynet', () => zenkit.getWaynet(handle!)), transfer: [] };
+}
+
 function close(): { result: null; transfer: ArrayBuffer[] } {
   // A live VFS keeps every mounted file memory-mapped and Windows refuses to
   // delete a mapped file until the handle is collected (zenkit-node README), so
@@ -177,6 +185,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'visuals': return visuals();
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
+    case 'waynet': return waynet();
     case 'close': return close();
   }
 }

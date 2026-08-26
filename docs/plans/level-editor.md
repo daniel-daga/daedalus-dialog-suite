@@ -1037,6 +1037,17 @@ browser.
   RGBA8 and a canvas is the whole of the work; a mesh does not, and says so
   rather than showing an empty frame.
 
+- **Waynet overlay.** `getWaynet` is to `normalizeWorld`'s waynet section what
+  `vobIndex` is to the VOB dump: the dump sorts waypoints by name and sorts each
+  edge pair because order is noise to a diff, while an overlay needs stored
+  order and edges as **index pairs into it**. Verified against retail NewWorld:
+  **2,959 waypoints, 3,402 edges, 0 dangling, 0 out-of-range indices**, and the
+  two independent readers agree on the waypoint set, the edge set, the positions
+  and the flags. It is fetched only when switched on, hangs under the same
+  mirrored root as everything else — so its positions stay in ZenGin
+  centimetres — and shares ONE position buffer between its points and its lines,
+  because two buffers can drift apart and one cannot.
+
 Two rules came out of building them, both from running against real data rather
 than fixtures:
 

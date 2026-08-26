@@ -54,6 +54,24 @@ export interface InstancedPayload {
   };
 }
 
+/**
+ * The waynet as a drawable graph (zenkit-node's `getWaynet`). Stored order,
+ * ZenGin space, edges as index pairs — an overlay builds a line buffer from
+ * indices, and the single coordinate conversion stays at the scene root.
+ */
+export interface WaynetPayload {
+  count: number;
+  names: string[];
+  positions: ArrayBuffer;
+  directions: ArrayBuffer;
+  waterDepths: ArrayBuffer;
+  /** bit 0 freePoint, bit 1 underWater. */
+  flags: ArrayBuffer;
+  edgeCount: number;
+  edges: ArrayBuffer;
+  danglingEdges: number;
+}
+
 /** One entry of a VFS directory listing — see zenkit-node's `vfsList`. */
 export interface VfsEntry {
   name: string;
@@ -67,7 +85,8 @@ export interface DecodedTexture {
   rgba: ArrayBuffer;
 }
 
-export type WorldWorkerOp = 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'close';
+export type WorldWorkerOp =
+  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'close';
 
 export interface WorldWorkerRequest {
   id: string;

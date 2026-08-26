@@ -4,7 +4,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import { threeToZen, zenBoxToThree } from 'zen-world';
-import type { DecodedTexture, InstancedPayload, WorldMeshPayload } from '../../../shared/worldTypes';
+import type {
+  DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload,
+} from '../../../shared/worldTypes';
+import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { WorldScene } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
@@ -53,6 +56,10 @@ export interface WorldViewportProps {
   visuals: InstancedPayload;
   /** ZenGin-space world bounds, for framing the camera. */
   bbox: number[];
+  /** The waynet, once someone has asked to see it. Null until then: it is a
+   *  separate IPC call and an overlay nobody turned on costs nothing. */
+  waynet: WaynetPayload | null;
+  showWaynet: boolean;
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
   /**
    * A click's result: the VOB that was hit, or the point on the world mesh in
@@ -62,8 +69,14 @@ export interface WorldViewportProps {
   onPick: (vob: number | null, point: [number, number, number] | null) => void;
 }
 
-const WorldViewport: React.FC<WorldViewportProps> = ({ mesh, visuals, bbox, loadTexture, onPick }) => {
+const WorldViewport: React.FC<WorldViewportProps> = ({
+  mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
+}) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // The overlay is built and torn down independently of the scene, so asking
+  // for the waynet does not rebuild 31 MB of geometry.
+  const sceneRef = useRef<WorldScene | null>(null);
+  const overlayRef = useRef<WaynetOverlay | null>(null);
   // Read through refs so a parent re-render cannot tear the scene down and
   // rebuild 31 MB of buffers just because a callback identity changed.
   const onPickRef = useRef(onPick);
@@ -80,6 +93,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({ mesh, visuals, bbox, load
     scene.background = new THREE.Color(0x10141c);
 
     const world = new WorldScene();
+    sceneRef.current = world;
     world.setWorldMesh(mesh);
     world.setInstancedVisuals(visuals);
     scene.add(world.root);
@@ -246,6 +260,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({ mesh, visuals, bbox, load
 
     return () => {
       disposed = true;
+      sceneRef.current = null;
       delete window.__worldViewport;
       cancelAnimationFrame(frame);
       resize.disconnect();
@@ -260,6 +275,28 @@ const WorldViewport: React.FC<WorldViewportProps> = ({ mesh, visuals, bbox, load
     // Rebuilt only when a different world's payloads arrive — the callbacks are
     // read through refs precisely so they are not dependencies.
   }, [mesh, visuals, bbox]);
+
+  // The overlay lives and dies on its own, under the scene's converted root so
+  // it needs no conversion of its own. `mesh` is a dependency because a new
+  // world means a new root to hang it under, not because the waynet changed.
+  useEffect(() => {
+    const world = sceneRef.current;
+    if (world === null || waynet === null) return;
+
+    const overlay = new WaynetOverlay(waynet);
+    overlayRef.current = overlay;
+    world.root.add(overlay.root);
+
+    return () => {
+      world.root.remove(overlay.root);
+      overlay.dispose();
+      overlayRef.current = null;
+    };
+  }, [waynet, mesh]);
+
+  useEffect(() => {
+    overlayRef.current?.setVisible(showWaynet);
+  }, [showWaynet, waynet, mesh]);
 
   return <Box ref={hostRef} data-testid="world-viewport" sx={{ width: '100%', height: '100%', minHeight: 0 }} />;
 };

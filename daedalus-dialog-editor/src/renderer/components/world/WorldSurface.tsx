@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
-import type { InstancedPayload, WorldMeshPayload } from '../../../shared/worldTypes';
+import type { InstancedPayload, WaynetPayload, WorldMeshPayload } from '../../../shared/worldTypes';
 import { useWorldStore } from '../../store/worldStore';
 import WorldViewport from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
@@ -32,6 +32,11 @@ const WorldSurface: React.FC = () => {
   // beside the browser.
   const [panel, setPanel] = useState<'scene' | 'assets'>('scene');
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  // Fetched the first time it is switched on and kept afterwards. It is a
+  // separate IPC call on purpose: an overlay nobody asked for should not be in
+  // the cold open.
+  const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
+  const [showWaynet, setShowWaynet] = useState(false);
 
   useEffect(() => {
     void window.editorAPI.getGothicInstall().then(setGothicInstall);
@@ -73,6 +78,12 @@ const WorldSurface: React.FC = () => {
     }
   }, [beginOpen, openSucceeded, openFailed]);
 
+  const toggleWaynet = useCallback(async () => {
+    const next = !showWaynet;
+    setShowWaynet(next);
+    if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
+  }, [showWaynet, waynet]);
+
   const listAssets = useCallback(
     (assetPath: string) => window.editorAPI.listWorldAssets(assetPath),
     [],
@@ -110,6 +121,16 @@ const WorldSurface: React.FC = () => {
             </Typography>
           )}
           {status === 'opening' && <CircularProgress size={16} />}
+          {summary && (
+            <Button
+              size="small"
+              variant={showWaynet ? 'contained' : 'outlined'}
+              onClick={toggleWaynet}
+              data-testid="world-waynet-toggle"
+            >
+              Waynet
+            </Button>
+          )}
           {summary && (
             <Stack direction="row" spacing={1}>
               <Chip size="small" label={`${summary.stats.vobCount.toLocaleString()} VOBs`} />
@@ -172,6 +193,8 @@ const WorldSurface: React.FC = () => {
               mesh={mesh}
               visuals={visuals}
               bbox={summary.bbox}
+              waynet={waynet}
+              showWaynet={showWaynet}
               loadTexture={loadTexture}
               onPick={handlePick}
             />

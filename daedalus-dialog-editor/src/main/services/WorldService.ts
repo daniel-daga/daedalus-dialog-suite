@@ -8,6 +8,7 @@ import type {
   InstancedPayload,
   OpenWorldRequest,
   VfsEntry,
+  WaynetPayload,
   WorldMeshPayload,
   WorldSummary,
   WorldWorkerOp,
@@ -105,6 +106,12 @@ export class WorldService {
    */
   listAssets(path = '/'): Promise<VfsEntry[] | null> {
     return this.requestOnOpenWorld<VfsEntry[] | null>('assets', { path });
+  }
+
+  /** The waynet as a drawable graph. Requested on demand: an overlay nobody
+   *  turned on should not be in the cold open. */
+  getWaynet(): Promise<WaynetPayload> {
+    return this.requestOnOpenWorld<WaynetPayload>('waynet');
   }
 
   close(): void {

@@ -61,6 +61,22 @@ export interface VobIndex {
   visualTypeIndex: ArrayBuffer;
 }
 
+export interface WaynetGraph {
+  count: number;
+  /** Not interned: waypoint names are effectively unique. */
+  names: string[];
+  positions: ArrayBuffer;   // Float32 x3, ZenGin space
+  directions: ArrayBuffer;  // Float32 x3
+  waterDepths: ArrayBuffer; // Int32 x1
+  /** Uint32 x1 — bit 0 freePoint, bit 1 underWater. */
+  flags: ArrayBuffer;
+  edgeCount: number;
+  /** Uint32 x2 per edge — indices into the arrays above. */
+  edges: ArrayBuffer;
+  /** Edges dropped because an endpoint was not in the point list. */
+  danglingEdges: number;
+}
+
 export interface VfsEntry {
   name: string;
   type: 'file' | 'directory';
@@ -82,6 +98,8 @@ export interface TexturePayload {
 export function loadWorld(file: string, gameVersion: 'g1' | 'g2'): WorldHandle;
 export function extractWorldMesh(handle: WorldHandle): WorldMesh;
 export function vobIndex(handle: WorldHandle): VobIndex;
+/** The waynet as a drawable graph: stored order, edges as index pairs. */
+export function getWaynet(handle: WorldHandle): WaynetGraph;
 export function openVfs(paths: string[], options?: { overwrite?: 'all' | 'newer' | 'older' | 'none' }): VfsHandle;
 export function vfsResolve(vfs: VfsHandle, name: string): string | null;
 /** The children of one directory, or null when the path is absent or is a file. */
