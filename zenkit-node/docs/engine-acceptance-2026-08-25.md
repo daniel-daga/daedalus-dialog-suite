@@ -1,6 +1,6 @@
 # Engine acceptance record & session handoff — 2026-08-24/25
 
-Phase 0 tasks **T6.5** (§5 "E-early"), **T7** and **T8**
+Phase 0 tasks **T6.5** (§5 "E-early"), **T7**, **T8** and **T10**
 (`../../docs/plans/level-editor-phase-0.md`).
 Branch: `feature/level-editor-phase-0`. Nothing pushed to master.
 
@@ -20,7 +20,9 @@ scope: ZenKit cannot re-load its own ASCII output (a hard `0xC0000409` on all
 20 ASCII worlds) and every raw entry it writes is corrupt. Evidence, the four
 named defects and the scope decision are in §10.2 and §10.3.
 
-Remaining: T10 / E-full (checklist rows 2–10, §8).
+**T10 / E-full has now run and PASSED** — all three candidates, control
+included, row 10 a full pass with the inserted item takeable. Rows 5, 7, 8, 9
+were not exercised and are not claimed (§8).
 
 ---
 
@@ -28,7 +30,7 @@ Remaining: T10 / E-full (checklist rows 2–10, §8).
 
 New workspace `zenkit-node/`: an N-API binding around ZenKit plus the drift
 classifier, the container-level instrument and the `zen-roundtrip` harness.
-**82 tests, all passing.**
+**89 tests, all passing.**
 
 | Task | State | Notes |
 |---|---|---|
@@ -37,12 +39,12 @@ classifier, the container-level instrument and the `zen-roundtrip` harness.
 | T3 windows-1252 at the edge | ✅ | `src/encoding.{hh,cc}`; umlaut round-trip test. |
 | T4 `normalizeWorld` | ✅ | Direct struct reads, never via the save path. All 44 VOB classes. Self-contained SHA-256. Checked-in golden. **Now also carries a `container` section** — §4. |
 | T5 classifier | ✅ | `lib/classify.js` — `identical` / `float-noise` / `reordered` / `semantic-drift`. Container facts are **always** `semantic-drift`. |
-| T6 `saveWorld` + minimal mutations | ✅ | Atomic temp+rename; `setVobPosition`, `insertItemVob`. |
-| T9 CI wiring | ⚠️ | `.github/workflows/zenkit-node.yml`, path-filtered, 3 OSes, now also running `zen-roundtrip --fixtures`. **First execution 2026-08-25: ubuntu ✅, macOS ❌ (`-msse2` on arm64), windows ❌ (node-gyp VS finder, in the *parser* workspace)** — §9. |
+| T6 `saveWorld` + minimal mutations | ✅ | Atomic temp+rename; `setVobPosition`, `insertItemVob`. **Refuses a non-BinSafe world** unless `{ allowNonBinSafe: true }` — §9, §10.3. |
+| T9 CI wiring | ✅ | `.github/workflows/zenkit-node.yml`, path-filtered, **Windows only** since 2026-08-25, also running `zen-roundtrip --fixtures`. **Green: run `32934967838`** (build, 89 tests, C2 roundtrip, lint) — §9. |
 | T6.5 engine gate | ✅ | Passed, §3.5. |
 | T7 `zen-roundtrip` harness | ✅ | `scripts/zen-roundtrip.js`, two modes, per-world child-process isolation, coverage-honest report — §10. |
 | T8 corpus run | ✅ | Ran; **scoped to BinSafe**, with the ASCII reason measured — §10.2, §10.3. |
-| T10 / E-full | ⏸ | Manual, needs the user at the keyboard — §8. |
+| T10 / E-full | ✅ | Ran 2026-08-25 23:46, all three candidates PASS; rows 5/7/8/9 not exercised — §8. |
 
 ### ZenKit pin
 
@@ -363,17 +365,79 @@ git checkout feature/level-editor-phase-0
 cd zenkit-node
 node scripts/build-zenkit.js        # resets the submodule, applies patches/*.patch
 npx node-gyp rebuild
-node --test test/*.test.js          # expect 82 pass / 0 fail
+npm test                            # expect 89 pass / 0 fail
 npm run lint
 ```
 
-**Next:** T10 / E-full — §8. T7 and T8 are done (§10).
+**T10 / E-full is done** (§8). The only Phase-0 exit criterion still open is
+CI on macOS and Windows (§9).
 
 ### Environment
 
 - Gothic II: `C:\Program Files (x86)\Steam\steamapps\common\Gothic II` —
   extracted MDK-style install (`_work\Data\{Meshes,Textures,Scripts,Worlds}`).
   Install is healthy — verified.
+
+  **The MDK layout depends on six VDFs being renamed `.disabled`** —
+  `Worlds`, `Worlds_Addon`, `Meshes`, `Meshes_Addon`, `Textures`,
+  `Textures_Addon` — so that the engine reads loose files from `_work\Data`
+  instead. `vdfs.cfg` globs `Data\*.VDF`, so a Steam reinstall or a "verify
+  integrity" **restores all six and silently breaks this**, in two ways:
+
+  1. `Worlds.vdf` carries its own `NewWorld.zen`, so an engine run may not be
+     reading the candidate at all — **any T10 verdict taken in that state is
+     void**, pass or fail.
+  2. It also crashes the game. Measured on 2026-08-25 after a reinstall:
+     `Gothic2.exe` took an access violation ~5 s after launch, three runs out
+     of three, reading `[null+0x18]` in an ASLR-relocated DLL (`6E40A736`,
+     `6E50A736`, `71A5A736` — one offset, three bases), long before any world
+     load. Re-parking the six VDFs as `.disabled` fixed it: two clean 40 s and
+     30 s `Gothic2` runs and a clean `Spacer2` run, no error dialog.
+
+  The pairs were byte-identical, so re-parking loses nothing and is reversible
+  by renaming back. Check this **before** blaming a candidate — and note the
+  crash reproduced on candidate `00`, the pristine control, which is what made
+  it obvious the file was not implicated.
+  `tools/startup-probe.ps1` is the unattended check: it launches an engine,
+  watches for an error dialog and always kills what it started, without
+  touching the install.
+
+#### The oracle for T10 is not stock — state it with every verdict
+
+`Gothic2.exe` **never rendered on this machine**. T6.5 (§3.5) was won with
+Spacer, which does render; the game showed a black screen with working audio in
+every stock configuration, so rows 2–10 could not run at all. What was measured,
+in order, each with a launch:
+
+| Configuration | Result |
+|---|---|
+| 800×600 fullscreen, stock | runs, music, **black** |
+| + `DWM8And16BitMitigation` compat shim | runs, **black** |
+| windowed (`zStartupWindowed=1`) + SystemPack `FixAppCompat=2` | window collapses to its title bar, exits |
+| windowed + `FixAppCompat=1`, 1024×768 | silent access violation, `0xC0000005` |
+| 1024×768 fullscreen, `FixAppCompat=1` | runs, **black** |
+| **+ GD3D11** | **renders** |
+
+So the engine that produces the T10 verdicts is **Gothic II 2.6 (fix) +
+SystemPack + GD3D11** (kirides fork, nightly `51efd73`, installed as
+`System\ddraw.dll`), not a stock install. Three consequences:
+
+1. **The gate still holds.** GD3D11 replaces the DirectDraw/D3D7 *rendering*
+   path by hooking; it does not touch ZEN parsing, the archiver or the BSP —
+   the code the fidelity claim is about. It is not ZenKit-derived either, so
+   the OpenGothic objection (shared code under test) does not apply.
+2. **Checklist row 5 is weakened.** "Screenshots at ~5 fixed positions vs. the
+   original — vertex lighting" is now candidate-vs-control only: GD3D11 changes
+   lighting by design, so the absolute look is not the retail look. Both sides
+   render through the same renderer, so the A/B is still valid — it just cannot
+   speak to whether our lighting matches *ZenGin's*.
+3. **`-Windowed` is unavailable here.** Windowed mode crashed the process
+   outright (row 4 of the table), so the batch must run fullscreen.
+
+SystemPack hooks through its own `Vdfs32g.dll` (not `ddraw.dll`), so it and
+GD3D11 coexist. GD3D11 declines to hook Spacer — "GD3D11 Renderer doesn't work
+with your game version" — and Spacer then runs normally on its own renderer, so
+**Spacer remains a stock oracle** and §3.5 is unaffected.
 - **Pristine backup: `_work\Data\Worlds\NewWorld\NewWorld.zen.original-backup`
   (75,387,729 B, sha256 `b4dac867…`).** The install is currently restored to the
   original (hash-verified). Never write into the Gothic directory without a
@@ -626,28 +690,37 @@ Also open:
   byte-identical bar the header stamps. Engine-tested as harmless (§3.3
   candidate 09), so this is fidelity polish, not a defect.
 - **The ASCII writer** — four named defects, §10.2. A patch series of its own,
-  plus an engine A/B per patch. Until it lands, the binding should **refuse to
-  save** a non-BinSafe world (§10.3): a save that corrupts every raw entry and
-  cannot be re-opened is worse than no save.
-- **T9 CI** — `.github/workflows/zenkit-node.yml` **has now executed**, on the
-  master merge of 2026-08-25 (run `32844871149`), and the result is
-  **ubuntu ✅ / macOS ❌ / windows ❌**. Both failures are in the *build* step,
-  neither in this workspace's code:
-  - **macOS**: `clang++: error: unsupported option '-msse2' for target
-    'arm64-apple-darwin'`. `macos-latest` is arm64 now, and
-    `vendor/ZenKit/vendor/libsquish/CMakeLists.txt:35` gates `-msse2` on
-    `BUILD_SQUISH_WITH_SSE2 AND NOT WIN32` with **no architecture check**. Fix:
-    pass `-DBUILD_SQUISH_WITH_SSE2=OFF` from `scripts/build-zenkit.js` on
-    non-x86, or guard it upstream (a 20th upstreamable patch).
-  - **windows**: `daedalus-parser install: gyp ERR! find VS … RangeError
-    [ERR_CHILD_PROCESS_STDIO_MAXBUFFER] … Could not find any Visual Studio
-    installation`. **Not zenkit-node** — its CMake step was progressing
-    normally; node-gyp's VS finder overflowed its stdio buffer while installing
-    the *parser* workspace. Pre-existing and environmental.
+  plus an engine A/B per patch. **The refusal §10.3 asks for has landed**
+  (2026-08-25): `saveWorld` throws unless the handle was loaded from a BinSafe
+  archive, naming the format. `scripts/zen-roundtrip.js` opts out per call with
+  `{ allowNonBinSafe: true }` — measuring the unverified writer paths is what
+  the harness is for, and its C1 verdicts are unchanged by the guard. The guard
+  is tested against a **BINARY** world: an ASCII handle cannot be produced
+  in-process at all (loading ZenKit's own ASCII output aborts the process), and
+  both formats take the same `format != BINSAFE` branch.
+- **T9 CI — now GREEN, on Windows only.** The matrix was narrowed on
+  2026-08-25 (run `32934967838`, build + 89 tests + C2 roundtrip + lint all
+  green on `windows-2022`). Linux and macOS were **both green when dropped**
+  (run `32903532421`), which is also the only confirmation that the arm64
+  `-msse2` fix works — so nothing broken is hidden and re-adding them is one
+  matrix line.
 
-  So the addon builds and its 82 tests and lint pass in CI on Linux; the other
-  two OSes are blocked on toolchain issues, not on this code. Exit criterion 1
-  ("green on Linux, Windows and macOS") is therefore **not** met.
+  **Windows found three real defects the other two platforms could not**, which
+  is the argument for the narrowing rather than against it:
+  1. `windows-latest` now ships **Visual Studio 18**; node-gyp 11.5.0 cannot
+     identify it and dies at configure in the *daedalus-parser* workspace.
+     `zenkit-node`'s own CMake step is immune — it uses `vswhere`. Pinned to
+     `windows-2022`.
+  2. The `test` script was `node --test test/*.test.js`, which relies on the
+     **shell** expanding the glob. `pwsh` does not, and Node 20's `--test` does
+     not glob — so `npm test` had never worked on Windows in PowerShell or cmd.
+     Now bare `node --test`.
+  3. A byte test depended on the **length of the machine's username**. The
+     BinSafe header's `hashTableOffset` counts raw bytes, so it shifts with the
+     `user ` stamp; blanking the stamp text left the derived field behind. It
+     passed for `Daniel` (6) and CI's `runner` (6) and failed for
+     `runneradmin` (11), one byte at offset 81, `0x0B48` vs `0x0B4D`. **Not a
+     writer defect** — the test was wrong from the day it was written.
 - **Gothic 1** is not installed; no G1 coverage of anything.
 
 ---
@@ -679,17 +752,50 @@ force.
 | # | Check | Status |
 |---|---|---|
 | 1 | Loads in Spacer | ✅ §3.5 |
-| 2 | Loads in the game, hero spawns | ⏸ |
-| 3 | Walk terrain/interiors, jump, fall — **collision** | ⏸ — but the BSP tree and mesh are bit-identical, so nothing can differ here on an untouched re-save |
-| 4 | NPCs spawn and walk routines | ⏸ |
-| 5 | Screenshots at ~5 fixed positions vs. the original — vertex lighting | ⏸ |
-| 6 | Enter/exit a building, sector boundary — portals | ⏸ |
+| 2 | Loads in the game, hero spawns | ✅ **all three candidates** |
+| 3 | Walk terrain/interiors, jump, fall — **collision** | ✅ |
+| 4 | NPCs spawn and walk routines | ✅ |
+| 5 | Screenshots at ~5 fixed positions vs. the original — vertex lighting | ⏸ **and degraded** — GD3D11 changes lighting by design, so this can now only be candidate-vs-control, never against the retail look (Environment) |
+| 6 | Enter/exit a building, sector boundary — portals | ✅ |
 | 7 | Use a bed, chest, one other mobsi | ⏸ |
 | 8 | Trigger one sound/zone VOB | ⏸ |
 | 9 | Save, reload the savegame | ⏸ |
-| 10 | **Minimal edit:** move one VOB, insert one item | ⏸ — world built and verified, below |
+| 10 | **Minimal edit:** move one VOB, insert one item | ✅ **full pass — both mutations, apple taken** |
 
 Rows 2–9 run on the untouched re-save, row 10 on the edited world.
+
+### The run — 2026-08-25 23:46, all three candidates, PASS
+
+`tools/engine-batch.ps1 -Exe Gothic2`, fullscreen (windowed crashes here —
+Environment), against the engine named in Environment (**not stock**: 2.6 fix +
+SystemPack + GD3D11). From `results.log`:
+
+```
+23:46:12  00-control-original.zen  sha b4dac867…  → ok
+23:46:59  01-resave.zen            sha a2f7b7b9…  → ok
+23:47:43  02-minimal-edit.zen      sha 27a137c5…  → ok
+23:48:48  restored pristine NewWorld.zen (hash verified)
+```
+
+**The control ran first and passed in the same session**, and the VDF layout
+was verified beforehand so the engine could only have read `_work` — both
+preconditions this record insists on.
+
+**Row 10 is a full pass and it is the one that carried information.** The moved
+VOB (`NW_CITY_TABLE_PEASANT_01`, +300 units) visibly hung in the air near
+`START`, and `ITEM_PHASE0_APPLE_01` was not merely visible but **picked up into
+the inventory**. Takeability is the half that could have failed silently: an
+`oCItem` whose archive representation is subtly wrong can still render. It did
+not.
+
+**What was NOT run, stated rather than implied.** Rows 5, 7, 8 and 9 were not
+exercised — the per-candidate wall-clock (47 s / 44 s / 65 s) does not fit a
+savegame round-trip, and they are not claimed. On an *untouched* re-save that
+is defensible on the argument above (bit-identical mesh, BSP and VOB tree, gap
+0), which makes rows 2–9 a smoke test against a process error rather than a
+fidelity probe — and rows 2, 3, 4 and 6 supplied that smoke test. It is **not**
+defensible for Phase 1b's UI-edited worlds, where the checklist regains its
+full force and rows 7–9 must actually run.
 
 ### Building the candidates
 

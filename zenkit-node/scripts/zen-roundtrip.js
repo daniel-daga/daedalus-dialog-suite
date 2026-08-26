@@ -209,8 +209,12 @@ function measure(file, game, drill) {
   try {
     const out1 = path.join(dir, 'resave1.zen');
     const out2 = path.join(dir, 'resave2.zen');
-    zk.saveWorld(handle, out1);
-    zk.saveWorld(handle, out2);
+    // saveWorld refuses a non-BinSafe world by default (§10.3). Measuring the
+    // unverified writer paths is exactly this harness's job — that is how the
+    // four ASCII defects of §10.2 were found — so it opts out deliberately.
+    const save = { allowNonBinSafe: true };
+    zk.saveWorld(handle, out1, save);
+    zk.saveWorld(handle, out2, save);
 
     const resaved = fs.readFileSync(out1);
     const resavedAgain = fs.readFileSync(out2);

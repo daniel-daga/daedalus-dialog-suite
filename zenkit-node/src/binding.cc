@@ -257,13 +257,49 @@ Napi::Value DrillMesh(Napi::CallbackInfo const& info) {
   }
 }
 
-// T6 — saveWorld(handle, path). Serializes with the same archive format, game
-// version and wrapper object name captured at load, writes to a temp file in
-// the destination directory and renames it into place.
+char const* ArchiveFormatName(zenkit::ArchiveFormat format) {
+  switch (format) {
+    case zenkit::ArchiveFormat::BINARY:
+      return "binary";
+    case zenkit::ArchiveFormat::BINSAFE:
+      return "binsafe";
+    case zenkit::ArchiveFormat::ASCII:
+      return "ascii";
+  }
+  return "unknown";
+}
+
+// Only the BinSafe writer path is verified — byte-for-byte against the retail
+// corpus and in the original engine (docs/engine-acceptance-2026-08-25.md §3,
+// §10.1). The ASCII writer corrupts every raw entry it emits and ZenKit cannot
+// re-load its own ASCII output at all (§10.2), and the BINARY path has had no
+// fidelity work either. A save that produces a file nothing can re-open is
+// worse than no save, so refuse by default (§10.3). The diagnostic harness
+// measures those paths deliberately and opts out per call.
+bool AllowNonBinSafe(Napi::Env env, Napi::Value options) {
+  if (options.IsUndefined() || options.IsNull()) return false;
+  if (!options.IsObject()) {
+    throw Napi::TypeError::New(env, "options must be an object");
+  }
+  Napi::Value const value = options.As<Napi::Object>().Get("allowNonBinSafe");
+  return value.ToBoolean().Value();
+}
+
+// T6 — saveWorld(handle, path[, options]). Serializes with the same archive
+// format, game version and wrapper object name captured at load, writes to a
+// temp file in the destination directory and renames it into place.
 Napi::Value SaveWorld(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapHandle(env, info[0]);
   auto path = PathFromValue(env, info[1]);
+
+  if (handle->format != zenkit::ArchiveFormat::BINSAFE && !AllowNonBinSafe(env, info[2])) {
+    throw Napi::Error::New(
+        env, std::string {"refusing to save a world loaded from a '"} +
+                 ArchiveFormatName(handle->format) +
+                 "' archive: only the binsafe writer path is verified. Pass "
+                 "{ allowNonBinSafe: true } to save it anyway (diagnostics only).");
+  }
 
   try {
     // Serialize to memory first: zenkit::Write::to(path) never reports I/O

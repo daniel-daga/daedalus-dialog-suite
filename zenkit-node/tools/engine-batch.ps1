@@ -4,7 +4,9 @@
 # pristine backup. Run in YOUR OWN PowerShell window (it needs the keyboard):
 #   powershell -ExecutionPolicy Bypass -File engine-batch.ps1
 # Optional: -Only 01,06   (run only those candidate numbers)
-param([string[]]$Only = @(), [string]$Dir = 'cand', [ValidateSet('Spacer2', 'Gothic2', 'GothicStarter')][string]$Exe = 'Spacer2')
+# Optional: -Windowed     (run the engine in a framed window, restored on exit)
+param([string[]]$Only = @(), [string]$Dir = 'cand', [ValidateSet('Spacer2', 'Gothic2', 'GothicStarter')][string]$Exe = 'Spacer2',
+      [switch]$Windowed)
 
 $ErrorActionPreference = 'Stop'
 $Gothic  = 'C:\Program Files (x86)\Steam\steamapps\common\Gothic II'
@@ -38,6 +40,66 @@ public class W {
 "@
 
 function Sha($p) { (Get-FileHash -Algorithm SHA256 $p).Hash.ToLower() }
+
+# --- windowed mode (-Windowed).
+# There is no command-line switch for it: ZenGin reads zStartupWindowed from
+# System\Gothic.ini, and this install also has SystemPack, whose SimpleWindow=1
+# strips the window frame. Without a frame there is no title bar and no close
+# button, and this script asks you to CLOSE the engine to record a verdict, so
+# both keys are set. Resolution is left alone (already 800x600 here).
+#
+# These are files inside the Gothic install, so they get the same discipline as
+# the world: a backup made once, and a restore in the finally. The .ini files are
+# windows-1252, and are read and written as bytes so no PowerShell edition's
+# default encoding can rewrite the rest of the file.
+# SystemPack.ini is only read when SystemPack is actually installed, and a
+# stale copy of that .ini can sit in an install where it is not -- editing it
+# then is theatre. SystemPack hooks through its own build of Vdfs32g.dll (NOT
+# ddraw.dll, and not Shw32.dll or the exe: measured, only Vdfs32g.dll carries
+# the key names), so that DLL carrying the string is the sentinel.
+$IniEdits = @(
+  @{ File = Join-Path $Gothic 'System\Gothic.ini';     Key = 'zStartupWindowed'; Value = '1' }
+  @{ File = Join-Path $Gothic 'System\SystemPack.ini'; Key = 'SimpleWindow';     Value = '0'
+     NeedsMarker = @{ File = Join-Path $Gothic 'System\Vdfs32g.dll'; String = 'SystemPack.ini' } }
+)
+function HasMarker($m) {
+  if (-not (Test-Path $m.File)) { return $false }
+  $bytes = [System.IO.File]::ReadAllBytes($m.File)
+  return [System.Text.Encoding]::GetEncoding(1252).GetString($bytes).Contains($m.String)
+}
+$IniTouched = $false
+function ReadIni($p) { [System.Text.Encoding]::GetEncoding(1252).GetString([System.IO.File]::ReadAllBytes($p)) }
+function WriteIni($p, $s) { [System.IO.File]::WriteAllBytes($p, [System.Text.Encoding]::GetEncoding(1252).GetBytes($s)) }
+function EnableWindowed {
+  foreach ($e in $IniEdits) {
+    if (-not (Test-Path $e.File)) { Log "windowed: $($e.File) not present, skipped"; continue }
+    if ($e.NeedsMarker -and -not (HasMarker $e.NeedsMarker)) {
+      Log "windowed: $(Split-Path $e.File -Leaf) is inert (SystemPack not installed), skipped"
+      continue
+    }
+    $backup = "$($e.File).engine-batch-backup"
+    # Only if absent: a backup left by a killed run is the pristine one, and the
+    # file beside it is already modified. Never overwrite it with that.
+    if (-not (Test-Path $backup)) { Copy-Item $e.File $backup -Force }
+    $text = ReadIni $e.File
+    # Deliberately not `^\s*KEY\s*=.*$`: in .NET `\s` matches newlines, so a
+    # leading `\s*` swallows the preceding blank line, and `.*$` consumes the
+    # `\r` of a CRLF (multiline `$` anchors before the `\n`), silently rewriting
+    # the line ending. That cost 3 bytes per file when measured.
+    $pattern = "(?m)^[ \t]*$($e.Key)[ \t]*=[^\r\n]*"
+    if ($text -notmatch $pattern) { Log "windowed: WARNING $($e.Key) not found in $(Split-Path $e.File -Leaf); left alone"; continue }
+    WriteIni $e.File ([regex]::Replace($text, $pattern, "$($e.Key)=$($e.Value)"))
+    $script:IniTouched = $true
+    Log "windowed: $(Split-Path $e.File -Leaf) $($e.Key)=$($e.Value) (backup $(Split-Path $backup -Leaf))"
+  }
+}
+function RestoreIni {
+  if (-not $IniTouched) { return }
+  foreach ($e in $IniEdits) {
+    $backup = "$($e.File).engine-batch-backup"
+    if (Test-Path $backup) { Copy-Item $backup $e.File -Force; Log "restored $(Split-Path $e.File -Leaf)" }
+  }
+}
 function Log($s) { $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $s; Write-Host $line; Add-Content -Path $Log -Value $line -Encoding utf8 }
 function Restore {
   Copy-Item $Backup $Target -Force
@@ -61,6 +123,10 @@ $cands = Get-ChildItem $CandDir -Filter '*.zen' | Sort-Object Name
 if ($Only.Count -gt 0) { $cands = $cands | Where-Object { $n = $_.Name.Substring(0,2); $Only -contains $n } }
 
 try {
+  # Inside the try: everything that modifies the install must be covered by the
+  # finally that puts it back.
+  if ($Windowed) { EnableWindowed }
+
   foreach ($c in $cands) {
     Write-Host ""
     Write-Host "================================================================" -ForegroundColor Cyan
@@ -103,6 +169,7 @@ try {
   }
 } finally {
   Restore
+  RestoreIni
   Log "=== engine batch end"
 }
 Write-Host ""

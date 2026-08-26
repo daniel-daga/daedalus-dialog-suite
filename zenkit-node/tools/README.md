@@ -44,7 +44,7 @@ section; these CLIs are thin front-ends over it. See
   discovers worlds itself, isolates each in a child process, writes a report
   artifact and counts coverage honestly. `breadth.js` is kept because it is two
   screens of code and quicker to hack a one-off variation into.
-- `engine-batch.ps1 [-Dir cand] [-Only 00,01] [-Exe Spacer2|Gothic2]` — the
+- `engine-batch.ps1 [-Dir cand] [-Only 00,01] [-Exe Spacer2|Gothic2] [-Windowed]` — the
   manual engine pass, automated as far as it can be. Verifies the pristine
   backup's hash before touching the install, installs each candidate, launches
   the engine, polls its top-level windows and auto-captures any assertion dialog
@@ -52,6 +52,12 @@ section; these CLIs are thin front-ends over it. See
   the backup — hash-verified, in a `finally`, so an interrupt cannot leave a
   modified world behind. **Load each world twice**: Spacer renders nothing on
   the first load of *any* world, including the retail original.
+  `-Windowed` sets `zStartupWindowed=1` in `Gothic.ini` for the run and restores
+  it afterwards (backed up like the world, restored in the same `finally`).
+  There is no command-line switch for windowed mode; it is an ini key. It also
+  clears SystemPack's `SimpleWindow`, which strips the window frame — but only
+  when SystemPack's hook DLL (`ddraw.dll`) is actually installed, because
+  without it `SystemPack.ini` is inert and editing it would be theatre.
 - `mutate.js <outDir>` — stages the three T10 / E-full candidates as flat
   `*.zen` files for `engine-batch.ps1`: `00-control-original` (the pristine
   world — **the control, never skip it**), `01-resave` (load → save, unchanged,
@@ -59,6 +65,16 @@ section; these CLIs are thin front-ends over it. See
   row 10). Reads `NewWorld.zen.original-backup` in preference to the installed
   world and prints the source hash, so it cannot silently pick up a
   mid-experiment file. See the acceptance record §8.
+- `startup-probe.ps1 [-Exe Gothic2|Spacer2] [-Seconds 45]` — **is the engine
+  itself healthy?** Launches it, watches its top-level windows for an error
+  dialog, and always kills what it started. Modifies **nothing** in the
+  install and needs nobody at the keyboard, so it is safe to run before a
+  candidate batch. It answers only "does this crash at startup" — never a
+  checklist row. Written to diagnose a broken install (acceptance record §6,
+  Environment): a Steam reinstall restores the six VDFs the MDK layout needs
+  renamed `.disabled`, which crashes `Gothic2.exe` ~5 s after launch **and**
+  can make the engine read `NewWorld.zen` out of `Worlds.vdf` instead of the
+  installed candidate, voiding any verdict taken in that state.
 - `dumpwin.ps1` — extracts the text of Spacer's/Gothic's error dialogs via
   Win32 `EnumWindows`, so an assertion can be read exactly rather than from a
   screenshot. Run while the dialogs are still open; the **"Assertion Failed"**

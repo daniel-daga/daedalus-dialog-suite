@@ -3,12 +3,18 @@
 Companion to [`level-editor.md`](level-editor.md) (architecture) and
 [`level-editor-design-brief.md`](level-editor-design-brief.md) (source brief).
 
-Status: **in progress on `feature/level-editor-phase-0`** — T1–T9 landed,
-including **T6.5 (the in-engine gate), which PASSED**, and T7/T8. Nineteen
-ZenKit save-path defects were found and patched to get there; two were
-independently fatal to the original engine. Verdict: **Plan A, scoped to the
-BinSafe path** — T8 measured the ASCII writer and found it unusable (§6, T8).
-Only **T10 / E-full** remains, and it needs a person at the keyboard.
+Status: **T1–T10 all landed**, including both engine gates — **T6.5 (E-early)
+and T10 (E-full), both PASSED** (T10 on 2026-08-25: three candidates, control
+first, row 10 a full pass with the inserted item takeable). Nineteen ZenKit
+save-path defects were found and patched to get there; two were independently
+fatal to the original engine. Verdict: **Plan A, scoped to the BinSafe path** —
+T8 measured the ASCII writer and found it unusable (§6, T8).
+
+**All five exit criteria are now settled and Phase 0 is complete** — criterion
+1 green on Windows (run `32934967838`), criterion 2 with a measured and
+deliberate scope-down to the BinSafe path, criterion 4 with four checklist rows
+unrun and named, criteria 3 and 5 met outright. The work is on
+`feature/level-editor-phase-0-followups` / PR #217.
 Full record and evidence:
 [`zenkit-node/docs/engine-acceptance-2026-08-25.md`](../../zenkit-node/docs/engine-acceptance-2026-08-25.md).
 
@@ -38,10 +44,21 @@ and op system would already be built on an unproven assumption.
 
 **Exit criteria (all five):**
 
-1. `pnpm --filter zenkit-node test` green on Linux, Windows, and macOS.
-   — ⚠️ green locally (82 tests) and **green in CI on Linux**; macOS and Windows
-   fail in the build step on toolchain issues, not on this code — acceptance
-   record §9.
+1. ~~`pnpm --filter zenkit-node test` green on Linux, Windows, and macOS.~~
+   **Narrowed 2026-08-25 to Windows only** — the editor's users are on Windows,
+   and so is the only usable fidelity oracle (Gothic and Spacer are Windows
+   binaries). Linux and macOS are explicitly out of scope for now; re-adding
+   them is a one-line matrix change, and both were **green** when dropped.
+   — ✅ **MET.** Run `32934967838` on `windows-2022`: build, 89 tests,
+   `zen-roundtrip --fixtures --strict` (C2) and lint all green. Getting there
+   took three real fixes, none of which Linux or macOS could ever have found:
+   the `windows-latest` image ships **Visual Studio 18**, which node-gyp 11.5.0
+   cannot identify (pinned to `windows-2022`); the `test` script relied on the
+   *shell* expanding `test/*.test.js`, which `pwsh` does not do, so `npm test`
+   had never worked on Windows at all; and a byte-comparison test silently
+   depended on the **length of the machine's username**, passing on `Daniel`
+   and CI's `runner` (both 6) and failing on `runneradmin` (11).
+
 2. `zen-roundtrip` run against a developer-local Gothic 1 + Gothic 2/NotR
    installation reports **no `semantic-drift`** on any original world,
    including all parts (see §3 for what that means precisely).
@@ -58,7 +75,15 @@ and op system would already be built on an unproven assumption.
    named down to four specific writer defects.
 4. **The in-engine acceptance checklist (§5) passes in original Gothic** for
    both a plain re-save and a minimally edited world.
-   — ⏸ row 1 only (Spacer). T10 is what remains of Phase 0.
+   — ✅ **met, with four rows unrun and said so.** T10 ran 2026-08-25 23:46:
+   all three candidates PASS with the pristine control first in the same
+   session, and **row 10 is a full pass — the inserted item was takeable**, not
+   merely visible. Rows 2, 3, 4 and 6 ran on the plain re-save; rows 5, 7, 8
+   and 9 did not and are not claimed. The engine was **not stock** — the game
+   never rendered on this machine until GD3D11 was installed — which also
+   degrades row 5 permanently to candidate-vs-control. Both facts, and the
+   argument for why the unrun rows are acceptable on a bit-identical re-save
+   but *not* for Phase 1b, are in acceptance record §8 and Environment.
 5. A written **Plan A / Plan B verdict** (whole-world re-serialization vs.
    chunk splice — `level-editor.md` §5) supported by *both* the harness report
    and the engine result, per the decision matrix in §5.

@@ -20,11 +20,32 @@ const GOLDEN = path.join(__dirname, 'fixtures', 'minimal.g2.golden.json');
 // own header — so all header blocks are normalized, not just the first).
 // Both buffers get the same treatment, so the comparison still proves the
 // non-header remainder is byte-identical.
+// The BinSafe header's `hashTableOffset` counts RAW bytes from the start of the
+// file, so it shifts with the length of the `user ` stamp — i.e. with the
+// machine's username. Blanking the stamp TEXT therefore still leaves a derived
+// field that differs, and this test was silently machine-dependent: the fixture
+// was authored by a 6-character user (`Daniel`), it passed on ubuntu/macOS CI
+// whose runner is also 6 characters (`runner`), and it failed on Windows CI's
+// `runneradmin` by exactly 5 bytes — 0x0B48 vs 0x0B4D.
+//
+// Zeroing it costs no coverage: that the entry stream ends exactly at the hash
+// table is asserted by the container instrument (`endsAtHashTable`), and every
+// test below that walks the table reaches it through this same offset in the
+// un-normalized bytes.
+function zeroHashTableOffset(buffer) {
+  if (!buffer.toString('latin1', 0, 64).includes('BIN_SAFE')) return buffer;
+  const headerEnd = buffer.indexOf('END\n', 0, 'latin1');
+  if (headerEnd < 0) return buffer;
+  const out = Buffer.from(buffer);
+  out.writeUInt32LE(0, headerEnd + 4 + 8); // after END\n: version, objectCount, hashTableOffset
+  return out;
+}
+
 function normalizeHeaderStamps(buffer) {
   const latin1 = buffer.toString('latin1');
   const header =
     /(ZenGin Archive\nver 1\n[^\n]*\n[^\n]*\nsaveGame \d+\n)date [^\n]*\nuser [^\n]*\n(END\n)/g;
-  return Buffer.from(latin1.replace(header, '$1date\nuser\n$2'), 'latin1');
+  return zeroHashTableOffset(Buffer.from(latin1.replace(header, '$1date\nuser\n$2'), 'latin1'));
 }
 
 function withTmpDir(fn) {
@@ -35,6 +56,31 @@ function withTmpDir(fn) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
+
+// Reproduces the CI failure locally: the same world written on a machine whose
+// username is 5 characters longer is byte-identical apart from the `user` stamp
+// and the hashTableOffset that shifts with it. Without zeroHashTableOffset this
+// fails on the offset alone, which is what Windows CI hit and what ubuntu/macOS
+// missed because their runner name happens to be the same length as the
+// fixture author's.
+test('normalizeHeaderStamps is invariant to the length of the user stamp', () => {
+  const original = fs.readFileSync(FIXTURE);
+  const latin1 = original.toString('latin1');
+  const userLine = /\nuser ([^\n]*)\n/.exec(latin1);
+  assert.ok(userLine, 'fixture must carry a user stamp');
+
+  const longer = `${userLine[1]}XXXXX`; // +5, exactly the runneradmin delta
+  const shifted = Buffer.from(
+    latin1.replace(`\nuser ${userLine[1]}\n`, `\nuser ${longer}\n`),
+    'latin1'
+  );
+  // A real writer would also bump the offset, since it counts raw bytes.
+  const headerEnd = shifted.indexOf('END\n', 0, 'latin1');
+  shifted.writeUInt32LE(shifted.readUInt32LE(headerEnd + 12) + 5, headerEnd + 12);
+
+  assert.strictEqual(shifted.length, original.length + 5);
+  assert.deepStrictEqual(normalizeHeaderStamps(shifted), normalizeHeaderStamps(original));
+});
 
 test('saveWorld reproduces the fixture bytes except the header date/user stamps', () => {
   withTmpDir((dir) => {
@@ -342,5 +388,45 @@ test('saveWorld round-trips bit 15 of the packed zCVob flag word', () => {
     assert.ok(a.length >= 4, `expected the fixture's vobs, got ${a.length} dataRaw entries`);
     assert.strictEqual(a.filter((raw) => raw.length === 83 && (raw[74] & 0x80) !== 0).length, 1);
     assert.deepStrictEqual(b, a);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The non-BinSafe guard (docs/engine-acceptance-2026-08-25.md §10.2, §10.3).
+//
+// Only the BinSafe writer path is verified — against the retail corpus and
+// against the original engine. The ASCII writer corrupts every raw entry it
+// emits and ZenKit cannot re-load its own ASCII output at all, and the BINARY
+// path has had no fidelity work either. A save that silently produces a file
+// nothing can re-open is worse than no save, so saveWorld refuses.
+//
+// The guard is exercised on a BINARY world because an ASCII one can never
+// reach it: loading ZenKit's own ASCII output aborts the process, so an ASCII
+// handle cannot be produced in-process at all. Both go through the same
+// `format != BINSAFE` check.
+function withBinaryWorld(fn) {
+  withTmpDir((dir) => {
+    const authored = path.join(dir, 'authored.zen');
+    zenkit._authorFixtureWorld(authored, 'binary', 'g2');
+    fn(zenkit.loadWorld(authored, 'g2'), dir);
+  });
+}
+
+test('saveWorld refuses a world that was not loaded from a BinSafe archive', () => {
+  withBinaryWorld((handle, dir) => {
+    const out = path.join(dir, 'out.zen');
+    assert.throws(() => zenkit.saveWorld(handle, out), /binsafe|BinSafe/);
+    assert.strictEqual(fs.existsSync(out), false);
+  });
+});
+
+// The diagnostic harness (scripts/zen-roundtrip.js) measures the unverified
+// paths on purpose — that is how §10.2's four ASCII defects were found — so
+// the refusal is overridable, explicitly and per call.
+test('saveWorld saves a non-BinSafe world when explicitly allowed', () => {
+  withBinaryWorld((handle, dir) => {
+    const out = path.join(dir, 'out.zen');
+    zenkit.saveWorld(handle, out, { allowNonBinSafe: true });
+    assert.ok(fs.statSync(out).size > 0);
   });
 });
