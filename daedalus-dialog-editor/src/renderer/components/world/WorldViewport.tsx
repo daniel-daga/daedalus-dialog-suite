@@ -4,7 +4,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
-import { multiplyRotation, threeToZen, zenBoxToThree, type ZenRotation } from 'zen-world';
+import {
+  multiplyRotation, threeToZen, zenToThree, zenBoxToThree, ZEN_TO_THREE_SCALE, type ZenRotation,
+} from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
@@ -13,6 +15,7 @@ import { WorldScene } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
+import { attachBlenderNav, frameOn } from '../../world/cameraNav';
 import {
   runViewportBenchmark,
   type BenchmarkOptions,
@@ -156,6 +159,12 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   onPickRef.current = onPick;
   const loadTextureRef = useRef(loadTexture);
   loadTextureRef.current = loadTexture;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  // Survives the scene rebuild a structural op forces — see the restore below.
+  const poseRef = useRef<{
+    key: string; position: number[]; target: number[];
+  } | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -191,6 +200,21 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(box.center[0], box.center[1], box.center[2]);
     controls.enableDamping = true;
+    // Blender's mapping: the middle button navigates, the left one selects.
+    const detachNav = attachBlenderNav(controls, host);
+
+    // A structural op — placing a VOB — cannot be applied to the columnar
+    // projection, so the scene is rebuilt from the world (level-editor.md §7),
+    // which runs this effect again and re-frames the camera from the bbox. That
+    // throws away the view the placement was aimed from, which is the one view
+    // the user needs to see whether it landed. So the pose survives a rebuild
+    // of the *same* world, keyed on the bbox so that opening a different one
+    // still frames it.
+    const worldKey = bbox.join(',');
+    if (poseRef.current?.key === worldKey) {
+      camera.position.fromArray(poseRef.current.position);
+      controls.target.fromArray(poseRef.current.target);
+    }
     controls.update();
 
     // Only what is pickable gets a tree, and off the main thread.
@@ -393,6 +417,54 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     };
     renderer.domElement.addEventListener('click', handleClick);
 
+    // Blender's framing keys, and the reason orbiting is usable at all: the
+    // pivot starts at the centre of a 600 m island, so without a way to move it
+    // onto what you are looking at, every orbit up close swings the camera
+    // through half the world.
+    const frameSelection = () => {
+      // A VOB that is not drawn has no position to frame — a decal, a sound
+      // VOB — and a selection can be nothing but those.
+      const framable = selectionRef.current
+        .map((vob) => ({ at: world.positionOf(vob), bounds: world.boundsOf(vob) }))
+        .filter((vob): vob is { at: [number, number, number]; bounds: readonly number[] | null } => vob.at !== null);
+      if (framable.length === 0) return;
+
+      const center = new THREE.Vector3();
+      for (const { at } of framable) center.add(new THREE.Vector3(...zenToThree(at)));
+      center.divideScalar(framable.length);
+
+      let radius = 0;
+      for (const { at, bounds } of framable) {
+        const own = bounds
+          ? Math.max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2]) / 2
+          : 0;
+        radius = Math.max(radius, center.distanceTo(new THREE.Vector3(...zenToThree(at))) + own * ZEN_TO_THREE_SCALE);
+      }
+
+      frameOn(camera, controls.target, center, radius);
+    };
+
+    const frameAll = () => {
+      frameOn(
+        camera, controls.target, new THREE.Vector3(...box.center),
+        Math.max(box.size[0], box.size[1], box.size[2]) / 2,
+      );
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      // The property grid is a pile of text fields, and a '.' typed into one of
+      // them is a decimal point, not a camera move.
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? '')) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+      // Blender's key is numpad-period; laptops without a numpad send the
+      // ordinary one, and both mean the same thing here.
+      if (event.code === 'NumpadDecimal' || event.key === '.') { frameSelection(); return; }
+      if (event.key === 'Home') frameAll();
+    };
+    window.addEventListener('keydown', onKeyDown);
+
     const resize = new ResizeObserver(() => {
       const width = host.clientWidth || 1;
       const height = host.clientHeight || 1;
@@ -514,12 +586,19 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
 
     return () => {
       disposed = true;
+      poseRef.current = {
+        key: worldKey,
+        position: camera.position.toArray(),
+        target: controls.target.toArray(),
+      };
       sceneRef.current = null;
       gizmoRef.current = null;
       delete window.__worldViewport;
       cancelAnimationFrame(frame);
       resize.disconnect();
       renderer.domElement.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', onKeyDown);
+      detachNav();
       controls.dispose();
       transform.detach();
       scene.remove(transform.getHelper());
