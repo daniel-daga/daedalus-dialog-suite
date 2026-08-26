@@ -10,11 +10,11 @@ save-path defects were found and patched to get there; two were independently
 fatal to the original engine. Verdict: **Plan A, scoped to the BinSafe path** —
 T8 measured the ASCII writer and found it unusable (§6, T8).
 
-**The one exit criterion still open is criterion 1** — CI green on **Windows**,
-which is now the only platform the criterion covers (narrowed 2026-08-25;
-Linux and macOS were both green when they were dropped). Everything else is
-met, criterion 2 with a measured and deliberate scope-down and criterion 4 with
-four checklist rows unrun and named.
+**All five exit criteria are now settled and Phase 0 is complete** — criterion
+1 green on Windows (run `32934967838`), criterion 2 with a measured and
+deliberate scope-down to the BinSafe path, criterion 4 with four checklist rows
+unrun and named, criteria 3 and 5 met outright. The work is on
+`feature/level-editor-phase-0-followups` / PR #217.
 Full record and evidence:
 [`zenkit-node/docs/engine-acceptance-2026-08-25.md`](../../zenkit-node/docs/engine-acceptance-2026-08-25.md).
 
@@ -48,14 +48,17 @@ and op system would already be built on an unproven assumption.
    **Narrowed 2026-08-25 to Windows only** — the editor's users are on Windows,
    and so is the only usable fidelity oracle (Gothic and Spacer are Windows
    binaries). Linux and macOS are explicitly out of scope for now; re-adding
-   them is a one-line matrix change.
-   — ⚠️ **not met.** Run `32903532421` was **ubuntu ✅, macOS ✅, windows ❌**,
-   so the two platforms being dropped were *both green* when dropped (the macOS
-   `-msse2` fix is confirmed working, not merely written). Windows fails before
-   any of our code runs: `windows-latest` now ships **Visual Studio 18**, which
-   node-gyp 11.5.0 cannot identify, so the `daedalus-parser` workspace's install
-   dies at configure. `zenkit-node`'s own CMake pre-step is unaffected — it uses
-   `vswhere`. Pinned to `windows-2022` as the fix; **not yet observed green.**
+   them is a one-line matrix change, and both were **green** when dropped.
+   — ✅ **MET.** Run `32934967838` on `windows-2022`: build, 89 tests,
+   `zen-roundtrip --fixtures --strict` (C2) and lint all green. Getting there
+   took three real fixes, none of which Linux or macOS could ever have found:
+   the `windows-latest` image ships **Visual Studio 18**, which node-gyp 11.5.0
+   cannot identify (pinned to `windows-2022`); the `test` script relied on the
+   *shell* expanding `test/*.test.js`, which `pwsh` does not do, so `npm test`
+   had never worked on Windows at all; and a byte-comparison test silently
+   depended on the **length of the machine's username**, passing on `Daniel`
+   and CI's `runner` (both 6) and failing on `runneradmin` (11).
+
 2. `zen-roundtrip` run against a developer-local Gothic 1 + Gothic 2/NotR
    installation reports **no `semantic-drift`** on any original world,
    including all parts (see §3 for what that means precisely).
