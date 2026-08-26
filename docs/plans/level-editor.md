@@ -460,6 +460,13 @@ the two costs §3 said belonged elsewhere: textures are no longer decoded eagerl
 longer built on the main thread. Phase by phase: `loadWorld` 217, `vobIndex` 8,
 `openVfs` 33, `extractWorldMesh` 333, `visuals` 61.
 
+That run is now a script rather than a one-off:
+`daedalus-dialog-editor/scripts/verify-world-pipeline.js` prints the table
+above, and is the only instrument that drives binding → worker → IPC → payload
+end to end against real data. It is developer-local for the same reason
+`zen-roundtrip` is. The detached-index check below is an explicit assertion in
+it, so that bug cannot return quietly.
+
 Two things the run found that no test had:
 
 1. **`open` must not transfer the VOB index.** Transferring its columns to the
