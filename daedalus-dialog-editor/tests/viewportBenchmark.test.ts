@@ -48,7 +48,11 @@ interface ProbeCosts {
   finishGpu?: number;
   raycastWorldMesh?: number;
   raycastWholeScene?: number;
-  pickVobs?: number;
+  /** What the prop pick costs the main thread: the draw pass and the readback's
+   *  submission, everything before the fence is waited on. */
+  pickVobsBlocking?: number;
+  /** What the GPU fence then costs in wall clock, spent suspended. */
+  pickVobsFence?: number;
 }
 
 /** A probe that charges the clock for each call, and records what it was asked. */
@@ -85,9 +89,16 @@ function fakeProbe(clock: FakeClock, costs: ProbeCosts = {}) {
       clock.advance(costs.raycastWholeScene ?? 5.6);
       return true;
     },
-    pickVobs: (x, y) => {
+    // Asynchronous, like the real one: the draw pass and the readback's
+    // submission are synchronous, then the fence is awaited off the main thread.
+    pickVobs: async (x, y) => {
       calls.vobPicks.push([x, y]);
-      clock.advance(costs.pickVobs ?? 0.4);
+      clock.advance(costs.pickVobsBlocking ?? 0.4);
+      // A timer, like the real fence poll — so anything else the event loop is
+      // holding gets its turn in the middle of the pick sweep, as it does in
+      // the app.
+      await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      clock.advance(costs.pickVobsFence ?? 0);
       return false;
     },
     viewportSize: () => ({ width: 1463, height: 780 }),
@@ -102,11 +113,16 @@ interface EnvOptions {
   focusedAfter?: number;
   /** Stop calling back after this many rAF callbacks, as a suspended tab does. */
   framesBeforeSuspend?: number;
+  /** Deliver the suspended callbacks late, after the timer has already ended
+   *  the run — which is what a window being restored, or Chromium deciding to
+   *  composite once, actually does. */
+  resumeAfterTimeout?: boolean;
 }
 
 function fakeEnv(clock: FakeClock, options: EnvOptions = {}) {
   let rafCount = 0;
   const timers: Array<{ cb: () => void; at: number }> = [];
+  const suspended: Array<() => void> = [];
 
   const env: BenchmarkEnv = {
     now: clock.now,
@@ -115,6 +131,7 @@ function fakeEnv(clock: FakeClock, options: EnvOptions = {}) {
       if (options.framesBeforeSuspend !== undefined && rafCount > options.framesBeforeSuspend) {
         // A suspended tab simply stops calling back. The timer below is what
         // has to end the run instead.
+        suspended.push(cb);
         return;
       }
       const gap = typeof options.frameGap === 'function'
@@ -127,7 +144,16 @@ function fakeEnv(clock: FakeClock, options: EnvOptions = {}) {
     // rAF drains first, so a healthy run still completes on its own frames.
     setTimer: (cb, ms) => {
       timers.push({ cb, at: clock.t + ms });
-      setTimeout(() => { clock.advance(ms); cb(); }, 0);
+      setTimeout(() => {
+        // Deliberately without advancing the clock: a timer firing does not
+        // make time jump, and this one can now land in the middle of the pick
+        // sweep, where a 30 s jump would be charged to whichever ray was
+        // waiting on its fence.
+        cb();
+        if (options.resumeAfterTimeout) {
+          setTimeout(() => { for (const late of suspended.splice(0)) late(); }, 0);
+        }
+      }, 0);
     },
     visible: () => options.visibleAfter === undefined || rafCount < options.visibleAfter,
     focused: () => options.focusedAfter === undefined || rafCount < options.focusedAfter,
@@ -386,7 +412,7 @@ describe('pick latency', () => {
   it('measures all three mechanisms separately over the same rays', async () => {
     const clock = new FakeClock();
     const { probe, calls } = fakeProbe(clock, {
-      raycastWorldMesh: 0.2, raycastWholeScene: 5.6, pickVobs: 0.4,
+      raycastWorldMesh: 0.2, raycastWholeScene: 5.6, pickVobsBlocking: 0.4,
     });
     const { env } = fakeEnv(clock);
 
@@ -402,6 +428,36 @@ describe('pick latency', () => {
     expect(result.pickWholeScene.p50).toBeCloseTo(5.6, 5);
     // The app's actual mechanism for props, which the spike had no number for.
     expect(result.pickVobs.p50).toBeCloseTo(0.4, 5);
+  });
+
+  it('splits the prop pick into what it blocks for and what it waits for', async () => {
+    // The readback is asynchronous now, so the prop pick has two costs and they
+    // answer different questions. What the main thread spends is what competes
+    // with the frame; what the click waits for is the latency a user feels.
+    // Reporting only the second would read as a regression against the
+    // synchronous 2.1 ms, when it is the first that got smaller.
+    const clock = new FakeClock();
+    const { probe } = fakeProbe(clock, { pickVobsBlocking: 0.4, pickVobsFence: 6 });
+    const { env } = fakeEnv(clock);
+
+    const result = await runViewportBenchmark(probe, env, SMALL);
+
+    expect(result.pickVobsBlocking.p50).toBeCloseTo(0.4, 5);
+    expect(result.pickVobs.p50).toBeCloseTo(6.4, 5);
+  });
+
+  it('waits for each prop pick before starting the next, so they do not overlap', async () => {
+    // Concurrent picks would queue behind one another on the GPU and every
+    // reported latency after the first would be a queue depth, not a pick.
+    const clock = new FakeClock();
+    const { probe, calls } = fakeProbe(clock, { pickVobsBlocking: 0.4, pickVobsFence: 6 });
+    const { env } = fakeEnv(clock);
+
+    const result = await runViewportBenchmark(probe, env, SMALL);
+
+    expect(calls.vobPicks).toHaveLength(SMALL.rays);
+    // Overlapped, the last ray would report the whole sweep's wall clock.
+    expect(result.pickVobs.max).toBeCloseTo(6.4, 5);
   });
 
   // The first real run measured 0.1 ms for a whole-scene raycast — faster than
@@ -425,5 +481,29 @@ describe('pick latency', () => {
     expect(result.pickWholeScene.hits).toBe(SMALL.rays);
     expect(result.pickVobs.hits).toBe(0);
     expect(result.pickWorldMesh.rays).toBe(SMALL.rays);
+  });
+
+  it('keeps a late rAF callback from moving the camera under the rays', async () => {
+    // Found by measurement, not by reading: with the prop pick made
+    // asynchronous, two minimised runs of the real app answered 32 and 28 hits
+    // where every foreground run — and the synchronous build in the same
+    // minimised state — answered exactly 25.
+    //
+    // The rAF sweep in a suspended window ends on its timeout with a callback
+    // still outstanding. Chromium delivers it whenever it next composites, and
+    // `step` then moves the camera and renders. A synchronous pick loop never
+    // gave it the chance; a loop that awaits a fence between rays does, so the
+    // rest of the sweep aims from wherever that stray frame left the camera.
+    const clock = new FakeClock();
+    const { probe, calls } = fakeProbe(clock);
+    const { env } = fakeEnv(clock, { framesBeforeSuspend: 3, resumeAfterTimeout: true });
+
+    const result = await runViewportBenchmark(probe, env, SMALL);
+
+    // The rays must be aimed from the fixed viewpoint and nothing may move the
+    // camera afterwards — the whole sweep, not just the first ray.
+    const inside = cameraPose(Math.floor(SMALL.frames * 0.7), SMALL.frames, CENTRE, SPAN);
+    expect(calls.placed[calls.placed.length - 1]).toEqual(inside);
+    expect(result.presented.valid).toBe(false);
   });
 });

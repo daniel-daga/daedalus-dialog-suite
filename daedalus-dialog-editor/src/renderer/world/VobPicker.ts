@@ -7,11 +7,21 @@ import { NO_PICK, decodePickId, encodePickId } from './pickIds';
 // across the 724 InstancedMeshes costs 14.2 ms p50 / 21.3 p95 — over the
 // one-frame pick budget on its own. So the props are drawn once into a 1x1
 // buffer with a shader that outputs each instance's VOB id as a colour, and the
-// answer is one `readRenderTargetPixels`.
+// answer is that one pixel, read back.
 //
 // Drawn at 1x1 via `setViewOffset`, which reframes the camera's projection onto
 // the single pixel under the cursor: the cost is one draw pass over the
 // instanced meshes, not a full-screen buffer read.
+//
+// **The readback is asynchronous, and that is the whole of the pick's cost.**
+// Measured in the app's own viewport: 2.1 ms on an idle GPU, **7.2 ms p50 /
+// 12.1 p95 with the GPU shared with another workload** — where it lost to the
+// 3.8 ms CPU raycast it was chosen over. None of that was prop count;
+// `readRenderTargetPixels` is a synchronous readback that stalls the pipeline
+// until the GPU has drained, so its cost tracks GPU state. Reading through a
+// fence (`readRenderTargetPixelsAsync`) keeps the main thread free and leaves
+// the decision standing on what it was actually chosen for: O(1) in prop count,
+// against a raycast that is linear in `InstancedMesh`es (§3 decision 1).
 //
 // Known limit for Phase 1a: the pick pass ignores alpha-tested cut-outs, so
 // clicking the transparent corner of a foliage quad selects the plant. Fixing
@@ -52,7 +62,6 @@ export class VobPicker {
     side: THREE.FrontSide,
   });
 
-  private pixel = new Uint8Array(4);
   private proxies: THREE.InstancedMesh[] = [];
 
   /** Build the pick scene: the same instanced geometry, with an id per instance. */
@@ -96,16 +105,60 @@ export class VobPicker {
   /**
    * The VOB under a pixel, or `NO_PICK`.
    *
+   * The draw pass is submitted synchronously and the readback is awaited, so
+   * the caller's main thread is free while the GPU catches up — a click is
+   * answered a frame or so later instead of stalling the one it arrived in.
+   *
    * @param x,y  pixel coordinates in the canvas, y measured from the top
    */
-  pick(
+  async pickAsync(
     renderer: THREE.WebGLRenderer,
     camera: THREE.PerspectiveCamera,
     x: number,
     y: number,
     width: number,
     height: number,
-  ): number {
+  ): Promise<number> {
+    // Its own buffer per call: the draw loop keeps running during the readback,
+    // so a second click can be in flight before the first has settled, and a
+    // shared buffer would make each answer depend on the order the two fences
+    // happened to settle in.
+    const pixel = new Uint8Array(4);
+
+    let readback: Promise<unknown> | undefined;
+    this.draw(renderer, camera, x, y, width, height, () => {
+      readback = renderer.readRenderTargetPixelsAsync(this.target, 0, 0, 1, 1, pixel);
+    });
+
+    // Everything above — including the readback's own `readPixels` into a pixel
+    // pack buffer — is submitted before the first await, so the render target
+    // and the view offset are already restored by the time we suspend here.
+    await readback;
+
+    return pixel[3] === 0 ? NO_PICK : decodePickId(pixel[0], pixel[1], pixel[2]);
+  }
+
+  /**
+   * Draw the pick pass once and throw the pixel away.
+   *
+   * The first GPU pick of a session costs 53 ms — and once, 276 ms — compiling
+   * the pick shader on first use, the same class of first-use cost as texture
+   * upload (§3). Doing it when the world opens keeps it out of the first click.
+   */
+  warm(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
+    this.draw(renderer, camera, 0, 0, 1, 1, () => {});
+  }
+
+  /** The pick pass, framed onto one pixel, with the renderer left as it was. */
+  private draw(
+    renderer: THREE.WebGLRenderer,
+    camera: THREE.PerspectiveCamera,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    read: () => void,
+  ): void {
     const previousTarget = renderer.getRenderTarget();
 
     // Reframe the projection onto the one pixel under the cursor.
@@ -114,12 +167,10 @@ export class VobPicker {
     renderer.setClearColor(0x000000, 1);   // black is "nothing was hit"
     renderer.clear();
     renderer.render(this.scene, camera);
-    renderer.readRenderTargetPixels(this.target, 0, 0, 1, 1, this.pixel);
+    read();
 
     renderer.setRenderTarget(previousTarget);
     camera.clearViewOffset();
-
-    return this.pixel[3] === 0 ? NO_PICK : decodePickId(this.pixel[0], this.pixel[1], this.pixel[2]);
   }
 
   private clear(): void {

@@ -643,6 +643,75 @@ still guards what it was written for (main 398 kB, MUI 468 kB). The World
 surface, three and three-mesh-bvh are separate chunks fetched only when the
 World view is opened.
 
+#### The pick readback is asynchronous — and the pick has two costs now (2026-08-26)
+
+The section above ends by saying the readback "should be made asynchronous
+before anything else in the pick path is optimised", because the GPU pick's
+cost was never prop count: `readRenderTargetPixels` stalls the pipeline until
+the GPU has drained, which is why it cost 2.1 ms idle and **7.2 ms with the GPU
+shared**, losing to the 3.8 ms CPU raycast it was chosen over. `VobPicker` now
+reads through a fence (`readRenderTargetPixelsAsync`).
+
+**Measured as a controlled A/B**: the same world, the same sweep and the same
+window, the synchronous build and the asynchronous one built and run back to
+back — `render.frameMs.p50` 4.3 against 4.6, draw calls identical at 945 p50 /
+1076 max, the same 25 of 200 rays hitting a prop, so the two runs really are
+measuring the same scene in the same machine state.
+
+| Prop pick, 200 rays | synchronous | asynchronous | |
+|---|---|---|---|
+| **Main thread blocked, p50** | **2.4 ms** | **0.9 ms** | 2.7× |
+| blocked, p95 | 4.6 ms | 1.8 ms | 2.6× |
+| blocked, max | **48.9 ms** | 4.9–13.5 ms | |
+| Click → answer, p50 | 2.4 ms | 6.9–9.1 ms | |
+| Click → answer, max | 48.9 ms | 15.7 ms | |
+
+**So the pick has two costs and they answer different questions**, and the
+report states both: `pickVobs` is click-to-answer, which is the budget row, and
+`pickVobsBlocking` is what the main thread spent, which is the part that
+competes with the frame. Reading only the first would call this a regression.
+
+- **What got better is the number that mattered.** 0.9 ms p50 of main thread
+  against 2.4, and the worst single pick fell from **48.9 ms — three frames,
+  synchronously, in a run whose median was 2.4** — to under 5. That tail is the
+  characteristic shape of a synchronous readback: its cost is whatever the GPU
+  happens to owe, not what the pick asks for.
+- **What got worse is latency, and it stays inside the budget.** 6.9–9.1 ms p50,
+  15.7 ms worst of 200. Most of it is not the GPU: three's `probeAsync` polls
+  the fence on a **4 ms timer**, so ~4 ms is a floor no pick can beat. The row
+  is "< 1 frame" and it passes, but with far less headroom than the blocking
+  number suggests — a pick that answers one frame later is a correct trade for
+  a frame that is never stalled, and it is a trade, not a free win.
+- The comparison is at **880×746**, not the 1463×780 of the runs recorded above,
+  which is why draw calls read 945 rather than 974: a different aspect culls
+  differently. The pick itself draws 1×1 either way.
+
+**And the first pick of a session no longer costs 53 ms** (once, 276 ms)
+compiling the pick shader: `VobPicker.warm` draws the pick pass once when the
+world opens, which is where §3 said that first-use cost belonged.
+
+##### The measurement disagreed before it agreed, and the defect was in the instrument
+
+Two minimised runs of the asynchronous build answered **32 and 28** prop hits
+where every foreground run answered exactly **25** — and a hit count is not a
+number that may wobble; the rays are fixed and so is the camera. The
+synchronous build re-measured in the same minimised state answered 25 twice,
+which is what said the discrepancy was new rather than a property of the
+degraded state.
+
+The cause was in `viewportBenchmark`, not in the picker. **A rAF sweep that
+ends on its 30 s timeout leaves a callback outstanding**, and Chromium delivers
+it whenever it next composites the window. `step` then moved the camera and
+rendered — under the pick rays. A *synchronous* pick loop never gave it the
+chance to run; a loop that awaits a fence between rays does. So making the
+readback asynchronous did not introduce the defect, it made a latent one
+reachable, and every pick after the stray frame had been aimed from wherever
+that frame left the camera. `step` now returns immediately once the sweep has
+finished, and both minimised runs answer 25.
+
+Worth keeping in mind beyond this instrument: **anything that was only correct
+because it ran without yielding stops being correct the moment it awaits.**
+
 ---
 
 ## 4. Data layer — ZenKit binding (open question 3)

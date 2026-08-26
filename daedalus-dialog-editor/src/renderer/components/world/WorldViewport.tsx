@@ -130,6 +130,10 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       (instanced, instance) => world.resolveInstance(instanced, instance),
       world.root.matrix,
     );
+    // Measured: the first GPU pick of a session costs 53 ms — once, 276 ms —
+    // compiling the pick shader. Paying it here makes the first click cost what
+    // every later one does.
+    picker.warm(renderer, camera);
 
     // Textures on demand. Requested one at a time so a world with 490 of them
     // does not open 490 concurrent IPC calls; each one applied lands on every
@@ -147,14 +151,17 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     raycaster.firstHitOnly = true;
     const pointer = new THREE.Vector2();
 
-    const handleClick = (event: MouseEvent) => {
+    const handleClick = async (event: MouseEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
 
       // The props first: GPU ID-picking is one draw pass into a 1x1 buffer,
-      // where the equivalent CPU raycast is 14.2 ms.
-      const vob = picker.pick(renderer, camera, x, y, rect.width, rect.height);
+      // where the equivalent CPU raycast is 14.2 ms. The readback is awaited
+      // rather than stalled on, so the draw loop keeps running underneath it —
+      // and the world can be closed while a pick is still in flight.
+      const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
+      if (disposed) return;
       if (vob !== NO_PICK) {
         onPickRef.current(vob, null);
         return;
@@ -216,10 +223,10 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
         raycaster.setFromCamera(pickPointer.set(x, y), camera);
         return raycaster.intersectObjects(allMeshes, false).length > 0;
       },
-      pickVobs: (x, y) => {
+      pickVobs: async (x, y) => {
         const width = renderer.domElement.width;
         const height = renderer.domElement.height;
-        const vob = picker.pick(
+        const vob = await picker.pickAsync(
           renderer, camera, ((x + 1) / 2) * width, ((1 - y) / 2) * height, width, height,
         );
         return vob !== NO_PICK;

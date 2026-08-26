@@ -60,8 +60,11 @@ export interface ViewportProbe {
   /** The same ray against every mesh in the scene — the alternative to GPU
    *  ID-picking, kept because it is the number §3's decision 1 rests on. */
   raycastWholeScene(ndcX: number, ndcY: number): boolean;
-  /** The app's actual prop pick: one draw pass into a 1x1 buffer. */
-  pickVobs(ndcX: number, ndcY: number): boolean;
+  /** The app's actual prop pick: one draw pass into a 1x1 buffer, then an
+   *  asynchronous readback. Awaited, so the time before this returns is what
+   *  the pick costs the main thread and the time until it settles is the
+   *  latency a click actually waits. */
+  pickVobs(ndcX: number, ndcY: number): Promise<boolean>;
   viewportSize(): { width: number; height: number };
 }
 
@@ -102,7 +105,12 @@ export interface BenchmarkResult {
   trianglesPerFrame: Stat;
   pickWorldMesh: PickStat;
   pickWholeScene: PickStat;
+  /** Click to answer, the fence wait included — the budget row. */
   pickVobs: PickStat;
+  /** What the same pick costs the main thread, which is the part that competes
+   *  with the frame. The synchronous readback this replaced spent its whole
+   *  cost here: 2.1 ms idle, 7.2 ms with the GPU shared. */
+  pickVobsBlocking: Stat;
 }
 
 export interface BenchmarkOptions {
@@ -250,6 +258,13 @@ export async function runViewportBenchmark(
     let frame = 0;
     let last = env.now();
     const step = () => {
+      // A suspended window ends this sweep on the timeout below with a callback
+      // still outstanding, and Chromium delivers it whenever it next composites
+      // — which is during the pick rays. Measured: two minimised runs answered
+      // 32 and 28 prop hits where the same build in the foreground, and the
+      // synchronous pick in the same minimised state, answered exactly 25. The
+      // rays were being aimed from wherever this stray frame left the camera.
+      if (finished) return;
       place(frame);
       probe.render();
 
@@ -296,7 +311,23 @@ export async function runViewportBenchmark(
 
   const pickWorldMesh = measure((x, y) => probe.raycastWorldMesh(x, y));
   const pickWholeScene = measure((x, y) => probe.raycastWholeScene(x, y));
-  const pickVobs = measure((x, y) => probe.pickVobs(x, y));
+
+  // The prop pick answers asynchronously, so it has two costs and they are
+  // different facts. An async function runs to its first await synchronously,
+  // so the time before the call returns is exactly what the main thread spent —
+  // the draw pass and the readback's submission — and the time until it settles
+  // is what the click waited for. Rays are run one at a time: overlapping them
+  // would queue picks on the GPU and report a queue depth as a latency.
+  const vobTimes: number[] = [];
+  const vobBlocking: number[] = [];
+  let vobHits = 0;
+  for (const [x, y] of rays) {
+    const start = env.now();
+    const pending = probe.pickVobs(x, y);
+    vobBlocking.push(env.now() - start);
+    if (await pending) vobHits += 1;
+    vobTimes.push(env.now() - start);
+  }
   observe();
 
   return {
@@ -329,6 +360,7 @@ export async function runViewportBenchmark(
     trianglesPerFrame: stat(syncTriangles),
     pickWorldMesh,
     pickWholeScene,
-    pickVobs,
+    pickVobs: { ...stat(vobTimes), hits: vobHits, rays: rays.length },
+    pickVobsBlocking: stat(vobBlocking),
   };
 }
