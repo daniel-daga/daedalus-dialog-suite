@@ -162,6 +162,204 @@ test('setVobRotation survives a save and reload', () => {
   assert.deepStrictEqual(reloaded.bbox, [-1, -2, -3, 4, 5, 6]);
 });
 
+// setVobProp — the third mutation (level-editor.md §7). Everything it writes is
+// a scalar on `zCVob` itself, which is what separates it from the two before it:
+// nothing here is derived, and nothing but the bbox has to be recomputed.
+//
+// The one rule that is not obvious is about the visual. A visual is its own
+// object frame in the archive, with its own class, and the class is **not**
+// implied by the file name: measured across the three retail worlds, `.3DS`
+// carries `zCProgMeshProto` 20,716 times and `zCMesh` 31 times. So a rename
+// writes `visual->name` and leaves the object's class exactly as it found it;
+// giving a VOB a visual of a *different* type means replacing that object, which
+// is a different operation and needs the type decided rather than guessed.
+
+/** The variant with real visuals on it — the checked-in minimal fixture's VOBs
+ *  all carry an empty name and type UNKNOWN, which is what "no visual" is. */
+function authored() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zk-prop-'));
+  const file = path.join(dir, 'visuals.zen');
+  zenkit._authorFixtureWorld(file, 'binsafe', 'g2', 'mesh-extraction');
+  return file;
+}
+
+test('setVobProp writes the name, through cp1252', () => {
+  const handle = load();
+  zenkit.setVobProp(handle, '0/1', { name: 'ITEM_RENAMED_ÄÖÜ_01' });
+
+  assert.strictEqual(vobAt(dumpOf(handle), '0/1').name, 'ITEM_RENAMED_ÄÖÜ_01');
+});
+
+test('setVobProp writes every flag it is given, and only those', () => {
+  const handle = load();
+  const before = vobAt(dumpOf(load()), '0/1').flags;
+
+  zenkit.setVobProp(handle, '0/1', {
+    showVisual: true, cdStatic: false, cdDynamic: false,
+    vobStatic: true, ambient: true, physicsEnabled: true,
+  });
+
+  const after = vobAt(dumpOf(handle), '0/1').flags;
+  assert.deepStrictEqual(
+    {
+      showVisual: after.showVisual, cdStatic: after.cdStatic, cdDynamic: after.cdDynamic,
+      vobStatic: after.vobStatic, ambient: after.ambient, physicsEnabled: after.physicsEnabled,
+    },
+    {
+      showVisual: true, cdStatic: false, cdDynamic: false,
+      vobStatic: true, ambient: true, physicsEnabled: true,
+    },
+  );
+  // The enum-valued members of the same `flags` object are not this op's
+  // business and must come through untouched.
+  assert.strictEqual(after.spriteAlignment, before.spriteAlignment);
+  assert.strictEqual(after.shadowType, before.shadowType);
+  assert.strictEqual(after.animMode, before.animMode);
+});
+
+test('setVobProp sets one flag without disturbing its neighbours', () => {
+  // A flag word written wholesale would pass the test above and clear every
+  // flag the caller did not name here.
+  const handle = load();
+  const before = vobAt(dumpOf(load()), '0/1').flags;
+
+  zenkit.setVobProp(handle, '0/1', { showVisual: true });
+
+  const after = vobAt(dumpOf(handle), '0/1').flags;
+  assert.strictEqual(after.showVisual, true);
+  assert.strictEqual(after.cdStatic, before.cdStatic);
+  assert.strictEqual(after.cdDynamic, before.cdDynamic);
+  assert.strictEqual(after.vobStatic, before.vobStatic);
+  assert.strictEqual(after.ambient, before.ambient);
+  assert.strictEqual(after.physicsEnabled, before.physicsEnabled);
+});
+
+test('setVobProp renames the visual and keeps the visual object it found', () => {
+  const file = authored();
+  const handle = zenkit.loadWorld(file, 'g2');
+
+  // `1/1` carries EX_HOUSE.3DS as a zCMesh, which is the minority reading of
+  // that extension and exactly the case a name-derived type would get wrong.
+  zenkit.setVobProp(handle, '1/1', { visual: 'EX_OTHER.3DS' });
+
+  const after = vobAt(dumpOf(handle), '1/1');
+  assert.strictEqual(after.visual, 'EX_OTHER.3DS');
+  assert.strictEqual(after.visualType, 'MESH');
+});
+
+test('setVobProp refuses to name a visual on a VOB that has none', () => {
+  // `1/2` has a Visual object with an empty name and type UNKNOWN — which is
+  // what 15,749 of the 41,393 retail VOBs look like. Naming one leaves an
+  // UNKNOWN visual carrying a real mesh name, which is not a state the engine
+  // is ever handed. Giving a VOB a visual is replacing the object, not renaming
+  // it, and that operation has to decide the class.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+
+  assert.throws(() => zenkit.setVobProp(handle, '1/2', { visual: 'EX_CRATE.3DS' }), /visual/);
+  assert.strictEqual(vobAt(dumpOf(handle), '1/2').visual, '');
+});
+
+test('setVobProp writes the bbox it is given, and takes one only with a visual', () => {
+  // Same contract as setVobRotation: swapping a visual changes the box the
+  // engine culls by, the box is a pure function of (visual, rotation,
+  // position), and the caller that owns the asset layer is the one that can
+  // compute it. A bbox with nothing to justify it is a caller error.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  const bbox = [-1, -2, -3, 4, 5, 6];
+
+  zenkit.setVobProp(handle, '1/1', { visual: 'EX_OTHER.3DS', bbox });
+  assert.deepStrictEqual(vobAt(dumpOf(handle), '1/1').bbox, bbox);
+
+  assert.throws(() => zenkit.setVobProp(handle, '1/1', { bbox }), /bbox/);
+
+  // And a refused props object writes *nothing*. Validating as it goes would
+  // leave the name set and the box not — a state no op describes, so undo could
+  // not restore it. The name is checked rather than the box because a box the
+  // call refused was never going to be written anyway.
+  const named = vobAt(dumpOf(handle), '1/1').name;
+  assert.throws(() => zenkit.setVobProp(handle, '1/1', { name: 'HALF_APPLIED', bbox }), /bbox/);
+  assert.strictEqual(vobAt(dumpOf(handle), '1/1').name, named);
+  assert.throws(
+    () => zenkit.setVobProp(handle, '1/2', { name: 'HALF_APPLIED', visual: 'EX_CRATE.3DS' }),
+    /visual/,
+  );
+  assert.notStrictEqual(vobAt(dumpOf(handle), '1/2').name, 'HALF_APPLIED');
+});
+
+test('setVobProp leaves the bbox alone when a rename comes without one', () => {
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  const before = vobAt(dumpOf(handle), '1/1').bbox;
+
+  zenkit.setVobProp(handle, '1/1', { visual: 'EX_OTHER.3DS' });
+
+  assert.deepStrictEqual(vobAt(dumpOf(handle), '1/1').bbox, before);
+});
+
+test('setVobProp refuses an unknown key and an empty props object', () => {
+  // A misspelled key that silently does nothing is the whole failure mode this
+  // op has: every field it writes is invisible in the viewport.
+  const handle = load();
+  assert.throws(() => zenkit.setVobProp(handle, '0/1', { showvisual: true }), /showvisual/);
+  assert.throws(() => zenkit.setVobProp(handle, '0/1', { position: [1, 2, 3] }), /position/);
+  assert.throws(() => zenkit.setVobProp(handle, '0/1', {}), /at least one/);
+  for (const bad of [null, undefined, 'name', 42, []]) {
+    assert.throws(() => zenkit.setVobProp(handle, '0/1', bad), Error);
+  }
+});
+
+test('setVobProp refuses a wrongly typed value', () => {
+  const handle = load();
+  assert.throws(() => zenkit.setVobProp(handle, '0/1', { name: 42 }), /name/);
+  assert.throws(() => zenkit.setVobProp(handle, '0/1', { showVisual: 'yes' }), /showVisual/);
+  assert.throws(() => zenkit.setVobProp(handle, '0/1', { visual: null }), /visual/);
+  for (const bad of [[1, 2, 3], new Array(7).fill(0), 'x']) {
+    assert.throws(() => zenkit.setVobProp(handle, '0/1', { visual: 'A.3DS', bbox: bad }), Error);
+  }
+});
+
+test('setVobProp refuses a bad index path', () => {
+  const handle = load();
+  for (const bad of ['9', '0/9', '0/1/0', 'abc', '', '0//1', '-1']) {
+    assert.throws(() => zenkit.setVobProp(handle, bad, { name: 'X' }), Error, bad);
+  }
+});
+
+test('setVobProp changes only the targeted vob', () => {
+  const handle = load();
+  zenkit.setVobProp(handle, '0/1', { name: 'ONLY_THIS_ONE', showVisual: true, vobStatic: true });
+
+  const mutated = dumpOf(handle);
+  const fresh = dumpOf(load());
+  for (let i = 0; i < fresh.vobs.length; i++) {
+    if (fresh.vobs[i].path === '0/1') continue;
+    assert.deepStrictEqual(mutated.vobs[i], fresh.vobs[i]);
+  }
+  assert.deepStrictEqual(mutated.mesh, fresh.mesh);
+  assert.deepStrictEqual(mutated.bsp, fresh.bsp);
+  assert.deepStrictEqual(mutated.waynet, fresh.waynet);
+});
+
+test('setVobProp survives a save and reload', () => {
+  // The point of the op: the fields have to be in the file, not just in memory.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  zenkit.setVobProp(handle, '1/1', {
+    name: 'SAVED_ÄÖÜ', visual: 'EX_OTHER.3DS', bbox: [-1, -2, -3, 4, 5, 6],
+    showVisual: true, cdDynamic: false, ambient: true,
+  });
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-prop-rt-')), 'props.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = vobAt(dumpOf(zenkit.loadWorld(out, 'g2')), '1/1');
+
+  assert.strictEqual(reloaded.name, 'SAVED_ÄÖÜ');
+  assert.strictEqual(reloaded.visual, 'EX_OTHER.3DS');
+  assert.strictEqual(reloaded.visualType, 'MESH');
+  assert.deepStrictEqual(reloaded.bbox, [-1, -2, -3, 4, 5, 6]);
+  assert.strictEqual(reloaded.flags.showVisual, true);
+  assert.strictEqual(reloaded.flags.cdDynamic, false);
+  assert.strictEqual(reloaded.flags.ambient, true);
+});
+
 test('insertItemVob appends an oCItem under the parent and returns its path', () => {
   const handle = load();
   const statsBefore = zenkit.worldStats(handle);

@@ -42,6 +42,12 @@ function setVobRotation(handle, ...rest) {
   return result;
 }
 
+function setVobProp(handle, ...rest) {
+  const result = addon.setVobProp(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
 function insertItemVob(handle, ...rest) {
   const result = addon.insertItemVob(handle, ...rest);
   markMutated(handle);
@@ -49,5 +55,5 @@ function insertItemVob(handle, ...rest) {
 }
 
 module.exports = {
-  ...addon, loadWorld, normalizeWorld, setVobPosition, setVobRotation, insertItemVob,
+  ...addon, loadWorld, normalizeWorld, setVobPosition, setVobRotation, setVobProp, insertItemVob,
 };

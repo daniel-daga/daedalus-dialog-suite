@@ -297,6 +297,53 @@ The same run answers the scale question: `zCVob` has no scale field, and across
 from unit column length is **1.0e-2**. Nothing in the corpus is scaled, so there
 is no scaled representation to author against.
 
+### `setVobProp(handle, indexPath, props)`
+
+The third mutation, and the first that writes nothing derived: the name, the six
+boolean flags `vobIndex` emits (`showVisual`, `cdStatic`, `cdDynamic`,
+`vobStatic`, `ambient`, `physicsEnabled`), and the visual's name.
+
+Every key is optional and only the keys present are written, so setting one flag
+does not require knowing the other five. **An unrecognised key is refused**
+rather than ignored — every field here is invisible in the viewport, so a
+misspelled key that silently did nothing is the whole failure mode this op
+would otherwise have. Nothing is written until every value has been validated
+either: a refused props object leaves the VOB exactly as it was, where a
+half-applied one would be a state no op describes and undo could not restore.
+
+**The visual is a rename, and only a rename.** A visual is its own object frame
+in the archive with its own class, and the class is **not** implied by the file
+name. Measured across the three retail worlds:
+
+| extension | visual type | | |
+|---|---|---|---|
+| `.3DS` | `MULTI_RESOLUTION_MESH` ×20,716 | `MESH` ×31 | **ambiguous** |
+| `.TGA` | `DECAL` ×1,932 | | |
+| `.PFX` | `PARTICLE_EFFECT` ×1,391 | | |
+| `.ASC` | `MODEL` ×914 | | |
+| `.MDS` | `MODEL` ×502 | | |
+| `.MMS` | `MORPH_MESH` ×158 | | |
+| *(none)* | `UNKNOWN` ×15,749 | | |
+
+Those 31 `.3DS` VOBs carrying a `zCMesh` are why the extension cannot decide the
+class: a rule derived from the file name writes the wrong object frame for them,
+and nothing downstream reports it. So the object found on the VOB is kept and
+only `visual->name` changes. A VOB whose visual is `UNKNOWN` has no object to
+rename — and that is not a rare state, it is 15,749 of the 41,393 retail VOBs,
+which is what "this VOB has no visual" actually looks like on disk (no retail VOB
+has a null visual pointer at all). Naming one is refused, because giving a VOB a
+visual means **replacing** that object and deciding its class, which is a
+different operation.
+
+`bbox` follows `setVobRotation`'s contract for the same reason: swapping a visual
+changes the box the engine culls by, the box is a pure function of (visual,
+rotation, position), and only the caller that owns the asset layer can compute
+it. It is accepted **only** alongside `visual`, since nothing else here can
+change the box.
+
+**No engine verdict covers any of this** — like the rotation before it, it is
+Gate 2's business.
+
 **Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
 was loaded from a `zCArchiverBinSafe` archive: that is the only writer path
 verified byte-for-byte against the retail corpus and in the original engine.

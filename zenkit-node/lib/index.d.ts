@@ -135,6 +135,41 @@ export function setVobRotation(
   rotation: readonly number[],
   bbox?: readonly number[] | null,
 ): void;
+/** The scalar properties of `zCVob` itself. Every key is optional; only the
+ *  ones present are written, and an unrecognised key is refused rather than
+ *  ignored — every field here is invisible in the viewport, so a misspelled key
+ *  that silently did nothing is this op's whole failure mode. */
+export interface VobProps {
+  name?: string;
+  /**
+   * Renames the visual **in place**, keeping the visual object the VOB already
+   * carries. The object's class is not implied by the file name — measured over
+   * the three retail worlds, `.3DS` is `zCProgMeshProto` 20,716 times and
+   * `zCMesh` 31 times — so this never derives one. A VOB whose visual type is
+   * `UNKNOWN` (15,749 of the 41,393 retail VOBs) has no object to rename and is
+   * refused: giving a VOB a visual replaces the object and has to decide its
+   * class, which is a different operation.
+   */
+  visual?: string;
+  /** `[minX, minY, minZ, maxX, maxY, maxZ]`, written verbatim. Accepted only
+   *  with `visual`, since nothing else here changes the box — and derived by the
+   *  caller that owns the asset layer, exactly as `setVobRotation` requires. */
+  bbox?: readonly number[];
+  showVisual?: boolean;
+  cdStatic?: boolean;
+  cdDynamic?: boolean;
+  vobStatic?: boolean;
+  ambient?: boolean;
+  physicsEnabled?: boolean;
+}
+/**
+ * Set scalar properties on one VOB, addressed by the same index path.
+ *
+ * Nothing is written until every value has been validated, so a refused props
+ * object leaves the VOB exactly as it was — a half-applied one would be a state
+ * no op describes, and undo could not restore it.
+ */
+export function setVobProp(handle: WorldHandle, indexPath: string, props: VobProps): void;
 /**
  * Write the world to `path`, through a temp file and a rename.
  *

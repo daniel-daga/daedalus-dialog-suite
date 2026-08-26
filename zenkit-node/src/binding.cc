@@ -9,12 +9,15 @@
 #include <zenkit/vobs/VirtualObject.hh>
 #include <zenkit/world/WayNet.hh>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -548,6 +551,110 @@ std::string RequiredCp1252String(Napi::Env env, Napi::Object opts, char const* k
   }
 }
 
+// setVobProp(handle, indexPath, props) — the scalar fields of `zCVob` itself:
+// the name, the six boolean flags `vobIndex` emits, and the visual's name.
+//
+// Every key is optional and only the ones present are written, so a caller that
+// means to set one flag does not have to know the other five. A key that is not
+// one of these is **refused** rather than ignored: every field here is invisible
+// in the viewport, so a misspelled key that silently did nothing is exactly the
+// failure this op would otherwise have.
+//
+// The visual is a rename and nothing more. A visual is its own object frame in
+// the archive with its own class, and the class is not implied by the file
+// name — measured over the three retail worlds, `.3DS` carries
+// `zCProgMeshProto` 20,716 times and `zCMesh` 31 times. So the object found on
+// the VOB is kept and only its name changes; a VOB whose visual is UNKNOWN has
+// no object to rename (15,749 of the 41,393 retail VOBs are in that state) and
+// is refused, because giving a VOB a visual means replacing that object and
+// deciding its class, which is a different operation.
+//
+// `bbox` follows setVobRotation's contract: a swapped visual changes the box the
+// engine culls by, the box is a pure function of (visual, rotation, position)
+// (scripts/check-vob-bbox.js), and the caller that owns the asset layer is the
+// one that can compute it. It is accepted only alongside `visual`, since nothing
+// else here can change the box.
+std::optional<bool> OptionalBool(Napi::Env env, Napi::Object props, char const* key) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsBoolean()) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be a boolean");
+  }
+  return value.As<Napi::Boolean>().Value();
+}
+
+Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto indices = ParseIndexPath(env, info[1], "indexPath");
+
+  if (!info[2].IsObject() || info[2].IsArray()) {
+    throw Napi::TypeError::New(env, "props must be an object");
+  }
+  auto props = info[2].As<Napi::Object>();
+
+  static constexpr std::array<char const*, 9> kKnownKeys {
+      "name",     "visual",   "bbox",    "showVisual",     "cdStatic",
+      "cdDynamic", "vobStatic", "ambient", "physicsEnabled"};
+  auto names = props.GetPropertyNames();
+  if (names.Length() == 0) {
+    throw Napi::Error::New(env, "props must set at least one property");
+  }
+  for (std::uint32_t i = 0; i < names.Length(); ++i) {
+    std::string const key = names.Get(i).As<Napi::String>().Utf8Value();
+    if (std::find_if(kKnownKeys.begin(), kKnownKeys.end(),
+                     [&key](char const* known) { return key == known; }) == kKnownKeys.end()) {
+      throw Napi::Error::New(env, "props: unknown property '" + key + "'");
+    }
+  }
+
+  bool const has_name = props.Has("name") && !props.Get("name").IsUndefined();
+  bool const has_visual = props.Has("visual") && !props.Get("visual").IsUndefined();
+  bool const has_bbox = props.Has("bbox") && !props.Get("bbox").IsUndefined();
+  if (has_bbox && !has_visual) {
+    throw Napi::Error::New(env, "props.bbox is only meaningful with props.visual");
+  }
+
+  // Everything is validated before anything is written: a half-applied props
+  // object is a state no op describes, and undo would not restore it.
+  std::string name;
+  if (has_name) name = RequiredCp1252String(env, props, "name");
+  std::string visual;
+  if (has_visual) visual = RequiredCp1252String(env, props, "visual");
+  std::vector<float> bbox;
+  if (has_bbox) bbox = FloatsFromValue(env, props.Get("bbox"), 6, "props.bbox");
+
+  auto const show_visual = OptionalBool(env, props, "showVisual");
+  auto const cd_static = OptionalBool(env, props, "cdStatic");
+  auto const cd_dynamic = OptionalBool(env, props, "cdDynamic");
+  auto const vob_static = OptionalBool(env, props, "vobStatic");
+  auto const ambient = OptionalBool(env, props, "ambient");
+  auto const physics_enabled = OptionalBool(env, props, "physicsEnabled");
+
+  auto vob = ResolveVob(env, *handle, indices, "indexPath");
+
+  if (has_visual && (vob->visual == nullptr || vob->visual->type == zenkit::VisualType::UNKNOWN)) {
+    throw Napi::Error::New(
+        env, "props.visual: this vob has no visual object to rename — giving it one replaces "
+             "the object and has to decide its class");
+  }
+
+  if (has_name) vob->vob_name = std::move(name);
+  if (has_visual) vob->visual->name = std::move(visual);
+  if (has_bbox) {
+    vob->bbox.min = zenkit::Vec3 {bbox[0], bbox[1], bbox[2]};
+    vob->bbox.max = zenkit::Vec3 {bbox[3], bbox[4], bbox[5]};
+  }
+  if (show_visual) vob->show_visual = *show_visual;
+  if (cd_static) vob->cd_static = *cd_static;
+  if (cd_dynamic) vob->cd_dynamic = *cd_dynamic;
+  if (vob_static) vob->vob_static = *vob_static;
+  if (ambient) vob->ambient = *ambient;
+  if (physics_enabled) vob->physics_enabled = *physics_enabled;
+
+  return env.Undefined();
+}
+
 // insertItemVob(handle, parentPath | null, {name, instance, position}) —
 // appends a new oCItem vob and returns its index path. The visual is left
 // empty: the engine derives item visuals from the script instance.
@@ -698,6 +805,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("saveWorld", Napi::Function::New(env, SaveWorld));
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));
   exports.Set("setVobRotation", Napi::Function::New(env, SetVobRotation));
+  exports.Set("setVobProp", Napi::Function::New(env, SetVobProp));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));
