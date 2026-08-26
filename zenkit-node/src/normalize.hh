@@ -21,6 +21,14 @@ std::uint32_t PackPolygonFlags(zenkit::PolygonFlagSet const& flags, bool is_g2);
 // WriteArchive machinery, which is the code under test.
 Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle);
 
+// vobIndex(handle) — the VOB enumeration the renderer actually needs, as
+// columnar transferables with the repeated strings interned. NormalizeWorld is
+// the diagnostic dump and costs 933 ms on retail NewWorld (23,288 VOBs, every
+// per-class property, plus the archive-byte container section); this is the
+// same enumeration in the same order, reduced to identity, placement, visual
+// and the flags that decide whether a VOB is drawn.
+Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle);
+
 // _drillMesh(handle, {offset, limit}?) — per-polygon world-mesh geometry for
 // locating the first differing polygon between two worlds (T7 harness). Reads
 // the same load-path structs as NormalizeWorld; the optional window keeps the

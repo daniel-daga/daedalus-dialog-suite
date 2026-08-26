@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "encoding.hh"
+#include "napi_helpers.hh"
 #include "sha256.hh"
 
 namespace zenkit_node {
@@ -30,11 +31,8 @@ namespace {
 using namespace zenkit;
 
 // ---------------------------------------------------------------------------
-// JS value helpers. Every string crossing to JS goes through the cp1252 layer.
-
-Napi::String Str(Napi::Env env, std::string const& raw) {
-  return Napi::String::New(env, Windows1252ToUtf16(raw));
-}
+// JS value helpers. Every string crossing to JS goes through the cp1252 layer
+// — `Str` is the shared one in napi_helpers.hh.
 
 // Floats become JS numbers as-is (the classifier owns epsilon logic). -0.0 is
 // normalized to +0.0 because JSON round-trips lose the sign of zero and
@@ -1046,6 +1044,92 @@ void CollectVobs(Napi::Env env,
   }
 }
 
+// The columnar counterpart to CollectVobs: same traversal, same order, but it
+// writes into flat arrays and interns every string instead of building one JS
+// object per VOB. A dictionary is what makes this affordable — 23,288 retail
+// VOBs name only 444 distinct visuals and a handful of classes.
+struct VobColumns {
+  std::vector<std::int32_t> parent;
+  std::vector<std::uint32_t> child_index;
+  std::vector<float> positions;
+  std::vector<float> rotations;
+  std::vector<std::uint32_t> flags;
+  std::vector<std::uint32_t> class_index;
+  std::vector<std::uint32_t> name_index;
+  std::vector<std::uint32_t> visual_index;
+  std::vector<std::uint32_t> visual_type_index;
+
+  std::vector<std::string> classes;
+  std::vector<std::string> names;
+  std::vector<std::string> visuals;
+  std::vector<std::string> visual_types;
+  std::unordered_map<std::string, std::uint32_t> class_lookup;
+  std::unordered_map<std::string, std::uint32_t> name_lookup;
+  std::unordered_map<std::string, std::uint32_t> visual_lookup;
+  std::unordered_map<std::string, std::uint32_t> visual_type_lookup;
+
+  static std::uint32_t Intern(std::vector<std::string>& table,
+                              std::unordered_map<std::string, std::uint32_t>& lookup,
+                              std::string const& value) {
+    auto const found = lookup.find(value);
+    if (found != lookup.end()) return found->second;
+    auto const index = static_cast<std::uint32_t>(table.size());
+    table.push_back(value);
+    lookup.emplace(value, index);
+    return index;
+  }
+};
+
+void CollectVobColumns(std::vector<std::shared_ptr<VirtualObject>> const& vobs,
+                       std::int32_t parent,
+                       VobColumns& out) {
+  for (std::size_t i = 0; i < vobs.size(); ++i) {
+    auto const& vob = vobs[i];
+    if (vob == nullptr) continue;
+
+    auto const self = static_cast<std::int32_t>(out.parent.size());
+    out.parent.push_back(parent);
+    // The VOB's position among its siblings — the last element of the index
+    // path setVobPosition and friends address it by. Rebuilding the whole path
+    // is the consumer's job, and it only ever does it for a VOB it is editing.
+    out.child_index.push_back(static_cast<std::uint32_t>(i));
+
+    out.positions.insert(out.positions.end(),
+                         {vob->position.x, vob->position.y, vob->position.z});
+    for (unsigned row = 0; row < 3; ++row) {
+      for (unsigned col = 0; col < 3; ++col) {
+        out.rotations.push_back(vob->rotation.columns[col][row]);
+      }
+    }
+
+    std::uint32_t bits = 0;
+    if (vob->show_visual) bits |= 1u << 0;
+    if (vob->vob_static) bits |= 1u << 1;
+    if (vob->ambient) bits |= 1u << 2;
+    if (vob->cd_static) bits |= 1u << 3;
+    if (vob->cd_dynamic) bits |= 1u << 4;
+    if (vob->physics_enabled) bits |= 1u << 5;
+    out.flags.push_back(bits);
+
+    out.class_index.push_back(
+        VobColumns::Intern(out.classes, out.class_lookup, VobClassName(vob->type)));
+    out.name_index.push_back(
+        VobColumns::Intern(out.names, out.name_lookup, vob->vob_name));
+    // A VOB with no visual at all interns as the empty string. NormalizeWorld
+    // reports null there; a dictionary column has no null, and "no visual" and
+    // "a visual with an empty name" mean the same thing to a renderer.
+    out.visual_index.push_back(VobColumns::Intern(
+        out.visuals, out.visual_lookup,
+        vob->visual != nullptr ? vob->visual->name : std::string {}));
+    out.visual_type_index.push_back(VobColumns::Intern(
+        out.visual_types, out.visual_type_lookup,
+        vob->visual != nullptr ? std::string {VisualTypeName(vob->visual->type)}
+                               : std::string {"UNKNOWN"}));
+
+    CollectVobColumns(vob->children, self, out);
+  }
+}
+
 Napi::Object BuildMeshSection(Napi::Env env, Mesh const& mesh) {
   auto obj = Napi::Object::New(env);
   obj.Set("vertexCount", NumI(env, mesh.vertices.size()));
@@ -1187,6 +1271,34 @@ Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle) {
   dump.Set("waynet", BuildWayNetSection(env, handle.world->way_net.get()));
 
   return dump;
+}
+
+Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle) {
+  VobColumns columns;
+  CollectVobColumns(handle.world->world_vobs, -1, columns);
+
+  auto dictionary = [&env](std::vector<std::string> const& values) {
+    auto arr = Napi::Array::New(env, values.size());
+    for (std::uint32_t i = 0; i < values.size(); ++i) arr.Set(i, Str(env, values[i]));
+    return arr;
+  };
+
+  auto out = Napi::Object::New(env);
+  out.Set("count", NumI(env, columns.parent.size()));
+  out.Set("parent", Buffer(env, columns.parent));
+  out.Set("childIndex", Buffer(env, columns.child_index));
+  out.Set("positions", Buffer(env, columns.positions));
+  out.Set("rotations", Buffer(env, columns.rotations));
+  out.Set("flags", Buffer(env, columns.flags));
+  out.Set("classes", dictionary(columns.classes));
+  out.Set("classIndex", Buffer(env, columns.class_index));
+  out.Set("names", dictionary(columns.names));
+  out.Set("nameIndex", Buffer(env, columns.name_index));
+  out.Set("visuals", dictionary(columns.visuals));
+  out.Set("visualIndex", Buffer(env, columns.visual_index));
+  out.Set("visualTypes", dictionary(columns.visual_types));
+  out.Set("visualTypeIndex", Buffer(env, columns.visual_type_index));
+  return out;
 }
 
 Napi::Object DrillMesh(Napi::Env env,

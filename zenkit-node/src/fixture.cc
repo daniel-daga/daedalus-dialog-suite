@@ -390,6 +390,74 @@ std::shared_ptr<VirtualObject> BuildVobTree() {
   return root;
 }
 
+// A second root tree, authored only into the mesh-extraction variant so the
+// golden fixture's VOBs stay exactly as they were. BuildVobTree's VOBs carry no
+// visual and no flags at all, which is fine for a round-trip fixture and
+// useless for an index: nothing there would notice a dictionary that never
+// interns, a visual type read off the wrong field, or a flag word stuck at zero.
+std::shared_ptr<VirtualObject> BuildVisualVobTree() {
+  // Concrete visual classes, not the `Visual` base: the writer derives the
+  // object's class name from its type, and a base-class visual produces a world
+  // that cannot be re-loaded at all — a 0xC0000409 fail-fast with no
+  // diagnostic, the same shape of failure as patch 0020's.
+  auto proto_visual = [](char const* name) {
+    auto v = std::make_shared<VisualMultiResolutionMesh>();
+    v->name = name;
+    v->type = VisualType::MULTI_RESOLUTION_MESH;
+    return v;
+  };
+  auto mesh_visual = [](char const* name) {
+    auto v = std::make_shared<VisualMesh>();
+    v->name = name;
+    v->type = VisualType::MESH;
+    return v;
+  };
+
+  auto root = std::make_shared<VirtualObject>();
+  root->type = VirtualObjectType::zCVob;
+  root->vob_name = "VOB_INDEX_ROOT";
+  root->position = Vec3 {100.0f, 0.0f, 100.0f};
+  root->bbox = AxisAlignedBoundingBox {Vec3 {95.0f, -5.0f, 95.0f}, Vec3 {105.0f, 5.0f, 105.0f}};
+  root->visual = proto_visual("EX_CRATE.3DS");
+  root->show_visual = true;
+  root->vob_static = true;
+
+  // The same visual as the root: two VOBs, one dictionary entry.
+  auto a = std::make_shared<VSpot>();
+  a->type = VirtualObjectType::zCVobSpot;
+  a->vob_name = "VOB_INDEX_A";
+  a->position = Vec3 {110.0f, 1.0f, 120.0f};
+  a->rotation = Mat3 {0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+  a->bbox = AxisAlignedBoundingBox {Vec3 {109.0f, 0.0f, 119.0f}, Vec3 {111.0f, 2.0f, 121.0f}};
+  a->visual = proto_visual("EX_CRATE.3DS");
+  a->show_visual = false;
+  a->ambient = true;
+
+  // A different visual, a different visual type, and a different flag set.
+  auto b = std::make_shared<VItem>();
+  b->type = VirtualObjectType::oCItem;
+  b->vob_name = "VOB_INDEX_B";
+  b->instance = "ITMW_1H_SWORD_02";
+  b->position = Vec3 {130.0f, 2.0f, 140.0f};
+  b->bbox = AxisAlignedBoundingBox {Vec3 {129.0f, 1.0f, 139.0f}, Vec3 {131.0f, 3.0f, 141.0f}};
+  b->visual = mesh_visual("EX_HOUSE.3DS");
+  b->show_visual = true;
+  b->cd_dynamic = true;
+  b->physics_enabled = true;
+
+  // No visual object at all — normalizeWorld reports null there and the index
+  // reports the empty string, which is a difference worth having a VOB for.
+  auto c = std::make_shared<VirtualObject>();
+  c->type = VirtualObjectType::zCVob;
+  c->vob_name = "VOB_INDEX_NOVISUAL";
+  c->position = Vec3 {150.0f, 3.0f, 160.0f};
+  c->bbox = AxisAlignedBoundingBox {Vec3 {149.0f, 2.0f, 159.0f}, Vec3 {151.0f, 4.0f, 161.0f}};
+  c->visual = nullptr;
+
+  root->children = {a, b, c};
+  return root;
+}
+
 std::shared_ptr<WayNet> BuildWayNet() {
   auto make_point = [](std::string name, Vec3 position, bool free_point) {
     auto wp = std::make_shared<WayPoint>();
@@ -432,6 +500,9 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
                world->world_mesh.bbox,
                static_cast<std::uint32_t>(world->world_mesh.geometry.size()));
   world->world_vobs.push_back(BuildVobTree());
+  if (variant == FixtureVariant::kMeshExtraction) {
+    world->world_vobs.push_back(BuildVisualVobTree());
+  }
   world->way_net = BuildWayNet();
 
   auto w = Write::to(path);

@@ -143,19 +143,36 @@ function collectTextures(vfs, names) {
   return { textures, skipped };
 }
 
+const timings = {};
+function phase(name, fn) {
+  const t0 = Date.now();
+  const value = fn();
+  timings[name] = Date.now() - t0;
+  return value;
+}
+
 function main() {
   const t0 = Date.now();
-  const handle = zenkit.loadWorld(WORLD, 'g2');
-  const mesh = zenkit.extractWorldMesh(handle);
-  const dump = zenkit.normalizeWorld(handle);
-  const tLoad = Date.now() - t0;
+  const handle = phase('load', () => zenkit.loadWorld(WORLD, 'g2'));
+  const mesh = phase('worldMesh', () => zenkit.extractWorldMesh(handle));
+  // vobIndex, not normalizeWorld: the dump costs 877 ms on this world and
+  // nothing here wants per-class properties or the container section.
+  const index = phase('vobIndex', () => zenkit.vobIndex(handle));
 
-  const worldGroups = mergeChunks(mesh.chunks);
+  const worldGroups = phase('mergeWorld', () => mergeChunks(mesh.chunks));
 
-  const vfs = zenkit.openVfs(
-    [path.join(DATA, 'Meshes', '_compiled'), path.join(DATA, 'Textures', '_compiled')],
-    { overwrite: 'all' },
-  );
+  // Archives when they are there, loose directories otherwise. Measured on this
+  // install the two resolve every name identically and decode byte-identical
+  // pixels, but mounting the four VDFs takes 15 ms against 2170 ms for the two
+  // loose trees — mount_host memory-maps every one of their 4153 files, and a
+  // file open costs ~0.5 ms on this machine whoever does it.
+  const archives = ['Textures.vdf', 'Textures_Addon.vdf', 'Meshes.vdf', 'Meshes_Addon.vdf']
+    .flatMap((name) => [path.join(GOTHIC, 'Data', name), path.join(GOTHIC, 'Data', `${name}.disabled`)])
+    .filter((file) => fs.existsSync(file));
+  const sources = archives.length > 0
+    ? archives
+    : [path.join(DATA, 'Meshes', '_compiled'), path.join(DATA, 'Textures', '_compiled')];
+  const vfs = phase('openVfs', () => zenkit.openVfs(sources, { overwrite: 'all' }));
 
   // One extraction per unique visual name; the VOBs that share it become
   // instances of it. This is rule 1 of §3 — never one Mesh per VOB — and it is
@@ -164,54 +181,68 @@ function main() {
   const unresolved = new Map();
   let placed = 0;
 
-  for (const vob of dump.vobs) {
-    if (!vob.visual) continue;
+  phase('visuals', () => {
+    const positions = new Float32Array(index.positions);
+    const rotations = new Float32Array(index.rotations);
+    const visualIndex = new Uint32Array(index.visualIndex);
+    const visualTypeIndex = new Uint32Array(index.visualTypeIndex);
 
-    let visual = visuals.get(vob.visual.toUpperCase());
-    if (visual === undefined) {
-      const payload = zenkit.extractVisual(vfs, vob.visual);
-      visual = payload === null ? null : { payload, matrices: [] };
-      visuals.set(vob.visual.toUpperCase(), visual);
-      if (visual === null) {
-        unresolved.set(vob.visualType, (unresolved.get(vob.visualType) || 0) + 1);
+    for (let i = 0; i < index.count; i++) {
+      const name = index.visuals[visualIndex[i]];
+      if (!name) continue;
+
+      let visual = visuals.get(name);
+      if (visual === undefined) {
+        const payload = zenkit.extractVisual(vfs, name);
+        visual = payload === null ? null : { payload, matrices: [] };
+        visuals.set(name, visual);
+        if (visual === null) {
+          const type = index.visualTypes[visualTypeIndex[i]];
+          unresolved.set(type, (unresolved.get(type) || 0) + 1);
+        }
       }
+      if (visual === null) continue;
+
+      // Row-major 3x3 plus translation, in ZenGin space — the browser half
+      // feeds it to Matrix4.set(), which takes row-major arguments, and applies
+      // the one ZenGin->Three.js conversion around the whole scene.
+      const r = i * 9;
+      const p = i * 3;
+      visual.matrices.push(
+        rotations[r], rotations[r + 1], rotations[r + 2], positions[p],
+        rotations[r + 3], rotations[r + 4], rotations[r + 5], positions[p + 1],
+        rotations[r + 6], rotations[r + 7], rotations[r + 8], positions[p + 2],
+      );
+      placed += 1;
     }
-    if (visual === null) continue;
+  });
 
-    // Row-major 3x3 plus translation, in ZenGin space — the browser half feeds
-    // it to Matrix4.set(), which takes row-major arguments, and applies the one
-    // ZenGin->Three.js conversion around the whole scene.
-    const r = vob.rotation;
-    const p = vob.position;
-    visual.matrices.push(
-      r[0], r[1], r[2], p[0],
-      r[3], r[4], r[5], p[1],
-      r[6], r[7], r[8], p[2],
-    );
-    placed += 1;
-  }
-
-  const instanced = [];
-  for (const [name, visual] of visuals) {
-    if (visual === null || visual.matrices.length === 0) continue;
-    instanced.push({
-      name,
-      source: visual.payload.source,
-      count: visual.matrices.length / 12,
-      matrices: append(new Float32Array(visual.matrices).buffer),
-      groups: mergeChunks(visual.payload.chunks),
-    });
-  }
+  const instanced = phase('mergeVisuals', () => {
+    const out = [];
+    for (const [name, visual] of visuals) {
+      if (visual === null || visual.matrices.length === 0) continue;
+      out.push({
+        name,
+        source: visual.payload.source,
+        count: visual.matrices.length / 12,
+        matrices: append(new Float32Array(visual.matrices).buffer),
+        groups: mergeChunks(visual.payload.chunks),
+      });
+    }
+    return out;
+  });
 
   const names = new Set(worldGroups.map((g) => g.texture));
   for (const visual of instanced) for (const g of visual.groups) names.add(g.texture);
-  const { textures, skipped } = collectTextures(vfs, names);
+  const { textures, skipped } = phase('textures', () => collectTextures(vfs, names));
 
   const drawCalls = worldGroups.length + instanced.reduce((n, v) => n + v.groups.length, 0);
   const manifest = {
     world: path.basename(WORLD),
     bbox: mesh.bbox,
-    extractMs: tLoad,
+    timings,
+    extractMs: Date.now() - t0,
+    mountedArchives: archives.length > 0,
     worldGroups,
     instanced,
     textures,
@@ -240,6 +271,7 @@ function main() {
   fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest));
 
   console.log(manifest.stats);
+  console.log(timings);
   console.log('pack.bin', (packBytes / 1048576).toFixed(1), 'MB, total', Date.now() - t0, 'ms');
 }
 

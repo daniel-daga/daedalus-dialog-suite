@@ -219,7 +219,8 @@ the durable artefacts are the numbers here and the two binding changes it forced
 | Draw calls, full scene | < 1500 | **936 total, 839 p50 per frame** | ✅ |
 | Pick latency — world mesh | < 1 frame | **0.3 ms p50, 0.6 p95, 3.9 max** | ✅ |
 | Pick latency — whole scene | < 1 frame | **12.4 ms p50, 19.8 p95, 25.9 max** | ❌ |
-| Reload after an edit | < 2 s | **2.7 s cold** (1427 extract + 529 transfer + 179 scene + 545 BVH) | ⚠ |
+| Reload after an edit | < 2 s | **267 ms** — a full world-mesh re-extract; a VOB edit needs none | ✅ |
+| Cold open (no budget row) | — | **1.9–2.1 s**, from 4.3 s (see below) | |
 
 On an **integrated** GPU (Radeon 890M through ANGLE/D3D11) at 1463×780 — the low
 end of "mid-range", so the headroom is real: 2.59M triangles a frame at 936 draw
@@ -240,12 +241,9 @@ Three results change what Phase 1a builds:
    materials carry *no* texture at all and are separated only by their colour.
    22 extra draw calls is what correctness costs here. `zenkit-node` now emits
    the whole key on every chunk (world mesh and VOB visual alike).
-3. **Reload misses its budget by 0.7 s, and the BVH is why.** Extraction is not
-   the problem (1.4 s for a cold load + extract + normalize of the largest
-   world); building 936 bounds trees on the main thread is 545 ms, and the
-   532 ms transfer is an artefact of the spike's HTTP hop that the real
-   architecture (§7, transferable `ArrayBuffer`s over IPC) does not pay. Phase 1a
-   should build BVHs off the main thread and only for what is pickable.
+3. **The reload row and the number that missed it were measuring different
+   things** — see the next section, which took the cold open from 4.3 s to
+   1.9–2.1 s and cost the binding one new call.
 
 Two instrument bugs were caught before their numbers were believed, both by
 distrusting a suspiciously constant result rather than by luck:
@@ -262,6 +260,68 @@ distrusting a suspiciously constant result rather than by luck:
   includes GPU time; it excludes vsync, so it answers "can the frame be drawn
   inside the budget", not "was it presented at 60 Hz". The rAF sweep still runs
   as corroboration and reports itself void when it stalls.
+
+#### The load path, phase by phase — 4.3 s to 1.9 s (2026-08-26)
+
+The spike's first report put "reload" at 2.7 s and blamed the BVH. Both halves
+of that were wrong, and finding out why took nothing but timing each phase
+separately instead of one stopwatch around a block:
+
+| Phase | Before | After | |
+|---|---|---|---|
+| `loadWorld` | 218 ms | 216 ms | |
+| `extractWorldMesh` | 271 ms | 267 ms | |
+| VOB enumeration | **933 ms** | **11 ms** | `vobIndex` instead of `normalizeWorld` |
+| `openVfs` | **2102 ms** | **12 ms** | four VDFs instead of two loose trees |
+| `extractVisual` ×444 | 26 ms | 72 ms | |
+| `decodeTexture` ×454 | 723 ms | 692 ms | 96 MB of RGBA |
+| merge to draw groups | — | 57 ms | |
+| scene build (browser) | 179 ms | 153 ms | |
+| BVH build | 545 ms (936 trees) | 452–591 ms (352) | |
+| **total, no transfer** | **~4.3 s + browser** | **1.9–2.1 s** | |
+
+**The reload row is met, and always was.** "Reload after an edit" is not a cold
+open: the world is already in memory, the VFS is already mounted and the
+textures are already decoded. The worst case is re-extracting the whole world
+mesh — **267 ms** — and an edit that only moves a VOB does not even need that.
+What the 2.7 s measured was the cold open, which has no budget row of its own;
+it now has a number instead.
+
+Two costs were worth removing, and both were the same mistake — using a
+general-purpose call on a hot path:
+
+1. **`normalizeWorld` is a diagnostic instrument, not the render path's VOB
+   source.** It builds a JS object per VOB with every per-class property, plus
+   the container section's SHA-256s over the archive bytes: 877–933 ms for
+   NewWorld's 23,288 VOBs. `vobIndex` is the same enumeration in the same order,
+   reduced to identity, placement, visual and the flags that decide whether a
+   VOB is drawn, emitted columnar with the repeated strings interned (23,288
+   VOBs name 445 visuals and 37 classes). **9.2 ms, 1.69 MB of transferables**,
+   verified against the dump on retail data: same count, same order, same
+   reconstructed paths, same visual names. This is §7's `VobIndex` becoming a
+   real thing rather than a diagram box.
+2. **Mount archives, not loose trees, when both exist.** `Vfs::mount_host`
+   memory-maps every file under the directory eagerly — 4,153 of them for
+   `Meshes/_compiled` + `Textures/_compiled` — and on this machine *any* file
+   open costs ~500 µs (measured: walking and stat-ing all 4,153 takes 41 ms,
+   opening and closing them takes 2,156 ms, and a control directory outside
+   Program Files costs the same per file, so it is the platform, not ZenKit and
+   not the install layout). Mounting the four VDFs instead reads four archive
+   indexes: **15 ms against 2,170 ms**, and measured across the whole world the
+   two mounts resolve all 329 texture names and all 444 visual names to the
+   same files and decode byte-identical pixels. A mod directory still has to be
+   mounted as a directory — it is just usually small.
+
+What is left is honest: **692 ms decoding 454 textures** and **452–591 ms
+building 352 bounds trees**, on the main thread, in a spike that does both
+eagerly. Phase 1a should decode textures on demand and build the BVH off the
+main thread; note that neither is invalidated by an edit, so both belong to the
+cold open and neither is in the reload path.
+
+One more thing the phase split exposed: the *first* traversal of a freshly
+loaded page shows two frames over 16.7 ms (max 20.1 ms) where the second
+traversal shows none (max 8.2 ms). That is first-use texture upload, not
+rendering cost — worth knowing before someone reads it as a framerate problem.
 
 ---
 

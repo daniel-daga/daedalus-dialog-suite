@@ -205,6 +205,20 @@ Napi::Value VobNames(Napi::CallbackInfo const& info) {
   return names;
 }
 
+// The VOB enumeration the render path uses instead of the dump; see
+// src/normalize.cc.
+Napi::Value VobIndex(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  try {
+    return zenkit_node::VobIndex(env, *handle);
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to index vobs: "} + e.what());
+  }
+}
+
 // The phase-0 §3 dump. Reads only from ZenKit's parsed load-path structs;
 // see src/normalize.cc.
 Napi::Value NormalizeWorld(Napi::CallbackInfo const& info) {
@@ -594,6 +608,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("worldStats", Napi::Function::New(env, WorldStats));
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
+  exports.Set("vobIndex", Napi::Function::New(env, VobIndex));
   exports.Set("extractWorldMesh", Napi::Function::New(env, ExtractWorldMesh));
   exports.Set("openVfs", Napi::Function::New(env, zenkit_node::OpenVfs));
   exports.Set("vfsResolve", Napi::Function::New(env, zenkit_node::VfsResolve));

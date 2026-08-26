@@ -89,6 +89,40 @@ vertex colour (266 materials carry no texture at all and are separated only by
 (`disable_collision`, `dont_collapse`, `force_occluder`, `detail_object`) are
 deliberately not emitted.
 
+### `vobIndex(handle)`
+
+The VOB enumeration the render path uses. `normalizeWorld` is the diagnostic
+dump — a JS object per VOB with every per-class property, plus the container
+section's SHA-256s over the archive bytes — and costs **877 ms** on retail
+NewWorld's 23,288 VOBs. `vobIndex` is the *same* enumeration in the *same*
+order, reduced to identity, placement, visual and the flags that decide whether
+a VOB is drawn: **9.2 ms and 1.69 MB** of transferables.
+
+```js
+{
+  count,
+  parent,          // ArrayBuffer, Int32  ×1 — index of the parent, -1 for a root
+  childIndex,      // ArrayBuffer, Uint32 ×1 — position among its siblings
+  positions,       // ArrayBuffer, Float32 ×3 — ZenGin space, unconverted
+  rotations,       // ArrayBuffer, Float32 ×9 — row-major
+  flags,           // ArrayBuffer, Uint32 ×1 — bit 0 showVisual, 1 vobStatic,
+                   //   2 ambient, 3 cdStatic, 4 cdDynamic, 5 physicsEnabled
+  classes, classIndex,           // dictionary + ArrayBuffer, Uint32 ×1
+  names, nameIndex,
+  visuals, visualIndex,
+  visualTypes, visualTypeIndex,
+}
+```
+
+The strings are interned because they repeat: those 23,288 VOBs name 445
+distinct visuals, 2,654 distinct names and 37 classes. A VOB is addressed for
+mutation by an **index path**, and `parent` + `childIndex` rebuild one — for the
+single VOB being edited, rather than building 23,288 path strings on load.
+
+A VOB with no visual object interns as the empty string; `normalizeWorld`
+reports `null` there. `''` and "a visual named `''`" are the same thing to a
+renderer, and a dictionary column has no null.
+
 ### The asset layer — `openVfs`, `vfsResolve`, `extractVisual`, `decodeTexture`
 
 ```js
@@ -101,6 +135,17 @@ decodeTexture(vfs, 'NW_WOOD.TGA', 0);   // -> { source, width, height, mipmaps, 
 `openVfs` mounts VDF/MOD archives and loose directories into one namespace, in
 order — later paths win, which is the load order ZenGin itself uses, so a mod
 directory listed after the retail VDFs overrides them.
+
+**Prefer archives to loose directories where both exist.** `Vfs::mount_host`
+memory-maps every file under a directory eagerly, and mounting an extracted
+MDK-style install's `Meshes/_compiled` + `Textures/_compiled` (4,153 files)
+takes **2,170 ms** against **15 ms** for the four equivalent VDFs — measured
+across a whole world, the two mounts resolve every texture and visual name to
+the same file and decode byte-identical pixels. The cost is per *file*, not per
+byte, and it is not ZenKit's: on the machine this was measured on, opening and
+closing those same 4,153 files costs 2,156 ms with no VFS involved, and a
+control directory elsewhere on disk costs the same per file. A mod directory
+still has to be mounted as a directory — it is just usually small.
 
 A VOB names its **source** asset (`.3DS`, `.ASC`, `.MDS`, `.MMS`, `.TGA`) while
 the VFS holds what the asset compiler produced. The mapping is spelled out

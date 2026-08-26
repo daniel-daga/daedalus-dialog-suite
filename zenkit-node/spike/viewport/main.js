@@ -166,12 +166,19 @@ for (const visual of manifest.instanced) {
 const buildMs = performance.now() - tBuild;
 
 // Rule 2 of §3: stock raycasting is linear over triangles and would stutter
-// against 476k of them, so the world mesh gets a BVH. Instanced VOB visuals get
-// one too — the alternative §3 names is GPU ID-picking, and whether that is
-// needed is exactly what the pick measurement below decides.
+// against 476k of them, so the world mesh gets a BVH — 352 of them, not 936.
+// The first run built one for every instanced visual too and spent 545 ms on
+// it; measured, a CPU raycast across those 584 InstancedMeshes still costs
+// 12 ms a click, so they are GPU ID-picking's job and their trees are pure
+// load-time cost. They are still built below, after the timing, so the
+// whole-scene pick number stays comparable.
 const tBvh = performance.now();
-for (const mesh of pickable) mesh.geometry.computeBoundsTree();
+for (const mesh of worldMeshes) mesh.geometry.computeBoundsTree();
 const bvhMs = performance.now() - tBvh;
+
+const tBvhInstanced = performance.now();
+for (const mesh of instancedMeshes) mesh.geometry.computeBoundsTree();
+const bvhInstancedMs = performance.now() - tBvhInstanced;
 
 // ── renderer ───────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -348,11 +355,18 @@ function finish() {
       programs: renderer.info.programs.length,
     },
     load: {
+      // The data layer, phase by phase (extract.js).
+      ...manifest.timings,
       extractMs: manifest.extractMs,
+      mountedArchives: manifest.mountedArchives,
+      // An artefact of the spike's HTTP hop; §7's architecture moves these
+      // buffers as transferables over IPC and does not pay it.
       fetchMs: +fetchMs.toFixed(0),
       sceneBuildMs: +buildMs.toFixed(0),
       bvhBuildMs: +bvhMs.toFixed(0),
+      bvhInstancedMs: +bvhInstancedMs.toFixed(0),
       totalMs: +(manifest.extractMs + fetchMs + buildMs + bvhMs).toFixed(0),
+      totalWithoutTransferMs: +(manifest.extractMs + buildMs + bvhMs).toFixed(0),
     },
     // Primary: CPU submit + GPU execution per frame, measured with gl.finish().
     // Independent of tab state, and it excludes vsync — so it answers "can this
