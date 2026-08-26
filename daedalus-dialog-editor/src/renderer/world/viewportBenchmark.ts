@@ -91,6 +91,10 @@ export interface BenchmarkResult {
     valid: boolean;
     stalls: number;
     hiddenAtSomePoint: boolean;
+    /** The presented interval is bounded by vsync rather than by the renderer:
+     *  the renderer finishes a frame faster than the display shows one. When
+     *  this is true, `framesOver16ms` on this series measures the panel. */
+    displayBound: boolean;
     frameMs: Stat | null;
     fps: Fps | null;
   };
@@ -313,6 +317,11 @@ export async function runViewportBenchmark(
       valid: presentedValid,
       stalls,
       hiddenAtSomePoint: hidden,
+      // Measured on one machine hours apart: the panel dropped from 168 Hz to
+      // 53 Hz and 810 of 840 presented frames crossed 16.7 ms while the
+      // renderer never exceeded 12. Only the synchronous series is a verdict
+      // on the renderer; this says when the other one is about the display.
+      displayBound: driven.length > 0 && stat(syncTimes).p95 < stat(driven).p50,
       frameMs: driven.length > 0 ? stat(driven) : null,
       fps: driven.length > 0 ? fps(driven) : null,
     },

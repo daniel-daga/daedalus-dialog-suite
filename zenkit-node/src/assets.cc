@@ -159,6 +159,36 @@ Napi::Value VfsResolve(Napi::CallbackInfo const& info) {
   return Napi::String::New(env, resolved);
 }
 
+Napi::Value VfsList(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto const path = info[1].IsUndefined() ? std::string {"/"} : StringArg(env, info[1], "path");
+
+  // `resolve` answers for "/" as well as for any node below it, so the root
+  // needs no special case — a sabotage that removed one proved it was never
+  // reached.
+  VfsNode const* node = handle->vfs.resolve(path);
+
+  // A file is not a listing failure the caller should have to tell apart from
+  // a missing path — both mean "there is nothing here to list".
+  if (node == nullptr || node->type() != VfsNodeType::DIRECTORY) return env.Null();
+
+  auto const& children = node->children();
+  auto entries = Napi::Array::New(env, children.size());
+
+  // The container is a std::set ordered by the node comparator, so the order
+  // here is stable across runs without sorting anything.
+  std::uint32_t at = 0;
+  for (auto const& child : children) {
+    auto entry = Napi::Object::New(env);
+    entry.Set("name", Napi::String::New(env, child.name()));
+    entry.Set("type", Napi::String::New(
+                          env, child.type() == VfsNodeType::DIRECTORY ? "directory" : "file"));
+    entries.Set(at++, entry);
+  }
+  return entries;
+}
+
 Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);

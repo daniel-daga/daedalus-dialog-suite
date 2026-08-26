@@ -122,6 +122,68 @@ test('vfsResolve returns null for a name nothing maps to', () => {
   assert.strictEqual(zenkit.vfsResolve(handle, 'EX_MISSING.TGA'), null);
 });
 
+// --- vfsList -------------------------------------------------------------
+
+// A nested tree, because the fixture assets are mounted flat and a listing that
+// only ever saw one level would not show whether directories work at all.
+const TREE = path.join(root, 'tree');
+fs.mkdirSync(path.join(TREE, 'Meshes', '_compiled'), { recursive: true });
+fs.writeFileSync(path.join(TREE, 'Meshes', '_compiled', 'EX_TREE.MRM'), 'x');
+fs.writeFileSync(path.join(TREE, 'Meshes', 'NOTES.TXT'), 'x');
+fs.writeFileSync(path.join(TREE, 'README.TXT'), 'x');
+
+test('vfsList lists the root of the mounted namespace', () => {
+  const handle = zenkit.openVfs([TREE]);
+  const entries = zenkit.vfsList(handle, '/');
+
+  assert.deepStrictEqual(
+    entries.slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [{ name: 'Meshes', type: 'directory' }, { name: 'README.TXT', type: 'file' }],
+  );
+});
+
+test('vfsList defaults to the root when no path is given', () => {
+  const handle = zenkit.openVfs([TREE]);
+  assert.deepStrictEqual(zenkit.vfsList(handle), zenkit.vfsList(handle, '/'));
+});
+
+test('vfsList descends one level at a time, never recursively', () => {
+  // A Gothic install is tens of thousands of entries; a recursive walk would
+  // hand the browser the whole tree to show one directory.
+  const handle = zenkit.openVfs([TREE]);
+
+  const meshes = zenkit.vfsList(handle, 'Meshes');
+  const names = meshes.map((entry) => entry.name).sort();
+  assert.deepStrictEqual(names, ['NOTES.TXT', '_compiled']);
+  // The nested file is reachable only by descending into it.
+  assert.ok(!names.includes('EX_TREE.MRM'));
+
+  const compiled = zenkit.vfsList(handle, 'Meshes/_compiled');
+  assert.deepStrictEqual(compiled, [{ name: 'EX_TREE.MRM', type: 'file' }]);
+});
+
+test('vfsList returns null for a file and for a path that is not there', () => {
+  // Both mean "there is nothing here to list", and a browser has no use for
+  // telling them apart — it never offers to descend into a file.
+  const handle = zenkit.openVfs([TREE]);
+  assert.strictEqual(zenkit.vfsList(handle, 'README.TXT'), null);
+  assert.strictEqual(zenkit.vfsList(handle, 'NoSuchDirectory'), null);
+});
+
+test('vfsList shows a later mount source alongside the earlier ones', () => {
+  // Mount order is ZenGin's load order, and the browser has to show the union
+  // rather than only the last source mounted.
+  const handle = zenkit.openVfs([TREE, OVERLAY]);
+  const names = zenkit.vfsList(handle, '/').map((entry) => entry.name);
+
+  assert.ok(names.includes('Meshes'));
+  assert.ok(names.includes('EX_MOD_ONLY.MRM'));
+});
+
+test('vfsList rejects a handle that is not a VFS', () => {
+  assert.throws(() => zenkit.vfsList({}, '/'), /expected a VFS handle/);
+});
+
 // --- extractVisual: proto meshes ----------------------------------------
 
 const crate = () => zenkit.extractVisual(vfs(), 'EX_CRATE.3DS');

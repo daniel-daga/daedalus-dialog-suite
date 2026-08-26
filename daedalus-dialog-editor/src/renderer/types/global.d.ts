@@ -10,6 +10,7 @@ export type {
   WorldMeshPayload,
   InstancedPayload,
   DecodedTexture,
+  VfsEntry,
 } from '../../shared/worldTypes';
 
 // Re-export all shared types
@@ -163,6 +164,8 @@ export interface EditorAPI {
   getWorldMesh: () => Promise<WorldMeshPayload>;
   getWorldVisuals: () => Promise<InstancedPayload>;
   getWorldTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
+  /** One level of the mounted VFS; null for a missing path and for a file. */
+  listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;
   closeWorld: () => Promise<void>;
 
   // Updater API

@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
 import type { InstancedPayload, WorldMeshPayload } from '../../../shared/worldTypes';
 import { useWorldStore } from '../../store/worldStore';
 import WorldViewport from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
+import WorldAssetBrowser from './WorldAssetBrowser';
+import WorldAssetPreview from './WorldAssetPreview';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
 // app, lazily loaded, so `zenkit-node` is pulled in only when a world is
@@ -25,6 +27,11 @@ const WorldSurface: React.FC = () => {
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
   const [visuals, setVisuals] = useState<InstancedPayload | null>(null);
   const [terrainPoint, setTerrainPoint] = useState<[number, number, number] | null>(null);
+  // The left panel is the scene *or* the mounted assets, and the right panel
+  // follows it: a VOB's properties belong beside the tree, an asset's preview
+  // beside the browser.
+  const [panel, setPanel] = useState<'scene' | 'assets'>('scene');
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
 
   useEffect(() => {
     void window.editorAPI.getGothicInstall().then(setGothicInstall);
@@ -65,6 +72,11 @@ const WorldSurface: React.FC = () => {
       openFailed(failure instanceof Error ? failure.message : String(failure));
     }
   }, [beginOpen, openSucceeded, openFailed]);
+
+  const listAssets = useCallback(
+    (assetPath: string) => window.editorAPI.listWorldAssets(assetPath),
+    [],
+  );
 
   const loadTexture = useCallback(
     (name: string, maxSize: number) => window.editorAPI.getWorldTexture(name, maxSize),
@@ -128,8 +140,29 @@ const WorldSurface: React.FC = () => {
           an empty tree beside an empty viewport says nothing. */}
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {summary && (
-          <Box sx={{ width: 280, flexShrink: 0, borderRight: 1, borderColor: 'divider', minHeight: 0 }}>
-            <WorldSceneTree summary={summary} selectedVob={selectedVob} onSelect={selectVob} />
+          <Box sx={{
+            width: 280, flexShrink: 0, borderRight: 1, borderColor: 'divider',
+            minHeight: 0, display: 'flex', flexDirection: 'column',
+          }}>
+            <Tabs
+              value={panel}
+              onChange={(_event, next: 'scene' | 'assets') => setPanel(next)}
+              variant="fullWidth"
+              sx={{ minHeight: 32, '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
+            >
+              <Tab value="scene" label="Scene" data-testid="world-panel-scene" />
+              <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
+            </Tabs>
+            <Box sx={{ flex: 1, minHeight: 0, display: panel === 'scene' ? 'block' : 'none' }}>
+              <WorldSceneTree summary={summary} selectedVob={selectedVob} onSelect={selectVob} />
+            </Box>
+            {/* Mounted only once the user asks for it: the first listing is an
+                IPC round trip into the worker that holds the VFS. */}
+            {panel === 'assets' && (
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <WorldAssetBrowser listAssets={listAssets} onPreview={setSelectedAsset} />
+              </Box>
+            )}
           </Box>
         )}
 
@@ -147,7 +180,9 @@ const WorldSurface: React.FC = () => {
 
         {summary && (
           <Box sx={{ width: 300, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
-            <WorldPropertyGrid summary={summary} selectedVob={selectedVob} />
+            {panel === 'assets' && selectedAsset !== null
+              ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} />
+              : <WorldPropertyGrid summary={summary} selectedVob={selectedVob} />}
           </Box>
         )}
       </Box>

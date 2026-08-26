@@ -612,6 +612,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("extractWorldMesh", Napi::Function::New(env, ExtractWorldMesh));
   exports.Set("openVfs", Napi::Function::New(env, zenkit_node::OpenVfs));
   exports.Set("vfsResolve", Napi::Function::New(env, zenkit_node::VfsResolve));
+  exports.Set("vfsList", Napi::Function::New(env, zenkit_node::VfsList));
   exports.Set("extractVisual", Napi::Function::New(env, zenkit_node::ExtractVisual));
   exports.Set("decodeTexture", Napi::Function::New(env, zenkit_node::DecodeTexture));
   exports.Set("_drillMesh", Napi::Function::New(env, DrillMesh));

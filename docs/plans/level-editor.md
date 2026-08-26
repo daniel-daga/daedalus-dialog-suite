@@ -497,59 +497,97 @@ which runs the spike's sweep — the same 900-frame three-leg camera path, the
 same `gl.finish()` primary instrument, the same rAF corroboration, the same
 deterministic rays — against the scene `WorldScene` actually builds.
 `daedalus-dialog-editor/scripts/measure-viewport.js` drives it through the real
-Electron app on retail NewWorld, at 1460×746, on the Radeon 890M. Two
-foreground runs:
+Electron app on retail NewWorld, on the Radeon 890M.
 
-| Metric | Budget | Run 1 | Run 2 | spike | |
+**The same build, same world and same sweep was measured in two different
+machine states**, hours apart, and the difference is large enough that a single
+absolute number would have been a fiction. The second state is a **GPU shared
+with another workload** — confirmed, not inferred — and the report tells the two
+apart by itself: the panel was presenting at 168 Hz in the first and 53 Hz in the
+second, and the renderer's own cost roughly doubled with it.
+
+That makes the pair more useful than either half. The 168 Hz rows are what this
+scene costs on an uncontended integrated GPU; the 53 Hz rows are what it costs
+when something else is using it, which is an ordinary condition for a laptop
+editor and exactly the state a budget has to survive.
+
+| Metric | Budget | 168 Hz state (2 runs) | 53 Hz state (3 runs) | spike | |
 |---|---|---|---|---|---|
-| Frame time, `gl.finish()` | < 16 ms | **4.6 p50, 5.9 p95, 8.0 max** | 4.4 / 5.6 / 7.0 | 4.9 / 6.2 / 8.9 | ✅ |
-| Frames over 16.7 ms | 0 | **0 of 840** | 0 of 840 | 0 of 840 | ✅ |
-| Presented (rAF) | — | **5.8 p50, 8.5 p95, 10.8 max, 0 stalls** | 5.8 / 8.6 / 13.3 | 6.2 / 7.9 / 15.5 | ✅ |
-| Draw calls per frame | < 1500 | **974 p50, 1076 max** | 974 / 1076 | 961 p50, 1076 total | ✅ |
-| Triangles per frame | — | **2,740,125 max** | 2,740,125 | 2.74 M | |
-| Pick — world mesh, BVH | < 1 frame | **0.1 p50, 0.3 p95** | 0.1 / 0.3 | 0.2 / 0.9 | ✅ |
-| Pick — VOBs, GPU ID | < 1 frame | **2.1 p50, 4.1 p95** | 2.2 / 3.6 | never measured | ✅ |
-| Pick — whole scene, CPU raycast | < 1 frame | **2.7 p50, 4.1 p95** | 2.7 / 3.4 | 5.6 p50 (fg) | ✅ |
+| Frame time, `gl.finish()` | < 16 ms | **4.6 / 4.4 p50** | **8.1 / 7.9 / 7.9 p50** | 4.9 p50 | ✅ |
+| Worst frame in 840 | < 16.7 ms | 8.0 ms | **13.5 ms** | 8.9 ms | ✅ |
+| Frames over 16.7 ms | 0 | **0 of 840** | **0 of 840** | 0 of 840 | ✅ |
+| Draw calls per frame | < 1500 | 974 p50, **1076 max** | 945 p50, **1076 max** | 1076 | ✅ |
+| Triangles per frame | — | **2,740,125** | **2,740,125** | 2.74 M | |
+| Pick — world mesh, BVH | < 1 frame | 0.1 p50 | 0.2 p50 | 0.2 p50 | ✅ |
+| Pick — whole scene, CPU raycast | < 1 frame | 2.7 p50 | **3.8 p50** | 5.6 p50 | ✅ |
+| Pick — VOBs, GPU ID | < 1 frame | 2.1 p50 | **7.2 p50, 12.1 p95** | never measured | ✅ |
+| Presented (rAF) | — | 5.8 p50, **0 of 840** over 16.7 ms | 18.7 p50, **791 of 840** over | 6.2 p50 | — |
 
-**Every row passes, the two runs agree, and they agree with the spike.** The
-scene is identical to the one §3 already verified field for field — 1076 draw
-calls, 2.74 M triangles — so `zenkit-node/spike/viewport/` has nothing left to
-say and is **deleted**. The numbers above replace it.
+**The gate passes in both states on the instrument that answers it.** The worst
+frame in 840 was 13.5 ms even in the degraded state, and not one crossed 16.7 ms
+in any run. Draw calls and triangles per frame are identical to the unit across
+every run, which is what says the sweep really did render the same scene each
+time. So `zenkit-node/spike/viewport/` has nothing left to say and is **deleted**.
 
-Three things the app's own measurement says that the spike's could not:
+Four things the app's own measurement says that the spike's could not:
 
-1. **GPU ID-picking is no longer the fast option — it is the scale-free one.**
-   Measured in the app's foreground, the GPU pick costs **2.1 ms** and the CPU
-   raycast it replaced costs **2.7 ms**. That is the same ordering §3 decision 1
-   asserted, but the ratio is 1.3× where the original justification claimed 40×
-   (14.2 ms against 0.3 ms) and the foreground re-measurement claimed 19×. The
-   reason is that the GPU pick has a **fixed floor**: `readRenderTargetPixels`
-   is a synchronous readback that stalls the pipeline, and it costs ~2 ms
-   whatever is in the scene. So the decision stands on its remaining leg only —
-   O(1) in prop count against a raycast that is linear in `InstancedMesh`es and
-   degrades as parts load (§7 Phase 3) — and not on being cheaper today. If
-   Phase 2 ever wants that 2 ms back, the fix is an asynchronous readback
-   (`readRenderTargetPixelsAsync` / a PBO), not a return to raycasting.
-2. **The first GPU pick of a session costs 53 ms — and once, 276 ms.** That is
+1. **`framesOver16ms` on the presented series is a fact about the display, not
+   a verdict on the renderer.** In the 53 Hz state 791 of 840 presented frames
+   crossed 16.7 ms while the renderer never took more than 13.5 ms to draw one:
+   the panel was simply not showing frames any faster. §3 already noted that
+   presented p50 is floor-limited by the panel; at 168 Hz that caveat was
+   harmless and at 53 Hz it inverts the reading of the row entirely. The report
+   now computes it — `presented.displayBound` is true when the renderer's p95
+   finishes inside the presented interval — so nobody has to notice it by eye.
+   **Only the synchronous sweep is a verdict on the renderer.**
+2. **GPU ID-picking is not the fast option. It is the scale-free one, and on a
+   contended GPU it is the slower one.** Measured: 2.1 ms against the CPU
+   raycast's 2.7 ms at 168 Hz — and **7.2 ms against 3.8 ms** with the GPU shared, where
+   it loses by nearly 2×. `readRenderTargetPixels` is a *synchronous* readback that
+   stalls the pipeline, so its cost tracks GPU state rather than prop count,
+   which is exactly what makes it both scale-free and fragile. §3 decision 1
+   claimed 40× (14.2 ms against 0.3), the foreground re-measurement claimed 19×,
+   and the app's own viewport says the two mechanisms are within 2× of each other
+   in either direction. The decision stands on one leg only — O(1) in prop count
+   against a raycast that is linear in `InstancedMesh`es and degrades as parts
+   load (§7 Phase 3) — and **the readback should be made asynchronous**
+   (`readRenderTargetPixelsAsync` / a PBO) before anything else in the pick path
+   is optimised.
+3. **The first GPU pick of a session costs 53 ms — and once, 276 ms.** That is
    the pick shader compiling on first use, the same class of first-use cost §3
    already records for texture upload. It is not a per-click cost and does not
    touch the budget, but a Phase 2 that wants the first click to feel like the
    rest should warm the pick pass when the world opens.
-3. **A pick sweep needs a hit count or it is not a latency.** The first run of
+4. **A pick sweep needs a hit count or it is not a latency.** The first run of
    this benchmark reported a whole-scene raycast at **0.1 ms p50** — faster than
    the same ray through a BVH, and 56× faster than the spike. Every ray had
    missed: the sweep left the camera wherever its last frame put it, and a ray
    that hits nothing is rejected by a bounding sphere and costs almost nothing.
    The instrument now aims from a fixed viewpoint inside the world and reports
-   `hits` alongside every percentile (99 of 200 rays hit terrain, 26 of 200 hit
+   `hits` alongside every percentile (118 of 200 rays hit terrain, 25 of 200 hit
    a prop). A miss rate is not a detail of the report; without it a broken
    measurement reads as an excellent result.
+
+One confound was found and removed between the two states, and it is worth
+recording because it invalidated nothing and could have invalidated everything.
+The driver stubs the app's file dialogs, and the first version told them apart by
+testing the title for `"Gothic"` — but the *project* picker is titled "Select
+Gothic Mod Project Folder", so it was answered with the **installation
+directory**. Every early run therefore opened the whole Gothic install as the
+editor's project and left it being indexed in the background underneath the
+measurement. The dialogs are now matched on their exact titles, and an
+unrecognised one throws rather than being answered by whichever branch happens to
+match first. (The indexed-install runs were the *faster* ones, so the confound
+was not what produced the difference between the two states — but that is luck,
+not a defence.)
 
 #### The foreground/background A/B — controlled, and the guard that came out of it
 
 §3 above inferred from a disagreement between two runs that a background tab
 throttles every CPU-bound browser measurement. Run deliberately, same build,
 same world, same sweep, window minimised instead of focused:
+
+Both sides of this A/B were taken in the 168 Hz machine state, back to back:
 
 | | foreground (2 runs) | minimised (2 runs) | |
 |---|---|---|---|
@@ -971,6 +1009,45 @@ domain and binding packages move unchanged.
 
 Naming note: the app's product identity ("Daedalus Dialog Editor") will need
 revisiting when the World surface ships; defer.
+
+#### The Phase 1a panels, landed (2026-08-26)
+
+The surface is **scene tree | viewport | properties**, with the left panel
+tabbed between the scene and the mounted assets and the right panel following
+it — a VOB's properties belong beside the tree, an asset's preview beside the
+browser.
+
+- **Scene tree.** The hierarchy is two columns of `vobIndex` (`parent`,
+  `childIndex`), reconstructed in `zen-world/model`. Collapsed by default and
+  virtualized: verified against retail NewWorld, 23,288 VOBs are **23 rows in
+  the DOM**. A viewport pick returns a VOB index and nothing else, so the tree
+  expands the ancestors it is hidden behind and scrolls to it.
+- **Property grid.** Read-only, and it keeps two conventions the viewport does
+  not get to change: positions stay in **ZenGin centimetres** (the single
+  conversion is the mirrored root node, and it is one-way), and `flags` is shown
+  as named bits. It also answers what the viewport cannot — why a VOB that
+  exists is not drawn — for level compos, particle effects and decals, all three
+  of which are measured correct behaviour rather than gaps.
+- **Asset browser.** Over the *mounted VFS namespace*, not the filesystem:
+  `openVfs` merges the retail VDFs and any mod sources into one namespace, later
+  sources winning. It needed one new binding call, `vfsList`, which walks **one
+  level** — a Gothic install is tens of thousands of entries — and answers null
+  for a missing path and for a file alike, because both mean "nothing here to
+  list". A texture previews as an image, because `decodeTexture` already returns
+  RGBA8 and a canvas is the whole of the work; a mesh does not, and says so
+  rather than showing an empty frame.
+
+Two rules came out of building them, both from running against real data rather
+than fixtures:
+
+1. **Label an unnamed VOB by its visual, not its class.** NewWorld's 23,288 VOBs
+   carry 2,654 distinct names, so falling back to the class made the tree a
+   column of the word "zCVob". Name, else visual, with the class beside it.
+2. **"Nothing here" and "not listed yet" are different states.** Collapsing them
+   made every directory flash as empty on the way in, and made an empty state
+   nobody could trust. Found by a sabotage that should have failed a test and
+   did not — the test was passing on the first frame, before the listing had
+   arrived at all.
 
 ---
 

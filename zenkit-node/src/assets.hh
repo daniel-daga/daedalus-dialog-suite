@@ -26,6 +26,12 @@ Napi::Value OpenVfs(Napi::CallbackInfo const& info);
 // guess-free lookup the asset browser and the tests both need to see.
 Napi::Value VfsResolve(Napi::CallbackInfo const& info);
 
+// vfsList(handle, path) — the children of one directory in the mounted
+// namespace, as { name, type }, or null when the path is absent or is a file.
+// One level, never a recursive walk: a Gothic install is tens of thousands of
+// entries and an asset browser shows one directory at a time.
+Napi::Value VfsList(Napi::CallbackInfo const& info);
+
 // extractVisual(handle, name) — a VOB visual as render-ready buffers in the
 // same chunk shape extractWorldMesh emits. Null when the asset is absent or
 // its type carries no static geometry.

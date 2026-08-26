@@ -54,6 +54,12 @@ export interface InstancedPayload {
   };
 }
 
+/** One entry of a VFS directory listing — see zenkit-node's `vfsList`. */
+export interface VfsEntry {
+  name: string;
+  type: 'file' | 'directory';
+}
+
 export interface DecodedTexture {
   name: string;
   width: number;
@@ -61,7 +67,7 @@ export interface DecodedTexture {
   rgba: ArrayBuffer;
 }
 
-export type WorldWorkerOp = 'open' | 'worldMesh' | 'visuals' | 'texture' | 'close';
+export type WorldWorkerOp = 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'close';
 
 export interface WorldWorkerRequest {
   id: string;

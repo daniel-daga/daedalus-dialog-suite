@@ -128,6 +128,7 @@ renderer, and a dictionary column has no null.
 ```js
 const vfs = openVfs([vdfOrDirectory, ...], { overwrite: 'all' });
 vfsResolve(vfs, 'NW_CRATE.3DS');        // -> 'NW_CRATE.MRM' | null
+vfsList(vfs, '/');                      // -> [{ name, type: 'file'|'directory' }] | null
 extractVisual(vfs, 'NW_CRATE.3DS');     // -> the chunk payload above | null
 decodeTexture(vfs, 'NW_WOOD.TGA', 0);   // -> { source, width, height, mipmaps, rgba } | null
 ```
@@ -146,6 +147,12 @@ byte, and it is not ZenKit's: on the machine this was measured on, opening and
 closing those same 4,153 files costs 2,156 ms with no VFS involved, and a
 control directory elsewhere on disk costs the same per file. A mod directory
 still has to be mounted as a directory — it is just usually small.
+
+`vfsList` walks **one level**, never recursively: a Gothic install is tens of
+thousands of entries and an asset browser shows one directory at a time. It
+returns null both for a path that is not there and for a file, because both mean
+"nothing here to list" and no browser offers to descend into a file. Entries come
+out in the VFS's own set order, which is stable across runs without sorting.
 
 A VOB names its **source** asset (`.3DS`, `.ASC`, `.MDS`, `.MMS`, `.TGA`) while
 the VFS holds what the asset compiler produced. The mapping is spelled out

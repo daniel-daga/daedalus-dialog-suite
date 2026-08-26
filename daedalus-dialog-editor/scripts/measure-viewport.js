@@ -56,14 +56,21 @@ async function main() {
 
   const app = await electron.launch({ args: ['.'], cwd: path.join(__dirname, '..') });
 
-  // The two dialogs the World surface opens, answered without a human. Told
-  // apart by what they ask for, so neither can accidentally answer the other.
+  // The three dialogs this drive opens, answered without a human, matched on
+  // their *exact* titles. A substring match is what the first version used and
+  // it was wrong: the project picker is titled "Select Gothic Mod Project
+  // Folder", so a test for "Gothic" answered it with the installation
+  // directory — which opened the whole Gothic install as the project and left
+  // it being indexed in the background underneath the measurement.
   await app.evaluate(({ dialog }, paths) => {
     dialog.showOpenDialog = async (options) => {
-      const properties = options.properties || [];
-      if (properties.includes('openFile')) return { canceled: false, filePaths: [paths.world] };
-      if ((options.title || '').includes('Gothic')) return { canceled: false, filePaths: [paths.install] };
-      return { canceled: false, filePaths: [paths.project] };
+      switch (options.title) {
+        case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
+        case 'Select the Gothic installation directory':
+          return { canceled: false, filePaths: [paths.install] };
+        case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
+        default: throw new Error(`unexpected dialog: ${options.title}`);
+      }
     };
   }, { world: WORLD, install: INSTALL, project });
 

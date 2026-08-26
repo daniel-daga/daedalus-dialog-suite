@@ -662,6 +662,17 @@ function setupIpcHandlers() {
     return worldService.getTexture(request.name, request.maxSize);
   });
 
+  ipcMain.handle('world:assets', async (_event, request: unknown) => {
+    // The path is a position inside the *mounted VFS namespace*, not a
+    // filesystem path, so it never reaches the disk and the path validator has
+    // nothing to validate. The listing is bounded to one directory.
+    const path = typeof request === 'object' && request !== null && 'path' in request
+      && typeof (request as { path: unknown }).path === 'string'
+      ? (request as { path: string }).path
+      : '/';
+    return worldService.listAssets(path);
+  });
+
   ipcMain.handle('world:close', () => {
     worldService.close();
   });

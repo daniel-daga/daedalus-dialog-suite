@@ -7,6 +7,7 @@ import type {
   DecodedTexture,
   InstancedPayload,
   OpenWorldRequest,
+  VfsEntry,
   WorldMeshPayload,
   WorldSummary,
   WorldWorkerOp,
@@ -93,6 +94,17 @@ export class WorldService {
    */
   getTexture(name: string, maxSize = 256): Promise<DecodedTexture | null> {
     return this.requestOnOpenWorld<DecodedTexture | null>('texture', { name, maxSize });
+  }
+
+  /**
+   * One level of the mounted VFS, for the asset browser. Null both for a path
+   * that is not there and for a file — neither is something to list.
+   *
+   * Never recursive: the mounted namespace of a Gothic install is tens of
+   * thousands of entries, and the browser shows one directory at a time.
+   */
+  listAssets(path = '/'): Promise<VfsEntry[] | null> {
+    return this.requestOnOpenWorld<VfsEntry[] | null>('assets', { path });
   }
 
   close(): void {

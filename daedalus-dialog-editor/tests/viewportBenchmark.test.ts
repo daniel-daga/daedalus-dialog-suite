@@ -259,6 +259,37 @@ describe('the rAF corroboration', () => {
     expect(result.presented.frameMs!.p50).toBeCloseTo(6, 1);
   });
 
+  it('says when the presented interval is the display and not the renderer', async () => {
+    // Measured on the same machine hours apart: the panel went from 168 Hz to
+    // 53 Hz, and 810 of 840 presented frames crossed 16.7 ms while the
+    // renderer's own cost never exceeded 12. Read without this, the presented
+    // series looks like a budget failure when the renderer is comfortably
+    // inside it — so the report states which of the two is the ceiling.
+    const clock = new FakeClock();
+    const { probe } = fakeProbe(clock, { render: 2 });   // the renderer is fast
+    const { env } = fakeEnv(clock, { frameGap: 17 });    // the panel is slow
+
+    const result = await runViewportBenchmark(probe, env, SMALL);
+
+    expect(result.render.frameMs.p95).toBeLessThan(result.presented.frameMs!.p50);
+    expect(result.presented.displayBound).toBe(true);
+  });
+
+  it('does not blame the display when the renderer is what costs the frame', async () => {
+    // The GPU is what costs the frame, and only the synchronous sweep waits
+    // for it — `gl.finish()` is exactly the difference between the two
+    // instruments, which is why a renderer-bound run shows up as sync p95
+    // *above* the presented interval rather than below it.
+    const clock = new FakeClock();
+    const { probe } = fakeProbe(clock, { render: 2, finishGpu: 20 });
+    const { env } = fakeEnv(clock, { frameGap: 1 });
+
+    const result = await runViewportBenchmark(probe, env, SMALL);
+
+    expect(result.render.frameMs.p95).toBeGreaterThan(result.presented.frameMs!.p50);
+    expect(result.presented.displayBound).toBe(false);
+  });
+
   it('reports itself void when rAF stalls, and leaves the stalled frames out', async () => {
     const clock = new FakeClock();
     const { probe } = fakeProbe(clock);

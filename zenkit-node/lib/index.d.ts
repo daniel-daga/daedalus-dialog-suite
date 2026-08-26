@@ -61,6 +61,11 @@ export interface VobIndex {
   visualTypeIndex: ArrayBuffer;
 }
 
+export interface VfsEntry {
+  name: string;
+  type: 'file' | 'directory';
+}
+
 export interface VisualPayload {
   source: string;
   chunks: MeshChunk[];
@@ -79,6 +84,8 @@ export function extractWorldMesh(handle: WorldHandle): WorldMesh;
 export function vobIndex(handle: WorldHandle): VobIndex;
 export function openVfs(paths: string[], options?: { overwrite?: 'all' | 'newer' | 'older' | 'none' }): VfsHandle;
 export function vfsResolve(vfs: VfsHandle, name: string): string | null;
+/** The children of one directory, or null when the path is absent or is a file. */
+export function vfsList(vfs: VfsHandle, path?: string): VfsEntry[] | null;
 export function extractVisual(vfs: VfsHandle, name: string): VisualPayload | null;
 export function decodeTexture(vfs: VfsHandle, name: string, level: number): TexturePayload | null;
 export function zenkitVersion(): string;

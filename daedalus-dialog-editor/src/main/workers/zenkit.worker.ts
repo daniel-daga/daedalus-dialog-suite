@@ -13,6 +13,7 @@ import type {
   OpenWorldRequest,
   WorldMeshPayload,
   WorldSummary,
+  VfsEntry,
   WorldWorkerRequest,
 } from '../../shared/worldTypes';
 
@@ -137,6 +138,12 @@ function texture(payload: { name: string; maxSize: number }): {
   };
 }
 
+/** One level of the mounted VFS, for the asset browser. Never recursive: a
+ *  Gothic install is tens of thousands of entries. */
+function assets(payload: { path: string }): { result: VfsEntry[] | null; transfer: ArrayBuffer[] } {
+  return { result: zenkit.vfsList(vfs!, payload.path), transfer: [] };
+}
+
 function close(): { result: null; transfer: ArrayBuffer[] } {
   // A live VFS keeps every mounted file memory-mapped and Windows refuses to
   // delete a mapped file until the handle is collected (zenkit-node README), so
@@ -169,6 +176,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'worldMesh': return takeWorldMesh();
     case 'visuals': return visuals();
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
+    case 'assets': return assets(message.payload as { path: string });
     case 'close': return close();
   }
 }
