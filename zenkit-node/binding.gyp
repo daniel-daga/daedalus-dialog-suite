@@ -8,7 +8,7 @@
         "vendor/ZenKit/include",
         "vendor-build/zenkit"
       ],
-      "defines": ["NAPI_CPP_EXCEPTIONS"],
+      "defines": ["NAPI_CPP_EXCEPTIONS", "<!@(node scripts/zenkit-defines.js)"],
       "cflags_cc": ["-std=c++20", "-fexceptions"],
       "conditions": [
         ["OS=='win'", {

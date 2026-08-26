@@ -552,8 +552,27 @@ Napi::Value AuthorFixtureWorld(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// The ABI-affecting ZenKit definitions THIS addon was compiled with. ZenKit
+// sets them as PUBLIC CMake compile definitions and `_ZK_WITH_MMAP` changes
+// the layout of `zenkit::Vfs`, so an addon built without them silently
+// allocates a smaller Vfs than the library initialises. Reported here so a
+// test can compare it against what the vendored library was actually built
+// with (scripts/zenkit-defines.js) instead of trusting the build to agree.
+Napi::Array ZenkitAbi(Napi::Env env) {
+  auto abi = Napi::Array::New(env);
+  std::uint32_t i = 0;
+#ifdef _ZK_WITH_MMAP
+  abi.Set(i++, Napi::String::New(env, "_ZK_WITH_MMAP=1"));
+#endif
+#ifdef _ZK_WITH_ZIPPED_VDF
+  abi.Set(i++, Napi::String::New(env, "_ZK_WITH_ZIPPED_VDF=1"));
+#endif
+  return abi;
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("zenkitVersion", Napi::String::New(env, ZENKIT_NODE_ZENKIT_VERSION));
+  exports.Set("zenkitAbi", ZenkitAbi(env));
   exports.Set("loadWorld", Napi::Function::New(env, LoadWorld));
   exports.Set("worldStats", Napi::Function::New(env, WorldStats));
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
