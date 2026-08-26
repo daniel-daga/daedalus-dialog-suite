@@ -14,7 +14,10 @@ import {
   zenBoxToThree,
   applyRootMatrix,
   threeIndexOrder,
+  mirrorRotation,
+  type Vec3,
 } from '../src/coords';
+import type { ZenRotation } from '../src/model/ops';
 
 // Deterministic, so a failure is reproducible: a property test that cannot be
 // re-run on the input that broke it is a flake generator.
@@ -111,6 +114,82 @@ describe('zen-world/coords', () => {
     // by ignoring it.
     expect(drawnFromNormalSide(corners, [...threeIndexOrder(Uint32Array.from([0, 1, 2]))], normal))
       .toBe(true);
+  });
+
+  test('a mirrored rotation turns points the same way on both sides of the conversion', () => {
+    // What a rotation conversion has to satisfy, stated as the thing anyone can
+    // see rather than as an algebraic identity: turn a point in ZenGin space and
+    // convert it, or convert it and turn it in Three.js space, and the point
+    // must land in the same place. Anything else is a VOB that turns one way on
+    // screen and the other way in the engine.
+    const random = lcg(0x5eed);
+    const rotation = (): number[] => {
+      // A rotation about a random axis by a random angle, row-major — built from
+      // axis-angle so it is a rotation by construction rather than by hope.
+      const axis = [random() - 0.5, random() - 0.5, random() - 0.5];
+      const length = Math.hypot(...axis);
+      const [x, y, z] = axis.map((component) => component / length);
+      const angle = (random() - 0.5) * Math.PI * 2;
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      const t = 1 - c;
+      return [
+        t * x * x + c, t * x * y - s * z, t * x * z + s * y,
+        t * x * y + s * z, t * y * y + c, t * y * z - s * x,
+        t * x * z - s * y, t * y * z + s * x, t * z * z + c,
+      ];
+    };
+    const apply = (m: readonly number[], p: readonly number[]): number[] => [
+      m[0] * p[0] + m[1] * p[1] + m[2] * p[2],
+      m[3] * p[0] + m[4] * p[1] + m[5] * p[2],
+      m[6] * p[0] + m[7] * p[1] + m[8] * p[2],
+    ];
+
+    for (let i = 0; i < 200; i++) {
+      const inThree = rotation();
+      const inZen = mirrorRotation(inThree as ZenRotation);
+      const p: Vec3 = [(random() - 0.5) * 20000, (random() - 0.5) * 20000, (random() - 0.5) * 20000];
+
+      const turnedThenConverted = zenToThree(apply(inZen, p) as [number, number, number]);
+      const convertedThenTurned = apply(inThree, zenToThree(p));
+
+      for (let axis = 0; axis < 3; axis++) {
+        expect(turnedThenConverted[axis]).toBeCloseTo(convertedThenTurned[axis], 6);
+      }
+    }
+  });
+
+  test('mirroring a rotation twice is doing nothing — one function converts both ways', () => {
+    // The conversion is a conjugation by an involution, so it is its own
+    // inverse. Worth pinning: it is what makes "which direction is this
+    // function?" an impossible question to get wrong at a call site.
+    const yaw: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+    expect(mirrorRotation(mirrorRotation(yaw))).toEqual(yaw);
+
+    // And it is not the identity, which a sign error in the mask would make it.
+    expect(mirrorRotation(yaw)).not.toEqual(yaw);
+    // A quarter turn about Y becomes the opposite quarter turn about Y — the
+    // observed defect, in one line.
+    expect(mirrorRotation(yaw)).toEqual([0, 0, -1, 0, 1, 0, 1, 0, 0]);
+  });
+
+  test('mirroring leaves a rotation about X alone, and reverses Y and Z', () => {
+    // The prediction that made the defect report diagnosable: conjugating by
+    // diag(-1,1,1) maps a rotation about (x, y, z) to one about (x, -y, -z), so
+    // the mirrored axis is the one that survives. Anyone testing the gizmo by
+    // dragging the X ring would have seen nothing wrong.
+    const quarter = (about: 'x' | 'y' | 'z'): ZenRotation => ({
+      x: [1, 0, 0, 0, 0, -1, 0, 1, 0] as ZenRotation,
+      y: [0, 0, 1, 0, 1, 0, -1, 0, 0] as ZenRotation,
+      z: [0, -1, 0, 1, 0, 0, 0, 0, 1] as ZenRotation,
+    }[about]);
+    const transpose = (m: ZenRotation): ZenRotation => [
+      m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8],
+    ];
+
+    expect(mirrorRotation(quarter('x'))).toEqual(quarter('x'));
+    expect(mirrorRotation(quarter('y'))).toEqual(transpose(quarter('y')));
+    expect(mirrorRotation(quarter('z'))).toEqual(transpose(quarter('z')));
   });
 
   test('threeIndexOrder reverses every triangle and touches nothing else', () => {

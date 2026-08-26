@@ -5,7 +5,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
-  multiplyRotation, threeToZen, zenToThree, zenBoxToThree, ZEN_TO_THREE_SCALE, type ZenRotation,
+  multiplyRotation, mirrorRotation, threeToZen, zenToThree, zenBoxToThree,
+  ZEN_TO_THREE_SCALE, type ZenRotation,
 } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
@@ -349,15 +350,29 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       onTranslateRef.current(delta);
     });
 
-    /** The turn since the drag began, row-major in ZenGin space — or null if
-     *  the gizmo has not actually turned. The proxy hangs under the mirrored
-     *  root, so its *local* orientation is already in ZenGin's basis and needs
-     *  no conversion of its own; the root stays the only one. */
+    /**
+     * The turn since the drag began, row-major in ZenGin space — or null if the
+     * gizmo has not actually turned.
+     *
+     * **The proxy's local orientation is not in ZenGin's basis, though its local
+     * position is.** `TransformControls` builds its parent-inverse by
+     * decomposing the parent's `matrixWorld`, and `Matrix4.decompose` answers a
+     * negative determinant by negating `scale.x` — so the mirrored root
+     * decomposes to a scale of (-0.01, 0.01, 0.01) and a rotation of *identity*,
+     * and the flip never reaches the quaternion. Translation survives that (the
+     * offset is divided by the same negative scale); a rotation does not, and
+     * the VOB turned the opposite way to the ring about Y and about Z, X being
+     * the mirrored axis and therefore the one that looked correct.
+     *
+     * So the delta is conjugated by the mirror on the way out, in `coords`, with
+     * the rest of the conversion. `tests/gizmoRotation.test.ts` pins both
+     * library behaviours this depends on.
+     */
     const turnDelta = (): ZenRotation | null => {
       // q_now = delta * q_start, so delta = q_now * q_start⁻¹.
       turn.copy(proxyTurnFrom).invert().premultiply(proxy.quaternion);
       if (Math.abs(turn.w) >= 1) return null;
-      return rowMajor(turnMatrix.makeRotationFromQuaternion(turn));
+      return mirrorRotation(rowMajor(turnMatrix.makeRotationFromQuaternion(turn)));
     };
 
     // The live preview. The world in the main process still has the VOBs where
@@ -565,11 +580,21 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       turnGizmo: (axis, radians) => {
         if (gizmoVobs.length === 0) throw new Error('no VOB is selected');
         transform.dispatchEvent({ type: 'dragging-changed', value: true });
-        // The axis is in the proxy's own frame, which is ZenGin's — the same
-        // basis an op's matrix is in, so the driver can predict the answer.
-        proxy.quaternion.setFromAxisAngle(
-          new THREE.Vector3(axis[0], axis[1], axis[2]).normalize(), radians,
-        );
+        // The axis is in ZenGin space, like everything an op carries, so the
+        // driver can predict the answer. The proxy's quaternion is *not* in that
+        // basis (see `turnDelta`), so the turn is built in ZenGin and conjugated
+        // into the proxy's frame by the same function that converts it back —
+        // which is its own inverse, so this cannot be applied the wrong way.
+        const inZen = rowMajor(turnMatrix.makeRotationFromQuaternion(
+          turn.setFromAxisAngle(new THREE.Vector3(axis[0], axis[1], axis[2]).normalize(), radians),
+        ));
+        const asProxy = mirrorRotation(inZen);
+        proxy.quaternion.setFromRotationMatrix(turnMatrix.set(
+          asProxy[0], asProxy[1], asProxy[2], 0,
+          asProxy[3], asProxy[4], asProxy[5], 0,
+          asProxy[6], asProxy[7], asProxy[8], 0,
+          0, 0, 0, 1,
+        ));
         transform.dispatchEvent({ type: 'objectChange' });
         transform.dispatchEvent({ type: 'dragging-changed', value: false });
       },

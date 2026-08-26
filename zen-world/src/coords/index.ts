@@ -50,6 +50,40 @@ export const ROOT_MATRIX: Mat4 = Object.freeze([
 ]);
 
 /**
+ * A rotation converted between ZenGin space and Three.js space — conjugation by
+ * the mirror, `M R M`, and its own inverse, so one function serves both
+ * directions.
+ *
+ * **A quaternion cannot carry a mirror, which is why this has to exist.**
+ * `Matrix4.decompose` answers a negative determinant by negating `scale.x`, so
+ * `ROOT_MATRIX` decomposes to scale (-0.01, 0.01, 0.01) and a rotation of
+ * **identity** — the flip vanishes from the quaternion entirely. Anything that
+ * takes a rotation across this boundary as a quaternion therefore drops the
+ * mirror silently. Translation survives it (`TransformControls` divides its
+ * offset by that same negative scale, so the sign comes back); rotation does
+ * not, and a VOB turns one way on screen and the other way in the engine.
+ *
+ * Conjugating by diag(-1, 1, 1) maps a rotation about (x, y, z) to one about
+ * (x, -y, -z): **a rotation about X is unchanged, and Y and Z reverse.** In a
+ * row-major 3x3 that is exactly the four terms coupling X with the other two.
+ */
+export function mirrorRotation<T extends readonly number[]>(rotation: T): T {
+  const flip = [-1, 1, 1];
+  const out = new Array<number>(9);
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const turned = flip[row] * flip[col] * rotation[row * 3 + col];
+      // Negating a zero yields -0, which would reach `setVobRotation` and be
+      // written to the world as a different float than the 0 that was there.
+      // The roundtrip harness compares bytes, and this conversion is supposed to
+      // be invisible to a VOB nobody turned.
+      out[row * 3 + col] = turned === 0 ? 0 : turned;
+    }
+  }
+  return out as unknown as T;
+}
+
+/**
  * ZenGin's stored triangle order as Three.js has to receive it: every triangle
  * reversed, nothing else touched.
  *
