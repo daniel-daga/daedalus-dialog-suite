@@ -1331,6 +1331,50 @@ gizmo reads the scene), then puts both back with a single Ctrl+Z. Sabotaged by
 making the drag a destination again: the two VOBs collapse onto one point and
 the script fails.
 
+#### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
+
+Rotation is the next op, and it cannot be built the way `MoveVob` was.
+`setVobPosition` translates `bbox` by the same delta it moves the VOB, because
+the engine culls by that box and a moved VOB with a stale one may vanish — but
+an axis-aligned box does not rotate into an axis-aligned box. So before writing
+a `RotateVob`, `zenkit-node/scripts/check-vob-bbox.js` asked the data what the
+stored box actually **is**: it places each VOB's own visual by that VOB's
+rotation and position, in ZenGin space throughout, and compares.
+
+| | NewWorld | OldWorld | AddonWorld |
+|---|---|---|---|
+| VOBs with a resolvable visual | 12,370 | 4,808 | 3,324 |
+| **Stored box is the tight AABB of the placed visual** (<1% of the VOB's size) | **12,347** | **4,806** | **3,319** |
+| Looser than that | 0 | 0 | 0 |
+| Stored box *smaller* than the visual | 23 | 2 | 5 |
+| Mean slack | 0.11 cm | 0.02 cm | 0.07 cm |
+
+**So the box is a pure function of (visual, rotation, position)** — not of the
+VOB's history. That is the finding that makes a rotation op possible at all: the
+binding can recompute the box from the visual on every rotation, undo recomputes
+the box it started from, and nothing has to be carried in the op or snapshotted
+beside the history. Re-fitting the *stored* box instead would have grown it on
+every rotation and made the op non-invertible.
+
+**The 30 exceptions are all animated visuals** — `SNA_BODY.ASC`, `ORC_BODY.ASC`
+(NPC bodies, soft-skin), `SMOKE_WATERPIPE.MDS`, `BSFIRE_OC.MDS` — where the
+stored box covers the *animation* and the bind-pose mesh is up to 1 m smaller.
+Recomputing from the visual would shrink those boxes, and the engine consequence
+(early culling at the extremes of an animation) is **unmeasured**. It applies
+only to a VOB someone actually rotates, and it belongs on the Gate 2 checklist
+rather than being argued away here.
+
+**And there is no scale to gizmo.** `zCVob` stores a `Mat3` and a `Vec3` and has
+no scale field at all (`far_clip_scale` is a render-distance multiplier, not a
+transform), so the only way a scaled VOB could exist is a rotation matrix with
+non-unit columns. Measured across **all 41,393 VOB transforms** in the three
+retail worlds: the worst deviation from unit length is **1.0e-2**, and it is on
+a `.pfx` particle effect. Nothing in the corpus is scaled — every stored
+transform is a rotation to within 1% — so a scale gizmo would be authoring a
+representation ZenGin's own tools never wrote and whose acceptance nothing can
+be checked against. It is **out**, and the handoff item asking for "rotate and
+scale on the same gizmo" is answered by this measurement rather than by code.
+
 ---
 
 ## 8. Daedalus integration — open question 4

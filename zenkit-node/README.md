@@ -250,6 +250,32 @@ sign error in the script as a fact about ZenGin.
 A live VFS keeps every mounted file memory-mapped, so **Windows refuses to
 delete a mounted file until the handle is garbage-collected.**
 
+#### What a VOB's `bbox` is — measured, before any op re-fits one
+
+`setVobPosition` translates the box by the delta it moves the VOB, because the
+engine culls by it. A rotation cannot do that: an axis-aligned box does not
+rotate into an axis-aligned box. `scripts/check-vob-bbox.js` places each VOB's
+own visual by that VOB's rotation and position — ZenGin space throughout, so no
+coordinate convention enters — and compares:
+
+| | NewWorld | OldWorld | AddonWorld |
+|---|---|---|---|
+| VOBs with a resolvable visual | 12,370 | 4,808 | 3,324 |
+| **stored box = tight AABB of the placed visual** | **12,347** | **4,806** | **3,319** |
+| looser | 0 | 0 | 0 |
+| smaller than the visual | 23 | 2 | 5 |
+| mean slack | 0.11 cm | 0.02 cm | 0.07 cm |
+
+So the box is a **pure function of (visual, rotation, position)** and can be
+recomputed rather than carried, which is what keeps a rotation op invertible.
+The 30 exceptions are all animated visuals (`SNA_BODY.ASC`, `SMOKE_WATERPIPE.MDS`
+…) whose stored box covers the animation, not the bind pose.
+
+The same run answers the scale question: `zCVob` has no scale field, and across
+**all 41,393 VOB transforms** in the three retail worlds the worst deviation
+from unit column length is **1.0e-2**. Nothing in the corpus is scaled, so there
+is no scaled representation to author against.
+
 **Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
 was loaded from a `zCArchiverBinSafe` archive: that is the only writer path
 verified byte-for-byte against the retail corpus and in the original engine.
