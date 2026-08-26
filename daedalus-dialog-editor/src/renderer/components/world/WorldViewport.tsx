@@ -9,6 +9,12 @@ import { WorldScene } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
+import {
+  runViewportBenchmark,
+  type BenchmarkOptions,
+  type BenchmarkResult,
+  type ViewportProbe,
+} from '../../world/viewportBenchmark';
 
 // The Phase 1a viewport (level-editor.md §3, §7). Everything measured in the
 // spike is carried over here, none of it re-derived:
@@ -25,6 +31,17 @@ import { NO_PICK } from '../../world/pickIds';
 // it out of React's render path — no payload buffer ever becomes state.
 
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+declare global {
+  interface Window {
+    /** Present only while a world viewport is mounted. The Phase 1a budget rows
+     *  for framerate, draw calls and pick latency are measured through here —
+     *  see `viewportBenchmark.ts`. */
+    __worldViewport?: {
+      benchmark: (options?: Partial<BenchmarkOptions>) => Promise<BenchmarkResult>;
+    };
+  }
+}
 
 /** Textures are decoded at this cap by picking a mipmap rather than resampling.
  *  Every NewWorld texture at full size is ~490 MB of RGBA; the spike's measured
@@ -91,7 +108,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({ mesh, visuals, bbox, load
 
     // Only what is pickable gets a tree, and off the main thread.
     const bvh = new BvhBuilder();
-    for (const worldMesh of world.worldMeshes) void bvh.build(worldMesh.geometry);
+    const bvhReady = Promise.all(world.worldMeshes.map((worldMesh) => bvh.build(worldMesh.geometry)));
 
     const picker = new VobPicker();
     picker.setInstancedMeshes(
@@ -103,7 +120,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({ mesh, visuals, bbox, load
     // Textures on demand. Requested one at a time so a world with 490 of them
     // does not open 490 concurrent IPC calls; each one applied lands on every
     // material that named it.
-    void (async () => {
+    const texturesReady = (async () => {
       for (const name of world.pendingTextureNames()) {
         if (disposed) return;
         const decoded = await loadTextureRef.current(name, TEXTURE_MAX_SIZE);
@@ -157,8 +174,79 @@ const WorldViewport: React.FC<WorldViewportProps> = ({ mesh, visuals, bbox, load
     };
     draw();
 
+    // ── the measurement handle (level-editor.md §3) ─────────────────────────
+    // Framerate, draw calls per frame and pick latency are the budget rows that
+    // still rest on the spike's numbers, and they can only be answered by the
+    // scene above: the spike measured a scene the app does not own. So the live
+    // renderer, camera, picker and BVH are handed to `runViewportBenchmark` as
+    // a probe, exactly as `window.__spike` exposed the spike's.
+    const gl = renderer.getContext();
+    const pickPointer = new THREE.Vector2();
+    const target = new THREE.Vector3();
+    const allMeshes: THREE.Object3D[] = [...world.worldMeshes, ...world.instancedMeshes];
+
+    const probe: ViewportProbe = {
+      moveCamera: (pose) => {
+        camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+        camera.lookAt(target.set(pose.lookAt[0], pose.lookAt[1], pose.lookAt[2]));
+      },
+      render: () => renderer.render(scene, camera),
+      finishGpu: () => gl.finish(),
+      drawCalls: () => renderer.info.render.calls,
+      triangles: () => renderer.info.render.triangles,
+      raycastWorldMesh: (x, y) => {
+        raycaster.setFromCamera(pickPointer.set(x, y), camera);
+        return raycaster.intersectObjects(world.worldMeshes, false).length > 0;
+      },
+      raycastWholeScene: (x, y) => {
+        raycaster.setFromCamera(pickPointer.set(x, y), camera);
+        return raycaster.intersectObjects(allMeshes, false).length > 0;
+      },
+      pickVobs: (x, y) => {
+        const width = renderer.domElement.width;
+        const height = renderer.domElement.height;
+        const vob = picker.pick(
+          renderer, camera, ((x + 1) / 2) * width, ((1 - y) / 2) * height, width, height,
+        );
+        return vob !== NO_PICK;
+      },
+      viewportSize: () => ({ width: renderer.domElement.width, height: renderer.domElement.height }),
+    };
+
+    const benchmark = async (options?: Partial<BenchmarkOptions>): Promise<BenchmarkResult> => {
+      // A half-loaded scene is a different scene: the BVH decides the terrain
+      // pick and the textures decide what the GPU actually samples.
+      await Promise.all([bvhReady, texturesReady]);
+
+      // The draw loop and OrbitControls both write the camera every frame, and
+      // the sweep's whole point is that the camera follows a fixed path.
+      cancelAnimationFrame(frame);
+      controls.enabled = false;
+      try {
+        return await runViewportBenchmark(probe, {
+          now: () => performance.now(),
+          requestFrame: (callback) => { requestAnimationFrame(() => callback()); },
+          setTimer: (callback, ms) => { setTimeout(callback, ms); },
+          visible: () => document.visibilityState === 'visible',
+          focused: () => document.hasFocus(),
+          yieldToBrowser: () => new Promise<void>((resolve) => { setTimeout(resolve, 0); }),
+        }, {
+          centre: box.center as [number, number, number],
+          span,
+          ...options,
+        });
+      } finally {
+        controls.enabled = true;
+        controls.update();
+        draw();
+      }
+    };
+
+    window.__worldViewport = { benchmark };
+
     return () => {
       disposed = true;
+      delete window.__worldViewport;
       cancelAnimationFrame(frame);
       resize.disconnect();
       renderer.domElement.removeEventListener('click', handleClick);

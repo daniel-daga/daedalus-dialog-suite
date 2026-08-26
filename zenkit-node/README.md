@@ -277,32 +277,23 @@ regenerate automatically.** `pnpm --filter zenkit-node fixtures:regen` is an
 explicit, reviewed act; an auto-regenerating golden would silently ratify
 whatever bug just landed.
 
-## The viewport spike (`spike/viewport/`) — throwaway
+## The viewport spike — retired
 
-The Phase 1a gate from `../docs/plans/level-editor.md` §3: a real Three.js scene
-over retail NewWorld, to answer framerate and pick latency on measured data
-rather than arithmetic. Verdict and numbers live in §3.
+`spike/viewport/` was the Phase 1a gate from `../docs/plans/level-editor.md` §3:
+a throwaway Three.js scene over retail NewWorld, to answer framerate and pick
+latency on measured data rather than arithmetic. It has been **deleted**, because
+the thing it was the reference for has now been measured — the app's own
+viewport reproduces its frame time, draw calls and pick latency, and adds the
+numbers the spike had no way to take (§3, "The app's own viewport, measured on
+screen"). Its durable artefacts are those numbers, the two binding changes it
+forced, and the instrument rules that outlived it.
 
-**Still here even though the Phase 1a viewport has landed**, for two reasons
-that both end when someone measures the app's own viewport: it is the reference
-those numbers have to be compared against, and it is the only way to obtain the
-rAF corroboration §3 records as still missing (`node serve.js`, tab in front,
-~30 s, read `presented.valid`). Delete it once the World surface has been
-measured on screen.
-
-```
-cd spike/viewport
-npm install                 # three + three-mesh-bvh, outside the pnpm workspace
-node extract.js             # writes payload/ from the install (~132 MB)
-node serve.js               # then open http://127.0.0.1:8181/
-```
-
-The result is printed to the page and logged as one `SPIKE_RESULT` line. Two
-things it will not let you get wrong, both learned the hard way: the framerate
-comes from a synchronous `gl.finish()` sweep, because `requestAnimationFrame` is
-suspended in a background tab and would report any renderer as 1 fps; and the
-camera path is framed from the payload's own bbox, which is why
-`extractWorldMesh` had to stop copying the all-zero one out of `Mesh::bbox`.
+That measurement now lives in the app, where it belongs:
+`daedalus-dialog-editor/src/renderer/world/viewportBenchmark.ts` runs the same
+sweep against the real scene, and
+`daedalus-dialog-editor/scripts/measure-viewport.js` drives it through the real
+Electron app. Both are developer-local for the same reason `zen-roundtrip` is:
+they need a Gothic install, the built addon and a real GPU.
 
 ## zen-roundtrip harness
 

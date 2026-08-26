@@ -472,14 +472,115 @@ Two things the run found that no test had:
    23 decal visuals. The per-name figure is `visualsSeen - visualsResolved`,
    which is 49, which is the 23 + 26 in the table above.
 
-What is **not** yet measured on the real thing: framerate, draw calls per frame
-and pick latency in the app's own viewport. Those still rest on the spike's
-numbers, which is why `zenkit-node/spike/viewport/` is **not** deleted yet — it
-is the reference the app's viewport has to be measured against. (The rAF
+What was **not** measured on the real thing at the time of writing: framerate,
+draw calls per frame and pick latency in the app's own viewport. Those rested on
+the spike's numbers, which is why `zenkit-node/spike/viewport/` was kept — it was
+the reference the app's viewport had to be measured against. **That measurement
+has since been taken and the spike is deleted; see the next section.** (The rAF
 corroboration it was also being kept for has since been obtained: see above. It
 came with the finding that every browser-side CPU number in §3 was measured in a
 background tab and is ~3× pessimistic, including the pick row that made GPU
 ID-picking mandatory.)
+
+#### The app's own viewport, measured on screen — the spike is retired (2026-08-26)
+
+Every budget row above was the spike's. They are now the app's: `WorldViewport`
+exposes the live renderer, camera, picker and BVH to `viewportBenchmark.ts`,
+which runs the spike's sweep — the same 900-frame three-leg camera path, the
+same `gl.finish()` primary instrument, the same rAF corroboration, the same
+deterministic rays — against the scene `WorldScene` actually builds.
+`daedalus-dialog-editor/scripts/measure-viewport.js` drives it through the real
+Electron app on retail NewWorld, at 1460×746, on the Radeon 890M. Two
+foreground runs:
+
+| Metric | Budget | Run 1 | Run 2 | spike | |
+|---|---|---|---|---|---|
+| Frame time, `gl.finish()` | < 16 ms | **4.6 p50, 5.9 p95, 8.0 max** | 4.4 / 5.6 / 7.0 | 4.9 / 6.2 / 8.9 | ✅ |
+| Frames over 16.7 ms | 0 | **0 of 840** | 0 of 840 | 0 of 840 | ✅ |
+| Presented (rAF) | — | **5.8 p50, 8.5 p95, 10.8 max, 0 stalls** | 5.8 / 8.6 / 13.3 | 6.2 / 7.9 / 15.5 | ✅ |
+| Draw calls per frame | < 1500 | **974 p50, 1076 max** | 974 / 1076 | 961 p50, 1076 total | ✅ |
+| Triangles per frame | — | **2,740,125 max** | 2,740,125 | 2.74 M | |
+| Pick — world mesh, BVH | < 1 frame | **0.1 p50, 0.3 p95** | 0.1 / 0.3 | 0.2 / 0.9 | ✅ |
+| Pick — VOBs, GPU ID | < 1 frame | **2.1 p50, 4.1 p95** | 2.2 / 3.6 | never measured | ✅ |
+| Pick — whole scene, CPU raycast | < 1 frame | **2.7 p50, 4.1 p95** | 2.7 / 3.4 | 5.6 p50 (fg) | ✅ |
+
+**Every row passes, the two runs agree, and they agree with the spike.** The
+scene is identical to the one §3 already verified field for field — 1076 draw
+calls, 2.74 M triangles — so `zenkit-node/spike/viewport/` has nothing left to
+say and is **deleted**. The numbers above replace it.
+
+Three things the app's own measurement says that the spike's could not:
+
+1. **GPU ID-picking is no longer the fast option — it is the scale-free one.**
+   Measured in the app's foreground, the GPU pick costs **2.1 ms** and the CPU
+   raycast it replaced costs **2.7 ms**. That is the same ordering §3 decision 1
+   asserted, but the ratio is 1.3× where the original justification claimed 40×
+   (14.2 ms against 0.3 ms) and the foreground re-measurement claimed 19×. The
+   reason is that the GPU pick has a **fixed floor**: `readRenderTargetPixels`
+   is a synchronous readback that stalls the pipeline, and it costs ~2 ms
+   whatever is in the scene. So the decision stands on its remaining leg only —
+   O(1) in prop count against a raycast that is linear in `InstancedMesh`es and
+   degrades as parts load (§7 Phase 3) — and not on being cheaper today. If
+   Phase 2 ever wants that 2 ms back, the fix is an asynchronous readback
+   (`readRenderTargetPixelsAsync` / a PBO), not a return to raycasting.
+2. **The first GPU pick of a session costs 53 ms — and once, 276 ms.** That is
+   the pick shader compiling on first use, the same class of first-use cost §3
+   already records for texture upload. It is not a per-click cost and does not
+   touch the budget, but a Phase 2 that wants the first click to feel like the
+   rest should warm the pick pass when the world opens.
+3. **A pick sweep needs a hit count or it is not a latency.** The first run of
+   this benchmark reported a whole-scene raycast at **0.1 ms p50** — faster than
+   the same ray through a BVH, and 56× faster than the spike. Every ray had
+   missed: the sweep left the camera wherever its last frame put it, and a ray
+   that hits nothing is rejected by a bounding sphere and costs almost nothing.
+   The instrument now aims from a fixed viewpoint inside the world and reports
+   `hits` alongside every percentile (99 of 200 rays hit terrain, 26 of 200 hit
+   a prop). A miss rate is not a detail of the report; without it a broken
+   measurement reads as an excellent result.
+
+#### The foreground/background A/B — controlled, and the guard that came out of it
+
+§3 above inferred from a disagreement between two runs that a background tab
+throttles every CPU-bound browser measurement. Run deliberately, same build,
+same world, same sweep, window minimised instead of focused:
+
+| | foreground (2 runs) | minimised (2 runs) | |
+|---|---|---|---|
+| Frame time, `gl.finish()` p50 | 4.6 / 4.4 ms | **7.5 / 8.0 ms** | 1.7× |
+| Pick — world mesh, BVH p50 | 0.1 / 0.1 ms | **0.3 / 0.3 ms** | 3× |
+| Pick — whole scene p50 | 2.7 / 2.7 ms | **6.6 / 5.3 ms** | 2.0–2.4× |
+| Pick — VOBs, GPU ID p50 | 2.1 / 2.2 ms | **5.0 / 4.1 ms** | 1.9–2.3× |
+| Presented (rAF) | valid, 0 stalls | **not one callback in 30 s** | — |
+| Draw calls, triangles | 974 / 2,740,125 | 974 / 2,740,125 | identical |
+
+**The inference is confirmed: every CPU-bound number degrades ~2–3× outside the
+foreground, and the scene itself is provably unchanged** — draw calls and
+triangles per frame are identical to the unit, so the sweep really did render
+the same thing both times.
+
+One correction to §3 falls out of it. §3 says `gl.finish()` "was immune because
+it is GPU-bound". That holds for a *background tab* — the spike measured 4.9 ms
+both ways — but **not for a minimised window**, where it degrades 1.7×. A
+minimised window is the stronger condition: it is not composited at all. So the
+rule is not "GPU-bound numbers are safe"; it is that the degraded state has
+degrees, and the only safe measurement is one that proves it was in the good
+one.
+
+**Which is the finding worth more than the measurement.** The guard this
+benchmark started with was `document.hasFocus()` and `document.visibilityState`,
+checked throughout the run. Both are **wrong in Electron**: a minimised window
+reports `hasFocus() === true` and `visibilityState === 'visible'` while
+Chromium throttles it anyway. The A/B's first background run therefore came
+back `valid: true` — 2.4× slower on every CPU number, rAF suspended outright,
+and both signals the guard trusted saying it was in the foreground.
+
+So `viewportBenchmark` makes the rAF sweep **the guard, not the
+corroboration**: a report is `valid` only if frames were actually presented at a
+sane rate, because presented frames are the only evidence Chromium was not
+deprioritising the renderer. Every browser-side number this project records from
+here needs that guard, not a focus check — and `--background` exists on the
+driver precisely so the degraded state can be measured on purpose rather than by
+accident.
 
 Carried over into the real viewport, all of it measured rather than assumed:
 GPU ID-picking for instanced VOBs (`VobPicker`, ids shifted by one so a cleared
