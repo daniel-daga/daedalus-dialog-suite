@@ -43,27 +43,8 @@ export const useWorldStore = create<WorldStore>((set) => ({
   reset: () => set({ status: 'idle', summary: null, error: null, selectedVob: null }),
 }));
 
-/** The class, name and visual of one VOB, read out of the columnar index. */
-export function describeVob(summary: WorldSummary, vob: number): {
-  index: number;
-  className: string;
-  name: string;
-  visual: string;
-  visualType: string;
-  position: [number, number, number];
-} | null {
-  const index = summary.vobIndex;
-  if (vob < 0 || vob >= index.count) return null;
-
-  const positions = new Float32Array(index.positions);
-  return {
-    index: vob,
-    className: index.classes[new Uint32Array(index.classIndex)[vob]],
-    name: index.names[new Uint32Array(index.nameIndex)[vob]],
-    visual: index.visuals[new Uint32Array(index.visualIndex)[vob]],
-    visualType: index.visualTypes[new Uint32Array(index.visualTypeIndex)[vob]],
-    // ZenGin space, unconverted — what the property grid shows and what an op
-    // would carry.
-    position: [positions[vob * 3], positions[vob * 3 + 1], positions[vob * 3 + 2]],
-  };
-}
+// `describeVob` used to live here, reading one VOB out of the columnar index
+// for a one-line status bar. The property grid replaced it, and it reads
+// through `zen-world`'s `createVobReader` instead — which makes its column
+// views once rather than five typed arrays per call, because a virtualized tree
+// over 23,288 VOBs calls it on every scroll frame.

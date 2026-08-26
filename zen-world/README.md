@@ -11,6 +11,7 @@ every binding call is injected.
 | Module | What it owns |
 |---|---|
 | `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. |
+| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
@@ -48,6 +49,13 @@ viewport.
 - **An unresolved visual is a fact, not an error.** A decal names a texture and a
   `.pfx` is a Daedalus instance; neither is in the VFS. They are counted, and
   the count is per VOB — the per-*name* figure is `visualsSeen - visualsResolved`.
+- **Sibling order is `childIndex`, not VOB index.** The hierarchy is two columns
+  of the index, and retail worlds are enumerated depth-first so the two usually
+  agree — which is exactly why sorting by the wrong one passes on the world you
+  tested and silently reorders the next. A flattened view also costs what is
+  *visible*: 23,288 VOBs behind a collapsed root is one row, not 23,288. And a
+  row is read, never built — `createVobReader` makes its column views once,
+  because a virtualized tree calls it on every scroll frame.
 - **Mount archives, not loose trees.** `Vfs::mount_host` memory-maps every file
   under a directory eagerly: 2,170 ms for an extracted install's 4,153 compiled
   asset files against **15 ms** for the equivalent VDFs, which resolve every name

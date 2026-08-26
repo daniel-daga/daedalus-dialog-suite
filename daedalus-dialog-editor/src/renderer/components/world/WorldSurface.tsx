@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Typography } from '@mui/material';
 import type { InstancedPayload, WorldMeshPayload } from '../../../shared/worldTypes';
-import { describeVob, useWorldStore } from '../../store/worldStore';
+import { useWorldStore } from '../../store/worldStore';
 import WorldViewport from './WorldViewport';
+import WorldSceneTree from './WorldSceneTree';
+import WorldPropertyGrid from './WorldPropertyGrid';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
 // app, lazily loaded, so `zenkit-node` is pulled in only when a world is
@@ -74,8 +76,6 @@ const WorldSurface: React.FC = () => {
     setTerrainPoint(point);
   }, [selectVob]);
 
-  const selection = summary && selectedVob !== null ? describeVob(summary, selectedVob) : null;
-
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Paper square elevation={1} sx={{ p: 1, borderBottom: 1, borderColor: 'divider' }}>
@@ -123,33 +123,43 @@ const WorldSurface: React.FC = () => {
         </Box>
       )}
 
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        {mesh && visuals && summary && (
-          <WorldViewport
-            mesh={mesh}
-            visuals={visuals}
-            bbox={summary.bbox}
-            loadTexture={loadTexture}
-            onPick={handlePick}
-          />
+      {/* Scene tree | viewport | properties. The two panels appear only once a
+          world is open: without a `VobIndex` there is no hierarchy to show, and
+          an empty tree beside an empty viewport says nothing. */}
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {summary && (
+          <Box sx={{ width: 280, flexShrink: 0, borderRight: 1, borderColor: 'divider', minHeight: 0 }}>
+            <WorldSceneTree summary={summary} selectedVob={selectedVob} onSelect={selectVob} />
+          </Box>
+        )}
+
+        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+          {mesh && visuals && summary && (
+            <WorldViewport
+              mesh={mesh}
+              visuals={visuals}
+              bbox={summary.bbox}
+              loadTexture={loadTexture}
+              onPick={handlePick}
+            />
+          )}
+        </Box>
+
+        {summary && (
+          <Box sx={{ width: 300, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
+            <WorldPropertyGrid summary={summary} selectedVob={selectedVob} />
+          </Box>
         )}
       </Box>
 
-      {(selection || terrainPoint) && (
+      {terrainPoint && selectedVob === null && (
         <Paper square elevation={1} sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}>
-          {selection ? (
-            <Typography variant="caption" data-testid="world-selection">
-              {selection.className}
-              {selection.name && ` "${selection.name}"`}
-              {selection.visual && ` — ${selection.visual} (${selection.visualType})`}
-              {` @ ${selection.position.map((v) => Math.round(v)).join(', ')}`}
-            </Typography>
-          ) : (
-            <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
-              {/* ZenGin space, centimetres — the coordinates an op would carry. */}
-              Terrain @ {terrainPoint!.map((v) => Math.round(v)).join(', ')}
-            </Typography>
-          )}
+          {/* Terrain is not a VOB, so it has no row and no properties — a hit
+              reports the point rather than inventing a selection. ZenGin space,
+              centimetres: the coordinates an op would carry. */}
+          <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
+            Terrain @ {terrainPoint.map((v) => Math.round(v)).join(', ')}
+          </Typography>
         </Paper>
       )}
     </Box>
