@@ -231,4 +231,120 @@ describe('WorldScene', () => {
     expect(disposed).toHaveBeenCalled();
     expect(scene.root.children).toHaveLength(0);
   });
+
+  // ── an edit reaching the scene (level-editor.md §7, Phase 1b) ─────────────
+  //
+  // An op moves a VOB in the world the main process holds. The viewport has to
+  // follow without rebuilding 31 MB of buffers, and two things about how it is
+  // drawn make that less obvious than it sounds: a VOB is an *instance* inside
+  // a shared InstancedMesh, and a visual with several draw groups puts the same
+  // VOB in several of them.
+
+  test('moving a VOB writes the new position into every mesh its visual was split into', () => {
+    // A visual with two draw groups is two InstancedMeshes over the same
+    // instances. Updating the first one leaves the VOB drawn in both places.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      stats: {} as never,
+    });
+
+    const meshes = scene.root.children.filter((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh[];
+    expect(meshes).toHaveLength(2);
+    // `needsUpdate` is a setter with no getter; `version` is what it bumps, and
+    // it is what decides whether the buffer is re-uploaded to the GPU at all.
+    const versions = meshes.map((mesh) => mesh.instanceMatrix.version);
+
+    expect(scene.moveVob(9, [70, 80, 90])).toBe(true);
+
+    const matrix = new THREE.Matrix4();
+    meshes.forEach((mesh, at) => {
+      // vob 9 is the second instance in the fixture
+      mesh.getMatrixAt(1, matrix);
+      expect([matrix.elements[12], matrix.elements[13], matrix.elements[14]]).toEqual([70, 80, 90]);
+      expect(mesh.instanceMatrix.version).toBeGreaterThan(versions[at]);
+    });
+  });
+
+  test('a move changes the position and nothing else about the instance', () => {
+    // The op carries a position; the rotation is the VOB's own and is not the
+    // op's to touch.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      stats: {} as never,
+    });
+
+    scene.moveVob(7, [-1, -2, -3]);
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    expect([...matrix.elements]).toEqual([1, 4, 7, 0, 2, 5, 8, 0, 3, 6, 9, 0, -1, -2, -3, 1]);
+  });
+
+  test('the position is ZenGin space, unconverted — the root is still the only conversion', () => {
+    // An op's coordinates are centimetres in ZenGin handedness, exactly as the
+    // binding takes them. Converting here would be a second conversion, and the
+    // instance would land somewhere the property grid does not agree with.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], stats: {} as never });
+
+    scene.moveVob(4, [1000, 0, 0]);
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    expect(matrix.elements[12]).toBe(1000);
+  });
+
+  test('a moved VOB takes its bounding sphere with it, or the frustum culls it away', () => {
+    // InstancedMesh culls by a bounding sphere computed from the instances it
+    // had when it was built. Dragging a VOB out of that sphere and leaving the
+    // sphere behind makes it vanish at certain camera angles — and only at
+    // certain camera angles, which is the worst way to find out.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], stats: {} as never });
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const before = mesh.boundingSphere!.clone();
+
+    scene.moveVob(4, [100000, 0, 0]);
+
+    expect(mesh.boundingSphere!.center.distanceTo(before.center)).toBeGreaterThan(1000);
+  });
+
+  test('moving a VOB that is not drawn changes nothing and says so', () => {
+    // 23,288 VOBs are enumerated and 12,463 are placed: a decal, a particle
+    // effect or a level compo has no instance to move, and the property grid
+    // can still select one.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    expect(scene.moveVob(4242, [1, 2, 3])).toBe(false);
+  });
+
+  test('where a VOB is drawn can be read back, so a gizmo can be put on it', () => {
+    // The viewport has no access to the VOB index — it is handed payloads, not
+    // the world — so the scene is what it asks where the selected VOB is.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      stats: {} as never,
+    });
+
+    expect(scene.positionOf(7)).toEqual([10, 20, 30]);
+    scene.moveVob(7, [40, 50, 60]);
+    expect(scene.positionOf(7)).toEqual([40, 50, 60]);
+    // A VOB with no instance has no position to report, and null is not [0,0,0]
+    // — the middle of the world is a real place for a VOB to be.
+    expect(scene.positionOf(4242)).toBeNull();
+  });
 });

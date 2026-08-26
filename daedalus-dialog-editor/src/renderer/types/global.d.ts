@@ -172,9 +172,10 @@ export interface EditorAPI {
   /** Apply an edit. One call is one undo entry, so a multi-select drag is one
    *  batch and not one call per VOB. */
   applyWorldOps: (ops: WorldOp[]) => Promise<void>;
-  /** False when there was nothing left to undo/redo. */
-  undoWorldEdit: () => Promise<boolean>;
-  redoWorldEdit: () => Promise<boolean>;
+  /** The ops that were applied, so the renderer's projection can follow them —
+   *  null when there was nothing left to undo/redo. */
+  undoWorldEdit: () => Promise<WorldOp[] | null>;
+  redoWorldEdit: () => Promise<WorldOp[] | null>;
   closeWorld: () => Promise<void>;
 
   // Updater API

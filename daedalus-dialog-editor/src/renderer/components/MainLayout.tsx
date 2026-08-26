@@ -75,6 +75,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
 
       if (!isUndo && !isRedo) return;
 
+      // The World surface has its own history — the authoritative op log in the
+      // main process (level-editor.md §7) — and binds its own shortcut. Without
+      // this, Ctrl+Z there would undo a *dialog* edit in whichever file happens
+      // to be open behind the view, which is every time: the World surface
+      // lives inside a project like every other view.
+      if (useUISelectionStore.getState().activeView === 'world') return;
+
       // Let Monaco's built-in undo/redo handle events when the source editor is focused
       const activeElement = document.activeElement;
       if (activeElement?.closest('.monaco-editor')) return;

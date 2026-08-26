@@ -1224,10 +1224,66 @@ the in-memory ZenKit world exactly as the engine-accepted row-10 edit did, and
 through the engine checklist — rows 7-9 included, which the acceptance record
 says regain their full force there.
 
-What is **not** built: anything that produces an op. There is no gizmo, no drag,
-no keyboard undo; the renderer has `applyWorldOps`/`undoWorldEdit`/`redoWorldEdit`
-on its API and does not call them yet. That, and keeping the renderer's own copy
-of the index in step through `applyOps`, is the next step.
+#### The loop closed — a VOB is moved in the app (2026-08-26)
+
+A translate gizmo, the projection following the edit, and Ctrl+Z/Ctrl+Y. The
+whole path runs against retail NewWorld in the real Electron app:
+`scripts/verify-world-edit.js` selects a placed VOB, drags it 500 cm on each
+axis, and watches the property grid, the gizmo and the scene follow it there,
+back through undo, forward through redo, and back again.
+
+- **A VOB is an instance, not an `Object3D`**, so there is nothing for
+  `TransformControls` to attach to. A proxy object hangs under the same mirrored
+  root as everything else, which makes its local position ZenGin centimetres and
+  needs no conversion of its own — the root stays the only one. The gizmo's own
+  helper goes in the top-level scene instead, or it would be drawn through that
+  same 0.01 scale and mirror.
+- **A visual with several draw groups puts one VOB in several `InstancedMesh`es.**
+  `WorldScene.moveVob` writes every one of them, or the VOB is drawn in two
+  places at once — and recomputes the bounding sphere, because `InstancedMesh`
+  culls by the sphere it was built with and a VOB dragged out of it vanishes at
+  some camera angles and not others.
+- **The drag previews locally and commits on release.** The world in the main
+  process still has the VOB where it was until then; a refused op sends it back
+  and says so in a warning that does not replace the surface, because the world
+  is still open and still correct.
+- **The projection is written in place.** An op lands in the index's own
+  `ArrayBuffer` columns, so no cached reader is invalidated — which also means
+  React sees nothing change, and what re-renders the panels is the World
+  surface's `appliedOps` state.
+- **Ctrl+Z in the World view is the world's undo, not the dialog editor's.** The
+  layout's shortcut is a *window* listener that only checks a file is open —
+  which it is, since the World surface lives inside a project like every other
+  view — so it was undoing dialog edits in a file the user could not see.
+
+Two defects came out of driving it for real, and neither was visible from the
+unit tests as they stood:
+
+1. **`Ctrl+Shift+Z` never fired.** Holding Shift changes the letter itself: the
+   key arrives as `'Z'`, and a comparison against `'z'` never matches. The Jest
+   test agreed with the implementation because `fireEvent` let it fake
+   `{ key: 'z', shiftKey: true }`, which no browser sends. (The same latent bug
+   is still in the dialog editor's own shortcut in `MainLayout` — noted, not
+   touched.)
+2. **Two undos in flight took the same batch.** Every edit is an IPC round trip
+   and the stacks move only once the worker answers, so overlapping replays both
+   read the same top of the undo stack, both applied it, and one entry never
+   came off. `WorldService` now serialises edits. This was found by *looking*
+   after the driver flickered — the driver's own failure was a fixed 250 ms wait
+   where a condition was needed, which is the mistake §3 already records for
+   throwaway Playwright scripts, and it had been hiding the race behind its own
+   latency.
+
+One build consequence: `TransformControls` puts the three chunk at **545.5 kB**
+against the CI guard's 550 kB. It fits, with 4.5 kB to spare — the next thing
+added to that chunk trips the guard and the limit will have to be argued about
+rather than nudged.
+
+What is still **not** built: multi-select, any op other than `MoveVob`, and
+save. No fidelity claim has moved — `saveWorld` is untouched — and until a
+UI-edited world is saved and re-run through the engine checklist, the check
+above cannot prove the *native* VOB moved is the one the flat index named,
+because the position it reads back comes from the projection.
 
 ---
 

@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
-import type { InstancedPayload, WaynetPayload, WorldMeshPayload } from '../../../shared/worldTypes';
+import { moveVob } from 'zen-world';
+import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { useWorldStore } from '../../store/worldStore';
+import { vobModelOf } from '../../world/vobModel';
 import WorldViewport from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
@@ -20,6 +22,7 @@ const WorldSurface: React.FC = () => {
   const status = useWorldStore((s) => s.status);
   const summary = useWorldStore((s) => s.summary);
   const error = useWorldStore((s) => s.error);
+  const editError = useWorldStore((s) => s.editError);
   const selectedVob = useWorldStore((s) => s.selectedVob);
   const { beginOpen, openSucceeded, openFailed, selectVob } = useWorldStore.getState();
 
@@ -99,6 +102,69 @@ const WorldSurface: React.FC = () => {
     setTerrainPoint(point);
   }, [selectVob]);
 
+  // ── editing (level-editor.md §7, Phase 1b) ────────────────────────────────
+  //
+  // The shell owns the IPC, so this is where a drag becomes an op. The
+  // authoritative world and the authoritative op log are both in the main
+  // process; what happens here is that the *projection* is brought into line
+  // with them once they have accepted the edit — never before, or a refused op
+  // leaves the two disagreeing.
+  //
+  // `appliedOps` is how the viewport hears about it. It is imperative and lives
+  // outside React's render path, so it cannot read the index the panels read;
+  // handing it the ops that were applied is smaller than either a callback ref
+  // or a second copy of the world.
+  const [appliedOps, setAppliedOps] = useState<WorldOp[] | null>(null);
+
+  const commitOps = useCallback(async (ops: WorldOp[]) => {
+    const { applyEdit, editFailed } = useWorldStore.getState();
+    try {
+      await window.editorAPI.applyWorldOps(ops);
+      applyEdit(ops);
+      setAppliedOps(ops);
+    } catch (failure) {
+      editFailed(failure instanceof Error ? failure.message : String(failure));
+      // The viewport has already drawn the drag; left alone, the VOB would sit
+      // where nothing else in the app agrees it is.
+      setAppliedOps(ops.map((op) => ({ ...op, from: op.to, to: op.from })));
+    }
+  }, []);
+
+  const handleMoveVob = useCallback((vob: number, to: [number, number, number]) => {
+    const current = useWorldStore.getState().summary;
+    if (current === null) return;
+    // `from` comes out of the index before anything is applied to it, which is
+    // what lets the op be inverted without a snapshot beside the history.
+    void commitOps([moveVob(vobModelOf(current).reader, vob, to)]);
+  }, [commitOps]);
+
+  useEffect(() => {
+    if (summary === null) return undefined;
+
+    const handler = (event: KeyboardEvent) => {
+      // Lower-cased because holding Shift changes the letter itself: Ctrl+Shift+Z
+      // arrives as `key: 'Z'`, and a comparison against 'z' never fires.
+      const key = event.key.toLowerCase();
+      const undo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
+      const redo = (event.ctrlKey || event.metaKey)
+        && (key === 'y' || (key === 'z' && event.shiftKey));
+      if (!undo && !redo) return;
+
+      event.preventDefault();
+      // What the main process says it applied, not what this side thinks it
+      // sent: the op log is over there and it is the one that decides.
+      void (undo ? window.editorAPI.undoWorldEdit() : window.editorAPI.redoWorldEdit())
+        .then((ops) => {
+          if (ops === null || ops.length === 0) return;
+          useWorldStore.getState().applyEdit(ops);
+          setAppliedOps(ops);
+        });
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [summary]);
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Paper square elevation={1} sx={{ p: 1, borderBottom: 1, borderColor: 'divider' }}>
@@ -144,6 +210,12 @@ const WorldSurface: React.FC = () => {
 
       {status === 'error' && (
         <Alert severity="error" square data-testid="world-error">{error}</Alert>
+      )}
+
+      {/* A refused edit, deliberately not `status: 'error'` — that replaces the
+          whole surface, and the world is still open and still correct. */}
+      {editError !== null && (
+        <Alert severity="warning" square data-testid="world-edit-error">{editError}</Alert>
       )}
 
       {status === 'idle' && (
@@ -197,6 +269,9 @@ const WorldSurface: React.FC = () => {
               showWaynet={showWaynet}
               loadTexture={loadTexture}
               onPick={handlePick}
+              selectedVob={selectedVob}
+              onMoveVob={handleMoveVob}
+              appliedOps={appliedOps}
             />
           )}
         </Box>

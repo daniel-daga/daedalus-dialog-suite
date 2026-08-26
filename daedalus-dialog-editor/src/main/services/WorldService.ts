@@ -71,6 +71,8 @@ export class WorldService {
   // whatever happens to sit at that path.
   private undoStack: WorldOp[][] = [];
   private redoStack: WorldOp[][] = [];
+  /** Edits run one at a time — see `serialized`. */
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(options: WorldServiceOptions = {}) {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -132,19 +134,28 @@ export class WorldService {
    * because the inverse of an edit that never happened moves a VOB that was
    * never moved.
    */
-  async applyOps(ops: readonly WorldOp[]): Promise<void> {
-    await this.requestOnOpenWorld<null>('applyOps', { ops });
-    this.undoStack.push([...ops]);
-    this.redoStack.length = 0;
+  applyOps(ops: readonly WorldOp[]): Promise<void> {
+    return this.serialized(async () => {
+      await this.requestOnOpenWorld<null>('applyOps', { ops });
+      this.undoStack.push([...ops]);
+      this.redoStack.length = 0;
+    });
   }
 
-  /** Replay the last batch's inverses; false when there is nothing to undo. */
-  undo(): Promise<boolean> {
+  /**
+   * Replay the last batch's inverses; null when there is nothing to undo.
+   *
+   * Answers with **the ops it applied**, not merely that it did. The renderer
+   * holds a projection of this world and has to move the same VOBs in it; a
+   * boolean would leave it either guessing or keeping a second history, and §7
+   * puts the authoritative one here.
+   */
+  undo(): Promise<WorldOp[] | null> {
     return this.replay(this.undoStack, this.redoStack, true);
   }
 
-  /** Replay the last undone batch as it was; false when there is nothing. */
-  redo(): Promise<boolean> {
+  /** Replay the last undone batch as it was; null when there is nothing. */
+  redo(): Promise<WorldOp[] | null> {
     return this.replay(this.redoStack, this.undoStack, false);
   }
 
@@ -155,11 +166,36 @@ export class WorldService {
    * VOB in one batch compose, and undoing them front to back leaves it where
    * the first op put it.
    */
-  private async replay(
+  private replay(
     from: WorldOp[][], to: WorldOp[][], invert: boolean,
-  ): Promise<boolean> {
+  ): Promise<WorldOp[] | null> {
+    return this.serialized(() => this.replayOne(from, to, invert));
+  }
+
+  /**
+   * One edit at a time, in the order it was asked for.
+   *
+   * Found by holding Ctrl+Z in the real app: every edit is an IPC round trip
+   * and the stacks are moved only once the worker answers, so two overlapping
+   * replays both read the same top of the stack and both apply it — the VOB
+   * moves back twice and one entry never comes off. Serialising is the whole
+   * fix; the alternative, moving the stacks before the worker confirms, is the
+   * bug the test above pins.
+   */
+  private serialized<T>(run: () => Promise<T>): Promise<T> {
+    // `then(run, run)`: the next edit runs whether or not the one before it was
+    // refused. A refused edit changes nothing — the batch is atomic and nothing
+    // is recorded — so it is no reason to stop taking edits.
+    const next = this.queue.then(run, run);
+    this.queue = next;
+    return next;
+  }
+
+  private async replayOne(
+    from: WorldOp[][], to: WorldOp[][], invert: boolean,
+  ): Promise<WorldOp[] | null> {
     const batch = from[from.length - 1];
-    if (batch === undefined) return false;
+    if (batch === undefined) return null;
 
     const ops = invert ? [...batch].reverse().map(invertOp) : batch;
     await this.requestOnOpenWorld<null>('applyOps', { ops });
@@ -168,7 +204,7 @@ export class WorldService {
     // the history where it was rather than one step out of step with the world.
     from.pop();
     to.push(batch);
-    return true;
+    return ops;
   }
 
   close(): void {

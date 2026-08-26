@@ -93,6 +93,74 @@ export class WorldScene {
   }
 
   /** The VOB an instance came from — a pick returns nothing else that identifies it. */
+  /**
+   * Move a VOB in the scene, in **ZenGin space** — an edit arriving from the op
+   * path (level-editor.md §7), or the live preview of one being dragged.
+   *
+   * Two things make this less obvious than setting a matrix. A VOB is an
+   * instance inside a mesh shared with every other VOB of the same visual, and
+   * a visual with several draw groups puts that instance in several meshes — so
+   * every one of them has to be written, or the VOB is drawn in two places at
+   * once. And `InstancedMesh` culls by a bounding sphere computed from the
+   * instances it was built with: dragging a VOB out of that sphere without
+   * recomputing it makes the whole mesh vanish at some camera angles and not
+   * others.
+   *
+   * The scan is deliberate rather than an index. It costs one pass over the
+   * ~20k instance ids in the scene, it happens on a drag frame and not on a
+   * render frame, and a permanent VOB -> instance map is a second structure to
+   * keep correct across every future op that adds or removes one.
+   *
+   * @returns whether the VOB is drawn at all — 23,288 VOBs are enumerated on
+   *   NewWorld and 12,463 placed, so a decal or a particle effect is selectable
+   *   and has no instance to move.
+   */
+  moveVob(vob: number, position: readonly [number, number, number]): boolean {
+    const matrix = new THREE.Matrix4();
+    let moved = false;
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      if (!vobIds) continue;
+
+      let here = false;
+      for (let i = vobIds.indexOf(vob); i !== -1; i = vobIds.indexOf(vob, i + 1)) {
+        mesh.getMatrixAt(i, matrix);
+        matrix.setPosition(position[0], position[1], position[2]);
+        mesh.setMatrixAt(i, matrix);
+        here = true;
+      }
+      if (!here) continue;
+
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      moved = true;
+    }
+
+    return moved;
+  }
+
+  /**
+   * Where a VOB is drawn, in ZenGin space — or null if it is not drawn at all.
+   *
+   * The viewport is handed payloads, never the world, so the scene is what it
+   * asks where the selected VOB is when it puts a gizmo on it.
+   */
+  positionOf(vob: number): [number, number, number] | null {
+    const matrix = new THREE.Matrix4();
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      const at = vobIds ? vobIds.indexOf(vob) : -1;
+      if (at === -1) continue;
+
+      mesh.getMatrixAt(at, matrix);
+      return [matrix.elements[12], matrix.elements[13], matrix.elements[14]];
+    }
+
+    return null;
+  }
+
   resolveInstance(mesh: THREE.InstancedMesh, instanceId: number): number | null {
     const vobIds = this.instanceVobIds.get(mesh);
     if (!vobIds || instanceId < 0 || instanceId >= vobIds.length) return null;

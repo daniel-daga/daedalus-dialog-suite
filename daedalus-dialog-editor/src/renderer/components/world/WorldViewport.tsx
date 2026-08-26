@@ -2,10 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import { threeToZen, zenBoxToThree } from 'zen-world';
 import type {
-  DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload,
+  DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { WorldScene } from '../../world/WorldScene';
@@ -42,6 +43,18 @@ declare global {
      *  see `viewportBenchmark.ts`. */
     __worldViewport?: {
       benchmark: (options?: Partial<BenchmarkOptions>) => Promise<BenchmarkResult>;
+      /**
+       * Drag the gizmo to a position in ZenGin space and let go, by firing the
+       * events `TransformControls` fires — for `scripts/verify-world-edit.js`,
+       * which drives the real app against a real world.
+       *
+       * What it stands in for is precisely three's pointer-to-position maths;
+       * everything below that — the live preview, the commit, the op, the IPC,
+       * the native move and the panels — is the real thing.
+       */
+      dragGizmo: (to: [number, number, number]) => void;
+      /** Where the gizmo currently sits, in ZenGin space, or null if detached. */
+      gizmoPosition: () => [number, number, number] | null;
     };
   }
 }
@@ -67,16 +80,34 @@ export interface WorldViewportProps {
    * the click missed everything.
    */
   onPick: (vob: number | null, point: [number, number, number] | null) => void;
+  /** What the gizmo is attached to. Null hides it. */
+  selectedVob: number | null;
+  /** A finished drag, in **ZenGin space** — the shell turns it into an op. The
+   *  viewport has already drawn the move; this asks for it to be made real. */
+  onMoveVob: (vob: number, to: [number, number, number]) => void;
+  /** Ops the main process has applied — a committed edit, an undo, a redo, or
+   *  the reversal of a refused one. The scene follows them. */
+  appliedOps: WorldOp[] | null;
+}
+
+/** What the selection and edit effects need of the imperative viewport, so
+ *  neither of them can tear the scene down and rebuild 31 MB of buffers. */
+interface Gizmo {
+  attach: (vob: number | null) => void;
 }
 
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
+  selectedVob, onMoveVob, appliedOps,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
   // for the waynet does not rebuild 31 MB of geometry.
   const sceneRef = useRef<WorldScene | null>(null);
   const overlayRef = useRef<WaynetOverlay | null>(null);
+  const gizmoRef = useRef<Gizmo | null>(null);
+  const onMoveVobRef = useRef(onMoveVob);
+  onMoveVobRef.current = onMoveVob;
   // Read through refs so a parent re-render cannot tear the scene down and
   // rebuild 31 MB of buffers just because a callback identity changed.
   const onPickRef = useRef(onPick);
@@ -147,11 +178,75 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       }
     })();
 
+    // ── the gizmo (level-editor.md §7, Phase 1b) ────────────────────────────
+    //
+    // A VOB is an *instance*, not an Object3D, so there is nothing for
+    // TransformControls to attach to. The proxy is that something: it hangs
+    // under the same mirrored root as everything else, which means its local
+    // position is ZenGin centimetres and reading it back needs no conversion —
+    // the root stays the only one in the app.
+    //
+    // The gizmo's own helper goes in the top-level scene instead, or it would
+    // be drawn through that same 0.01 scale and mirror.
+    const proxy = new THREE.Object3D();
+    world.root.add(proxy);
+
+    const transform = new TransformControls(camera, renderer.domElement);
+    transform.setSpace('world');
+    scene.add(transform.getHelper());
+    transform.enabled = false;
+    transform.getHelper().visible = false;
+
+    let gizmoVob: number | null = null;
+    // A drag ends with a pointerup that the browser also delivers as a click on
+    // the canvas, *after* the gizmo has already reported the drag finished — so
+    // a flag that is true only during the drag would already be false by then.
+    // This one is consumed by the click it belongs to.
+    let endedDrag = false;
+
+    const attach = (vob: number | null) => {
+      const position = vob === null ? null : world.positionOf(vob);
+      gizmoVob = position === null ? null : vob;
+
+      if (position === null) {
+        transform.detach();
+        transform.enabled = false;
+        transform.getHelper().visible = false;
+        return;
+      }
+      proxy.position.set(position[0], position[1], position[2]);
+      transform.attach(proxy);
+      transform.enabled = true;
+      transform.getHelper().visible = true;
+    };
+    gizmoRef.current = { attach };
+
+    // A drag must not also orbit the camera.
+    transform.addEventListener('dragging-changed', (event) => {
+      const dragging = event.value as boolean;
+      controls.enabled = !dragging;
+      if (dragging) return;
+
+      endedDrag = true;
+      if (gizmoVob === null) return;
+      onMoveVobRef.current(gizmoVob, [proxy.position.x, proxy.position.y, proxy.position.z]);
+    });
+
+    // The live preview. The world in the main process still has the VOB where
+    // it was; this is the drag being drawn, and it is made real on release.
+    transform.addEventListener('objectChange', () => {
+      if (gizmoVob === null) return;
+      world.moveVob(gizmoVob, [proxy.position.x, proxy.position.y, proxy.position.z]);
+    });
+
     const raycaster = new THREE.Raycaster();
     raycaster.firstHitOnly = true;
     const pointer = new THREE.Vector2();
 
     const handleClick = async (event: MouseEvent) => {
+      // Picking here would select whatever is behind the gizmo — usually
+      // nothing, so a finished drag would deselect the VOB it just moved.
+      if (endedDrag) { endedDrag = false; return; }
       const rect = renderer.domElement.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
@@ -263,16 +358,31 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       }
     };
 
-    window.__worldViewport = { benchmark };
+    window.__worldViewport = {
+      benchmark,
+      dragGizmo: (to) => {
+        if (gizmoVob === null) throw new Error('no VOB is selected');
+        proxy.position.set(to[0], to[1], to[2]);
+        transform.dispatchEvent({ type: 'objectChange' });
+        transform.dispatchEvent({ type: 'dragging-changed', value: false });
+      },
+      gizmoPosition: () => (gizmoVob === null
+        ? null
+        : [proxy.position.x, proxy.position.y, proxy.position.z]),
+    };
 
     return () => {
       disposed = true;
       sceneRef.current = null;
+      gizmoRef.current = null;
       delete window.__worldViewport;
       cancelAnimationFrame(frame);
       resize.disconnect();
       renderer.domElement.removeEventListener('click', handleClick);
       controls.dispose();
+      transform.detach();
+      scene.remove(transform.getHelper());
+      transform.dispose();
       picker.dispose();
       bvh.dispose();
       world.dispose();
@@ -304,6 +414,27 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   useEffect(() => {
     overlayRef.current?.setVisible(showWaynet);
   }, [showWaynet, waynet, mesh]);
+
+  // The gizmo follows the selection. `mesh` is a dependency because a new
+  // world's scene is a new gizmo, not because the selection changed.
+  useEffect(() => {
+    gizmoRef.current?.attach(selectedVob);
+  }, [selectedVob, mesh, visuals]);
+
+  // An edit the main process has taken — a commit, an undo, a redo, or the
+  // reversal of a refused one. The scene is a projection and has to follow it;
+  // the gizmo has to follow the VOB it is attached to, or it is left floating
+  // where the VOB used to be.
+  useEffect(() => {
+    const world = sceneRef.current;
+    if (world === null || appliedOps === null) return;
+
+    for (const op of appliedOps) world.moveVob(op.vob, op.to);
+    if (appliedOps.some((op) => op.vob === selectedVob)) gizmoRef.current?.attach(selectedVob);
+    // `selectedVob` is deliberately not a dependency: this effect is about ops
+    // arriving, and re-running it on a selection change would re-apply them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedOps]);
 
   return <Box ref={hostRef} data-testid="world-viewport" sx={{ width: '100%', height: '100%', minHeight: 0 }} />;
 };

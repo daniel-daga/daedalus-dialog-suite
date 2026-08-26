@@ -52,6 +52,10 @@ class FakeWorker implements WorldWorker {
   }
 }
 
+/** Edits are serialized in the service, so the request reaches the worker a
+ *  microtask after the call. A macrotask boundary lets the queue drain. */
+const tick = () => new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+
 function makeService(timeoutMs?: number) {
   const worker = new FakeWorker();
   const service = new WorldService({
@@ -223,6 +227,7 @@ describe('the op log', () => {
   /** Apply a batch and let the worker confirm it. */
   async function applied(service: WorldService, worker: FakeWorker, ops: Move[]) {
     const pending = service.applyOps(ops);
+    await tick();
     worker.replyLast('applyOps', null);
     await pending;
   }
@@ -246,8 +251,12 @@ describe('the op log', () => {
     await applied(service, worker, [A, B]);
 
     const undone = service.undo();
+    await tick();
     worker.replyLast('applyOps', null);
-    await expect(undone).resolves.toBe(true);
+    await expect(undone).resolves.toEqual([
+      { ...B, from: B.to, to: B.from },
+      { ...A, from: A.to, to: A.from },
+    ]);
 
     expect(worker.sent.at(-1)!.op).toBe('applyOps');
     expect(worker.sent.at(-1)!.payload).toEqual({
@@ -264,12 +273,14 @@ describe('the op log', () => {
     await applied(service, worker, [A]);
 
     const undone = service.undo();
+    await tick();
     worker.replyLast('applyOps', null);
     await undone;
 
     const redone = service.redo();
+    await tick();
     worker.replyLast('applyOps', null);
-    await expect(redone).resolves.toBe(true);
+    await expect(redone).resolves.toEqual([A]);
 
     expect(worker.sent.at(-1)!.payload).toEqual({ ops: [A] });
     service.close();
@@ -279,8 +290,8 @@ describe('the op log', () => {
     const { worker, service } = await openedService();
     const before = worker.sent.length;
 
-    await expect(service.undo()).resolves.toBe(false);
-    await expect(service.redo()).resolves.toBe(false);
+    await expect(service.undo()).resolves.toBeNull();
+    await expect(service.redo()).resolves.toBeNull();
 
     expect(worker.sent).toHaveLength(before);
     service.close();
@@ -290,13 +301,14 @@ describe('the op log', () => {
     const { worker, service } = await openedService();
     await applied(service, worker, [A]);
     const undone = service.undo();
+    await tick();
     worker.replyLast('applyOps', null);
     await undone;
 
     await applied(service, worker, [B]);
 
     // Redoing A now would move a VOB the user never touched again.
-    await expect(service.redo()).resolves.toBe(false);
+    await expect(service.redo()).resolves.toBeNull();
     service.close();
   });
 
@@ -310,7 +322,7 @@ describe('the op log', () => {
     worker.replyLast('open', SUMMARY);
     await reopened;
 
-    await expect(service.undo()).resolves.toBe(false);
+    await expect(service.undo()).resolves.toBeNull();
     expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(1);
     service.close();
   });
@@ -321,10 +333,11 @@ describe('the op log', () => {
     const { worker, service } = await openedService();
 
     const failing = service.applyOps([A]);
+    await tick();
     worker.fail('applyOps', 'no vob at indexPath');
     await expect(failing).rejects.toThrow('no vob at indexPath');
 
-    await expect(service.undo()).resolves.toBe(false);
+    await expect(service.undo()).resolves.toBeNull();
     service.close();
   });
 
@@ -337,17 +350,74 @@ describe('the op log', () => {
     await applied(service, worker, [A]);
 
     const refused = service.undo();
+    await tick();
     worker.fail('applyOps', 'no vob at indexPath');
     await expect(refused).rejects.toThrow('no vob at indexPath');
 
     const retried = service.undo();
+    await tick();
     worker.replyLast('applyOps', null);
-    await expect(retried).resolves.toBe(true);
+    await expect(retried).resolves.toEqual([{ ...A, from: A.to, to: A.from }]);
     // ...and it did not also land on the redo stack the first time round.
     const redone = service.redo();
+    await tick();
     worker.replyLast('applyOps', null);
-    await expect(redone).resolves.toBe(true);
-    await expect(service.redo()).resolves.toBe(false);
+    await expect(redone).resolves.toEqual([A]);
+    await expect(service.redo()).resolves.toBeNull();
+    service.close();
+  });
+
+  test('two undos in flight at once do not both take the same batch', async () => {
+    // Found by holding Ctrl+Z in the real app: undo is an IPC round trip into
+    // the worker, and the stacks are moved only once it answers (the test
+    // above). Two overlapping replays therefore both read the same top of the
+    // undo stack, both send its inverses, and the VOB is moved back twice —
+    // while one entry stays on the stack forever.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+    await applied(service, worker, [B]);
+
+    const first = service.undo();
+    const second = service.undo();
+
+    // Only one request may be out at a time; the second waits its turn.
+    await tick();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(3);
+    worker.replyLast('applyOps', null);
+    await first;
+
+    await tick();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(4);
+    worker.replyLast('applyOps', null);
+    await second;
+
+    const replays = worker.sent.filter((m) => m.op === 'applyOps').slice(2);
+    expect(replays[0].payload).toEqual({ ops: [{ ...B, from: B.to, to: B.from }] });
+    expect(replays[1].payload).toEqual({ ops: [{ ...A, from: A.to, to: A.from }] });
+    await expect(service.undo()).resolves.toBeNull();
+    service.close();
+  });
+
+  test('an edit made while an undo is in flight waits for it', async () => {
+    // Same hazard from the other side: the op the user is dragging must not be
+    // recorded on top of a batch the undo has not finished taking off.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const undone = service.undo();
+    const edit = service.applyOps([B]);
+
+    await tick();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(2);
+    worker.replyLast('applyOps', null);
+    await undone;
+    await tick();
+    worker.replyLast('applyOps', null);
+    await edit;
+
+    // The edit landed after the undo, so redo has nothing left: a new edit
+    // drops the redo stack.
+    await expect(service.redo()).resolves.toBeNull();
     service.close();
   });
 

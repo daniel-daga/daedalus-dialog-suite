@@ -1,0 +1,151 @@
+/**
+ * The renderer's side of an edit (level-editor.md §7, Phase 1b).
+ *
+ * The authoritative world lives in the main process and the store holds a
+ * *projection* of it — the columnar `vobIndex` the worker sent. So an op that
+ * has been applied over there has to be applied here too, or the scene tree and
+ * the property grid go on showing where a VOB used to be until something
+ * reloads 31 MB of payloads.
+ *
+ * The projection is mutated **in place**, in the `ArrayBuffer` columns the
+ * worker sent, which is exactly why this store has no `immer` middleware and
+ * why `vobModelOf` caches its reader against the summary object: the readers
+ * are views over those buffers and must not be rebuilt on every edit.
+ *
+ * @jest-environment jsdom
+ */
+
+import { createVobReader, moveVob, type VobIndex, type WorldOp } from 'zen-world';
+import { useWorldStore } from '../src/renderer/store/worldStore';
+import { vobModelOf } from '../src/renderer/world/vobModel';
+import type { WorldSummary } from '../src/shared/worldTypes';
+
+function vobIndex(positions: Array<[number, number, number]>): VobIndex {
+  const count = positions.length;
+  const columns = new Float32Array(count * 3);
+  positions.forEach((position, i) => columns.set(position, i * 3));
+
+  return {
+    count,
+    parent: new Int32Array(count).fill(-1).buffer,
+    childIndex: new Uint32Array(count.valueOf()).map((_, i) => i).buffer,
+    positions: columns.buffer,
+    rotations: new Float32Array(count * 9).buffer,
+    flags: new Uint32Array(count).buffer,
+    classes: ['zCVob'], classIndex: new Uint32Array(count).buffer,
+    names: [''], nameIndex: new Uint32Array(count).buffer,
+    visuals: [''], visualIndex: new Uint32Array(count).buffer,
+    visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
+  };
+}
+
+function summaryWith(positions: Array<[number, number, number]>): WorldSummary {
+  return {
+    worldPath: 'C:/Gothic/NewWorld.zen',
+    bbox: [0, 0, 0, 1, 1, 1],
+    vobIndex: vobIndex(positions),
+    stats: { vobCount: positions.length, materials: 1, worldDrawGroups: 1, worldTriangles: 1 },
+    timings: {},
+  };
+}
+
+/** A store with a world open, and the op that moves its second VOB. */
+function opened() {
+  const summary = summaryWith([[0, 0, 0], [10, 20, 30]]);
+  useWorldStore.getState().reset();
+  useWorldStore.getState().openSucceeded(summary);
+  const op = moveVob(vobModelOf(summary).reader, 1, [11, 22, 33]);
+  return { summary, op };
+}
+
+afterEach(() => { useWorldStore.getState().reset(); });
+
+describe('an edit reaching the renderer', () => {
+  it('moves the VOB in the index the panels read', () => {
+    const { summary, op } = opened();
+
+    useWorldStore.getState().applyEdit([op]);
+
+    expect(vobModelOf(summary).reader.position(1)).toEqual([11, 22, 33]);
+  });
+
+  it('mutates the columns in place, so no reader has to be rebuilt', () => {
+    // `vobModelOf` caches the tree and the column views against the summary
+    // because a virtualized tree over 23,288 VOBs reads them on every scroll
+    // frame. An edit that replaced the index would leave every cached reader
+    // pointing at the old buffers.
+    const { summary, op } = opened();
+    const before = vobModelOf(summary);
+
+    useWorldStore.getState().applyEdit([op]);
+
+    expect(vobModelOf(summary)).toBe(before);
+    expect(useWorldStore.getState().summary).toBe(summary);
+  });
+
+  it('applies a batch in order — a multi-select drag is one edit', () => {
+    const { summary } = opened();
+    const reader = vobModelOf(summary).reader;
+    const ops: WorldOp[] = [moveVob(reader, 0, [1, 1, 1]), moveVob(reader, 1, [2, 2, 2])];
+
+    useWorldStore.getState().applyEdit(ops);
+
+    expect(reader.position(0)).toEqual([1, 1, 1]);
+    expect(reader.position(1)).toEqual([2, 2, 2]);
+  });
+
+  it('does nothing at all when no world is open', () => {
+    // Undo is a keystroke, and a keystroke can arrive between closing one world
+    // and opening the next.
+    useWorldStore.getState().reset();
+
+    expect(() => useWorldStore.getState().applyEdit([
+      { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 2, 3] },
+    ])).not.toThrow();
+    expect(useWorldStore.getState().summary).toBeNull();
+  });
+
+  it('starts a newly opened world with no stale edit error', () => {
+    const { op } = opened();
+    useWorldStore.getState().applyEdit([op]);
+    useWorldStore.getState().editFailed('the worker refused it');
+
+    useWorldStore.getState().openSucceeded(summaryWith([[0, 0, 0]]));
+
+    expect(useWorldStore.getState().editError).toBeNull();
+  });
+
+  it('reports a refused edit without tearing the world down', () => {
+    // `status: 'error'` is how a failed *open* is reported and it replaces the
+    // whole surface with a message. A refused edit must not do that — the world
+    // is still open and still correct.
+    opened();
+
+    useWorldStore.getState().editFailed('no vob at indexPath');
+
+    expect(useWorldStore.getState().editError).toBe('no vob at indexPath');
+    expect(useWorldStore.getState().status).toBe('ready');
+    expect(useWorldStore.getState().summary).not.toBeNull();
+  });
+
+  it('clears the edit error once an edit succeeds', () => {
+    const { op } = opened();
+    useWorldStore.getState().editFailed('no vob at indexPath');
+
+    useWorldStore.getState().applyEdit([op]);
+
+    expect(useWorldStore.getState().editError).toBeNull();
+  });
+});
+
+describe('the reader the panels share', () => {
+  it('sees the same buffers the store holds — not a copy of them', () => {
+    // If `openSucceeded` ever copied the index, every edit would land in one of
+    // the two copies and the panels would disagree with the viewport.
+    const { summary } = opened();
+    const stored = useWorldStore.getState().summary!;
+
+    expect(stored.vobIndex.positions).toBe(summary.vobIndex.positions);
+    expect(createVobReader(stored.vobIndex).position(1)).toEqual([10, 20, 30]);
+  });
+});
