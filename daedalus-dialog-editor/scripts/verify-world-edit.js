@@ -407,6 +407,38 @@ async function main() {
   await expect_(async () => (await page.getByTestId('world-prop-name-input').inputValue()) === RENAMED,
     'redo did not restore the rename');
 
+  // ── placing a VOB, which changes the shape of the world ──────────────────
+  //
+  // The first edit that adds a VOB rather than changing one, and the only one
+  // whose projection cannot be patched: a flat index is a VOB's position in a
+  // depth-first traversal, so the index is re-read whole and the scene rebuilt.
+  // Undone again before the save below, which counts on 23,288.
+  const treeCount = () => page.getByTestId('world-tree-count').textContent()
+    .then((text) => Number((text ?? '').replace(/[^0-9]/g, '')));
+
+  const vobsBefore = await treeCount();
+  const PLACED = `VERIFY_PLACED_${process.pid}`;
+
+  await page.evaluate(() => globalThis.__worldViewport.pickTerrain([29628, 5300, -15176]));
+  await page.getByTestId('world-place-vob').click();
+  await page.getByTestId('world-place-name').fill(PLACED);
+  await page.getByTestId('world-place-visual').fill('NW_CRATE.3DS');
+  await page.getByTestId('world-place-confirm').click();
+
+  await expect_(async () => (await treeCount()) === vobsBefore + 1,
+    `the scene tree never showed ${vobsBefore + 1} VOBs after placing one`);
+  check(await page.getByTestId('world-edit-error').count() === 0, 'the placement was refused');
+
+  // The refresh is the half that only the real app exercises: the worker
+  // re-reads its own index, the store takes a whole new summary, and every
+  // cached reader over the old buffers has to be dropped with it.
+  const placedIndex = vobsBefore;
+  await clickRow(placedIndex).catch(() => undefined);
+
+  await page.keyboard.press('Control+z');
+  await expect_(async () => (await treeCount()) === vobsBefore,
+    'undo did not remove the placed VOB from the index');
+
   // ── save, and the question only a save can answer ─────────────────────────
   //
   // Every check above reads the *projection*: the property grid reads the
@@ -492,6 +524,7 @@ async function main() {
   row('Undo / redo', 'both followed by the grid and the gizmo');
   row('Turned', 'a quarter turn about Y, checked in both projections, undone');
   row('Renamed', `${nameBefore || '(unnamed)'} -> ${RENAMED}, and one flag, each its own undo`);
+  row('Placed', `${PLACED} appended as a root, index re-read, undone`);
   row('Saved and re-loaded', saved
     ? `VOB ${selected} is at ${saved.position.map(Math.round).join(', ')} in the file`
     : 'FAILED');

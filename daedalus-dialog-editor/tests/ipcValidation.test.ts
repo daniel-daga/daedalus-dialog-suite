@@ -438,4 +438,67 @@ describe('assertApplyOpsRequest', () => {
       }
     });
   });
+
+  describe('an add', () => {
+    const add = {
+      op: 'AddVob',
+      vob: 12,
+      path: '3',
+      from: null,
+      to: { name: 'PLACED', visual: 'CRATE.3DS', position: [1, 2, 3] },
+    };
+
+    it('is accepted in either direction', () => {
+      expect(() => assertApplyOpsRequest({ ops: [add] })).not.toThrow();
+      // Its inverse: the same op with the sides swapped, which is a delete.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, from: add.to, to: null }],
+      })).not.toThrow();
+    });
+
+    it('rejects an op that is neither an add nor a delete', () => {
+      // Both null does nothing; neither null is an add and a delete at once,
+      // and `writeOp` would then read it as an insert in *both* directions — so
+      // the VOB would never come back off an undo.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, from: null, to: null }],
+      })).toThrow(/one null side/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, from: add.to, to: add.to }],
+      })).toThrow(/one null side/);
+    });
+
+    it('requires a position, in three finite numbers', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { name: 'NO_WHERE' } }],
+      })).toThrow(/position/);
+      for (const bad of [[1, 2], [1, 2, NaN], '1,2,3', null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, to: { position: bad } }],
+        })).toThrow(/position/);
+      }
+    });
+
+    it('rejects a property the binding cannot author', () => {
+      // `physicsEnabled` is in the flag word the property op writes, and
+      // `insertVob` does not take it — ZenGin writes that field only for some
+      // world formats and cannot set it in the Spacer at all. Sharing one list
+      // between the two would wave through exactly what the binding refuses.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], physicsEnabled: true } }],
+      })).toThrow(/physicsEnabled/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], scale: 2 } }],
+      })).toThrow(/scale/);
+    });
+
+    it('checks the matrix and the box it is given', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], rotation: [1, 2, 3] } }],
+      })).toThrow(/rotation/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], bbox: [1, 2, 3] } }],
+      })).toThrow(/bbox/);
+    });
+  });
 });

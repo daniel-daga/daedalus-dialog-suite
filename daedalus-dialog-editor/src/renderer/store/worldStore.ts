@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { applyOps, createVobReader } from 'zen-world';
+import { applyOps, createVobReader, isStructuralOp } from 'zen-world';
 import type { WorldOp, WorldSummary } from '../../shared/worldTypes';
 
 /**
@@ -42,6 +42,10 @@ interface WorldStore {
   toggleVob: (vob: number) => void;
   /** Apply ops the main process has already applied to the authoritative world. */
   applyEdit: (ops: readonly WorldOp[]) => void;
+  /** A re-read of the VOB enumeration after a structural edit. The columns are
+   *  new buffers, so every cached reader over the old summary is stale — which
+   *  is why this replaces the summary rather than writing into it. */
+  indexRefreshed: (summary: WorldSummary) => void;
   editFailed: (error: string) => void;
   reset: () => void;
 }
@@ -78,6 +82,13 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     // A keystroke can arrive between closing one world and opening the next.
     if (summary === null) return;
 
+    // A structural op changes how many VOBs there are, so there is no column to
+    // write it into — `zen-world`'s `applyOps` refuses one by name. The whole
+    // batch is left alone rather than partly applied, because the caller follows
+    // it with `indexRefreshed`, which supersedes anything this could have
+    // written.
+    if (ops.some(isStructuralOp)) return;
+
     // Straight into the columns the worker sent, so neither the summary nor
     // the index changes identity: `vobModelOf` caches the tree and the column
     // views against the summary because a virtualized tree over 23,288 VOBs
@@ -91,6 +102,12 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     applyOps(createVobReader(summary.vobIndex), ops);
     if (get().editError !== null) set({ editError: null });
   },
+
+  // The selection is kept: an added VOB is appended and takes the index one past
+  // the end, so nothing that was selected has been renumbered. An op that
+  // renumbered would have to clear it, which is one more reason there is no such
+  // op yet.
+  indexRefreshed: (summary) => set({ summary, editError: null }),
 
   editFailed: (editError) => set({ editError }),
 

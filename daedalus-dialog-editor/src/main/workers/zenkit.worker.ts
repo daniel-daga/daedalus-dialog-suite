@@ -7,6 +7,7 @@ import {
   commitOps,
   createVobReader,
   groupTransferables,
+  isStructuralOp,
   visualBounds,
   type MeshChunk,
   type SceneBinding,
@@ -42,6 +43,11 @@ let index: zenkit.VobIndex | null = null;
 // Extracted during `open` so its 267 ms sits inside the measured cold open
 // rather than surfacing later as an unexplained stall.
 let worldMesh: ReturnType<typeof buildWorldMesh> | null = null;
+// What an open established and a structural edit does not change — kept so the
+// index can be re-read without re-loading the world and losing every edit.
+let openedPath: string | null = null;
+let worldBbox: number[] | null = null;
+let openedStats: WorldSummary['stats'] | null = null;
 
 // `zenkit-node` omits `lights` on a proto-mesh chunk; `zen-world` wants the
 // absence stated. This is the whole of the impedance mismatch between them.
@@ -79,18 +85,21 @@ function open(request: OpenWorldRequest): { result: WorldSummary; transfer: Arra
   const mesh = phase('extractWorldMesh', () => buildWorldMesh(binding, handle!));
 
   worldMesh = mesh;
+  openedPath = request.worldPath;
+  worldBbox = mesh.bbox;
+  openedStats = {
+    vobCount: index.count,
+    materials: mesh.stats.materials,
+    worldDrawGroups: mesh.stats.drawGroups,
+    worldTriangles: mesh.stats.triangles,
+  };
 
   return {
     result: {
       worldPath: request.worldPath,
       bbox: mesh.bbox,
       vobIndex: index,
-      stats: {
-        vobCount: index.count,
-        materials: mesh.stats.materials,
-        worldDrawGroups: mesh.stats.drawGroups,
-        worldTriangles: mesh.stats.triangles,
-      },
+      stats: { ...openedStats },
       timings: { ...timings },
     },
     // Nothing is transferred here, and that is deliberate. Transferring the
@@ -100,6 +109,32 @@ function open(request: OpenWorldRequest): { result: WorldSummary; transfer: Arra
     // also the authoritative VOB enumeration this worker keeps for later ops.
     // Copying it is 1.69 MB; transfer is for the geometry, which is 31 MB and
     // which this side genuinely does hand over.
+    transfer: [],
+  };
+}
+
+/**
+ * The VOB enumeration again, after a structural edit has changed it.
+ *
+ * A VOB's flat index is its position in a depth-first traversal, so adding one
+ * changes how many there are and the renderer's columnar projection cannot be
+ * patched — `zen-world`'s `applyOps` refuses a structural op by name rather than
+ * pretending. This re-reads the index from the world **this thread already
+ * holds**: re-opening would re-load from disk and throw away every edit.
+ *
+ * The world mesh is not re-extracted. Nothing structural about the VOB tree
+ * touches it, and it is the expensive half of an open.
+ */
+function refreshIndex(): { result: WorldSummary; transfer: ArrayBuffer[] } {
+  index = phase('vobIndex', () => zenkit.vobIndex(handle!));
+  return {
+    result: {
+      worldPath: openedPath!,
+      bbox: worldBbox!,
+      vobIndex: index,
+      stats: { ...openedStats!, vobCount: index.count },
+      timings: { ...timings },
+    },
     transfer: [],
   };
 }
@@ -197,10 +232,16 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
       setVobPosition: (path, to) => zenkit.setVobPosition(handle!, path, to),
       setVobRotation: (path, to, bbox) => zenkit.setVobRotation(handle!, path, to, bbox),
       setVobProp: (path, props) => zenkit.setVobProp(handle!, path, props),
+      insertVob: (spec) => zenkit.insertVob(handle!, spec),
+      deleteVob: (path) => zenkit.deleteVob(handle!, path),
     },
     payload.ops,
   );
-  applyOps(createVobReader(index!), payload.ops);
+  // A structural op changes how many VOBs there are, so the columnar projection
+  // cannot be patched — `applyOps` refuses one by name. The index this thread
+  // keeps is re-read instead, and the renderer asks for it with `refreshIndex`.
+  if (payload.ops.some(isStructuralOp)) index = zenkit.vobIndex(handle!);
+  else applyOps(createVobReader(index!), payload.ops);
   return { result: null, transfer: [] };
 }
 
@@ -230,6 +271,9 @@ function close(): { result: null; transfer: ArrayBuffer[] } {
   vfs = null;
   index = null;
   worldMesh = null;
+  openedPath = null;
+  worldBbox = null;
+  openedStats = null;
   return { result: null, transfer: [] };
 }
 
@@ -257,6 +301,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'assets': return assets(message.payload as { path: string });
     case 'waynet': return waynet();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);
+    case 'refreshIndex': return refreshIndex();
     case 'applyOps': return applyOpsRequest(message.payload as ApplyOpsRequest);
     case 'save': return save(message.payload as SaveWorldRequest);
     case 'close': return close();

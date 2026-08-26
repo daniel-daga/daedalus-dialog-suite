@@ -642,6 +642,9 @@ export const mockEditorAPI: EditorAPI = {
   // Null is what the real call returns for a visual that does not resolve, and
   // the op treats that as "leave the stale box alone" rather than as an error.
   async getVisualBounds(): Promise<null> { return null; },
+  async refreshWorldIndex(): Promise<never> {
+    throw new Error('No world is open');
+  },
   async applyWorldOps(): Promise<never> {
     throw new Error('No world is open');
   },

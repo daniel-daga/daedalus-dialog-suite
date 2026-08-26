@@ -138,7 +138,58 @@ export interface SetVobProp {
   toBbox: ZenBounds | null;
 }
 
-export type WorldOp = MoveVob | RotateVob | SetVobProp;
+/**
+ * A VOB to author. Only `position` is required.
+ *
+ * Everything about a VOB made this way is described here, which is exactly what
+ * makes an add op invertible: undo deletes it and redo makes it again from the
+ * same description, with no snapshot beside the history. That is **not** true of
+ * an arbitrary retail VOB — an `oCMobInter` carries per-class properties,
+ * children, an AI and an event manager that nothing here describes — which is
+ * why deleting one is a different op that does not exist yet.
+ */
+export interface NewVob {
+  name?: string;
+  /** The visual's class is derived from the extension by the binding, which is
+   *  the opposite of what a rename does and for the opposite reason: a rename
+   *  has a class to preserve, authoring has none. */
+  visual?: string;
+  position: ZenPosition;
+  /** Row-major; identity when omitted. */
+  rotation?: ZenRotation;
+  bbox?: ZenBounds;
+  showVisual?: boolean;
+  cdStatic?: boolean;
+  cdDynamic?: boolean;
+  vobStatic?: boolean;
+  ambient?: boolean;
+}
+
+export interface AddVob {
+  op: 'AddVob';
+  /** The flat index it takes — one past the end, because it is enumerated last. */
+  vob: number;
+  /** The native address: the slot after the last root. */
+  path: string;
+  /** Null means "not in the world". `from` is null for an add and `to` is null
+   *  for its inverse, so `invertOp` swaps the two sides exactly as it does for
+   *  every other op and a delete needs no special case. */
+  from: NewVob | null;
+  to: NewVob | null;
+}
+
+export type WorldOp = MoveVob | RotateVob | SetVobProp | AddVob;
+
+/**
+ * Does this op change how many VOBs there are, and therefore the enumeration?
+ *
+ * A flat index is a VOB's position in a depth-first traversal. Every other op
+ * writes into columns that already exist; this one changes how many there are,
+ * so the renderer's projection cannot follow it and has to be re-read.
+ */
+export function isStructuralOp(op: WorldOp): op is AddVob {
+  return op.op === 'AddVob';
+}
 
 /**
  * The native address of `vob`: its slot among its parent's children, root
@@ -378,6 +429,31 @@ export function setVobProps(
   ));
 }
 
+/**
+ * Place a new VOB in the world.
+ *
+ * **It appends a root, and that is the design rather than a gap.** A VOB's flat
+ * index is its position in a depth-first traversal, so a VOB added anywhere else
+ * is enumerated before VOBs that already exist and renumbers every one of them —
+ * and every op already in the history addresses a VOB both by that number and by
+ * an index path built from it. Appending a root is the one position that shifts
+ * nothing: it is enumerated last, and takes the index one past the end.
+ *
+ * Placing a VOB *under* a parent is a real feature. It waits on an answer to
+ * that renumbering, which is the same answer a reparent and a general delete
+ * both need.
+ */
+export function addVob(reader: VobReader, spec: NewVob): AddVob {
+  // The slot it will occupy among the roots — the binding appends to the same
+  // list, so this is the path it comes back with, and `commitOps` refuses the
+  // op if it does not.
+  const { parent } = reader.columns;
+  let roots = 0;
+  for (let vob = 0; vob < reader.count; vob++) if (parent[vob] < 0) roots += 1;
+
+  return { op: 'AddVob', vob: reader.count, path: String(roots), from: null, to: spec };
+}
+
 /** The op that undoes `op` — pure, and an ordinary op in its own right. */
 export function invertOp(op: WorldOp): WorldOp {
   // The box is half of what these two write. Swapping only the matrix — or only
@@ -391,6 +467,11 @@ export function invertOp(op: WorldOp): WorldOp {
   if (op.op === 'SetVobProp') {
     return { ...op, from: op.to, to: op.from, fromBbox: op.toBbox, toBbox: op.fromBbox };
   }
+  if (op.op === 'AddVob') {
+    // A null side means "not in the world", so swapping the two sides turns an
+    // add into a delete and back with no special case of its own.
+    return { ...op, from: op.to, to: op.from };
+  }
   return { ...op, from: op.to, to: op.from };
 }
 
@@ -402,6 +483,10 @@ export interface OpBinding {
   /** `bbox` is present only when a visual swap changed it — the binding refuses
    *  a box that no visual swap justifies, so it cannot be passed unconditionally. */
   setVobProp(path: string, props: VobProps & { bbox?: ZenBounds }): void;
+  /** Appends a root VOB and answers with the index path it landed at, which
+   *  `commitOps` checks against the one the op claims. */
+  insertVob(spec: NewVob): string;
+  deleteVob(path: string): void;
 }
 
 /** One op against the world, and its own inverse — the two directions
@@ -416,6 +501,24 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   if (op.op === 'SetVobProp') {
     const bbox = direction === 'to' ? op.toBbox : op.fromBbox;
     binding.setVobProp(op.path, bbox === null ? op[direction] : { ...op[direction], bbox });
+    return;
+  }
+  if (op.op === 'AddVob') {
+    const spec = op[direction];
+    if (spec === null) {
+      binding.deleteVob(op.path);
+      return;
+    }
+    // The guard the enumeration needs. If the world has gained or lost a root
+    // since the op was made, the VOB lands at a different path — and this op's
+    // own inverse would then delete somebody else.
+    const landed = binding.insertVob(spec);
+    if (landed !== op.path) {
+      binding.deleteVob(landed);
+      throw new RangeError(
+        `the new vob landed at ${landed}, not ${op.path} — the world's roots have changed`,
+      );
+    }
     return;
   }
   binding.setVobPosition(op.path, op[direction]);
@@ -470,6 +573,16 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
   const touched: number[] = [];
 
   for (const op of ops) {
+    if (isStructuralOp(op)) {
+      // Every other op writes into columns that already exist; this one changes
+      // how many there are. The typed arrays cannot grow, and every index after
+      // the new VOB would shift if they could — so the caller re-reads the index
+      // rather than being handed a projection that quietly disagrees with the
+      // world.
+      throw new RangeError(
+        `${op.op} is structural: re-read the index rather than applying it to the projection`,
+      );
+    }
     if (op.op === 'SetVobProp') {
       // The name and the visual are dictionary indices rather than values, so
       // this is an intern plus a write — a projection that only wrote the

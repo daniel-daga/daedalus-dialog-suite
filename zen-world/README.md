@@ -11,7 +11,7 @@ every binding call is injected.
 | Module | What it owns |
 |---|---|
 | `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. |
-| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `rotateVob`, `rotateVobs`, `setVobProp`, `setVobProps`, `invertOp`, `commitOps`, `applyOps`. |
+| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `rotateVob`, `rotateVobs`, `setVobProp`, `setVobProps`, `addVob`, `invertOp`, `commitOps`, `applyOps`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
@@ -114,6 +114,22 @@ viewport.
   to the values they each had, and one shared `from` reads correct on a selection
   of one. Applying one to the projection is an **intern plus a column write**,
   since a name is a dictionary index and not a value.
+- **An add appends a root, because a flat index is a position in a traversal.**
+  `AddVob` is the first op that changes the *shape* of the world, and the
+  enumeration is what constrains it: a VOB's index is where it falls in a
+  depth-first walk, so one added anywhere else is enumerated before VOBs that
+  already exist and renumbers every one of them — while every op already in the
+  history addresses a VOB by that number and by a path built from it. Appending a
+  root shifts nothing: it is enumerated last and takes the index one past the
+  end. `commitOps` still checks the path the insert actually landed at, because a
+  world whose roots have changed since the op was made would put it somewhere
+  else and the op's own inverse would then delete somebody else. A null side
+  means "not in the world", so `invertOp` turns an add into a delete by swapping
+  the two sides like every other op. And the projection **cannot** follow it —
+  the typed arrays cannot grow and every later index would shift — so `applyOps`
+  refuses a structural op by name rather than skipping it, and the caller
+  re-reads the index. Placing a VOB *under a parent*, reparenting and deleting an
+  arbitrary VOB all wait on an answer to that renumbering.
 - **Mount archives, not loose trees.** `Vfs::mount_host` memory-maps every file
   under a directory eagerly: 2,170 ms for an extracted install's 4,153 compiled
   asset files against **15 ms** for the equivalent VDFs, which resolve every name

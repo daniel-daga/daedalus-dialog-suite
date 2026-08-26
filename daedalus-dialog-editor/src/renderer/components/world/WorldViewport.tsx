@@ -60,6 +60,10 @@ declare global {
       gizmoPosition: () => [number, number, number] | null;
       /** The anchor VOB's 3x3 as drawn, row-major, or null if detached. */
       gizmoRotation: () => number[] | null;
+      /** Report a click that hit the world mesh rather than a VOB, at a point in
+       *  ZenGin space — what the surface's placement flow reads. It stands in
+       *  for the BVH raycast that turns a pixel into a point, and nothing else. */
+      pickTerrain: (point: [number, number, number]) => void;
     };
   }
 }
@@ -497,6 +501,11 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
         transform.dispatchEvent({ type: 'objectChange' });
         transform.dispatchEvent({ type: 'dragging-changed', value: false });
       },
+      // A click that hit the world mesh rather than a VOB, in ZenGin space.
+      // What it stands in for is precisely the BVH raycast that turns a pixel
+      // into a point — everything above it, including the surface's placement
+      // flow, is the real thing.
+      pickTerrain: (point) => onPickRef.current(null, point, false),
       gizmoRotation: () => (gizmoVobs.length === 0 ? null : world.rotationOf(gizmoVobs[gizmoVobs.length - 1])),
       gizmoPosition: () => (gizmoVobs.length === 0
         ? null

@@ -15,7 +15,7 @@
  * @jest-environment jsdom
  */
 
-import { createVobReader, moveVob, type VobIndex, type WorldOp } from 'zen-world';
+import { addVob, createVobReader, moveVob, type VobIndex, type WorldOp } from 'zen-world';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import { vobModelOf } from '../src/renderer/world/vobModel';
 import type { WorldSummary } from '../src/shared/worldTypes';
@@ -92,6 +92,52 @@ describe('an edit reaching the renderer', () => {
 
     expect(reader.position(0)).toEqual([1, 1, 1]);
     expect(reader.position(1)).toEqual([2, 2, 2]);
+  });
+
+  it('leaves a structural batch to the refresh instead of applying it', () => {
+    // A flat index is a VOB's position in a depth-first traversal, so an added
+    // VOB changes how many there are — there is no column to write it into, and
+    // `zen-world`'s `applyOps` refuses one by name rather than pretending. The
+    // whole batch is left alone rather than partly applied: the caller follows
+    // it with `indexRefreshed`, which supersedes anything this could write.
+    const { summary } = opened();
+    const reader = vobModelOf(summary).reader;
+    const ops = [
+      moveVob(reader, 0, [5, 5, 5]),
+      addVob(reader, { position: [1, 2, 3] }),
+    ];
+
+    expect(() => useWorldStore.getState().applyEdit(ops)).not.toThrow();
+    // Not half-applied: the move in the same batch is left alone too, because
+    // the refresh replaces the whole index anyway.
+    expect(reader.position(0)).toEqual([0, 0, 0]);
+  });
+
+  it('takes a re-read index whole, because its columns are new buffers', () => {
+    // `vobModelOf` caches its reader against the summary object. A refreshed
+    // index is a different set of `ArrayBuffer`s, so anything still reading the
+    // old summary is reading a world that no longer exists — which is why this
+    // replaces the summary rather than writing into it.
+    const { summary } = opened();
+    const grown = summaryWith([[0, 0, 0], [10, 20, 30], [7, 7, 7]]);
+
+    useWorldStore.getState().indexRefreshed(grown);
+
+    expect(useWorldStore.getState().summary).toBe(grown);
+    expect(useWorldStore.getState().summary).not.toBe(summary);
+    expect(vobModelOf(grown).reader.count).toBe(3);
+  });
+
+  it('keeps the selection across a refresh, because an added VOB renumbers nothing', () => {
+    // It is appended and takes the index one past the end. An op that renumbered
+    // would have to clear the selection — which is one more reason there is no
+    // such op yet.
+    opened();
+    useWorldStore.getState().selectVob(1);
+
+    useWorldStore.getState().indexRefreshed(summaryWith([[0, 0, 0], [10, 20, 30], [7, 7, 7]]));
+
+    expect(useWorldStore.getState().selection).toEqual([1]);
   });
 
   it('does nothing at all when no world is open', () => {

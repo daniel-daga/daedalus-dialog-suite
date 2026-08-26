@@ -690,6 +690,10 @@ function setupIpcHandlers() {
     return worldService.getVisualBounds(name);
   });
 
+  // The VOB enumeration again, after a structural edit changed it. It reads the
+  // world the worker already holds — nothing on disk is touched.
+  ipcMain.handle('world:refreshIndex', async () => worldService.refreshIndex());
+
   // The first IPC that changes the world rather than reading a projection of
   // it (level-editor.md §7). The history is the service's, not the renderer's:
   // an op addresses a VOB by its index path down the world the worker holds.

@@ -139,6 +139,18 @@ export class WorldService {
   }
 
   /**
+   * The VOB enumeration again, after a structural edit changed it.
+   *
+   * A flat index is a VOB's position in a depth-first traversal, so an added VOB
+   * changes how many there are and the renderer's columnar projection cannot be
+   * patched. This re-reads the index from the world the worker already holds —
+   * re-opening would re-load from disk and discard every edit.
+   */
+  refreshIndex(): Promise<WorldSummary> {
+    return this.requestOnOpenWorld<WorldSummary>('refreshIndex');
+  }
+
+  /**
    * Apply an edit to the authoritative world, and record it (§7).
    *
    * A batch is one entry in the history: a multi-select drag is one undo, not

@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, Paper, Stack, Tab, Tabs,
+  DialogContentText, DialogTitle, Paper, Stack, Tab, Tabs, TextField,
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  invertOp, rotateVobs, setVobProps, translateVobs,
-  type VobProps, type ZenBounds, type ZenRotation,
+  addVob, invertOp, isStructuralOp, placeBounds, rotateVobs, setVobProps, translateVobs,
+  type NewVob, type VobProps, type ZenBounds, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { useWorldStore } from '../../store/worldStore';
@@ -25,6 +25,11 @@ import WorldAssetPreview from './WorldAssetPreview';
 // finished payloads; the viewport owns the Three.js lifetime. Nothing here
 // keeps a geometry buffer in React state.
 
+/** A new VOB is placed unrotated: the terrain click gives a point and nothing
+ *  else, and inventing an orientation from a surface normal is a feature with
+ *  its own decisions (which axis is up for this visual?) rather than a default. */
+const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
 const WorldSurface: React.FC = () => {
   const status = useWorldStore((s) => s.status);
   const summary = useWorldStore((s) => s.summary);
@@ -37,6 +42,8 @@ const WorldSurface: React.FC = () => {
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
   const [visuals, setVisuals] = useState<InstancedPayload | null>(null);
   const [terrainPoint, setTerrainPoint] = useState<[number, number, number] | null>(null);
+  /** The VOB being placed, while the dialog is open. Null when it is closed. */
+  const [placing, setPlacing] = useState<{ name: string; visual: string } | null>(null);
   // The left panel is the scene *or* the mounted assets, and the right panel
   // follows it: a VOB's properties belong beside the tree, an asset's preview
   // beside the browser.
@@ -169,12 +176,37 @@ const WorldSurface: React.FC = () => {
     }
   }, [summary]);
 
+  /**
+   * What every applied batch does, whichever way it arrived.
+   *
+   * A structural op changes how many VOBs there are, and a flat index is a VOB's
+   * position in a depth-first traversal — so the columnar projection cannot be
+   * patched and is re-read whole. The scene follows by rebuilding from fresh
+   * visuals: an instance cannot be appended to an `InstancedMesh` that is
+   * already allocated. Both are the cost of a structural edit, and only a
+   * structural edit pays them — including a camera that returns to framing the
+   * world, since the rebuild is the same path an open takes.
+   *
+   * **Undo and redo come through here too**, and that is the whole reason this
+   * is a function rather than three lines inside `commitOps`. They do not go
+   * through it — the op log lives in the main process, so the keyboard handler
+   * asks it what it undid and applies that — and an undone placement leaves the
+   * renderer holding a VOB the world no longer has.
+   */
+  const applied = useCallback(async (ops: readonly WorldOp[]) => {
+    useWorldStore.getState().applyEdit(ops);
+    setAppliedOps([...ops]);
+    if (!ops.some(isStructuralOp)) return;
+
+    useWorldStore.getState().indexRefreshed(await window.editorAPI.refreshWorldIndex());
+    setVisuals(await window.editorAPI.getWorldVisuals());
+  }, []);
+
   const commitOps = useCallback(async (ops: WorldOp[]) => {
-    const { applyEdit, editFailed } = useWorldStore.getState();
+    const { editFailed } = useWorldStore.getState();
     try {
       await window.editorAPI.applyWorldOps(ops);
-      applyEdit(ops);
-      setAppliedOps(ops);
+      await applied(ops);
     } catch (failure) {
       editFailed(failure instanceof Error ? failure.message : String(failure));
       // The viewport has already drawn the drag; left alone, the VOB would sit
@@ -183,7 +215,7 @@ const WorldSurface: React.FC = () => {
       // pose, and swapping only the matrix is half an inverse.
       setAppliedOps(ops.map(invertOp));
     }
-  }, []);
+  }, [applied]);
 
   // One gizmo drives the whole selection, so a drag arrives as a delta rather
   // than a destination and becomes one op per VOB in one batch — which is one
@@ -270,6 +302,40 @@ const WorldSurface: React.FC = () => {
     }
   }, [commitOps, boundsOf]);
 
+  /**
+   * Place a new VOB at the last point picked on the terrain.
+   *
+   * The terrain point rather than the camera or the origin, because it is the
+   * one position in the surface that a user has actually chosen — a click on the
+   * world mesh already reports it in ZenGin centimetres, which is what an op
+   * carries.
+   *
+   * The box is fitted here, from the visual's own bounds placed at that point,
+   * for the same reason a rotation fits one: the engine culls by it, and the
+   * binding's default is a 10 cm cube that would cull a house. A visual that
+   * does not resolve gets no box and keeps that default, which is the honest
+   * answer — there is nothing to fit.
+   */
+  const placeVob = useCallback(async (spec: { name: string; visual: string }) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null || terrainPoint === null) return;
+
+    const visual = spec.visual.trim();
+    const bounds = visual === '' ? null : await window.editorAPI.getVisualBounds(visual)
+      .catch(() => null);
+
+    const placed: NewVob = {
+      position: terrainPoint,
+      ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
+      ...(visual === '' ? {} : { visual }),
+      ...(bounds === null ? {} : {
+        bbox: placeBounds(bounds as ZenBounds, IDENTITY, terrainPoint),
+      }),
+    };
+
+    await commitOps([addVob(vobModelOf(current).reader, placed)]);
+  }, [commitOps, terrainPoint]);
+
   useEffect(() => {
     if (summary === null) return undefined;
 
@@ -302,14 +368,16 @@ const WorldSurface: React.FC = () => {
       void (undo ? window.editorAPI.undoWorldEdit() : window.editorAPI.redoWorldEdit())
         .then((ops) => {
           if (ops === null || ops.length === 0) return;
-          useWorldStore.getState().applyEdit(ops);
-          setAppliedOps(ops);
+          // Through the same path a commit takes, because an undone placement
+          // is as structural as the placement was: the VOB is gone from the
+          // world and the renderer's index still has it.
+          return applied(ops);
         });
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [summary]);
+  }, [summary, applied]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -507,12 +575,68 @@ const WorldSurface: React.FC = () => {
         <Paper square elevation={1} sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}>
           {/* Terrain is not a VOB, so it has no row and no properties — a hit
               reports the point rather than inventing a selection. ZenGin space,
-              centimetres: the coordinates an op would carry. */}
-          <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
-            Terrain @ {terrainPoint.map((v) => Math.round(v)).join(', ')}
-          </Typography>
+              centimetres: the coordinates an op would carry, and the position a
+              placed VOB gets. */}
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
+              Terrain @ {terrainPoint.map((v) => Math.round(v)).join(', ')}
+            </Typography>
+            <Button size="small" onClick={() => setPlacing({ name: '', visual: '' })} data-testid="world-place-vob">
+              Place VOB here…
+            </Button>
+          </Stack>
         </Paper>
       )}
+
+      <Dialog open={placing !== null} onClose={() => setPlacing(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Place a VOB</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
+            {/* Stated rather than hidden: it is the constraint the enumeration
+                imposes, and a user who expects the VOB under the selected node
+                should find out here and not from a scene tree. */}
+            It is appended as a root VOB at {terrainPoint?.map((v) => Math.round(v)).join(', ')}.
+            Placing one under a parent would renumber every VOB after it, which
+            no op can yet describe.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            variant="standard"
+            label="Name (optional)"
+            value={placing?.name ?? ''}
+            onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, name: event.target.value }))}
+            inputProps={{ 'data-testid': 'world-place-name' }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            variant="standard"
+            label="Visual"
+            placeholder="NW_CRATE.3DS"
+            helperText="Its class comes from the extension. A .TGA decal is refused — it carries settings this does not take."
+            value={placing?.visual ?? ''}
+            onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, visual: event.target.value }))}
+            inputProps={{ 'data-testid': 'world-place-visual' }}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPlacing(null)} data-testid="world-place-cancel">Cancel</Button>
+          <Button
+            variant="contained"
+            data-testid="world-place-confirm"
+            onClick={() => {
+              const spec = placing;
+              setPlacing(null);
+              if (spec !== null) void placeVob(spec);
+            }}
+          >
+            Place
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

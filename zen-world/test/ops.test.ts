@@ -17,10 +17,12 @@
 //     back out of the native world or keeps a snapshot beside it.
 
 import {
+  addVob,
   applyOps,
   commitOps,
   createVobReader,
   invertOp,
+  isStructuralOp,
   moveVob,
   multiplyRotation,
   placeBounds,
@@ -30,6 +32,7 @@ import {
   setVobProps,
   translateVobs,
   vobIndexPath,
+  type NewVob,
   type OpBinding,
   type RotateVob,
   type VobFlags,
@@ -322,6 +325,8 @@ describe('a rotate op', () => {
       setVobPosition: (path, to) => calls.push(['position', path, to]),
       setVobRotation: (path, to, bbox) => calls.push(['rotation', path, to, bbox]),
       setVobProp: (path, props) => calls.push(['props', path, props]),
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
     };
 
     commitOps(binding, [rotateVob(reader(), 1, QUARTER_Y, BOUNDS)]);
@@ -337,6 +342,8 @@ describe('a rotate op', () => {
       setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); calls.push(`move ${path}`); },
       setVobRotation: (path) => calls.push(`rotate ${path}`),
       setVobProp: (path) => calls.push(`props ${path}`),
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
     };
     const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
 
@@ -562,6 +569,99 @@ describe('a multi-select property edit', () => {
   });
 });
 
+describe('an add op', () => {
+  // The first op that changes the *shape* of the world rather than a VOB in it,
+  // and the enumeration is what constrains it: a VOB's flat index is its
+  // position in a depth-first traversal, so a VOB added anywhere but the very
+  // end renumbers every VOB after it — and every op already in the history
+  // carries one of those numbers. Appending a root is the one position that
+  // shifts nothing.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A' },
+    { parent: 0, childIndex: 0, name: 'CHILD' },
+    { childIndex: 1, name: 'ROOT_B' },
+  ]));
+
+  const SPEC: NewVob = { name: 'PLACED', visual: 'CRATE.3DS', position: [10, 20, 30] };
+
+  it('takes the index one past the end and the slot after the last root', () => {
+    const op = addVob(reader(), SPEC);
+
+    // Three VOBs, two of them roots: the new one is enumerated last, so it gets
+    // index 3 — and it is the third root, so its path is '2'.
+    expect(op).toEqual({ op: 'AddVob', vob: 3, path: '2', from: null, to: SPEC });
+  });
+
+  it('carries a null `from`, because the VOB is not there yet', () => {
+    // Which is what makes the inverse a delete rather than a special case:
+    // `invertOp` swaps the two sides like it does for every other op.
+    const op = addVob(reader(), SPEC);
+    const back = invertOp(op);
+
+    expect(back).toEqual({ op: 'AddVob', vob: 3, path: '2', from: SPEC, to: null });
+    expect(invertOp(back)).toEqual(op);
+  });
+
+  it('reaches the binding as an insert one way and a delete the other', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      insertVob: (spec) => { calls.push(`insert ${spec.name}`); return '2'; },
+      deleteVob: (path) => { calls.push(`delete ${path}`); },
+    };
+    const op = addVob(reader(), SPEC);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual(['insert PLACED', 'delete 2']);
+  });
+
+  it('refuses an insert that did not land where the op says it would', () => {
+    // The guard the enumeration needs. If the world has gained or lost a root
+    // since the op was made, the VOB lands at a different path — and the op's
+    // own inverse would then delete somebody else.
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      insertVob: () => '7',
+      deleteVob: () => {},
+    };
+
+    expect(() => commitOps(binding, [addVob(reader(), SPEC)])).toThrow(/7|2/);
+  });
+
+  it('is unwound by a delete when a later op in the batch is refused', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); },
+      setVobRotation: () => {}, setVobProp: () => {},
+      insertVob: () => { calls.push('insert'); return '2'; },
+      deleteVob: (path) => { calls.push(`delete ${path}`); },
+    };
+
+    expect(() => commitOps(binding, [
+      addVob(reader(), SPEC),
+      { op: 'MoveVob', vob: 0, path: '9/9', from: [0, 0, 0], to: [1, 1, 1] },
+    ])).toThrow('no vob');
+
+    expect(calls).toEqual(['insert', 'delete 2']);
+  });
+
+  it('cannot be applied to the projection, and says so', () => {
+    // Every other op writes into columns that already exist. This one changes
+    // how many there are — the typed arrays cannot grow, and every index after
+    // it would shift if it could. The caller re-reads the index instead, and
+    // being told that is much better than a projection that quietly disagrees
+    // with the world.
+    const live = reader();
+    expect(() => applyOps(live, [addVob(live, SPEC)])).toThrow(/structural|re-read/i);
+    expect(isStructuralOp(addVob(live, SPEC))).toBe(true);
+    expect(isStructuralOp(moveVob(live, 0, [1, 2, 3]))).toBe(false);
+  });
+});
+
 describe('applying ops to the index', () => {
   // The renderer's projection has to move with the world, or the scene tree,
   // the property grid and the viewport go on showing where a VOB used to be
@@ -665,6 +765,8 @@ describe('committing ops to the world', () => {
       },
       setVobRotation: () => { throw new Error('these batches are moves only'); },
       setVobProp: () => { throw new Error('these batches are moves only'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
     };
     return { binding, calls };
   }
@@ -708,6 +810,8 @@ describe('committing ops to the world', () => {
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: (path, props) => { calls.push([path, props]); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
     };
     const box: ZenBounds = [0, 0, 0, 1, 1, 1];
 
@@ -731,6 +835,8 @@ describe('committing ops to the world', () => {
         if (path === '0/2') throw new Error(`no vob at ${path}`);
         calls.push([path, props]);
       },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
     };
 
     expect(() => commitOps(binding, [

@@ -173,6 +173,10 @@ export interface EditorAPI {
    *  the one bounds not already in the renderer, because a visual the world does
    *  not use has no instance. Null for a name that does not resolve. */
   getVisualBounds: (name: string) => Promise<number[] | null>;
+  /** The VOB enumeration again, after a structural edit changed it. A flat index
+   *  is a position in a depth-first traversal, so an added VOB changes how many
+   *  there are and the columnar projection cannot be patched. */
+  refreshWorldIndex: () => Promise<WorldSummary>;
   /** Apply an edit. One call is one undo entry, so a multi-select drag is one
    *  batch and not one call per VOB. */
   applyWorldOps: (ops: WorldOp[]) => Promise<void>;

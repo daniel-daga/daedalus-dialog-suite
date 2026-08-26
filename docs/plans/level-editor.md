@@ -1528,6 +1528,74 @@ Still not built: `ReparentVob`, `AddVob`, `DeleteVob`. And **no engine verdict
 covers a renamed VOB, a swapped visual or a changed flag** — like the rotation
 before it, that is Gate 2's business.
 
+#### Placing a VOB — and the renumbering that decides what add, delete and reparent can be (2026-08-26)
+
+`AddVob` runs the same path the other three ops do — `zen-world`'s `addVob` →
+`WorldService.applyOps` → the worker → **`insertVob`** — and the surface places
+one at the last point clicked on the terrain. `verify-world-edit.js` places a
+VOB in the real app on retail NewWorld, watches the scene tree go from 23,288 to
+23,289, and undoes it.
+
+**One fact about the enumeration decides the shape of this op and of the three
+that are still missing.** A VOB's flat index is its position in a depth-first
+traversal. Every op in the history carries one of those numbers, and an index
+path built from it. So a VOB inserted anywhere *except* the very end is
+enumerated before VOBs that already exist and renumbers every one of them —
+which silently re-points every op on the undo stack at a different VOB.
+
+Appending a **root** is the one position that shifts nothing: it is enumerated
+last and takes the index one past the end. That is why `insertVob` takes no
+parent at all, rather than taking one and hoping. `commitOps` still checks the
+path the insert actually landed at, because a world whose roots have changed
+since the op was made would put it somewhere else — and the op's own inverse
+would then delete somebody else.
+
+The consequences worth keeping:
+
+- **A null side means "not in the world".** `AddVob` carries `from: null` and
+  `to: spec`, so `invertOp` turns an add into a delete by swapping the two sides
+  exactly as it does for a move. There is no separate delete op and no special
+  case.
+- **An added VOB is invertible because the call that made it describes it
+  completely.** Undo deletes it, redo makes it again from the same spec, and
+  nothing is snapshotted beside the history. That is emphatically **not** true of
+  an arbitrary retail VOB — an `oCMobInter` carries per-class properties,
+  children, an AI and an event manager that no op describes — so deleting one is
+  a different feature that needs a different answer, and the editor does not
+  offer it.
+- **The projection cannot follow it.** The columnar index cannot grow, so
+  `applyOps` refuses a structural op *by name* rather than skipping it, and the
+  index is re-read whole (`refreshIndex` — from the world the worker already
+  holds, since re-opening would re-load from disk and discard every edit). The
+  scene rebuilds too: an instance cannot be appended to an `InstancedMesh` that
+  is already allocated. Both costs are paid only by a structural edit, and the
+  rebuild resets the camera because it is the same path an open takes.
+- **`insertVob` derives the visual's class from the extension, which is exactly
+  what `setVobProp` refuses to do.** Renaming an existing visual has a fact to
+  preserve — `.3DS` is `zCProgMeshProto` 20,716 times and `zCMesh` 31 times —
+  and authoring a new one has none, so the measured majority is the only
+  defensible choice. A `.TGA` is refused: a `zCDecal` carries dimension, offset,
+  alpha function and weight that this call does not take.
+- **A placed VOB goes at the terrain point, unrotated, with a box fitted from its
+  visual.** The point because it is the one position the user actually chose;
+  unrotated because inventing an orientation from a surface normal is a feature
+  with its own decisions; and the box because the engine culls by it and the
+  binding's fallback is a 10 cm cube that would cull a house.
+
+**Two defects, both found by thinking about how the driver would exercise this
+rather than by a failing test.** `deleteVob` must *erase* the slot rather than
+blank it — `CollectVobs` and `CountVobs` both skip a null child, so a delete that
+left a hole reads identical in the dump, the VOB count, the mesh, the BSP and the
+waynet, and only hands the writer a gap. And **undo does not go through
+`commitOps`**: the op log lives in the main process, so the keyboard handler asks
+it what it undid and applies that — without the same refresh, an undone
+placement leaves the renderer holding a VOB the world no longer has.
+
+Eleven sabotages across the binding and the op, all caught. Still missing, and
+all three waiting on the same answer: placing a VOB **under a parent**,
+`ReparentVob`, and deleting an arbitrary VOB. And no engine verdict covers a
+world with a VOB added to it.
+
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
 Rotation is the next op, and it cannot be built the way `MoveVob` was.

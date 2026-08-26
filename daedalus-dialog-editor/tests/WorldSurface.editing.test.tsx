@@ -33,6 +33,11 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
   default: (props: {
     onTranslateSelection: (delta: [number, number, number]) => void;
     onRotateSelection: (delta: number[]) => void;
+    onPick: (
+      vob: number | null,
+      point: [number, number, number] | null,
+      additive: boolean,
+    ) => void;
     gizmoMode: string;
     selection: readonly number[];
     appliedOps: WorldOp[] | null;
@@ -48,10 +53,19 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
         <button type="button" data-testid="stub-turn" onClick={() => props.onRotateSelection(TURN)}>
           turn
         </button>
+        {/* A click that hit the world mesh rather than a VOB: terrain is not a
+            VOB, so it reports a point and no selection. That point is where a
+            placed VOB goes. */}
+        <button type="button" data-testid="stub-pick-terrain" onClick={() => props.onPick(null, TERRAIN, false)}>
+          pick terrain
+        </button>
       </div>
     );
   },
 }));
+
+/** Where a terrain click lands — ZenGin centimetres, deliberately not round. */
+const TERRAIN: [number, number, number] = [1500.5, -220, 3300.25];
 
 function vobIndex(positions: Array<[number, number, number]>): VobIndex {
   const count = positions.length;
@@ -100,6 +114,8 @@ const api = {
   getWorldTexture: jest.fn(async () => null),
   listWorldAssets: jest.fn(async () => null),
   getWorldWaynet: jest.fn(),
+  getVisualBounds: jest.fn(async (): Promise<number[] | null> => null),
+  refreshWorldIndex: jest.fn(),
   applyWorldOps: jest.fn(async () => undefined),
   undoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
   redoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
@@ -444,6 +460,145 @@ describe('saving the world', () => {
 
     expect(await screen.findByTestId('world-save-error')).toHaveTextContent(/binsafe|ascii/i);
     expect(screen.getByTestId('world-viewport-stub')).toBeInTheDocument();
+  });
+});
+
+describe('placing a VOB', () => {
+  /** Pick terrain, open the dialog, fill it in and confirm. */
+  async function place(visual: string, name = '') {
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    // Nothing is selected after a terrain hit, so the placement bar is what the
+    // surface shows instead of a property grid.
+    act(() => useWorldStore.getState().selectVob(null));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: visual } });
+    if (name !== '') {
+      fireEvent.change(screen.getByTestId('world-place-name'), { target: { value: name } });
+    }
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+  }
+
+  it('becomes an AddVob at the point that was clicked, appended as a root', async () => {
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await place('NW_CRATE.3DS', 'PLACED_01');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: 'AddVob',
+      // Two VOBs in the fixture, both roots: the new one is enumerated last and
+      // takes the index one past the end, in the slot after the last root.
+      vob: 2,
+      path: '2',
+      from: null,
+      to: { name: 'PLACED_01', visual: 'NW_CRATE.3DS', position: TERRAIN },
+    });
+  });
+
+  it('fits the box from the visual placed at that point, not the binding default', async () => {
+    // The engine culls by the box, and the binding's fallback is a 10 cm cube —
+    // which would cull a house. The bounds are the visual's own, in the visual's
+    // own space, so they have to be placed at the position before they mean
+    // anything.
+    const summary = await openWorld();
+    api.getVisualBounds.mockResolvedValueOnce([-100, 0, -100, 100, 250, 100]);
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await place('NW_HOUSE.3DS');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect((ops[0] as { to: { bbox: number[] } }).to.bbox).toEqual([
+      TERRAIN[0] - 100, TERRAIN[1], TERRAIN[2] - 100,
+      TERRAIN[0] + 100, TERRAIN[1] + 250, TERRAIN[2] + 100,
+    ]);
+  });
+
+  it('carries no box for a visual that does not resolve', async () => {
+    // A misspelling, a decal's texture, a `.pfx`. There is nothing to fit, and
+    // the binding's own default is the honest answer rather than a guess.
+    const summary = await openWorld();
+    api.getVisualBounds.mockResolvedValueOnce(null);
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await place('NOT_A_VISUAL.3DS');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('bbox');
+  });
+
+  it('re-reads the index and the visuals, because a structural edit renumbers', async () => {
+    // The projection cannot be patched: a flat index is a position in a
+    // depth-first traversal. And an instance cannot be appended to an
+    // `InstancedMesh` that is already allocated, so the scene rebuilds too.
+    const summary = await openWorld();
+    const grown = { ...summary, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30], TERRAIN]) };
+    api.refreshWorldIndex.mockResolvedValueOnce(grown as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await place('NW_CRATE.3DS');
+
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
+    await waitFor(() => expect(useWorldStore.getState().summary).toBe(grown));
+    expect(api.getWorldVisuals).toHaveBeenCalledTimes(2);   // the open, then this
+  });
+
+  it('does not re-read anything when the edit was refused', async () => {
+    await openWorld();
+    api.applyWorldOps.mockRejectedValueOnce(new Error('no vob at 2') as never);
+
+    await place('NW_CRATE.3DS');
+
+    await waitFor(() => expect(screen.getByTestId('world-edit-error')).toBeInTheDocument());
+    expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+  });
+
+  it('re-reads on undo too, because an undone placement is just as structural', async () => {
+    // Undo does not go through `commitOps`: the op log lives in the main
+    // process, so the keyboard handler asks it what it undid and applies that.
+    // Without the same refresh, the VOB is gone from the world and the
+    // renderer's index still has it — and every index after it would be wrong
+    // if the op had not been an append.
+    const summary = await openWorld();
+    const shrunk = { ...summary, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+    api.undoWorldEdit.mockResolvedValueOnce([
+      { op: 'AddVob', vob: 2, path: '2', from: { position: [1, 2, 3] }, to: null },
+    ] as never);
+    api.refreshWorldIndex.mockResolvedValueOnce(shrunk as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
+    await waitFor(() => expect(useWorldStore.getState().summary).toBe(shrunk));
+  });
+
+  it('does not re-read on an undo that was not structural', async () => {
+    // A move is patched into the columns in place, which is the whole reason
+    // the projection exists — re-reading 1.69 MB for every Ctrl+Z would undo
+    // that.
+    await openWorld();
+    api.undoWorldEdit.mockResolvedValueOnce([MOVE] as never);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalled());
+    expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+  });
+
+  it('cannot be reached without a point to place at', async () => {
+    // The position is the one thing the surface cannot invent: a VOB placed at
+    // the origin is 55 metres under the terrain on retail NewWorld.
+    await openWorld();
+    expect(screen.queryByTestId('world-place-vob')).not.toBeInTheDocument();
   });
 });
 

@@ -87,7 +87,7 @@ export interface DecodedTexture {
 
 export type WorldWorkerOp =
   | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'visualBounds'
-  | 'applyOps' | 'save' | 'close';
+  | 'refreshIndex' | 'applyOps' | 'save' | 'close';
 
 /**
  * The bounds of a visual that is **not** in the scene — what a visual swap needs

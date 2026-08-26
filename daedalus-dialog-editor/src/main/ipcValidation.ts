@@ -217,6 +217,15 @@ const VOB_FLAG_KEYS = [
   'showVisual', 'vobStatic', 'ambient', 'cdStatic', 'cdDynamic', 'physicsEnabled',
 ];
 
+/** The flags a VOB can be *authored* with — the same list minus
+ *  `physicsEnabled`, which `insertVob` does not take. ZenGin writes that field
+ *  only for some world formats and cannot set it in the Spacer at all, so there
+ *  is no meaningful value to author it with. Sharing the list above would let
+ *  the boundary wave through exactly what the binding then refuses. */
+const NEW_VOB_FLAG_KEYS = [
+  'showVisual', 'vobStatic', 'ambient', 'cdStatic', 'cdDynamic',
+];
+
 export function assertApplyOpsRequest(request: unknown): asserts request is { ops: WorldOp[] } {
   if (!isPlainObject(request)) {
     throw new Error('Invalid ops request: expected a plain object');
@@ -226,7 +235,8 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
   }
   for (const op of request.ops) {
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
-    if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp') {
+    if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
+      && op.op !== 'AddVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
     if (typeof op.vob !== 'number' || !Number.isInteger(op.vob) || op.vob < 0) {
@@ -254,6 +264,36 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
           throw new Error(`Invalid op: ${field} must be six finite numbers or null`);
         }
       }
+      continue;
+    }
+
+    if (op.op === 'AddVob') {
+      // Exactly one side is null. Both null is an op that does nothing; neither
+      // null is an add and a delete at once, and `writeOp` would read it as an
+      // insert in one direction and an insert in the other — so the VOB would
+      // never come back off an undo.
+      const nulls = ['from', 'to'].filter((side) => op[side] === null).length;
+      if (nulls !== 1) {
+        throw new Error('Invalid op: an AddVob has exactly one null side — it adds or it removes');
+      }
+      const spec = op.from === null ? op.to : op.from;
+      if (!isPlainObject(spec)) throw new Error('Invalid op: the vob to add must be an object');
+      for (const [key, value] of Object.entries(spec)) {
+        if (key === 'name' || key === 'visual') {
+          if (typeof value !== 'string') throw new Error(`Invalid op: ${key} must be a string`);
+        } else if (NEW_VOB_FLAG_KEYS.includes(key)) {
+          if (typeof value !== 'boolean') throw new Error(`Invalid op: ${key} must be a boolean`);
+        } else if (key === 'position') {
+          if (!isZenPosition(value)) throw new Error('Invalid op: position must be three finite numbers');
+        } else if (key === 'rotation') {
+          if (!isFiniteNumbers(value, 9)) throw new Error('Invalid op: rotation must be nine finite numbers');
+        } else if (key === 'bbox') {
+          if (!isFiniteNumbers(value, 6)) throw new Error('Invalid op: bbox must be six finite numbers');
+        } else {
+          throw new Error(`Invalid op: unknown property ${key}`);
+        }
+      }
+      if (!('position' in spec)) throw new Error('Invalid op: a vob to add needs a position');
       continue;
     }
 
