@@ -655,6 +655,180 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// The visual object for a name a caller is **authoring**.
+//
+// This derives the class from the extension, which is exactly what setVobProp
+// refuses to do — and for the opposite reason. Renaming an existing visual has a
+// fact to preserve: `.3DS` is `zCProgMeshProto` 20,716 times and `zCMesh` 31
+// times across the retail corpus, and nothing in the name says which, so the
+// object found on the VOB is kept. A *new* visual has no such fact, and the
+// majority reading is the only defensible choice.
+//
+// The class must be a concrete one, never the `Visual` base: the writer derives
+// the object's class name from its type, and a base-class visual produces a
+// world that cannot be re-loaded at all — a 0xC0000409 fail-fast with no
+// diagnostic (see src/fixture.cc).
+std::shared_ptr<zenkit::Visual> AuthorVisual(Napi::Env env, std::string const& name) {
+  auto const dot = name.rfind('.');
+  if (dot == std::string::npos || dot + 1 >= name.size()) {
+    throw Napi::Error::New(env, "opts.visual: '" + name + "' has no extension to author from");
+  }
+  std::string ext = name.substr(dot + 1);
+  for (char& c : ext) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+  if (ext == "3DS") {
+    auto v = std::make_shared<zenkit::VisualMultiResolutionMesh>();
+    v->name = name;
+    v->type = zenkit::VisualType::MULTI_RESOLUTION_MESH;
+    return v;
+  }
+  if (ext == "ASC" || ext == "MDS") {
+    auto v = std::make_shared<zenkit::VisualModel>();
+    v->name = name;
+    v->type = zenkit::VisualType::MODEL;
+    return v;
+  }
+  if (ext == "MMS") {
+    auto v = std::make_shared<zenkit::VisualMorphMesh>();
+    v->name = name;
+    v->type = zenkit::VisualType::MORPH_MESH;
+    return v;
+  }
+  if (ext == "PFX") {
+    auto v = std::make_shared<zenkit::VisualParticleEffect>();
+    v->name = name;
+    v->type = zenkit::VisualType::PARTICLE_EFFECT;
+    return v;
+  }
+  if (ext == "TGA") {
+    // A zCDecal carries its own dimension, offset, alpha function and weight. One
+    // authored without them is a visual ZenGin never wrote, so this refuses
+    // rather than inventing them.
+    throw Napi::Error::New(
+        env, "opts.visual: a decal (.TGA) carries its own dimensions and alpha settings, "
+             "which this call does not take");
+  }
+  throw Napi::Error::New(env, "opts.visual: no visual class is known for '" + ext + "'");
+}
+
+// insertVob(handle, opts) — appends a **root** zCVob and returns its index path.
+//
+// It takes no parent, and that is the design rather than a gap. Every VOB is
+// enumerated depth-first and its flat index is its position in that traversal,
+// so a VOB inserted anywhere else renumbers every VOB after it — and every op
+// already in the history addresses a VOB by that number and by an index path
+// built from it. Appending a root is the one position that shifts nothing: it is
+// enumerated last and takes the index one past the end. Placing a VOB under a
+// parent is a real feature and it waits on an answer to that renumbering, which
+// is the same answer reparent and a general delete need.
+Napi::Value InsertVob(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+
+  if (!info[1].IsObject() || info[1].IsArray()) {
+    throw Napi::TypeError::New(env, "opts must be an object with at least a position");
+  }
+  auto opts = info[1].As<Napi::Object>();
+
+  static constexpr std::array<char const*, 10> kKnownKeys {
+      "name",      "visual",   "position", "rotation", "bbox",
+      "showVisual", "cdStatic", "cdDynamic", "vobStatic", "ambient"};
+  auto names = opts.GetPropertyNames();
+  for (std::uint32_t i = 0; i < names.Length(); ++i) {
+    std::string const key = names.Get(i).As<Napi::String>().Utf8Value();
+    if (std::find_if(kKnownKeys.begin(), kKnownKeys.end(),
+                     [&key](char const* known) { return key == known; }) == kKnownKeys.end()) {
+      throw Napi::Error::New(env, "opts: unknown property '" + key + "'");
+    }
+  }
+
+  auto position = Vec3FromValue(env, opts.Get("position"), "opts.position");
+
+  std::string name;
+  if (!opts.Get("name").IsUndefined()) name = RequiredCp1252String(env, opts, "name");
+
+  std::shared_ptr<zenkit::Visual> visual;
+  if (!opts.Get("visual").IsUndefined()) {
+    visual = AuthorVisual(env, RequiredCp1252String(env, opts, "visual"));
+  }
+
+  std::vector<float> rotation {1, 0, 0, 0, 1, 0, 0, 0, 1};
+  if (!opts.Get("rotation").IsUndefined()) {
+    rotation = FloatsFromValue(env, opts.Get("rotation"), 9, "opts.rotation");
+  }
+
+  // A box around the position, the same shape insertItemVob uses, unless the
+  // caller has one — and it will, because it owns the asset layer and the box is
+  // a pure function of (visual, rotation, position).
+  constexpr float kDefaultHalfExtent = 10.0f;
+  std::vector<float> bbox {
+      position.x - kDefaultHalfExtent, position.y - kDefaultHalfExtent,
+      position.z - kDefaultHalfExtent, position.x + kDefaultHalfExtent,
+      position.y + kDefaultHalfExtent, position.z + kDefaultHalfExtent};
+  if (!opts.Get("bbox").IsUndefined()) {
+    bbox = FloatsFromValue(env, opts.Get("bbox"), 6, "opts.bbox");
+  }
+
+  auto const show_visual = OptionalBool(env, opts, "showVisual");
+  auto const cd_static = OptionalBool(env, opts, "cdStatic");
+  auto const cd_dynamic = OptionalBool(env, opts, "cdDynamic");
+  auto const vob_static = OptionalBool(env, opts, "vobStatic");
+  auto const ambient = OptionalBool(env, opts, "ambient");
+
+  // Every field ZenKit does not default-initialize is set here, as
+  // insertItemVob's construction is.
+  auto vob = std::make_shared<zenkit::VirtualObject>();
+  vob->type = zenkit::VirtualObjectType::zCVob;
+  vob->vob_name = std::move(name);
+  vob->position = position;
+  vob->rotation = zenkit::Mat3 {rotation[0], rotation[3], rotation[6],
+                                rotation[1], rotation[4], rotation[7],
+                                rotation[2], rotation[5], rotation[8]};
+  vob->bbox = zenkit::AxisAlignedBoundingBox {zenkit::Vec3 {bbox[0], bbox[1], bbox[2]},
+                                              zenkit::Vec3 {bbox[3], bbox[4], bbox[5]}};
+  vob->visual = visual;
+  // A VOB with nothing to draw does not claim otherwise.
+  vob->show_visual = show_visual ? *show_visual : (visual != nullptr);
+  vob->cd_static = cd_static ? *cd_static : true;
+  vob->cd_dynamic = cd_dynamic ? *cd_dynamic : true;
+  vob->vob_static = vob_static ? *vob_static : false;
+  vob->ambient = ambient ? *ambient : false;
+  vob->physics_enabled = false;
+
+  handle->world->world_vobs.push_back(vob);
+  return Napi::String::New(env, std::to_string(handle->world->world_vobs.size() - 1));
+}
+
+// deleteVob(handle, indexPath) — removes the vob and its whole subtree.
+//
+// The subtree goes with it because a child is reachable only through its parent:
+// leaving one behind would orphan it into a tree nothing enumerates. Callers
+// that mean to keep the children have to move them first, which is the reparent
+// this does not yet have.
+Napi::Value DeleteVob(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto indices = ParseIndexPath(env, info[1], "indexPath");
+
+  // Resolve the parent's list and the slot inside it, rather than the vob: the
+  // vob itself does not know where it is held.
+  auto* list = &handle->world->world_vobs;
+  for (std::size_t at = 0; at + 1 < indices.size(); ++at) {
+    std::size_t const index = indices[at];
+    if (index >= list->size() || (*list)[index] == nullptr) {
+      throw Napi::Error::New(env, "no vob at indexPath");
+    }
+    list = &(*list)[index]->children;
+  }
+
+  std::size_t const slot = indices.back();
+  if (slot >= list->size() || (*list)[slot] == nullptr) {
+    throw Napi::Error::New(env, "no vob at indexPath");
+  }
+  list->erase(list->begin() + static_cast<std::ptrdiff_t>(slot));
+  return env.Undefined();
+}
+
 // insertItemVob(handle, parentPath | null, {name, instance, position}) —
 // appends a new oCItem vob and returns its index path. The visual is left
 // empty: the engine derives item visuals from the script instance.
@@ -806,6 +980,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));
   exports.Set("setVobRotation", Napi::Function::New(env, SetVobRotation));
   exports.Set("setVobProp", Napi::Function::New(env, SetVobProp));
+  exports.Set("insertVob", Napi::Function::New(env, InsertVob));
+  exports.Set("deleteVob", Napi::Function::New(env, DeleteVob));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));

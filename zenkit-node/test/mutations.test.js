@@ -360,6 +360,198 @@ test('setVobProp survives a save and reload', () => {
   assert.strictEqual(reloaded.flags.ambient, true);
 });
 
+// insertVob / deleteVob — the structural pair (level-editor.md §7).
+//
+// `insertVob` appends a **root** VOB and takes no parent, and that is the whole
+// of its design. Every VOB is enumerated depth-first and its flat index is its
+// position in that traversal, so a VOB inserted anywhere else renumbers every
+// VOB after it — and every op already in the history addresses a VOB by that
+// number and by an index path built from it. Appending a root is the one
+// position that shifts nothing: it is enumerated last, and it takes the index
+// one past the end.
+//
+// The visual's class is chosen from the extension here, which is the opposite of
+// what `setVobProp` may do — and for the opposite reason. Renaming an existing
+// visual must preserve whatever class ZenGin wrote, because `.3DS` is
+// `zCProgMeshProto` 20,716 times and `zCMesh` 31 times and there is no telling
+// which from the name. Authoring a *new* one has no such fact to preserve, and
+// the majority reading is the only defensible choice.
+
+test('insertVob appends a root vob and returns its path', () => {
+  const handle = load();
+  const before = zenkit.worldStats(handle).vobCount;
+  const roots = dumpOf(handle).vobs.filter((v) => !v.path.includes('/')).length;
+
+  const at = zenkit.insertVob(handle, {
+    name: 'PLACED_ÄÖÜ_01',
+    visual: 'NW_CRATE.3DS',
+    position: [10, 20, 30],
+  });
+
+  assert.strictEqual(at, String(roots));
+  assert.strictEqual(zenkit.worldStats(handle).vobCount, before + 1);
+
+  const placed = vobAt(dumpOf(handle), at);
+  assert.strictEqual(placed.class, 'zCVob');
+  assert.strictEqual(placed.name, 'PLACED_ÄÖÜ_01');
+  assert.strictEqual(placed.visual, 'NW_CRATE.3DS');
+  assert.deepStrictEqual(placed.position, [10, 20, 30]);
+  assert.deepStrictEqual(placed.rotation, [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  assert.strictEqual(placed.flags.showVisual, true);
+});
+
+test('insertVob takes the index one past the end, renumbering nothing', () => {
+  // The reason it appends a root and takes no parent. A VOB inserted anywhere
+  // else is enumerated before some of the VOBs that already exist, and every one
+  // of those changes its flat index — which every op in the history carries.
+  const handle = load();
+  const before = dumpOf(load()).vobs;
+
+  zenkit.insertVob(handle, { visual: 'NW_CRATE.3DS', position: [0, 0, 0] });
+
+  const after = dumpOf(handle).vobs;
+  assert.strictEqual(after.length, before.length + 1);
+  for (let i = 0; i < before.length; i++) {
+    assert.deepStrictEqual(after[i], before[i], `vob ${i} moved or changed`);
+  }
+});
+
+test('insertVob picks the visual class from the extension, by the measured majority', () => {
+  const handle = load();
+  for (const [visual, type] of [
+    ['A.3DS', 'MULTI_RESOLUTION_MESH'],
+    ['B.ASC', 'MODEL'],
+    ['C.MDS', 'MODEL'],
+    ['D.MMS', 'MORPH_MESH'],
+    ['E.PFX', 'PARTICLE_EFFECT'],
+  ]) {
+    const at = zenkit.insertVob(handle, { visual, position: [0, 0, 0] });
+    assert.strictEqual(vobAt(dumpOf(handle), at).visualType, type, visual);
+  }
+});
+
+test('insertVob refuses a visual it cannot author', () => {
+  const handle = load();
+  // A decal carries its own dimension, offset, alpha function and weight; a
+  // zCDecal authored without them is a visual ZenGin never wrote. Refusing is
+  // the honest answer until this API takes them.
+  assert.throws(() => zenkit.insertVob(handle, { visual: 'X.TGA', position: [0, 0, 0] }), /decal/i);
+  for (const bad of ['X.MRM', 'X', 'X.WAV', '.3DS.']) {
+    assert.throws(() => zenkit.insertVob(handle, { visual: bad, position: [0, 0, 0] }), Error, bad);
+  }
+});
+
+test('insertVob without a visual makes a VOB with none, like an inserted item', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, { name: 'MARKER', position: [1, 2, 3] });
+
+  const placed = vobAt(dumpOf(handle), at);
+  assert.strictEqual(placed.visual, null);
+  // Nothing to draw, so nothing claims otherwise.
+  assert.strictEqual(placed.flags.showVisual, false);
+});
+
+test('insertVob writes the rotation, box and flags it is given', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, {
+    visual: 'A.3DS',
+    position: [0, 0, 0],
+    rotation: ROTATION_90_Y,
+    bbox: [-1, -2, -3, 4, 5, 6],
+    vobStatic: true,
+    cdDynamic: false,
+  });
+
+  const placed = vobAt(dumpOf(handle), at);
+  assert.deepStrictEqual(placed.rotation, ROTATION_90_Y);
+  assert.deepStrictEqual(placed.bbox, [-1, -2, -3, 4, 5, 6]);
+  assert.strictEqual(placed.flags.vobStatic, true);
+  assert.strictEqual(placed.flags.cdDynamic, false);
+});
+
+test('insertVob refuses a bad position, matrix, box or unknown key', () => {
+  const handle = load();
+  assert.throws(() => zenkit.insertVob(handle, {}), /position/);
+  assert.throws(() => zenkit.insertVob(handle, { position: [1, 2] }), /position/);
+  assert.throws(() => zenkit.insertVob(handle, { position: [0, 0, 0], rotation: [1, 2, 3] }), /rotation/);
+  assert.throws(() => zenkit.insertVob(handle, { position: [0, 0, 0], bbox: [1, 2, 3] }), /bbox/);
+  assert.throws(() => zenkit.insertVob(handle, { position: [0, 0, 0], parent: '0' }), /parent/);
+  assert.throws(() => zenkit.insertVob(handle, null), Error);
+});
+
+test('deleteVob removes the vob and its whole subtree', () => {
+  const handle = load();
+  const before = zenkit.worldStats(handle).vobCount;
+  const children = vobAt(dumpOf(handle), '0').childCount;
+
+  zenkit.deleteVob(handle, '0');
+
+  // The root and every descendant: the fixture's root carries three children.
+  assert.strictEqual(zenkit.worldStats(handle).vobCount, before - (1 + children));
+  assert.strictEqual(dumpOf(handle).vobs.find((v) => v.path === '0/0'), undefined);
+});
+
+test('deleteVob undoes an insert exactly, leaving the world as it was', () => {
+  // The pair is what makes the op invertible: an added VOB is described
+  // completely by what created it, so undo deletes it and redo makes it again.
+  const handle = load();
+  const before = dumpOf(load());
+
+  const at = zenkit.insertVob(handle, {
+    name: 'TEMPORARY', visual: 'A.3DS', position: [7, 8, 9],
+  });
+  zenkit.deleteVob(handle, at);
+
+  const after = dumpOf(handle);
+  assert.strictEqual(after.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.deepStrictEqual(after.vobs[i], before.vobs[i]);
+  }
+  assert.deepStrictEqual(after.mesh, before.mesh);
+  assert.deepStrictEqual(after.bsp, before.bsp);
+  assert.deepStrictEqual(after.waynet, before.waynet);
+
+  // And through the writer, which is the half the dump cannot see. Both
+  // `CollectVobs` and `CountVobs` skip a null child, so a delete that left the
+  // slot behind as a hole rather than erasing it reads *identical* in every
+  // assertion above — and hands the writer a child list with a gap in it.
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-del-')), 'deleted.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+  assert.strictEqual(reloaded.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.deepStrictEqual(reloaded.vobs[i].path, before.vobs[i].path);
+    assert.deepStrictEqual(reloaded.vobs[i].name, before.vobs[i].name);
+  }
+});
+
+test('deleteVob throws on a bad index path', () => {
+  const handle = load();
+  for (const bad of ['9', '0/9', '0/1/0', 'abc', '', '0//1', '-1']) {
+    assert.throws(() => zenkit.deleteVob(handle, bad), Error, bad);
+  }
+});
+
+test('an inserted vob survives a save and reload', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, {
+    name: 'PLACED_SAVED', visual: 'NW_CRATE.3DS',
+    position: [11, 22, 33], rotation: ROTATION_90_Y, bbox: [-1, -2, -3, 4, 5, 6],
+  });
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-add-')), 'added.zen');
+  zenkit.saveWorld(handle, out);
+
+  const reloaded = vobAt(dumpOf(zenkit.loadWorld(out, 'g2')), at);
+  assert.ok(reloaded, 'the inserted vob is not in the saved world');
+  assert.strictEqual(reloaded.class, 'zCVob');
+  assert.strictEqual(reloaded.name, 'PLACED_SAVED');
+  assert.strictEqual(reloaded.visual, 'NW_CRATE.3DS');
+  assert.strictEqual(reloaded.visualType, 'MULTI_RESOLUTION_MESH');
+  assert.deepStrictEqual(reloaded.position, [11, 22, 33]);
+  assert.deepStrictEqual(reloaded.rotation, ROTATION_90_Y);
+});
+
 test('insertItemVob appends an oCItem under the parent and returns its path', () => {
   const handle = load();
   const statsBefore = zenkit.worldStats(handle);

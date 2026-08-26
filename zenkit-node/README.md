@@ -344,6 +344,53 @@ change the box.
 **No engine verdict covers any of this** — like the rotation before it, it is
 Gate 2's business.
 
+### `insertVob(handle, opts)` and `deleteVob(handle, indexPath)`
+
+The structural pair. `insertVob` appends a **root** `zCVob` and returns its index
+path; `deleteVob` removes a VOB and its whole subtree.
+
+**`insertVob` takes no parent, and that is the design rather than a gap.** Every
+VOB is enumerated depth-first and its flat index is its position in that
+traversal, so a VOB inserted anywhere else renumbers every VOB after it — and
+every op already in the history addresses a VOB both by that number and by an
+index path built from it. Appending a root is the one position that shifts
+nothing: it is enumerated last and takes the index one past the end. Placing a
+VOB *under a parent* is a real feature, and it waits on an answer to that
+renumbering — the same answer a reparent and a general delete need.
+
+`opts` is `{ name?, visual?, position, rotation?, bbox?, showVisual?, cdStatic?,
+cdDynamic?, vobStatic?, ambient? }`; only `position` is required and an
+unrecognised key is refused. Without a `bbox` it gets a 10 cm box around the
+position, the same as `insertItemVob` — the caller that owns the asset layer
+should pass the real one, since the box is a pure function of (visual, rotation,
+position). Without a `visual` it gets none, and then `showVisual` defaults to
+false: a VOB with nothing to draw does not claim otherwise.
+
+**The visual's class is derived from the extension here, which is exactly what
+`setVobProp` refuses to do — and for the opposite reason.** Renaming an existing
+visual has a fact to preserve: `.3DS` is `zCProgMeshProto` 20,716 times and
+`zCMesh` 31 times, and nothing in the name says which. *Authoring* a new one has
+no such fact, so the measured majority is the only defensible choice — `.3DS` →
+`zCProgMeshProto`, `.ASC`/`.MDS` → `zCModel`, `.MMS` → `zCMorphMesh`, `.PFX` →
+`zCParticleFX`. A `.TGA` is **refused**: a `zCDecal` carries its own dimension,
+offset, alpha function and weight, and one authored without them is a visual
+ZenGin never wrote. The class must also be a concrete one and never the `Visual`
+base — a base-class visual produces a world that cannot be re-loaded at all, a
+`0xC0000409` fail-fast with no diagnostic.
+
+**`deleteVob` erases the slot, it does not blank it.** Both `CollectVobs` and
+`CountVobs` skip a null child, so a delete that left a hole behind reads
+*identical* in every `normalizeWorld` assertion — and hands the writer a child
+list with a gap in it. The test that tells the two apart saves the world and
+loads the result.
+
+The two are exact inverses for a VOB `insertVob` created, which is what makes an
+add op invertible: everything about such a VOB is described by the call that
+made it, so undo deletes it and redo makes it again. That is **not** true of an
+arbitrary retail VOB — an `oCMobInter` carries per-class properties, children, an
+AI and an event manager that no op describes — so deleting one is not yet
+invertible and the editor does not offer it.
+
 **Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
 was loaded from a `zCArchiverBinSafe` archive: that is the only writer path
 verified byte-for-byte against the retail corpus and in the original engine.

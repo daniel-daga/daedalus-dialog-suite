@@ -170,6 +170,50 @@ export interface VobProps {
  * no op describes, and undo could not restore it.
  */
 export function setVobProp(handle: WorldHandle, indexPath: string, props: VobProps): void;
+/** A VOB to author. Only `position` is required; an unrecognised key is refused. */
+export interface NewVob {
+  name?: string;
+  /**
+   * The visual's class is derived from the extension — `.3DS` →
+   * `zCProgMeshProto`, `.ASC`/`.MDS` → `zCModel`, `.MMS` → `zCMorphMesh`,
+   * `.PFX` → `zCParticleFX` — which is the opposite of what `setVobProp` does,
+   * and for the opposite reason: a rename has a class to preserve, authoring has
+   * none, so the measured majority is the only defensible choice. `.TGA` is
+   * refused: a decal carries dimensions and alpha settings this does not take.
+   */
+  visual?: string;
+  position: readonly [number, number, number];
+  /** Row-major; identity when omitted. */
+  rotation?: readonly number[];
+  /** `[minX, minY, minZ, maxX, maxY, maxZ]`. A 10 cm box around the position
+   *  when omitted — pass the real one, computed from the visual. */
+  bbox?: readonly number[];
+  /** Defaults to whether there is a visual: a VOB with nothing to draw does not
+   *  claim otherwise. */
+  showVisual?: boolean;
+  cdStatic?: boolean;
+  cdDynamic?: boolean;
+  vobStatic?: boolean;
+  ambient?: boolean;
+}
+/**
+ * Append a **root** `zCVob` and return its index path.
+ *
+ * It takes no parent by design. A VOB's flat index is its position in a
+ * depth-first traversal, so one inserted anywhere else renumbers every VOB after
+ * it — and every op in the history addresses a VOB by that number. Appending a
+ * root is the one position that shifts nothing.
+ */
+export function insertVob(handle: WorldHandle, opts: NewVob): string;
+/**
+ * Remove a VOB and its whole subtree.
+ *
+ * The exact inverse of `insertVob` for a VOB `insertVob` created — which is what
+ * makes an add op invertible. It is **not** an invertible operation on an
+ * arbitrary retail VOB: an `oCMobInter` carries per-class properties, children,
+ * an AI and an event manager that no op describes.
+ */
+export function deleteVob(handle: WorldHandle, indexPath: string): void;
 /**
  * Write the world to `path`, through a temp file and a rename.
  *
