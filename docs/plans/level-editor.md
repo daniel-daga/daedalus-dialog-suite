@@ -265,6 +265,65 @@ distrusting a suspiciously constant result rather than by luck:
   inside the budget", not "was it presented at 60 Hz". The rAF sweep still runs
   as corroboration and reports itself void when it stalls.
 
+#### The rAF corroboration, obtained — and the run that invalidates half the CPU numbers above (2026-08-26)
+
+A foreground run finally produced `presented.valid: true` — 840 frames, **0
+stalls**, `hiddenAtSomePoint: false`. It corroborates the frame-time verdict:
+
+| | synchronous (`gl.finish()`) | **presented (rAF)** |
+|---|---|---|
+| p50 | 4.9 ms | 6.2 ms |
+| p95 | 6.2 ms | 7.9 ms |
+| max | 8.9 ms | **15.5 ms** |
+| frames over 16.7 ms | 0 of 840 | **0 of 840** |
+
+**The gate holds on real presented frames, not just on work submitted.** The
+worst frame in 840 was 15.5 ms — 64.5 fps instantaneous — and not one crossed
+16.7 ms. Note that `presented` p50 is *floor-limited by the panel*: mean 168.6
+presented fps means this display refreshes every ~5.9 ms, so 6.2 ms p50 is the
+refresh interval, not the renderer. What the rAF sweep actually proves is that
+nothing stalls; the renderer's own cost is still the 4.9 ms number.
+
+**Then the same run contradicted three numbers this document states as
+measured.** Comparing it against the run those came from:
+
+| | recorded above | foreground run | |
+|---|---|---|---|
+| `gl.finish()` frame p50 | 4.9 ms | 4.9 ms | unchanged |
+| `loadWorld` / `extractWorldMesh` (node) | 218 / 267 ms | 218 / 271 ms | unchanged |
+| scene build (browser) | 159 ms | **48 ms** | 3.3× |
+| BVH build, 352 trees (browser) | 452–591 ms | **145 ms** | 3.1–4.1× |
+| Pick — whole scene (browser) | 14.2 ms p50 | **5.6 ms p50** | 2.5× |
+
+The pattern is not noise and it is not the machine: **everything measured in the
+node process is unchanged, the GPU-bound number is identical to the decimal, and
+every CPU-bound measurement taken inside the browser is ~3× faster.** That is
+one cause, and it is the same one the second instrument bug was about — the
+earlier run was in a background tab. Chrome does not only suspend `rAF` there;
+it deprioritises the whole renderer process. `gl.finish()` was immune because it
+is GPU-bound, which is exactly why it was chosen and exactly why it hid this.
+
+**So decision 1 below rests on a throttled measurement.** "A CPU raycast across
+the instanced VOBs costs 14.2 ms and blows the one-frame budget by itself" is
+what a *backgrounded* tab measures. In the foreground it is 5.6 ms p50 / 6.3
+p95, which is inside a 60 Hz frame — the budget it was said to fail.
+
+That does not reverse the decision, and GPU ID-picking stays:
+
+- it is O(1) in prop count, where a CPU raycast is linear in `InstancedMesh`es
+  and gets worse as a world grows or as parts are loaded (§7 Phase 3);
+- 5.6 ms of a 16.7 ms frame for one click is still a third of the budget spent
+  on selection alone, and on *this* panel's ~5.9 ms refresh it is a whole frame;
+- the throttled figure is not a fictional state. A laptop editor spends real
+  time deprioritised, and a budget that is only met in the good state is not met.
+
+But the *justification* is now "the better mechanism, and the only one that
+holds in the degraded state", not "the alternative fails outright". Anyone
+re-deriving this should re-measure foreground and background deliberately rather
+than trusting either number alone — and should treat every browser-side CPU
+figure recorded above (scene build, BVH build, both pick rows) as pessimistic by
+about 3×.
+
 #### The load path, phase by phase — 4.3 s to 1.9 s (2026-08-26)
 
 The spike's first report put "reload" at 2.7 s and blamed the BVH. Both halves
@@ -416,8 +475,11 @@ Two things the run found that no test had:
 What is **not** yet measured on the real thing: framerate, draw calls per frame
 and pick latency in the app's own viewport. Those still rest on the spike's
 numbers, which is why `zenkit-node/spike/viewport/` is **not** deleted yet — it
-is the reference the app's viewport has to be measured against, and it is still
-the only way to obtain the rAF corroboration §3 records as missing.
+is the reference the app's viewport has to be measured against. (The rAF
+corroboration it was also being kept for has since been obtained: see above. It
+came with the finding that every browser-side CPU number in §3 was measured in a
+background tab and is ~3× pessimistic, including the pick row that made GPU
+ID-picking mandatory.)
 
 Carried over into the real viewport, all of it measured rather than assumed:
 GPU ID-picking for instanced VOBs (`VobPicker`, ids shifted by one so a cleared
