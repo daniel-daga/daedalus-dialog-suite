@@ -234,6 +234,7 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
       setVobProp: (path, props) => zenkit.setVobProp(handle!, path, props),
       insertVob: (spec) => zenkit.insertVob(handle!, spec),
       deleteVob: (path) => zenkit.deleteVob(handle!, path),
+      reparentVob: (from, parentPath, slot) => zenkit.reparentVob(handle!, from, parentPath, slot),
     },
     payload.ops,
   );

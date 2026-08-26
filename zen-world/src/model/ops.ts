@@ -178,7 +178,26 @@ export interface AddVob {
   to: NewVob | null;
 }
 
-export type WorldOp = MoveVob | RotateVob | SetVobProp | AddVob;
+/** Where a VOB sits: the slot, the parent that holds it, and the path the two
+ *  make. All three, because a path alone cannot describe a move — putting a VOB
+ *  back at the *end* of the list it came from is a different world. */
+export interface VobSlot {
+  /** The index path the VOB is at, or lands at. */
+  path: string;
+  /** The parent's index path; null means it is a root. */
+  parentPath: string | null;
+  /** The slot among that parent's children. */
+  slot: number;
+}
+
+export interface ReparentVob {
+  op: 'ReparentVob';
+  vob: number;
+  from: VobSlot;
+  to: VobSlot;
+}
+
+export type WorldOp = MoveVob | RotateVob | SetVobProp | AddVob | ReparentVob;
 
 /**
  * Does this op change how many VOBs there are, and therefore the enumeration?
@@ -187,8 +206,22 @@ export type WorldOp = MoveVob | RotateVob | SetVobProp | AddVob;
  * writes into columns that already exist; this one changes how many there are,
  * so the renderer's projection cannot follow it and has to be re-read.
  */
-export function isStructuralOp(op: WorldOp): op is AddVob {
-  return op.op === 'AddVob';
+export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob {
+  return op.op === 'AddVob' || op.op === 'ReparentVob';
+}
+
+/**
+ * Does this op change what *other* VOBs' paths are?
+ *
+ * Not the same question as `isStructuralOp`, and the difference is what lets an
+ * add share a batch. Every op in a batch carries a path resolved before the
+ * batch ran, so an op that renumbers invalidates the ones after it — but
+ * appending a root is enumerated last and shifts nothing, which is the whole
+ * reason `insertVob` takes no parent. A reparent has two ends and everything
+ * between them moves.
+ */
+function renumbersPaths(op: WorldOp): boolean {
+  return op.op === 'ReparentVob';
 }
 
 /**
@@ -454,6 +487,69 @@ export function addVob(reader: VobReader, spec: NewVob): AddVob {
   return { op: 'AddVob', vob: reader.count, path: String(roots), from: null, to: spec };
 }
 
+/**
+ * Move a VOB into another parent, at a slot — `toParent` null meaning a root.
+ *
+ * **It renumbers, and no slot avoids that.** `addVob` sidesteps the question by
+ * appending a root; a move has two ends and every VOB between them changes its
+ * flat index and its path. What makes that safe is the history's discipline
+ * rather than anything here: `WorldService` clears the redo stack on every new
+ * edit and replays batches strictly LIFO, so an op is only ever applied to a
+ * world in the enumeration it was recorded against. What cannot follow is the
+ * renderer's projection, which is re-read whole — `isStructuralOp` says so.
+ */
+export function reparentVob(
+  reader: VobReader, vob: number, toParent: number | null, slot: number,
+): ReparentVob {
+  const path = vobIndexPath(reader, vob);
+  if (path === null) throw new RangeError(`no VOB ${vob} in this world`);
+
+  const parentPath = toParent === null ? null : vobIndexPath(reader, toParent);
+  if (toParent !== null && parentPath === null) {
+    throw new RangeError(`no VOB ${toParent} in this world to reparent under`);
+  }
+
+  // A VOB under its own descendant is unreachable from the roots: not
+  // enumerated, not counted, not written — it disappears at the next save. The
+  // binding refuses it too; this is here so the UI never offers it.
+  if (parentPath !== null && (parentPath === path || parentPath.startsWith(`${path}/`))) {
+    throw new RangeError(`VOB ${vob} cannot be reparented into itself or its own descendant`);
+  }
+
+  const { parent, childIndex } = reader.columns;
+  const was = parent[vob] < 0 ? null : vobIndexPath(reader, parent[vob]);
+
+  return {
+    op: 'ReparentVob',
+    vob,
+    from: { path, parentPath: was, slot: childIndex[vob] },
+    to: { path: landingPath(path, parentPath, slot), parentPath, slot },
+  };
+}
+
+/**
+ * Where a VOB moved out of `from` and into `parentPath` at `slot` ends up.
+ *
+ * The removal vacates a slot, so a destination numbered *after* the VOB in the
+ * same list has already shifted down one by the time the insert happens. The
+ * binding makes the identical adjustment and `commitOps` checks the two agree —
+ * the duplication is deliberate: this side has to predict the path for the op's
+ * own inverse, and the disagreement is the signal that the world moved under it.
+ */
+function landingPath(from: string, parentPath: string | null, slot: number): string {
+  if (parentPath === null) return String(slot);
+
+  const source = from.split('/').map(Number);
+  const destination = parentPath.split('/').map(Number);
+  const sharesParent = destination.length >= source.length
+    && source.slice(0, -1).every((index, at) => index === destination[at]);
+
+  if (sharesParent && destination[source.length - 1] > source[source.length - 1]) {
+    destination[source.length - 1] -= 1;
+  }
+  return `${destination.join('/')}/${slot}`;
+}
+
 /** The op that undoes `op` — pure, and an ordinary op in its own right. */
 export function invertOp(op: WorldOp): WorldOp {
   // The box is half of what these two write. Swapping only the matrix — or only
@@ -472,6 +568,9 @@ export function invertOp(op: WorldOp): WorldOp {
     // add into a delete and back with no special case of its own.
     return { ...op, from: op.to, to: op.from };
   }
+  if (op.op === 'ReparentVob') {
+    return { ...op, from: op.to, to: op.from };
+  }
   return { ...op, from: op.to, to: op.from };
 }
 
@@ -487,6 +586,10 @@ export interface OpBinding {
    *  `commitOps` checks against the one the op claims. */
   insertVob(spec: NewVob): string;
   deleteVob(path: string): void;
+  /** Moves a VOB and its subtree into `parentPath` at `slot` — null for a root
+   *  — and answers with the index path it landed at, which `commitOps` checks
+   *  against the one the op predicted. */
+  reparentVob(from: string, parentPath: string | null, slot: number): string;
 }
 
 /** One op against the world, and its own inverse — the two directions
@@ -501,6 +604,21 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   if (op.op === 'SetVobProp') {
     const bbox = direction === 'to' ? op.toBbox : op.fromBbox;
     binding.setVobProp(op.path, bbox === null ? op[direction] : { ...op[direction], bbox });
+    return;
+  }
+  if (op.op === 'ReparentVob') {
+    // Undo moves the VOB from where the op *put* it, not from where it started —
+    // which is the half swapping `from` and `to` does not give for free.
+    const [source, destination] = direction === 'to' ? [op.from, op.to] : [op.to, op.from];
+    const landed = binding.reparentVob(source.path, destination.parentPath, destination.slot);
+    if (landed !== destination.path) {
+      // Put it back before reporting, so a refused op changes nothing — the same
+      // contract `commitOps` keeps for a batch.
+      binding.reparentVob(landed, source.parentPath, source.slot);
+      throw new RangeError(
+        `the vob landed at ${landed}, not ${destination.path} — the world has changed under this op`,
+      );
+    }
     return;
   }
   if (op.op === 'AddVob') {
@@ -534,6 +652,16 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
  * unwinding free — back to front, because two ops on the same VOB compose.
  */
 export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
+  // Every op carries a path resolved before the batch ran, so one that renumbers
+  // makes the ones after it address different VOBs. Refused here rather than
+  // left to callers: the batch is where the addresses were resolved, and this is
+  // the only place that can see the whole of one.
+  if (ops.length > 1 && ops.some(renumbersPaths)) {
+    throw new RangeError(
+      'a ReparentVob renumbers every path after it: it has to be the only op in its batch',
+    );
+  }
+
   const applied: WorldOp[] = [];
   try {
     for (const op of ops) {

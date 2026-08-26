@@ -19,6 +19,7 @@
 import {
   addVob,
   applyOps,
+  reparentVob,
   commitOps,
   createVobReader,
   invertOp,
@@ -169,7 +170,9 @@ describe('a move op', () => {
     // Same VOB, same native address: an inverse is an op like any other and
     // goes through the same path.
     expect(undo.vob).toBe(op.vob);
-    expect(undo.path).toBe(op.path);
+    // Narrowed because `invertOp` answers a `WorldOp`, and a reparent addresses
+    // a VOB by two slots rather than by one path.
+    expect(undo.op === 'MoveVob' && undo.path).toBe(op.path);
     expect(invertOp(undo)).toEqual(op);
   });
 
@@ -327,6 +330,7 @@ describe('a rotate op', () => {
       setVobProp: (path, props) => calls.push(['props', path, props]),
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
 
     commitOps(binding, [rotateVob(reader(), 1, QUARTER_Y, BOUNDS)]);
@@ -344,6 +348,7 @@ describe('a rotate op', () => {
       setVobProp: (path) => calls.push(`props ${path}`),
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
     const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
 
@@ -610,6 +615,7 @@ describe('an add op', () => {
       setVobProp: () => { throw new Error('not a property change'); },
       insertVob: (spec) => { calls.push(`insert ${spec.name}`); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
     const op = addVob(reader(), SPEC);
 
@@ -627,6 +633,7 @@ describe('an add op', () => {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       insertVob: () => '7',
       deleteVob: () => {},
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
 
     expect(() => commitOps(binding, [addVob(reader(), SPEC)])).toThrow(/7|2/);
@@ -639,6 +646,7 @@ describe('an add op', () => {
       setVobRotation: () => {}, setVobProp: () => {},
       insertVob: () => { calls.push('insert'); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
 
     expect(() => commitOps(binding, [
@@ -659,6 +667,132 @@ describe('an add op', () => {
     expect(() => applyOps(live, [addVob(live, SPEC)])).toThrow(/structural|re-read/i);
     expect(isStructuralOp(addVob(live, SPEC))).toBe(true);
     expect(isStructuralOp(moveVob(live, 0, [1, 2, 3]))).toBe(false);
+  });
+});
+
+describe('a reparent op', () => {
+  //  vob 0 (root 0) ── vob 1 (slot 0)
+  //                 └─ vob 2 (slot 1)
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0 },
+    { parent: 0, childIndex: 0 },
+    { parent: 0, childIndex: 1 },
+    { childIndex: 1 },
+  ]));
+
+  it('carries where the VOB was and where it goes, both as slots', () => {
+    // A path alone cannot describe the move: putting a VOB back at the *end* of
+    // the list it came from is a different world from the one it left, so the
+    // slot is part of both sides.
+    const op = reparentVob(reader(), 2, 1, 0);
+
+    expect(op).toEqual({
+      op: 'ReparentVob',
+      vob: 2,
+      from: { path: '0/1', parentPath: '0', slot: 1 },
+      to: { path: '0/0/0', parentPath: '0/0', slot: 0 },
+    });
+  });
+
+  it('predicts the path the removal itself renumbers', () => {
+    // Moving a VOB into a *later sibling* of itself: once it is gone the
+    // destination has shifted down a slot, and the op has to say where the VOB
+    // will actually be or its own inverse addresses somebody else. The binding
+    // makes the same adjustment; `commitOps` checks the two agree.
+    const op = reparentVob(reader(), 1, 2, 0);
+
+    expect(op.from).toEqual({ path: '0/0', parentPath: '0', slot: 0 });
+    expect(op.to).toEqual({ path: '0/0/0', parentPath: '0/1', slot: 0 });
+  });
+
+  it('takes a null parent to mean a root', () => {
+    const op = reparentVob(reader(), 1, null, 2);
+    expect(op.to).toEqual({ path: '2', parentPath: null, slot: 2 });
+  });
+
+  it('is its own inverse, with the two sides swapped', () => {
+    const op = reparentVob(reader(), 2, 1, 0);
+    const back = invertOp(op);
+
+    expect(back).toEqual({ op: 'ReparentVob', vob: 2, from: op.to, to: op.from });
+    expect(invertOp(back)).toEqual(op);
+  });
+
+  it('reaches the binding from the path the VOB is at, each way round', () => {
+    // The half a swap of `from` and `to` does not give for free: undo moves the
+    // VOB from where the op *put* it, not from where it started.
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: () => { throw new Error('not a delete'); },
+      reparentVob: (from, parent, slot) => {
+        calls.push(`${from} -> ${parent}[${slot}]`);
+        return parent === null ? String(slot) : `${parent}/${slot}`;
+      },
+    };
+    const op = reparentVob(reader(), 2, 1, 0);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual(['0/1 -> 0/0[0]', '0/0/0 -> 0[1]']);
+  });
+
+  it('refuses a move that did not land where the op says it would', () => {
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      insertVob: () => '0', deleteVob: () => {},
+      reparentVob: () => '9/9',
+    };
+
+    expect(() => commitOps(binding, [reparentVob(reader(), 2, 1, 0)])).toThrow(/9\/9|0\/0\/0/);
+  });
+
+  it('refuses to put a VOB inside itself or its own subtree', () => {
+    // The one move that destroys VOBs rather than misplacing them: a subtree
+    // under its own descendant is unreachable from the roots, so it is not
+    // enumerated, not counted and not written. The binding refuses it too; this
+    // is here so the UI never offers it.
+    expect(() => reparentVob(reader(), 0, 1, 0)).toThrow(/itself|descendant/i);
+    expect(() => reparentVob(reader(), 0, 0, 0)).toThrow(/itself|descendant/i);
+  });
+
+  it('refuses a VOB or a parent that is not in the index', () => {
+    expect(() => reparentVob(reader(), 9, 0, 0)).toThrow(/9/);
+    expect(() => reparentVob(reader(), 1, 9, 0)).toThrow(/9/);
+  });
+
+  it('cannot be applied to the projection: it renumbers everything after it', () => {
+    const live = reader();
+    expect(() => applyOps(live, [reparentVob(live, 2, 1, 0)])).toThrow(/structural|re-read/i);
+    expect(isStructuralOp(reparentVob(live, 2, 1, 0))).toBe(true);
+  });
+
+  it('has to be the only op in its batch, and an add does not', () => {
+    // The distinction the batch guard rests on. Every op in a batch carries a
+    // path resolved *before* the batch ran, so an op that renumbers invalidates
+    // the ones after it — but appending a root renumbers nothing, which is the
+    // whole reason `insertVob` takes no parent. Refusing both would break the
+    // multi-op batches an add legitimately appears in.
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
+    };
+    const live = reader();
+
+    expect(() => commitOps(binding, [
+      reparentVob(live, 2, 1, 0),
+      moveVob(live, 3, [1, 2, 3]),
+    ])).toThrow(/alone|only op|batch/i);
+
+    expect(() => commitOps(binding, [
+      addVob(live, { name: 'PLACED', position: [1, 2, 3] }),
+      moveVob(live, 3, [1, 2, 3]),
+    ])).not.toThrow();
   });
 });
 
@@ -767,6 +901,7 @@ describe('committing ops to the world', () => {
       setVobProp: () => { throw new Error('these batches are moves only'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
     return { binding, calls };
   }
@@ -812,6 +947,7 @@ describe('committing ops to the world', () => {
       setVobProp: (path, props) => { calls.push([path, props]); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
     const box: ZenBounds = [0, 0, 0, 1, 1, 1];
 
@@ -837,6 +973,7 @@ describe('committing ops to the world', () => {
       },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
     };
 
     expect(() => commitOps(binding, [

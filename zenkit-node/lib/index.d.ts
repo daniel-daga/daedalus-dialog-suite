@@ -215,6 +215,25 @@ export function insertVob(handle: WorldHandle, opts: NewVob): string;
  */
 export function deleteVob(handle: WorldHandle, indexPath: string): void;
 /**
+ * Move a VOB and its whole subtree into `parentPath` at `slot` — `null` for a
+ * root — and answer with the index path it landed at.
+ *
+ * **It renumbers, and no slot avoids that**: a move has two ends and every VOB
+ * between them changes its flat index. It is safe because of how the history
+ * uses it, not because of anything the call does — batches are replayed strictly
+ * LIFO and the redo stack is cleared on every new edit, so an op is only ever
+ * applied to the enumeration it was recorded against. The renderer's projection
+ * is re-read whole, exactly as an insert re-reads it.
+ *
+ * The slot is what makes it invertible: putting a VOB back at the *end* of the
+ * list it came from is a different world from the one it left. It refuses to
+ * move a VOB into its own descendant, which would make the subtree unreachable
+ * from the roots and therefore silently unwritten.
+ */
+export function reparentVob(
+  handle: WorldHandle, fromPath: string, parentPath: string | null, slot: number,
+): string;
+/**
  * Write the world to `path`, through a temp file and a rename.
  *
  * **Throws for a world that was not loaded from a `zCArchiverBinSafe`

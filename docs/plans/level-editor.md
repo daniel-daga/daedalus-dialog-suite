@@ -1611,7 +1611,67 @@ placement leaves the renderer holding a VOB the world no longer has.
 Eleven sabotages across the binding and the op, all caught. Still missing, and
 all three waiting on the same answer: placing a VOB **under a parent**,
 `ReparentVob`, and deleting an arbitrary VOB. And no engine verdict covers a
-world with a VOB added to it.
+world with a VOB added to it. *(The answer landed on 2026-08-27 — see "The
+renumbering answer" below. It is the history's LIFO discipline, not a property
+of the ops.)*
+
+#### The renumbering answer, and `ReparentVob` on top of it (2026-08-27)
+
+Three ops were held back by one question — placing a VOB under a parent,
+`ReparentVob`, and deleting an arbitrary VOB — because a VOB inserted or moved
+anywhere but the end of the roots renumbers every VOB after it, and every op in
+the history carries one of those numbers and a path built from it.
+
+**The answer was already in the code, and it is a property of the history rather
+than of the ops.** `WorldService.applyOps` clears the redo stack on every new
+edit, and undo and redo move whole batches between two stacks through one
+serialised queue. So a recorded op is only ever applied to a world in **exactly
+the enumeration it was recorded against**: new edits destroy the redo stack that
+would otherwise hold ops from a different one, and LIFO replay unwinds
+enumerations in the order they were created. Renumbering cannot reach the
+history at all.
+
+What renumbering *does* reach is two things, and both are handled where they
+belong:
+
+- **The renderer's projection**, which is columnar and cannot grow or reorder —
+  re-read whole, exactly as an add re-reads it. `isStructuralOp` is the name of
+  that, and it now covers `ReparentVob` too.
+- **Other ops in the same batch**, whose paths were resolved before the batch
+  ran. That is a real hole and `commitOps` now refuses it: a reparent must be
+  the only op in its batch. **Not** the same rule as "structural", and the
+  distinction is the point — appending a root renumbers nothing, so an add
+  legitimately shares a batch, and a guard written against `isStructuralOp`
+  would have broken the batches it already appears in. `renumbersPaths` is the
+  narrower predicate.
+
+`reparentVob(handle, fromPath, parentPath | null, slot)` takes a **slot** rather
+than appending, because that is what makes it invertible: putting a VOB back at
+the end of the list it came from is a different world from the one it left. Two
+consequences fall out of the move having two ends:
+
+- **The removal vacates a slot before the insert happens**, so a destination
+  numbered after the source in the same list has already shifted down one. Both
+  sides make that adjustment — the binding to find the list, the op to predict
+  the path its own inverse will address — and `commitOps` checks the two agree,
+  the same guard an insert already had. The duplication is deliberate; the
+  disagreement is the signal that the world moved under the op.
+- **A VOB moved into its own descendant is unreachable from the roots**, so it
+  is not enumerated, not counted and not written — it disappears at the next
+  save rather than being misplaced. Refused in the binding and again in the op
+  factory, so the UI never offers it.
+
+Three sabotages, all caught, and one of them was found by asking which branch no
+test reached: the index adjustment was covered by nothing until a test moved a
+VOB into a *later sibling* of itself, which is the only shape that exercises it.
+
+Still missing: placing a VOB under a parent (the same call, once the placement
+UI takes a parent), the drag-and-drop that would let a user reparent anything,
+and **deleting an arbitrary retail VOB** — which is not blocked by renumbering
+at all but by invertibility: an `oCMobInter` carries per-class properties,
+children, an AI and an event manager that no op describes, so undo cannot
+rebuild one. That needs a way to snapshot a subtree, and it is a different
+feature.
 
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 

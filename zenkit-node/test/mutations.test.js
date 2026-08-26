@@ -636,3 +636,147 @@ test('mutations survive a save/reload round trip', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// reparentVob — the third structural op (level-editor.md §7).
+//
+// It renumbers, and unlike `insertVob` it has no position that does not: moving
+// a VOB anywhere changes the depth-first traversal for everything between the
+// two slots. What makes it safe is not a property of the call but of the
+// history that uses it — `WorldService` clears the redo stack on every new edit
+// and replays batches strictly LIFO, so an op is only ever applied to a world in
+// the enumeration it was recorded against. The renderer's projection is the part
+// that cannot follow, and it is re-read whole, exactly as an insert re-reads it.
+//
+// It takes the destination slot rather than appending, because that is what
+// makes it invertible: put back at the end of the old parent's children is a
+// different world from the one it came from.
+
+test('reparentVob moves a vob into another parent at the slot it was given', () => {
+  const handle = load();
+  const before = zenkit.worldStats(handle).vobCount;
+
+  // The chest becomes a child of the campfire spot.
+  const landed = zenkit.reparentVob(handle, '0/2', '0/0', 0);
+
+  assert.strictEqual(landed, '0/0/0');
+  assert.strictEqual(zenkit.worldStats(handle).vobCount, before);
+
+  const dump = dumpOf(handle);
+  assert.strictEqual(vobAt(dump, '0/0/0').name, 'CHEST_01');
+  // And it is gone from where it was: the fixture's root keeps two children.
+  assert.strictEqual(vobAt(dump, '0').childCount, 2);
+  assert.strictEqual(dump.vobs.filter((v) => v.name === 'CHEST_01').length, 1);
+});
+
+test('reparentVob carries the whole subtree with it', () => {
+  const handle = load();
+  // Give the chest a child first, so there is a subtree to lose.
+  const extra = zenkit.insertVob(handle, { name: 'CARGO', position: [1, 2, 3] });
+  zenkit.reparentVob(handle, extra, '0/2', 0);
+  assert.strictEqual(vobAt(dumpOf(handle), '0/2/0').name, 'CARGO');
+
+  zenkit.reparentVob(handle, '0/2', '0/0', 0);
+
+  const dump = dumpOf(handle);
+  assert.strictEqual(vobAt(dump, '0/0/0').name, 'CHEST_01');
+  assert.strictEqual(vobAt(dump, '0/0/0/0').name, 'CARGO');
+});
+
+test('reparentVob to a root slot takes a null parent', () => {
+  const handle = load();
+  const landed = zenkit.reparentVob(handle, '0/1', null, 0);
+
+  assert.strictEqual(landed, '0');
+  const dump = dumpOf(handle);
+  assert.strictEqual(vobAt(dump, '0').name, 'ITEM_SWORD_01');
+  // The old root moved down one slot, which is exactly the renumbering this op
+  // cannot avoid and the reason it is structural.
+  assert.strictEqual(vobAt(dump, '1').name, 'FIXTURE_ROOT');
+});
+
+test('reparentVob puts a vob back exactly, leaving the world as it was', () => {
+  // The property the op model needs: undo is a reparent in the other direction,
+  // so the pair has to compose to nothing — including the slot, which is why
+  // this call takes one.
+  const handle = load();
+  const before = dumpOf(load());
+
+  zenkit.reparentVob(handle, '0/2', '0/0', 0);
+  zenkit.reparentVob(handle, '0/0/0', '0', 2);
+
+  const after = dumpOf(handle);
+  assert.strictEqual(after.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.deepStrictEqual(after.vobs[i], before.vobs[i], `vob ${i} differs`);
+  }
+
+  // Through the writer as well, for the same reason the delete pair checks it:
+  // a child list left with a hole in it reads identical in every dump.
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-rep-')), 'reparented.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+  assert.strictEqual(reloaded.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.strictEqual(reloaded.vobs[i].path, before.vobs[i].path);
+    assert.strictEqual(reloaded.vobs[i].name, before.vobs[i].name);
+  }
+});
+
+test('reparentVob refuses to put a vob inside itself', () => {
+  // The one input that would silently destroy VOBs: a subtree moved into its own
+  // descendant is unreachable from the roots, so it is not enumerated, not
+  // counted and not written — it simply disappears at the next save.
+  const handle = load();
+  assert.throws(() => zenkit.reparentVob(handle, '0', '0/1', 0), /own descendant|itself/i);
+  assert.throws(() => zenkit.reparentVob(handle, '0', '0', 0), /own descendant|itself/i);
+
+  // And nothing was moved by the attempt.
+  const dump = dumpOf(handle);
+  assert.strictEqual(vobAt(dump, '0').name, 'FIXTURE_ROOT');
+  assert.strictEqual(vobAt(dump, '0/1').name, 'ITEM_SWORD_01');
+});
+
+test('reparentVob accounts for the slot the removal itself vacates', () => {
+  // Source and destination in the same list: moving 0/0 to slot 2 of the same
+  // parent has to mean the slot *after the removal*, or the call is off by one
+  // in one direction and out of range in the other.
+  const handle = load();
+  const landed = zenkit.reparentVob(handle, '0/0', '0', 2);
+
+  assert.strictEqual(landed, '0/2');
+  const dump = dumpOf(handle);
+  assert.strictEqual(vobAt(dump, '0/0').name, 'ITEM_SWORD_01');
+  assert.strictEqual(vobAt(dump, '0/1').name, 'CHEST_01');
+  assert.strictEqual(vobAt(dump, '0/2').name, 'FP_CAMPFIRE_ÄÖÜ_01');
+});
+
+test('reparentVob throws on a bad path, and on a slot out of range', () => {
+  const handle = load();
+  for (const bad of ['9', '0/9', 'abc', '', '0//1', '-1']) {
+    assert.throws(() => zenkit.reparentVob(handle, bad, '0', 0), Error, bad);
+    assert.throws(() => zenkit.reparentVob(handle, '0/1', bad, 0), Error, bad);
+  }
+  // One past the end of the destination list is an append and is allowed; two is
+  // a gap, and a gap in a child list is what the writer cannot represent.
+  assert.throws(() => zenkit.reparentVob(handle, '0/1', '0', 9), /slot|range/i);
+  assert.throws(() => zenkit.reparentVob(handle, '0/1', '0', -1), /slot|range/i);
+});
+
+test('reparentVob follows a destination that the removal itself renumbers', () => {
+  // The case the other tests miss, and the one the adjustment exists for: the
+  // destination is a *later sibling* of the vob being moved, so removing the vob
+  // shifts the destination down one slot before the insert happens. Written
+  // after noticing no test reached that branch — it passes on the wrong code by
+  // moving the vob into whatever ends up at the caller's original path.
+  const handle = load();
+
+  // The campfire spot (0/0) moves into the chest (0/2). Once 0/0 is gone the
+  // chest is at 0/1, and that is where the vob has to land.
+  const landed = zenkit.reparentVob(handle, '0/0', '0/2', 0);
+
+  assert.strictEqual(landed, '0/1/0');
+  const dump = dumpOf(handle);
+  assert.strictEqual(vobAt(dump, '0/1').name, 'CHEST_01');
+  assert.strictEqual(vobAt(dump, '0/1/0').name, 'FP_CAMPFIRE_ÄÖÜ_01');
+  assert.strictEqual(vobAt(dump, '0').childCount, 2);
+});

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -829,6 +830,100 @@ Napi::Value DeleteVob(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// reparentVob(handle, fromPath, toParentPath | null, slot) — moves a vob and its
+// whole subtree into another parent's children, at a given slot, and returns the
+// index path it landed at.
+//
+// **It renumbers, and there is no slot that does not.** `insertVob` avoids the
+// question by appending a root, which is enumerated last; a move has two ends
+// and everything between them shifts. What makes that safe is not this call but
+// the discipline of the history that uses it: `WorldService` clears the redo
+// stack on every new edit and replays batches strictly LIFO, so an op is only
+// ever applied to a world in the enumeration it was recorded against. The
+// renderer's projection is the part that cannot follow, and it is re-read whole,
+// exactly as an insert re-reads it.
+//
+// It takes the destination slot rather than appending because that is what makes
+// it invertible: putting a vob back at the *end* of the list it came from is a
+// different world from the one it left.
+Napi::Value ReparentVob(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+
+  auto from = ParseIndexPath(env, info[1], "fromPath");
+  bool const to_root = info[2].IsNull() || info[2].IsUndefined();
+  std::vector<std::size_t> to_parent;
+  if (!to_root) to_parent = ParseIndexPath(env, info[2], "toParentPath");
+
+  if (!info[3].IsNumber()) {
+    throw Napi::TypeError::New(env, "slot must be a number");
+  }
+  double const slot_raw = info[3].As<Napi::Number>().DoubleValue();
+  if (slot_raw < 0 || slot_raw != std::floor(slot_raw)) {
+    throw Napi::Error::New(env, "slot must be a non-negative whole number");
+  }
+  auto slot = static_cast<std::size_t>(slot_raw);
+
+  // A subtree moved into its own descendant is unreachable from the roots: it is
+  // not enumerated, not counted and not written, so it would simply disappear at
+  // the next save. Refused before anything is touched.
+  if (!to_root && to_parent.size() >= from.size()
+      && std::equal(from.begin(), from.end(), to_parent.begin())) {
+    throw Napi::Error::New(env, "cannot reparent a vob into itself or its own descendant");
+  }
+
+  // Resolve the source's holding list and validate the whole path, including the
+  // destination, before removing anything — a half-done move has no inverse.
+  auto* from_list = &handle->world->world_vobs;
+  for (std::size_t at = 0; at + 1 < from.size(); ++at) {
+    std::size_t const index = from[at];
+    if (index >= from_list->size() || (*from_list)[index] == nullptr) {
+      throw Napi::Error::New(env, "no vob at fromPath");
+    }
+    from_list = &(*from_list)[index]->children;
+  }
+  std::size_t const from_slot = from.back();
+  if (from_slot >= from_list->size() || (*from_list)[from_slot] == nullptr) {
+    throw Napi::Error::New(env, "no vob at fromPath");
+  }
+  if (!to_root) ResolveVob(env, *handle, to_parent, "toParentPath");
+
+  // The removal vacates a slot, and the destination may be numbered *after* it in
+  // the same list — in which case the caller's slot means the list as it will be
+  // once the vob is gone. Both the destination path and the slot have to account
+  // for that, or the same move is off by one in one direction and out of range in
+  // the other.
+  if (!to_root && to_parent.size() >= from.size()
+      && std::equal(from.begin(), from.end() - 1, to_parent.begin())
+      && to_parent[from.size() - 1] > from_slot) {
+    to_parent[from.size() - 1] -= 1;
+  }
+
+  auto vob = (*from_list)[from_slot];
+  from_list->erase(from_list->begin() + static_cast<std::ptrdiff_t>(from_slot));
+
+  auto* to_list = to_root ? &handle->world->world_vobs
+                          : &ResolveVob(env, *handle, to_parent, "toParentPath")->children;
+
+  // One past the end is an append; two is a gap, and a gap is what the writer
+  // cannot represent. Checked after the removal because that is the list the slot
+  // is an index into — and the vob is put back before throwing, so a refused call
+  // changes nothing.
+  if (slot > to_list->size()) {
+    from_list->insert(from_list->begin() + static_cast<std::ptrdiff_t>(from_slot), vob);
+    throw Napi::Error::New(env, "slot is out of range for the destination's children");
+  }
+
+  to_list->insert(to_list->begin() + static_cast<std::ptrdiff_t>(slot), vob);
+
+  std::string landed;
+  if (!to_root) {
+    for (std::size_t const index : to_parent) landed += std::to_string(index) + "/";
+  }
+  landed += std::to_string(slot);
+  return Napi::String::New(env, landed);
+}
+
 // insertItemVob(handle, parentPath | null, {name, instance, position}) —
 // appends a new oCItem vob and returns its index path. The visual is left
 // empty: the engine derives item visuals from the script instance.
@@ -982,6 +1077,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setVobProp", Napi::Function::New(env, SetVobProp));
   exports.Set("insertVob", Napi::Function::New(env, InsertVob));
   exports.Set("deleteVob", Napi::Function::New(env, DeleteVob));
+  exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));
