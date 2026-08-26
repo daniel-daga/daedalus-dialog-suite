@@ -70,6 +70,98 @@ test('setVobPosition throws on a bad index path', () => {
   }
 });
 
+// setVobRotation — the second mutation (level-editor.md §7). It takes the
+// bounding box rather than deriving one, and that is the whole design decision:
+// measured across the three retail worlds, a VOB's stored box is the tight
+// world AABB of its own visual placed by its own transform (20,472 of 20,502,
+// mean slack ~0.1 cm). It is a pure function of (visual, rotation, position),
+// so it is recomputed by the caller that has the asset layer and passed in —
+// never re-fitted from the box that is already there, which would grow on every
+// rotation and make the op non-invertible.
+
+const ROTATION_90_Y = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+
+test('setVobRotation writes the matrix row-major, as vobIndex reads it', () => {
+  const handle = load();
+
+  zenkit.setVobRotation(handle, '0/1', ROTATION_90_Y);
+
+  const after = vobAt(dumpOf(handle), '0/1');
+  assert.deepStrictEqual(after.rotation, ROTATION_90_Y);
+  // The columnar index is the other reader of the same matrix, and it is the
+  // one the gizmo and the property grid go through. The two disagreeing is a
+  // transpose, which is invisible on any symmetric matrix — including identity.
+  // `vobIndex` is the same enumeration in the same order as the dump, which is
+  // what lets the flat index be found this way at all.
+  const at = dumpOf(handle).vobs.findIndex((v) => v.path === '0/1');
+  const rotations = new Float32Array(zenkit.vobIndex(handle).rotations);
+  assert.deepStrictEqual([...rotations.slice(at * 9, at * 9 + 9)], ROTATION_90_Y);
+});
+
+test('setVobRotation leaves the bbox alone when it is not given one', () => {
+  // A VOB whose visual does not resolve — a decal, a .pfx, an unresolved
+  // model — has no bounds to recompute from. A guessed box is worse than the
+  // stale one: the stale one at least bounded the visual in some pose.
+  const handle = load();
+  const before = vobAt(dumpOf(load()), '0/1');
+
+  zenkit.setVobRotation(handle, '0/1', ROTATION_90_Y);
+
+  assert.deepStrictEqual(vobAt(dumpOf(handle), '0/1').bbox, before.bbox);
+});
+
+test('setVobRotation writes the bbox it is given, verbatim', () => {
+  const handle = load();
+  const bbox = [-1, -2, -3, 4, 5, 6];
+
+  zenkit.setVobRotation(handle, '0/1', ROTATION_90_Y, bbox);
+
+  assert.deepStrictEqual(vobAt(dumpOf(handle), '0/1').bbox, bbox);
+});
+
+test('setVobRotation changes only the targeted vob', () => {
+  const handle = load();
+  zenkit.setVobRotation(handle, '0/1', ROTATION_90_Y, [-1, -2, -3, 4, 5, 6]);
+
+  const mutated = dumpOf(handle);
+  const fresh = dumpOf(load());
+  for (let i = 0; i < fresh.vobs.length; i++) {
+    if (fresh.vobs[i].path === '0/1') continue;
+    assert.deepStrictEqual(mutated.vobs[i], fresh.vobs[i]);
+  }
+  assert.deepStrictEqual(mutated.mesh, fresh.mesh);
+  assert.deepStrictEqual(mutated.bsp, fresh.bsp);
+  assert.deepStrictEqual(mutated.waynet, fresh.waynet);
+});
+
+test('setVobRotation refuses a bad path, a bad matrix and a bad box', () => {
+  const handle = load();
+  for (const bad of ['9', '0/9', '0/1/0', 'abc', '', '0//1', '-1']) {
+    assert.throws(() => zenkit.setVobRotation(handle, bad, ROTATION_90_Y), Error, bad);
+  }
+  // Nine numbers, not four and not twelve: the matrix is handed to native code
+  // and read positionally.
+  for (const bad of [[], [1, 2, 3], new Array(8).fill(0), new Array(10).fill(0), 'x', null]) {
+    assert.throws(() => zenkit.setVobRotation(handle, '0/1', bad), Error);
+  }
+  for (const bad of [[1, 2, 3], new Array(7).fill(0), 'x']) {
+    assert.throws(() => zenkit.setVobRotation(handle, '0/1', ROTATION_90_Y, bad), Error);
+  }
+});
+
+test('setVobRotation survives a save and reload', () => {
+  // The point of the op: the matrix has to be in the file, not just in memory.
+  const handle = load();
+  zenkit.setVobRotation(handle, '0/1', ROTATION_90_Y, [-1, -2, -3, 4, 5, 6]);
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-rot-')), 'rotated.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = vobAt(dumpOf(zenkit.loadWorld(out, 'g2')), '0/1');
+
+  assert.deepStrictEqual(reloaded.rotation, ROTATION_90_Y);
+  assert.deepStrictEqual(reloaded.bbox, [-1, -2, -3, 4, 5, 6]);
+});
+
 test('insertItemVob appends an oCItem under the parent and returns its path', () => {
   const handle = load();
   const statsBefore = zenkit.worldStats(handle);

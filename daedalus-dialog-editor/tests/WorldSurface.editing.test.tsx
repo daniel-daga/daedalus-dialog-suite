@@ -25,19 +25,30 @@ let mockAppliedOps: WorldOp[] | null | undefined;
 let mockSelection: readonly number[] | undefined;
 /** The drag the stub fires — VOB 1 sits at [10, 20, 30], so this is `MOVE`. */
 const DRAG: [number, number, number] = [1, 2, 3];
+let mockGizmoMode: string | undefined;
+/** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
+const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 jest.mock('../src/renderer/components/world/WorldViewport', () => ({
   __esModule: true,
   default: (props: {
     onTranslateSelection: (delta: [number, number, number]) => void;
+    onRotateSelection: (delta: number[]) => void;
+    gizmoMode: string;
     selection: readonly number[];
     appliedOps: WorldOp[] | null;
   }) => {
     mockAppliedOps = props.appliedOps;
     mockSelection = props.selection;
+    mockGizmoMode = props.gizmoMode;
     return (
-      <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
-        drag
-      </button>
+      <>
+        <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
+          drag
+        </button>
+        <button type="button" data-testid="stub-turn" onClick={() => props.onRotateSelection(TURN)}>
+          turn
+        </button>
+      </>
     );
   },
 }));
@@ -48,13 +59,17 @@ function vobIndex(positions: Array<[number, number, number]>): VobIndex {
   positions.forEach((position, i) => columns.set(position, i * 3));
   const childIndex = new Uint32Array(count);
   childIndex.forEach((_, i) => { childIndex[i] = i; });
+  // Identity, not zeros: a zero matrix is not a rotation any world contains,
+  // and a rotation op composed onto one produces a box collapsed to a point.
+  const rotations = new Float32Array(count * 9);
+  for (let i = 0; i < count; i++) rotations.set([1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
 
   return {
     count,
     parent: new Int32Array(count).fill(-1).buffer,
     childIndex: childIndex.buffer,
     positions: columns.buffer,
-    rotations: new Float32Array(count * 9).buffer,
+    rotations: rotations.buffer,
     flags: new Uint32Array(count).buffer,
     classes: ['zCVob'], classIndex: new Uint32Array(count).buffer,
     names: ['BARREL'], nameIndex: new Uint32Array(count).buffer,
@@ -105,7 +120,21 @@ async function openWorld() {
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
-  api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 1 } } as never);
+  // One visual carrying VOB 1, with bounds — what a rotation refits the bbox
+  // from. VOB 0 is deliberately not in it: a selection can hold a VOB with no
+  // instance, and the op for it must carry no box rather than a guessed one.
+  api.getWorldVisuals.mockResolvedValueOnce({
+    visuals: [{
+      name: 'BARREL.3DS',
+      source: 'BARREL.MRM',
+      count: 1,
+      matrices: new Float32Array(12).buffer,
+      vobIds: new Uint32Array([1]).buffer,
+      groups: [],
+      bounds: [-1, 0, -10, 1, 2, 10],
+    }],
+    stats: { vobsPlaced: 1 },
+  } as never);
 
   render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
@@ -254,6 +283,96 @@ describe('a multi-select drag', () => {
 
     await waitFor(() => expect(mockSelection).toEqual([]));
     expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+});
+
+describe('a turn of the gizmo', () => {
+  it('becomes a RotateVob carrying both matrices and both boxes', async () => {
+    // The box is half of what a rotation writes: the engine culls by it, and an
+    // axis-aligned box does not rotate into an axis-aligned box. It is refitted
+    // from the visual's own bounds — measured, that is what a retail world
+    // stores — and both poses' boxes travel in the op so undo restores the one
+    // it started from.
+    const summary = await openWorld();
+
+    fireEvent.click(screen.getByTestId('stub-turn'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'RotateVob',
+      vob: 1,
+      path: '1',
+      from: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      to: TURN,
+      // VOB 1 sits at [10, 20, 30]; its visual spans x -1..1 and z -10..10, so
+      // a quarter turn about Y swaps those extents.
+      fromBbox: [9, 20, 20, 11, 22, 40],
+      toBbox: [0, 20, 29, 20, 22, 31],
+    }]);
+    expect(createVobReader(summary.vobIndex).rotation(1)).toEqual(TURN);
+    // A turn is not a move.
+    expect(createVobReader(summary.vobIndex).position(1)).toEqual([10, 20, 30]);
+  });
+
+  it('carries no box for a selected VOB that is not drawn', async () => {
+    // VOB 0 has no instance in the payload, so there are no bounds to refit
+    // from. A guessed box bounds nothing; the stale one bounded the visual in
+    // some pose.
+    await openWorld();
+    act(() => useWorldStore.getState().selectVob(0));
+
+    fireEvent.click(screen.getByTestId('stub-turn'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [[ops]] = api.applyWorldOps.mock.calls as unknown as [[WorldOp[]]];
+    expect(ops[0]).toMatchObject({ op: 'RotateVob', vob: 0, fromBbox: null, toBbox: null });
+  });
+
+  it('puts the whole op back, boxes included, when it is refused', async () => {
+    await openWorld();
+    api.applyWorldOps.mockRejectedValueOnce(new Error('no vob at indexPath'));
+
+    fireEvent.click(screen.getByTestId('stub-turn'));
+
+    await waitFor(() => expect(mockAppliedOps).not.toBeNull());
+    expect(mockAppliedOps).toEqual([{
+      op: 'RotateVob',
+      vob: 1,
+      path: '1',
+      from: TURN,
+      to: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      // Swapped with the matrices. Half an inverse would send the VOB back and
+      // leave it culled by a box fitted to the pose it no longer holds.
+      fromBbox: [0, 20, 29, 20, 22, 31],
+      toBbox: [9, 20, 20, 11, 22, 40],
+    }]);
+  });
+
+  it('switches the gizmo on W and E, and on the toggle', async () => {
+    await openWorld();
+    expect(mockGizmoMode).toBe('translate');
+
+    fireEvent.keyDown(window, { key: 'e' });
+    await waitFor(() => expect(mockGizmoMode).toBe('rotate'));
+
+    fireEvent.keyDown(window, { key: 'w' });
+    await waitFor(() => expect(mockGizmoMode).toBe('translate'));
+
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    await waitFor(() => expect(mockGizmoMode).toBe('rotate'));
+  });
+
+  it('leaves the gizmo alone when the letter was typed into a field', async () => {
+    // Bare letters, on a *window* listener: the app is full of text fields and
+    // an 'e' typed into one must not silently change what the gizmo does.
+    await openWorld();
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+
+    fireEvent.keyDown(field, { key: 'e' });
+
+    expect(mockGizmoMode).toBe('translate');
+    document.body.removeChild(field);
   });
 });
 

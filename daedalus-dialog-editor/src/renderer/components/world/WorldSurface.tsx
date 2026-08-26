@@ -1,10 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
-import { translateVobs } from 'zen-world';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Tab, Tabs,
+  ToggleButton, ToggleButtonGroup, Typography,
+} from '@mui/material';
+import {
+  invertOp, rotateVobs, translateVobs, type ZenBounds, type ZenRotation,
+} from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { useWorldStore } from '../../store/worldStore';
 import { vobModelOf } from '../../world/vobModel';
-import WorldViewport from './WorldViewport';
+import WorldViewport, { type GizmoMode } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
@@ -137,8 +142,10 @@ const WorldSurface: React.FC = () => {
     } catch (failure) {
       editFailed(failure instanceof Error ? failure.message : String(failure));
       // The viewport has already drawn the drag; left alone, the VOB would sit
-      // where nothing else in the app agrees it is.
-      setAppliedOps(ops.map((op) => ({ ...op, from: op.to, to: op.from })));
+      // where nothing else in the app agrees it is. Through `invertOp` rather
+      // than by swapping `from` and `to` here: a rotation carries a box for each
+      // pose, and swapping only the matrix is half an inverse.
+      setAppliedOps(ops.map(invertOp));
     }
   }, []);
 
@@ -155,6 +162,37 @@ const WorldSurface: React.FC = () => {
     void commitOps(translateVobs(vobModelOf(current).reader, selected, delta));
   }, [commitOps]);
 
+  // What the gizmo does. There is no scale: `zCVob` has no scale field, and
+  // measured across all 41,393 VOB transforms in the three retail worlds
+  // nothing is scaled — a scale gizmo would author a representation ZenGin's
+  // own tools never wrote (level-editor.md §7).
+  const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate');
+
+  /**
+   * The visual's own bounds for a VOB, from the payload the worker already
+   * sent — what a rotation refits the VOB's bbox from.
+   *
+   * Built from `visuals` rather than asked for over IPC: the bounds are six
+   * numbers per visual and they came across with the geometry. A VOB with no
+   * instance (a decal, a `.pfx`) has none, and null is the right answer — the
+   * op then leaves the stale box alone rather than refitting it to nothing.
+   */
+  const boundsOf = useMemo(() => {
+    const byVob = new Map<number, ZenBounds>();
+    for (const visual of visuals?.visuals ?? []) {
+      for (const vob of new Uint32Array(visual.vobIds)) byVob.set(vob, visual.bounds);
+    }
+    return (vob: number) => byVob.get(vob) ?? null;
+  }, [visuals]);
+
+  const handleRotateSelection = useCallback((delta: ZenRotation) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+    // Each VOB turns about its own origin, and the delta composes on the left
+    // so a selection of differently-oriented VOBs all turn the same way.
+    void commitOps(rotateVobs(vobModelOf(current).reader, selected, delta, boundsOf));
+  }, [commitOps, boundsOf]);
+
   useEffect(() => {
     if (summary === null) return undefined;
 
@@ -162,6 +200,20 @@ const WorldSurface: React.FC = () => {
       // Lower-cased because holding Shift changes the letter itself: Ctrl+Shift+Z
       // arrives as `key: 'Z'`, and a comparison against 'z' never fires.
       const key = event.key.toLowerCase();
+
+      // W and E, as every 3D editor binds them. Bare letters, so unlike the
+      // undo shortcut they have to keep out of the way of anything that takes
+      // typing — the World surface has no text field of its own, but this is a
+      // window listener and the app is full of them.
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'w' || key === 'e')) {
+        const target = event.target as HTMLElement | null;
+        if (target?.isContentEditable
+          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        event.preventDefault();
+        setGizmoMode(key === 'w' ? 'translate' : 'rotate');
+        return;
+      }
+
       const undo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
       const redo = (event.ctrlKey || event.metaKey)
         && (key === 'y' || (key === 'z' && event.shiftKey));
@@ -213,6 +265,19 @@ const WorldSurface: React.FC = () => {
             >
               Waynet
             </Button>
+          )}
+          {/* Two modes, not three: a VOB has no scale to gizmo. */}
+          {summary && (
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={gizmoMode}
+              onChange={(_event, next: GizmoMode | null) => next !== null && setGizmoMode(next)}
+              sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1, fontSize: 12 } }}
+            >
+              <ToggleButton value="translate" data-testid="world-gizmo-translate">Move (W)</ToggleButton>
+              <ToggleButton value="rotate" data-testid="world-gizmo-rotate">Turn (E)</ToggleButton>
+            </ToggleButtonGroup>
           )}
           {summary && (
             <Stack direction="row" spacing={1}>
@@ -288,6 +353,8 @@ const WorldSurface: React.FC = () => {
               onPick={handlePick}
               selection={selection}
               onTranslateSelection={handleTranslateSelection}
+              gizmoMode={gizmoMode}
+              onRotateSelection={handleRotateSelection}
               appliedOps={appliedOps}
             />
           )}

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
-import { threeToZen, zenBoxToThree } from 'zen-world';
+import { multiplyRotation, threeToZen, zenBoxToThree, type ZenRotation } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
@@ -53,8 +53,13 @@ declare global {
        * the native move and the panels — is the real thing.
        */
       dragGizmo: (to: [number, number, number]) => void;
+      /** The same, for the rotate gizmo: turn about an axis in ZenGin space by
+       *  `radians` and let go. */
+      turnGizmo: (axis: [number, number, number], radians: number) => void;
       /** Where the gizmo currently sits, in ZenGin space, or null if detached. */
       gizmoPosition: () => [number, number, number] | null;
+      /** The anchor VOB's 3x3 as drawn, row-major, or null if detached. */
+      gizmoRotation: () => number[] | null;
     };
   }
 }
@@ -94,20 +99,42 @@ export interface WorldViewportProps {
    * has already drawn the move; this asks for it to be made real.
    */
   onTranslateSelection: (delta: [number, number, number]) => void;
+  /** What the gizmo does. A VOB has no scale — `zCVob` has no such field and
+   *  nothing in the retail corpus is scaled — so there are two modes, not three. */
+  gizmoMode: GizmoMode;
+  /**
+   * A finished turn as a **delta 3x3 in ZenGin space, row-major** — the shell
+   * composes it onto each selected VOB's own matrix, so every one of them turns
+   * the same way on screen and each about its own origin.
+   */
+  onRotateSelection: (delta: ZenRotation) => void;
   /** Ops the main process has applied — a committed edit, an undo, a redo, or
    *  the reversal of a refused one. The scene follows them. */
   appliedOps: WorldOp[] | null;
 }
 
+export type GizmoMode = 'translate' | 'rotate';
+
 /** What the selection and edit effects need of the imperative viewport, so
  *  neither of them can tear the scene down and rebuild 31 MB of buffers. */
 interface Gizmo {
   attach: (selection: readonly number[]) => void;
+  setMode: (mode: GizmoMode) => void;
+}
+
+/** A rotation as ZenGin reads it — row-major — out of three's column-major
+ *  `Matrix4`. `elements[col * 4 + row]` is element [row][col]. */
+function rowMajor(matrix: THREE.Matrix4): ZenRotation {
+  const out: number[] = [];
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) out.push(matrix.elements[col * 4 + row]);
+  }
+  return out as ZenRotation;
 }
 
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
-  selection, onTranslateSelection, appliedOps,
+  selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -117,6 +144,8 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   const gizmoRef = useRef<Gizmo | null>(null);
   const onTranslateRef = useRef(onTranslateSelection);
   onTranslateRef.current = onTranslateSelection;
+  const onRotateRef = useRef(onRotateSelection);
+  onRotateRef.current = onRotateSelection;
   // Read through refs so a parent re-render cannot tear the scene down and
   // rebuild 31 MB of buffers just because a callback identity changed.
   const onPickRef = useRef(onPick);
@@ -213,7 +242,12 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // they are, and only the preview needs an instance.
     let gizmoVobs: readonly number[] = [];
     const dragFrom = new Map<number, [number, number, number]>();
+    const turnFrom = new Map<number, ZenRotation>();
     const proxyFrom = new THREE.Vector3();
+    const proxyTurnFrom = new THREE.Quaternion();
+    // Scratch, so a drag frame allocates nothing.
+    const turn = new THREE.Quaternion();
+    const turnMatrix = new THREE.Matrix4();
     // A drag ends with a pointerup that the browser also delivers as a click on
     // the canvas, *after* the gizmo has already reported the drag finished — so
     // a flag that is true only during the drag would already be false by then.
@@ -232,11 +266,18 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
         return;
       }
       proxy.position.set(position[0], position[1], position[2]);
+      // The proxy's own orientation is reset on every attach: the gizmo reports
+      // a *delta* from where it was picked up, so what it starts from only has
+      // to be the same at the press and at the release.
+      proxy.quaternion.identity();
       transform.attach(proxy);
       transform.enabled = true;
       transform.getHelper().visible = true;
     };
-    gizmoRef.current = { attach };
+    gizmoRef.current = {
+      attach,
+      setMode: (mode) => transform.setMode(mode),
+    };
 
     // A drag must not also orbit the camera.
     transform.addEventListener('dragging-changed', (event) => {
@@ -244,32 +285,63 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       controls.enabled = !dragging;
 
       if (dragging) {
-        // Where everything was when the drag began. Read once: `moveVob` writes
-        // the instance matrices this would otherwise be read back out of, so a
-        // per-frame read would compound the delta.
+        // Where everything was when the drag began. Read once: the preview
+        // writes the instance matrices this would otherwise be read back out
+        // of, so a per-frame read would compound the delta.
         proxyFrom.copy(proxy.position);
+        proxyTurnFrom.copy(proxy.quaternion);
         dragFrom.clear();
+        turnFrom.clear();
         for (const vob of gizmoVobs) {
           const position = world.positionOf(vob);
           if (position !== null) dragFrom.set(vob, position);
+          const rotation = world.rotationOf(vob);
+          if (rotation !== null) turnFrom.set(vob, rotation as ZenRotation);
         }
         return;
       }
 
       endedDrag = true;
+      if (gizmoVobs.length === 0) return;
+
+      if (transform.getMode() === 'rotate') {
+        const delta = turnDelta();
+        // Identity is a click that turned nothing, and committing it would put
+        // one op per selected VOB on the undo stack for a batch that undoes
+        // nothing.
+        if (delta === null) return;
+        onRotateRef.current(delta);
+        return;
+      }
+
       const delta: [number, number, number] = [
         proxy.position.x - proxyFrom.x, proxy.position.y - proxyFrom.y, proxy.position.z - proxyFrom.z,
       ];
-      // A click on the gizmo that moves nothing is not an edit. Committing it
-      // would put one op per selected VOB on the undo stack for a batch that
-      // undoes nothing.
-      if (gizmoVobs.length === 0 || delta.every((component) => component === 0)) return;
+      if (delta.every((component) => component === 0)) return;
       onTranslateRef.current(delta);
     });
+
+    /** The turn since the drag began, row-major in ZenGin space — or null if
+     *  the gizmo has not actually turned. The proxy hangs under the mirrored
+     *  root, so its *local* orientation is already in ZenGin's basis and needs
+     *  no conversion of its own; the root stays the only one. */
+    const turnDelta = (): ZenRotation | null => {
+      // q_now = delta * q_start, so delta = q_now * q_start⁻¹.
+      turn.copy(proxyTurnFrom).invert().premultiply(proxy.quaternion);
+      if (Math.abs(turn.w) >= 1) return null;
+      return rowMajor(turnMatrix.makeRotationFromQuaternion(turn));
+    };
 
     // The live preview. The world in the main process still has the VOBs where
     // they were; this is the drag being drawn, and it is made real on release.
     transform.addEventListener('objectChange', () => {
+      if (transform.getMode() === 'rotate') {
+        const delta = turnDelta();
+        if (delta === null) return;
+        for (const [vob, from] of turnFrom) world.rotateVob(vob, multiplyRotation(delta, from));
+        return;
+      }
+
       for (const [vob, from] of dragFrom) {
         world.moveVob(vob, [
           from[0] + proxy.position.x - proxyFrom.x,
@@ -414,6 +486,18 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
         transform.dispatchEvent({ type: 'objectChange' });
         transform.dispatchEvent({ type: 'dragging-changed', value: false });
       },
+      turnGizmo: (axis, radians) => {
+        if (gizmoVobs.length === 0) throw new Error('no VOB is selected');
+        transform.dispatchEvent({ type: 'dragging-changed', value: true });
+        // The axis is in the proxy's own frame, which is ZenGin's — the same
+        // basis an op's matrix is in, so the driver can predict the answer.
+        proxy.quaternion.setFromAxisAngle(
+          new THREE.Vector3(axis[0], axis[1], axis[2]).normalize(), radians,
+        );
+        transform.dispatchEvent({ type: 'objectChange' });
+        transform.dispatchEvent({ type: 'dragging-changed', value: false });
+      },
+      gizmoRotation: () => (gizmoVobs.length === 0 ? null : world.rotationOf(gizmoVobs[gizmoVobs.length - 1])),
       gizmoPosition: () => (gizmoVobs.length === 0
         ? null
         : [proxy.position.x, proxy.position.y, proxy.position.z]),
@@ -469,6 +553,10 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     gizmoRef.current?.attach(selection);
   }, [selection, mesh, visuals]);
 
+  useEffect(() => {
+    gizmoRef.current?.setMode(gizmoMode);
+  }, [gizmoMode, mesh, visuals]);
+
   // An edit the main process has taken — a commit, an undo, a redo, or the
   // reversal of a refused one. The scene is a projection and has to follow it;
   // the gizmo has to follow the VOB it is attached to, or it is left floating
@@ -477,7 +565,10 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     const world = sceneRef.current;
     if (world === null || appliedOps === null) return;
 
-    for (const op of appliedOps) world.moveVob(op.vob, op.to);
+    for (const op of appliedOps) {
+      if (op.op === 'RotateVob') world.rotateVob(op.vob, op.to);
+      else world.moveVob(op.vob, op.to);
+    }
     // The gizmo has to follow the VOBs it is attached to, or it is left
     // floating where they used to be — an undo of a multi-select drag moves
     // every one of them.

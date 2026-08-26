@@ -117,4 +117,22 @@ export function decodeTexture(vfs: VfsHandle, name: string, level: number): Text
 export function setVobPosition(
   handle: WorldHandle, indexPath: string, position: [number, number, number],
 ): void;
+/**
+ * Rotate one VOB, addressed by the same index path, with a **row-major** 3x3 —
+ * the order `vobIndex` emits and `normalizeWorld` dumps.
+ *
+ * `bbox` is `[minX, minY, minZ, maxX, maxY, maxZ]` and is written verbatim when
+ * given. It is not derived here: measured across the three retail worlds, a
+ * VOB's stored box is the tight world AABB of its own visual placed by its own
+ * transform, so the box is a pure function of (visual, rotation, position) and
+ * the caller that owns the asset layer recomputes it. Omit it for a VOB whose
+ * visual does not resolve — the stale box at least bounded the visual in some
+ * pose, where a guessed one bounds nothing.
+ */
+export function setVobRotation(
+  handle: WorldHandle,
+  indexPath: string,
+  rotation: readonly number[],
+  bbox?: readonly number[] | null,
+): void;
 export function zenkitVersion(): string;

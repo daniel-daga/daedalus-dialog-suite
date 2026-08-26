@@ -11,7 +11,7 @@ every binding call is injected.
 | Module | What it owns |
 |---|---|
 | `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. |
-| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `invertOp`, `commitOps`, `applyOps`. |
+| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `rotateVob`, `rotateVobs`, `invertOp`, `commitOps`, `applyOps`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
@@ -76,6 +76,18 @@ viewport.
   (`commitOps` unwinds what it applied, back to front) because a batch is one
   undo entry, and a half-applied one leaves the world in a state no entry
   describes.
+- **A turn refits the bounding box from the *visual*, and carries a box for each
+  pose.** The engine culls by that box and an axis-aligned box does not rotate
+  into an axis-aligned box, so a rotation cannot translate it the way a move
+  does. Measured across the three retail worlds, a stored box is the tight world
+  AABB of the VOB's own visual placed by its own transform — a pure function of
+  (visual, rotation, position) — so both poses' boxes are computed when the op is
+  made and `invertOp` swaps both pairs. Re-fitting the *stored* box instead
+  grows it on every turn and never shrinks back, and undo would not restore it.
+  Swapping only the matrix is half an inverse: the VOB goes back and stays culled
+  by a box fitted to a pose it no longer holds. A selection turns about **each
+  VOB's own origin** and the delta composes **on the left**, so
+  differently-oriented VOBs all turn the same way on screen.
 - **A drag of a selection is a delta, not a destination.** One gizmo moves N
   VOBs, so `translateVobs` builds one op per VOB and each carries **its own**
   origin: the selection keeps the spacing it had, and undoing the batch puts a

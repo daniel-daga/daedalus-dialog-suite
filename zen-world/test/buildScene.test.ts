@@ -188,6 +188,52 @@ describe('zen-world/scene — buildInstancedVisuals', () => {
     ]);
   });
 
+  test('a visual carries its own bounds, taken after the merge', () => {
+    // A rotation refits the VOB's bbox, and the box a retail world stores is
+    // the tight world AABB of the visual placed by the VOB's transform
+    // (measured — zenkit-node's check-vob-bbox.js). Refitting needs the
+    // visual's own bounds and nothing else, so they are computed here where the
+    // merged buffers are already in hand.
+    //
+    // **After** the merge, because that is where an attachment's node transform
+    // has been applied: bounds taken from the raw chunks would put a chest's
+    // lid at the chest's origin.
+    const scene = buildInstancedVisuals(
+      binding(() => [
+        chunk('A.TGA'),
+        // An attachment 100 up — the whole point of taking bounds after the
+        // merge rather than before it.
+        { ...chunk('B.TGA'), transform: [1, 0, 0, 0, 0, 1, 0, 100, 0, 0, 1, 0] },
+      ]),
+      VFS,
+      vobIndex([{ visual: 'CHEST.3DS' }]),
+    );
+
+    // chunk() is a triangle spanning (0,0,0)-(1,1,0); the attachment copy of it
+    // sits 100 higher.
+    expect(scene.visuals[0].bounds).toEqual([0, 0, 0, 1, 101, 0]);
+  });
+
+  test('a visual with no vertices gets a zero box, not an infinite one', () => {
+    // The sweep's sentinels are Infinity, and an infinite bbox is a box the
+    // engine cannot cull by.
+    const scene = buildInstancedVisuals(
+      binding(() => [{
+        ...chunk('A.TGA'),
+        vertexCount: 0,
+        triangleCount: 0,
+        positions: new ArrayBuffer(0),
+        normals: new ArrayBuffer(0),
+        uvs: new ArrayBuffer(0),
+        indices: new ArrayBuffer(0),
+      }]),
+      VFS,
+      vobIndex([{ visual: 'EMPTY.3DS' }]),
+    );
+
+    expect(scene.visuals[0].bounds).toEqual([0, 0, 0, 0, 0, 0]);
+  });
+
   test('a visual that resolves to no geometry is not an instanced entry', () => {
     const b = binding(() => []);
     const built = buildInstancedVisuals(b, VFS, vobIndex([{ visual: 'EMPTY.3DS' }]));

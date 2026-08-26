@@ -250,6 +250,27 @@ sign error in the script as a fact about ZenGin.
 A live VFS keeps every mounted file memory-mapped, so **Windows refuses to
 delete a mounted file until the handle is garbage-collected.**
 
+### `setVobRotation(handle, indexPath, rotation[9], bbox?)`
+
+The second mutation. The matrix is **row-major** — the order `vobIndex` emits
+and `normalizeWorld` dumps — and is transposed once here into `zenkit::Mat3`'s
+columns, rather than at each call site that would otherwise have to remember. A
+transpose is invisible on identity and on every symmetric matrix, which is what
+makes it worth naming.
+
+It does **not** derive the bounding box. `setVobPosition` translates the box by
+the delta it moves the VOB, because the engine culls by it; a rotation cannot do
+that, since an axis-aligned box does not rotate into an axis-aligned box.
+Deriving one here would put the asset layer inside a mutation, and the box is a
+pure function of (visual, rotation, position) — see below — so the caller that
+already owns the asset layer recomputes it and passes it in. Omitting it leaves
+the stale box, which is the right answer for a VOB whose visual does not resolve:
+it at least bounded the visual in some pose, where a guessed one bounds nothing.
+
+**No engine verdict covers a rotated VOB.** The acceptance record's row 10 moved
+a VOB and inserted an item; a rotation and its refitted box are Gate 2's
+business.
+
 #### What a VOB's `bbox` is — measured, before any op re-fits one
 
 `setVobPosition` translates the box by the delta it moves the VOB, because the

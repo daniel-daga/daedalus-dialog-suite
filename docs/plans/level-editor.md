@@ -1204,10 +1204,11 @@ The first thing in this project that writes. `MoveVob` runs end to end:
 `setVobPosition`, with undo and redo, and `verify-world-pipeline.js` applies,
 undoes and redoes one edit against retail NewWorld.
 
-Only `MoveVob` exists. `setVobPosition` is the one mutation the engine has
-actually accepted — the acceptance record's row 10 moved a VOB through it and
-the real game loaded the result — and the rest of the list above (reparent,
-set-prop, add, delete, waynet) arrives when the binding call for it does.
+Only `MoveVob` existed when this was written; `RotateVob` has since landed
+beside it (below). `setVobPosition` is the one mutation the **engine** has
+accepted — the acceptance record's row 10 moved a VOB through it and the real
+game loaded the result — and the rest of the list above (reparent, set-prop,
+add, delete, waynet) arrives when the binding call for it does.
 
 What the shape had to get right, none of it obvious from either side alone:
 
@@ -1345,6 +1346,60 @@ one's position in **both** projections (the property grid reads the index, the
 gizmo reads the scene), then puts both back with a single Ctrl+Z. Sabotaged by
 making the drag a destination again: the two VOBs collapse onto one point and
 the script fails.
+
+#### The turn gizmo — the second op, and the first that rewrites a bbox (2026-08-26)
+
+`RotateVob` runs end to end on the same path `MoveVob` does: `zen-world`'s
+`rotateVobs` → `WorldService.applyOps` → the worker → **`setVobRotation`**, a new
+binding call, with undo and redo, and `verify-world-edit.js` turns a VOB in the
+real app on retail NewWorld.
+
+What made it more than "the same again with a different verb":
+
+- **It rewrites the bounding box, and the box is refitted from the *visual*, not
+  from the box that is already there.** The engine culls by that box and an
+  axis-aligned box does not rotate into an axis-aligned box. Re-fitting the
+  stored box would grow it on every turn and never shrink back, so an undo would
+  not restore it and the op would stop being invertible. The measurement below
+  is what says refitting from the visual is right: a stored box *is* the tight
+  world AABB of the VOB's own visual placed by its own transform.
+- **So the op carries a box for each pose**, and `invertOp` swaps both pairs.
+  Swapping only the matrix is half an inverse: the VOB goes back and stays
+  culled by a box fitted to a pose it no longer holds.
+- **`zen-world/scene` now emits each visual's own bounds** with the geometry —
+  six numbers next to buffers that are already crossing — so the renderer can
+  build an op without a round trip, and a VOB with no instance correctly has
+  none.
+- **`setVobRotation` takes the box rather than deriving one.** The binding would
+  have to load the visual to derive it, which means the asset layer inside a
+  mutation; the box is a pure function of (visual, rotation, position) and the
+  caller that already owns the asset layer computes it.
+- **The matrix is row-major everywhere** — `vobIndex` emits it, `normalizeWorld`
+  dumps it, the op carries it, `setVobRotation` takes it — and the binding
+  transposes once, into `zenkit::Mat3`'s columns. A transpose is invisible on
+  identity and on every symmetric matrix, which is why the fixtures are
+  deliberately neither.
+- **A selection turns about each VOB's own origin**, not about the selection's
+  pivot: turning about a pivot moves the VOBs as well as turning them, which is
+  a batch of two op kinds and a different feature. The delta composes **on the
+  left**, so differently-oriented VOBs all turn the same way on screen.
+- **W and E switch the gizmo**, as every 3D editor binds them — bare letters on
+  a window listener, so they step aside for anything that takes typing.
+
+**The engine has not accepted a rotated VOB.** The acceptance record's row 10
+covered a moved VOB and an inserted item; a rotation, and the refitted box in
+particular, is exactly what Gate 2 has to answer — including the 30 measured
+VOBs whose stored box is bigger than their bind-pose mesh.
+
+Two fixtures were too special to catch a real defect first time, and both were
+found by sabotage rather than by reading:
+
+- a quarter turn about an axis maps a box's min corner to the min corner, so
+  fitting the box from **two** corners instead of eight passed; and with bounds
+  symmetric about that axis the matrix is its own transpose, so reading it
+  column-major passed too. A 45° turn with asymmetric bounds is neither.
+- two turns about the **same** axis commute, so composing the delta on the wrong
+  side passed. The fixture now turns about a different axis than the VOB's own.
 
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 

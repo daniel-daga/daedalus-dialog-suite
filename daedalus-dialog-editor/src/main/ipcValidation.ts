@@ -173,9 +173,13 @@ export function assertTextureRequest(
 /** Slots down the children lists, as `setVobPosition` parses it: "0", "0/4". */
 const INDEX_PATH = /^\d+(\/\d+)*$/;
 
-function isZenPosition(value: unknown): value is [number, number, number] {
-  return Array.isArray(value) && value.length === 3
+function isFiniteNumbers(value: unknown, count: number): boolean {
+  return Array.isArray(value) && value.length === count
     && value.every((component) => typeof component === 'number' && Number.isFinite(component));
+}
+
+function isZenPosition(value: unknown): value is [number, number, number] {
+  return isFiniteNumbers(value, 3);
 }
 
 /**
@@ -197,13 +201,37 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
   }
   for (const op of request.ops) {
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
-    if (op.op !== 'MoveVob') throw new Error(`Invalid op: unknown op ${String(op.op)}`);
+    if (op.op !== 'MoveVob' && op.op !== 'RotateVob') {
+      throw new Error(`Invalid op: unknown op ${String(op.op)}`);
+    }
     if (typeof op.vob !== 'number' || !Number.isInteger(op.vob) || op.vob < 0) {
       throw new Error('Invalid op: vob must be a non-negative integer');
     }
     if (typeof op.path !== 'string' || !INDEX_PATH.test(op.path)) {
       throw new Error('Invalid op: path must be slot indices separated by "/"');
     }
+
+    if (op.op === 'RotateVob') {
+      // Nine, not three. The two ops share every other field name, so a move
+      // mislabelled as a rotation is exactly the shape a check on `op` alone
+      // would wave through — into `setVobRotation`, which reads the matrix
+      // positionally in C++ and would leave uninitialized rows in a struct
+      // ZenKit does not zero.
+      for (const field of ['from', 'to'] as const) {
+        if (!isFiniteNumbers(op[field], 9)) {
+          throw new Error(`Invalid op: ${field} must be nine finite numbers, row-major`);
+        }
+      }
+      // Null is a legitimate answer, not a missing field: a VOB whose visual
+      // does not resolve has no bounds to refit and keeps the box it has.
+      for (const field of ['fromBbox', 'toBbox'] as const) {
+        if (op[field] !== null && !isFiniteNumbers(op[field], 6)) {
+          throw new Error(`Invalid op: ${field} must be six finite numbers or null`);
+        }
+      }
+      continue;
+    }
+
     if (!isZenPosition(op.from)) throw new Error('Invalid op: from must be three finite numbers');
     if (!isZenPosition(op.to)) throw new Error('Invalid op: to must be three finite numbers');
   }

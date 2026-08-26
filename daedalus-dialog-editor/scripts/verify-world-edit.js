@@ -264,11 +264,70 @@ async function main() {
     both = { first, second, wereAt, movedTo };
   }
 
+  // ── the turn gizmo (level-editor.md §7) ──────────────────────────────────
+  //
+  // A rotation is the second mutation the binding has, and unlike a move it
+  // rewrites the VOB's bounding box: the engine culls by that box and an
+  // axis-aligned box does not rotate into an axis-aligned box. Everything below
+  // the gizmo is exercised by Jest; what only the real app can show is that the
+  // three's-quaternion-to-ZenGin-matrix path produces the matrix the op claims.
+  const readRotation = () => page.getByTestId('world-prop-rotation').textContent()
+    .then((text) => text.split(/[\n,]/).map((value) => Number(value.trim())));
+
+  await clickRow(selected);
+  const rotationBefore = await readRotation();
+
+  await page.keyboard.press('e');
+  await page.waitForSelector('[data-testid="world-gizmo-rotate"][aria-pressed="true"]', { timeout: 5_000 })
+    .catch(() => check(false, 'pressing E did not switch the gizmo to Turn'));
+
+  // A quarter turn about ZenGin's Y (up). Predictable on purpose: the matrix
+  // that comes back is the one this script can check by hand.
+  await page.evaluate(() => globalThis.__worldViewport.turnGizmo([0, 1, 0], Math.PI / 2));
+
+  const QUARTER_Y = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  const turnedTo = (expected) => page.waitForFunction((want) => {
+    const text = globalThis.document.querySelector('[data-testid="world-prop-rotation"]')?.textContent ?? '';
+    const read = text.split(/[\n,]/).map((value) => Number(value.trim()));
+    return read.length === 9 && read.every((value, i) => Math.abs(value - want[i]) < 0.01);
+  }, expected, { timeout: 10_000 });
+
+  // The expectation is computed here, by plain 3x3 algebra, from whatever
+  // matrix the VOB actually had — the first VOB this picks on retail NewWorld
+  // is already turned 23 degrees, so "it will be the quarter turn" would have
+  // been a fixture assumption rather than a check. The app reaches the same
+  // number through three's quaternion path and `multiplyRotation`; two
+  // independent routes agreeing is the point.
+  const times = (a, b) => Array.from({ length: 9 }, (_, at) => {
+    const [r, c] = [Math.floor(at / 3), at % 3];
+    return a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c];
+  });
+  const expected = times(QUARTER_Y, rotationBefore);
+
+  let turned = true;
+  await turnedTo(expected).catch(() => { turned = false; });
+  check(turned, `the grid never showed the turned matrix: ${(await readRotation()).join(', ')} `
+    + `(wanted ${expected.map((v) => v.toFixed(2)).join(', ')})`);
+  // The grid reads the index and the gizmo reads the scene — two projections of
+  // the same op, and a turn that reached only one of them is a real defect.
+  check((await page.evaluate(() => globalThis.__worldViewport.gizmoRotation()))
+    .every((value, i) => Math.abs(value - expected[i]) < 0.01),
+  'the scene does not draw the VOB at the matrix the property grid reports');
+
+  check(await page.getByTestId('world-edit-error').count() === 0, 'the turn was refused');
+
+  await page.keyboard.press('Control+z');
+  await turnedTo(rotationBefore)
+    .catch(() => check(false, 'undo did not put the matrix back'));
+
+  await page.keyboard.press('w');
+
   const row = (label, value) => console.log(`  ${String(label).padEnd(28)}${value}`);
   console.log('\nVOBs moved, through the real app\n');
   row('VOB', selected);
   row('Moved', `${before.map(Math.round).join(', ')} -> ${to.map(Math.round).join(', ')}`);
   row('Undo / redo', 'both followed by the grid and the gizmo');
+  row('Turned', 'a quarter turn about Y, checked in both projections, undone');
   if (both) {
     row('Multi-select', `${both.first} + ${both.second}, one gizmo, one batch`);
     row('  kept their spacing', [0, 1, 2]

@@ -287,4 +287,54 @@ describe('assertApplyOpsRequest', () => {
     expect(() => assertApplyOpsRequest({ ops: move })).toThrow(/ops/);
     expect(() => assertApplyOpsRequest([move])).toThrow();
   });
+
+  describe('a rotation', () => {
+    const rotate = {
+      op: 'RotateVob',
+      vob: 3,
+      path: '0/4',
+      from: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      to: [0, 0, 1, 0, 1, 0, -1, 0, 0],
+      fromBbox: [-1, -1, -1, 1, 1, 1],
+      toBbox: [-2, -1, -1, 2, 1, 1],
+    };
+
+    it('is accepted, matrices and boxes and all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [rotate] })).not.toThrow();
+    });
+
+    it('is accepted with no boxes — an unresolved visual has none', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...rotate, fromBbox: null, toBbox: null }],
+      })).not.toThrow();
+    });
+
+    it('mixes with moves in one batch', () => {
+      expect(() => assertApplyOpsRequest({ ops: [move, rotate] })).not.toThrow();
+    });
+
+    it('rejects a matrix that is not nine finite numbers', () => {
+      // It is handed to native code and read positionally: a short matrix would
+      // leave uninitialized rows in a struct ZenKit does not zero.
+      for (const bad of [[1, 2, 3], new Array(8).fill(0), new Array(10).fill(0),
+        [...new Array(8).fill(0), NaN], null, '1,0,0']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, from: bad }] })).toThrow(/from/);
+      }
+    });
+
+    it('rejects a box that is not six finite numbers, but takes null', () => {
+      for (const bad of [[1, 2, 3], new Array(7).fill(0), [1, 2, 3, 4, 5, Infinity], '0']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, toBbox: bad }] })).toThrow(/Bbox/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, fromBbox: bad }] })).toThrow(/Bbox/);
+      }
+    });
+
+    it('rejects a rotation carrying a position where a matrix belongs', () => {
+      // The two ops share every other field name, so a `MoveVob` mislabelled as
+      // a rotation is exactly the shape that would slip through a check that
+      // only looked at `op`.
+      expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, to: [1, 2, 3] }] })).toThrow(/to/);
+    });
+  });
 });

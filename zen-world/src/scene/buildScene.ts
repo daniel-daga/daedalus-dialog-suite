@@ -19,6 +19,7 @@
 // is `coords`' single decision to make.
 
 import { mergeChunks, type DrawGroup, type MeshChunk } from '../render';
+import type { ZenBounds } from '../model';
 
 /** The `vobIndex` payload, columnar with the repeated strings interned. */
 export interface VobIndex {
@@ -89,6 +90,18 @@ export interface InstancedVisual {
    *  (InstancedMesh, instanceId) and nothing else identifies the object. */
   vobIds: ArrayBuffer;
   groups: DrawGroup[];
+  /**
+   * The visual's own bounds in the visual's own space,
+   * `[minX, minY, minZ, maxX, maxY, maxZ]`.
+   *
+   * Six numbers, computed here because the merged buffers are already in hand
+   * and because a rotation needs them: a VOB's stored bbox is the tight world
+   * AABB of its visual placed by its transform (measured — `zenkit-node`'s
+   * `check-vob-bbox.js`), so refitting it on a rotation needs exactly this and
+   * nothing else. Sending it beats re-deriving it from the geometry in the
+   * renderer, which would have to walk 2.7 M vertices to answer it.
+   */
+  bounds: ZenBounds;
 }
 
 export interface InstancedScene {
@@ -107,6 +120,35 @@ export interface InstancedScene {
      */
     unresolvedByType: Record<string, number>;
   };
+}
+
+/**
+ * The bounds of a visual's merged draw groups, in the visual's own space.
+ *
+ * Over the merged buffers rather than the raw chunks, because that is where an
+ * attachment's node transform has already been applied — bounds taken before
+ * the merge would place a chest's lid at the chest's origin, which is the defect
+ * `mergeChunks` exists to have fixed.
+ */
+function groupBounds(groups: readonly DrawGroup[]): ZenBounds {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+
+  for (const group of groups) {
+    const positions = new Float32Array(group.positions);
+    for (let at = 0; at < positions.length; at += 3) {
+      for (let axis = 0; axis < 3; axis++) {
+        const value = positions[at + axis];
+        if (value < min[axis]) min[axis] = value;
+        if (value > max[axis]) max[axis] = value;
+      }
+    }
+  }
+
+  // A group with no vertices leaves the sweep at its sentinels, and Infinity in
+  // a bbox is a box the engine cannot cull by.
+  if (!Number.isFinite(min[0])) return [0, 0, 0, 0, 0, 0];
+  return [min[0], min[1], min[2], max[0], max[1], max[2]];
 }
 
 export function buildInstancedVisuals(
@@ -179,6 +221,7 @@ export function buildInstancedVisuals(
       matrices: new Float32Array(placement.matrices).buffer,
       vobIds: new Uint32Array(placement.vobIds).buffer,
       groups,
+      bounds: groupBounds(groups),
     });
     vobsPlaced += placement.vobIds.length;
     instancedDrawGroups += groups.length;

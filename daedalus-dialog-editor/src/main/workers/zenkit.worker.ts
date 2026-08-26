@@ -163,13 +163,19 @@ function waynet(): { result: WaynetPayload; transfer: ArrayBuffer[] } {
  * `setVobPosition` is the mutation the engine has actually accepted — the
  * acceptance record's row 10 moved a VOB through it and the real game loaded
  * the result — and it moves the bbox with the position, which the engine culls
- * by. The batch is atomic, and the index this thread keeps is updated only
- * after the world is, so `visuals` never places a VOB where an op failed to
- * move it.
+ * by. `setVobRotation` takes the refitted box instead of deriving one, because
+ * the box is a pure function of (visual, rotation, position) and the op already
+ * carries both poses' boxes; the engine has **not** accepted a rotated VOB yet,
+ * and that is Gate 2's business. The batch is atomic, and the index this thread
+ * keeps is updated only after the world is, so `visuals` never places a VOB
+ * where an op failed to move it.
  */
 function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: ArrayBuffer[] } {
   commitOps(
-    { setVobPosition: (path, to) => zenkit.setVobPosition(handle!, path, to) },
+    {
+      setVobPosition: (path, to) => zenkit.setVobPosition(handle!, path, to),
+      setVobRotation: (path, to, bbox) => zenkit.setVobRotation(handle!, path, to, bbox),
+    },
     payload.ops,
   );
   applyOps(createVobReader(index!), payload.ops);

@@ -22,11 +22,18 @@ import {
   createVobReader,
   invertOp,
   moveVob,
+  multiplyRotation,
+  placeBounds,
+  rotateVob,
+  rotateVobs,
   translateVobs,
   vobIndexPath,
   type OpBinding,
+  type RotateVob,
   type VobIndex,
   type WorldOp,
+  type ZenBounds,
+  type ZenRotation,
 } from '../src/model';
 
 interface Spec {
@@ -188,6 +195,210 @@ describe('a multi-select drag', () => {
   });
 });
 
+describe('a rotate op', () => {
+  // The second mutation the binding has. Two things separate it from a move:
+  //
+  //   - the matrix is row-major, which is the order `vobIndex` emits and
+  //     `setVobRotation` takes. A transpose is invisible on identity and on
+  //     every symmetric matrix, so the fixtures below are deliberately neither.
+  //   - it has to re-fit the bounding box, and the box is **recomputed from the
+  //     visual**, never re-fitted from the box that is already there. Measured
+  //     across the three retail worlds, a VOB's stored box is the tight world
+  //     AABB of its own visual placed by its own transform (20,472 of 20,502),
+  //     so it is a pure function of (visual, rotation, position) — which is what
+  //     lets the op carry both boxes and stay invertible. Re-fitting the stored
+  //     box would grow it on every rotation and never shrink back.
+
+  /** A quarter turn about Y, row-major. Asymmetric, so a transpose shows. */
+  const QUARTER_Y: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  /** A visual one unit wide in x, ten in z — so a quarter turn is visible. */
+  const BOUNDS: ZenBounds = [-1, 0, -10, 1, 2, 10];
+
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+  ]));
+
+  it('carries both matrices and both boxes', () => {
+    const op = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
+
+    expect(op.op).toBe('RotateVob');
+    expect(op.vob).toBe(1);
+    expect(op.path).toBe('0/4');
+    expect(op.from).toEqual(IDENTITY);
+    expect(op.to).toEqual(QUARTER_Y);
+    // Unrotated: the visual's own box, moved to the VOB.
+    expect(op.fromBbox).toEqual([9, 20, 20, 11, 22, 40]);
+    // A quarter turn about Y swaps the x and z extents — which is exactly what
+    // an axis-aligned box cannot do by being translated.
+    expect(op.toBbox).toEqual([0, 20, 29, 20, 22, 31]);
+  });
+
+  it('fits the box to all eight corners, and reads the matrix row-major', () => {
+    // Both of these were sabotages the tests above could not see, and for the
+    // same reason: a quarter turn about an axis is a special case. It maps the
+    // box's min corner to the min corner, so two corners give the right answer;
+    // and with bounds symmetric about the axis it is its own transpose, so a
+    // column-major read gives the right answer too. A **45 degree** turn with
+    // **asymmetric** bounds is neither.
+    const c = Math.SQRT1_2;
+    const HALF_QUARTER_Y: ZenRotation = [c, 0, c, 0, 1, 0, -c, 0, c];
+    const lopsided: ZenBounds = [-1, 0, 0, 3, 2, 10];
+
+    const box = placeBounds(lopsided, HALF_QUARTER_Y, [0, 0, 0]);
+
+    // x spans corner-to-corner across the diagonal, not min-to-min: the two
+    // extremes are (-1, ·, 0) and (3, ·, 10).
+    expect(box[0]).toBeCloseTo(-c, 5);
+    expect(box[3]).toBeCloseTo(3 * c + 10 * c, 5);
+    // z is what the transposed matrix gets wrong — its extremes swap sign.
+    expect(box[2]).toBeCloseTo(-3 * c, 5);
+    expect(box[5]).toBeCloseTo(10 * c + c, 5);
+    expect([box[1], box[4]]).toEqual([0, 2]);
+  });
+
+  it('carries no box at all for a VOB whose visual does not resolve', () => {
+    // A decal, a .pfx, an unresolved model. A guessed box bounds nothing; the
+    // stale one at least bounded the visual in some pose, so it is left alone.
+    const op = rotateVob(reader(), 1, QUARTER_Y, null);
+
+    expect(op.fromBbox).toBeNull();
+    expect(op.toBbox).toBeNull();
+  });
+
+  it('inverts by swapping both pairs, with no state to consult', () => {
+    const op = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
+    const undo = invertOp(op) as RotateVob;
+
+    expect(undo.from).toEqual(op.to);
+    expect(undo.to).toEqual(op.from);
+    // The box is half the op. Swapping only the matrix would undo the rotation
+    // and leave the VOB culled by a box fitted to a pose it is no longer in.
+    expect(undo.fromBbox).toEqual(op.toBbox);
+    expect(undo.toBbox).toEqual(op.fromBbox);
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => rotateVob(reader(), 9, QUARTER_Y, BOUNDS)).toThrow(/9/);
+  });
+
+  it('reaches the binding as setVobRotation, with the box it carries', () => {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: (path, to) => calls.push(['position', path, to]),
+      setVobRotation: (path, to, bbox) => calls.push(['rotation', path, to, bbox]),
+    };
+
+    commitOps(binding, [rotateVob(reader(), 1, QUARTER_Y, BOUNDS)]);
+
+    expect(calls).toEqual([['rotation', '0/4', QUARTER_Y, [0, 20, 29, 20, 22, 31]]]);
+  });
+
+  it('is unwound by its own inverse when a later op in the batch is refused', () => {
+    // A mixed batch is still all-or-nothing, and a rotation is unwound by
+    // rotating back — not by a move.
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); calls.push(`move ${path}`); },
+      setVobRotation: (path) => calls.push(`rotate ${path}`),
+    };
+    const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
+
+    expect(() => commitOps(binding, [
+      rotate,
+      { op: 'MoveVob', vob: 0, path: '9/9', from: [0, 0, 0], to: [1, 1, 1] },
+    ])).toThrow('no vob');
+
+    expect(calls).toEqual(['rotate 0/4', 'rotate 0/4']);
+  });
+
+  it('writes the matrix into the index the panels read', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }, { parent: 0, childIndex: 0, pos: [10, 20, 30] }]);
+    const live = createVobReader(index);
+
+    applyOps(live, [rotateVob(live, 1, QUARTER_Y, BOUNDS)]);
+
+    expect(live.rotation(1)).toEqual(QUARTER_Y);
+    expect(live.rotation(0)).toEqual(IDENTITY);
+    // A rotation is not a move: the position column must not be touched.
+    expect(live.position(1)).toEqual([10, 20, 30]);
+  });
+});
+
+describe('a multi-select turn', () => {
+  const QUARTER_Y: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  const QUARTER_X: ZenRotation = [1, 0, 0, 0, 0, -1, 0, 1, 0];
+  const BOUNDS: ZenBounds = [-1, 0, -10, 1, 2, 10];
+
+  it('composes the delta onto each VOB\'s own matrix, on the left', () => {
+    // A selection of differently-oriented VOBs must all turn the same way on
+    // screen. Applying the delta on the right turns each about *its own* axes,
+    // which sends them in different directions and looks like a bug in the
+    // gizmo rather than in the multiplication order.
+    //
+    // The delta and the VOB's own matrix are deliberately about **different
+    // axes**: two turns about the same axis commute, so a fixture that used one
+    // matrix twice would agree with either order — which is exactly how this
+    // test passed a sabotage of the multiplication order the first time.
+    const index = vobIndex([{ pos: [0, 0, 0] }, { parent: 0, childIndex: 1, pos: [5, 5, 5] }]);
+    const rotations = new Float32Array(index.rotations);
+    rotations.set(QUARTER_X, 9);       // vob 1 starts a quarter turn about X
+    const reader = createVobReader(index);
+
+    const ops = rotateVobs(reader, [0, 1], QUARTER_Y, () => BOUNDS);
+
+    expect(ops[0].to).toEqual(QUARTER_Y);
+    expect(ops[1].to).toEqual([0, 1, 0, 0, 0, -1, -1, 0, 0]);        // QUARTER_Y * QUARTER_X
+    expect(ops[1].to).not.toEqual([0, 0, 1, 1, 0, 0, 0, 1, 0]);      // QUARTER_X * QUARTER_Y
+  });
+
+  it('turns each VOB about its own origin, leaving every position alone', () => {
+    const index = vobIndex([{ pos: [0, 0, 0] }, { parent: 0, childIndex: 1, pos: [5, 5, 5] }]);
+    const live = createVobReader(index);
+
+    applyOps(live, rotateVobs(live, [0, 1], QUARTER_Y, () => BOUNDS));
+
+    expect(live.position(0)).toEqual([0, 0, 0]);
+    expect(live.position(1)).toEqual([5, 5, 5]);
+  });
+
+  it('asks for each VOB\'s own bounds, and takes null for an answer', () => {
+    const asked: number[] = [];
+    const reader = createVobReader(vobIndex([{ pos: [0, 0, 0] }, { parent: 0, pos: [1, 1, 1] }]));
+
+    const ops = rotateVobs(reader, [0, 1], QUARTER_Y, (vob) => {
+      asked.push(vob);
+      return vob === 0 ? BOUNDS : null;
+    });
+
+    expect(asked).toEqual([0, 1]);
+    expect(ops[0].toBbox).not.toBeNull();
+    expect(ops[1].toBbox).toBeNull();
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    const reader = createVobReader(vobIndex([{}]));
+    expect(rotateVobs(reader, [], QUARTER_Y, () => null)).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    const reader = createVobReader(vobIndex([{}]));
+    expect(() => rotateVobs(reader, [0, 9], QUARTER_Y, () => null)).toThrow(/9/);
+  });
+
+  it('multiplies row-major matrices in the order it claims', () => {
+    // Written out rather than derived: an implementation that transposed both
+    // operands would agree with a test that built its expectation the same way.
+    const a: ZenRotation = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const b: ZenRotation = [1, 0, 0, 0, 0, 1, 0, 1, 0];   // swaps rows 2 and 3
+
+    expect(multiplyRotation(a, b)).toEqual([1, 3, 2, 4, 6, 5, 7, 9, 8]);
+    expect(multiplyRotation(b, a)).toEqual([1, 2, 3, 7, 8, 9, 4, 5, 6]);
+  });
+});
+
 describe('applying ops to the index', () => {
   // The renderer's projection has to move with the world, or the scene tree,
   // the property grid and the viewport go on showing where a VOB used to be
@@ -237,6 +448,7 @@ describe('committing ops to the world', () => {
         if (path === refuse) throw new Error(`no vob at ${path}`);
         calls.push([path, to]);
       },
+      setVobRotation: () => { throw new Error('these batches are moves only'); },
     };
     return { binding, calls };
   }

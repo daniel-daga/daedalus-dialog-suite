@@ -471,6 +471,71 @@ Napi::Value SetVobPosition(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// Reads `count` numbers out of a JS array. The matrix and the box are both
+// read positionally by native code, so a wrong length is refused rather than
+// padded — a short matrix would leave uninitialized rows in a struct ZenKit
+// does not zero.
+std::vector<float> FloatsFromValue(Napi::Env env,
+                                   Napi::Value value,
+                                   std::uint32_t count,
+                                   char const* label) {
+  if (!value.IsArray()) {
+    throw Napi::TypeError::New(env, std::string {label} + " must be an array of numbers");
+  }
+  auto arr = value.As<Napi::Array>();
+  if (arr.Length() != count) {
+    throw Napi::TypeError::New(
+        env, std::string {label} + " must have exactly " + std::to_string(count) + " elements");
+  }
+  std::vector<float> out;
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    Napi::Value const element = arr.Get(i);
+    if (!element.IsNumber()) {
+      throw Napi::TypeError::New(env, std::string {label} + " elements must be numbers");
+    }
+    out.push_back(static_cast<float>(element.As<Napi::Number>().DoubleValue()));
+  }
+  return out;
+}
+
+// setVobRotation(handle, indexPath, rotation[9], bbox[6]?) — sets the rotation
+// and, when given one, the bounding box.
+//
+// The matrix is **row-major**, which is the order `vobIndex` emits and the
+// order `normalizeWorld` dumps; zenkit::Mat3 stores columns, so it is
+// transposed here rather than at each of the three call sites that would
+// otherwise each have to remember.
+//
+// It does not derive the box. Measured across the three retail worlds
+// (scripts/check-vob-bbox.js), a VOB's stored box is the tight world AABB of
+// its own visual placed by its own transform — 20,472 of 20,502, mean slack
+// ~0.1 cm — so the box is a pure function of (visual, rotation, position) and
+// the caller that owns the asset layer recomputes it. Re-fitting the box that
+// is already there would grow it on every rotation and make the op
+// non-invertible; a VOB whose visual does not resolve is given no box at all
+// and keeps the stale one, which at least bounded the visual in some pose.
+Napi::Value SetVobRotation(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto indices = ParseIndexPath(env, info[1], "indexPath");
+  auto rotation = FloatsFromValue(env, info[2], 9, "rotation");
+
+  bool const has_bbox = !(info[3].IsNull() || info[3].IsUndefined());
+  std::vector<float> bbox;
+  if (has_bbox) bbox = FloatsFromValue(env, info[3], 6, "bbox");
+
+  auto vob = ResolveVob(env, *handle, indices, "indexPath");
+  vob->rotation = zenkit::Mat3 {rotation[0], rotation[3], rotation[6],
+                                rotation[1], rotation[4], rotation[7],
+                                rotation[2], rotation[5], rotation[8]};
+  if (has_bbox) {
+    vob->bbox.min = zenkit::Vec3 {bbox[0], bbox[1], bbox[2]};
+    vob->bbox.max = zenkit::Vec3 {bbox[3], bbox[4], bbox[5]};
+  }
+  return env.Undefined();
+}
+
 std::string RequiredCp1252String(Napi::Env env, Napi::Object opts, char const* key) {
   Napi::Value const value = opts.Get(key);
   if (!value.IsString()) {
@@ -632,6 +697,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("_drillMesh", Napi::Function::New(env, DrillMesh));
   exports.Set("saveWorld", Napi::Function::New(env, SaveWorld));
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));
+  exports.Set("setVobRotation", Napi::Function::New(env, SetVobRotation));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));

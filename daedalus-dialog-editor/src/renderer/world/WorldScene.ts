@@ -40,6 +40,11 @@ export class WorldScene {
 
   private textures = new Map<string, TextureSlot>();
   private instanceVobIds = new WeakMap<THREE.InstancedMesh, Uint32Array>();
+  /** The visual's own bounds, per mesh — what a rotation refits a bbox from.
+   *  Against the mesh rather than against each VOB, because the scan for a VOB's
+   *  instance already exists and a second per-VOB structure would be a second
+   *  thing to keep correct across every op that adds or removes one. */
+  private meshBounds = new WeakMap<THREE.InstancedMesh, readonly number[]>();
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
 
@@ -86,6 +91,7 @@ export class WorldScene {
         mesh.computeBoundingSphere();
 
         this.instanceVobIds.set(mesh, vobIds);
+        this.meshBounds.set(mesh, visual.bounds);
         this.root.add(mesh);
         this.instancedMeshes.push(mesh);
       }
@@ -138,6 +144,86 @@ export class WorldScene {
     }
 
     return moved;
+  }
+
+  /**
+   * Turn a VOB in the scene: its 3x3, **row-major**, in ZenGin space.
+   *
+   * The same two hazards as `moveVob` — every mesh the visual was split into,
+   * and the bounding sphere the mesh culls by — plus one of its own: the
+   * rotation and the position share a `Matrix4`, so this writes the nine
+   * elements of the basis and leaves the fourth column exactly as it was. A
+   * rotation is not a move, and a VOB that quietly jumped to the origin when it
+   * was turned would look like a gizmo bug.
+   *
+   * @returns whether the VOB is drawn at all.
+   */
+  rotateVob(vob: number, rotation: readonly number[]): boolean {
+    const matrix = new THREE.Matrix4();
+    let turned = false;
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      if (!vobIds) continue;
+
+      let here = false;
+      for (let i = vobIds.indexOf(vob); i !== -1; i = vobIds.indexOf(vob, i + 1)) {
+        mesh.getMatrixAt(i, matrix);
+        // `elements` is column-major: element[row][col] is elements[col*4+row].
+        for (let row = 0; row < 3; row++) {
+          for (let col = 0; col < 3; col++) {
+            matrix.elements[col * 4 + row] = rotation[row * 3 + col];
+          }
+        }
+        mesh.setMatrixAt(i, matrix);
+        here = true;
+      }
+      if (!here) continue;
+
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      turned = true;
+    }
+
+    return turned;
+  }
+
+  /**
+   * The visual's own bounds for a VOB, in the visual's own space — or null when
+   * it is not drawn.
+   *
+   * A rotation refits the VOB's bbox from exactly this: measured across the
+   * retail corpus, a stored box is the tight world AABB of the visual placed by
+   * the VOB's transform. Null rather than a zero box, because a zero box would
+   * refit a real bbox down to a point.
+   */
+  boundsOf(vob: number): readonly number[] | null {
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      if (!vobIds || vobIds.indexOf(vob) === -1) continue;
+      return this.meshBounds.get(mesh) ?? null;
+    }
+    return null;
+  }
+
+  /** A VOB's 3x3 as drawn, row-major — what a turn composes onto. */
+  rotationOf(vob: number): number[] | null {
+    const matrix = new THREE.Matrix4();
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      const at = vobIds ? vobIds.indexOf(vob) : -1;
+      if (at === -1) continue;
+
+      mesh.getMatrixAt(at, matrix);
+      const out: number[] = [];
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 3; col++) out.push(matrix.elements[col * 4 + row]);
+      }
+      return out;
+    }
+
+    return null;
   }
 
   /**

@@ -57,6 +57,9 @@ function visual(overrides: Partial<InstancedVisual> = {}): InstancedVisual {
     ]).buffer,
     vobIds: new Uint32Array([7, 9]).buffer,
     groups: [group({ lights: null })],
+    // The visual's own bounds, which a rotation needs to refit the VOB's bbox.
+    // group()'s triangle spans (0,0,0)-(100,100,0).
+    bounds: [0, 0, 0, 100, 100, 0],
     ...overrides,
   };
 }
@@ -346,6 +349,90 @@ describe('WorldScene', () => {
     // A VOB with no instance has no position to report, and null is not [0,0,0]
     // — the middle of the world is a real place for a VOB to be.
     expect(scene.positionOf(4242)).toBeNull();
+  });
+
+  // ── rotation (level-editor.md §7) ───────────────────────────────────────
+  //
+  // A rotation writes the instance's 3x3 and must not touch its position: the
+  // two live in the same Matrix4, and a careless `set` writes both.
+
+  test('rotating a VOB writes the matrix row-major and leaves the position alone', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      stats: {} as never,
+    });
+
+    // A quarter turn about Y: asymmetric, so a transpose shows.
+    expect(scene.rotateVob(7, [0, 0, 1, 0, 1, 0, -1, 0, 0])).toBe(true);
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    // Column-major storage of the row-major matrix above, with the position
+    // untouched in the fourth column.
+    expect([...matrix.elements]).toEqual([0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 10, 20, 30, 1]);
+  });
+
+  test('a rotated VOB takes its bounding sphere with it', () => {
+    // Same reason as a move: InstancedMesh culls by the sphere it was built
+    // with, and a long visual turned end-on sweeps well outside it.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]).buffer,
+        vobIds: new Uint32Array([4]).buffer,
+      })],
+      stats: {} as never,
+    });
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const before = mesh.boundingSphere!.center.clone();
+
+    scene.rotateVob(4, [0, 0, 1, 0, 1, 0, -1, 0, 0]);
+
+    expect(mesh.boundingSphere!.center.distanceTo(before)).toBeGreaterThan(1);
+  });
+
+  test('rotating a VOB that is not drawn changes nothing and says so', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    expect(scene.rotateVob(4242, [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(false);
+  });
+
+  test('a VOB reports the visual bounds a rotation refits its bbox from', () => {
+    // The bbox a retail world stores is the tight world AABB of the visual
+    // placed by the VOB's transform, so an op that turns a VOB needs the
+    // visual's own bounds — and the scene is where the renderer can reach them.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ bounds: [-1, -2, -3, 4, 5, 6] })],
+      stats: {} as never,
+    });
+
+    expect(scene.boundsOf(9)).toEqual([-1, -2, -3, 4, 5, 6]);
+    // Not [0,0,0,0,0,0]: a VOB with no instance has no visual bounds, and an
+    // empty box would refit a real bbox down to a point.
+    expect(scene.boundsOf(4242)).toBeNull();
+  });
+
+  test('a VOB reports the matrix a turn composes onto', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([0, 0, 1, 10, 0, 1, 0, 20, -1, 0, 0, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      stats: {} as never,
+    });
+
+    expect(scene.rotationOf(7)).toEqual([0, 0, 1, 0, 1, 0, -1, 0, 0]);
+    expect(scene.rotationOf(4242)).toBeNull();
   });
 
   test('a selection anchors the gizmo on the last VOB in it that is actually drawn', () => {
