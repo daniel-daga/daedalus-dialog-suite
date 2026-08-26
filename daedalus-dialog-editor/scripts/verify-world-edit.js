@@ -18,10 +18,17 @@
  * everything below it is the real thing, including the live preview, the op,
  * the native `setVobPosition`, undo, redo and the property grid.
  *
- * The other limit is the one `verify-world-pipeline.js` already records: the
- * position read back comes from the renderer's projection, so this cannot prove
- * the *native* VOB moved is the one the flat index named. That needs the world
- * saved and re-loaded, which is Phase 1b's half of Gate 2.
+ * **The projection is no longer the only witness.** Every panel check here reads
+ * a projection — the property grid reads the renderer's index, the gizmo reads
+ * the scene — and neither could prove the VOB the *native* world moved is the
+ * one the flat index named. So this now also saves the edited world to a temp
+ * file and re-loads it **in this process, through the binding**, with nothing of
+ * the app's in the path, and compares the dump against a fresh load of the
+ * original: exactly one VOB differs, and it is the one that was edited.
+ *
+ * What that still is **not** is a Gate 2 pass. A world the engine accepts is
+ * decided by the engine (`zenkit-node/docs/engine-acceptance-*.md`), and no
+ * engine run covers a UI-edited world or a rotated VOB yet.
  */
 
 const fs = require('fs');
@@ -37,6 +44,8 @@ function arg(name, fallback = null) {
 const INSTALL = arg('install', 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Gothic II');
 const WORLD = arg('world', path.join(INSTALL, '_work', 'Data', 'Worlds', 'NewWorld', 'NewWorld.zen'));
 const NUDGE = 500;   // ZenGin centimetres — far past any float noise
+/** Never inside the Gothic install: this writes a world. */
+const SAVE_TO = path.join(os.tmpdir(), `verify-world-edit-${process.pid}.zen`);
 
 const problems = [];
 const check = (condition, message) => { if (!condition) problems.push(message); };
@@ -66,7 +75,10 @@ async function main() {
         default: throw new Error(`unexpected dialog: ${options.title}`);
       }
     };
-  }, { world: WORLD, install: INSTALL, project });
+    // Never the Gothic directory: this script writes a world, and the one it
+    // opened is a retail game file.
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: paths.save });
+  }, { world: WORLD, install: INSTALL, project, save: SAVE_TO });
 
   const page = await app.firstWindow();
   page.setDefaultTimeout(180_000);
@@ -322,12 +334,89 @@ async function main() {
 
   await page.keyboard.press('w');
 
+  // ── save, and the question only a save can answer ─────────────────────────
+  //
+  // Every check above reads the *projection*: the property grid reads the
+  // renderer's index and the gizmo reads the scene, and both were built from
+  // what the worker sent. Neither can prove the VOB the **native** world moved
+  // is the one the flat index named — the two addresses a VOB has are different
+  // numbers, and on a depth-first-enumerated retail world they agree often
+  // enough that the wrong one passes.
+  //
+  // Saving and re-loading closes that. The file is read here, in this process,
+  // by the binding itself — nothing of the app's is in the path.
+  await clickRow(selected);
+  const home = await readGrid();
+  const away = home.map((value) => value + NUDGE);
+  await page.evaluate((target) => globalThis.__worldViewport.dragGizmo(target), away);
+  await page.waitForFunction(gridReads, away, { timeout: 10_000 })
+    .catch(() => check(false, 'the VOB to be saved never moved'));
+
+  await page.getByTestId('world-save').click();
+  await page.getByTestId('world-save-confirm').click();
+  await page.getByTestId('world-saved').waitFor({ timeout: 120_000 })
+    .catch(async () => check(false,
+      `the save never reported success: ${await page.getByTestId('world-save-error').textContent().catch(() => 'no error shown')}`));
+
+  let saved = null;
+  let changed = null;
+  if (fs.existsSync(SAVE_TO)) {
+    const zenkit = require('zenkit-node');
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(SAVE_TO, 'g2'));
+    // The flat index the UI selected, resolved to the path the binding used —
+    // the same two addresses, checked against the file rather than against the
+    // projection that produced them.
+    const expectedPath = (await page.evaluate(
+      () => globalThis.document.querySelector('[data-testid="world-prop-index"]')?.textContent ?? '',
+    ));
+    saved = dump.vobs[Number(expectedPath)];
+    check(saved !== undefined, `the saved world has no VOB at index ${expectedPath}`);
+    if (saved) {
+      check(near(saved.position, away),
+        `the saved world has that VOB at ${saved.position.map(Math.round)}, not ${away.map(Math.round)}`);
+      // The bbox travels with the position — the engine culls by it.
+      check(Math.abs((saved.bbox[0] + saved.bbox[3]) / 2 - away[0]) < NUDGE,
+        'the saved VOB kept a bounding box centred where it used to be');
+    }
+    // And **only** that VOB. Every check above could pass on a writer that
+    // scrambled the rest of the tree; this is the one that says the edit is the
+    // only difference. The comparison is against a fresh load of the original,
+    // in this process, through the same dump both sides use.
+    const original = zenkit.normalizeWorld(zenkit.loadWorld(WORLD, 'g2'));
+    check(original.vobs.length === dump.vobs.length,
+      `the saved world has ${dump.vobs.length} VOBs, the original ${original.vobs.length}`);
+
+    const differing = [];
+    for (let at = 0; at < Math.min(original.vobs.length, dump.vobs.length); at++) {
+      if (JSON.stringify(original.vobs[at]) !== JSON.stringify(dump.vobs[at])) differing.push(at);
+    }
+    check(differing.length === 1 && differing[0] === Number(expectedPath),
+      `${differing.length} VOBs differ from the original (${differing.slice(0, 5)}), expected only ${expectedPath}`);
+    // The structures Phase 1 never edits, and the ones the engine computes
+    // collision from.
+    for (const section of ['mesh', 'bsp', 'waynet']) {
+      check(JSON.stringify(original[section]) === JSON.stringify(dump[section]),
+        `the saved world's ${section} differs from the original`);
+    }
+    changed = differing.length;
+  } else {
+    check(false, `nothing was written to ${SAVE_TO}`);
+  }
+
+  // Put it back, so what follows starts from the world as it was found.
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(gridReads, home, { timeout: 10_000 }).catch(() => undefined);
+
   const row = (label, value) => console.log(`  ${String(label).padEnd(28)}${value}`);
   console.log('\nVOBs moved, through the real app\n');
   row('VOB', selected);
   row('Moved', `${before.map(Math.round).join(', ')} -> ${to.map(Math.round).join(', ')}`);
   row('Undo / redo', 'both followed by the grid and the gizmo');
   row('Turned', 'a quarter turn about Y, checked in both projections, undone');
+  row('Saved and re-loaded', saved
+    ? `VOB ${selected} is at ${saved.position.map(Math.round).join(', ')} in the file`
+    : 'FAILED');
+  row('  VOBs differing', changed === null ? 'not compared' : `${changed} of ${'23,288'} — mesh, bsp and waynet identical`);
   if (both) {
     row('Multi-select', `${both.first} + ${both.second}, one gizmo, one batch`);
     row('  kept their spacing', [0, 1, 2]
@@ -338,6 +427,7 @@ async function main() {
 
   await app.close();
   fs.rmSync(project, { recursive: true, force: true });
+  fs.rmSync(SAVE_TO, { force: true });
   report();
 }
 

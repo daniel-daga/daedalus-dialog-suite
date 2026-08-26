@@ -183,6 +183,25 @@ function isZenPosition(value: unknown): value is [number, number, number] {
 }
 
 /**
+ * Assert a save request (level-editor.md §5).
+ *
+ * The path goes to the native writer, which creates a temp file beside it and
+ * renames — so this is the last place a renderer-supplied string is a string
+ * rather than a file on disk. The main process validates it against the
+ * whitelist as well; this only settles its shape.
+ */
+export function assertSaveWorldRequest(
+  request: unknown,
+): asserts request is { targetPath: string } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid save request: expected a plain object');
+  }
+  if (typeof request.targetPath !== 'string' || request.targetPath.trim() === '') {
+    throw new Error('Invalid save request: targetPath must be a non-empty string');
+  }
+}
+
+/**
  * Assert an edit batch (level-editor.md §7).
  *
  * This is the first IPC payload that *changes* the world rather than reading a

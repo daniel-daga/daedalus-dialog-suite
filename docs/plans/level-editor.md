@@ -1233,12 +1233,12 @@ What the shape had to get right, none of it obvious from either side alone:
   Nothing is recorded until the worker confirms it, and the stacks move only
   after a replay is confirmed too.
 
-**No fidelity claim has moved.** Nothing here touches the writer: an op mutates
-the in-memory ZenKit world exactly as the engine-accepted row-10 edit did, and
-`saveWorld` is untouched and still BinSafe-only. The claim that changes is Gate
-2's, and it changes when a world edited *through the UI* is saved and re-run
-through the engine checklist — rows 7-9 included, which the acceptance record
-says regain their full force there.
+**No fidelity claim had moved when this was written.** Nothing here touches the
+writer: an op mutates the in-memory ZenKit world exactly as the engine-accepted
+row-10 edit did, and `saveWorld` was untouched and still BinSafe-only. A
+UI-edited world has since been saved and re-loaded (below) — one VOB differs, and
+mesh, BSP and waynet are byte-for-byte the original's. The claim still waiting on
+the *engine* is Gate 2's, rows 7–9 included.
 
 #### The loop closed — a VOB is moved in the app (2026-08-26)
 
@@ -1346,6 +1346,52 @@ one's position in **both** projections (the property grid reads the index, the
 gizmo reads the scene), then puts both back with a single Ctrl+Z. Sabotaged by
 making the drag a destination again: the two VOBs collapse onto one point and
 the script fails.
+
+#### Save, from the UI — and the question the projection could never answer (2026-08-26)
+
+`saveWorld` is reachable from the app: a **Save world…** button, the two
+warnings §7 requires shown *before* the file dialog rather than after the write,
+a main-process save dialog, and `WorldService.saveWorld` serialised with the
+edits so a save can never write a world in the middle of a batch.
+
+Three decisions are worth keeping:
+
+- **The target is always chosen in a dialog, and the suggested name is never the
+  file the world was opened from** (`NewWorld.zen` → `NewWorld.edited.zen`).
+  The worlds this app opens are retail game files. Overwriting one stays
+  reachable — the OS dialog asks — but it has to be asked for, and the renderer
+  never names its own target: the dialog is what puts the directory on the path
+  whitelist.
+- **The warnings are about whether to save at all**, so they come first: the
+  lighting a world was compiled with is not re-baked by an edit (only Spacer's
+  `compile light` does that, and re-running it rebuilds the world from its
+  parts), and a savegame carries its own copy of the VOB tree.
+- **The binding's refusal is passed through verbatim.** "Only the binsafe writer
+  path is verified" is the one sentence a user can act on, and replacing it with
+  a generic failure hides it.
+
+**And it closes the question every check before it had to leave open.** Until
+now every witness in `verify-world-edit.js` was a *projection* — the property
+grid reads the renderer's index, the gizmo reads the scene — and neither could
+prove the VOB the **native** world moved is the one the flat index named. A VOB
+has two addresses and on a depth-first-enumerated retail world they agree often
+enough that the wrong one passes. The driver now saves the edited world to a
+temp file, re-loads it **in its own process through the binding**, with nothing
+of the app's in the path, and compares the dump against a fresh load of the
+original:
+
+```
+Saved and re-loaded    VOB 0 is at 31413, 5299, -14341 in the file
+  VOBs differing       1 of 23,288 — mesh, bsp and waynet identical
+```
+
+**Exactly one VOB differs, and it is the edited one.** That is the semantic-diff
+half of Gate 2 answered for a world edited through the real UI.
+
+**It is not a Gate 2 pass.** Whether the *engine* accepts a UI-edited world is
+decided by the engine, and no engine run covers one — nor a rotated VOB, nor the
+refitted bounding box. Rows 7–9 of the acceptance checklist regain their full
+force there and must actually run, which needs a person at the keyboard.
 
 #### The turn gizmo — the second op, and the first that rewrites a bbox (2026-08-26)
 

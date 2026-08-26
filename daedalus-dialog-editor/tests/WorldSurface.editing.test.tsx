@@ -41,14 +41,14 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     mockSelection = props.selection;
     mockGizmoMode = props.gizmoMode;
     return (
-      <>
+      <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
           drag
         </button>
         <button type="button" data-testid="stub-turn" onClick={() => props.onRotateSelection(TURN)}>
           turn
         </button>
-      </>
+      </div>
     );
   },
 }));
@@ -103,6 +103,8 @@ const api = {
   applyWorldOps: jest.fn(async () => undefined),
   undoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
   redoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
+  saveWorldDialog: jest.fn(async (): Promise<string | null> => null),
+  saveWorld: jest.fn(async () => undefined),
   closeWorld: jest.fn(),
 };
 
@@ -373,6 +375,75 @@ describe('a turn of the gizmo', () => {
 
     expect(mockGizmoMode).toBe('translate');
     document.body.removeChild(field);
+  });
+});
+
+describe('saving the world', () => {
+  const openSaveDialog = async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-save'));
+    await screen.findByTestId('world-save-confirm');
+  };
+
+  it('warns before it asks for a file, not after it has written one', async () => {
+    // Both warnings are facts about ZenGin rather than about this editor, and
+    // both are about whether to save at all: the lighting a world was compiled
+    // with is not re-baked by an edit, and a savegame carries its own copy of
+    // the VOB tree.
+    await openSaveDialog();
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/lighting/i);
+    expect(dialog).toHaveTextContent(/savegame/i);
+    expect(api.saveWorldDialog).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the warning is dismissed', async () => {
+    await openSaveDialog();
+
+    fireEvent.click(screen.getByTestId('world-save-cancel'));
+
+    await waitFor(() => expect(screen.queryByTestId('world-save-confirm')).not.toBeInTheDocument());
+    expect(api.saveWorldDialog).not.toHaveBeenCalled();
+    expect(api.saveWorld).not.toHaveBeenCalled();
+  });
+
+  it('suggests a name beside the original rather than the original', async () => {
+    // The worlds this app opens are retail game files. Overwriting one is
+    // reachable — the OS dialog asks — but it is never the pre-filled answer.
+    await openSaveDialog();
+    api.saveWorldDialog.mockResolvedValueOnce(null as never);
+
+    fireEvent.click(screen.getByTestId('world-save-confirm'));
+
+    await waitFor(() => expect(api.saveWorldDialog)
+      .toHaveBeenCalledWith('C:/Gothic/NewWorld.edited.zen'));
+    expect(api.saveWorld).not.toHaveBeenCalled();
+  });
+
+  it('writes to the chosen file and says where it went', async () => {
+    await openSaveDialog();
+    api.saveWorldDialog.mockResolvedValueOnce('C:/out/NewWorld.zen' as never);
+
+    fireEvent.click(screen.getByTestId('world-save-confirm'));
+
+    await waitFor(() => expect(api.saveWorld).toHaveBeenCalledWith('C:/out/NewWorld.zen'));
+    expect(await screen.findByTestId('world-saved')).toHaveTextContent('C:/out/NewWorld.zen');
+  });
+
+  it('shows the binding\'s refusal without tearing the world down', async () => {
+    // A non-BinSafe world is the case this is for, and the sentence the binding
+    // writes is the only one the user can act on.
+    await openSaveDialog();
+    api.saveWorldDialog.mockResolvedValueOnce('C:/out/OldCamp.zen' as never);
+    api.saveWorld.mockRejectedValueOnce(
+      new Error("refusing to save a world loaded from a 'ascii' archive"),
+    );
+
+    fireEvent.click(screen.getByTestId('world-save-confirm'));
+
+    expect(await screen.findByTestId('world-save-error')).toHaveTextContent(/binsafe|ascii/i);
+    expect(screen.getByTestId('world-viewport-stub')).toBeInTheDocument();
   });
 });
 

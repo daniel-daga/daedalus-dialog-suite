@@ -22,6 +22,7 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertApplyOpsRequest,
+  assertSaveWorldRequest,
   sanitizeRendererErrorPayload,
 } from './ipcValidation';
 
@@ -682,6 +683,53 @@ function setupIpcHandlers() {
   ipcMain.handle('world:applyOps', async (_event, request: unknown) => {
     assertApplyOpsRequest(request);
     await worldService.applyOps(request.ops);
+  });
+
+  // Saving (level-editor.md §5). Two handlers, because the target is chosen in
+  // a main-process dialog and only then does the path exist: a renderer that
+  // could name its own target could write anywhere the whitelist allows, and
+  // the worlds this app opens are retail game files.
+  ipcMain.handle('world:saveDialog', async (_event, request: unknown) => {
+    try {
+      const suggested = typeof request === 'object' && request !== null && 'suggested' in request
+        && typeof (request as { suggested: unknown }).suggested === 'string'
+        ? (request as { suggested: string }).suggested
+        : 'world.zen';
+
+      const result = await dialog.showSaveDialog({
+        title: 'Save the world',
+        defaultPath: suggested,
+        filters: [{ name: 'ZenGin world', extensions: ['zen'] }],
+        // Electron's own overwrite prompt is the confirmation for writing over
+        // an existing file, and the suggested name is deliberately not the one
+        // the world was opened under.
+        properties: ['showOverwriteConfirmation', 'createDirectory'],
+      });
+      if (result.canceled || !result.filePath) return null;
+
+      pathValidator.addAllowedPath(path.dirname(result.filePath));
+      return result.filePath;
+    } catch (error) {
+      console.error('[IPC] world:saveDialog error:', error);
+      throw new Error(`Failed to open save dialog: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('world:save', async (_event, request: unknown) => {
+    try {
+      assertSaveWorldRequest(request);
+      await pathValidator.validatePathResolved(request.targetPath);
+      await worldService.saveWorld(request.targetPath);
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] world:save - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] world:save error:', error);
+      // The binding's own refusal — a non-BinSafe world — is the message worth
+      // showing, so it is passed through rather than replaced.
+      throw new Error(error instanceof Error ? error.message : 'Failed to save the world');
+    }
   });
 
   ipcMain.handle('world:undo', async () => worldService.undo());

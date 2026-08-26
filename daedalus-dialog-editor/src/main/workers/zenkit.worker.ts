@@ -12,6 +12,7 @@ import {
 } from 'zen-world';
 import type {
   ApplyOpsRequest,
+  SaveWorldRequest,
   DecodedTexture,
   InstancedPayload,
   OpenWorldRequest,
@@ -182,6 +183,24 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
   return { result: null, transfer: [] };
 }
 
+/**
+ * Write the world out (level-editor.md §5, §7).
+ *
+ * The binding refuses a world that was not loaded from a `zCArchiverBinSafe`
+ * archive — the only writer path verified byte-for-byte against the retail
+ * corpus and in the original engine — and that refusal is passed through rather
+ * than worked around: ZenKit's ASCII writer corrupts every raw entry it emits
+ * and cannot re-load its own output. It writes to a temp file and renames, so a
+ * failed save leaves the target as it was.
+ *
+ * `{ allowNonBinSafe: true }` exists for diagnostics and is deliberately not
+ * reachable from the app.
+ */
+function save(payload: SaveWorldRequest): { result: null; transfer: ArrayBuffer[] } {
+  phase('save', () => zenkit.saveWorld(handle!, payload.targetPath));
+  return { result: null, transfer: [] };
+}
+
 function close(): { result: null; transfer: ArrayBuffer[] } {
   // A live VFS keeps every mounted file memory-mapped and Windows refuses to
   // delete a mapped file until the handle is collected (zenkit-node README), so
@@ -217,6 +236,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'assets': return assets(message.payload as { path: string });
     case 'waynet': return waynet();
     case 'applyOps': return applyOpsRequest(message.payload as ApplyOpsRequest);
+    case 'save': return save(message.payload as SaveWorldRequest);
     case 'close': return close();
   }
 }

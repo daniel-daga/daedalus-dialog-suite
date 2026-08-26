@@ -135,4 +135,17 @@ export function setVobRotation(
   rotation: readonly number[],
   bbox?: readonly number[] | null,
 ): void;
+/**
+ * Write the world to `path`, through a temp file and a rename.
+ *
+ * **Throws for a world that was not loaded from a `zCArchiverBinSafe`
+ * archive** — the only writer path verified byte-for-byte against the retail
+ * corpus and in the original engine. ZenKit's ASCII writer corrupts every raw
+ * entry it emits and cannot re-load its own output, and the BINARY path has had
+ * no fidelity work at all. `{ allowNonBinSafe: true }` is for diagnostics
+ * (`scripts/zen-roundtrip.js`), never for the app.
+ */
+export function saveWorld(
+  handle: WorldHandle, path: string, options?: { allowNonBinSafe?: boolean },
+): void;
 export function zenkitVersion(): string;

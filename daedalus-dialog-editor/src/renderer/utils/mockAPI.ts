@@ -644,6 +644,12 @@ export const mockEditorAPI: EditorAPI = {
   },
   async undoWorldEdit(): Promise<null> { return null; },
   async redoWorldEdit(): Promise<null> { return null; },
+  // Cancelled rather than "no world is open": in browser mode there is no
+  // dialog to open, and a cancelled save is a state the surface already handles.
+  async saveWorldDialog(): Promise<null> { return null; },
+  async saveWorld(): Promise<never> {
+    throw new Error('No world is open');
+  },
   async closeWorld(): Promise<void> {},
 };
 

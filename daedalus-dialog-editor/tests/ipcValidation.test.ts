@@ -13,6 +13,7 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertApplyOpsRequest,
+  assertSaveWorldRequest,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
@@ -232,6 +233,22 @@ describe('assertTextureRequest', () => {
     for (const bad of [0, -1, 1.5, NaN, Infinity, '256']) {
       expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: bad })).toThrow(/maxSize/);
     }
+  });
+});
+
+describe('assertSaveWorldRequest', () => {
+  it('accepts a target path', () => {
+    expect(() => assertSaveWorldRequest({ targetPath: 'C:/Gothic/NewWorld.edited.zen' })).not.toThrow();
+  });
+
+  it('rejects anything that is not a non-empty string', () => {
+    // It reaches the native writer, which creates a temp file beside it and
+    // renames. The whitelist check in main is the other half; this is the shape.
+    for (const bad of ['', '   ', null, 42, ['a'], undefined]) {
+      expect(() => assertSaveWorldRequest({ targetPath: bad })).toThrow(/targetPath/);
+    }
+    expect(() => assertSaveWorldRequest(null)).toThrow();
+    expect(() => assertSaveWorldRequest('C:/a.zen')).toThrow();
   });
 });
 

@@ -143,6 +143,25 @@ export class WorldService {
   }
 
   /**
+   * Write the world to `targetPath` (level-editor.md §5, §7).
+   *
+   * Serialised with the edits rather than run beside them: a save that
+   * overlapped a batch would write a world in the middle of one, and `commitOps`
+   * guarantees a batch is all-or-nothing only against callers that never read it
+   * half-applied.
+   *
+   * The target is always explicit. The app never writes back over the file it
+   * opened unless the user names it in the save dialog — the worlds it opens are
+   * retail game files, and the acceptance workflow keeps a hash-verified
+   * pristine backup for exactly that reason.
+   */
+  saveWorld(targetPath: string): Promise<void> {
+    return this.serialized(async () => {
+      await this.requestOnOpenWorld<null>('save', { targetPath });
+    });
+  }
+
+  /**
    * Replay the last batch's inverses; null when there is nothing to undo.
    *
    * Answers with **the ops it applied**, not merely that it did. The renderer

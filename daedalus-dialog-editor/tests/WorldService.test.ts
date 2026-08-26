@@ -426,4 +426,59 @@ describe('the op log', () => {
     await expect(service.applyOps([A])).rejects.toThrow(/no world is open/i);
     service.close();
   });
+
+  test('a save is sent with the target it was given', async () => {
+    const { worker, service } = await openedService();
+
+    const saved = service.saveWorld('C:/Gothic/NewWorld.edited.zen');
+    await tick();
+
+    expect(worker.sent.filter((m) => m.op === 'save')).toEqual([
+      expect.objectContaining({ payload: { targetPath: 'C:/Gothic/NewWorld.edited.zen' } }),
+    ]);
+    worker.replyLast('save', null);
+    await expect(saved).resolves.toBeUndefined();
+    service.close();
+  });
+
+  test('a save waits for an edit in flight rather than writing mid-batch', async () => {
+    // A batch is all-or-nothing only against callers that never read it
+    // half-applied. A save that overlapped one would write a world in the
+    // middle of a batch that the history describes as a single entry.
+    const { worker, service } = await openedService();
+
+    const edit = service.applyOps([A]);
+    const saved = service.saveWorld('C:/out.zen');
+
+    await tick();
+    expect(worker.sent.map((m) => m.op)).toEqual(['open', 'applyOps']);
+
+    worker.replyLast('applyOps', null);
+    await edit;
+    await tick();
+    expect(worker.sent.map((m) => m.op)).toEqual(['open', 'applyOps', 'save']);
+
+    worker.replyLast('save', null);
+    await saved;
+    service.close();
+  });
+
+  test('a refused save rejects with the binding\'s own message', async () => {
+    // "only the binsafe writer path is verified" is the useful sentence, and
+    // replacing it with a generic one hides the one thing the user can act on.
+    const { worker, service } = await openedService();
+
+    const saved = service.saveWorld('C:/out.zen');
+    await tick();
+    worker.fail('save', "refusing to save a world loaded from a 'ascii' archive");
+
+    await expect(saved).rejects.toThrow(/binsafe|ascii/i);
+    service.close();
+  });
+
+  test('saving before a world is open is refused, not queued', async () => {
+    const { service } = makeService();
+    await expect(service.saveWorld('C:/out.zen')).rejects.toThrow(/no world is open/i);
+    service.close();
+  });
 });

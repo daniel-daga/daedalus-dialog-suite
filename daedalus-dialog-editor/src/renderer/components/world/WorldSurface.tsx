@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Tab, Tabs,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, Paper, Stack, Tab, Tabs,
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
@@ -132,6 +133,40 @@ const WorldSurface: React.FC = () => {
   // handing it the ops that were applied is smaller than either a callback ref
   // or a second copy of the world.
   const [appliedOps, setAppliedOps] = useState<WorldOp[] | null>(null);
+
+  // ── saving (level-editor.md §5) ───────────────────────────────────────────
+  //
+  // Two things are deliberately not automatic. The **target** is always chosen
+  // in the save dialog: the worlds this app opens are retail game files, and
+  // writing back over the one it opened is never the default. And the two
+  // warnings below are shown *before* the dialog rather than after the write,
+  // because they are about whether to save at all.
+  const [confirmingSave, setConfirmingSave] = useState(false);
+  const [savedTo, setSavedTo] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const saveWorld = useCallback(async () => {
+    setConfirmingSave(false);
+    setSavedTo(null);
+    setSaveError(null);
+    if (summary === null) return;
+
+    // `.edited.zen` beside the original, so the pre-filled answer is never the
+    // file the world was opened from. Overwriting is still reachable — the OS
+    // dialog asks — but it has to be asked for.
+    const suggested = `${summary.worldPath.replace(/\.zen$/i, '')}.edited.zen`;
+
+    try {
+      const target = await window.editorAPI.saveWorldDialog(suggested);
+      if (target === null) return;
+      await window.editorAPI.saveWorld(target);
+      setSavedTo(target);
+    } catch (failure) {
+      // The binding's own refusal — "only the binsafe writer path is verified" —
+      // is the message worth showing, so it is not replaced with a generic one.
+      setSaveError(failure instanceof Error ? failure.message : String(failure));
+    }
+  }, [summary]);
 
   const commitOps = useCallback(async (ops: WorldOp[]) => {
     const { applyEdit, editFailed } = useWorldStore.getState();
@@ -266,6 +301,16 @@ const WorldSurface: React.FC = () => {
               Waynet
             </Button>
           )}
+          {summary && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setConfirmingSave(true)}
+              data-testid="world-save"
+            >
+              Save world…
+            </Button>
+          )}
           {/* Two modes, not three: a VOB has no scale to gizmo. */}
           {summary && (
             <ToggleButtonGroup
@@ -299,6 +344,47 @@ const WorldSurface: React.FC = () => {
       {editError !== null && (
         <Alert severity="warning" square data-testid="world-edit-error">{editError}</Alert>
       )}
+
+      {saveError !== null && (
+        <Alert severity="warning" square data-testid="world-save-error">{saveError}</Alert>
+      )}
+      {savedTo !== null && (
+        <Alert severity="success" square data-testid="world-saved">Saved to {savedTo}</Alert>
+      )}
+
+      {/* The warnings belong before the write, not after it: they are about
+          whether to save at all. Both are the brief's (§7) and both are facts
+          about ZenGin rather than about this editor. */}
+      <Dialog open={confirmingSave} onClose={() => setConfirmingSave(false)}>
+        <DialogTitle>Save this world?</DialogTitle>
+        <DialogContent>
+          <DialogContentText component="div" variant="body2">
+            <p>
+              <strong>The lighting will be stale.</strong> ZenGin bakes vertex lighting and
+              lightmaps when a world is compiled. Moving or turning a VOB does not re-bake
+              anything, so its lighting stays as it was where the VOB used to be. Only Spacer&apos;s
+              <code> compile light </code>
+              can fix that, and re-running it rebuilds the world from its part files.
+            </p>
+            <p>
+              <strong>Existing savegames will not match.</strong> A savegame stores its own copy of
+              the VOB tree, so a game saved before this edit keeps the old world — and loading one
+              against an edited world is where ZenGin is least forgiving.
+            </p>
+            <p>
+              Only <code>zCArchiverBinSafe</code> worlds can be written: that is the one writer path
+              verified byte-for-byte against the retail corpus and in the original engine. The four
+              in a Gothic II install are NewWorld, OldWorld, AddonWorld and DragonIsland.
+            </p>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmingSave(false)} data-testid="world-save-cancel">Cancel</Button>
+          <Button onClick={saveWorld} variant="contained" data-testid="world-save-confirm">
+            Choose a file…
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {status === 'idle' && (
         <Box sx={{ p: 3 }}>

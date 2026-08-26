@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldTexture: (name: string, maxSize: number) =>
     ipcRenderer.invoke('world:texture', { name, maxSize }),
   applyWorldOps: (ops: unknown[]) => ipcRenderer.invoke('world:applyOps', { ops }),
+  saveWorldDialog: (suggested: string) => ipcRenderer.invoke('world:saveDialog', { suggested }),
+  saveWorld: (targetPath: string) => ipcRenderer.invoke('world:save', { targetPath }),
   undoWorldEdit: () => ipcRenderer.invoke('world:undo'),
   redoWorldEdit: () => ipcRenderer.invoke('world:redo'),
   closeWorld: () => ipcRenderer.invoke('world:close'),

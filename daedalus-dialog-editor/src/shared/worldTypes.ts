@@ -86,12 +86,19 @@ export interface DecodedTexture {
 }
 
 export type WorldWorkerOp =
-  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'applyOps' | 'close';
+  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'applyOps' | 'save'
+  | 'close';
 
 /** The payload of an `applyOps` request. Undo and redo are the same request
  *  with inverted ops (level-editor.md §7). */
 export interface ApplyOpsRequest {
   ops: WorldOp[];
+}
+
+/** Where to write the world. Always an explicit target: the app never writes
+ *  back over the file it opened unless the user names it in the save dialog. */
+export interface SaveWorldRequest {
+  targetPath: string;
 }
 
 export interface WorldWorkerRequest {

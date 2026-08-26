@@ -176,6 +176,13 @@ export interface EditorAPI {
    *  null when there was nothing left to undo/redo. */
   undoWorldEdit: () => Promise<WorldOp[] | null>;
   redoWorldEdit: () => Promise<WorldOp[] | null>;
+  /** Ask for a save target. Null when the dialog was cancelled. The renderer
+   *  never names its own: the target is chosen in a main-process dialog, which
+   *  is also what puts it on the path whitelist. */
+  saveWorldDialog: (suggested: string) => Promise<string | null>;
+  /** Write the world. Rejects with the binding's own message for a world that
+   *  was not loaded from a `zCArchiverBinSafe` archive. */
+  saveWorld: (targetPath: string) => Promise<void>;
   closeWorld: () => Promise<void>;
 
   // Updater API
