@@ -5,7 +5,8 @@ import {
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  addVob, invertOp, isStructuralOp, placeBounds, rotateVobs, setVobProps, translateVobs,
+  addVob, invertOp, isStructuralOp, placeBounds, reparentVob, rotateVobs, setVobProps,
+  translateVobs,
   type NewVob, type VobProps, type ZenBounds, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
@@ -303,6 +304,22 @@ const WorldSurface: React.FC = () => {
   }, [commitOps, boundsOf]);
 
   /**
+   * Move a VOB into another parent — the scene tree's drag and drop.
+   *
+   * One op, alone in its batch, and `commitOps` enforces that rather than
+   * trusting this: a reparent renumbers every path after it, and the other ops
+   * in a batch carry paths resolved before the batch ran. The refresh it needs
+   * afterwards is the ordinary structural one, which `applied` already does for
+   * a placement — the index is re-read whole because the columnar projection
+   * cannot reorder.
+   */
+  const reparent = useCallback(async (vob: number, toParent: number, slot: number) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null) return;
+    await commitOps([reparentVob(vobModelOf(current).reader, vob, toParent, slot)]);
+  }, [commitOps]);
+
+  /**
    * Place a new VOB at the last point picked on the terrain.
    *
    * The terrain point rather than the camera or the origin, because it is the
@@ -525,7 +542,12 @@ const WorldSurface: React.FC = () => {
               <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
             </Tabs>
             <Box sx={{ flex: 1, minHeight: 0, display: panel === 'scene' ? 'block' : 'none' }}>
-              <WorldSceneTree summary={summary} selection={selection} onSelect={handleSelect} />
+              <WorldSceneTree
+                summary={summary}
+                selection={selection}
+                onSelect={handleSelect}
+                onReparent={reparent}
+              />
             </Box>
             {/* Mounted only once the user asks for it: the first listing is an
                 IPC round trip into the worker that holds the VFS. */}

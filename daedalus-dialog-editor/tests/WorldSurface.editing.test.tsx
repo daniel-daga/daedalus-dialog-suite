@@ -28,6 +28,13 @@ const DRAG: [number, number, number] = [1, 2, 3];
 let mockGizmoMode: string | undefined;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+// The house pattern for react-window under jsdom, which has no layout — without
+// it the scene tree renders no rows at all and the drag-and-drop test below has
+// nothing to drag.
+jest.mock('react-virtualized-auto-sizer', () => (props: {
+  children: (size: { height: number; width: number }) => React.ReactNode;
+}) => props.children({ height: 600, width: 320 }));
+
 jest.mock('../src/renderer/components/world/WorldViewport', () => ({
   __esModule: true,
   default: (props: {
@@ -549,6 +556,32 @@ describe('placing a VOB', () => {
     await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
     await waitFor(() => expect(useWorldStore.getState().summary).toBe(grown));
     expect(api.getWorldVisuals).toHaveBeenCalledTimes(2);   // the open, then this
+  });
+
+  it('reparents a VOB dragged onto another row, as one op alone in its batch', async () => {
+    // The scene tree's drag and drop, through the surface it is wired to. One
+    // op and nothing else in the batch: a reparent renumbers every path after
+    // it, and the other ops in a batch carry paths resolved before it ran.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.dragStart(screen.getByTestId('world-vob-row-1'));
+    fireEvent.drop(screen.getByTestId('world-vob-row-0'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const ops = api.applyWorldOps.mock.calls.at(-1)![0] as WorldOp[];
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: 'ReparentVob',
+      vob: 1,
+      from: { path: '1', parentPath: null, slot: 1 },
+      to: { path: '0/0', parentPath: '0', slot: 0 },
+    });
+
+    // And it refreshes like any other structural edit, because the columnar
+    // projection cannot reorder itself.
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
   });
 
   it('does not re-read anything when the edit was refused', async () => {

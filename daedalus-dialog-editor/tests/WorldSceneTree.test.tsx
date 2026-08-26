@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
 import WorldSceneTree from '../src/renderer/components/world/WorldSceneTree';
@@ -223,6 +223,70 @@ describe('WorldSceneTree', () => {
     const rendered = screen.getAllByRole('treeitem');
     expect(rendered.length).toBeGreaterThan(0);
     expect(rendered.length).toBeLessThan(200);
+  });
+
+  it('reparents a VOB dropped onto another row, as that row’s last child', () => {
+    // Drop *onto* a row rather than between rows: the gesture has to be
+    // unambiguous without an insertion indicator, and "becomes a child of what
+    // you dropped it on" is the one reading that needs no extra UI. The slot is
+    // the end of that parent's children, which is where a drop with no position
+    // in it can honestly mean.
+    const onReparent = jest.fn();
+    render(<WorldSceneTree
+      summary={NESTED}
+      selection={[]}
+      onSelect={jest.fn()}
+      onReparent={onReparent}
+    />);
+
+    fireEvent.dragStart(row(4)!);
+    fireEvent.dragOver(row(0)!);
+    fireEvent.drop(row(0)!);
+
+    // CASTLE already has two children, so WELL becomes the third.
+    expect(onReparent).toHaveBeenCalledWith(4, 0, 2);
+  });
+
+  it('refuses a drop onto the VOB being dragged, or onto its own descendant', () => {
+    // The move that destroys VOBs rather than misplacing them: a subtree under
+    // its own descendant is unreachable from the roots, so it is not
+    // enumerated, not counted and not written. The op refuses it and so does
+    // the binding; this is the layer that must not offer it.
+    const onReparent = jest.fn();
+    render(<WorldSceneTree
+      summary={NESTED}
+      selection={[]}
+      onSelect={jest.fn()}
+      onReparent={onReparent}
+    />);
+
+    fireEvent.click(screen.getByTestId('world-vob-toggle-0'));
+
+    // Onto itself. A drop ends the drag whether or not it was accepted, so each
+    // attempt below starts a fresh one — which is also what the browser does.
+    fireEvent.dragStart(row(0)!);
+    fireEvent.drop(row(0)!);
+    expect(onReparent).not.toHaveBeenCalled();
+
+    // Onto its own child. In a browser this drop never fires at all, because
+    // dragover refuses to preventDefault for it; dispatching it directly is the
+    // only way to reach the second guard, and the second guard is the one that
+    // matters if anything ever dispatches a drop itself.
+    fireEvent.dragStart(row(0)!);
+    fireEvent.drop(row(1)!);
+    expect(onReparent).not.toHaveBeenCalled();
+
+    // And a sibling is a legitimate target.
+    fireEvent.dragStart(row(0)!);
+    fireEvent.drop(row(4)!);
+    expect(onReparent).toHaveBeenCalledWith(0, 4, 0);
+  });
+
+  it('does not drag at all when no handler is given', () => {
+    // The tree is a Phase 1a read-only surface without one, and a row that
+    // looks draggable but drops nowhere is worse than a row that does not.
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+    expect(row(0)).not.toHaveAttribute('draggable', 'true');
   });
 
   it('says how many VOBs the world has, since the tree only ever shows a few', () => {

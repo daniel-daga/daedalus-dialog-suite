@@ -517,6 +517,45 @@ async function main() {
   await page.keyboard.press('Control+z');
   await page.waitForFunction(gridReads, home, { timeout: 10_000 }).catch(() => undefined);
 
+  // ── reparenting, by dragging one row onto another ────────────────────────
+  //
+  // The third structural op, and the first one whose gesture is the tree rather
+  // than the viewport. Driven by the drag events a row actually listens for —
+  // Playwright's own drag helpers move a mouse, and an HTML5 drag is not a mouse
+  // move — so what stands in for the pointer here is precisely the part the
+  // browser owns, and everything below it is the real thing.
+  let reparented = null;
+  const treeCountAfter = await treeCount();
+  const twoRows = await page.evaluate(() => [...globalThis.document
+    .querySelectorAll('[data-testid^="world-vob-row-"]')]
+    .slice(0, 2)
+    .map((element) => Number(element.getAttribute('data-testid').replace('world-vob-row-', ''))));
+
+  if (twoRows.length === 2) {
+    const [target, moved] = twoRows;
+    await page.evaluate(({ from, onto }) => {
+      const row = (vob) => globalThis.document.querySelector(`[data-testid="world-vob-row-${vob}"]`);
+      const fire = (element, type) => element.dispatchEvent(
+        new globalThis.Event(type, { bubbles: true, cancelable: true }),
+      );
+      fire(row(from), 'dragstart');
+      fire(row(onto), 'dragover');
+      fire(row(onto), 'drop');
+    }, { from: moved, onto: target });
+
+    // The index is re-read whole after a structural op, so the count is what
+    // says the world is still whole — a reparent moves a VOB, it never loses
+    // one, and a subtree dropped into itself would vanish from the count.
+    await expect_(async () => (await treeCount()) === treeCountAfter,
+      'the VOB count changed across a reparent — a subtree was lost');
+    check(await page.getByTestId('world-edit-error').count() === 0, 'the reparent was refused');
+
+    await page.keyboard.press('Control+z');
+    await expect_(async () => (await treeCount()) === treeCountAfter,
+      'undoing the reparent changed the VOB count');
+    reparented = `${moved} into ${target}, count held at ${treeCountAfter.toLocaleString()}, undone`;
+  }
+
   const row = (label, value) => console.log(`  ${String(label).padEnd(28)}${value}`);
   console.log('\nVOBs moved, through the real app\n');
   row('VOB', selected);
@@ -525,6 +564,7 @@ async function main() {
   row('Turned', 'a quarter turn about Y, checked in both projections, undone');
   row('Renamed', `${nameBefore || '(unnamed)'} -> ${RENAMED}, and one flag, each its own undo`);
   row('Placed', `${PLACED} appended as a root, index re-read, undone`);
+  row('Reparented', reparented ?? 'not exercised — fewer than two rows in the tree');
   row('Saved and re-loaded', saved
     ? `VOB ${selected} is at ${saved.position.map(Math.round).join(', ')} in the file`
     : 'FAILED');

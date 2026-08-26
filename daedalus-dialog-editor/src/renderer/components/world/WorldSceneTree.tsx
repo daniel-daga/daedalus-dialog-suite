@@ -34,10 +34,20 @@ interface RowData {
   selected: ReadonlySet<number>;
   onSelect: (vob: number, additive: boolean) => void;
   onToggle: (vob: number) => void;
+  /** Absent on a read-only tree, and then no row is draggable at all — a row
+   *  that looks draggable and drops nowhere is worse than one that does not. */
+  onDragVob?: (vob: number) => void;
+  onDropOn?: (vob: number) => void;
+  /** Whether the drag in flight may land on this row. Drives `preventDefault`
+   *  on dragover, which is what decides whether the browser offers a drop
+   *  cursor at all — so an impossible target says so before the mouse is let
+   *  go, and the drop event never fires for it. */
+  canDropOn: (vob: number) => boolean;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   const { rows, reader, expanded, selected, onSelect, onToggle } = data;
+  const { onDragVob, onDropOn, canDropOn } = data;
   const { vob, depth, hasChildren } = rows[index];
 
   // Most VOBs are unnamed — retail NewWorld's 23,288 carry 2,654 distinct
@@ -56,6 +66,10 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       aria-expanded={hasChildren ? expanded.has(vob) : undefined}
       data-testid={`world-vob-row-${vob}`}
       onClick={(event) => onSelect(vob, event.ctrlKey || event.metaKey)}
+      draggable={onDragVob !== undefined}
+      onDragStart={onDragVob === undefined ? undefined : () => onDragVob(vob)}
+      onDragOver={(event) => { if (canDropOn(vob)) event.preventDefault(); }}
+      onDrop={onDropOn === undefined ? undefined : (event) => { event.preventDefault(); onDropOn(vob); }}
       style={style}
       sx={{
         display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer',
@@ -93,9 +107,22 @@ export interface WorldSceneTreeProps {
   /** `additive` is a Ctrl/Cmd click: add this VOB to the selection rather than
    *  replacing it, which is how a multi-select batch is built. */
   onSelect: (vob: number, additive: boolean) => void;
+  /**
+   * Move `vob` into `toParent` at `slot` — absent on a read-only tree, and then
+   * nothing in it is draggable.
+   *
+   * A drop **onto** a row rather than between rows, because the gesture has to
+   * be unambiguous without an insertion indicator, and "becomes a child of what
+   * you dropped it on" is the one reading that needs no extra UI. The slot is
+   * therefore always the end of that parent's children, which is all a drop with
+   * no position in it can honestly mean.
+   */
+  onReparent?: (vob: number, toParent: number, slot: number) => void;
 }
 
-const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({ summary, selection, onSelect }) => {
+const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
+  summary, selection, onSelect, onReparent,
+}) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selected = useMemo(() => new Set(selection), [selection]);
   // Only the primary is followed. Expanding and scrolling to every VOB of a
@@ -135,9 +162,38 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({ summary, selection, onS
     });
   }, []);
 
+  const [dragging, setDragging] = useState<number | null>(null);
+
+  // A VOB dropped into its own subtree is unreachable from the roots: not
+  // enumerated, not counted, not written. The op refuses it and so does the
+  // binding — this is the layer that must not offer it in the first place.
+  const canDropOn = useCallback((target: number) => (
+    dragging !== null && target !== dragging && !tree.ancestors(target).includes(dragging)
+  ), [dragging, tree]);
+
+  const onDropOn = useCallback((target: number) => {
+    const vob = dragging;
+    setDragging(null);
+    // Checked again rather than trusted: `canDropOn` gates the browser's drop
+    // cursor, and a drop can still be delivered by anything that dispatches the
+    // event itself.
+    if (vob === null || onReparent === undefined || !canDropOn(target)) return;
+    onReparent(vob, target, tree.children(target).length);
+  }, [dragging, onReparent, tree, canDropOn]);
+
   const itemData = useMemo<RowData>(
-    () => ({ rows, reader, expanded, selected, onSelect, onToggle }),
-    [rows, reader, expanded, selected, onSelect, onToggle],
+    () => ({
+      rows,
+      reader,
+      expanded,
+      selected,
+      onSelect,
+      onToggle,
+      canDropOn,
+      onDragVob: onReparent === undefined ? undefined : setDragging,
+      onDropOn: onReparent === undefined ? undefined : onDropOn,
+    }),
+    [rows, reader, expanded, selected, onSelect, onToggle, canDropOn, onReparent, onDropOn],
   );
 
   return (
