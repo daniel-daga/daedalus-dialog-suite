@@ -13,6 +13,7 @@ import {
   threeToZen,
   zenBoxToThree,
   applyRootMatrix,
+  threeIndexOrder,
 } from '../src/coords';
 
 // Deterministic, so a failure is reproducible: a property test that cannot be
@@ -35,16 +36,92 @@ function det3(m: readonly number[], i: number, j: number, k: number): number {
   );
 }
 
+/** The right-handed geometric normal of a triangle, in the order given. */
+function geometricNormal(
+  corners: readonly (readonly [number, number, number])[],
+  order: readonly number[],
+): [number, number, number] {
+  const [a, b, c] = order.map((i) => corners[i]);
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  return [
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0],
+  ];
+}
+
+const dot = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/**
+ * Whether the GPU draws this triangle when the camera is on the side its stored
+ * normal points to — a model of the *composite* rule, which is the only form of
+ * the question that has a correct answer.
+ *
+ * Two things decide it and they are easy to double-count. The rasteriser calls a
+ * triangle front-facing when its screen winding matches `gl.frontFace`, which is
+ * CCW by default; and Three.js sets it to CW for any object whose `matrixWorld`
+ * determinant is negative (`three/build/three.cjs`, `renderBufferDirect`:
+ * `const frontFaceCW = ( object.isMesh && object.matrixWorld.determinant() < 0 )`).
+ * So the mirror flips the winding and Three.js flips the test back. A model that
+ * leaves out either half endorses whatever the code does.
+ */
+function drawnFromNormalSide(
+  zenCorners: readonly (readonly [number, number, number])[],
+  order: readonly number[],
+  zenNormal: readonly [number, number, number],
+): boolean {
+  const converted = zenCorners.map((p) => zenToThree(p));
+  const normal = zenToThree(zenNormal as [number, number, number]);
+
+  const seenCcw = dot(geometricNormal(converted, order), normal) > 0;
+  const frontFaceCw = det3(ROOT_MATRIX, 0, 1, 2) < 0;
+  return frontFaceCw ? !seenCcw : seenCcw;
+}
+
 describe('zen-world/coords', () => {
-  test('the root transform is a mirror — which is what settles triangle winding', () => {
-    // The binding emits indices in stored order and makes no winding claim
-    // (zenkit-node/README.md). Measured, that order reads *against* the stored
-    // normals in a right-handed basis; a negative determinant flips the
-    // rasteriser's idea of front-facing, so after this transform it reads
-    // *with* them and every material stays FrontSide. If this determinant ever
-    // turns positive the whole world renders inside-out, which is precisely the
-    // failure this assertion exists to catch before a screenshot does.
+  test('the root transform is a mirror', () => {
+    // ZenGin is left-handed, so the conversion changes handedness, so the
+    // determinant is negative. It is *not* what settles winding — Three.js
+    // cancels a negative determinant's effect on the front/back test, which is
+    // what `threeIndexOrder` exists for and what the tests below pin.
     expect(det3(ROOT_MATRIX, 0, 1, 2)).toBeLessThan(0);
+  });
+
+  test('a triangle wound as ZenGin stores it is drawn from the side its normal points to', () => {
+    // The measured fact this whole convention rests on: read right-handed, the
+    // geometric normal of a triangle in *stored* index order points against the
+    // normals ZenGin stored on its corners — 230,395 of 230,395 loose-visual
+    // triangles and 475,146 of 475,184 decidable NewWorld world-mesh triangles
+    // (zenkit-node/scripts/check-visual-winding.js). This fixture is built to
+    // have that property, so it stands in for every triangle in the corpus.
+    const corners = [
+      [0, 0, 0], [100, 0, 0], [0, 0, 100],
+    ] as const satisfies readonly (readonly [number, number, number])[];
+    const normal = [0, 1, 0] as const;
+    expect(dot(geometricNormal(corners, [0, 1, 2]), normal)).toBeLessThan(0);
+
+    // Stored order alone is inside-out: the world's floor is invisible from
+    // above and its VOBs are turned inside out. That is the defect, asserted
+    // rather than described.
+    expect(drawnFromNormalSide(corners, [0, 1, 2], normal)).toBe(false);
+
+    // Reversed at this boundary, it is drawn from outside — which is the whole
+    // job, and it holds *with* Three.js' determinant compensation rather than
+    // by ignoring it.
+    expect(drawnFromNormalSide(corners, [...threeIndexOrder(Uint32Array.from([0, 1, 2]))], normal))
+      .toBe(true);
+  });
+
+  test('threeIndexOrder reverses every triangle and touches nothing else', () => {
+    const out = threeIndexOrder(Uint32Array.from([0, 1, 2, 7, 8, 9]));
+    expect([...out]).toEqual([0, 2, 1, 7, 9, 8]);
+
+    // A fresh buffer, because the payload it reads is a view over the transfer
+    // from the worker: reversing in place would flip a second call back.
+    const input = Uint32Array.from([0, 1, 2]);
+    threeIndexOrder(input);
+    expect([...input]).toEqual([0, 1, 2]);
   });
 
   test('zenToThree is the root matrix, not a second opinion of it', () => {

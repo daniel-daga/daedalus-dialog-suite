@@ -5,8 +5,9 @@
  * WebGLRenderer, so everything the spike had to verify by looking at a picture
  * is checkable here instead:
  *
- *   - the whole scene hangs under ONE mirrored node, so winding and units are
- *     settled in one place and no material reaches for DoubleSide
+ *   - the whole scene hangs under ONE mirrored node, and index order goes
+ *     through the same boundary, so units and winding are settled in one place
+ *     and no material reaches for DoubleSide
  *   - VOBs sharing a visual are one InstancedMesh, not one Mesh each
  *   - an instance can be traced back to the VOB it came from
  *
@@ -75,13 +76,34 @@ describe('WorldScene', () => {
     expect(scene.root.matrix.determinant()).toBeLessThan(0);
   });
 
-  test('materials are single-sided, because the mirror already flipped winding', () => {
+  test('materials are single-sided, because the index order settles winding', () => {
     // side: DoubleSide would hide a wrong winding decision instead of proving
-    // the right one — explicitly ruled out in §7.
+    // the right one — explicitly ruled out in §7. So would BackSide, which is
+    // the same reversal written as a lie about the material, and which leaves
+    // Raycaster culling by the opposite convention from the one drawn.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [0, 0, 0, 1, 1, 1] });
     const mesh = scene.root.children[0] as THREE.Mesh;
     expect((mesh.material as THREE.Material).side).toBe(THREE.FrontSide);
+  });
+
+  test('every triangle reaches the GPU reversed, world mesh and VOBs alike', () => {
+    // The one thing the mirror does not do (zen-world/coords): Three.js cancels
+    // a negative determinant's effect on the front/back test, so stored order
+    // renders the world inside-out. `threeIndexOrder` is where that is fixed,
+    // and this is the assertion that it is actually *called* — the geometry
+    // builder is shared, so a VOB proves the same path as the world mesh only
+    // if both are checked.
+    const stored = new Uint32Array([0, 1, 2, 3, 4, 5]).buffer;
+    const reversed = [0, 2, 1, 3, 5, 4];
+
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group({ indices: stored })], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ indices: stored, lights: null })] })] });
+
+    for (const mesh of [scene.root.children[0], scene.root.children[1]] as THREE.Mesh[]) {
+      expect([...(mesh.geometry.getIndex()!.array)]).toEqual(reversed);
+    }
   });
 
   test('one draw group becomes one mesh, with the buffers it was given', () => {

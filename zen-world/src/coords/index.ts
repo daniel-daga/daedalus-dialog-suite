@@ -10,15 +10,24 @@
 // stored ZenGin form — and it means a VOB's local transform in the scene graph
 // *is* its ZenGin placement, which is what makes reading a gizmo back cheap.
 //
-// The mirror also settles triangle winding, which is why the binding refuses to
-// make that decision (zenkit-node/README.md, "Triangle winding"). Measured over
-// the retail corpus, a triangle in stored index order read right-handed has its
-// geometric normal pointing *against* the normals ZenGin stored on its corners
-// — uniformly, through two independent readers. A negative-determinant
-// transform inverts the rasteriser's front/back test, so under this node stored
-// order reads *with* the stored normals and materials stay single-sided. Nobody
-// downstream reverses an index buffer, and nobody reaches for `DoubleSide` to
-// make a wrong choice invisible.
+// Triangle winding belongs to this same boundary, which is why the binding
+// refuses to decide it (zenkit-node/README.md, "Triangle winding"). Measured
+// over the retail corpus, a triangle in stored index order read right-handed
+// has its geometric normal pointing *against* the normals ZenGin stored on its
+// corners — uniformly, through two independent readers. So the emitted order
+// has to be reversed, and `threeIndexOrder` below is the one place that does
+// it. Nobody reaches for `DoubleSide` to make a wrong choice invisible.
+//
+// **The mirror does not settle winding, and believing it did is what shipped an
+// inside-out world.** A negative-determinant transform does invert the
+// rasteriser's front/back test — and Three.js exists to hide that, so it
+// inverts it straight back (`three/build/three.cjs`, `renderBufferDirect`:
+// `const frontFaceCW = ( object.isMesh && object.matrixWorld.determinant() < 0
+// )`). The two cancel, stored order is drawn from the inside, and every floor
+// in the world is transparent from above. Any fix here has to be argued against
+// the *composite* of those two rules; `test/coords.test.ts` models both halves
+// for exactly that reason. Nor is there a matrix that avoids the problem: a
+// change of handedness has a negative determinant by definition.
 
 export type Vec3 = readonly [number, number, number];
 
@@ -39,6 +48,25 @@ export const ROOT_MATRIX: Mat4 = Object.freeze([
   0, 0, ZEN_TO_THREE_SCALE, 0,
   0, 0, 0, 1,
 ]);
+
+/**
+ * ZenGin's stored triangle order as Three.js has to receive it: every triangle
+ * reversed, nothing else touched.
+ *
+ * A fresh buffer rather than a reversal in place. What callers hold is a view
+ * over the payload the worker transferred, and an in-place flip would make a
+ * second call — a re-read of the same payload, a scene rebuilt after a
+ * structural op — silently undo the first.
+ */
+export function threeIndexOrder(indices: Uint32Array): Uint32Array {
+  const out = new Uint32Array(indices.length);
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    out[i] = indices[i];
+    out[i + 1] = indices[i + 2];
+    out[i + 2] = indices[i + 1];
+  }
+  return out;
+}
 
 /** Apply a column-major 4x4 to a point. Present so `ROOT_MATRIX` is testable
  *  against the helpers below rather than merely declared beside them. */

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROOT_MATRIX } from 'zen-world';
+import { ROOT_MATRIX, threeIndexOrder } from 'zen-world';
 import type { DrawGroup, InstancedPayload, WorldMeshPayload, DecodedTexture } from '../../shared/worldTypes';
 
 // The Three.js projection of a world (level-editor.md §7: "the renderer is a
@@ -7,11 +7,13 @@ import type { DrawGroup, InstancedPayload, WorldMeshPayload, DecodedTexture } fr
 // WebGLRenderer: it builds a scene graph out of the payloads the worker sent,
 // which is what makes the decisions in it testable without a GPU.
 //
-// The whole graph hangs under ONE node carrying `coords`' ROOT_MATRIX. That
-// node is the entire ZenGin -> Three.js conversion: centimetres to metres, and
-// the mirror that both flips handedness and settles triangle winding. Because
-// of it every buffer below stays exactly as the binding emitted it — positions
-// unconverted, indices in stored order — and every material stays FrontSide.
+// The whole graph hangs under ONE node carrying `coords`' ROOT_MATRIX:
+// centimetres to metres, and the mirror that flips handedness. Because of it
+// every position below stays exactly as the binding emitted it, unconverted.
+// Triangle winding is the one thing that node cannot settle — Three.js cancels
+// a negative determinant's effect on the front/back test — so index order goes
+// through `coords`' `threeIndexOrder` on the way in, and every material stays
+// FrontSide.
 
 /** sRGB -> linear, for the baked zCOLOR word. 256 entries beats a pow per vertex. */
 const SRGB_TO_LINEAR = new Float32Array(256);
@@ -332,7 +334,10 @@ export class WorldScene {
     if (group.lights !== null) {
       geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors(new Uint32Array(group.lights)), 3));
     }
-    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(group.indices), 1));
+    // The one conversion the root node cannot carry: Three.js cancels the
+    // mirror's effect on the front/back test, so the winding is reversed here
+    // instead — in `coords`, with the rest of the ZenGin -> Three.js boundary.
+    geometry.setIndex(new THREE.BufferAttribute(threeIndexOrder(new Uint32Array(group.indices)), 1));
     geometry.computeBoundingSphere();
 
     this.geometries.push(geometry);

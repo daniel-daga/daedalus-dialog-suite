@@ -1192,6 +1192,23 @@ than fixtures:
   is `coords`' job, exactly like the axis convention; it is never a per-mesh
   or per-visual decision, and the spike must not sprinkle
   `side: DoubleSide` over the problem instead.
+- **The mirror does not perform that flip — `threeIndexOrder` does (corrected
+  2026-08-26, after a screenshot).** The first version of this bullet reasoned
+  that `ROOT_MATRIX`'s negative determinant inverts the rasteriser's front/back
+  test and therefore settles winding for free. True of raw WebGL, and wrong
+  here: Three.js exists to hide that effect and cancels it per object
+  (`three/build/three.cjs`, `renderBufferDirect`: `const frontFaceCW = (
+  object.isMesh && object.matrixWorld.determinant() < 0 )`). The two rules
+  cancel, so every one of those 230,395 triangles was drawn from the inside —
+  the world's floor transparent from above, `NW_HARBOUR_CRATE_01` inside out.
+  The fix reverses index order once at the same boundary; `side: BackSide`
+  would have been the identical flip written as a lie about the material, and
+  would have left `Raycaster` — which culls by local winding, with no
+  determinant compensation — picking by the opposite convention from the one
+  drawn. **No matrix avoids this:** a change of handedness has a negative
+  determinant by definition. `zen-world/test/coords.test.ts` now models both
+  rules together, because a test of either half alone endorses whatever the
+  code does — which is exactly how the wrong conclusion passed CI.
 - **Multi-ZEN workspace (Phase 3):** parts are a storage format, not a work
   model (brief §4.2) — `WorldService` holds N part handles, the viewport
   renders their union with correct world transforms, every VOB knows its
