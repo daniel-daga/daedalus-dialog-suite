@@ -109,16 +109,97 @@ void BuildMesh(Mesh& mesh) {
   }
 }
 
-void BuildBspTree(BspTree& bsp, AxisAlignedBoundingBox const& bbox) {
+// A mesh built to exercise the three things ExtractWorldMesh does that the
+// minimal fixture cannot reach: fan-triangulating an n-gon, keying vertices on
+// the (vertex, feature) pair rather than the vertex alone, and skipping a
+// material no polygon references.
+void BuildMeshExtractionMesh(Mesh& mesh) {
+  mesh.date = Date {2024, 1, 1, 0, 0, 0, 0x4A01};
+  mesh.name = "MESH_EXTRACTION_FIXTURE";
+  mesh.bbox = AxisAlignedBoundingBox {Vec3 {0.0f, -1.0f, 0.0f}, Vec3 {20.0f, 1.0f, 10.0f}};
+  mesh.obb = OrientedBoundingBox {};
+  mesh.obb.center = Vec3 {10.0f, 0.0f, 5.0f};
+  mesh.obb.axes[0] = Vec3 {1.0f, 0.0f, 0.0f};
+  mesh.obb.axes[1] = Vec3 {0.0f, 1.0f, 0.0f};
+  mesh.obb.axes[2] = Vec3 {0.0f, 0.0f, 1.0f};
+  mesh.obb.half_width = Vec3 {10.0f, 1.0f, 5.0f};
+
+  // EX_UNUSED is referenced by no polygon: extraction must emit no chunk for it.
+  for (auto const* name : {"EX_STONE", "EX_GRASS", "EX_UNUSED"}) {
+    Material mat {};
+    mat.name = name;
+    mat.group = MaterialGroup::UNDEFINED;
+    mat.color = Color {128, 128, 128, 255};
+    mat.texture = std::string {name} + ".TGA";
+    mesh.materials.push_back(std::move(mat));
+  }
+
+  mesh.vertices = {
+      Vec3 {0.0f, 0.0f, 0.0f},   Vec3 {10.0f, 0.0f, 0.0f},  Vec3 {10.0f, 0.0f, 10.0f},
+      Vec3 {0.0f, 0.0f, 10.0f},  Vec3 {20.0f, 0.0f, 0.0f},  Vec3 {20.0f, 0.0f, 10.0f},
+  };
+
+  // Seven features for six vertices: feature 6 is a second set of per-corner
+  // data for vertex 1, so a chunk that keys on the vertex alone would collapse
+  // two genuinely different render vertices into one.
+  for (auto i = 0u; i < 6; ++i) {
+    VertexFeature feat {};
+    feat.texture = Vec2 {static_cast<float>(i), static_cast<float>(i * 2)};
+    feat.light = 0x01020300u + i;
+    feat.normal = Vec3 {0.0f, 1.0f, 0.0f};
+    mesh.features.push_back(feat);
+  }
+  VertexFeature alt {};
+  alt.texture = Vec2 {9.0f, 9.0f};
+  alt.light = 0x0A0B0C0Du;
+  alt.normal = Vec3 {1.0f, 0.0f, 0.0f};
+  mesh.features.push_back(alt);
+
+  auto add_polygon = [&mesh](std::uint32_t material,
+                             std::uint8_t portal,
+                             bool sector,
+                             std::vector<std::uint32_t> const& vertex_indices,
+                             std::vector<std::uint32_t> const& feature_indices) {
+    Polygon poly {};
+    poly.material = material;
+    poly.lightmap = -1;
+    poly.flags = PolygonFlagSet {};
+    poly.flags.is_portal = portal;
+    poly.flags.is_sector = sector ? 1 : 0;
+    poly.flags.sector_index = -1;
+    poly.plane_normal = Vec3 {0.0f, 1.0f, 0.0f};
+    poly.plane_distance = 0.0f;
+    poly.index_count = vertex_indices.size();
+    poly.index_offset = mesh.polygon_vertex_indices.size();
+    mesh.geometry.push_back(poly);
+
+    for (std::size_t i = 0; i < vertex_indices.size(); ++i) {
+      mesh.polygon_vertex_indices.push_back(vertex_indices[i]);
+      mesh.polygon_feature_indices.push_back(feature_indices[i]);
+    }
+  };
+
+  // A quad — fans into two triangles sharing corners 0 and 2.
+  add_polygon(0, 0, false, {0, 1, 2, 3}, {0, 1, 2, 3});
+  // Same material, and vertex 1 again but with feature 6.
+  add_polygon(0, 1, false, {1, 2, 4}, {6, 2, 4});
+  add_polygon(1, 0, true, {4, 5, 2}, {4, 5, 2});
+
+  // Mesh::triangulate fills the derived PolygonList on load and Mesh::save
+  // never writes it, so the fixture leaves it empty.
+}
+
+void BuildBspTree(BspTree& bsp, AxisAlignedBoundingBox const& bbox, std::uint32_t polygon_count) {
   bsp.mode = BspTreeType::OUTDOOR;
-  bsp.polygon_indices = {0, 1};
+  bsp.polygon_indices.resize(polygon_count);
+  for (std::uint32_t i = 0; i < polygon_count; ++i) bsp.polygon_indices[i] = i;
 
   // A single leaf node covering all polygons. BspTree::load treats a
   // one-node tree as a leaf, so leaf_node_indices must be exactly {0}.
   BspNode node {};
   node.bbox = bbox;
   node.polygon_index = 0;
-  node.polygon_count = 2;
+  node.polygon_count = static_cast<std::int32_t>(polygon_count);
   bsp.nodes.push_back(node);
   bsp.leaf_node_indices = {0};
 
@@ -209,11 +290,18 @@ std::shared_ptr<WayNet> BuildWayNet() {
 
 void AuthorFixtureWorld(std::filesystem::path const& path,
                         zenkit::ArchiveFormat format,
-                        zenkit::GameVersion version) {
+                        zenkit::GameVersion version,
+                        FixtureVariant variant) {
   auto world = std::make_shared<World>();
 
-  BuildMesh(world->world_mesh);
-  BuildBspTree(world->world_bsp_tree, world->world_mesh.bbox);
+  if (variant == FixtureVariant::kMeshExtraction) {
+    BuildMeshExtractionMesh(world->world_mesh);
+  } else {
+    BuildMesh(world->world_mesh);
+  }
+  BuildBspTree(world->world_bsp_tree,
+               world->world_mesh.bbox,
+               static_cast<std::uint32_t>(world->world_mesh.geometry.size()));
   world->world_vobs.push_back(BuildVobTree());
   world->way_net = BuildWayNet();
 

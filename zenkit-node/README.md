@@ -13,12 +13,62 @@ Phase 0 of the level-editor plan — see
 > the manual in-engine acceptance pass. The harness report states which claim
 > it covers.
 
-## Scope (Phase 0)
+## Scope
 
-Read + save + exactly one minimal mutation (set VOB position, insert item
-VOB), `normalizeWorld` dumps, and the round-trip harness. No `applyOps`
-system, no mesh extraction for rendering, no VFS browsing, no UI — those are
-Phase 1.
+Phase 0 (complete): read + save + exactly one minimal mutation (set VOB
+position, insert item VOB), `normalizeWorld` dumps, and the round-trip
+harness. No `applyOps` system, no VFS browsing, no UI — those are Phase 1.
+
+Phase 1a adds `extractWorldMesh` (below). Everything Phase 1a adds is a
+**read-only projection**: it reads the same load-path structs `normalizeWorld`
+does, never the writer, and makes no fidelity claim of its own.
+
+### `extractWorldMesh(handle)`
+
+The world mesh as render-ready buffers, one chunk per material that at least
+one polygon references:
+
+```js
+{
+  bbox: [minX, minY, minZ, maxX, maxY, maxZ],
+  vertexCount, triangleCount,          // totals over all chunks
+  chunks: [{
+    materialIndex, name, texture, group, color: [r, g, b, a],
+    vertexCount, triangleCount,
+    positions,  // ArrayBuffer, Float32 ×3 per vertex — ZenGin space, unconverted
+    normals,    // ArrayBuffer, Float32 ×3 per vertex
+    uvs,        // ArrayBuffer, Float32 ×2 per vertex
+    lights,     // ArrayBuffer, Uint32  ×1 per vertex — the raw zCOLOR word
+    indices,    // ArrayBuffer, Uint32  ×3 per triangle
+    flags,      // ArrayBuffer, Uint32  ×1 per triangle — same packing as _drillMesh
+  }]
+}
+```
+
+Three things it deliberately does *not* do, each because the decision belongs
+above the binding:
+
+- **No coordinate conversion.** Positions stay in ZenGin space (cm, ZenGin
+  handedness); the single conversion module is `zen-world/coords`
+  (`../docs/plans/level-editor.md` §7).
+- **No light decoding.** `lights` is the raw `zCOLOR` word. The channel order
+  is a rendering question and is emitted undecoded rather than guessed.
+- **No polygon filtering.** It reads the complete `Mesh::geometry` list and
+  fan-triangulates n-gons itself, rather than reusing ZenKit's
+  `Mesh::triangulate`, which is filtered to the BSP leaf set and silently drops
+  `is_portal`, `is_ghost_occluder` and `is_outdoor` polygons. A level editor
+  needs to be able to *show* portals and sectors, so the per-triangle `flags`
+  buffer lets the projection layer decide what to draw.
+
+Vertices are keyed on the **(vertex, feature) pair**, not the vertex alone:
+ZenGin stores position per vertex but UV, normal and baked light per polygon
+corner. On retail NewWorld that halves the vertex count (1,429,335 triangle
+corners → 713,719 vertices, 49 MB → 30 MB).
+
+Chunks are per *material*, but a renderer should merge chunks sharing a
+texture — NewWorld has 1400 materials and only 330 unique textures, and one
+draw call per material would exceed the whole viewport budget on its own
+(`../docs/plans/level-editor.md` §3).
 
 **Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
 was loaded from a `zCArchiverBinSafe` archive: that is the only writer path

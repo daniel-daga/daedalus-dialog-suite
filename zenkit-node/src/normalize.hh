@@ -3,10 +3,18 @@
 #pragma once
 
 #include <napi.h>
+#include <zenkit/Mesh.hh>
+
+#include <cstdint>
 
 #include "world_handle.hh"
 
 namespace zenkit_node {
+
+// The packed on-disk polygon flag byte(s), version-appropriate (see Mesh.cc
+// load). G1 packs normal_axis across two bytes; returned here as one integer.
+// Shared so _drillMesh and extractWorldMesh cannot drift apart.
+std::uint32_t PackPolygonFlags(zenkit::PolygonFlagSet const& flags, bool is_g2);
 
 // Builds the canonical dump of a loaded world. Reads exclusively from the
 // structs ZenKit's *load* path populated — never through any save()/

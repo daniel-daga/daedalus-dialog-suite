@@ -20,6 +20,7 @@
 
 #include "encoding.hh"
 #include "fixture.hh"
+#include "mesh_extract.hh"
 #include "normalize.hh"
 #include "world_handle.hh"
 #include "zenkit-version.h"
@@ -214,6 +215,20 @@ Napi::Value NormalizeWorld(Napi::CallbackInfo const& info) {
     throw;
   } catch (std::exception const& e) {
     throw Napi::Error::New(env, std::string {"failed to normalize world: "} + e.what());
+  }
+}
+
+// extractWorldMesh(handle) — render-ready world-mesh buffers chunked by
+// material; see src/mesh_extract.cc.
+Napi::Value ExtractWorldMesh(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  try {
+    return zenkit_node::ExtractWorldMesh(env, *handle);
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to extract world mesh: "} + e.what());
   }
 }
 
@@ -504,16 +519,30 @@ zenkit::ArchiveFormat ParseArchiveFormat(Napi::Env env, Napi::Value value) {
   throw Napi::TypeError::New(env, "format must be 'binary', 'binsafe' or 'ascii', got '" + str + "'");
 }
 
-// Internal: authors the checked-in golden fixture. Only invoked through the
-// explicit `fixtures:regen` script.
+zenkit_node::FixtureVariant ParseFixtureVariant(Napi::Env env, Napi::Value value) {
+  if (value.IsUndefined() || value.IsNull()) return zenkit_node::FixtureVariant::kMinimal;
+  if (!value.IsString()) {
+    throw Napi::TypeError::New(env, "variant must be 'minimal' or 'mesh-extraction'");
+  }
+  std::string const str = value.As<Napi::String>().Utf8Value();
+  if (str == "minimal") return zenkit_node::FixtureVariant::kMinimal;
+  if (str == "mesh-extraction") return zenkit_node::FixtureVariant::kMeshExtraction;
+  throw Napi::TypeError::New(
+      env, "variant must be 'minimal' or 'mesh-extraction', got '" + str + "'");
+}
+
+// Internal: authors a fixture world. The 'minimal' variant is the checked-in
+// golden and is only invoked through the explicit `fixtures:regen` script;
+// 'mesh-extraction' is authored into a temp directory by the tests.
 Napi::Value AuthorFixtureWorld(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto path = PathFromValue(env, info[0]);
   auto format = ParseArchiveFormat(env, info[1]);
   auto version = ParseGameVersion(env, info[2]);
+  auto variant = ParseFixtureVariant(env, info[3]);
 
   try {
-    zenkit_node::AuthorFixtureWorld(path, format, version);
+    zenkit_node::AuthorFixtureWorld(path, format, version, variant);
   } catch (Napi::Error&) {
     throw;
   } catch (std::exception const& e) {
@@ -528,6 +557,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("worldStats", Napi::Function::New(env, WorldStats));
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
+  exports.Set("extractWorldMesh", Napi::Function::New(env, ExtractWorldMesh));
   exports.Set("_drillMesh", Napi::Function::New(env, DrillMesh));
   exports.Set("saveWorld", Napi::Function::New(env, SaveWorld));
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));

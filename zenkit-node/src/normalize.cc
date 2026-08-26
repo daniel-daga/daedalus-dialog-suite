@@ -1147,6 +1147,23 @@ char const* ArchiveFormatName(ArchiveFormat format) {
 
 }  // namespace
 
+std::uint32_t PackPolygonFlags(PolygonFlagSet const& flags, bool is_g2) {
+  if (is_g2) {
+    return static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
+                                      ((flags.is_sector & 1) << 3) |
+                                      ((flags.should_relight & 1) << 4) |
+                                      ((flags.is_outdoor & 1) << 5) |
+                                      ((flags.is_ghost_occluder & 1) << 6) |
+                                      ((flags.is_dynamically_lit & 1) << 7));
+  }
+  return static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
+                                    ((flags.is_sector & 1) << 3) | ((flags.is_lod & 1) << 4) |
+                                    ((flags.is_outdoor & 1) << 5) |
+                                    ((flags.is_ghost_occluder & 1) << 6) |
+                                    ((flags.normal_axis & 1) << 7) |
+                                    ((flags.normal_axis & 2) << 8));
+}
+
 Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle) {
   auto dump = Napi::Object::New(env);
 
@@ -1193,26 +1210,8 @@ Napi::Object DrillMesh(Napi::Env env,
     entry.Set("material", NumI(env, poly.material));
     entry.Set("lightmap", NumI(env, poly.lightmap));
 
-    // The packed on-disk flag byte(s), version-appropriate (see Mesh.cc load).
-    // G1 packs normal_axis across two bytes; emitted here as one integer.
     auto const& flags = poly.flags;
-    std::uint32_t bits;
-    if (is_g2) {
-      bits = static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
-                                        ((flags.is_sector & 1) << 3) |
-                                        ((flags.should_relight & 1) << 4) |
-                                        ((flags.is_outdoor & 1) << 5) |
-                                        ((flags.is_ghost_occluder & 1) << 6) |
-                                        ((flags.is_dynamically_lit & 1) << 7));
-    } else {
-      bits = static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
-                                        ((flags.is_sector & 1) << 3) | ((flags.is_lod & 1) << 4) |
-                                        ((flags.is_outdoor & 1) << 5) |
-                                        ((flags.is_ghost_occluder & 1) << 6) |
-                                        ((flags.normal_axis & 1) << 7) |
-                                        ((flags.normal_axis & 2) << 8));
-    }
-    entry.Set("flagsBits", NumI(env, bits));
+    entry.Set("flagsBits", NumI(env, PackPolygonFlags(flags, is_g2)));
     entry.Set("sectorIndex", NumI(env, flags.sector_index));
 
     auto vertex_indices = Napi::Array::New(env, poly.index_count);

@@ -174,6 +174,38 @@ different projection layer (WebGPU renderer; native viewport in the worst
 case). The "renderer is a projection, never the model" rule (§5, §7) exists
 precisely so that swap touches neither the domain nor the data layer.
 
+#### Correction — "chunk by material" does not fit the budget; chunk by texture (measured 2026-08-26)
+
+Rule 1 above says "world mesh pre-chunked by material". Measured against the
+retail G2 worlds through `extractWorldMesh`, that is **on its own over the
+draw-call budget before a single VOB is drawn**:
+
+| | NewWorld | OldWorld | AddonWorld |
+|---|---|---|---|
+| Materials (all referenced by ≥1 polygon) | **1400** | 543 | 898 |
+| **Unique textures** | **330** | 288 | 240 |
+| Triangles (after fan-triangulation) | 476,445 | 88,551 | 334,272 |
+| Render vertices (deduped) | 713,719 | 142,456 | 463,172 |
+| Payload | 31.8 MB | 6.2 MB | 21.0 MB |
+| `extractWorldMesh` wall clock | 256 ms | 42 ms | 149 ms |
+
+One draw call per material is 1400 for NewWorld's world mesh alone, against a
+**< 1500 full-scene** budget. One per *texture* is 330, which leaves the budget
+its intended headroom for instanced VOBs. The tail is why: 1060 of the 1400
+materials carry fewer than 100 triangles each, and 334 chunks already cover 95%
+of all triangles.
+
+So the merge is a **projection-layer** step, and the binding stays as §4
+describes — it emits one chunk per material, each carrying its texture name,
+and the renderer merges chunks sharing a texture. The merge key must include
+whatever render state actually differs between two materials that share a
+texture; that is for the spike to establish, not to assume.
+
+Two budget rows are already met and need no spike: extraction of the largest
+world is **256 ms**, comfortably inside "reload after an edit < 2s"; and 476k
+triangles is the scale §3 predicted. What remains genuinely open is framerate
+and pick latency, which only a real Three.js scene can answer.
+
 ---
 
 ## 4. Data layer — ZenKit binding (open question 3)
