@@ -38,6 +38,15 @@ viewport.
   mode, UV scroll, env-map strength and vertex colour, and 266 materials carry
   no texture at all and are told apart only by colour. A field missing from that
   key is an additive-blend flame inside an opaque wall.
+- **A model attachment's node transform must be applied, at the merge.** The
+  binding emits it rather than baking it, and for the whole of Phase 1a nothing
+  read it: measured on retail NewWorld, **57 of 153 attachment chunks are
+  displaced by more than 1 cm and up to 1.25 m**, so every one of those parts was
+  drawn stacked at its model's origin. It belongs in `mergeChunks` rather than on
+  the draw call because two attachments of one model can share a texture and then
+  they are one buffer with two transforms. Positions take the whole affine
+  matrix; **normals take only the rotation**, because a normal is a direction and
+  translating one points every face at the node.
 - **Never one mesh per VOB.** 12,463 placed VOBs collapse into 379 instanced
   visuals and 724 draw groups. Each instance records the VOB it came from,
   because a pick returns `(InstancedMesh, instanceId)` and nothing else

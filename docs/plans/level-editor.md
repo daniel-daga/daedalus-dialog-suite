@@ -426,7 +426,22 @@ and the answers are different in kind:
    editable sources. (The 0.8% of Farm that does *not* match is a part edited
    after the last full compile — a live example of the drift §5 warns about at
    save time.)
-4. **DECAL and PARTICLE_EFFECT are not mesh assets.** A decal's name resolves to
+4. **An attachment's node transform has to be *applied*, and for six weeks it
+   was not (found 2026-08-26).** The binding emits each attachment's accumulated
+   hierarchy matrix rather than baking it — deliberately, since baking is a
+   coordinate decision the binding does not make — and nothing above it ever
+   read the field. Measured on retail NewWorld: **57 of 153 attachment chunks
+   are displaced by more than 1 cm**, up to **1.25 m** (`TOUCHPLATE_STONE.MDS`'s
+   plate, `RMAKER_1.MDS`'s three circles, `BARBQ_SCAV.MDS`'s chicken), so every
+   one of those parts was drawn stacked at its model's origin. It is applied in
+   `mergeChunks` and not as a per-draw-call matrix, because two attachments of
+   one model can share a texture and then they are one buffer with two
+   transforms; positions take the whole affine matrix and **normals only the
+   rotation**, since a normal is a direction. It was found by writing the bbox
+   measurement below — which places a visual by a VOB's transform and reproduced
+   20,472 of the engine's own stored boxes, so the placement it applies is the
+   one ZenGin agrees with.
+5. **DECAL and PARTICLE_EFFECT are not mesh assets.** A decal's name resolves to
    a texture (23/23 do) and the renderer builds the quad; a `.pfx` is a Daedalus
    instance, not a file in the VFS. Both are correctly "unresolved" by
    `extractVisual` and neither is a defect.

@@ -157,4 +157,75 @@ describe('zen-world/render — mergeChunks', () => {
   test('no chunks is no groups', () => {
     expect(mergeChunks([])).toEqual([]);
   });
+
+  describe('an attachment carries its node transform, and it must be applied', () => {
+    // A model's geometry is in two places: `meshes` holds soft-skin bodies and
+    // `attachments` holds rigid sub-meshes hung on hierarchy nodes. The binding
+    // emits each attachment's accumulated node matrix **rather than baking it**
+    // (zenkit-node README), because baking it would put a coordinate decision in
+    // the binding. Measured on retail NewWorld, 57 of 153 attachment chunks are
+    // displaced by more than 1 cm and up to 1.25 m — a rune-maker's three
+    // circles, a barbecue's chicken, a chest's lid — so ignoring the matrix
+    // stacks every part of a model at the model's origin.
+    //
+    // It is applied here rather than at the draw call because two attachments of
+    // one model can share a texture, and then they merge into one buffer with
+    // two different transforms.
+    // Twelve plain numbers, which is what the binding emits: one matrix per
+    // attachment is not a per-vertex buffer.
+    const transform = (values: number[]) => values;
+    const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+
+    test('the positions are placed by it', () => {
+      const groups = mergeChunks([chunk({
+        positions: f32([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        // Row-major 3x4: a quarter turn about Y, then 100 up.
+        transform: transform([0, 0, 1, 0, 0, 1, 0, 100, -1, 0, 0, 0]),
+      })]);
+
+      expect([...new Float32Array(groups[0].positions)]).toEqual([
+        0, 100, 0,
+        0, 100, -1,
+        0, 101, 0,
+      ]);
+    });
+
+    test('the normals are rotated by it and not translated', () => {
+      // A normal is a direction. Translating it points every face at the node.
+      const groups = mergeChunks([chunk({
+        normals: f32([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+        transform: transform([0, 0, 1, 0, 0, 1, 0, 100, -1, 0, 0, 0]),
+      })]);
+
+      expect([...new Float32Array(groups[0].normals)]).toEqual([
+        1, 0, 0, 1, 0, 0, 1, 0, 0,
+      ]);
+    });
+
+    test('each merged part is placed by its own transform', () => {
+      // The reason this is not a per-draw-call matrix: two attachments of one
+      // model sharing a texture become one buffer, and one matrix cannot place
+      // both.
+      const groups = mergeChunks([
+        chunk({ positions: f32([0, 0, 0, 0, 0, 0, 0, 0, 0]), transform: transform([...IDENTITY]) }),
+        chunk({
+          positions: f32([0, 0, 0, 0, 0, 0, 0, 0, 0]),
+          transform: transform([1, 0, 0, 5, 0, 1, 0, 6, 0, 0, 1, 7]),
+        }),
+      ]);
+
+      expect(groups).toHaveLength(1);
+      expect([...new Float32Array(groups[0].positions)]).toEqual([
+        0, 0, 0, 0, 0, 0, 0, 0, 0,
+        5, 6, 7, 5, 6, 7, 5, 6, 7,
+      ]);
+    });
+
+    test('a chunk without one is copied untouched', () => {
+      // Every world-mesh chunk and every MRM chunk is in this case; only model
+      // attachments carry a matrix at all.
+      const groups = mergeChunks([chunk({ positions: f32([1, 2, 3, 4, 5, 6, 7, 8, 9]) })]);
+      expect([...new Float32Array(groups[0].positions)]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    });
+  });
 });

@@ -41,6 +41,17 @@ export interface MeshChunk {
   indices: ArrayBuffer;
   /** The raw zCOLOR word per vertex; null on a proto mesh, which has no baked light. */
   lights: ArrayBuffer | null;
+  /**
+   * A model attachment's hierarchy-node matrix, row-major 3x4 — absent on every
+   * other kind of chunk. Twelve plain numbers, which is how the binding emits
+   * it: it is one matrix per attachment, not a per-vertex buffer.
+   *
+   * `zenkit-node` emits it rather than baking it, because baking is a
+   * coordinate decision and the binding makes none. It is applied here, at the
+   * merge, and not as a per-draw-call matrix: two attachments of one model can
+   * share a texture, and then they are one buffer with two transforms.
+   */
+  transform?: readonly number[] | null;
 }
 
 /** The render state that decides whether two materials may share a draw call. */
@@ -73,6 +84,39 @@ function mergeKey(chunk: MeshChunk): string {
   return JSON.stringify(MERGE_KEY_FIELDS.map((field) => (
     field === 'texture' ? chunk.texture.toUpperCase() : chunk[field]
   )));
+}
+
+/**
+ * Copy one part's positions and normals into the merged buffers, placed by its
+ * node transform when it has one.
+ *
+ * A position takes the whole affine matrix; a **normal takes only the rotation**
+ * — it is a direction, and translating it points every face at the node. The
+ * matrices are the hierarchy's own rigid transforms, so no inverse-transpose is
+ * needed: a rotation is its own normal matrix.
+ */
+function place(
+  positions: Float32Array, normals: Float32Array, part: MeshChunk, vertex: number,
+): void {
+  const from = new Float32Array(part.positions);
+  const fromNormals = new Float32Array(part.normals);
+
+  if (!part.transform) {
+    positions.set(from, vertex * 3);
+    normals.set(fromNormals, vertex * 3);
+    return;
+  }
+
+  const t = part.transform;
+  for (let at = 0; at < from.length; at += 3) {
+    const [x, y, z] = [from[at], from[at + 1], from[at + 2]];
+    const [nx, ny, nz] = [fromNormals[at], fromNormals[at + 1], fromNormals[at + 2]];
+    for (let row = 0; row < 3; row++) {
+      const r = row * 4;
+      positions[vertex * 3 + at + row] = t[r] * x + t[r + 1] * y + t[r + 2] * z + t[r + 3];
+      normals[vertex * 3 + at + row] = t[r] * nx + t[r + 1] * ny + t[r + 2] * nz;
+    }
+  }
 }
 
 /**
@@ -111,8 +155,7 @@ export function mergeChunks(chunks: readonly MeshChunk[]): DrawGroup[] {
     let vertex = 0;
     let index = 0;
     for (const part of group) {
-      positions.set(new Float32Array(part.positions), vertex * 3);
-      normals.set(new Float32Array(part.normals), vertex * 3);
+      place(positions, normals, part, vertex);
       uvs.set(new Float32Array(part.uvs), vertex * 2);
       if (lights !== null) lights.set(new Uint32Array(part.lights!), vertex);
       // Re-based, not copied: each part's indices address its own vertices.
