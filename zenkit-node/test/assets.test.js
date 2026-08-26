@@ -180,6 +180,28 @@ test('extractVisual emits triangle indices in stored order', () => {
   assert.deepStrictEqual(u32(iron.indices), [2, 1, 0]);
 });
 
+test('extractVisual emits the same material render state as a world-mesh chunk', () => {
+  const [wood, iron] = crate().chunks;
+
+  // A VOB visual chunk is merged into the scene under the same rules as a
+  // world-mesh chunk, so it has to expose the same render state — otherwise
+  // the merge key means one thing for the world and another for its props.
+  // EX_WOOD carries a non-default value for each field; EX_IRON carries none.
+  const render = (c) => [
+    c.alphaFunc, c.texAniMapMode, c.texAniFps, c.texAniMapDir,
+    c.envMapping, c.envMappingStrength,
+    c.waveMode, c.waveSpeed, c.waveMaxAmplitude, c.waveGridSize,
+    c.ignoreSun, c.disableLightmap,
+  ];
+
+  assert.deepStrictEqual(render(wood), [
+    3, 1, 12, [-1, 0.5], true, 0.25, 2, 1, 7.5, 20, true, true,
+  ]);
+  assert.deepStrictEqual(render(iron), [
+    1, 0, 0, [0, 0], false, 0, 0, 0, 0, 0, false, false,
+  ]);
+});
+
 test('extractVisual carries no lights or flags for a proto mesh', () => {
   // A VOB visual has no baked ZenGin light word and no per-polygon flags;
   // emitting empty buffers would claim data that does not exist.

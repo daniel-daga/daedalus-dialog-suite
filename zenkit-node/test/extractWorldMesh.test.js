@@ -37,7 +37,16 @@ test('extractWorldMesh chunks by material and skips materials no polygon uses', 
       [1, 'EX_GRASS', 'EX_GRASS.TGA'],
     ],
   );
-  assert.deepStrictEqual(payload.bbox, [0, -1, 0, 20, 1, 10]);
+});
+
+test('extractWorldMesh computes the bbox from the vertices it emits', () => {
+  // Not copied from Mesh::bbox: retail zCMesh world meshes store an all-zero
+  // box (measured on NewWorld, OldWorld and AddonWorld), so a copied one is
+  // useless exactly where it matters — a viewport that frames the world by it
+  // puts the camera at the origin and never moves. The fixture declares a
+  // deliberately wrong +/-999 box; the emitted vertices span x 0..20, z 0..10
+  // and are flat at y 0, and that is what the payload has to report.
+  assert.deepStrictEqual(extract().bbox, [0, 0, 0, 20, 0, 10]);
 });
 
 test('extractWorldMesh fan-triangulates n-gons', () => {
@@ -116,6 +125,78 @@ test('extractWorldMesh buffer lengths agree with the declared counts', () => {
     // Transferable to the renderer as-is (level-editor.md §7).
     assert.ok(chunk.positions instanceof ArrayBuffer);
   }
+});
+
+test('extractWorldMesh emits the render state a merge key has to include', () => {
+  const [stone, grass] = extract().chunks;
+
+  // Chunks are per material, but 1400 NewWorld materials share 330 textures,
+  // so the projection layer merges chunks by texture (level-editor.md §3). A
+  // merge key of texture alone would silently collapse two materials that
+  // render differently — an additive-blend flame into an opaque wall — so the
+  // binding emits every field that changes the rendered result. EX_STONE
+  // carries a non-default value for each of them; EX_GRASS carries none.
+  assert.deepStrictEqual(
+    {
+      alphaFunc: stone.alphaFunc,
+      texAniMapMode: stone.texAniMapMode,
+      texAniFps: stone.texAniFps,
+      texAniMapDir: stone.texAniMapDir,
+      envMapping: stone.envMapping,
+      envMappingStrength: stone.envMappingStrength,
+      waveMode: stone.waveMode,
+      waveSpeed: stone.waveSpeed,
+      waveMaxAmplitude: stone.waveMaxAmplitude,
+      waveGridSize: stone.waveGridSize,
+      ignoreSun: stone.ignoreSun,
+      disableLightmap: stone.disableLightmap,
+    },
+    {
+      alphaFunc: 2, // AlphaFunction::BLEND
+      texAniMapMode: 1, // AnimationMapping::LINEAR
+      texAniFps: 5,
+      texAniMapDir: [0.25, -0.5],
+      envMapping: true,
+      envMappingStrength: 0.75,
+      waveMode: 7, // WaveMode::WIND
+      waveSpeed: 3, // WaveSpeed::FAST
+      waveMaxAmplitude: 12.5,
+      waveGridSize: 40,
+      ignoreSun: true,
+      disableLightmap: true,
+    },
+  );
+
+  assert.deepStrictEqual(
+    {
+      alphaFunc: grass.alphaFunc,
+      texAniMapMode: grass.texAniMapMode,
+      texAniFps: grass.texAniFps,
+      texAniMapDir: grass.texAniMapDir,
+      envMapping: grass.envMapping,
+      envMappingStrength: grass.envMappingStrength,
+      waveMode: grass.waveMode,
+      waveSpeed: grass.waveSpeed,
+      waveMaxAmplitude: grass.waveMaxAmplitude,
+      waveGridSize: grass.waveGridSize,
+      ignoreSun: grass.ignoreSun,
+      disableLightmap: grass.disableLightmap,
+    },
+    {
+      alphaFunc: 1, // AlphaFunction::NONE — ZenGin's default for a plain material
+      texAniMapMode: 0,
+      texAniFps: 0,
+      texAniMapDir: [0, 0],
+      envMapping: false,
+      envMappingStrength: 0,
+      waveMode: 0,
+      waveSpeed: 0,
+      waveMaxAmplitude: 0,
+      waveGridSize: 0,
+      ignoreSun: false,
+      disableLightmap: false,
+    },
+  );
 });
 
 test('extractWorldMesh leaves positions in ZenGin space', () => {

@@ -31,10 +31,15 @@ one polygon references:
 
 ```js
 {
-  bbox: [minX, minY, minZ, maxX, maxY, maxZ],
+  bbox: [minX, minY, minZ, maxX, maxY, maxZ],   // of the vertices emitted
   vertexCount, triangleCount,          // totals over all chunks
   chunks: [{
     materialIndex, name, texture, group, color: [r, g, b, a],
+    // the render state, so a merged chunk can only merge with an equal one
+    alphaFunc, texAniMapMode, texAniFps, texAniMapDir: [x, y],
+    envMapping, envMappingStrength,
+    waveMode, waveSpeed, waveMaxAmplitude, waveGridSize,
+    ignoreSun, disableLightmap,
     vertexCount, triangleCount,
     positions,  // ArrayBuffer, Float32 ×3 per vertex — ZenGin space, unconverted
     normals,    // ArrayBuffer, Float32 ×3 per vertex
@@ -66,10 +71,23 @@ ZenGin stores position per vertex but UV, normal and baked light per polygon
 corner. On retail NewWorld that halves the vertex count (1,429,335 triangle
 corners → 713,719 vertices, 49 MB → 30 MB).
 
+`bbox` is computed from the vertices actually emitted, **not** copied from
+`Mesh::bbox`: every retail world mesh stores that box as all zeros, so a copied
+one hands the projection layer a world with no size. The fixture declares a
+deliberately wrong box so the difference is visible in a test.
+
 Chunks are per *material*, but a renderer should merge chunks sharing a
 texture — NewWorld has 1400 materials and only 330 unique textures, and one
 draw call per material would exceed the whole viewport budget on its own
-(`../docs/plans/level-editor.md` §3).
+(`../docs/plans/level-editor.md` §3). Two materials on one texture may only
+merge if they also agree on the render state above; measured on NewWorld that
+merge key gives 352 groups where texture alone gives 330, and the 22 it keeps
+apart are real differences in blend mode, UV scroll, env-map strength and
+vertex colour (266 materials carry no texture at all and are separated only by
+`color`). Fields the asset compiler has already baked into the geometry
+(`smooth_angle`, `texture_scale`, `default_mapping`) and gameplay-only fields
+(`disable_collision`, `dont_collapse`, `force_occluder`, `detail_object`) are
+deliberately not emitted.
 
 ### The asset layer — `openVfs`, `vfsResolve`, `extractVisual`, `decodeTexture`
 
@@ -179,6 +197,27 @@ initialized recursively.
 regenerate automatically.** `pnpm --filter zenkit-node fixtures:regen` is an
 explicit, reviewed act; an auto-regenerating golden would silently ratify
 whatever bug just landed.
+
+## The viewport spike (`spike/viewport/`) — throwaway
+
+The Phase 1a gate from `../docs/plans/level-editor.md` §3: a real Three.js scene
+over retail NewWorld, to answer framerate and pick latency on measured data
+rather than arithmetic. Verdict and numbers live in §3; delete this directory
+when the Phase 1a viewport lands.
+
+```
+cd spike/viewport
+npm install                 # three + three-mesh-bvh, outside the pnpm workspace
+node extract.js             # writes payload/ from the install (~132 MB)
+node serve.js               # then open http://127.0.0.1:8181/
+```
+
+The result is printed to the page and logged as one `SPIKE_RESULT` line. Two
+things it will not let you get wrong, both learned the hard way: the framerate
+comes from a synchronous `gl.finish()` sweep, because `requestAnimationFrame` is
+suspended in a background tab and would report any renderer as 1 fps; and the
+camera path is framed from the payload's own bbox, which is why
+`extractWorldMesh` had to stop copying the all-zero one out of `Mesh::bbox`.
 
 ## zen-roundtrip harness
 

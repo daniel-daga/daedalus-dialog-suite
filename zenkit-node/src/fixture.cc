@@ -122,7 +122,11 @@ void BuildMesh(Mesh& mesh) {
 void BuildMeshExtractionMesh(Mesh& mesh) {
   mesh.date = Date {2024, 1, 1, 0, 0, 0, 0x4A01};
   mesh.name = "MESH_EXTRACTION_FIXTURE";
-  mesh.bbox = AxisAlignedBoundingBox {Vec3 {0.0f, -1.0f, 0.0f}, Vec3 {20.0f, 1.0f, 10.0f}};
+  // Deliberately wrong, like the proto-mesh fixture's: the extractor computes
+  // its own box from the vertices it emits, because retail zCMesh world meshes
+  // store an all-zero one.
+  mesh.bbox = AxisAlignedBoundingBox {Vec3 {-999.0f, -999.0f, -999.0f},
+                                      Vec3 {999.0f, 999.0f, 999.0f}};
   mesh.obb = OrientedBoundingBox {};
   mesh.obb.center = Vec3 {10.0f, 0.0f, 5.0f};
   mesh.obb.axes[0] = Vec3 {1.0f, 0.0f, 0.0f};
@@ -139,6 +143,24 @@ void BuildMeshExtractionMesh(Mesh& mesh) {
     mat.texture = std::string {name} + ".TGA";
     mesh.materials.push_back(std::move(mat));
   }
+
+  // Every field that changes how a material renders, each with a value nothing
+  // else in the fixture carries: two chunks sharing a texture may only merge if
+  // all of them agree, so a field the extractor forgets has to be visible.
+  // EX_GRASS keeps the defaults, as the other half of that comparison.
+  auto& stone = mesh.materials[0];
+  stone.alpha_func = AlphaFunction::BLEND;
+  stone.texture_anim_map_mode = AnimationMapping::LINEAR;
+  stone.texture_anim_fps = 5.0f;
+  stone.texture_anim_map_dir = Vec2 {0.25f, -0.5f};
+  stone.environment_mapping = true;
+  stone.environment_mapping_strength = 0.75f;
+  stone.wave_mode = WaveMode::WIND;
+  stone.wave_speed = WaveSpeed::FAST;
+  stone.wave_max_amplitude = 12.5f;
+  stone.wave_grid_size = 40.0f;
+  stone.ignore_sun = true;
+  stone.disable_lightmap = true;
 
   mesh.vertices = {
       Vec3 {0.0f, 0.0f, 0.0f},   Vec3 {10.0f, 0.0f, 0.0f},  Vec3 {10.0f, 0.0f, 10.0f},
@@ -242,6 +264,24 @@ void BuildAssetProtoMesh(MultiResolutionMesh& mesh) {
                    MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {0.0f, 1.0f}, 3},
                },
                {MeshTriangle {{0, 1, 2}}, MeshTriangle {{0, 2, 3}}});
+
+  // The same render state a world-mesh chunk carries, with different values, so
+  // a sub-mesh chunk that reads the wrong material field cannot pass by
+  // borrowing the world fixture's answer. EX_IRON keeps the defaults.
+  auto& wood = mesh.sub_meshes[0].mat;
+  wood.alpha_func = AlphaFunction::ADD;
+  wood.texture_anim_map_mode = AnimationMapping::LINEAR;
+  wood.texture_anim_fps = 12.0f;
+  wood.texture_anim_map_dir = Vec2 {-1.0f, 0.5f};
+  wood.environment_mapping = true;
+  wood.environment_mapping_strength = 0.25f;
+  wood.wave_mode = WaveMode::GROUND;
+  wood.wave_speed = WaveSpeed::SLOW;
+  wood.wave_max_amplitude = 7.5f;
+  wood.wave_grid_size = 20.0f;
+  wood.ignore_sun = true;
+  wood.disable_lightmap = true;
+  mesh.materials[0] = wood;
 
   // Wedges but no triangles: contributes no chunk and no bounding box.
   add_sub_mesh("EX_EMPTY",

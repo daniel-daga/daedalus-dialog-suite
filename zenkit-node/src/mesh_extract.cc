@@ -18,6 +18,33 @@ namespace {
 
 using namespace zenkit;
 
+// Accumulates the extent of the vertices actually emitted. zCMesh carries a
+// bbox of its own, but every retail world mesh stores it as all zeros, so
+// copying it hands the projection layer a world with no size.
+struct Extent {
+  float lo[3] {0, 0, 0};
+  float hi[3] {0, 0, 0};
+  bool seen {false};
+
+  void Add(float x, float y, float z) {
+    float const xyz[3] = {x, y, z};
+    for (int i = 0; i < 3; ++i) {
+      if (!seen || xyz[i] < lo[i]) lo[i] = xyz[i];
+      if (!seen || xyz[i] > hi[i]) hi[i] = xyz[i];
+    }
+    seen = true;
+  }
+
+  Napi::Array Arr(Napi::Env env) const {
+    auto arr = Napi::Array::New(env, 6);
+    for (std::uint32_t i = 0; i < 3; ++i) {
+      arr.Set(i, Napi::Number::New(env, lo[i]));
+      arr.Set(i + 3, Napi::Number::New(env, hi[i]));
+    }
+    return arr;
+  }
+};
+
 // One material's accumulating render buffers. Vertices are keyed on the
 // (vertex, feature) pair: ZenGin stores position per vertex but UV, normal and
 // baked light per polygon corner, so the same position reached through two
@@ -53,15 +80,52 @@ struct Chunk {
   }
 };
 
-Napi::Array BboxArr(Napi::Env env, AxisAlignedBoundingBox const& bbox) {
-  auto arr = Napi::Array::New(env, 6);
-  arr.Set(0u, Napi::Number::New(env, bbox.min.x));
-  arr.Set(1u, Napi::Number::New(env, bbox.min.y));
-  arr.Set(2u, Napi::Number::New(env, bbox.min.z));
-  arr.Set(3u, Napi::Number::New(env, bbox.max.x));
-  arr.Set(4u, Napi::Number::New(env, bbox.max.y));
-  arr.Set(5u, Napi::Number::New(env, bbox.max.z));
-  return arr;
+// The material fields a chunk carries, identical for a world-mesh chunk and a
+// VOB-visual chunk so the projection layer can apply one rule to both.
+//
+// Chunks are per material, but the retail worlds share 330 textures between
+// 1400 materials and one draw call per material would exceed the whole viewport
+// budget (../docs/plans/level-editor.md §3), so the renderer merges chunks that
+// share a texture. Everything here is part of that merge key: two materials on
+// one texture may only merge if they agree on all of it, and a field left out
+// is an additive-blend flame silently merged into an opaque wall.
+//
+// Deliberately absent: fields that the asset compiler has already resolved into
+// the geometry (smooth_angle, texture_scale, default_mapping) and fields that
+// describe gameplay rather than pixels (disable_collision, dont_collapse,
+// force_occluder, detail_object). `group` is emitted, but as the surface's
+// material class — an editor fact, not a render one.
+void SetMaterialFields(Napi::Env env, Napi::Object entry, Material const& material) {
+  entry.Set("name", Str(env, material.name));
+  entry.Set("texture", Str(env, material.texture));
+  entry.Set("group", Napi::Number::New(env, static_cast<double>(material.group)));
+
+  auto color = Napi::Array::New(env, 4);
+  color.Set(0u, Napi::Number::New(env, material.color.r));
+  color.Set(1u, Napi::Number::New(env, material.color.g));
+  color.Set(2u, Napi::Number::New(env, material.color.b));
+  color.Set(3u, Napi::Number::New(env, material.color.a));
+  entry.Set("color", color);
+
+  entry.Set("alphaFunc", Napi::Number::New(env, static_cast<double>(material.alpha_func)));
+  entry.Set("texAniMapMode",
+            Napi::Number::New(env, static_cast<double>(material.texture_anim_map_mode)));
+  entry.Set("texAniFps", Napi::Number::New(env, material.texture_anim_fps));
+
+  auto dir = Napi::Array::New(env, 2);
+  dir.Set(0u, Napi::Number::New(env, material.texture_anim_map_dir.x));
+  dir.Set(1u, Napi::Number::New(env, material.texture_anim_map_dir.y));
+  entry.Set("texAniMapDir", dir);
+
+  entry.Set("envMapping", Napi::Boolean::New(env, material.environment_mapping));
+  entry.Set("envMappingStrength",
+            Napi::Number::New(env, material.environment_mapping_strength));
+  entry.Set("waveMode", Napi::Number::New(env, static_cast<double>(material.wave_mode)));
+  entry.Set("waveSpeed", Napi::Number::New(env, static_cast<double>(material.wave_speed)));
+  entry.Set("waveMaxAmplitude", Napi::Number::New(env, material.wave_max_amplitude));
+  entry.Set("waveGridSize", Napi::Number::New(env, material.wave_grid_size));
+  entry.Set("ignoreSun", Napi::Boolean::New(env, material.ignore_sun));
+  entry.Set("disableLightmap", Napi::Boolean::New(env, material.disable_lightmap));
 }
 
 }  // namespace
@@ -104,24 +168,19 @@ Napi::Object ExtractMesh(Napi::Env env, Mesh const& mesh, bool is_g2) {
   std::uint32_t out_index = 0;
   std::size_t total_vertices = 0;
   std::size_t total_triangles = 0;
+  Extent extent;
 
   for (std::size_t i = 0; i < chunks.size(); ++i) {
     auto& chunk = chunks[i];
     if (chunk.flags.empty()) continue;
 
-    auto const& material = mesh.materials[i];
+    for (std::size_t p = 0; p + 2 < chunk.positions.size(); p += 3) {
+      extent.Add(chunk.positions[p], chunk.positions[p + 1], chunk.positions[p + 2]);
+    }
+
     auto entry = Napi::Object::New(env);
     entry.Set("materialIndex", Napi::Number::New(env, static_cast<double>(i)));
-    entry.Set("name", Str(env, material.name));
-    entry.Set("texture", Str(env, material.texture));
-    entry.Set("group", Napi::Number::New(env, static_cast<double>(material.group)));
-
-    auto color = Napi::Array::New(env, 4);
-    color.Set(0u, Napi::Number::New(env, material.color.r));
-    color.Set(1u, Napi::Number::New(env, material.color.g));
-    color.Set(2u, Napi::Number::New(env, material.color.b));
-    color.Set(3u, Napi::Number::New(env, material.color.a));
-    entry.Set("color", color);
+    SetMaterialFields(env, entry, mesh.materials[i]);
 
     entry.Set("vertexCount", Napi::Number::New(env, static_cast<double>(chunk.lights.size())));
     entry.Set("triangleCount", Napi::Number::New(env, static_cast<double>(chunk.flags.size())));
@@ -137,7 +196,7 @@ Napi::Object ExtractMesh(Napi::Env env, Mesh const& mesh, bool is_g2) {
     out.Set(out_index++, entry);
   }
 
-  result.Set("bbox", BboxArr(env, mesh.bbox));
+  result.Set("bbox", extent.Arr(env));
   result.Set("vertexCount", Napi::Number::New(env, static_cast<double>(total_vertices)));
   result.Set("triangleCount", Napi::Number::New(env, static_cast<double>(total_triangles)));
   result.Set("chunks", out);
@@ -156,9 +215,7 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
 
   // A wedge is already a de-duplicated render vertex — position index plus its
   // own normal and UV — so unlike zCMesh there is nothing to collapse here.
-  float lo[3] = {0, 0, 0};
-  float hi[3] = {0, 0, 0};
-  bool seen = false;
+  Extent extent;
 
   for (std::size_t i = 0; i < mesh.sub_meshes.size(); ++i) {
     auto const& sub = mesh.sub_meshes[i];
@@ -178,14 +235,9 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
         throw Napi::Error::New(env, "visual mesh wedge points outside the position list");
       }
       auto const& position = mesh.positions[wedge.index];
-      float const xyz[3] = {position.x, position.y, position.z};
-      for (int i = 0; i < 3; ++i) {
-        if (!seen || xyz[i] < lo[i]) lo[i] = xyz[i];
-        if (!seen || xyz[i] > hi[i]) hi[i] = xyz[i];
-      }
-      seen = true;
+      extent.Add(position.x, position.y, position.z);
 
-      positions.insert(positions.end(), {xyz[0], xyz[1], xyz[2]});
+      positions.insert(positions.end(), {position.x, position.y, position.z});
       normals.insert(normals.end(), {wedge.normal.x, wedge.normal.y, wedge.normal.z});
       uvs.insert(uvs.end(), {wedge.texture.x, wedge.texture.y});
     }
@@ -208,16 +260,7 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
     // an ExtractMesh chunk: an index into the mesh's material list. A sub-mesh
     // skipped for having no triangles must not renumber the ones after it.
     entry.Set("materialIndex", Napi::Number::New(env, static_cast<double>(i)));
-    entry.Set("name", Str(env, sub.mat.name));
-    entry.Set("texture", Str(env, sub.mat.texture));
-    entry.Set("group", Napi::Number::New(env, static_cast<double>(sub.mat.group)));
-
-    auto color = Napi::Array::New(env, 4);
-    color.Set(0u, Napi::Number::New(env, sub.mat.color.r));
-    color.Set(1u, Napi::Number::New(env, sub.mat.color.g));
-    color.Set(2u, Napi::Number::New(env, sub.mat.color.b));
-    color.Set(3u, Napi::Number::New(env, sub.mat.color.a));
-    entry.Set("color", color);
+    SetMaterialFields(env, entry, sub.mat);
 
     entry.Set("vertexCount", Napi::Number::New(env, static_cast<double>(sub.wedges.size())));
     entry.Set("triangleCount", Napi::Number::New(env, static_cast<double>(sub.triangles.size())));
@@ -231,14 +274,8 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
     out.Set(out_index++, entry);
   }
 
-  auto bbox = Napi::Array::New(env, 6);
-  for (std::uint32_t i = 0; i < 3; ++i) {
-    bbox.Set(i, Napi::Number::New(env, lo[i]));
-    bbox.Set(i + 3, Napi::Number::New(env, hi[i]));
-  }
-
   auto result = Napi::Object::New(env);
-  result.Set("bbox", bbox);
+  result.Set("bbox", extent.Arr(env));
   result.Set("vertexCount", Napi::Number::New(env, static_cast<double>(total_vertices)));
   result.Set("triangleCount", Napi::Number::New(env, static_cast<double>(total_triangles)));
   result.Set("chunks", out);

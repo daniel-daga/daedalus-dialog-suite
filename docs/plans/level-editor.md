@@ -206,6 +206,63 @@ world is **256 ms**, comfortably inside "reload after an edit < 2s"; and 476k
 triangles is the scale §3 predicted. What remains genuinely open is framerate
 and pick latency, which only a real Three.js scene can answer.
 
+#### The spike ran — Gate: **passed** on measured data (2026-08-26)
+
+`zenkit-node/spike/viewport/` is that scene: retail NewWorld, the complete world
+mesh merged by the key below, **11,548 VOBs as 313 instanced visuals**, 454
+decoded textures, `three-mesh-bvh` for picking, Three.js r180. It is throwaway —
+the durable artefacts are the numbers here and the two binding changes it forced.
+
+| Metric | Budget | Measured | |
+|---|---|---|---|
+| Frame time, full scene | < 16 ms | **3.8 ms p50, 5.4 p95, 8.4 max** — 0 of 840 frames over 16.7 ms | ✅ |
+| Draw calls, full scene | < 1500 | **936 total, 839 p50 per frame** | ✅ |
+| Pick latency — world mesh | < 1 frame | **0.3 ms p50, 0.6 p95, 3.9 max** | ✅ |
+| Pick latency — whole scene | < 1 frame | **12.4 ms p50, 19.8 p95, 25.9 max** | ❌ |
+| Reload after an edit | < 2 s | **2.7 s cold** (1427 extract + 529 transfer + 179 scene + 545 BVH) | ⚠ |
+
+On an **integrated** GPU (Radeon 890M through ANGLE/D3D11) at 1463×780 — the low
+end of "mid-range", so the headroom is real: 2.59M triangles a frame at 936 draw
+calls costs a quarter of the budget.
+
+Three results change what Phase 1a builds:
+
+1. **GPU ID-picking for instanced VOBs is now required, not optional.** §3 offered
+   it as an alternative to a BVH; measured, a CPU raycast across 584
+   `InstancedMesh`es costs **12.4 ms median** and blows the one-frame budget on
+   its own, while the same raycast against the 476k-triangle world mesh through
+   its BVH costs **0.3 ms**. The BVH answers the world mesh; it does not answer
+   the props.
+2. **The merge key is texture + render state + material colour** — measured, not
+   assumed. On NewWorld it yields **352 groups** against 330 for texture alone;
+   the 22 it refuses to merge are real differences in blend mode (`alphaFunc`),
+   scroll speed, env-map strength and vertex colour, and 266 of the 1400
+   materials carry *no* texture at all and are separated only by their colour.
+   22 extra draw calls is what correctness costs here. `zenkit-node` now emits
+   the whole key on every chunk (world mesh and VOB visual alike).
+3. **Reload misses its budget by 0.7 s, and the BVH is why.** Extraction is not
+   the problem (1.4 s for a cold load + extract + normalize of the largest
+   world); building 936 bounds trees on the main thread is 545 ms, and the
+   532 ms transfer is an artefact of the spike's HTTP hop that the real
+   architecture (§7, transferable `ArrayBuffer`s over IPC) does not pay. Phase 1a
+   should build BVHs off the main thread and only for what is pickable.
+
+Two instrument bugs were caught before their numbers were believed, both by
+distrusting a suspiciously constant result rather than by luck:
+
+- The first run reported a **flat 505 draw calls and an identical triangle count
+  in all 840 frames**. The camera had never moved: the flythrough framed the
+  world from `extractWorldMesh`'s `bbox`, and every retail zCMesh stores that
+  box as **all zeros**. The fixture had hidden it by declaring a real one. The
+  binding now computes the box from the vertices it emits, as the proto-mesh
+  path always did.
+- `requestAnimationFrame` is suspended in a tab that is not the foreground tab,
+  which reports any renderer as a 1 fps one. The framerate above therefore comes
+  from a synchronous sweep timed with `gl.finish()`, which is immune to that and
+  includes GPU time; it excludes vsync, so it answers "can the frame be drawn
+  inside the budget", not "was it presented at 60 Hz". The rAF sweep still runs
+  as corroboration and reports itself void when it stalls.
+
 ---
 
 ## 4. Data layer — ZenKit binding (open question 3)
