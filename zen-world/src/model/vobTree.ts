@@ -152,6 +152,14 @@ export interface VobReader {
     visualIndex: Uint32Array;
     visualTypeIndex: Uint32Array;
   };
+  /**
+   * The interned dictionaries `nameIndex` and `visualIndex` point into.
+   *
+   * Exposed because a property op renames a VOB, and a name is a dictionary
+   * index rather than a value — applying one is an intern plus a column write,
+   * and neither half is reachable through the accessors above.
+   */
+  dictionaries: { names: string[]; visuals: string[] };
   className(vob: number): string | null;
   name(vob: number): string | null;
   visual(vob: number): string | null;
@@ -192,6 +200,7 @@ export function createVobReader(index: VobIndex): VobReader {
   return {
     count: index.count,
     columns,
+    dictionaries: { names: index.names, visuals: index.visuals },
     className: (vob) => (inside(vob) ? index.classes[columns.classIndex[vob]] : null),
     name: (vob) => (inside(vob) ? index.names[columns.nameIndex[vob]] : null),
     visual: (vob) => (inside(vob) ? index.visuals[columns.visualIndex[vob]] : null),

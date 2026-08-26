@@ -11,7 +11,7 @@ every binding call is injected.
 | Module | What it owns |
 |---|---|
 | `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. |
-| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `rotateVob`, `rotateVobs`, `invertOp`, `commitOps`, `applyOps`. |
+| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `rotateVob`, `rotateVobs`, `setVobProp`, `setVobProps`, `invertOp`, `commitOps`, `applyOps`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
@@ -97,6 +97,23 @@ viewport.
   VOB in it. A VOB not in the index refuses the whole batch rather than being
   skipped: a quietly dropped op is the half-applied state above, reached before
   the binding was ever asked.
+- **A property op carries exactly the keys it sets, on both sides.** The name,
+  the six flags and the visual are the first fields an op writes that are
+  *invisible in the viewport* — a move that goes wrong is on screen, a flag that
+  goes wrong is not. So `from` is read out of the index for precisely the keys
+  `to` names: carrying every property the VOB has gives an inverse that restores
+  fields the op never touched, carrying fewer leaves one unrestored, and neither
+  is visible until somebody undoes. `visual` is a **rename** — the visual object
+  keeps its class, because the class is not implied by the file name (`.3DS` is
+  `zCProgMeshProto` 20,716 times and `zCMesh` 31 times across the retail corpus),
+  and a VOB with no visual object is refused rather than given one. Only a visual
+  swap can change the box, and then the two sides have genuinely *different*
+  bounds rather than one bounds under two transforms — which is what separates it
+  from a rotation. A batch gives every VOB its own `from` for the same reason a
+  drag is a delta: a selection whose VOBs did not share a value has to come back
+  to the values they each had, and one shared `from` reads correct on a selection
+  of one. Applying one to the projection is an **intern plus a column write**,
+  since a name is a dictionary index and not a value.
 - **Mount archives, not loose trees.** `Vfs::mount_host` memory-maps every file
   under a directory eagerly: 2,170 ms for an extracted install's 4,153 compiled
   asset files against **15 ms** for the equivalent VDFs, which resolve every name

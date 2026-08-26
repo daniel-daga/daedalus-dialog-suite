@@ -78,7 +78,67 @@ export interface RotateVob {
   toBbox: ZenBounds | null;
 }
 
-export type WorldOp = MoveVob | RotateVob;
+/**
+ * The scalar properties of a VOB — every key optional, and only the keys present
+ * are written.
+ *
+ * `visual` is a **rename**: the visual object the VOB carries keeps its class,
+ * because the class is not implied by the file name (measured over the three
+ * retail worlds, `.3DS` is `zCProgMeshProto` 20,716 times and `zCMesh` 31
+ * times). Giving a VOB a visual it does not have replaces that object and has to
+ * decide the class, which is a different operation — the binding refuses it.
+ */
+export interface VobProps {
+  name?: string;
+  visual?: string;
+  showVisual?: boolean;
+  vobStatic?: boolean;
+  ambient?: boolean;
+  cdStatic?: boolean;
+  cdDynamic?: boolean;
+  physicsEnabled?: boolean;
+}
+
+/** The keys of `VobProps`, in the order an op reads them back out of the index.
+ *  A key added to the type and forgotten here is written and never restored. */
+const PROP_KEYS = [
+  'name', 'visual', 'showVisual', 'vobStatic', 'ambient',
+  'cdStatic', 'cdDynamic', 'physicsEnabled',
+] as const satisfies ReadonlyArray<keyof VobProps>;
+
+export interface SetVobProp {
+  op: 'SetVobProp';
+  /** The flat index into `vobIndex` — what the UI selected. */
+  vob: number;
+  /** The native address, `setVobProp`'s `indexPath`. */
+  path: string;
+  /**
+   * The properties as they were and as they are to become — **the same keys on
+   * both sides**, read out of the index when the op was made.
+   *
+   * Carrying every property the VOB has would make an inverse that restores
+   * fields this op never touched; carrying fewer would leave one unrestored.
+   * Neither is visible until someone undoes, which is what makes this op
+   * different in kind from a move: every field it writes is invisible in the
+   * viewport.
+   */
+  from: VobProps;
+  to: VobProps;
+  /**
+   * The world AABB before and after — null unless a visual swap changed it.
+   *
+   * Only `visual` can change the box, and when it does the two poses have
+   * genuinely different bounds rather than one bounds under two transforms,
+   * which is what separates this from a rotation. Both are null when either
+   * visual does not resolve: the stale box at least bounded the visual in some
+   * pose, where a box fitted to the visual being replaced bounds the wrong
+   * thing entirely.
+   */
+  fromBbox: ZenBounds | null;
+  toBbox: ZenBounds | null;
+}
+
+export type WorldOp = MoveVob | RotateVob | SetVobProp;
 
 /**
  * The native address of `vob`: its slot among its parent's children, root
@@ -233,12 +293,102 @@ export function rotateVobs(
   });
 }
 
+/** The visual's own bounds on each side of a swap, in the visual's own space —
+ *  null for one that does not resolve. */
+export interface VisualSwap {
+  from: ZenBounds | null;
+  to: ZenBounds | null;
+}
+
+/**
+ * Set scalar properties on one VOB.
+ *
+ * `bounds` is the visual's own bounds before and after, and is accepted **only**
+ * for a change that includes `visual` — nothing else here can change the box the
+ * engine culls by, and a box with nothing to justify it is a caller error rather
+ * than a no-op. The binding refuses the same combination for the same reason.
+ */
+export function setVobProp(
+  reader: VobReader, vob: number, to: VobProps, bounds: VisualSwap | null = null,
+): SetVobProp {
+  const keys = PROP_KEYS.filter((key) => to[key] !== undefined);
+  if (keys.length === 0) throw new RangeError('a property op must set at least one property');
+  if (bounds !== null && to.visual === undefined) {
+    throw new RangeError('bounds are only meaningful for a change of visual');
+  }
+
+  const path = vobIndexPath(reader, vob);
+  const position = reader.position(vob);
+  const rotation = reader.rotation(vob);
+  if (path === null || position === null || rotation === null) {
+    throw new RangeError(`no vob ${vob} in the index`);
+  }
+
+  // `from` is read out of the index rather than snapshotted beside the history,
+  // and carries exactly the keys `to` does.
+  const flags = reader.flags(vob);
+  const from: VobProps = {};
+  for (const key of keys) {
+    if (key === 'name') from.name = reader.name(vob) ?? '';
+    else if (key === 'visual') from.visual = reader.visual(vob) ?? '';
+    else from[key] = flags[key];
+  }
+
+  const swapped = bounds !== null && bounds.from !== null && bounds.to !== null;
+  return {
+    op: 'SetVobProp',
+    vob,
+    path,
+    from,
+    to: Object.fromEntries(keys.map((key) => [key, to[key]])) as VobProps,
+    fromBbox: swapped ? placeBounds(bounds.from!, rotation as ZenRotation, position) : null,
+    toBbox: swapped ? placeBounds(bounds.to!, rotation as ZenRotation, position) : null,
+  };
+}
+
+/** The bounds a batch needs: each VOB's current visual, and the one new visual
+ *  every VOB in the selection is being given. */
+export interface VisualSwapBatch {
+  from: (vob: number) => ZenBounds | null;
+  to: ZenBounds | null;
+}
+
+/**
+ * Set the same properties on a whole selection — a batch property edit.
+ *
+ * One op per VOB, each carrying **its own** `from`, for exactly the reason a
+ * drag is a delta and not a destination: a selection whose VOBs did not share a
+ * value must come back to the values they each had, and a batch that shared one
+ * `from` reads correct on a selection of one — which is every test that has only
+ * one VOB in it.
+ *
+ * It refuses the whole batch if any one VOB is not in the index rather than
+ * skipping it: a quietly dropped op is the half-applied state `commitOps` exists
+ * to prevent, reached before the binding was ever asked.
+ */
+export function setVobProps(
+  reader: VobReader,
+  vobs: readonly number[],
+  to: VobProps,
+  bounds: VisualSwapBatch | null = null,
+): SetVobProp[] {
+  return vobs.map((vob) => setVobProp(
+    reader, vob, to,
+    bounds === null ? null : { from: bounds.from(vob), to: bounds.to },
+  ));
+}
+
 /** The op that undoes `op` — pure, and an ordinary op in its own right. */
 export function invertOp(op: WorldOp): WorldOp {
+  // The box is half of what these two write. Swapping only the matrix — or only
+  // the props — undoes the visible half and leaves the VOB culled by a box
+  // fitted to something it is no longer. The two branches are written out
+  // rather than shared: `from` and `to` are different types on each, and a
+  // union-shaped spread is not assignable back to `WorldOp`.
   if (op.op === 'RotateVob') {
-    // The box is half of what a rotation writes. Swapping only the matrix would
-    // undo the rotation and leave the VOB culled by a box fitted to a pose it is
-    // no longer in.
+    return { ...op, from: op.to, to: op.from, fromBbox: op.toBbox, toBbox: op.fromBbox };
+  }
+  if (op.op === 'SetVobProp') {
     return { ...op, from: op.to, to: op.from, fromBbox: op.toBbox, toBbox: op.fromBbox };
   }
   return { ...op, from: op.to, to: op.from };
@@ -249,6 +399,9 @@ export function invertOp(op: WorldOp): WorldOp {
 export interface OpBinding {
   setVobPosition(path: string, to: ZenPosition): void;
   setVobRotation(path: string, to: ZenRotation, bbox: ZenBounds | null): void;
+  /** `bbox` is present only when a visual swap changed it — the binding refuses
+   *  a box that no visual swap justifies, so it cannot be passed unconditionally. */
+  setVobProp(path: string, props: VobProps & { bbox?: ZenBounds }): void;
 }
 
 /** One op against the world, and its own inverse — the two directions
@@ -258,6 +411,11 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
     binding.setVobRotation(
       op.path, op[direction], direction === 'to' ? op.toBbox : op.fromBbox,
     );
+    return;
+  }
+  if (op.op === 'SetVobProp') {
+    const bbox = direction === 'to' ? op.toBbox : op.fromBbox;
+    binding.setVobProp(op.path, bbox === null ? op[direction] : { ...op[direction], bbox });
     return;
   }
   binding.setVobPosition(op.path, op[direction]);
@@ -292,12 +450,43 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
  * was projected from in step, so the scene tree, the property grid and the
  * viewport show the edit without reloading 31 MB of payloads.
  */
+/** The dictionary index for `value`, appending it only if it is not already
+ *  there. Every rename appending would grow the dictionary without bound behind
+ *  a user holding a checkbox, and stop two VOBs with one name sharing an entry —
+ *  which is what the interning is for. */
+function internProp(dictionary: string[], value: string): number {
+  const found = dictionary.indexOf(value);
+  return found === -1 ? dictionary.push(value) - 1 : found;
+}
+
+/** The bit each flag occupies in the index's packed `flags` column. */
+const FLAG_BITS: ReadonlyArray<[keyof VobProps, number]> = [
+  ['showVisual', 0b000001], ['vobStatic', 0b000010], ['ambient', 0b000100],
+  ['cdStatic', 0b001000], ['cdDynamic', 0b010000], ['physicsEnabled', 0b100000],
+];
+
 export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
-  const { positions, rotations } = reader.columns;
+  const { positions, rotations, flags, nameIndex, visualIndex } = reader.columns;
   const touched: number[] = [];
 
   for (const op of ops) {
-    if (op.op === 'RotateVob') {
+    if (op.op === 'SetVobProp') {
+      // The name and the visual are dictionary indices rather than values, so
+      // this is an intern plus a write — a projection that only wrote the
+      // columns would leave the property grid naming the visual the world no
+      // longer has.
+      if (op.to.name !== undefined) {
+        nameIndex[op.vob] = internProp(reader.dictionaries.names, op.to.name);
+      }
+      if (op.to.visual !== undefined) {
+        visualIndex[op.vob] = internProp(reader.dictionaries.visuals, op.to.visual);
+      }
+      for (const [flag, bit] of FLAG_BITS) {
+        if (op.to[flag] === undefined) continue;      // not this op's to clear
+        if (op.to[flag]) flags[op.vob] |= bit;
+        else flags[op.vob] &= ~bit;
+      }
+    } else if (op.op === 'RotateVob') {
       // A rotation is not a move: the position column is not the op's to touch,
       // and the matrix goes in row-major, which is the order it came out in.
       rotations.set(op.to, op.vob * 9);

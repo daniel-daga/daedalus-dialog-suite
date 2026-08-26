@@ -26,11 +26,15 @@ import {
   placeBounds,
   rotateVob,
   rotateVobs,
+  setVobProp,
+  setVobProps,
   translateVobs,
   vobIndexPath,
   type OpBinding,
   type RotateVob,
+  type VobFlags,
   type VobIndex,
+  type VobProps,
   type WorldOp,
   type ZenBounds,
   type ZenRotation,
@@ -40,6 +44,29 @@ interface Spec {
   parent?: number;
   childIndex?: number;
   pos?: [number, number, number];
+  name?: string;
+  visual?: string;
+  flags?: Partial<VobFlags>;
+}
+
+/** The bit layout `vobIndex` packs its flags column in. */
+const FLAG_BITS: Array<[keyof VobFlags, number]> = [
+  ['showVisual', 0b000001], ['vobStatic', 0b000010], ['ambient', 0b000100],
+  ['cdStatic', 0b001000], ['cdDynamic', 0b010000], ['physicsEnabled', 0b100000],
+];
+
+/** Interned exactly as the binding interns: one dictionary, indices into it. */
+function intern(values: Array<string | undefined>): { dictionary: string[]; index: ArrayBuffer } {
+  const dictionary: string[] = [];
+  const index = new Uint32Array(values.length);
+  values.forEach((value, at) => {
+    const key = value ?? '';
+    let found = dictionary.indexOf(key);
+    if (found === -1) found = dictionary.push(key) - 1;
+    index[at] = found;
+  });
+  if (dictionary.length === 0) dictionary.push('');
+  return { dictionary, index: index.buffer };
 }
 
 /** A VOB table in the columnar shape `vobIndex` emits. */
@@ -48,13 +75,18 @@ function vobIndex(vobs: Spec[]): VobIndex {
   const childIndex = new Uint32Array(vobs.length);
   const positions = new Float32Array(vobs.length * 3);
   const rotations = new Float32Array(vobs.length * 9);
+  const flags = new Uint32Array(vobs.length);
 
   vobs.forEach((vob, i) => {
     parent[i] = vob.parent ?? -1;
     childIndex[i] = vob.childIndex ?? 0;
     positions.set(vob.pos ?? [i, i * 2, i * 3], i * 3);
     rotations.set([1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
+    for (const [flag, bit] of FLAG_BITS) if (vob.flags?.[flag]) flags[i] |= bit;
   });
+
+  const names = intern(vobs.map((vob) => vob.name));
+  const visuals = intern(vobs.map((vob) => vob.visual));
 
   return {
     count: vobs.length,
@@ -62,10 +94,10 @@ function vobIndex(vobs: Spec[]): VobIndex {
     childIndex: childIndex.buffer,
     positions: positions.buffer,
     rotations: rotations.buffer,
-    flags: new Uint32Array(vobs.length).buffer,
+    flags: flags.buffer,
     classes: ['zCVob'], classIndex: new Uint32Array(vobs.length).buffer,
-    names: [''], nameIndex: new Uint32Array(vobs.length).buffer,
-    visuals: [''], visualIndex: new Uint32Array(vobs.length).buffer,
+    names: names.dictionary, nameIndex: names.index,
+    visuals: visuals.dictionary, visualIndex: visuals.index,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(vobs.length).buffer,
   };
 }
@@ -289,6 +321,7 @@ describe('a rotate op', () => {
     const binding: OpBinding = {
       setVobPosition: (path, to) => calls.push(['position', path, to]),
       setVobRotation: (path, to, bbox) => calls.push(['rotation', path, to, bbox]),
+      setVobProp: (path, props) => calls.push(['props', path, props]),
     };
 
     commitOps(binding, [rotateVob(reader(), 1, QUARTER_Y, BOUNDS)]);
@@ -303,6 +336,7 @@ describe('a rotate op', () => {
     const binding: OpBinding = {
       setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); calls.push(`move ${path}`); },
       setVobRotation: (path) => calls.push(`rotate ${path}`),
+      setVobProp: (path) => calls.push(`props ${path}`),
     };
     const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
 
@@ -399,6 +433,135 @@ describe('a multi-select turn', () => {
   });
 });
 
+describe('a property op', () => {
+  // The third op, and the first whose fields are all invisible in the viewport.
+  // A move that goes wrong is on screen; a flag that goes wrong is not, which is
+  // why `from` has to carry exactly the keys `to` does — an inverse that
+  // restored a key the op never set, or dropped one it did, looks identical
+  // until someone undoes.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT' },
+    {
+      parent: 0, childIndex: 4, pos: [10, 20, 30],
+      name: 'BARREL_01', visual: 'BARREL.3DS',
+      flags: { showVisual: true, cdStatic: true },
+    },
+  ]));
+
+  it('carries both addresses, and a `from` with exactly the keys `to` has', () => {
+    const op = setVobProp(reader(), 1, { name: 'BARREL_02', cdStatic: false });
+
+    expect(op).toEqual({
+      op: 'SetVobProp',
+      vob: 1,
+      path: '0/4',
+      from: { name: 'BARREL_01', cdStatic: true },
+      to: { name: 'BARREL_02', cdStatic: false },
+      fromBbox: null,
+      toBbox: null,
+    });
+    // Not "every property the VOB has": an inverse that also restored
+    // showVisual would undo edits this op never made.
+    expect(Object.keys(op.from)).toEqual(Object.keys(op.to));
+  });
+
+  it('reads `from` out of the index, so the inverse needs no snapshot', () => {
+    const op = setVobProp(reader(), 1, { showVisual: false, visual: 'CRATE.3DS' });
+
+    expect(op.from).toEqual({ showVisual: true, visual: 'BARREL.3DS' });
+    expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+  });
+
+  it('is refused when it would set nothing', () => {
+    // Fifty VOBs selected and a dialog dismissed unchanged is fifty ops on the
+    // undo stack for a batch that undoes nothing — the same rule the gizmo has.
+    expect(() => setVobProp(reader(), 1, {})).toThrow(/at least one/);
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => setVobProp(reader(), 9, { name: 'X' })).toThrow(/9/);
+  });
+
+  describe('and the box, which only a visual swap can change', () => {
+    const OLD: ZenBounds = [-1, -1, -1, 1, 1, 1];
+    const NEW: ZenBounds = [-10, 0, -2, 10, 4, 2];
+
+    it('places each visual\'s own bounds by the VOB\'s own transform', () => {
+      const live = reader();
+      const op = setVobProp(live, 1, { visual: 'CRATE.3DS' }, { from: OLD, to: NEW });
+
+      expect(op.fromBbox).toEqual(placeBounds(OLD, [1, 0, 0, 0, 1, 0, 0, 0, 1], [10, 20, 30]));
+      expect(op.toBbox).toEqual(placeBounds(NEW, [1, 0, 0, 0, 1, 0, 0, 0, 1], [10, 20, 30]));
+      // Two different visuals cannot share a box, which is the whole reason the
+      // caller passes both rather than one.
+      expect(op.fromBbox).not.toEqual(op.toBbox);
+    });
+
+    it('leaves both boxes null when a visual does not resolve', () => {
+      const op = setVobProp(reader(), 1, { visual: 'MISSING.3DS' }, { from: OLD, to: null });
+
+      expect(op.toBbox).toBeNull();
+      // The stale box at least bounded the visual in some pose; a box fitted to
+      // the visual that is being replaced bounds the wrong thing entirely.
+      expect(op.fromBbox).toBeNull();
+    });
+
+    it('refuses bounds for a change that is not a visual swap', () => {
+      expect(() => setVobProp(reader(), 1, { name: 'X' }, { from: OLD, to: NEW }))
+        .toThrow(/visual/);
+    });
+
+    it('swaps both boxes in the inverse, not just the props', () => {
+      // Exactly the half-inverse a rotation would have had: the visual goes
+      // back and the VOB stays culled by a box fitted to the other one.
+      const op = setVobProp(reader(), 1, { visual: 'CRATE.3DS' }, { from: OLD, to: NEW });
+      const back = invertOp(op);
+
+      expect(back.op === 'SetVobProp' && back.fromBbox).toEqual(op.toBbox);
+      expect(back.op === 'SetVobProp' && back.toBbox).toEqual(op.fromBbox);
+    });
+  });
+});
+
+describe('a multi-select property edit', () => {
+  const reader = () => createVobReader(vobIndex([
+    { name: 'A', visual: 'A.3DS', flags: { showVisual: true } },
+    { parent: 0, childIndex: 1, name: 'B', visual: 'B.3DS', flags: { showVisual: false } },
+  ]));
+
+  it('gives every VOB its own `from`, so one undo restores what each one had', () => {
+    // The same lesson the drag learned as a delta-not-destination: a batch that
+    // shared one `from` would put a selection that was never uniform back as if
+    // it had been, and reads correct on a selection of one.
+    const ops = setVobProps(reader(), [0, 1], { showVisual: true });
+
+    expect(ops.map((op) => op.from)).toEqual([{ showVisual: true }, { showVisual: false }]);
+    expect(ops.map((op) => op.to)).toEqual([{ showVisual: true }, { showVisual: true }]);
+  });
+
+  it('asks each VOB for its own current bounds and shares the new visual\'s', () => {
+    const asked: number[] = [];
+    const NEW: ZenBounds = [-2, -2, -2, 2, 2, 2];
+
+    const ops = setVobProps(reader(), [0, 1], { visual: 'C.3DS' }, {
+      from: (vob) => { asked.push(vob); return vob === 0 ? [-1, -1, -1, 1, 1, 1] : null; },
+      to: NEW,
+    });
+
+    expect(asked).toEqual([0, 1]);
+    expect(ops[0].fromBbox).not.toBeNull();
+    expect(ops[1].fromBbox).toBeNull();
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(setVobProps(reader(), [], { showVisual: true })).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    expect(() => setVobProps(reader(), [0, 9], { showVisual: true })).toThrow(/9/);
+  });
+});
+
 describe('applying ops to the index', () => {
   // The renderer's projection has to move with the world, or the scene tree,
   // the property grid and the viewport go on showing where a VOB used to be
@@ -425,6 +588,58 @@ describe('applying ops to the index', () => {
     expect(reader.position(0)).toEqual([1, 2, 3]);
   });
 
+  it('writes a property op into the interned columns the panels read', () => {
+    // The name and the visual are dictionary indices, not values — so applying
+    // one of these is not a write to a column but an intern plus a write, and a
+    // projection that skipped it leaves the property grid naming the old visual
+    // while the world holds the new one.
+    const reader = createVobReader(vobIndex([
+      { name: 'OLD', visual: 'OLD.3DS', flags: { showVisual: true, cdDynamic: true } },
+    ]));
+
+    const touched = applyOps(reader, [
+      setVobProp(reader, 0, { name: 'NEW', visual: 'NEW.3DS', showVisual: false }),
+    ]);
+
+    expect(touched).toEqual([0]);
+    expect(reader.name(0)).toBe('NEW');
+    expect(reader.visual(0)).toBe('NEW.3DS');
+    expect(reader.flags(0).showVisual).toBe(false);
+    // A flag the op never named is not this op's to clear.
+    expect(reader.flags(0).cdDynamic).toBe(true);
+  });
+
+  it('interns a name that is already in the dictionary instead of appending it', () => {
+    // Every rename appending would grow the dictionary without bound behind a
+    // user holding a checkbox, and two VOBs sharing a name would stop sharing
+    // an entry — which is what the interning is for.
+    const index = vobIndex([{ name: 'A' }, { name: 'B' }]);
+    const reader = createVobReader(index);
+    const before = index.names.length;
+
+    applyOps(reader, [setVobProp(reader, 0, { name: 'B' })]);
+
+    expect(reader.name(0)).toBe('B');
+    expect(index.names.length).toBe(before);
+  });
+
+  it('restores every property exactly when a property op and its inverse are applied', () => {
+    const reader = createVobReader(vobIndex([
+      { name: 'OLD', visual: 'OLD.3DS', flags: { showVisual: true, vobStatic: true } },
+    ]));
+    const op = setVobProp(reader, 0, { name: 'NEW', visual: 'NEW.3DS', showVisual: false });
+
+    applyOps(reader, [op]);
+    applyOps(reader, [invertOp(op)]);
+
+    expect(reader.name(0)).toBe('OLD');
+    expect(reader.visual(0)).toBe('OLD.3DS');
+    expect(reader.flags(0)).toEqual({
+      showVisual: true, vobStatic: true, ambient: false,
+      cdStatic: false, cdDynamic: false, physicsEnabled: false,
+    });
+  });
+
   it('applies a batch in order, so a multi-select drag is one op list', () => {
     const reader = createVobReader(vobIndex([{ pos: [0, 0, 0] }, { parent: 0, pos: [0, 0, 0] }]));
     const ops: WorldOp[] = [
@@ -449,6 +664,7 @@ describe('committing ops to the world', () => {
         calls.push([path, to]);
       },
       setVobRotation: () => { throw new Error('these batches are moves only'); },
+      setVobProp: () => { throw new Error('these batches are moves only'); },
     };
     return { binding, calls };
   }
@@ -481,6 +697,48 @@ describe('committing ops to the world', () => {
       // back where it came from, and the ops after the failure never ran
       ['0/1', [0, 0, 0]],
     ]);
+  });
+
+  it('hands a property op its props, and the box only when the visual moved', () => {
+    // The binding refuses a bbox that no visual swap justifies, so a writer that
+    // always attached one would refuse every flag edit — and one that never
+    // attached one would leave a swapped visual culled by the old visual's box.
+    const calls: Array<[string, VobProps & { bbox?: ZenBounds }]> = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: (path, props) => { calls.push([path, props]); },
+    };
+    const box: ZenBounds = [0, 0, 0, 1, 1, 1];
+
+    commitOps(binding, [
+      { op: 'SetVobProp', vob: 0, path: '0/1', from: { showVisual: false }, to: { showVisual: true }, fromBbox: null, toBbox: null },
+      { op: 'SetVobProp', vob: 1, path: '0/2', from: { visual: 'A.3DS' }, to: { visual: 'B.3DS' }, fromBbox: null, toBbox: box },
+    ]);
+
+    expect(calls).toEqual([
+      ['0/1', { showVisual: true }],
+      ['0/2', { visual: 'B.3DS', bbox: box }],
+    ]);
+  });
+
+  it('unwinds a refused property batch back to the props each VOB had', () => {
+    const calls: Array<[string, VobProps & { bbox?: ZenBounds }]> = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: (path, props) => {
+        if (path === '0/2') throw new Error(`no vob at ${path}`);
+        calls.push([path, props]);
+      },
+    };
+
+    expect(() => commitOps(binding, [
+      { op: 'SetVobProp', vob: 0, path: '0/1', from: { name: 'A' }, to: { name: 'B' }, fromBbox: null, toBbox: null },
+      { op: 'SetVobProp', vob: 1, path: '0/2', from: { name: 'C' }, to: { name: 'D' }, fromBbox: null, toBbox: null },
+    ])).toThrow('no vob at 0/2');
+
+    expect(calls).toEqual([['0/1', { name: 'B' }], ['0/1', { name: 'A' }]]);
   });
 
   it('rolls back in reverse order, so two ops on one VOB unwind correctly', () => {
