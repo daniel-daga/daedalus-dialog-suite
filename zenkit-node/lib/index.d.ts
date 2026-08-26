@@ -106,4 +106,15 @@ export function vfsResolve(vfs: VfsHandle, name: string): string | null;
 export function vfsList(vfs: VfsHandle, path?: string): VfsEntry[] | null;
 export function extractVisual(vfs: VfsHandle, name: string): VisualPayload | null;
 export function decodeTexture(vfs: VfsHandle, name: string, level: number): TexturePayload | null;
+/**
+ * Move one VOB, addressed by its index path down the children lists ("0/2"),
+ * to a position in ZenGin space. Translates the bbox by the same delta — the
+ * engine culls by bbox, and a moved VOB with a stale one can vanish.
+ *
+ * `vobIndex` emits the last segment of that path as `childIndex`; rebuilding
+ * the whole path is the consumer's job (`zen-world`'s `vobIndexPath`).
+ */
+export function setVobPosition(
+  handle: WorldHandle, indexPath: string, position: [number, number, number],
+): void;
 export function zenkitVersion(): string;

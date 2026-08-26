@@ -639,6 +639,11 @@ export const mockEditorAPI: EditorAPI = {
   async getWorldWaynet(): Promise<never> {
     throw new Error('No world is open');
   },
+  async applyWorldOps(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async undoWorldEdit(): Promise<boolean> { return false; },
+  async redoWorldEdit(): Promise<boolean> { return false; },
   async closeWorld(): Promise<void> {},
 };
 

@@ -73,6 +73,9 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldWaynet: () => ipcRenderer.invoke('world:waynet'),
   getWorldTexture: (name: string, maxSize: number) =>
     ipcRenderer.invoke('world:texture', { name, maxSize }),
+  applyWorldOps: (ops: unknown[]) => ipcRenderer.invoke('world:applyOps', { ops }),
+  undoWorldEdit: () => ipcRenderer.invoke('world:undo'),
+  redoWorldEdit: () => ipcRenderer.invoke('world:redo'),
   closeWorld: () => ipcRenderer.invoke('world:close'),
 
   // Updater API

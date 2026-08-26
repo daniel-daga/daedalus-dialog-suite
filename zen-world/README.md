@@ -11,7 +11,7 @@ every binding call is injected.
 | Module | What it owns |
 |---|---|
 | `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. |
-| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader`. |
+| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `invertOp`, `commitOps`, `applyOps`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
@@ -56,6 +56,17 @@ viewport.
   *visible*: 23,288 VOBs behind a collapsed root is one row, not 23,288. And a
   row is read, never built — `createVobReader` makes its column views once,
   because a virtualized tree calls it on every scroll frame.
+- **A VOB has two addresses, and they are different numbers.** The UI selects a
+  flat index into the columnar `vobIndex`; the binding takes an index *path*
+  down the children lists (`setVobPosition(handle, "0/2", …)`). The path is the
+  chain of `childIndex` values, not of VOB indices — on retail NewWorld, VOB 85
+  lives at `2/71`. An op carries both, plus **where the VOB came from as well as
+  where it goes**, which is what makes `invertOp` pure: undo replays an op
+  through the same path as any other edit, with no snapshot beside the history
+  and nothing read back out of the native world. A batch is all-or-nothing
+  (`commitOps` unwinds what it applied, back to front) because a batch is one
+  undo entry, and a half-applied one leaves the world in a state no entry
+  describes.
 - **Mount archives, not loose trees.** `Vfs::mount_host` memory-maps every file
   under a directory eagerly: 2,170 ms for an extracted install's 4,153 compiled
   asset files against **15 ms** for the equivalent VDFs, which resolve every name

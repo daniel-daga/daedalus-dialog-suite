@@ -12,6 +12,7 @@ export type {
   DecodedTexture,
   VfsEntry,
   WaynetPayload,
+  WorldOp,
 } from '../../shared/worldTypes';
 
 // Re-export all shared types
@@ -168,6 +169,12 @@ export interface EditorAPI {
   /** One level of the mounted VFS; null for a missing path and for a file. */
   listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;
   getWorldWaynet: () => Promise<WaynetPayload>;
+  /** Apply an edit. One call is one undo entry, so a multi-select drag is one
+   *  batch and not one call per VOB. */
+  applyWorldOps: (ops: WorldOp[]) => Promise<void>;
+  /** False when there was nothing left to undo/redo. */
+  undoWorldEdit: () => Promise<boolean>;
+  redoWorldEdit: () => Promise<boolean>;
   closeWorld: () => Promise<void>;
 
   // Updater API

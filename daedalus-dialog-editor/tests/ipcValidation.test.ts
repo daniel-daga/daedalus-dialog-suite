@@ -12,6 +12,7 @@ import {
   assertSaveFileOptions,
   assertOpenWorldRequest,
   assertTextureRequest,
+  assertApplyOpsRequest,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
@@ -231,5 +232,59 @@ describe('assertTextureRequest', () => {
     for (const bad of [0, -1, 1.5, NaN, Infinity, '256']) {
       expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: bad })).toThrow(/maxSize/);
     }
+  });
+});
+
+describe('assertApplyOpsRequest', () => {
+  const move = {
+    op: 'MoveVob',
+    vob: 3,
+    path: '0/4',
+    from: [10, 20, 30],
+    to: [11, 20, 30],
+  };
+
+  it('accepts a well-formed batch', () => {
+    expect(() => assertApplyOpsRequest({ ops: [move] })).not.toThrow();
+  });
+
+  it('accepts an empty batch', () => {
+    // A drag that ended where it began sends nothing to move, and refusing it
+    // here would make the caller special-case a no-op.
+    expect(() => assertApplyOpsRequest({ ops: [] })).not.toThrow();
+  });
+
+  it('rejects an op it has never heard of', () => {
+    // §7 lists reparent, set-prop, add and delete as ops to come. Until the
+    // binding can apply one, naming it here is the difference between 'not
+    // implemented' and a silently ignored edit.
+    expect(() => assertApplyOpsRequest({ ops: [{ ...move, op: 'DeleteVob' }] })).toThrow(/DeleteVob/);
+  });
+
+  it('rejects an index path that is not slots separated by slashes', () => {
+    // It goes straight to setVobPosition, which parses it in C++ and addresses
+    // the VOB tree with it.
+    for (const bad of ['', '/', '0//2', 'a/b', '0/2/', -1, null]) {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, path: bad }] })).toThrow(/path/);
+    }
+  });
+
+  it('rejects positions that are not three finite numbers', () => {
+    for (const bad of [[1, 2], [1, 2, 3, 4], [1, 2, 'x'], [1, 2, NaN], [1, 2, Infinity], null, '1,2,3']) {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, to: bad }] })).toThrow(/to/);
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, from: bad }] })).toThrow(/from/);
+    }
+  });
+
+  it('rejects a vob that is not a non-negative integer', () => {
+    for (const bad of [-1, 1.5, '3', NaN]) {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, vob: bad }] })).toThrow(/vob/);
+    }
+  });
+
+  it('rejects a payload that is not a batch at all', () => {
+    expect(() => assertApplyOpsRequest(null)).toThrow();
+    expect(() => assertApplyOpsRequest({ ops: move })).toThrow(/ops/);
+    expect(() => assertApplyOpsRequest([move])).toThrow();
   });
 });

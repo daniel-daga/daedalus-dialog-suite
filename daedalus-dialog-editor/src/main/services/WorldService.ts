@@ -2,6 +2,7 @@ import { Worker } from 'worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
+import { invertOp } from 'zen-world';
 import { WorkerRequestError } from './WorkerRequestError';
 import type {
   DecodedTexture,
@@ -10,6 +11,7 @@ import type {
   VfsEntry,
   WaynetPayload,
   WorldMeshPayload,
+  WorldOp,
   WorldSummary,
   WorldWorkerOp,
   WorldWorkerRequest,
@@ -63,6 +65,12 @@ export class WorldService {
   private readonly createWorker: () => WorldWorker;
   private worldPath: string | null = null;
   private failure: WorkerRequestError | null = null;
+  // The authoritative history (§7). A batch is one entry. Both stacks belong to
+  // the world that is open: an op addresses a VOB by its index path down *that*
+  // world's tree, and replayed against the next one it would resolve to
+  // whatever happens to sit at that path.
+  private undoStack: WorldOp[][] = [];
+  private redoStack: WorldOp[][] = [];
 
   constructor(options: WorldServiceOptions = {}) {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -74,6 +82,8 @@ export class WorldService {
     if (this.worker === null) this.startWorker();
     const summary = await this.request<WorldSummary>('open', request);
     this.worldPath = request.worldPath;
+    this.undoStack = [];
+    this.redoStack = [];
     return summary;
   }
 
@@ -112,6 +122,53 @@ export class WorldService {
    *  turned on should not be in the cold open. */
   getWaynet(): Promise<WaynetPayload> {
     return this.requestOnOpenWorld<WaynetPayload>('waynet');
+  }
+
+  /**
+   * Apply an edit to the authoritative world, and record it (§7).
+   *
+   * A batch is one entry in the history: a multi-select drag is one undo, not
+   * one per VOB. Nothing is recorded until the worker has confirmed the batch,
+   * because the inverse of an edit that never happened moves a VOB that was
+   * never moved.
+   */
+  async applyOps(ops: readonly WorldOp[]): Promise<void> {
+    await this.requestOnOpenWorld<null>('applyOps', { ops });
+    this.undoStack.push([...ops]);
+    this.redoStack.length = 0;
+  }
+
+  /** Replay the last batch's inverses; false when there is nothing to undo. */
+  undo(): Promise<boolean> {
+    return this.replay(this.undoStack, this.redoStack, true);
+  }
+
+  /** Replay the last undone batch as it was; false when there is nothing. */
+  redo(): Promise<boolean> {
+    return this.replay(this.redoStack, this.undoStack, false);
+  }
+
+  /**
+   * Undo and redo are the same move in opposite directions: take the top batch
+   * off one stack, send it through the ordinary `applyOps` path, and put it on
+   * the other. Undo sends the inverses **back to front** — two ops on the same
+   * VOB in one batch compose, and undoing them front to back leaves it where
+   * the first op put it.
+   */
+  private async replay(
+    from: WorldOp[][], to: WorldOp[][], invert: boolean,
+  ): Promise<boolean> {
+    const batch = from[from.length - 1];
+    if (batch === undefined) return false;
+
+    const ops = invert ? [...batch].reverse().map(invertOp) : batch;
+    await this.requestOnOpenWorld<null>('applyOps', { ops });
+
+    // Moved only once the worker has confirmed it, so a refused replay leaves
+    // the history where it was rather than one step out of step with the world.
+    from.pop();
+    to.push(batch);
+    return true;
   }
 
   close(): void {

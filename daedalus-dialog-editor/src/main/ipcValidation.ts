@@ -6,6 +6,8 @@
  * with a clear error rather than reaching deep service internals.
  */
 
+import type { WorldOp } from '../shared/worldTypes';
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -165,5 +167,44 @@ export function assertTextureRequest(
   const { maxSize } = request;
   if (typeof maxSize !== 'number' || !Number.isInteger(maxSize) || maxSize <= 0) {
     throw new Error('Invalid texture request: maxSize must be a positive integer');
+  }
+}
+
+/** Slots down the children lists, as `setVobPosition` parses it: "0", "0/4". */
+const INDEX_PATH = /^\d+(\/\d+)*$/;
+
+function isZenPosition(value: unknown): value is [number, number, number] {
+  return Array.isArray(value) && value.length === 3
+    && value.every((component) => typeof component === 'number' && Number.isFinite(component));
+}
+
+/**
+ * Assert an edit batch (level-editor.md §7).
+ *
+ * This is the first IPC payload that *changes* the world rather than reading a
+ * projection of it, and every field of it is handed to native code: the path is
+ * parsed in C++ and used to walk the VOB tree, and the position is written into
+ * a `zenkit::Vec3`. `op` is checked against the ops that exist rather than
+ * assumed, so an op the binding cannot apply is a refusal here and not a
+ * silently skipped edit.
+ */
+export function assertApplyOpsRequest(request: unknown): asserts request is { ops: WorldOp[] } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid ops request: expected a plain object');
+  }
+  if (!Array.isArray(request.ops)) {
+    throw new Error('Invalid ops request: ops must be an array');
+  }
+  for (const op of request.ops) {
+    if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
+    if (op.op !== 'MoveVob') throw new Error(`Invalid op: unknown op ${String(op.op)}`);
+    if (typeof op.vob !== 'number' || !Number.isInteger(op.vob) || op.vob < 0) {
+      throw new Error('Invalid op: vob must be a non-negative integer');
+    }
+    if (typeof op.path !== 'string' || !INDEX_PATH.test(op.path)) {
+      throw new Error('Invalid op: path must be slot indices separated by "/"');
+    }
+    if (!isZenPosition(op.from)) throw new Error('Invalid op: from must be three finite numbers');
+    if (!isZenPosition(op.to)) throw new Error('Invalid op: to must be three finite numbers');
   }
 }

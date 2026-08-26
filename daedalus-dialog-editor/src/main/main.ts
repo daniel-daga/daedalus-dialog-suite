@@ -21,6 +21,7 @@ import {
   assertSaveFileOptions,
   assertOpenWorldRequest,
   assertTextureRequest,
+  assertApplyOpsRequest,
   sanitizeRendererErrorPayload,
 } from './ipcValidation';
 
@@ -674,6 +675,17 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('world:waynet', async () => worldService.getWaynet());
+
+  // The first IPC that changes the world rather than reading a projection of
+  // it (level-editor.md §7). The history is the service's, not the renderer's:
+  // an op addresses a VOB by its index path down the world the worker holds.
+  ipcMain.handle('world:applyOps', async (_event, request: unknown) => {
+    assertApplyOpsRequest(request);
+    await worldService.applyOps(request.ops);
+  });
+
+  ipcMain.handle('world:undo', async () => worldService.undo());
+  ipcMain.handle('world:redo', async () => worldService.redo());
 
   ipcMain.handle('world:close', () => {
     worldService.close();

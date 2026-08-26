@@ -1182,6 +1182,53 @@ than fixtures:
   renders their union with correct world transforms, every VOB knows its
   part, and only dirty parts are rewritten.
 
+#### The op path, landed — everything but the UI that produces one (2026-08-26)
+
+The first thing in this project that writes. `MoveVob` runs end to end:
+`zen-world/model/ops.ts` → `WorldService.applyOps` → `zenkit.worker` →
+`setVobPosition`, with undo and redo, and `verify-world-pipeline.js` applies,
+undoes and redoes one edit against retail NewWorld.
+
+Only `MoveVob` exists. `setVobPosition` is the one mutation the engine has
+actually accepted — the acceptance record's row 10 moved a VOB through it and
+the real game loaded the result — and the rest of the list above (reparent,
+set-prop, add, delete, waynet) arrives when the binding call for it does.
+
+What the shape had to get right, none of it obvious from either side alone:
+
+- **A VOB has two addresses.** The UI selects a flat index into `vobIndex`; the
+  binding takes an index *path* down the children lists. The path is the chain
+  of `childIndex` values, **not** of VOB indices, and on retail NewWorld VOB 85
+  lives at `2/71`. `vobIndex` deliberately emits only the last segment and
+  leaves the chain to the consumer, so this is `zen-world`'s job and an op
+  carries both addresses, resolved when it was made.
+- **An op carries `from` as well as `to`**, which is the whole of what makes
+  undo work: `invertOp` is pure, the history holds ops and not snapshots, and
+  undo goes to the worker as an ordinary `applyOps`. Undo replays a batch's
+  inverses **back to front** — two ops on one VOB compose, and unwinding them
+  front to back leaves it where the first op put it.
+- **A batch is atomic.** It is also one undo entry, so a batch that half-applies
+  leaves the world in a state no entry describes — `WorldService` records
+  nothing for a refused batch, so whatever it did move would never come back.
+  `commitOps` unwinds what it applied, which the op model makes free.
+- **The history belongs to the world.** Opening another world empties both
+  stacks: an op addresses a VOB by its path down *that* world's tree, and
+  replayed against the next one it resolves to whatever sits at that path.
+  Nothing is recorded until the worker confirms it, and the stacks move only
+  after a replay is confirmed too.
+
+**No fidelity claim has moved.** Nothing here touches the writer: an op mutates
+the in-memory ZenKit world exactly as the engine-accepted row-10 edit did, and
+`saveWorld` is untouched and still BinSafe-only. The claim that changes is Gate
+2's, and it changes when a world edited *through the UI* is saved and re-run
+through the engine checklist — rows 7-9 included, which the acceptance record
+says regain their full force there.
+
+What is **not** built: anything that produces an op. There is no gizmo, no drag,
+no keyboard undo; the renderer has `applyWorldOps`/`undoWorldEdit`/`redoWorldEdit`
+on its API and does not call them yet. That, and keeping the renderer's own copy
+of the index in step through `applyOps`, is the next step.
+
 ---
 
 ## 8. Daedalus integration — open question 4

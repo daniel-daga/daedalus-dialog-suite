@@ -3,9 +3,9 @@
 // which is where they are tested; this file adds only what crossing a process
 // boundary needs — the request/response envelope and the summary.
 
-import type { DrawGroup, InstancedVisual, VobIndex } from 'zen-world';
+import type { DrawGroup, InstancedVisual, VobIndex, WorldOp } from 'zen-world';
 
-export type { DrawGroup, InstancedVisual, VobIndex };
+export type { DrawGroup, InstancedVisual, VobIndex, WorldOp };
 
 export type GameVersion = 'g1' | 'g2';
 
@@ -86,7 +86,13 @@ export interface DecodedTexture {
 }
 
 export type WorldWorkerOp =
-  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'close';
+  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'applyOps' | 'close';
+
+/** The payload of an `applyOps` request. Undo and redo are the same request
+ *  with inverted ops (level-editor.md §7). */
+export interface ApplyOpsRequest {
+  ops: WorldOp[];
+}
 
 export interface WorldWorkerRequest {
   id: string;

@@ -1,13 +1,17 @@
 import { parentPort } from 'worker_threads';
 import * as zenkit from 'zenkit-node';
 import {
+  applyOps,
   buildInstancedVisuals,
   buildWorldMesh,
+  commitOps,
+  createVobReader,
   groupTransferables,
   type MeshChunk,
   type SceneBinding,
 } from 'zen-world';
 import type {
+  ApplyOpsRequest,
   DecodedTexture,
   InstancedPayload,
   OpenWorldRequest,
@@ -152,6 +156,26 @@ function waynet(): { result: WaynetPayload; transfer: ArrayBuffer[] } {
   return { result: phase('waynet', () => zenkit.getWaynet(handle!)), transfer: [] };
 }
 
+/**
+ * An edit (level-editor.md §7, Phase 1b). The world in this thread is the
+ * authoritative one; the renderer's index is a projection of it.
+ *
+ * `setVobPosition` is the mutation the engine has actually accepted — the
+ * acceptance record's row 10 moved a VOB through it and the real game loaded
+ * the result — and it moves the bbox with the position, which the engine culls
+ * by. The batch is atomic, and the index this thread keeps is updated only
+ * after the world is, so `visuals` never places a VOB where an op failed to
+ * move it.
+ */
+function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: ArrayBuffer[] } {
+  commitOps(
+    { setVobPosition: (path, to) => zenkit.setVobPosition(handle!, path, to) },
+    payload.ops,
+  );
+  applyOps(createVobReader(index!), payload.ops);
+  return { result: null, transfer: [] };
+}
+
 function close(): { result: null; transfer: ArrayBuffer[] } {
   // A live VFS keeps every mounted file memory-mapped and Windows refuses to
   // delete a mapped file until the handle is collected (zenkit-node README), so
@@ -186,6 +210,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
     case 'waynet': return waynet();
+    case 'applyOps': return applyOpsRequest(message.payload as ApplyOpsRequest);
     case 'close': return close();
   }
 }

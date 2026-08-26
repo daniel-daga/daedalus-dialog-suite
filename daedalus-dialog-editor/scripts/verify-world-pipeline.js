@@ -28,7 +28,9 @@ const path = require('path');
 
 const DIST = path.join(__dirname, '..', 'dist', 'main');
 const { WorldService } = require(path.join(DIST, 'services', 'WorldService.js'));
-const { gothicAssetSources } = require(path.join(__dirname, '..', '..', 'zen-world', 'dist', 'cjs', 'index.js'));
+const {
+  createVobReader, gothicAssetSources, moveVob,
+} = require(path.join(__dirname, '..', '..', 'zen-world', 'dist', 'cjs', 'index.js'));
 
 function arg(name, fallback) {
   const at = process.argv.indexOf(`--${name}`);
@@ -112,6 +114,8 @@ async function main() {
   row('One texture on demand', `${firstTexture} ${decoded ? `${decoded.width}x${decoded.height}` : 'FAILED'} in ${decodeMs} ms`);
   row('World bbox (ZenGin space)', summary.bbox.map((v) => Math.round(v)).join(', '));
 
+  await verifyOneEdit(service, index, visuals);
+
   service.close();
 
   if (problems.length > 0) {
@@ -121,6 +125,82 @@ async function main() {
     return;
   }
   console.log('\nPipeline OK.');
+}
+
+/**
+ * One edit, applied and undone against the real world (level-editor.md §7).
+ *
+ * Everything Phase 1a added is a read-only projection; an op is the first thing
+ * that writes. What this proves, on real data: an op built from a real VOB
+ * addresses a path the binding accepts (NewWorld's VOB 85 is at `2/71` — the
+ * two numbering schemes visibly disagree, and a path built from the wrong one
+ * would be refused or land elsewhere), the batch reaches the native world
+ * without throwing, and the projection the viewport draws follows it there and
+ * back through undo and redo.
+ *
+ * **What it does not prove, stated rather than implied:** that the native VOB
+ * moved is the one the flat index named. The instance matrices are rebuilt from
+ * the worker's *index*, which `applyOps` updates by flat index — so a path that
+ * resolved to some other VOB would move that one natively while this check
+ * still read a moved instance. Closing that needs the world saved and re-loaded,
+ * which is Phase 1b's half of Gate 2 (acceptance record §8: rows 7-9 regain
+ * their force on UI-edited worlds) and needs the writer, which no op touches yet.
+ */
+async function verifyOneEdit(service, index, visuals) {
+  const reader = createVobReader(index);
+
+  // A *nested* VOB deliberately: a root's path is one segment and would agree
+  // with its flat index by construction, which is precisely the case that
+  // proves nothing about the mapping between the two.
+  let vob = -1;
+  for (const visual of visuals.visuals) {
+    for (const candidate of new Uint32Array(visual.vobIds)) {
+      if (reader.columns.parent[candidate] >= 0) { vob = candidate; break; }
+    }
+    if (vob >= 0) break;
+  }
+  if (vob < 0) { check(false, 'no placed VOB with a parent to edit'); return; }
+  const from = reader.position(vob);
+  // Far enough that no float noise could account for it, in ZenGin centimetres.
+  const op = moveVob(reader, vob, [from[0] + 500, from[1] + 500, from[2] + 500]);
+
+  // Where the instance actually is, read back through the whole pipeline: the
+  // worker rebuilds the matrices from its own index on every `visuals` call.
+  const translationOf = async () => {
+    const built = await service.getInstancedVisuals();
+    for (const visual of built.visuals) {
+      const ids = new Uint32Array(visual.vobIds);
+      const at = ids.indexOf(vob);
+      if (at === -1) continue;
+      const matrices = new Float32Array(visual.matrices);
+      return [matrices[at * 12 + 3], matrices[at * 12 + 7], matrices[at * 12 + 11]];
+    }
+    return null;
+  };
+
+  const near = (a, b) => a !== null && b !== null
+    && a.every((value, i) => Math.abs(value - b[i]) < 0.5);
+
+  const before = await translationOf();
+  check(near(before, from), `the instance matrix does not agree with the index before any edit: ${before} vs ${from}`);
+
+  await service.applyOps([op]);
+  const moved = await translationOf();
+  check(near(moved, op.to), `the VOB did not move: ${moved} vs ${op.to}`);
+
+  check(await service.undo(), 'undo found nothing to undo');
+  const restored = await translationOf();
+  check(near(restored, from), `undo did not put the VOB back: ${restored} vs ${from}`);
+
+  check(await service.redo(), 'redo found nothing to redo');
+  check(near(await translationOf(), op.to), 'redo did not move the VOB again');
+  check(await service.undo(), 'the second undo found nothing');
+
+  const row = (label, value) => console.log(`  ${String(label).padEnd(34)}${value}`);
+  console.log('\none edit, through the op path\n');
+  row('VOB', `${vob} — ${reader.name(vob) || reader.visual(vob) || reader.className(vob)}`);
+  row('Flat index -> index path', `${vob} -> ${op.path}`);
+  row('Moved / undone / redone', `${from.map(Math.round).join(', ')} -> ${op.to.map(Math.round).join(', ')} -> back`);
 }
 
 main().catch((error) => { console.error('FAILED:', error); process.exit(1); });
