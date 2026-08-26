@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "assets.hh"
 #include "encoding.hh"
 #include "fixture.hh"
 #include "mesh_extract.hh"
@@ -558,6 +559,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
   exports.Set("extractWorldMesh", Napi::Function::New(env, ExtractWorldMesh));
+  exports.Set("openVfs", Napi::Function::New(env, zenkit_node::OpenVfs));
+  exports.Set("vfsResolve", Napi::Function::New(env, zenkit_node::VfsResolve));
+  exports.Set("extractVisual", Napi::Function::New(env, zenkit_node::ExtractVisual));
+  exports.Set("decodeTexture", Napi::Function::New(env, zenkit_node::DecodeTexture));
   exports.Set("_drillMesh", Napi::Function::New(env, DrillMesh));
   exports.Set("saveWorld", Napi::Function::New(env, SaveWorld));
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));

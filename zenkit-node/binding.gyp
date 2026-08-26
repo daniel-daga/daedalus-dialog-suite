@@ -2,7 +2,7 @@
   "targets": [
     {
       "target_name": "zenkit_node",
-      "sources": ["src/binding.cc", "src/encoding.cc", "src/fixture.cc", "src/mesh_extract.cc", "src/normalize.cc", "src/sha256.cc"],
+      "sources": ["src/assets.cc", "src/binding.cc", "src/encoding.cc", "src/fixture.cc", "src/mesh_extract.cc", "src/normalize.cc", "src/sha256.cc"],
       "include_dirs": [
         "<!(node -p \"require('node-addon-api').include_dir\")",
         "vendor/ZenKit/include",

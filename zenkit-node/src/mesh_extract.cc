@@ -5,11 +5,10 @@
 #include <zenkit/World.hh>
 
 #include <cstdint>
-#include <cstring>
 #include <unordered_map>
 #include <vector>
 
-#include "encoding.hh"
+#include "napi_helpers.hh"
 #include "normalize.hh"
 
 namespace zenkit_node {
@@ -17,11 +16,6 @@ namespace zenkit_node {
 namespace {
 
 using namespace zenkit;
-
-Napi::String Str(Napi::Env env, std::string const& raw) {
-  auto utf16 = Windows1252ToUtf16(raw);
-  return Napi::String::New(env, reinterpret_cast<char16_t const*>(utf16.c_str()), utf16.size());
-}
 
 // One material's accumulating render buffers. Vertices are keyed on the
 // (vertex, feature) pair: ZenGin stores position per vertex but UV, normal and
@@ -58,17 +52,6 @@ struct Chunk {
   }
 };
 
-// Copies a vector into a fresh ArrayBuffer. N-API owns the memory, so the
-// buffer survives the vector going out of scope and can be transferred to the
-// renderer without a further copy on the JS side.
-template <typename T>
-Napi::ArrayBuffer Buffer(Napi::Env env, std::vector<T> const& values) {
-  auto const bytes = values.size() * sizeof(T);
-  auto buffer = Napi::ArrayBuffer::New(env, bytes);
-  if (bytes != 0) std::memcpy(buffer.Data(), values.data(), bytes);
-  return buffer;
-}
-
 Napi::Array BboxArr(Napi::Env env, AxisAlignedBoundingBox const& bbox) {
   auto arr = Napi::Array::New(env, 6);
   arr.Set(0u, Napi::Number::New(env, bbox.min.x));
@@ -82,9 +65,7 @@ Napi::Array BboxArr(Napi::Env env, AxisAlignedBoundingBox const& bbox) {
 
 }  // namespace
 
-Napi::Object ExtractWorldMesh(Napi::Env env, WorldHandle const& handle) {
-  auto const& mesh = handle.world->world_mesh;
-  bool const is_g2 = handle.version == GameVersion::GOTHIC_2;
+Napi::Object ExtractMesh(Napi::Env env, Mesh const& mesh, bool is_g2) {
 
   // Indexed by material; a material no polygon references stays empty and is
   // skipped below. The retail world meshes declare 1400 materials and use all
@@ -156,6 +137,99 @@ Napi::Object ExtractWorldMesh(Napi::Env env, WorldHandle const& handle) {
   }
 
   result.Set("bbox", BboxArr(env, mesh.bbox));
+  result.Set("vertexCount", Napi::Number::New(env, static_cast<double>(total_vertices)));
+  result.Set("triangleCount", Napi::Number::New(env, static_cast<double>(total_triangles)));
+  result.Set("chunks", out);
+  return result;
+}
+
+Napi::Object ExtractWorldMesh(Napi::Env env, WorldHandle const& handle) {
+  return ExtractMesh(env, handle.world->world_mesh, handle.version == GameVersion::GOTHIC_2);
+}
+
+Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
+  auto out = Napi::Array::New(env);
+  std::uint32_t out_index = 0;
+  std::size_t total_vertices = 0;
+  std::size_t total_triangles = 0;
+
+  // A wedge is already a de-duplicated render vertex — position index plus its
+  // own normal and UV — so unlike zCMesh there is nothing to collapse here.
+  float lo[3] = {0, 0, 0};
+  float hi[3] = {0, 0, 0};
+  bool seen = false;
+
+  for (auto const& sub : mesh.sub_meshes) {
+    if (sub.triangles.empty() || sub.wedges.empty()) continue;
+
+    std::vector<float> positions;
+    std::vector<float> normals;
+    std::vector<float> uvs;
+    std::vector<std::uint32_t> indices;
+    positions.reserve(sub.wedges.size() * 3);
+    normals.reserve(sub.wedges.size() * 3);
+    uvs.reserve(sub.wedges.size() * 2);
+    indices.reserve(sub.triangles.size() * 3);
+
+    for (auto const& wedge : sub.wedges) {
+      if (wedge.index >= mesh.positions.size()) {
+        throw Napi::Error::New(env, "visual mesh wedge points outside the position list");
+      }
+      auto const& position = mesh.positions[wedge.index];
+      float const xyz[3] = {position.x, position.y, position.z};
+      for (int i = 0; i < 3; ++i) {
+        if (!seen || xyz[i] < lo[i]) lo[i] = xyz[i];
+        if (!seen || xyz[i] > hi[i]) hi[i] = xyz[i];
+      }
+      seen = true;
+
+      positions.insert(positions.end(), {xyz[0], xyz[1], xyz[2]});
+      normals.insert(normals.end(), {wedge.normal.x, wedge.normal.y, wedge.normal.z});
+      uvs.insert(uvs.end(), {wedge.texture.x, wedge.texture.y});
+    }
+
+    for (auto const& triangle : sub.triangles) {
+      // Stored order, unreversed. Winding is a rendering question: it is
+      // settled by comparing the geometric normal against the stored wedge
+      // normals (scripts/check-visual-winding.js), not asserted here.
+      indices.push_back(triangle.wedges[0]);
+      indices.push_back(triangle.wedges[1]);
+      indices.push_back(triangle.wedges[2]);
+    }
+
+    auto entry = Napi::Object::New(env);
+    entry.Set("materialIndex", Napi::Number::New(env, static_cast<double>(out_index)));
+    entry.Set("name", Str(env, sub.mat.name));
+    entry.Set("texture", Str(env, sub.mat.texture));
+    entry.Set("group", Napi::Number::New(env, static_cast<double>(sub.mat.group)));
+
+    auto color = Napi::Array::New(env, 4);
+    color.Set(0u, Napi::Number::New(env, sub.mat.color.r));
+    color.Set(1u, Napi::Number::New(env, sub.mat.color.g));
+    color.Set(2u, Napi::Number::New(env, sub.mat.color.b));
+    color.Set(3u, Napi::Number::New(env, sub.mat.color.a));
+    entry.Set("color", color);
+
+    entry.Set("vertexCount", Napi::Number::New(env, static_cast<double>(sub.wedges.size())));
+    entry.Set("triangleCount", Napi::Number::New(env, static_cast<double>(sub.triangles.size())));
+    entry.Set("positions", Buffer(env, positions));
+    entry.Set("normals", Buffer(env, normals));
+    entry.Set("uvs", Buffer(env, uvs));
+    entry.Set("indices", Buffer(env, indices));
+
+    total_vertices += sub.wedges.size();
+    total_triangles += sub.triangles.size();
+    out.Set(out_index++, entry);
+  }
+
+  auto bbox = Napi::Array::New(env, 6);
+  for (std::uint32_t i = 0; i < 3; ++i) {
+    bbox.Set(i, Napi::Number::New(env, lo[i]));
+    bbox.Set(i + 3, Napi::Number::New(env, hi[i]));
+  }
+
+  auto result = Napi::Object::New(env);
+  result.Set("bbox", bbox);
   result.Set("vertexCount", Napi::Number::New(env, static_cast<double>(total_vertices)));
   result.Set("triangleCount", Napi::Number::New(env, static_cast<double>(total_triangles)));
   result.Set("chunks", out);
