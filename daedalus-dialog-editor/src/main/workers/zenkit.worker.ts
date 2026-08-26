@@ -7,11 +7,14 @@ import {
   commitOps,
   createVobReader,
   groupTransferables,
+  visualBounds,
   type MeshChunk,
   type SceneBinding,
+  type ZenBounds,
 } from 'zen-world';
 import type {
   ApplyOpsRequest,
+  VisualBoundsRequest,
   SaveWorldRequest,
   DecodedTexture,
   InstancedPayload,
@@ -158,6 +161,21 @@ function waynet(): { result: WaynetPayload; transfer: ArrayBuffer[] } {
 }
 
 /**
+ * The bounds of a visual a VOB is being *given* — the one thing a property edit
+ * needs that is not already in the renderer.
+ *
+ * Every other op refits its box from bounds that crossed with the geometry. A
+ * visual the world does not currently use has no instance and no payload, so it
+ * has to be extracted here, where the VFS is. Null for a name that does not
+ * resolve, which is a normal fact about a world rather than an error.
+ */
+function boundsOfVisual(
+  payload: VisualBoundsRequest,
+): { result: ZenBounds | null; transfer: ArrayBuffer[] } {
+  return { result: visualBounds(binding, vfs!, payload.name), transfer: [] };
+}
+
+/**
  * An edit (level-editor.md §7, Phase 1b). The world in this thread is the
  * authoritative one; the renderer's index is a projection of it.
  *
@@ -167,15 +185,18 @@ function waynet(): { result: WaynetPayload; transfer: ArrayBuffer[] } {
  * by. `setVobRotation` takes the refitted box instead of deriving one, because
  * the box is a pure function of (visual, rotation, position) and the op already
  * carries both poses' boxes; the engine has **not** accepted a rotated VOB yet,
- * and that is Gate 2's business. The batch is atomic, and the index this thread
- * keeps is updated only after the world is, so `visuals` never places a VOB
- * where an op failed to move it.
+ * and that is Gate 2's business. `setVobProp` writes only the keys the op names
+ * and refuses an unrecognised one, and it takes a box only for a visual swap —
+ * the one property change that can move the box. The batch is atomic, and the
+ * index this thread keeps is updated only after the world is, so `visuals` never
+ * places a VOB where an op failed to move it.
  */
 function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: ArrayBuffer[] } {
   commitOps(
     {
       setVobPosition: (path, to) => zenkit.setVobPosition(handle!, path, to),
       setVobRotation: (path, to, bbox) => zenkit.setVobRotation(handle!, path, to, bbox),
+      setVobProp: (path, props) => zenkit.setVobProp(handle!, path, props),
     },
     payload.ops,
   );
@@ -235,6 +256,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
     case 'waynet': return waynet();
+    case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);
     case 'applyOps': return applyOpsRequest(message.payload as ApplyOpsRequest);
     case 'save': return save(message.payload as SaveWorldRequest);
     case 'close': return close();

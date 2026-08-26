@@ -5,7 +5,8 @@ import {
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  invertOp, rotateVobs, translateVobs, type ZenBounds, type ZenRotation,
+  invertOp, rotateVobs, setVobProps, translateVobs,
+  type VobProps, type ZenBounds, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { useWorldStore } from '../../store/worldStore';
@@ -226,6 +227,47 @@ const WorldSurface: React.FC = () => {
     // Each VOB turns about its own origin, and the delta composes on the left
     // so a selection of differently-oriented VOBs all turn the same way.
     void commitOps(rotateVobs(vobModelOf(current).reader, selected, delta, boundsOf));
+  }, [commitOps, boundsOf]);
+
+  /**
+   * A property change from the grid, applied to the whole selection.
+   *
+   * The whole selection because that is what every other edit here does — one
+   * gizmo drags all of them — and `setVobProps` gives each VOB its own `from`,
+   * so one undo puts a selection that never agreed on a value back to the values
+   * they each had.
+   *
+   * A change of visual is the only one that needs anything asked for: the box
+   * the engine culls by is refitted from the *new* visual's bounds, and a visual
+   * the world does not currently use has no instance and no payload to read them
+   * from. Every other property leaves the box alone, and passes no bounds at
+   * all — which is what the binding requires.
+   */
+  const handleEditProps = useCallback(async (props: VobProps) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+
+    let bounds = null;
+    if (props.visual !== undefined) {
+      // Null for a name that resolves to nothing — a misspelling, a decal's
+      // texture, a `.pfx`. The op then leaves the stale box alone rather than
+      // refitting it to nothing, exactly as a rotation does.
+      const next = await window.editorAPI.getVisualBounds(props.visual)
+        .catch(() => null);
+      bounds = { from: boundsOf, to: next === null ? null : next as ZenBounds };
+    }
+
+    await commitOps(setVobProps(vobModelOf(current).reader, selected, props, bounds));
+
+    // The viewport can follow a move or a turn by rewriting an instance matrix.
+    // It cannot follow a swapped visual: that is a different mesh, in a
+    // different `InstancedMesh` which may not exist yet. Re-requesting the
+    // instanced visuals rebuilds the scene from the world as it now is, which is
+    // the same path the cold open takes and the only one that is correct. It
+    // costs what an open costs, and only a change of visual pays it.
+    if (props.visual !== undefined) {
+      setVisuals(await window.editorAPI.getWorldVisuals());
+    }
   }, [commitOps, boundsOf]);
 
   useEffect(() => {
@@ -450,7 +492,13 @@ const WorldSurface: React.FC = () => {
           <Box sx={{ width: 300, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
             {panel === 'assets' && selectedAsset !== null
               ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} />
-              : <WorldPropertyGrid summary={summary} selection={selection} />}
+              : (
+                <WorldPropertyGrid
+                  summary={summary}
+                  selection={selection}
+                  onEditProps={handleEditProps}
+                />
+              )}
           </Box>
         )}
       </Box>

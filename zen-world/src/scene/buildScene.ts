@@ -151,6 +151,34 @@ function groupBounds(groups: readonly DrawGroup[]): ZenBounds {
   return [min[0], min[1], min[2], max[0], max[1], max[2]];
 }
 
+/**
+ * The bounds of one visual by name — for a visual a VOB is being **given**.
+ *
+ * Every other op refits a box from bounds the renderer already has: they cross
+ * with the geometry, six numbers beside buffers that were going anyway. A visual
+ * the world does not currently use has no instance and no payload, so this is
+ * the one bounds that has to be asked for.
+ *
+ * It goes through `mergeChunks` and `groupBounds` rather than summing the raw
+ * chunks, because that is the path `buildInstancedVisuals` takes — so a swapped
+ * visual's box is the box the scene would have given it, by construction rather
+ * than by two implementations agreeing. Taking the bounds before the merge would
+ * also place an attachment at its model's origin, which is the defect
+ * `mergeChunks` exists to have fixed.
+ *
+ * Null for a name that does not resolve (a decal's texture, a `.pfx`) and for
+ * one that resolves to no geometry — the op then leaves the stale box alone,
+ * which is the same answer a rotation gives for the same reason.
+ */
+export function visualBounds(
+  binding: SceneBinding, vfs: VfsHandle, name: string,
+): ZenBounds | null {
+  const visual = binding.extractVisual(vfs, name);
+  if (visual === null) return null;
+  const groups = mergeChunks(visual.chunks);
+  return groups.length === 0 ? null : groupBounds(groups);
+}
+
 export function buildInstancedVisuals(
   binding: SceneBinding,
   vfs: VfsHandle,

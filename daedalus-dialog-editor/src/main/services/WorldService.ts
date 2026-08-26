@@ -127,6 +127,18 @@ export class WorldService {
   }
 
   /**
+   * The bounds of a visual by name, for a VOB that is being given one.
+   *
+   * The only bounds in the system that has to be asked for: every other op
+   * refits its box from bounds that already crossed with the geometry, and a
+   * visual the world does not currently use has neither an instance nor a
+   * payload. Null for a name that does not resolve.
+   */
+  getVisualBounds(name: string): Promise<number[] | null> {
+    return this.requestOnOpenWorld<number[] | null>('visualBounds', { name });
+  }
+
+  /**
    * Apply an edit to the authoritative world, and record it (§7).
    *
    * A batch is one entry in the history: a multi-select drag is one undo, not

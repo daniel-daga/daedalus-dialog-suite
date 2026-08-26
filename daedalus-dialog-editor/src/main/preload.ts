@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldVisuals: () => ipcRenderer.invoke('world:visuals'),
   listWorldAssets: (path: string) => ipcRenderer.invoke('world:assets', { path }),
   getWorldWaynet: () => ipcRenderer.invoke('world:waynet'),
+  getVisualBounds: (name: string) => ipcRenderer.invoke('world:visualBounds', { name }),
   getWorldTexture: (name: string, maxSize: number) =>
     ipcRenderer.invoke('world:texture', { name, maxSize }),
   applyWorldOps: (ops: unknown[]) => ipcRenderer.invoke('world:applyOps', { ops }),

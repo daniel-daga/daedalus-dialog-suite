@@ -567,7 +567,12 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
 
     for (const op of appliedOps) {
       if (op.op === 'RotateVob') world.rotateVob(op.vob, op.to);
-      else world.moveVob(op.vob, op.to);
+      else if (op.op === 'MoveVob') world.moveVob(op.vob, op.to);
+      // A property op moves nothing: the name and the flags are not drawn at
+      // all, and a swapped visual is a different mesh in a different
+      // `InstancedMesh` rather than a matrix to rewrite. The surface re-requests
+      // the instanced visuals for that one, which rebuilds the scene — there is
+      // no in-place edit of it that would be correct.
     }
     // The gizmo has to follow the VOBs it is attached to, or it is left
     // floating where they used to be — an undo of a multi-select drag moves

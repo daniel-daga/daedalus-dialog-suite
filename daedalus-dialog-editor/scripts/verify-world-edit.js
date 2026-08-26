@@ -49,6 +49,23 @@ const SAVE_TO = path.join(os.tmpdir(), `verify-world-edit-${process.pid}.zen`);
 
 const problems = [];
 const check = (condition, message) => { if (!condition) problems.push(message); };
+
+/**
+ * Poll a condition until it holds, and record a problem if it never does.
+ *
+ * Deliberately not a fixed pause: an edit is an IPC round trip into the worker
+ * and back through React, and a sleep here makes this script report failures
+ * that were only late answers — while hiding real races behind its own latency.
+ * That mistake is already recorded for the gizmo half below.
+ */
+async function expect_(holds, message, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (await holds()) return true;
+    if (Date.now() > deadline) { check(false, message); return false; }
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+  }
+}
 const near = (a, b) => a !== null && b !== null
   && a.every((value, i) => Math.abs(value - b[i]) < 0.5);
 
@@ -210,11 +227,25 @@ async function main() {
   for (let i = 0; i < 6; i++) await page.keyboard.press('Control+y');
   for (let i = 0; i < 6; i++) await page.keyboard.press('Control+z');
 
-  await page.waitForFunction(gridReads, before, { timeout: 15_000 })
-    .catch(() => undefined);
-  const settled = await readGrid();
-  check(near(settled, before), `held keys left the VOB at ${settled}, not ${before}`);
-  console.log(`  6x undo/redo/undo -> ${settled.map(Math.round).join(', ')}`);
+  // Two waits, not one, because the single wait could not tell the two failures
+  // apart — and it reported the wrong one. Eighteen keystrokes arrive faster
+  // than the round trip and `WorldService` serialises them, so at 15 s the
+  // stack can still be draining; a VOB left at `to` is exactly what one
+  // *pending* undo looks like AND exactly what one *dropped* undo looks like.
+  // If it settles on the second wait it was latency. If it never settles, an
+  // undo really was taken twice — the race this section exists to catch.
+  const settles = (timeout) => page.waitForFunction(gridReads, before, { timeout })
+    .then(() => true).catch(() => false);
+
+  let settled = await settles(15_000);
+  if (!settled) {
+    settled = await settles(45_000);
+    if (settled) console.log('  (the undo queue was still draining at 15 s)');
+  }
+  const at = await readGrid();
+  check(settled, `held keys left the VOB at ${at}, not ${before}, and it never settled there — `
+    + 'an undo was taken twice');
+  console.log(`  6x undo/redo/undo -> ${at.map(Math.round).join(', ')}`);
 
   // ── the same gizmo, two VOBs (level-editor.md §7, multi-select) ───────────
   //
@@ -334,6 +365,48 @@ async function main() {
 
   await page.keyboard.press('w');
 
+  // ── the property grid, which is where the invisible half is ───────────────
+  //
+  // Everything the gizmos write is on screen. Nothing `SetVobProp` writes is:
+  // a name, a visual and six flags. So this is the one edit whose only witness
+  // in the app is the panel that produced it — and the reason the save check
+  // below now also reads the name and the flag out of the *file*.
+  await clickRow(selected);
+
+  const nameField = page.getByTestId('world-prop-name-input');
+  const nameBefore = await nameField.inputValue();
+  const RENAMED = `VERIFY_RENAMED_${process.pid}`;
+
+  await nameField.fill(RENAMED);
+  await nameField.press('Enter');
+  await expect_(async () => (await page.getByTestId('world-prop-name-input').inputValue()) === RENAMED,
+    'the property grid never showed the new name');
+  check(await page.getByTestId('world-edit-error').count() === 0, 'the rename was refused');
+
+  // A flag is a checkbox and a single key in the op — the grid must not post the
+  // whole word, or an undo restores five flags nobody edited.
+  const flag = page.getByTestId('world-prop-flag-cdDynamic');
+  const flagBefore = await flag.isChecked();
+  await flag.click();
+  await expect_(async () => (await page.getByTestId('world-prop-flag-cdDynamic').isChecked()) !== flagBefore,
+    'the flag checkbox did not follow the edit');
+
+  // Two edits, two undo entries: the flag comes back first.
+  await page.keyboard.press('Control+z');
+  await expect_(async () => (await page.getByTestId('world-prop-flag-cdDynamic').isChecked()) === flagBefore,
+    'undo did not put the flag back');
+  await expect_(async () => (await page.getByTestId('world-prop-name-input').inputValue()) === RENAMED,
+    'undoing the flag also undid the rename — one edit, one entry');
+
+  await page.keyboard.press('Control+z');
+  await expect_(async () => (await page.getByTestId('world-prop-name-input').inputValue()) === nameBefore,
+    'undo did not put the name back');
+
+  // Put the rename back so the save below carries it into the file.
+  await page.keyboard.press('Control+y');
+  await expect_(async () => (await page.getByTestId('world-prop-name-input').inputValue()) === RENAMED,
+    'redo did not restore the rename');
+
   // ── save, and the question only a save can answer ─────────────────────────
   //
   // Every check above reads the *projection*: the property grid reads the
@@ -374,6 +447,11 @@ async function main() {
     if (saved) {
       check(near(saved.position, away),
         `the saved world has that VOB at ${saved.position.map(Math.round)}, not ${away.map(Math.round)}`);
+      // The property op reaching the *file*, which is the only witness that is
+      // not a projection — and the one that matters, because a name and a flag
+      // are invisible in the viewport either way.
+      check(saved.name === RENAMED,
+        `the saved world has that VOB named "${saved.name}", not "${RENAMED}"`);
       // The bbox travels with the position — the engine culls by it.
       check(Math.abs((saved.bbox[0] + saved.bbox[3]) / 2 - away[0]) < NUDGE,
         'the saved VOB kept a bounding box centred where it used to be');
@@ -413,6 +491,7 @@ async function main() {
   row('Moved', `${before.map(Math.round).join(', ')} -> ${to.map(Math.round).join(', ')}`);
   row('Undo / redo', 'both followed by the grid and the gizmo');
   row('Turned', 'a quarter turn about Y, checked in both projections, undone');
+  row('Renamed', `${nameBefore || '(unnamed)'} -> ${RENAMED}, and one flag, each its own undo`);
   row('Saved and re-loaded', saved
     ? `VOB ${selected} is at ${saved.position.map(Math.round).join(', ')} in the file`
     : 'FAILED');

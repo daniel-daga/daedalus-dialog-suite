@@ -86,8 +86,21 @@ export interface DecodedTexture {
 }
 
 export type WorldWorkerOp =
-  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'applyOps' | 'save'
-  | 'close';
+  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'visualBounds'
+  | 'applyOps' | 'save' | 'close';
+
+/**
+ * The bounds of a visual that is **not** in the scene — what a visual swap needs
+ * and nothing else does.
+ *
+ * Every other op refits a box from bounds the renderer already has: they came
+ * across with the geometry, six numbers beside buffers that were crossing
+ * anyway. A visual the world does not currently use has no instance and no
+ * payload, so its bounds are the one thing here that has to be asked for.
+ */
+export interface VisualBoundsRequest {
+  name: string;
+}
 
 /** The payload of an `applyOps` request. Undo and redo are the same request
  *  with inverted ops (level-editor.md §7). */

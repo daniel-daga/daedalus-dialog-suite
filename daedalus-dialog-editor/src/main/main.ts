@@ -677,6 +677,19 @@ function setupIpcHandlers() {
 
   ipcMain.handle('world:waynet', async () => worldService.getWaynet());
 
+  // A name inside the mounted VFS namespace, exactly like `world:assets` — it
+  // never reaches the disk, so the path validator has nothing to validate.
+  ipcMain.handle('world:visualBounds', async (_event, request: unknown) => {
+    const name = typeof request === 'object' && request !== null && 'name' in request
+      && typeof (request as { name: unknown }).name === 'string'
+      ? (request as { name: string }).name
+      : null;
+    if (name === null || name.trim() === '') {
+      throw new Error('Invalid visual bounds request: name must be a non-empty string');
+    }
+    return worldService.getVisualBounds(name);
+  });
+
   // The first IPC that changes the world rather than reading a projection of
   // it (level-editor.md §7). The history is the service's, not the renderer's:
   // an op addresses a VOB by its index path down the world the worker holds.

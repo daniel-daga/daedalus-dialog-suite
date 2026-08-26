@@ -1447,6 +1447,87 @@ found by sabotage rather than by reading:
 - two turns about the **same** axis commute, so composing the delta on the wrong
   side passed. The fixture now turns about a different axis than the VOB's own.
 
+#### The property editor — the first edit the viewport cannot show (2026-08-26)
+
+`SetVobProp` runs the same path the two gizmos do — `zen-world`'s `setVobProp` /
+`setVobProps` → `WorldService.applyOps` → the worker → **`setVobProp`**, a new
+binding call — and the property grid writes: the name, the six flags, and the
+visual. `verify-world-edit.js` renames a VOB in the real app on retail NewWorld,
+toggles a flag, undoes each separately, and reads the new name back **out of the
+saved file**.
+
+What separates it from a move and a turn, and decides most of its shape:
+**every field it writes is invisible in the viewport.** A VOB moved by the wrong
+op is on screen. A VOB renamed by the wrong op is not, and neither is an inverse
+that restores the wrong set of fields — until somebody presses Ctrl+Z.
+
+- **An op carries exactly the keys it sets, on both sides.** `from` is read out
+  of the index for precisely the keys `to` names. Carrying every property the
+  VOB has gives an inverse that undoes edits the op never made; carrying fewer
+  leaves one unrestored. The grid therefore posts **only the field that
+  changed**, and an edit that changes nothing is not sent at all — the rule the
+  gizmo already had, and with a selection it is the difference between one undo
+  entry and fifty.
+- **A visual is renamed, never re-typed.** A visual is its own object frame in
+  the archive with its own class, and the class is **not** implied by the file
+  name. Measured across the three retail worlds:
+
+  | extension | type | | |
+  |---|---|---|---|
+  | `.3DS` | `MULTI_RESOLUTION_MESH` ×20,716 | `MESH` ×31 | **ambiguous** |
+  | `.TGA` | `DECAL` ×1,932 | | |
+  | `.PFX` | `PARTICLE_EFFECT` ×1,391 | | |
+  | `.ASC` / `.MDS` | `MODEL` ×914 / ×502 | | |
+  | `.MMS` | `MORPH_MESH` ×158 | | |
+  | *(none)* | `UNKNOWN` ×15,749 | | |
+
+  Those 31 `.3DS` VOBs carrying a `zCMesh` are the whole argument: a rule that
+  derived the class from the extension writes the wrong object frame for them
+  and nothing downstream reports it. So the object found on the VOB is kept and
+  only its name changes. A VOB whose visual is `UNKNOWN` has none to rename —
+  and that is not an edge case, it is **15,749 of the 41,393**, which is what
+  "this VOB has no visual" actually looks like on disk (no retail VOB has a null
+  visual pointer at all). The binding refuses it and the grid disables the field
+  rather than offering an edit that would be refused at the bottom of the stack.
+- **Only a visual swap can move the box, and its two sides are different
+  visuals** — not one visual under two transforms, which is what a rotation has.
+  So the op carries a box for each and `invertOp` swaps both, and the *new*
+  visual's bounds are the one thing in the system that has to be **asked for**:
+  every other op refits from bounds that crossed with the geometry, and a visual
+  the world does not currently use has no instance and no payload.
+  `zen-world`'s `visualBounds` computes them through `mergeChunks` and the same
+  `groupBounds` the scene uses, so a swapped visual's box is the box the scene
+  would have given it by construction rather than by two implementations
+  agreeing.
+- **The viewport does not follow a visual swap in place.** A move rewrites an
+  instance matrix; a swapped visual is a different mesh in a different
+  `InstancedMesh` that may not exist yet. The surface re-requests the instanced
+  visuals, which rebuilds the scene from the world as it now is — the cold-open
+  path, and only a change of visual pays it.
+
+**One defect, and only the real app could show it.** The grid's fields are
+uncontrolled inputs keyed on the VOB, which is right for a selection change — a
+half-typed name must not follow the selection to the next VOB. It is not enough
+for a change of *value*: an undo changed the name in the world and the panel went
+on showing the old one, then would have written it back on the next blur. Every
+Jest fixture moved the selection and none changed the value, so all of them
+passed. The key is on the VOB **and** the value now, and the test that was
+missing is the one that changes the value under a fixed selection.
+
+Eleven sabotages this session across the binding, the op model and the grid, all
+caught — writing the flag word wholesale (which passes on any props object that
+sets all six), a batch sharing one `from`, a half inverse that leaves the box
+behind, deriving the visual's class from its extension, and ignoring an unknown
+key rather than refusing it. Two of them were reported as *surviving* first, by a
+harness that grepped for the test runner's pass/fail glyphs: PowerShell 5.1 reads
+a UTF-8 scratchpad script as ANSI, and jest wraps those glyphs in ANSI colour
+codes. **A sabotage run that reports every sabotage as surviving is a broken
+harness, not a broken test suite** — count the runner's own summary.
+
+Still not built: `ReparentVob`, `AddVob`, `DeleteVob`. And **no engine verdict
+covers a renamed VOB, a swapped visual or a changed flag** — like the rotation
+before it, that is Gate 2's business.
+
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
 Rotation is the next op, and it cannot be built the way `MoveVob` was.

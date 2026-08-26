@@ -354,4 +354,88 @@ describe('assertApplyOpsRequest', () => {
       expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, to: [1, 2, 3] }] })).toThrow(/to/);
     });
   });
+
+  describe('a property change', () => {
+    const props = {
+      op: 'SetVobProp',
+      vob: 3,
+      path: '0/4',
+      from: { name: 'BARREL_01', showVisual: true },
+      to: { name: 'BARREL_02', showVisual: false },
+      fromBbox: null,
+      toBbox: null,
+    };
+
+    it('is accepted, and mixes with a move in one batch', () => {
+      expect(() => assertApplyOpsRequest({ ops: [props] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [move, props] })).not.toThrow();
+    });
+
+    it('rejects a property the binding has never heard of', () => {
+      // The props object is handed to C++ whole, where an unrecognised key is
+      // refused rather than ignored — so refusing it here is what keeps a
+      // mistyped key from being discovered at the bottom of a batch that has
+      // already applied half of itself.
+      for (const bad of [{ showvisual: true }, { position: [1, 2, 3] }, { scale: 2 }]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...props, from: bad, to: bad }],
+        })).toThrow(/unknown property/);
+      }
+    });
+
+    it('rejects a property whose value is the wrong type', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { name: 1 }, to: { name: 2 } }],
+      })).toThrow(/name/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { showVisual: 'yes' }, to: { showVisual: 'no' } }],
+      })).toThrow(/showVisual/);
+    });
+
+    it('rejects sides that do not carry the same properties', () => {
+      // The inverse is `from` and `to` swapped. Sides that disagree give an
+      // undo that restores a different set of fields than the op wrote, and
+      // nothing shows it until somebody presses Ctrl+Z.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { name: 'A' }, to: { name: 'B', showVisual: true } }],
+      })).toThrow(/same properties/);
+    });
+
+    it('rejects an op that sets nothing', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: {}, to: {} }],
+      })).toThrow(/sets no properties/);
+    });
+
+    it('takes a box only for a change of visual', () => {
+      const box = [-1, -1, -1, 1, 1, 1];
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          ...props,
+          from: { visual: 'A.3DS' }, to: { visual: 'B.3DS' },
+          fromBbox: box, toBbox: box,
+        }],
+      })).not.toThrow();
+      // Nothing but a visual swap can move the box, and the binding refuses one
+      // that no swap justifies — so a batch carrying it never starts.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, toBbox: box }],
+      })).toThrow(/visual/);
+    });
+
+    it('rejects a box that is not six finite numbers', () => {
+      const visual = { ...props, from: { visual: 'A.3DS' }, to: { visual: 'B.3DS' } };
+      for (const bad of [[1, 2, 3], new Array(7).fill(0), [1, 2, 3, 4, 5, NaN], '0']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...visual, toBbox: bad }] })).toThrow(/Bbox/);
+      }
+    });
+
+    it('rejects sides that are not objects at all', () => {
+      for (const bad of [null, 'name', 42, ['name']]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...props, from: bad, to: bad }],
+        })).toThrow(/from|to/);
+      }
+    });
+  });
 });

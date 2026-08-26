@@ -9,7 +9,10 @@
 // The binding is injected, so all of this is exercised without the native
 // addon and without a Gothic install.
 
-import { buildInstancedVisuals, buildWorldMesh, type SceneBinding, type VobIndex } from '../src/scene';
+import {
+  buildInstancedVisuals, buildWorldMesh, visualBounds,
+  type SceneBinding, type VobIndex,
+} from '../src/scene';
 import type { MeshChunk } from '../src/render';
 
 function chunk(texture: string): MeshChunk {
@@ -95,6 +98,47 @@ describe('zen-world/scene — buildWorldMesh', () => {
     expect(mesh.groups[0].materials).toBe(2);
     expect(mesh.bbox).toEqual([0, 0, 0, 100, 100, 100]);
     expect(mesh.stats).toEqual({ materials: 3, drawGroups: 2, triangles: 2 });
+  });
+});
+
+describe('zen-world/scene — visualBounds', () => {
+  // The bounds of a visual a VOB is being *given*. Every other op refits its box
+  // from bounds that crossed with the geometry; a visual the world does not
+  // currently use has no instance and no payload, so this is the one that has to
+  // be asked for.
+
+  test('is the box the scene would have given that visual', () => {
+    // Not "a box computed the same way" — the *same* box. Two implementations
+    // that agree today are two implementations that can drift, and the one that
+    // drifts is the one the engine culls by.
+    const b = binding(() => [chunk('A.TGA')]);
+    const scene = buildInstancedVisuals(b, VFS, vobIndex([{ visual: 'BARREL.3DS' }]));
+
+    expect(visualBounds(b, VFS, 'BARREL.3DS')).toEqual(scene.visuals[0].bounds);
+  });
+
+  test('applies an attachment\'s node transform, because it goes through the merge', () => {
+    // Bounds taken before the merge place a chest's lid at the chest's origin —
+    // the defect `mergeChunks` exists to have fixed, and a box that inherited it
+    // would cull a swapped visual by a box a metre from where it is drawn.
+    const attached = { ...chunk('A.TGA'), node: 'LID', transform: [1, 0, 0, 100, 0, 1, 0, 0, 0, 0, 1, 0] };
+    const b = binding(() => [attached]);
+
+    const bounds = visualBounds(b, VFS, 'CHEST.3DS')!;
+
+    expect(bounds[0]).toBeCloseTo(100);
+    expect(bounds[3]).toBeCloseTo(101);
+  });
+
+  test('is null for a name that does not resolve', () => {
+    // A decal names a texture and a `.pfx` is a Daedalus instance; neither is in
+    // the VFS. The op then leaves the stale box alone rather than refitting it
+    // to nothing, which is the answer a rotation gives for the same reason.
+    expect(visualBounds(binding(() => null), VFS, 'PFX_SMOKE')).toBeNull();
+  });
+
+  test('is null for a visual that resolves to no geometry', () => {
+    expect(visualBounds(binding(() => []), VFS, 'EMPTY.3DS')).toBeNull();
   });
 });
 

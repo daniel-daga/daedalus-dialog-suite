@@ -211,6 +211,12 @@ export function assertSaveWorldRequest(
  * assumed, so an op the binding cannot apply is a refusal here and not a
  * silently skipped edit.
  */
+/** The boolean properties a `SetVobProp` may carry — the six `vobIndex` emits.
+ *  Anything else is refused, exactly as the binding refuses it. */
+const VOB_FLAG_KEYS = [
+  'showVisual', 'vobStatic', 'ambient', 'cdStatic', 'cdDynamic', 'physicsEnabled',
+];
+
 export function assertApplyOpsRequest(request: unknown): asserts request is { ops: WorldOp[] } {
   if (!isPlainObject(request)) {
     throw new Error('Invalid ops request: expected a plain object');
@@ -220,7 +226,7 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
   }
   for (const op of request.ops) {
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
-    if (op.op !== 'MoveVob' && op.op !== 'RotateVob') {
+    if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
     if (typeof op.vob !== 'number' || !Number.isInteger(op.vob) || op.vob < 0) {
@@ -246,6 +252,50 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       for (const field of ['fromBbox', 'toBbox'] as const) {
         if (op[field] !== null && !isFiniteNumbers(op[field], 6)) {
           throw new Error(`Invalid op: ${field} must be six finite numbers or null`);
+        }
+      }
+      continue;
+    }
+
+    if (op.op === 'SetVobProp') {
+      // The props reach C++ as a whole object, where an unrecognised key is
+      // refused rather than ignored — so the same key set is settled here, and
+      // an op the binding would refuse never becomes a half-applied batch.
+      const sides = ['from', 'to'] as const;
+      for (const side of sides) {
+        if (!isPlainObject(op[side])) {
+          throw new Error(`Invalid op: ${side} must be an object of properties`);
+        }
+        for (const [key, value] of Object.entries(op[side])) {
+          if (key === 'name' || key === 'visual') {
+            if (typeof value !== 'string') {
+              throw new Error(`Invalid op: ${side}.${key} must be a string`);
+            }
+          } else if (VOB_FLAG_KEYS.includes(key)) {
+            if (typeof value !== 'boolean') {
+              throw new Error(`Invalid op: ${side}.${key} must be a boolean`);
+            }
+          } else {
+            throw new Error(`Invalid op: unknown property ${key}`);
+          }
+        }
+      }
+      // The same keys on both sides, or the inverse restores a different set of
+      // fields than the op wrote — which is invisible until someone undoes.
+      const keys = sides.map((side) => Object.keys(op[side] as object).sort());
+      if (keys[0].length === 0) throw new Error('Invalid op: sets no properties');
+      if (keys[0].join() !== keys[1].join()) {
+        throw new Error('Invalid op: from and to must carry the same properties');
+      }
+      for (const field of ['fromBbox', 'toBbox'] as const) {
+        if (op[field] !== null && !isFiniteNumbers(op[field], 6)) {
+          throw new Error(`Invalid op: ${field} must be six finite numbers or null`);
+        }
+        // Only a visual swap can move the box, and the binding refuses a box
+        // without one — so a box on any other change is refused here too rather
+        // than at the bottom of a batch that has already applied.
+        if (op[field] !== null && !('visual' in (op.to as object))) {
+          throw new Error(`Invalid op: ${field} is only meaningful with a change of visual`);
         }
       }
       continue;

@@ -169,6 +169,10 @@ export interface EditorAPI {
   /** One level of the mounted VFS; null for a missing path and for a file. */
   listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;
   getWorldWaynet: () => Promise<WaynetPayload>;
+  /** The bounds of a visual a VOB is being *given*, for the box a swap refits —
+   *  the one bounds not already in the renderer, because a visual the world does
+   *  not use has no instance. Null for a name that does not resolve. */
+  getVisualBounds: (name: string) => Promise<number[] | null>;
   /** Apply an edit. One call is one undo entry, so a multi-select drag is one
    *  batch and not one call per VOB. */
   applyWorldOps: (ops: WorldOp[]) => Promise<void>;
