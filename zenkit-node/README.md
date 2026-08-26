@@ -157,7 +157,33 @@ is `null`, never an error: an unresolved visual is a normal fact about a world.
 
 `extractVisual` reuses the chunk shape above. A proto-mesh chunk carries **no
 `lights` and no `flags`** — its wedges are already de-duplicated render vertices
-and a VOB visual has no baked ZenGin light word. `decodeTexture` returns RGBA8
+and a VOB visual has no baked ZenGin light word.
+
+**The compiled models are in `Anims.vdf`**, not `Meshes` — `.MDL`, `.MDM`,
+`.MDH` and `.MMB` all live there, and an extracted MDK install leaves
+`Anims/_compiled` empty. A VFS mounting only meshes and textures resolves no
+model at all, which is what made 53 of NewWorld's 63 MODEL visuals look like a
+name-mapping problem when the mapping was never wrong.
+
+**A model's geometry is in two places.** `ModelMesh::meshes` holds soft-skin
+bodies; `ModelMesh::attachments` holds rigid sub-meshes hung on hierarchy nodes,
+and a static prop's geometry is entirely in the second — a locked chest is base
++ lid + lock + zone mesh, four attachments. An attachment chunk carries two
+extra fields: `node`, the hierarchy node it hangs on, and `transform`, that
+node's matrix accumulated down the chain from the root, row-major and
+**emitted rather than baked** into the positions. Attachments are emitted in
+hierarchy-node order because the map they are stored in is unordered. A `.MDM`
+has attachments but no hierarchy: it is read from the `.MDH` beside it, as
+ZenGin pairs them.
+
+A `zCVobLevelCompo`'s visual is **not an asset lookup** — it names the source
+mesh that a slice of the already-compiled world mesh came from, and drawing it
+would draw that geometry twice. Measured on NewWorld, 100% of
+`NewWorld_Part_Xardas_01`'s vertex positions are already in `NewWorld.zen`'s
+world mesh. Consumers should skip those VOBs; the part `.zen`s beside the world
+are their editable sources. Decals resolve to a texture rather than a mesh, and
+`.pfx` particle effects are Daedalus instances that are not in the VFS at all —
+`extractVisual` returns null for both, correctly. `decodeTexture` returns RGBA8
 through ZenKit's own ZTEX decoder, so the renderer never sees DXT.
 
 #### Triangle winding — measured, and still not applied here

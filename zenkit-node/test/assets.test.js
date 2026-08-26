@@ -228,6 +228,66 @@ test('extractVisual buffer lengths agree with the declared counts', () => {
   }
 });
 
+// --- extractVisual: models ----------------------------------------------
+
+// Static props — chests, stoves, bookshelves — keep their geometry in a model's
+// *attachments*: rigid sub-meshes hung on hierarchy nodes. 53 of NewWorld's 63
+// MODEL visuals are like that, and extraction used to return null for every one
+// of them because it only looked at the soft-skin mesh list.
+const prop = () => zenkit.extractVisual(vfs(), 'EX_PROP.ASC');
+
+test('extractVisual reads a model attachment, which is where static props live', () => {
+  const payload = prop();
+
+  assert.strictEqual(payload.source, 'EX_PROP.MDL');
+  assert.deepStrictEqual(
+    payload.chunks.map((c) => [c.node, c.name, c.triangleCount]),
+    [
+      // Hierarchy order, not the order of the unordered_map they are stored in:
+      // BSPROOT is node 0 and LID is node 1.
+      ['BSPROOT', 'EX_WOOD', 2],
+      ['BSPROOT', 'EX_IRON', 1],
+      ['LID', 'EX_WOOD', 2],
+      ['LID', 'EX_IRON', 1],
+    ],
+  );
+});
+
+test('extractVisual accumulates each attachment transform down the hierarchy', () => {
+  const [root, , lid] = prop().chunks;
+
+  // Row-major, like every other matrix the binding emits, so the translation is
+  // at [3], [7], [11]. BSPROOT sits at (1, 2, 3); LID is its child at a further
+  // (0, 10, 0), so LID lands at (1, 12, 3) — a child that ignored its parent
+  // would report (0, 10, 0) and a wrong multiplication order (10, 2, 3)-ish.
+  assert.strictEqual(root.transform.length, 16);
+  assert.deepStrictEqual(
+    [root.transform[3], root.transform[7], root.transform[11]], [1, 2, 3],
+  );
+  assert.deepStrictEqual(
+    [lid.transform[3], lid.transform[7], lid.transform[11]], [1, 12, 3],
+  );
+
+  // Positions themselves stay exactly as stored — the transform is emitted, not
+  // baked, for the same reason the coordinate convention is not applied here.
+  assert.deepStrictEqual(f32(lid.positions).slice(0, 3), [0, 0, 0]);
+});
+
+test('extractVisual takes a .MDM\'s hierarchy from its sibling .MDH', () => {
+  // A .MDM carries attachments but no hierarchy at all: the node transforms live
+  // in the .MDH beside it, which is how ZenGin pairs them. All 12 .MDM visuals
+  // in NewWorld have one.
+  const payload = zenkit.extractVisual(vfs(), 'EX_RIG.ASC');
+
+  assert.strictEqual(payload.source, 'EX_RIG.MDM');
+  assert.deepStrictEqual(payload.chunks.map((c) => c.node), ['BASE', 'BASE']);
+  assert.deepStrictEqual(
+    [payload.chunks[0].transform[3], payload.chunks[0].transform[7],
+      payload.chunks[0].transform[11]],
+    [5, 0, 0],
+  );
+});
+
 test('extractVisual returns null for a name nothing maps to', () => {
   assert.strictEqual(zenkit.extractVisual(vfs(), 'EX_MISSING.3DS'), null);
   // A texture is not a visual: the visual candidates never reach a .TEX.

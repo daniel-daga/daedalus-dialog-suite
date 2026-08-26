@@ -2,6 +2,7 @@
 
 #include <zenkit/Mesh.hh>
 #include <zenkit/Model.hh>
+#include <zenkit/ModelHierarchy.hh>
 #include <zenkit/ModelMesh.hh>
 #include <zenkit/MorphMesh.hh>
 #include <zenkit/MultiResolutionMesh.hh>
@@ -185,19 +186,36 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
       mesh.load(reader.get());
       payload = ExtractProtoMesh(env, mesh.mesh);
     } else if (EndsWith(resolved, ".MDM") || EndsWith(resolved, ".MDL")) {
+      // The bind pose only: soft-skin weights and animation are not the
+      // editor's concern yet. But a model's geometry is in two places, and a
+      // static prop's is entirely in the second: `meshes` holds soft-skin
+      // bodies, `attachments` holds rigid sub-meshes hung on hierarchy nodes.
       ModelMesh model {};
+      ModelHierarchy hierarchy {};
+
       if (EndsWith(resolved, ".MDL")) {
         Model full {};
         full.load(reader.get());
         model = std::move(full.mesh);
+        hierarchy = std::move(full.hierarchy);
       } else {
         model.load(reader.get());
+        // A .MDM carries attachments but no node transforms at all; they live
+        // in the .MDH beside it, which is how ZenGin pairs the two. Every one
+        // of NewWorld's 12 .MDM visuals has one. Without it the attachments
+        // cannot be placed, so they are not emitted rather than emitted wrong.
+        std::string hierarchy_name;
+        auto const* mdh = FindFirst(handle->vfs,
+                                    {resolved.substr(0, resolved.size() - 4) + ".MDH"},
+                                    &hierarchy_name);
+        if (mdh != nullptr) {
+          auto hierarchy_reader = mdh->open_read();
+          hierarchy.load(hierarchy_reader.get());
+        }
       }
-      // The bind pose only: the soft-skin weights and the node hierarchy are an
-      // animation concern the editor has no use for yet. A model with several
-      // soft-skin meshes contributes each one's geometry.
-      if (model.meshes.empty()) return env.Null();
-      payload = ExtractProtoMesh(env, model.meshes.front().mesh);
+
+      if (model.meshes.empty() && model.attachments.empty()) return env.Null();
+      payload = ExtractModelMesh(env, model, hierarchy);
     } else {
       return env.Null();
     }

@@ -215,12 +215,16 @@ the durable artefacts are the numbers here and the two binding changes it forced
 
 | Metric | Budget | Measured | |
 |---|---|---|---|
-| Frame time, full scene | < 16 ms | **3.8 ms p50, 5.4 p95, 8.4 max** — 0 of 840 frames over 16.7 ms | ✅ |
-| Draw calls, full scene | < 1500 | **936 total, 839 p50 per frame** | ✅ |
-| Pick latency — world mesh | < 1 frame | **0.3 ms p50, 0.6 p95, 3.9 max** | ✅ |
-| Pick latency — whole scene | < 1 frame | **12.4 ms p50, 19.8 p95, 25.9 max** | ❌ |
-| Reload after an edit | < 2 s | **267 ms** — a full world-mesh re-extract; a VOB edit needs none | ✅ |
-| Cold open (no budget row) | — | **1.9–2.1 s**, from 4.3 s (see below) | |
+| Frame time, full scene | < 16 ms | **4.9 ms p50, 6.5 p95, 16.2 max** — 0 of 840 frames over 16.7 ms | ✅ |
+| Draw calls, full scene | < 1500 | **1076 total, 961 p50 per frame** | ✅ |
+| Pick latency — world mesh | < 1 frame | **0.2 ms p50, 0.9 p95, 5.0 max** | ✅ |
+| Pick latency — whole scene | < 1 frame | **14.2 ms p50, 21.3 p95, 22.2 max** | ❌ |
+| Reload after an edit | < 2 s | **266 ms** — a full world-mesh re-extract; a VOB edit needs none | ✅ |
+| Cold open (no budget row) | — | **1.8 s**, from 4.3 s (see below) | |
+
+Final scene: 476,445 world-mesh triangles in 352 draw groups, plus **12,463
+VOBs collapsed into 379 instanced visuals** and 490 decoded textures —
+2.74M triangles a frame.
 
 On an **integrated** GPU (Radeon 890M through ANGLE/D3D11) at 1463×780 — the low
 end of "mid-range", so the headroom is real: 2.59M triangles a frame at 936 draw
@@ -322,6 +326,55 @@ One more thing the phase split exposed: the *first* traversal of a freshly
 loaded page shows two frames over 16.7 ms (max 20.1 ms) where the second
 traversal shows none (max 8.2 ms). That is first-use texture upload, not
 rendering cost — worth knowing before someone reads it as a framerate problem.
+
+#### The unresolved visuals — none of them were a name-mapping problem (2026-08-26)
+
+Phase 0 left two open questions: 53 of 63 MODEL visuals unresolved, and 16 MESH
+visuals unresolved. Neither turned out to be about `.ASC`/`.MDS`/`.3DS` mapping,
+and the answers are different in kind:
+
+| Visual type | Before | Now | Why |
+|---|---|---|---|
+| MULTI_RESOLUTION_MESH | 313/313 | 313/313 | |
+| MODEL | 10/63 | **63/63** | `Anims.vdf` + model attachments |
+| MORPH_MESH | 0/3 | **3/3** | `Anims.vdf` |
+| MESH | 0/16 | **n/a** | level compos — must not resolve |
+| DECAL | 0/23 | 0/23 | not a mesh; a textured quad |
+| PARTICLE_EFFECT | 1/26 | 1/26 | script-defined, not a VFS asset |
+
+1. **The compiled models are in `Anims.vdf`.** `.MDL`, `.MDM`, `.MDH` and `.MMB`
+   live there, not in `Meshes` — and an extracted MDK install leaves
+   `Anims/_compiled` empty, so nothing mounting only `Meshes` and `Textures` can
+   see a single model. The documented mapping was right all along; the archive
+   holding the files was never mounted. With it, name resolution is 63/63 and
+   3/3.
+2. **A model's geometry is in two places, and a static prop's is entirely in the
+   second.** `ModelMesh::meshes` holds soft-skin bodies; `ModelMesh::attachments`
+   holds rigid sub-meshes hung on hierarchy nodes. `extractVisual` read only the
+   first and returned null for the rest, which is why chests, stoves and
+   bookshelves came back as nothing. Attachments are now emitted in
+   hierarchy-node order — the map they live in is unordered — each carrying its
+   node name and the transform accumulated down the node chain. Retail models
+   carry up to four (a locked chest is base + lid + lock + zone mesh).
+3. **The 16 MESH visuals must never resolve.** They are all on `zCVobLevelCompo`
+   VOBs, and they name the source mesh a *slice of the compiled world* came
+   from. Measured: 100% of `NewWorld_Part_Xardas_01`'s 19,430 distinct vertex
+   positions, 100% of `..._Ship_01`'s and `..._TrollArea_01`'s, and 99.2% of
+   `..._Farm_01`'s already appear in `NewWorld.zen`'s own world mesh. Drawing
+   them would draw the world twice — the four TrollArea compos alone are 111k
+   triangles. They are part *references*, which is the §7 Phase 3 multi-ZEN
+   model showing up in the data; the part `.zen`s beside the world are their
+   editable sources. (The 0.8% of Farm that does *not* match is a part edited
+   after the last full compile — a live example of the drift §5 warns about at
+   save time.)
+4. **DECAL and PARTICLE_EFFECT are not mesh assets.** A decal's name resolves to
+   a texture (23/23 do) and the renderer builds the quad; a `.pfx` is a Daedalus
+   instance, not a file in the VFS. Both are correctly "unresolved" by
+   `extractVisual` and neither is a defect.
+
+Result: **379 of 428 visuals**, up from 313, and **12,463 VOBs placed** instead
+of 11,548 — 1076 draw calls where the budget is 1500, with the framerate above
+measured on that fuller scene.
 
 ---
 

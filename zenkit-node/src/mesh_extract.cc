@@ -2,6 +2,8 @@
 
 #include <zenkit/Material.hh>
 #include <zenkit/Mesh.hh>
+#include <zenkit/ModelHierarchy.hh>
+#include <zenkit/ModelMesh.hh>
 #include <zenkit/World.hh>
 
 #include <cstddef>
@@ -207,16 +209,37 @@ Napi::Object ExtractWorldMesh(Napi::Env env, WorldHandle const& handle) {
   return ExtractMesh(env, handle.world->world_mesh, handle.version == GameVersion::GOTHIC_2);
 }
 
-Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
-  auto out = Napi::Array::New(env);
-  std::uint32_t out_index = 0;
-  std::size_t total_vertices = 0;
-  std::size_t total_triangles = 0;
+namespace {
 
-  // A wedge is already a de-duplicated render vertex — position index plus its
-  // own normal and UV — so unlike zCMesh there is nothing to collapse here.
-  Extent extent;
+// Multiplies two column-stored matrices: result = a * b, so applying `result`
+// applies `b` first and then `a` — the order a child's transform composes with
+// its parent's.
+Mat4 Multiply(Mat4 const& a, Mat4 const& b) {
+  Mat4 out {};
+  for (unsigned col = 0; col < 4; ++col) {
+    for (unsigned row = 0; row < 4; ++row) {
+      float sum = 0.0f;
+      for (unsigned k = 0; k < 4; ++k) sum += a.columns[k][row] * b.columns[col][k];
+      out.columns[col][row] = sum;
+    }
+  }
+  return out;
+}
 
+// Appends one chunk per sub-mesh of `mesh` to `out`. A model contributes
+// several meshes to one payload — a soft-skin mesh per body, an attachment per
+// hierarchy node — so the per-sub-mesh work is shared rather than duplicated.
+// `node` and `transform` are set only when the mesh came from an attachment:
+// nothing else in a payload is positioned by a hierarchy.
+void AppendSubMeshChunks(Napi::Env env,
+                         MultiResolutionMesh const& mesh,
+                         char const* node,
+                         Mat4 const* transform,
+                         Napi::Array& out,
+                         std::uint32_t& out_index,
+                         Extent& extent,
+                         std::size_t& total_vertices,
+                         std::size_t& total_triangles) {
   for (std::size_t i = 0; i < mesh.sub_meshes.size(); ++i) {
     auto const& sub = mesh.sub_meshes[i];
     if (sub.triangles.empty() || sub.wedges.empty()) continue;
@@ -261,6 +284,21 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
     // skipped for having no triangles must not renumber the ones after it.
     entry.Set("materialIndex", Napi::Number::New(env, static_cast<double>(i)));
     SetMaterialFields(env, entry, sub.mat);
+    if (node != nullptr) {
+      entry.Set("node", Napi::String::New(env, node));
+      // Row-major, like every other matrix the binding emits. Emitted rather
+      // than baked into the positions, for the same reason the coordinate
+      // convention is not applied here: it is the model's own fact, and the
+      // projection layer is where facts become pixels.
+      auto matrix = Napi::Array::New(env, 16);
+      std::uint32_t at = 0;
+      for (unsigned row = 0; row < 4; ++row) {
+        for (unsigned col = 0; col < 4; ++col) {
+          matrix.Set(at++, Napi::Number::New(env, transform->columns[col][row]));
+        }
+      }
+      entry.Set("transform", matrix);
+    }
 
     entry.Set("vertexCount", Napi::Number::New(env, static_cast<double>(sub.wedges.size())));
     entry.Set("triangleCount", Napi::Number::New(env, static_cast<double>(sub.triangles.size())));
@@ -273,13 +311,79 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
     total_triangles += sub.triangles.size();
     out.Set(out_index++, entry);
   }
+}
 
+Napi::Object FinishPayload(Napi::Env env,
+                           Napi::Array const& out,
+                           Extent const& extent,
+                           std::size_t total_vertices,
+                           std::size_t total_triangles) {
   auto result = Napi::Object::New(env);
   result.Set("bbox", extent.Arr(env));
   result.Set("vertexCount", Napi::Number::New(env, static_cast<double>(total_vertices)));
   result.Set("triangleCount", Napi::Number::New(env, static_cast<double>(total_triangles)));
   result.Set("chunks", out);
   return result;
+}
+
+}  // namespace
+
+Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
+  auto out = Napi::Array::New(env);
+  std::uint32_t out_index = 0;
+  std::size_t total_vertices = 0;
+  std::size_t total_triangles = 0;
+  // A wedge is already a de-duplicated render vertex — position index plus its
+  // own normal and UV — so unlike zCMesh there is nothing to collapse here.
+  Extent extent;
+
+  AppendSubMeshChunks(env, mesh, nullptr, nullptr, out, out_index, extent,
+                      total_vertices, total_triangles);
+  return FinishPayload(env, out, extent, total_vertices, total_triangles);
+}
+
+// A model's geometry is in two places and static props are entirely in the
+// second: `meshes` holds soft-skin bodies, `attachments` holds rigid sub-meshes
+// hung on hierarchy nodes. Reading only the first is why 53 of NewWorld's 63
+// MODEL visuals — chests, stoves, bookshelves — extracted as nothing at all.
+//
+// Attachments are stored in an unordered_map, so emitting them in map order
+// would put the chunks in a different order on a different run. The hierarchy
+// supplies the order, and it is also the only thing that can place them: each
+// node's transform is relative to its parent, so the emitted matrix is the
+// product down the chain from the root.
+Napi::Object ExtractModelMesh(Napi::Env env,
+                              ModelMesh const& model,
+                              ModelHierarchy const& hierarchy) {
+  auto out = Napi::Array::New(env);
+  std::uint32_t out_index = 0;
+  std::size_t total_vertices = 0;
+  std::size_t total_triangles = 0;
+  Extent extent;
+
+  for (auto const& skin : model.meshes) {
+    AppendSubMeshChunks(env, skin.mesh, nullptr, nullptr, out, out_index, extent,
+                        total_vertices, total_triangles);
+  }
+
+  std::vector<Mat4> world(hierarchy.nodes.size(), Mat4::identity());
+  for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
+    auto const& node = hierarchy.nodes[i];
+    // A parent always precedes its children in a ZenGin hierarchy, so one pass
+    // in order is enough; a forward or self reference would be a broken file.
+    world[i] = node.parent_index >= 0 && static_cast<std::size_t>(node.parent_index) < i
+        ? Multiply(world[node.parent_index], node.transform)
+        : node.transform;
+  }
+
+  for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
+    auto const found = model.attachments.find(hierarchy.nodes[i].name);
+    if (found == model.attachments.end()) continue;
+    AppendSubMeshChunks(env, found->second, hierarchy.nodes[i].name.c_str(), &world[i],
+                        out, out_index, extent, total_vertices, total_triangles);
+  }
+
+  return FinishPayload(env, out, extent, total_vertices, total_triangles);
 }
 
 }  // namespace zenkit_node

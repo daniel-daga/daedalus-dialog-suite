@@ -166,7 +166,11 @@ function main() {
   // pixels, but mounting the four VDFs takes 15 ms against 2170 ms for the two
   // loose trees — mount_host memory-maps every one of their 4153 files, and a
   // file open costs ~0.5 ms on this machine whoever does it.
-  const archives = ['Textures.vdf', 'Textures_Addon.vdf', 'Meshes.vdf', 'Meshes_Addon.vdf']
+  // Anims carries the compiled models — .MDL/.MDM/.MMB. Without it every MODEL
+  // and MORPH_MESH visual in the world is unresolvable, which is what made 63
+  // of them look like a name-mapping problem.
+  const archives = ['Textures.vdf', 'Textures_Addon.vdf', 'Meshes.vdf', 'Meshes_Addon.vdf',
+    'Anims.vdf', 'Anims_Addon.vdf']
     .flatMap((name) => [path.join(GOTHIC, 'Data', name), path.join(GOTHIC, 'Data', `${name}.disabled`)])
     .filter((file) => fs.existsSync(file));
   const sources = archives.length > 0
@@ -179,6 +183,7 @@ function main() {
   // what turns ~15k objects into a few hundred draw calls.
   const visuals = new Map();
   const unresolved = new Map();
+  const levelCompos = new Set();
   let placed = 0;
 
   phase('visuals', () => {
@@ -186,10 +191,21 @@ function main() {
     const rotations = new Float32Array(index.rotations);
     const visualIndex = new Uint32Array(index.visualIndex);
     const visualTypeIndex = new Uint32Array(index.visualTypeIndex);
+    const classIndex = new Uint32Array(index.classIndex);
 
     for (let i = 0; i < index.count; i++) {
       const name = index.visuals[visualIndex[i]];
       if (!name) continue;
+
+      // A zCVobLevelCompo names the source mesh a slice of the world came from,
+      // and that geometry is already IN the compiled world mesh — measured, 100%
+      // of NewWorld_Part_Xardas_01's 19,430 vertex positions appear in
+      // NewWorld's. Drawing it would draw the world twice (the four TrollArea
+      // compos alone are 111k triangles). It is a part reference, not an asset.
+      if (index.classes[classIndex[i]] === 'zCVobLevelCompo') {
+        levelCompos.add(name);
+        continue;
+      }
 
       let visual = visuals.get(name);
       if (visual === undefined) {
@@ -262,6 +278,7 @@ function main() {
       instancedDrawCalls: drawCalls - worldGroups.length,
       drawCalls,
       unresolvedByType: Object.fromEntries(unresolved),
+      levelCompos: levelCompos.size,
       packBytes,
     },
   };

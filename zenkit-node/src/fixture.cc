@@ -2,6 +2,9 @@
 
 #include <zenkit/Material.hh>
 #include <zenkit/Mesh.hh>
+#include <zenkit/Model.hh>
+#include <zenkit/ModelHierarchy.hh>
+#include <zenkit/ModelMesh.hh>
 #include <zenkit/MultiResolutionMesh.hh>
 #include <zenkit/Stream.hh>
 #include <zenkit/Texture.hh>
@@ -301,6 +304,13 @@ void BuildAssetProtoMesh(MultiResolutionMesh& mesh) {
                {MeshTriangle {{2, 1, 0}}});
 }
 
+// Mat4 stores columns, so a translation lives in the fourth one.
+Mat4 Translation(float x, float y, float z) {
+  auto m = Mat4::identity();
+  m.columns[3] = Vec4 {x, y, z, 1.0f};
+  return m;
+}
+
 // Two mipmap levels so decodeTexture's `level` argument has something to
 // select between, and distinguishable pixels at each level.
 Texture BuildAssetTexture() {
@@ -544,6 +554,42 @@ void AuthorFixtureAssets(std::filesystem::path const& dir) {
   {
     auto w = Write::to(dir / "EX_CRATE-C.TEX");
     texture.save(w.get());
+  }
+
+  // EX_PROP.ASC -> EX_PROP.MDL: a model whose geometry is entirely in its
+  // *attachments*, which is what a static prop is. Two nodes deep, so a chunk
+  // that ignored its parent's transform is visible; a third node carries no
+  // attachment, so emission has to follow the attachments rather than the
+  // hierarchy; and the attachment map is unordered, so the emission order has
+  // to come from the hierarchy to be deterministic at all.
+  {
+    Model model {};
+    model.hierarchy.nodes = {
+        ModelHierarchyNode {-1, "BSPROOT", Translation(1.0f, 2.0f, 3.0f)},
+        ModelHierarchyNode {0, "LID", Translation(0.0f, 10.0f, 0.0f)},
+        ModelHierarchyNode {0, "SPARE", Translation(0.0f, 0.0f, 7.0f)},
+    };
+    model.mesh.attachments.emplace("LID", proto);
+    model.mesh.attachments.emplace("BSPROOT", proto);
+
+    auto w = Write::to(dir / "EX_PROP.MDL");
+    model.save(w.get(), GameVersion::GOTHIC_2);
+  }
+
+  // EX_RIG.ASC -> EX_RIG.MDM, whose hierarchy is in the .MDH beside it. A .MDM
+  // on its own has attachments but no node transforms at all.
+  {
+    ModelMesh mesh {};
+    mesh.attachments.emplace("BASE", proto);
+    auto w = Write::to(dir / "EX_RIG.MDM");
+    mesh.save(w.get(), GameVersion::GOTHIC_2);
+
+    ModelHierarchy hierarchy {};
+    hierarchy.nodes = {ModelHierarchyNode {-1, "BASE", Translation(5.0f, 0.0f, 0.0f)}};
+    hierarchy.source_date = Date {2024, 1, 1, 0, 0, 0, 0};
+    hierarchy.source_path = "EX_RIG.ASC";
+    auto wh = Write::to(dir / "EX_RIG.MDH");
+    hierarchy.save(wh.get());
   }
 
   // Name resolution never opens the file it resolves to, so these hold no real
