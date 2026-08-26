@@ -95,7 +95,7 @@ const row = (vob: number) => screen.queryByTestId(`world-vob-row-${vob}`);
 describe('WorldSceneTree', () => {
   it('starts collapsed, showing only the roots', () => {
     // 23,288 VOBs: an expand-everything default is 23,288 rows on open.
-    render(<WorldSceneTree summary={NESTED} selectedVob={null} onSelect={jest.fn()} />);
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
 
     expect(row(0)).toBeInTheDocument();
     expect(row(4)).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe('WorldSceneTree', () => {
 
   it('reveals children when a row is expanded, and hides them again', async () => {
     const user = userEvent.setup();
-    render(<WorldSceneTree summary={NESTED} selectedVob={null} onSelect={jest.fn()} />);
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
 
     await user.click(screen.getByTestId('world-vob-toggle-0'));
     expect(row(1)).toBeInTheDocument();
@@ -123,7 +123,7 @@ describe('WorldSceneTree', () => {
     // that was a column of the word "zCVob" — the visual is what actually
     // identifies an unnamed prop.
     const user = userEvent.setup();
-    render(<WorldSceneTree summary={NESTED} selectedVob={null} onSelect={jest.fn()} />);
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
 
     expect(within(row(0)!).getByText('CASTLE')).toBeInTheDocument();
     expect(within(row(0)!).getByText('zCVob')).toBeInTheDocument();
@@ -140,7 +140,7 @@ describe('WorldSceneTree', () => {
       { cls: 'zCVob', visual: 'NW_NATURE_HOHETANNEN_02_531P.3DS' },
       { cls: 'zCVobLight' },
     ]));
-    render(<WorldSceneTree summary={unnamed} selectedVob={null} onSelect={jest.fn()} />);
+    render(<WorldSceneTree summary={unnamed} selection={[]} onSelect={jest.fn()} />);
 
     expect(within(row(0)!).getByText('NW_NATURE_HOHETANNEN_02_531P.3DS')).toBeInTheDocument();
     // Nothing to fall back to but the class, which every row carries anyway.
@@ -152,7 +152,7 @@ describe('WorldSceneTree', () => {
     // the VobIndex is the only stable identity a VOB has.
     const user = userEvent.setup();
     const onSelect = jest.fn();
-    render(<WorldSceneTree summary={NESTED} selectedVob={null} onSelect={onSelect} />);
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={onSelect} />);
 
     await user.click(screen.getByTestId('world-vob-toggle-0'));
     // VOB 4 deliberately: with 0 expanded the visible rows are 0, 1, 2, 4, so
@@ -160,7 +160,34 @@ describe('WorldSceneTree', () => {
     // here and would agree with the VOB index for every other row in this tree.
     await user.click(row(4)!);
 
-    expect(onSelect).toHaveBeenCalledWith(4);
+    expect(onSelect).toHaveBeenCalledWith(4, false);
+  });
+
+  it('asks to add to the selection on a Ctrl or Meta click, and to replace it otherwise', async () => {
+    // The tree is the only place a VOB the viewport cannot show — a decal, a
+    // sound VOB, anything unplaced — can be added to a batch at all.
+    const user = userEvent.setup();
+    const onSelect = jest.fn();
+    render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+
+    await user.keyboard('{Control>}');
+    await user.click(row(4)!);
+    await user.keyboard('{/Control}');
+    expect(onSelect).toHaveBeenLastCalledWith(4, true);
+
+    await user.click(row(4)!);
+    expect(onSelect).toHaveBeenLastCalledWith(4, false);
+  });
+
+  it('marks every VOB in the selection, not just the one the panels describe', async () => {
+    const user = userEvent.setup();
+    render(<WorldSceneTree summary={NESTED} selection={[0, 4]} onSelect={jest.fn()} />);
+
+    expect(row(0)).toHaveAttribute('aria-selected', 'true');
+    expect(row(4)).toHaveAttribute('aria-selected', 'true');
+
+    await user.click(screen.getByTestId('world-vob-toggle-0'));
+    expect(row(1)).toHaveAttribute('aria-selected', 'false');
   });
 
   it('expands the ancestors of a VOB selected from the viewport', () => {
@@ -168,11 +195,11 @@ describe('WorldSceneTree', () => {
     // returns a VOB index and nothing else, and the row for it is three levels
     // down inside collapsed parents.
     const { rerender } = render(
-      <WorldSceneTree summary={NESTED} selectedVob={null} onSelect={jest.fn()} />,
+      <WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />,
     );
     expect(row(3)).not.toBeInTheDocument();
 
-    rerender(<WorldSceneTree summary={NESTED} selectedVob={3} onSelect={jest.fn()} />);
+    rerender(<WorldSceneTree summary={NESTED} selection={[3]} onSelect={jest.fn()} />);
 
     expect(row(3)).toBeInTheDocument();
     expect(row(0)).toBeInTheDocument();
@@ -189,7 +216,7 @@ describe('WorldSceneTree', () => {
       { name: 'ROOT' },
       ...Array.from({ length: 20_000 }, (_, i) => ({ parent: 0, childIndex: i })),
     ]));
-    render(<WorldSceneTree summary={many} selectedVob={null} onSelect={jest.fn()} />);
+    render(<WorldSceneTree summary={many} selection={[]} onSelect={jest.fn()} />);
 
     await user.click(screen.getByTestId('world-vob-toggle-0'));
 
@@ -199,7 +226,7 @@ describe('WorldSceneTree', () => {
   });
 
   it('says how many VOBs the world has, since the tree only ever shows a few', () => {
-    render(<WorldSceneTree summary={NESTED} selectedVob={null} onSelect={jest.fn()} />);
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
     expect(screen.getByTestId('world-tree-count')).toHaveTextContent('5');
   });
 });

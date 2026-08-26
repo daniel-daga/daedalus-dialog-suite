@@ -1279,11 +1279,57 @@ against the CI guard's 550 kB. It fits, with 4.5 kB to spare — the next thing
 added to that chunk trips the guard and the limit will have to be argued about
 rather than nudged.
 
-What is still **not** built: multi-select, any op other than `MoveVob`, and
-save. No fidelity claim has moved — `saveWorld` is untouched — and until a
-UI-edited world is saved and re-run through the engine checklist, the check
-above cannot prove the *native* VOB moved is the one the flat index named,
-because the position it reads back comes from the projection.
+What is still **not** built: any op other than `MoveVob`, and save. No fidelity
+claim has moved — `saveWorld` is untouched — and until a UI-edited world is
+saved and re-run through the engine checklist, the check above cannot prove the
+*native* VOB moved is the one the flat index named, because the position it
+reads back comes from the projection.
+
+#### Multi-select — one gizmo, one batch, one undo entry (2026-08-26)
+
+The op path was built for this and needed nothing: a batch was already atomic in
+`commitOps` and already one undo entry in `WorldService`. What was missing was
+the UI, and one decision underneath it.
+
+- **A drag of a selection is a delta, not a destination.** One gizmo moves N
+  VOBs and they keep the spacing they had, so `translateVobs(reader, vobs,
+  delta)` builds one `MoveVob` per VOB, each carrying **its own** origin. That
+  is also what makes the undo right: the inverses replay back to front and put
+  a selection that was never uniform back exactly where it was, rather than
+  collapsing it onto the anchor. A destination-shaped API cannot express this
+  and reads correct on a selection of one — which is every unit test that stubs
+  the viewport out.
+- **The delta is measured from where the gizmo was when the drag began**, and
+  each VOB's start position is read once, at the press. Reading it per frame
+  would compound: the preview writes the same instance matrices it would read
+  back.
+- **The gizmo anchors on the last selected VOB that is actually drawn**
+  (`WorldScene.anchorOf`). Last, because that is the one just clicked; *drawn*,
+  because a selection may hold a decal or a sound VOB, and anchoring on one of
+  those would detach the gizmo from a selection full of drawable VOBs. Those
+  VOBs are still in the batch — the op is built from the index, which knows
+  where they are; only the preview needs an instance.
+- **`translateVobs` refuses the whole batch if one VOB is not in the index**
+  rather than skipping it, which is the half-applied state `commitOps` exists
+  to prevent, reached before the binding is ever asked.
+- **A gizmo click that moves nothing is not an edit.** With one VOB that was a
+  no-op op; with fifty selected it is fifty ops on the undo stack for a batch
+  that undoes nothing.
+- **The modifier is read before the pick's `await`.** The prop pick is
+  asynchronous now (§3), and a Ctrl released during the readback would turn a
+  Ctrl+click into a plain one — which empties the selection being built.
+- The selection is one ordered list in `worldStore`, without duplicates: a
+  repeat would put two ops on one VOB in a batch meant to hold one each. The
+  property grid describes the last VOB and says how many are going with it,
+  because a VOB out of view is not visible in the viewport either.
+
+**Verified in the real app**, which is the only place any of the gizmo half is
+reachable — `scripts/verify-world-edit.js` now selects two drawn VOBs on retail
+NewWorld, Ctrl+clicks the second, drags both 500 cm on each axis and checks each
+one's position in **both** projections (the property grid reads the index, the
+gizmo reads the scene), then puts both back with a single Ctrl+Z. Sabotaged by
+making the drag a destination again: the two VOBs collapse onto one point and
+the script fails.
 
 ---
 

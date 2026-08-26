@@ -84,26 +84,43 @@ async function main() {
   await page.getByTestId('world-viewport').waitFor();
   await page.waitForFunction(() => globalThis.__worldViewport !== undefined);
 
-  // A VOB that is actually drawn: only a placed one has an instance for the
+  // VOBs that are actually drawn: only a placed one has an instance for the
   // gizmo to sit on, and 10,825 of NewWorld's 23,288 are not placed at all.
-  const selected = await page.evaluate(async () => {
+  // Two of them, because the second half of this script drags both at once.
+  const drawn = await page.evaluate(async () => {
     const settle = () => new Promise((resolve) => {
       globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve));
     });
 
     // Only the rows react-window has actually rendered are in the DOM — 23 of
     // 23,288 with the root collapsed, which is the point of the virtualization.
+    const found = [];
     for (const row of globalThis.document.querySelectorAll('[data-testid^="world-vob-row-"]')) {
       row.click();
       await settle();
       if (globalThis.__worldViewport.gizmoPosition() !== null) {
-        return Number(row.getAttribute('data-testid').replace('world-vob-row-', ''));
+        found.push(Number(row.getAttribute('data-testid').replace('world-vob-row-', '')));
+        if (found.length === 2) break;
       }
     }
-    return null;
+    return found;
   });
-  check(selected !== null, 'no visible scene-tree row selected a VOB the gizmo could attach to');
-  if (selected === null) { await app.close(); return report(); }
+  check(drawn.length > 0, 'no visible scene-tree row selected a VOB the gizmo could attach to');
+  if (drawn.length === 0) { await app.close(); return report(); }
+  const selected = drawn[0];
+
+  /** Click a scene-tree row, optionally with Ctrl held — which adds to the selection. */
+  const clickRow = (vob, additive = false) => page.evaluate(async ({ at, ctrl }) => {
+    const row = globalThis.document.querySelector(`[data-testid="world-vob-row-${at}"]`);
+    if (row === null) throw new Error(`no row for vob ${at}`);
+    // `row.click()` cannot hold a modifier, and the modifier is the feature.
+    row.dispatchEvent(new globalThis.MouseEvent('click', { bubbles: true, ctrlKey: ctrl }));
+    await new Promise((resolve) => {
+      globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve));
+    });
+  }, { at: vob, ctrl: additive });
+
+  await clickRow(selected);
 
   const readGrid = () => page.getByTestId('world-prop-position').textContent()
     .then((text) => text.split(',').map((value) => Number(value.trim())));
@@ -187,11 +204,78 @@ async function main() {
   check(near(settled, before), `held keys left the VOB at ${settled}, not ${before}`);
   console.log(`  6x undo/redo/undo -> ${settled.map(Math.round).join(', ')}`);
 
+  // ── the same gizmo, two VOBs (level-editor.md §7, multi-select) ───────────
+  //
+  // What this half is for: a drag of a selection is a *delta*, and the delta is
+  // measured from where the gizmo was when the drag began. Every piece of that
+  // lives inside the viewport's Three.js effect, where Jest cannot reach it —
+  // the surface's tests stub the viewport out entirely. Two VOBs at different
+  // places is what tells a delta from a destination: a batch that moved both to
+  // the *same* point would pass every check that only looks at one of them.
+  let both = null;
+  if (drawn.length < 2) {
+    console.log('\n  only one drawn VOB among the visible rows — multi-select not exercised');
+  } else {
+    const [first, second] = drawn;
+
+    const positionOf = async (vob) => {
+      await clickRow(vob);
+      return { grid: await readGrid(), gizmo: await page.evaluate(() => globalThis.__worldViewport.gizmoPosition()) };
+    };
+
+    const wereAt = { [first]: (await positionOf(first)).grid, [second]: (await positionOf(second)).grid };
+    check(!near(wereAt[first], wereAt[second]),
+      'both test VOBs are at the same position — a delta and a destination cannot be told apart');
+
+    // Select both: `second` is clicked last, so the gizmo anchors on it.
+    await clickRow(first);
+    await clickRow(second, true);
+    const count = await page.getByTestId('world-prop-selection').textContent();
+    check(/2/.test(count ?? ''), `the property grid did not report 2 selected: ${count}`);
+
+    const anchor = await page.evaluate(() => globalThis.__worldViewport.gizmoPosition());
+    check(near(anchor, wereAt[second]), 'the gizmo did not anchor on the last VOB selected');
+
+    await page.evaluate((target) => globalThis.__worldViewport.dragGizmo(target),
+      anchor.map((value) => value + NUDGE));
+
+    const movedTo = {};
+    for (const vob of [first, second]) {
+      const expected = wereAt[vob].map((value) => value + NUDGE);
+      await page.waitForFunction(gridReads, expected, { timeout: 10_000 })
+        .catch(() => undefined);
+      const at = await positionOf(vob);
+      movedTo[vob] = at.grid;
+      // The index and the scene are two different projections of the same edit,
+      // and only the first is what an op wrote. A batch that moved the VOBs on
+      // top of each other reads correct in neither.
+      check(near(at.grid, expected), `vob ${vob} moved to ${at.grid}, not ${expected}`);
+      check(near(at.gizmo, expected), `vob ${vob} is drawn at ${at.gizmo}, not ${expected}`);
+    }
+
+    // One batch is one undo entry: a single Ctrl+Z must put *both* back, and a
+    // second one must find nothing left of this drag to undo.
+    await page.keyboard.press('Control+z');
+    for (const vob of [first, second]) {
+      await page.waitForFunction(gridReads, wereAt[vob], { timeout: 10_000 }).catch(() => undefined);
+      const at = await positionOf(vob);
+      check(near(at.grid, wereAt[vob]), `one undo left vob ${vob} at ${at.grid}, not ${wereAt[vob]}`);
+    }
+    both = { first, second, wereAt, movedTo };
+  }
+
   const row = (label, value) => console.log(`  ${String(label).padEnd(28)}${value}`);
-  console.log('\none VOB moved, through the real app\n');
+  console.log('\nVOBs moved, through the real app\n');
   row('VOB', selected);
   row('Moved', `${before.map(Math.round).join(', ')} -> ${to.map(Math.round).join(', ')}`);
   row('Undo / redo', 'both followed by the grid and the gizmo');
+  if (both) {
+    row('Multi-select', `${both.first} + ${both.second}, one gizmo, one batch`);
+    row('  kept their spacing', [0, 1, 2]
+      .map((axis) => Math.round(both.movedTo[both.first][axis] - both.movedTo[both.second][axis]))
+      .join(', '));
+    row('  one undo', 'put both back');
+  }
 
   await app.close();
   fs.rmSync(project, { recursive: true, force: true });

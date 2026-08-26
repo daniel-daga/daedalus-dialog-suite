@@ -11,7 +11,7 @@ every binding call is injected.
 | Module | What it owns |
 |---|---|
 | `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. |
-| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `invertOp`, `commitOps`, `applyOps`. |
+| `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `invertOp`, `commitOps`, `applyOps`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
@@ -67,6 +67,15 @@ viewport.
   (`commitOps` unwinds what it applied, back to front) because a batch is one
   undo entry, and a half-applied one leaves the world in a state no entry
   describes.
+- **A drag of a selection is a delta, not a destination.** One gizmo moves N
+  VOBs, so `translateVobs` builds one op per VOB and each carries **its own**
+  origin: the selection keeps the spacing it had, and undoing the batch puts a
+  selection that was never uniform back exactly where it was instead of
+  collapsing it onto the anchor. A destination-shaped API cannot say this, and
+  it reads correct on a selection of one — which is every test that has only one
+  VOB in it. A VOB not in the index refuses the whole batch rather than being
+  skipped: a quietly dropped op is the half-applied state above, reached before
+  the binding was ever asked.
 - **Mount archives, not loose trees.** `Vfs::mount_host` memory-maps every file
   under a directory eagerly: 2,170 ms for an extracted install's 4,153 compiled
   asset files against **15 ms** for the equivalent VDFs, which resolve every name

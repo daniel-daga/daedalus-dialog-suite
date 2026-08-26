@@ -22,15 +22,20 @@ import type { WorldSummary } from '../src/shared/worldTypes';
  */
 
 let mockAppliedOps: WorldOp[] | null | undefined;
+let mockSelection: readonly number[] | undefined;
+/** The drag the stub fires — VOB 1 sits at [10, 20, 30], so this is `MOVE`. */
+const DRAG: [number, number, number] = [1, 2, 3];
 jest.mock('../src/renderer/components/world/WorldViewport', () => ({
   __esModule: true,
   default: (props: {
-    onMoveVob: (vob: number, to: [number, number, number]) => void;
+    onTranslateSelection: (delta: [number, number, number]) => void;
+    selection: readonly number[];
     appliedOps: WorldOp[] | null;
   }) => {
     mockAppliedOps = props.appliedOps;
+    mockSelection = props.selection;
     return (
-      <button type="button" data-testid="stub-drag" onClick={() => props.onMoveVob(1, [11, 22, 33])}>
+      <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
         drag
       </button>
     );
@@ -90,6 +95,10 @@ const api = {
  * Open a world the way the user does — the viewport, and with it the gizmo, is
  * mounted only once the payloads have arrived. A fresh index per test: the ops
  * below mutate it in place.
+ *
+ * A drag is a translation of the *selection*, so a world with nothing selected
+ * has nothing to drag: VOB 1 is selected here as the gizmo's own attachment
+ * would do it.
  */
 async function openWorld() {
   const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
@@ -101,6 +110,7 @@ async function openWorld() {
   render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
   await screen.findByTestId('stub-drag');
+  act(() => useWorldStore.getState().selectVob(1));
   return summary;
 }
 
@@ -180,6 +190,70 @@ describe('a VOB dragged in the viewport', () => {
     fireEvent.click(screen.getByTestId('stub-drag'));
 
     await waitFor(() => expect(mockAppliedOps).toEqual([MOVE]));
+  });
+});
+
+describe('a multi-select drag', () => {
+  it('is one batch — one call, one op per VOB, each from where that VOB was', async () => {
+    // The whole point of multi-select: `WorldService` records a batch as one
+    // undo entry and `commitOps` applies it atomically, so N VOBs moved
+    // together must arrive as one list. N calls would be N undo entries, and
+    // Ctrl+Z would put them back one at a time.
+    const summary = await openWorld();
+    act(() => useWorldStore.getState().toggleVob(0));
+
+    fireEvent.click(screen.getByTestId('stub-drag'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(api.applyWorldOps).toHaveBeenCalledWith([
+      // In selection order, and each op carries its own VOB's origin — the
+      // selection keeps the spacing it had rather than collapsing onto a point.
+      { op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [11, 22, 33] },
+      { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 2, 3] },
+    ]);
+    const reader = createVobReader(summary.vobIndex);
+    expect(reader.position(0)).toEqual([1, 2, 3]);
+    expect(reader.position(1)).toEqual([11, 22, 33]);
+  });
+
+  it('sends the whole selection back when the batch is refused', async () => {
+    // A refused batch moved nothing — `commitOps` unwound it — so every VOB the
+    // viewport has already drawn at its dragged position has to be put back,
+    // not just the one the gizmo was on.
+    const summary = await openWorld();
+    act(() => useWorldStore.getState().toggleVob(0));
+    api.applyWorldOps.mockRejectedValueOnce(new Error('no vob at indexPath'));
+
+    fireEvent.click(screen.getByTestId('stub-drag'));
+
+    await waitFor(() => expect(mockAppliedOps).toHaveLength(2));
+    expect(mockAppliedOps).toEqual([
+      { op: 'MoveVob', vob: 1, path: '1', from: [11, 22, 33], to: [10, 20, 30] },
+      { op: 'MoveVob', vob: 0, path: '0', from: [1, 2, 3], to: [0, 0, 0] },
+    ]);
+    const reader = createVobReader(summary.vobIndex);
+    expect(reader.position(0)).toEqual([0, 0, 0]);
+    expect(reader.position(1)).toEqual([10, 20, 30]);
+  });
+
+  it('hands the viewport the selection, so the gizmo drives all of it', async () => {
+    await openWorld();
+
+    act(() => useWorldStore.getState().toggleVob(0));
+
+    await waitFor(() => expect(mockSelection).toEqual([1, 0]));
+  });
+
+  it('does nothing at all with nothing selected', async () => {
+    // The gizmo is detached then, but the drag hook is reachable from the
+    // driver script and an empty batch is an undo entry that undoes nothing.
+    await openWorld();
+    act(() => useWorldStore.getState().selectVob(null));
+
+    fireEvent.click(screen.getByTestId('stub-drag'));
+
+    await waitFor(() => expect(mockSelection).toEqual([]));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 });
 

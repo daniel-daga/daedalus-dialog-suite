@@ -31,13 +31,13 @@ interface RowData {
   rows: VobRow[];
   reader: VobReader;
   expanded: ReadonlySet<number>;
-  selectedVob: number | null;
-  onSelect: (vob: number) => void;
+  selected: ReadonlySet<number>;
+  onSelect: (vob: number, additive: boolean) => void;
   onToggle: (vob: number) => void;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
-  const { rows, reader, expanded, selectedVob, onSelect, onToggle } = data;
+  const { rows, reader, expanded, selected, onSelect, onToggle } = data;
   const { vob, depth, hasChildren } = rows[index];
 
   // Most VOBs are unnamed — retail NewWorld's 23,288 carry 2,654 distinct
@@ -47,7 +47,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   // saying.
   const className = reader.className(vob);
   const label = reader.name(vob) || reader.visual(vob);
-  const isSelected = vob === selectedVob;
+  const isSelected = selected.has(vob);
 
   return (
     <Box
@@ -55,7 +55,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       aria-selected={isSelected}
       aria-expanded={hasChildren ? expanded.has(vob) : undefined}
       data-testid={`world-vob-row-${vob}`}
-      onClick={() => onSelect(vob)}
+      onClick={(event) => onSelect(vob, event.ctrlKey || event.metaKey)}
       style={style}
       sx={{
         display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer',
@@ -87,13 +87,21 @@ Row.displayName = 'WorldSceneTreeRow';
 
 export interface WorldSceneTreeProps {
   summary: WorldSummary;
-  /** An index into the `VobIndex` — names are not unique and rows move. */
-  selectedVob: number | null;
-  onSelect: (vob: number) => void;
+  /** Indices into the `VobIndex` — names are not unique and rows move. The last
+   *  is the one the viewport and the property grid follow. */
+  selection: readonly number[];
+  /** `additive` is a Ctrl/Cmd click: add this VOB to the selection rather than
+   *  replacing it, which is how a multi-select batch is built. */
+  onSelect: (vob: number, additive: boolean) => void;
 }
 
-const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({ summary, selectedVob, onSelect }) => {
+const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({ summary, selection, onSelect }) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
+  const selected = useMemo(() => new Set(selection), [selection]);
+  // Only the primary is followed. Expanding and scrolling to every VOB of a
+  // large selection would fight the user for the scroll position on every
+  // Ctrl+click.
+  const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set<number>());
   const rows = useMemo(() => flattenVisible(tree, expanded), [tree, expanded]);
   const listRef = useRef<List>(null);
@@ -128,8 +136,8 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({ summary, selectedVob, o
   }, []);
 
   const itemData = useMemo<RowData>(
-    () => ({ rows, reader, expanded, selectedVob, onSelect, onToggle }),
-    [rows, reader, expanded, selectedVob, onSelect, onToggle],
+    () => ({ rows, reader, expanded, selected, onSelect, onToggle }),
+    [rows, reader, expanded, selected, onSelect, onToggle],
   );
 
   return (

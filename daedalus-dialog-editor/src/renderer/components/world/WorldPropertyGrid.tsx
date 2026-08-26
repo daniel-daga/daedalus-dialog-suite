@@ -43,11 +43,14 @@ const Field: React.FC<{ label: string; name: string; children: React.ReactNode }
 
 export interface WorldPropertyGridProps {
   summary: WorldSummary;
-  selectedVob: number | null;
+  /** The whole selection. The grid describes the last VOB in it — the one the
+   *  gizmo anchors on — and says how many others a drag would take with it. */
+  selection: readonly number[];
 }
 
-const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = ({ summary, selectedVob }) => {
+const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = ({ summary, selection }) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
+  const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
 
   if (selectedVob === null || reader.className(selectedVob) === null) {
     return (
@@ -86,6 +89,17 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = ({ summary, selected
 
   return (
     <Box sx={{ p: 1.5, overflowY: 'auto', height: '100%' }}>
+      {/* A drag moves the whole selection and the grid only ever describes one
+          VOB of it, so without this the count is visible nowhere but the
+          viewport — where a VOB out of view is not visible at all. */}
+      {selection.length > 1 && (
+        <Chip
+          size="small"
+          label={`${selection.length} VOBs selected`}
+          data-testid="world-prop-selection"
+          sx={{ mb: 1 }}
+        />
+      )}
       <Field label="Index" name="index">
         <Typography variant="caption">{selectedVob}</Typography>
       </Field>

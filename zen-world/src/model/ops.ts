@@ -71,6 +71,32 @@ export function moveVob(reader: VobReader, vob: number, to: ZenPosition): MoveVo
   return { op: 'MoveVob', vob, path, from, to };
 }
 
+/**
+ * Move a whole selection by one delta, in ZenGin space — a multi-select drag.
+ *
+ * One gizmo drives many VOBs, so what a drag of a selection produces is a
+ * *delta* and not a destination: the VOBs keep the spacing they had, and each
+ * op still carries its own VOB's origin, which is what lets one undo entry put
+ * a selection that was never uniform back exactly where it was.
+ *
+ * It refuses the whole batch if any one of the VOBs is not in the index rather
+ * than skipping it. A batch is atomic and is one undo entry; a list that
+ * quietly dropped a VOB would apply cleanly and leave the selection somewhere
+ * no single history entry describes — the state `commitOps` unwinds for,
+ * arrived at before the binding was ever asked.
+ */
+export function translateVobs(
+  reader: VobReader,
+  vobs: readonly number[],
+  delta: ZenPosition,
+): MoveVob[] {
+  return vobs.map((vob) => {
+    const from = reader.position(vob);
+    if (from === null) throw new RangeError(`no vob ${vob} in the index`);
+    return moveVob(reader, vob, [from[0] + delta[0], from[1] + delta[1], from[2] + delta[2]]);
+  });
+}
+
 /** The op that undoes `op` — pure, and an ordinary op in its own right. */
 export function invertOp(op: WorldOp): WorldOp {
   return { ...op, from: op.to, to: op.from };

@@ -106,13 +106,13 @@ const field = (label: string) => screen.getByTestId(`world-prop-${label}`);
 
 describe('WorldPropertyGrid', () => {
   it('says nothing is selected rather than showing an empty grid', () => {
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={null} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[]} />);
     expect(screen.getByTestId('world-props-empty')).toBeInTheDocument();
     expect(screen.queryByTestId('world-prop-class')).not.toBeInTheDocument();
   });
 
   it('shows the identity of the selected VOB', () => {
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={1} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} />);
 
     expect(field('index')).toHaveTextContent('1');
     expect(field('class')).toHaveTextContent('zCVobLight');
@@ -125,7 +125,7 @@ describe('WorldPropertyGrid', () => {
     // The single conversion is one mirrored root node in the viewport (§7).
     // Nothing else in the codebase converts, and this grid is the place it
     // would be most tempting to.
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={1} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} />);
 
     const position = field('position').textContent ?? '';
     expect(position).toContain('12.5');
@@ -134,7 +134,7 @@ describe('WorldPropertyGrid', () => {
   });
 
   it('names the flag bits instead of printing the word', () => {
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={1} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} />);
 
     // 0b11 is showVisual + vobStatic.
     expect(field('flags')).toHaveTextContent('showVisual');
@@ -143,10 +143,10 @@ describe('WorldPropertyGrid', () => {
   });
 
   it('places the VOB in the hierarchy', () => {
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={1} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} />);
     expect(field('parent')).toHaveTextContent('CASTLE');
 
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={0} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} />);
     expect(screen.getAllByTestId('world-prop-parent')[1]).toHaveTextContent(/none|root/i);
     expect(screen.getAllByTestId('world-prop-children')[1]).toHaveTextContent('2');
   });
@@ -155,17 +155,32 @@ describe('WorldPropertyGrid', () => {
     // Its visual names the source mesh a slice of the already-compiled world
     // came from, and drawing it draws the world twice. It is skipped on
     // purpose, and the grid is where someone asks why their VOB is invisible.
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={2} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[2]} />);
     expect(screen.getByTestId('world-prop-note')).toHaveTextContent(/compo|not drawn|world mesh/i);
   });
 
   it('explains an unresolved visual as a fact, not an error', () => {
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={3} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[3]} />);
     expect(screen.getByTestId('world-prop-note')).toHaveTextContent(/Daedalus|not a mesh|not in the VFS/i);
   });
 
+  it('describes the last VOB selected, and says how many are going with it', () => {
+    // The grid describes one VOB — a multi-select drag moves them all, and
+    // without a count the only evidence of that is the viewport. The one it
+    // describes is the last one added, which is also the one the gizmo sits on.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} />);
+
+    expect(field('index')).toHaveTextContent('1');
+    expect(screen.getByTestId('world-prop-selection')).toHaveTextContent('2');
+  });
+
+  it('says nothing about a selection of one', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} />);
+    expect(screen.queryByTestId('world-prop-selection')).not.toBeInTheDocument();
+  });
+
   it('shows no note for an ordinary drawn VOB', () => {
-    render(<WorldPropertyGrid summary={WORLD} selectedVob={1} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} />);
     expect(screen.queryByTestId('world-prop-note')).not.toBeInTheDocument();
   });
 });

@@ -79,12 +79,21 @@ export interface WorldViewportProps {
    * **ZenGin space** when the click landed on terrain instead. Both null means
    * the click missed everything.
    */
-  onPick: (vob: number | null, point: [number, number, number] | null) => void;
-  /** What the gizmo is attached to. Null hides it. */
-  selectedVob: number | null;
-  /** A finished drag, in **ZenGin space** — the shell turns it into an op. The
-   *  viewport has already drawn the move; this asks for it to be made real. */
-  onMoveVob: (vob: number, to: [number, number, number]) => void;
+  onPick: (
+    vob: number | null,
+    point: [number, number, number] | null,
+    /** Ctrl/Cmd was held: add to the selection rather than replacing it. */
+    additive: boolean,
+  ) => void;
+  /** What the gizmo drives. Empty hides it; the gizmo sits on the last entry. */
+  selection: readonly number[];
+  /**
+   * A finished drag as a **delta in ZenGin space** — the shell turns it into one
+   * op per selected VOB. A delta rather than a destination because one gizmo
+   * moves a whole selection and the VOBs keep the spacing they had. The viewport
+   * has already drawn the move; this asks for it to be made real.
+   */
+  onTranslateSelection: (delta: [number, number, number]) => void;
   /** Ops the main process has applied — a committed edit, an undo, a redo, or
    *  the reversal of a refused one. The scene follows them. */
   appliedOps: WorldOp[] | null;
@@ -93,12 +102,12 @@ export interface WorldViewportProps {
 /** What the selection and edit effects need of the imperative viewport, so
  *  neither of them can tear the scene down and rebuild 31 MB of buffers. */
 interface Gizmo {
-  attach: (vob: number | null) => void;
+  attach: (selection: readonly number[]) => void;
 }
 
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
-  selectedVob, onMoveVob, appliedOps,
+  selection, onTranslateSelection, appliedOps,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -106,8 +115,8 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   const sceneRef = useRef<WorldScene | null>(null);
   const overlayRef = useRef<WaynetOverlay | null>(null);
   const gizmoRef = useRef<Gizmo | null>(null);
-  const onMoveVobRef = useRef(onMoveVob);
-  onMoveVobRef.current = onMoveVob;
+  const onTranslateRef = useRef(onTranslateSelection);
+  onTranslateRef.current = onTranslateSelection;
   // Read through refs so a parent re-render cannot tear the scene down and
   // rebuild 31 MB of buffers just because a callback identity changed.
   const onPickRef = useRef(onPick);
@@ -197,16 +206,24 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     transform.enabled = false;
     transform.getHelper().visible = false;
 
-    let gizmoVob: number | null = null;
+    // What the gizmo drives, and where each of them started the drag. A
+    // selection can hold VOBs that are not drawn at all — a decal, a sound VOB,
+    // anything unresolved — and those have no instance to preview. They are
+    // still in the batch: the op is built from the index, which knows where
+    // they are, and only the preview needs an instance.
+    let gizmoVobs: readonly number[] = [];
+    const dragFrom = new Map<number, [number, number, number]>();
+    const proxyFrom = new THREE.Vector3();
     // A drag ends with a pointerup that the browser also delivers as a click on
     // the canvas, *after* the gizmo has already reported the drag finished — so
     // a flag that is true only during the drag would already be false by then.
     // This one is consumed by the click it belongs to.
     let endedDrag = false;
 
-    const attach = (vob: number | null) => {
-      const position = vob === null ? null : world.positionOf(vob);
-      gizmoVob = position === null ? null : vob;
+    const attach = (vobs: readonly number[]) => {
+      // The gizmo sits on the last selected VOB that is actually drawn.
+      const position = world.anchorOf(vobs);
+      gizmoVobs = position === null ? [] : vobs;
 
       if (position === null) {
         transform.detach();
@@ -225,18 +242,41 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     transform.addEventListener('dragging-changed', (event) => {
       const dragging = event.value as boolean;
       controls.enabled = !dragging;
-      if (dragging) return;
+
+      if (dragging) {
+        // Where everything was when the drag began. Read once: `moveVob` writes
+        // the instance matrices this would otherwise be read back out of, so a
+        // per-frame read would compound the delta.
+        proxyFrom.copy(proxy.position);
+        dragFrom.clear();
+        for (const vob of gizmoVobs) {
+          const position = world.positionOf(vob);
+          if (position !== null) dragFrom.set(vob, position);
+        }
+        return;
+      }
 
       endedDrag = true;
-      if (gizmoVob === null) return;
-      onMoveVobRef.current(gizmoVob, [proxy.position.x, proxy.position.y, proxy.position.z]);
+      const delta: [number, number, number] = [
+        proxy.position.x - proxyFrom.x, proxy.position.y - proxyFrom.y, proxy.position.z - proxyFrom.z,
+      ];
+      // A click on the gizmo that moves nothing is not an edit. Committing it
+      // would put one op per selected VOB on the undo stack for a batch that
+      // undoes nothing.
+      if (gizmoVobs.length === 0 || delta.every((component) => component === 0)) return;
+      onTranslateRef.current(delta);
     });
 
-    // The live preview. The world in the main process still has the VOB where
-    // it was; this is the drag being drawn, and it is made real on release.
+    // The live preview. The world in the main process still has the VOBs where
+    // they were; this is the drag being drawn, and it is made real on release.
     transform.addEventListener('objectChange', () => {
-      if (gizmoVob === null) return;
-      world.moveVob(gizmoVob, [proxy.position.x, proxy.position.y, proxy.position.z]);
+      for (const [vob, from] of dragFrom) {
+        world.moveVob(vob, [
+          from[0] + proxy.position.x - proxyFrom.x,
+          from[1] + proxy.position.y - proxyFrom.y,
+          from[2] + proxy.position.z - proxyFrom.z,
+        ]);
+      }
     });
 
     const raycaster = new THREE.Raycaster();
@@ -255,10 +295,14 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       // where the equivalent CPU raycast is 14.2 ms. The readback is awaited
       // rather than stalled on, so the draw loop keeps running underneath it —
       // and the world can be closed while a pick is still in flight.
+      // Read before the await: a modifier released while the readback is in
+      // flight would otherwise turn a Ctrl+click into a plain one.
+      const additive = event.ctrlKey || event.metaKey;
+
       const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
       if (disposed) return;
       if (vob !== NO_PICK) {
-        onPickRef.current(vob, null);
+        onPickRef.current(vob, null, additive);
         return;
       }
 
@@ -269,7 +313,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       pointer.set((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
-      onPickRef.current(null, hit ? threeToZen(hit.point.toArray()) : null);
+      onPickRef.current(null, hit ? threeToZen(hit.point.toArray()) : null, additive);
     };
     renderer.domElement.addEventListener('click', handleClick);
 
@@ -361,12 +405,16 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     window.__worldViewport = {
       benchmark,
       dragGizmo: (to) => {
-        if (gizmoVob === null) throw new Error('no VOB is selected');
+        if (gizmoVobs.length === 0) throw new Error('no VOB is selected');
+        // The whole sequence a real drag fires, in order: the press is what
+        // records where everything started, and a delta measured from a stale
+        // origin is the defect this stands to catch.
+        transform.dispatchEvent({ type: 'dragging-changed', value: true });
         proxy.position.set(to[0], to[1], to[2]);
         transform.dispatchEvent({ type: 'objectChange' });
         transform.dispatchEvent({ type: 'dragging-changed', value: false });
       },
-      gizmoPosition: () => (gizmoVob === null
+      gizmoPosition: () => (gizmoVobs.length === 0
         ? null
         : [proxy.position.x, proxy.position.y, proxy.position.z]),
     };
@@ -418,8 +466,8 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   // The gizmo follows the selection. `mesh` is a dependency because a new
   // world's scene is a new gizmo, not because the selection changed.
   useEffect(() => {
-    gizmoRef.current?.attach(selectedVob);
-  }, [selectedVob, mesh, visuals]);
+    gizmoRef.current?.attach(selection);
+  }, [selection, mesh, visuals]);
 
   // An edit the main process has taken — a commit, an undo, a redo, or the
   // reversal of a refused one. The scene is a projection and has to follow it;
@@ -430,8 +478,11 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     if (world === null || appliedOps === null) return;
 
     for (const op of appliedOps) world.moveVob(op.vob, op.to);
-    if (appliedOps.some((op) => op.vob === selectedVob)) gizmoRef.current?.attach(selectedVob);
-    // `selectedVob` is deliberately not a dependency: this effect is about ops
+    // The gizmo has to follow the VOBs it is attached to, or it is left
+    // floating where they used to be — an undo of a multi-select drag moves
+    // every one of them.
+    if (appliedOps.some((op) => selection.includes(op.vob))) gizmoRef.current?.attach(selection);
+    // `selection` is deliberately not a dependency: this effect is about ops
     // arriving, and re-running it on a selection change would re-apply them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedOps]);

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Chip, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
-import { moveVob } from 'zen-world';
+import { translateVobs } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { useWorldStore } from '../../store/worldStore';
 import { vobModelOf } from '../../world/vobModel';
@@ -23,8 +23,8 @@ const WorldSurface: React.FC = () => {
   const summary = useWorldStore((s) => s.summary);
   const error = useWorldStore((s) => s.error);
   const editError = useWorldStore((s) => s.editError);
-  const selectedVob = useWorldStore((s) => s.selectedVob);
-  const { beginOpen, openSucceeded, openFailed, selectVob } = useWorldStore.getState();
+  const selection = useWorldStore((s) => s.selection);
+  const { beginOpen, openSucceeded, openFailed, selectVob, toggleVob } = useWorldStore.getState();
 
   const [gothicInstall, setGothicInstall] = useState<string | null>(null);
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
@@ -97,10 +97,22 @@ const WorldSurface: React.FC = () => {
     [],
   );
 
-  const handlePick = useCallback((vob: number | null, point: [number, number, number] | null) => {
-    selectVob(vob);
+  // A plain click replaces the selection; Ctrl/Cmd adds to it. One rule for
+  // both panels — the tree is the only way to reach a VOB the viewport cannot
+  // draw (a decal, a sound VOB), and the viewport the only way to reach one the
+  // tree has not been scrolled to.
+  const handleSelect = useCallback((vob: number, additive: boolean) => {
+    if (additive) toggleVob(vob); else selectVob(vob);
+  }, [selectVob, toggleVob]);
+
+  const handlePick = useCallback((
+    vob: number | null, point: [number, number, number] | null, additive: boolean,
+  ) => {
+    // A Ctrl+click that misses must not empty a selection someone is building.
+    if (vob !== null) handleSelect(vob, additive);
+    else if (!additive) selectVob(null);
     setTerrainPoint(point);
-  }, [selectVob]);
+  }, [handleSelect, selectVob]);
 
   // ── editing (level-editor.md §7, Phase 1b) ────────────────────────────────
   //
@@ -130,12 +142,17 @@ const WorldSurface: React.FC = () => {
     }
   }, []);
 
-  const handleMoveVob = useCallback((vob: number, to: [number, number, number]) => {
-    const current = useWorldStore.getState().summary;
-    if (current === null) return;
-    // `from` comes out of the index before anything is applied to it, which is
-    // what lets the op be inverted without a snapshot beside the history.
-    void commitOps([moveVob(vobModelOf(current).reader, vob, to)]);
+  // One gizmo drives the whole selection, so a drag arrives as a delta rather
+  // than a destination and becomes one op per VOB in one batch — which is one
+  // undo entry, and atomic in `commitOps`. Read out of the store rather than
+  // closed over: the drag is delivered from outside React's render path.
+  const handleTranslateSelection = useCallback((delta: [number, number, number]) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+    // Each op's `from` comes out of the index before anything is applied to it,
+    // which is what lets the batch be inverted without a snapshot beside the
+    // history — and what keeps a selection's spacing across an undo.
+    void commitOps(translateVobs(vobModelOf(current).reader, selected, delta));
   }, [commitOps]);
 
   useEffect(() => {
@@ -247,7 +264,7 @@ const WorldSurface: React.FC = () => {
               <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
             </Tabs>
             <Box sx={{ flex: 1, minHeight: 0, display: panel === 'scene' ? 'block' : 'none' }}>
-              <WorldSceneTree summary={summary} selectedVob={selectedVob} onSelect={selectVob} />
+              <WorldSceneTree summary={summary} selection={selection} onSelect={handleSelect} />
             </Box>
             {/* Mounted only once the user asks for it: the first listing is an
                 IPC round trip into the worker that holds the VFS. */}
@@ -269,8 +286,8 @@ const WorldSurface: React.FC = () => {
               showWaynet={showWaynet}
               loadTexture={loadTexture}
               onPick={handlePick}
-              selectedVob={selectedVob}
-              onMoveVob={handleMoveVob}
+              selection={selection}
+              onTranslateSelection={handleTranslateSelection}
               appliedOps={appliedOps}
             />
           )}
@@ -280,12 +297,12 @@ const WorldSurface: React.FC = () => {
           <Box sx={{ width: 300, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
             {panel === 'assets' && selectedAsset !== null
               ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} />
-              : <WorldPropertyGrid summary={summary} selectedVob={selectedVob} />}
+              : <WorldPropertyGrid summary={summary} selection={selection} />}
           </Box>
         )}
       </Box>
 
-      {terrainPoint && selectedVob === null && (
+      {terrainPoint && selection.length === 0 && (
         <Paper square elevation={1} sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}>
           {/* Terrain is not a VOB, so it has no row and no properties — a hit
               reports the point rather than inventing a selection. ZenGin space,

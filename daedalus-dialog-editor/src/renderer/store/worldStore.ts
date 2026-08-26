@@ -21,8 +21,14 @@ interface WorldStore {
   status: WorldStatus;
   summary: WorldSummary | null;
   error: string | null;
-  /** Index into `summary.vobIndex`, not a name — names are not unique. */
-  selectedVob: number | null;
+  /**
+   * Indices into `summary.vobIndex`, not names — names are not unique.
+   *
+   * Ordered and without duplicates: the **last** entry is the VOB the gizmo
+   * anchors on, and a repeat would put two ops on one VOB in a batch that is
+   * meant to be one op each.
+   */
+  selection: readonly number[];
   /** A refused edit. Deliberately not `error`/`status: 'error'`, which replaces
    *  the whole surface: the world is still open and still correct. */
   editError: string | null;
@@ -30,7 +36,10 @@ interface WorldStore {
   beginOpen: () => void;
   openSucceeded: (summary: WorldSummary) => void;
   openFailed: (error: string) => void;
+  /** Replace the selection — a plain click. `null` clears it. */
   selectVob: (vob: number | null) => void;
+  /** Add or remove one VOB — a Ctrl/Cmd click, which is how a batch is built. */
+  toggleVob: (vob: number) => void;
   /** Apply ops the main process has already applied to the authoritative world. */
   applyEdit: (ops: readonly WorldOp[]) => void;
   editFailed: (error: string) => void;
@@ -41,9 +50,13 @@ const EMPTY = {
   status: 'idle' as WorldStatus,
   summary: null,
   error: null,
-  selectedVob: null,
+  selection: [] as readonly number[],
   editError: null,
 };
+
+/** The VOB the panels describe and the gizmo sits on: the last one selected. */
+export const primaryVob = (selection: readonly number[]): number | null =>
+  (selection.length === 0 ? null : selection[selection.length - 1]);
 
 export const useWorldStore = create<WorldStore>((set, get) => ({
   ...EMPTY,
@@ -51,7 +64,14 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   beginOpen: () => set({ ...EMPTY, status: 'opening' }),
   openSucceeded: (summary) => set({ ...EMPTY, status: 'ready', summary }),
   openFailed: (error) => set({ ...EMPTY, status: 'error', error }),
-  selectVob: (selectedVob) => set({ selectedVob }),
+  selectVob: (vob) => set({ selection: vob === null ? [] : [vob] }),
+
+  toggleVob: (vob) => set(({ selection }) => ({
+    selection: selection.includes(vob)
+      ? selection.filter((selected) => selected !== vob)
+      // Appended, so the VOB just added is the one the gizmo anchors on.
+      : [...selection, vob],
+  })),
 
   applyEdit: (ops) => {
     const summary = get().summary;

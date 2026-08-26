@@ -138,6 +138,59 @@ describe('an edit reaching the renderer', () => {
   });
 });
 
+describe('the selection a batch edit is made from', () => {
+  // A batch is one undo entry and `commitOps` is already atomic, so what
+  // multi-select adds is the selection itself: an ordered list, not a single
+  // index. The order matters — the last VOB added is the one the gizmo sits on.
+  it('replaces the selection on a plain select, and empties it on null', () => {
+    opened();
+
+    useWorldStore.getState().selectVob(1);
+    expect(useWorldStore.getState().selection).toEqual([1]);
+
+    useWorldStore.getState().selectVob(0);
+    expect(useWorldStore.getState().selection).toEqual([0]);
+
+    useWorldStore.getState().selectVob(null);
+    expect(useWorldStore.getState().selection).toEqual([]);
+  });
+
+  it('adds and removes one VOB on a toggle, leaving the rest alone', () => {
+    opened();
+    useWorldStore.getState().selectVob(0);
+
+    useWorldStore.getState().toggleVob(1);
+    expect(useWorldStore.getState().selection).toEqual([0, 1]);
+
+    useWorldStore.getState().toggleVob(0);
+    expect(useWorldStore.getState().selection).toEqual([1]);
+  });
+
+  it('never holds the same VOB twice', () => {
+    // A duplicate would put two ops on one VOB in a batch. They compose, so the
+    // world would end up right and the undo entry would be twice the size it
+    // should be — a selection is a set, and this is where that is enforced.
+    opened();
+
+    useWorldStore.getState().toggleVob(1);
+    useWorldStore.getState().toggleVob(1);
+    useWorldStore.getState().toggleVob(1);
+
+    expect(useWorldStore.getState().selection).toEqual([1]);
+  });
+
+  it('is emptied by opening another world', () => {
+    // An index into one world's `vobIndex` addresses a different VOB in the
+    // next, exactly as the history does — and the history is emptied for it.
+    opened();
+    useWorldStore.getState().selectVob(1);
+
+    useWorldStore.getState().openSucceeded(summaryWith([[0, 0, 0]]));
+
+    expect(useWorldStore.getState().selection).toEqual([]);
+  });
+});
+
 describe('the reader the panels share', () => {
   it('sees the same buffers the store holds — not a copy of them', () => {
     // If `openSucceeded` ever copied the index, every edit would land in one of

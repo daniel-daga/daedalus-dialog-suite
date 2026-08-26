@@ -161,6 +161,23 @@ export class WorldScene {
     return null;
   }
 
+  /**
+   * Where to put one gizmo for a whole selection: the position of the **last**
+   * VOB in it that is actually drawn, or null if none of them is.
+   *
+   * The last is the one just clicked, which is the one the user expects the
+   * handles to appear on. It is the last *drawn* one because a selection may
+   * hold VOBs with no instance — a decal, a sound VOB — and anchoring on one of
+   * those would take the gizmo away from a selection full of drawable VOBs.
+   */
+  anchorOf(vobs: readonly number[]): [number, number, number] | null {
+    for (let at = vobs.length - 1; at >= 0; at--) {
+      const position = this.positionOf(vobs[at]);
+      if (position !== null) return position;
+    }
+    return null;
+  }
+
   resolveInstance(mesh: THREE.InstancedMesh, instanceId: number): number | null {
     const vobIds = this.instanceVobIds.get(mesh);
     if (!vobIds || instanceId < 0 || instanceId >= vobIds.length) return null;

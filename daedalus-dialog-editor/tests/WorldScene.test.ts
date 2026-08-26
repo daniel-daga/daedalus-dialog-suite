@@ -347,4 +347,24 @@ describe('WorldScene', () => {
     // — the middle of the world is a real place for a VOB to be.
     expect(scene.positionOf(4242)).toBeNull();
   });
+
+  test('a selection anchors the gizmo on the last VOB in it that is actually drawn', () => {
+    // One gizmo drives a whole selection, and it has to sit somewhere. The last
+    // one selected is the one the user just clicked — but a selection may hold
+    // VOBs with no instance at all, and anchoring on one of those would detach
+    // the gizmo from a selection that has perfectly drawable VOBs in it.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    // Both drawn, and at different places: the order is the whole answer here,
+    // and a scan from either end agrees whenever only one of them is drawn.
+    expect(scene.anchorOf([7, 9])).toEqual([40, 50, 60]);
+    expect(scene.anchorOf([9, 7])).toEqual([10, 20, 30]);
+    // A VOB with no instance is stepped over rather than detaching the gizmo.
+    expect(scene.anchorOf([9, 4242])).toEqual([40, 50, 60]);
+    // Nothing drawn, nothing to attach to — and an empty selection is not an
+    // error, it is what "deselect" leaves behind.
+    expect(scene.anchorOf([4242])).toBeNull();
+    expect(scene.anchorOf([])).toBeNull();
+  });
 });

@@ -22,6 +22,7 @@ import {
   createVobReader,
   invertOp,
   moveVob,
+  translateVobs,
   vobIndexPath,
   type OpBinding,
   type VobIndex,
@@ -132,6 +133,58 @@ describe('a move op', () => {
 
   it('is refused for a VOB that is not in the index', () => {
     expect(() => moveVob(reader(), 9, [1, 2, 3])).toThrow(/9/);
+  });
+});
+
+describe('a multi-select drag', () => {
+  // One gizmo moves a whole selection, so what the drag produces is a *delta*,
+  // not a destination: the VOBs keep their spacing, and each op still carries
+  // the position of its own VOB. A batch is atomic and is one undo entry, so
+  // this is one list, never one call per VOB.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+    { parent: 0, childIndex: 5, pos: [-1, -2, -3] },
+  ]));
+
+  it('moves every selected VOB by the same delta, from wherever it is', () => {
+    const ops = translateVobs(reader(), [0, 2], [5, 0, -10]);
+
+    expect(ops).toEqual([
+      { op: 'MoveVob', vob: 0, path: '0', from: [100, 200, 300], to: [105, 200, 290] },
+      { op: 'MoveVob', vob: 2, path: '0/5', from: [-1, -2, -3], to: [4, -2, -13] },
+    ]);
+  });
+
+  it('inverts as a batch — the whole selection goes back where it came from', () => {
+    // Undo replays inverses back to front (`commitOps`), and each op knows its
+    // own origin, so a selection that was never uniform to begin with is
+    // restored exactly rather than collapsed onto one point.
+    const index = vobIndex([
+      { childIndex: 0, pos: [100, 200, 300] },
+      { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+      { parent: 0, childIndex: 5, pos: [-1, -2, -3] },
+    ]);
+    const live = createVobReader(index);
+    const ops = translateVobs(live, [0, 1, 2], [7, 7, 7]);
+
+    applyOps(live, ops);
+    applyOps(live, [...ops].reverse().map(invertOp));
+
+    expect(live.position(0)).toEqual([100, 200, 300]);
+    expect(live.position(1)).toEqual([10, 20, 30]);
+    expect(live.position(2)).toEqual([-1, -2, -3]);
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(translateVobs(reader(), [], [1, 2, 3])).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    // Not "skip the bad one": a batch that quietly moves four of five VOBs is
+    // the half-applied state `commitOps` exists to prevent, arrived at before
+    // the binding was ever asked.
+    expect(() => translateVobs(reader(), [0, 9], [1, 2, 3])).toThrow(/9/);
   });
 });
 
