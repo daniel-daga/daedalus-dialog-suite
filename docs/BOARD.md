@@ -82,6 +82,13 @@ was true for so long nobody re-reads it.
   `SetVobClassProp` and the `CLASS_FIELDS` catalogue are in both, and the editor
   typechecks and tests against `zen-world/dist`, not its source, so `build:main`
   fails outright until `pnpm --filter zen-world build` has run.
+- **`binding.cc` changed again for the measured bounds**, so the addon was
+  rebuilt once more (`npx node-gyp rebuild` alone — `vendor/` did not change),
+  and `zen-world/dist` with it. `daedalus-dialog-editor/dist/` also holds a
+  **freshly packaged app**, built after those rebuilds and used to verify the
+  open-world smoke; it is `.gitignore`d and only matters if you are about to
+  trust a package that is already sitting there. Do not rebuild the addon while
+  a package is being written — see `environment-hazards.md`.
 - **Nothing else needs rebuilding on this machine.** On another, or after any change
   to `coords`, `binding.cc` or anything `zen-world` exports:
   `cd zenkit-node && node scripts/build-zenkit.js && npx node-gyp rebuild`, then
@@ -93,30 +100,27 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty — six cards landed this session in two parallel batches of three;
-see Done)*
+*(empty — five cards landed this session plus one diagnosis that closed a
+card by answering it rather than by changing code; see Done)*
 
 ## Next
 
-- **The release gate no longer has the addon-shaped hole, and one claim in it
-  is still unmade.** Both gaps landed (Done). What is *not* proven is that the
-  packaged addon actually loads: packaging asserts `zenkit_node.node` is present
-  and unpacked, and nothing in CI opens a world in the packaged app — the
-  startup smoke test still does not. `npmRebuild: false` is fine in theory
-  (Node-API with `NAPI_CPP_EXCEPTIONS` is ABI-portable to Electron) but that is
-  a reading of `binding.gyp`, not a runtime verdict. The cheap close is
-  extending the startup smoke to open a world; until then a dispatch ships an
-  addon nobody has watched load.
+- **The release gate's last unmade claim is made** (Done) — the packaged app
+  opens a world in CI now, so `npmRebuild: false` rests on a runtime verdict
+  rather than on a reading of `binding.gyp`. What the smoke does **not** cover
+  is the renderer: it never creates a window, so nothing in CI proves the World
+  surface *draws* in a packaged build. That is a different gap from the one just
+  closed, it needs a driver rather than an env var, and no card claims it.
 
 - **Three shipped ops have no engine verdict.** `DeleteVob`, `MoveWaypoint` and
   `SetVobClassProp` all landed after candidate `03` was built, so Gate 2 covers
   the ops that existed on 2026-08-27 and not these — the acceptance record says
   so itself at `engine-acceptance-2026-08-25.md:851-854`. Say "Gate 2 passed for
   the ops it tested", not "Gate 2 passed". A removed subtree is still the edit
-  ZenGin has the most room to disagree about, and `SetVobClassProp` writes
-  `oCItem.instance` as free text against a documented engine-crash path
-  (`level-editor.md` §14.1) — validating it against the parser's item index is
-  the obvious follow-up and is not scheduled.
+  ZenGin has the most room to disagree about. **The `oCItem.instance` half of
+  this card is closed** (Done): the name a `SetVobClassProp` writes is now
+  checked against the parser's item index, so a typo cannot reach a save — but
+  that is a check, not a verdict, and no engine run covers any of the three ops.
   **Increment 2 widened this rather than closing it**: five more classes are
   editable (Done), and a sound or a fog zone written wrongly is *invisible in
   the viewport* — the first edits whose only witness is the engine.
@@ -139,43 +143,25 @@ see Done)*
   Numeric transform entry (1.5) and snapping (1.6) are both **half landed** —
   their own cards below. Still before Phase 1c in §11.
 
-- **Typed rotation: the conversion exists now, the UI does not.** The domain
-  half landed (Done) — `zenRotationToEuler` / `eulerToZenRotation` in
-  `zen-world/coords`, measured rather than assumed. What is left is three fields
-  in `WorldPropertyGrid` and the two decisions the conversion deliberately did
-  not take.
-  **The trap first, because it is the one that corrupts a world quietly.** The
-  read *normalizes*: 12,514 of 41,393 retail VOBs (30.2 %) are non-orthonormal
-  by more than 1e-6, so `eulerToZenRotation(zenRotationToEuler(M))` differs from
-  `M` for a third of the world. A no-op commit would therefore re-orthonormalize
-  a matrix and change bytes nobody asked to change. The position field's
-  refuse-a-value-equal-to-the-one-already-there idiom covers it **if it is
-  applied per angle**.
-  Then: absolute or delta for a multi-selection (single selection is
-  `rotateVob(..., eulerToZenRotation(typed), bounds)`; N VOBs is
-  `multiplyRotation(target, invert(current))` and a UI decision). And displayed
-  angles are canonical — yaw/roll in (−180, 180], pitch in [−90, 90] — so a
-  field showing 190° remounts as −170° and a pole pose remounts with roll 0.
-  Both correct, both look to a user like the editor changing their number.
-  `zenRotationToEuler` **throws** on a reflection or a collapsed matrix; retail
-  has none, but an uncaught throw in a render path is a blank grid.
-  **And Spacer parity is unmeasured**: nothing in the format, in ZenKit or here
-  commits to an Euler order, so Y-X-Z was chosen on retail singularity counts
-  (464 VOBs on XYZ's against 53 on YXZ's), not on a match to Spacer. Settling it
-  needs Spacer itself — type an angle, save, read the matrix back. If it ever
-  turns out different, only those two functions and their tests change.
-
-- **The refusal idiom is fragile, and one instance is a live bug.**
-  `refactoring-targets.md` §7 holds it. A refused edit is corrected by the field
-  remounting, and the remount depended on React committing an intermediate state
-  **React never promised to commit** — a toolbar `Select` added this session was
-  enough to collapse it. The class-property half is fixed (Done, and the fix is
-  a rule now rather than a coincidence), but **position, name and visual are
-  not**: they read from the columnar index, which is never `null`, so there is
-  no unmount to save them and a refused edit keeps the typed value on screen
-  today, with no timing coincidence involved. Verified by probe, not inferred.
-  The remedy is a refusal generation folded into the field keys, or making the
-  fields controlled; it lands in `WorldPropertyGrid.tsx`.
+- **Typed rotation landed, and what is left of it needs Spacer and a UI
+  decision, not code.** The three fields are in (Done) and the quiet-corruption
+  trap is handled per angle, so the 30.2 % of retail VOBs that are
+  non-orthonormal are not re-orthonormalized by a commit nobody made. Two
+  things stayed open on purpose:
+  **Absolute or delta for a multi-selection.** The fields are hidden for N VOBs
+  rather than guessing. Single selection is absolute
+  (`rotateVob(..., eulerToZenRotation(typed), bounds)`); N VOBs would be
+  `multiplyRotation(target, invert(current))` and is a UI decision, not a
+  derivation.
+  **Spacer parity is still unmeasured.** Nothing in the format, in ZenKit or
+  here commits to an Euler order, so Y-X-Z was chosen on retail singularity
+  counts (464 VOBs on XYZ's against 53 on YXZ's), not on a match to Spacer.
+  Settling it needs Spacer itself — type an angle, save, read the matrix back.
+  If it turns out different, only those two functions and their tests change.
+  One thing users will see and may report as a bug: displayed angles are
+  canonical — yaw/roll in (−180, 180], pitch in [−90, 90] — so a field
+  committed at 190° remounts as −170°, and a pole pose remounts with roll 0.
+  Both correct, both look like the editor changing their number.
 
 - **Snapping — drop-to-ground and align-to-normal.** Grid step and angle step
   landed (Done). The two that are left are **not** blocked on a raycast, which
@@ -188,15 +174,16 @@ see Done)*
   at `IDENTITY`. Open and unacted: whether a *typed* coordinate should snap too
   (it does not — a typed number is an explicit destination).
 
-- **Two unmeasured catalogue bounds, one sweep closes both.**
-  `innerRangePercentage` ships with no upper bound because nothing says whether
-  ZenGin stores 0..1 or 0..100, and a wrong maximum refuses retail data.
-  `oCZoneMusic.priority` ships `min: 0` on ZenKit's documentation alone — a
-  retail world holding a negative priority would be refused by the grid, the
-  validator and the binding alike. One `normalizeWorld` sweep over a retail
-  install settles both. `oCZoneMusic.reverb` is unbounded on purpose and needs
-  no sweep: a reverb level is *negative* decibels, and a `min: 0` copied from
-  the light's `range` would refuse every music zone in the game.
+- **Every remaining catalogue bound rests on documentation, and one of those
+  was wrong.** The two unmeasured bounds are closed (Done), but the way they
+  closed is the card: the sweep that settled them also found `zCVobSound.volume`
+  shipping `max: 100` on ZenKit's "percent (0-100)" wording while retail
+  NewWorld holds 130 and 150 — the grid, the validator and the binding were all
+  refusing values the game itself ships. **So a bound taken from ZenKit's docs
+  rather than from a `normalizeWorld` sweep is a live refusal risk, not a
+  cautious default.** `coneAngle` 0–360 and the two daytime hours 0–24 are the
+  ones still standing on documentation alone; neither has been swept, and the
+  sweep is cheap now that the script exists.
 
 - **Waynet editing — the edge ops, and add/delete/rename.** The gizmo landed
   (see Done), so the one op that exists is now reachable; nothing below is.
@@ -214,35 +201,83 @@ see Done)*
   trap — a `WayPoint` is five scalar fields, so what an op cannot describe for
   free is its edge memberships, and those are an enumerable list.
 - **Jumping between a script reference and the place it names — Daniel's idea,
-  unscheduled.** A dialog, and an NPC instance, name waypoints (`AI_GotoWP`,
-  `Npc_GetDistToWP`, an instance's `start_aiwp`) and characters, and today there
-  is no way from either name to the world, or from a picked waypoint back to the
-  scripts that reach for it. **Both ends of the mechanism already exist and
-  nothing joins them**: the World surface has a jump — `WorldSurface.tsx:158`
-  turns a scene-tree double-click into a camera jump keyed on request identity,
-  not on state — and the waynet arrives named, in `getWaynet`'s point list.
-  What is missing is the index in between. **Nothing in the parser records a
-  waypoint-name string literal as a reference**, so there is no symbol to click
-  and no back-direction to answer; that, and not the camera, is the size of the
-  job, and it is the same shape as the cross-reference work `cross-references.ts`
-  already does for symbols the grammar knows are references.
-  Two decisions it would inherit rather than invent, both already met once here:
-  a waypoint is addressed by its **index** into `getWaynet`'s list and nothing in
-  the format promises its name is unique (the waynet-editing card above is the
-  long version), so a name-keyed jump needs an answer for a duplicate before it
-  has a destination; and it would be the **third** viewport command, which is
-  precisely the case the refactoring note below says should promote the two jump
-  props to an imperative handle instead of adding a third prop.
-  The character half is Phase 1c's ground — static NPC/item spawns are what §11
-  already schedules there — so the **waypoint half is the part that stands
-  alone**, and is the one worth sizing first.
+  now sized.** The core claim survived: **nothing in the parser records a
+  waypoint-name string literal as a reference**, and that index, not the camera,
+  is the job. `cross-references.ts` knows exactly two reference kinds and
+  returns no file, line or column at all — it exists to serve rename/remove, so
+  it is the right *shape* and the wrong *payload*. The camera is nearly free:
+  `frameVobs` takes `bounds: null` for "a point rather than a thing with a
+  size", and waynet positions are already ZenGin centimetres.
+  **Four things the card said were wrong, and the fourth changes what to
+  build.** The jump is at `WorldSurface.tsx:193-198`, not `:158`. `start_aiwp`
+  does not exist in the G2 MDK — the field is `C_Npc.wp` (plus `spawnPoint`),
+  literal-assigned in 2 places in the whole corpus. There is **one** request
+  prop, not two: `frameSelection` is a closure inside the scene effect, so a
+  waypoint jump is the *second* prop — still exactly the trigger the
+  imperative-handle note names. And the card listed the three least-used
+  carriers: measured over the MDK's 1,725 `.d` files, `AI_GotoWP` has **6**
+  literal waypoint sites against the `TA_*` daily routines' **6,223**. The
+  routines are the feature; the interesting question a level editor answers is
+  where an NPC stands at 08:00.
+  **The extractor should not hardcode a call list.** 58 `TA_*` functions declare
+  a parameter literally named `var string waypoint`, so the rule is derived from
+  the project being edited — map a function to the index of such a parameter,
+  then read the literal at that position. Only the engine externals
+  (`AI_GotoWP`, `Npc_GetDistToWP` and ~4 more) need a seed table, and that set
+  is closed. The one genuinely new parser capability is exposing function
+  **parameters**.
+  **The duplicate-name decision is answered by measurement: don't design for
+  it.** 24 worlds, 12,341 waypoints, **0 duplicate names**, not one even
+  case-insensitively. Build the lookup multi-valued anyway (it costs nothing),
+  jump to the first, and spend the effort on the real residue instead: 98.0 % of
+  the 6,529 literal sites resolve against all 24 worlds but only 84.3 % against
+  the three main ones, so the UI must distinguish "no such waypoint" from **"not
+  in *this* world"** or it will lie about the largest cluster of references in
+  the corpus. Names are unsafe as a persisted identity and perfectly safe as a
+  *query* — a jump is read-only, so `MoveWaypoint`'s index-addressing hazard
+  does not apply.
+  **Phasing, and the half worth doing first is the back-direction.**
+  W1 the index (medium — needs the parser change, and line/column must survive a
+  path that today keeps only `node.text`); **W2 world → scripts (small-medium,
+  and the one to land first)**: click a waypoint, see the routines that name it.
+  It needs neither inherited decision, no viewport refactor and no new
+  navigation model, and it delivers a Problems rule — 128 dangling waypoint
+  sites — for free. W3 the imperative handle (small, ~60 lines net negative; do
+  it immediately before the caller that justifies it, not earlier). W4 script →
+  world is **large**, and not for the camera: it needs the two blockers below.
+  Note a selected waypoint has **no UI at all** today, so W2 builds a panel from
+  nothing rather than extending one.
+  **The trap that would make W1 silently wrong**: an index built off
+  `mergedSemanticModel` is capped at `PARSED_FILES_CAP = 512` against the MDK's
+  1,725 files, and *which* files depends on the selected NPC — wrong by
+  construction and non-deterministically so. It has to ride
+  `buildProjectIndex`'s worker-pool pass, exactly as `voiceIds` does. Also:
+  free points (`WP_STAND`, `WP_PICK`, …) are prefix-matched by the engine, so a
+  strict exact-match Problems rule invents ~60 false findings.
 
-- **What is left of the ASCII writer — A2, A3, A6 and one undiagnosed drift.**
-  A1, A4 and A5 landed (Done), and the corpus now measures all 20 retail ASCII
-  worlds instead of crashing on them. They classify **`semantic-drift`**, and
-  the instrument names the whole of it in two findings across all 20:
-  - **A6 — `physicsEnabled` is dropped on every save, 396 of the 400 findings,
-    and it is not an ASCII defect at all.** `VirtualObject.cc:251` writes packed
+- **The World surface loses its geometry when you navigate away from it.**
+  Found while sizing the card above; pre-existing, unowned, and a hard
+  prerequisite for that card's W4. `MainLayout.tsx:189` renders `<WorldSurface>`
+  under a *conditional*, unlike the dialog view which is deliberately kept
+  mounted by a display toggle. `mesh`, `visuals` and `waynet` are local
+  `useState` filled only inside `openWorld`, and there is no mount-time refetch
+  — so leaving the World view and returning leaves `mesh === null`, the viewport
+  guard renders nothing, and the world looks closed while `worldStore.status`
+  still says open. The fix is a decision nobody has taken: keep tens of MB of
+  buffers mounted, or refetch on mount and pay the latency.
+
+- **What is left of the ASCII writer — A2, A3 and A6.** A1, A4 and A5 landed
+  (Done), and the corpus now measures all 20 retail ASCII worlds instead of
+  crashing on them. They classify **`semantic-drift`** in two findings across
+  all 20.
+  **Read the finding counts below as quotas, not totals.** A non-`--drill` run
+  kept only the first 20 findings per world, which is why "400 findings, 396 of
+  them A6" looked so tidy — it was 20 worlds times the cap. The report says so
+  now (Done), and the numbers here have been re-taken under `--drill`.
+  - **A6 — `physicsEnabled` is dropped on every save, 43,341 of the 43,469
+    findings a `--drill` run reports, and it is not an ASCII defect at all.**
+    (It was "396 of 400" while the cap was silent; it fires on essentially every
+    VOB, which is what filled every world's quota.) `VirtualObject.cc:251` writes packed
     bit 6 as `physics_enabled && rigid_body` on G2, but `rigid_body` is only
     ever filled inside `if (r.is_save_game())` (`:210`) — so in a *world* it is
     always empty and the flag is always lost. The `&& rigid_body` guard belongs
@@ -255,8 +290,22 @@ see Done)*
     user-edited or modded world is another matter, and that is the editor's own
     save path. Not landed here because it needs a fixture VOB with the flag set
     and, being a save-path byte change, the project's own engine-A/B rule.
-  - **`animMode` on 4 VOBs in the whole corpus.** Undiagnosed. Small enough to
-    be a single odd value and large enough to be a second enum defect.
+  - **`animMode` is diagnosed, is not 4 VOBs but 128, and needs no patch.** It
+    is retail garbage meeting a representational narrowing, not a writer defect.
+    130 `oCMobContainer` chests across 19 of the 20 ASCII worlds store a
+    heap-pointer-shaped `visualAniMode` — 145264232 (`0x08A8B0E8`) on 128 of
+    them — which Spacer serialized from an uninitialised member. ZenKit narrows
+    it twice: the load truncates uint32 to uint8 because `AnimationType` is
+    `: std::uint8_t` (`VirtualObject.cc:159`, `VirtualObject.hh:67`), giving
+    145264232 mod 256 = 104; then the packed writer masks to two bits
+    (`:255`, `& 3`), giving 0. Hence `104 vs 0`, and hence the two values ≡ 0
+    mod 256 that drift invisibly. **The editor's BinSafe save path is not
+    affected** — the opposite of A6: a packed reader can only ever produce 0–3
+    and `& 3` is the identity there, measured as 0 findings across all four
+    BinSafe worlds. No packed-path fix exists even in principle, since the
+    format has two bits for the field; a byte-faithful fix would need
+    `AnimationType` widened upstream *and* the unpacked writer resurrected,
+    which is blocked behind A2 and A3 below.
   - **A2 and A3 are unchanged and still chained.** A2 is dead code with no
     reachable switch: `VirtualObject.cc:12` has `static bool pack = true;`,
     `:336` `enable_packed_save` is its only writer, and grep over `src/`,
@@ -344,7 +393,11 @@ see Done)*
     jump both live inside the big scene effect, so reaching them needs a ref
     hop plus a request prop. A third viewport command should promote that to a
     handle rather than adding a second prop — a `docs/refactoring-targets.md`
-    entry if it grows.
+    entry if it grows. Sized since (the waypoint card above, W3): small, ~60
+    lines net negative, the closures already exist and `frameVobRef` is already
+    a ref. The one hazard is that the handle is only alive while the scene
+    effect is, and that effect re-runs on `[mesh, visuals, bbox]` — a jump
+    requested during a rebuild must be a no-op, not a crash.
 
 Two cards below are what is left of Daniel's first hands-on pass, 2026-08-27 —
 five of the seven have landed: the viewport pivot, the world open dialog, and
@@ -376,6 +429,79 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   dims slightly).
 
 ## Done — Phase 1b
+
+- **The packaged app opens a world before a dispatch ships it.** The release
+  gate asserted `zenkit_node.node` was packaged and unpacked, which is a claim
+  about a file. `DDE_SMOKE_OPEN_WORLD` now routes `whenReady` into a windowless
+  open through `WorldService` — the same call `world:open` makes, so the worker
+  spawn, the `app.asar.unpacked` dlopen and the summary all run as they would
+  for a user. Verified against a real package here in both directions: exit 0
+  with `{"ok":true,"vobCount":5,"worldTriangles":2}`, and exit 1 naming the
+  missing module when the addon is renamed away.
+  **The finding that cost the time is not in the feature.** The first package
+  built here was corrupt and the app exited 1 in 220 ms with no window, no
+  output and no event-log entry — indistinguishable from a main-process bug. A
+  `node-gyp rebuild` in one agent's tree had landed inside another agent's
+  packaging window. `environment-hazards.md` has the rule and the cheap test
+  (extract `package.json` from the asar and parse it).
+
+- **Two guessed catalogue bounds get measured, and a third turns out to have
+  been refusing retail data.** `innerRangePercentage` is 0..1 — every value
+  across the three worlds in [0.1, 1.0], world-defaults at exactly 1.0, where
+  ZenKit's docs say "Unknown". `oCZoneMusic.priority` keeps `min: 0`, now
+  measured: 62 music zones, 0 through 30, no negative. `reverb` stays unbounded
+  and the sweep says why — every retail value is negative, −10 to −3.219. The
+  third is the one worth remembering: `zCVobSound.volume` shipped `max: 100` on
+  ZenKit's "percent (0-100)" wording, and retail NewWorld holds 130 and 150.
+
+- **A refused edit stops sticking, and rotation becomes typeable.** The refusal
+  generation is a rule now — bumped in `commitOps`'s catch, folded into every
+  editable field key — so position, name and visual are corrected by the same
+  mechanism the class properties already were, with no scheduling coincidence
+  under it. Sabotage-verified. Typed rotation then rides on it, refusing a no-op
+  per angle so the 30.2 % non-orthonormal VOBs are not silently
+  re-orthonormalized; the equality check has to compare the *displayed* rounded
+  number as well as the decomposed one, since a field reading "30" can be
+  30.000000000000004 underneath.
+
+- **The finding cap stops passing for a total.** A non-`--drill` corpus report
+  kept the first 20 findings per world and said nothing about it, so a quota
+  read as a total and put a wrong number on this board. Rows carry
+  `findingTotal` and `findingsTruncated`, and the summary says "N findings, 20
+  shown (--drill for all)". The cap and `--drill` are unchanged.
+
+- **`animMode` is diagnosed, and the answer is that nothing should be done.**
+  Retail garbage — 130 chests carrying a heap-pointer-shaped `visualAniMode` —
+  meeting a uint8 enum and a two-bit packed field. Not 4 VOBs but 128, and the
+  editor's BinSafe save path is provably unaffected. The Next card carries the
+  mechanism; no patch, and the reason a patch cannot exist.
+
+- **The item instance stops being free text.** `oCItem.instance` is the only
+  class field whose value is a name in *another file*, and one no script
+  declares crashes ZenGin when the item spawns. The grid now refuses a name the
+  loaded project does not declare, through the same route a value out of bounds
+  already takes: nothing is sent, no op is built, and the field remounts showing
+  the world's own value.
+  **Where it could *not* go is the durable finding.** The main process holds no
+  item index and is not one round trip from having one — `ProjectIndex` carries
+  NPCs, dialogs, routines and voice ids and *no instances at all*, and
+  `ProjectService.primedModels` is a **take-once** hand-off cache of per-file
+  models, emptied as it is read and deliberately not a copy of the renderer's.
+  And even with an index it could not be a hard refusal: a world may be edited
+  with **no script project open**, and the renderer's own index is empty until
+  ingestion has merged the item files — so an empty index has to mean "nothing
+  is known", never "nothing is legal". What `assertApplyOpsRequest` *can* say is
+  the shape, and it now does: a `to.instance` that is not a Daedalus symbol is
+  refused there. `from` deliberately is not — it is the value the world already
+  holds, and refusing it would block the one edit that repairs such a VOB.
+  **Daedalus is case-insensitive and the parser keys `items` by the name as it
+  was written**, so the fold happens on both sides; each side has its own test
+  and each was verified by breaking one fold at a time.
+  Autocomplete was looked at and left out with a reason (plan §7):
+  `VariableAutocomplete` calls `onChange` per keystroke where this grid commits
+  on blur, so reusing it as-is would build an op per character, and its "Add …"
+  affordance offers to author a Daedalus symbol from the level editor. A
+  `<datalist>` on the existing input is the cheap version if it is ever wanted.
 
 - **A `bool` kind and an `int` kind, and the nine fields they unblock.** The
   catalogue's three kinds were the constraint; now there are five, and the class

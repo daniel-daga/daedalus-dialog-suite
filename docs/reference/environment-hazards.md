@@ -178,3 +178,15 @@ both met on 2026-08-28 with three agents in flight.
   directory: `node node_modules/jest/bin/jest.js`,
   `node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit`,
   `node node_modules/eslint/bin/eslint.js .`.
+- **Never rebuild the native addon while another agent is packaging.** A
+  `node-gyp rebuild` at 20:15 landed inside an `electron-builder` run that
+  wrote its asar at 20:18, and the result was a **corrupt package that looks
+  intact**: 32,918 entries listed, total size consistent with the declared
+  offsets, and yet `@electron/asar` extracted garbage for every file. The
+  packaged app then exited 1 in ~220 ms with no window, no stdout, no stderr
+  and no Windows event-log entry, which reads exactly like a main-process bug
+  and is not one. Two hours of a session can go into that symptom, so check the
+  artifact before the code: extract `package.json` out of the asar and parse it.
+  If it is not valid JSON, repackage with nothing else running rather than
+  debugging the app. (Packaging reads `node_modules` for minutes; any write into
+  a workspace it is copying is inside its window.)
