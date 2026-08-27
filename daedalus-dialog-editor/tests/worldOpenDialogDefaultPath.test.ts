@@ -50,8 +50,9 @@ jest.mock('fs', () => {
   return { ...actual, existsSync: jest.fn(() => false) };
 });
 
-// main.ts constructs one eagerly, and its worker pool would outlive the test.
-jest.mock('../src/main/services/ParserService', () => ({ ParserService: class {} }));
+// ParserService is deliberately NOT mocked: main.ts still constructs it at
+// module load, but the pool no longer spawns until something asks for a parse
+// (mainLazyParserPool.test.ts pins that), so nothing here outlives the test.
 
 jest.mock('../src/main/services/SettingsService', () => ({
   SettingsService: class {

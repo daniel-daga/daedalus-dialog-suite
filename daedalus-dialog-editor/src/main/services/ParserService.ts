@@ -37,6 +37,8 @@ export class ParserService {
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private readonly workerPath: string;
   private readonly timeoutMs: number;
+  private readonly workerCount: number;
+  private started = false;
   private restartTimestamps: number[] = [];
   private degraded = false;
 
@@ -48,11 +50,21 @@ export class ParserService {
 
     // Limit to 8 to avoid excessive memory usage, but at least 2 for parallelism.
     const numCPUs = os.cpus().length;
-    const workerCount = options.workerCount ?? Math.max(2, Math.min(numCPUs, 8));
+    this.workerCount = options.workerCount ?? Math.max(2, Math.min(numCPUs, 8));
+  }
 
-    console.log(`[ParserService] Initializing worker pool with ${workerCount} workers`);
+  /**
+   * The pool is not spawned until something actually asks for a parse — the
+   * same laziness WorldService has, and for the same reason: `main.ts`
+   * constructs this service at module load, and a dialog-only session (or a
+   * test that only imports `main.ts`) should not inherit eight live threads.
+   */
+  private startPool() {
+    this.started = true;
 
-    for (let i = 0; i < workerCount; i++) {
+    console.log(`[ParserService] Initializing worker pool with ${this.workerCount} workers`);
+
+    for (let i = 0; i < this.workerCount; i++) {
       const worker = this.spawnWorker();
       this.idleWorkers.push(worker);
     }
@@ -210,6 +222,8 @@ export class ParserService {
         new WorkerRequestError('Parser workers are crash-looping — restart the app', 'worker-crashed'),
       );
     }
+
+    if (!this.started) this.startPool();
 
     return new Promise((resolve, reject) => {
       const id = randomUUID();
