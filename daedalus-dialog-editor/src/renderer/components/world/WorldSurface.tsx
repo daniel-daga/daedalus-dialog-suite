@@ -7,7 +7,7 @@ import {
 import {
   addVob, applyWaypointPositions, classPropKeys, deleteVob, invertOp, isBarrierOp, isStructuralOp,
   isWaynetOp, moveWaypoint, placeBounds, renumbersPaths,
-  reparentVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
+  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
   type ClassProps, type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
@@ -102,6 +102,15 @@ const WorldSurface: React.FC = () => {
    * not persisted for the same reason nothing else on this bar is.
    */
   const [exposure, setExposure] = useState(DEFAULT_EXPOSURE);
+  /**
+   * How many edits the main process has refused — folded into every editable
+   * field key in `WorldPropertyGrid`, so a refusal remounts the fields showing
+   * the world's own values (refactoring-targets.md §7). Bumped in `commitOps`'
+   * catch, beside the `setClassProps(null)` that is the same rule for the class
+   * section: a refusal changes nothing in the world, so without this nothing
+   * re-keys and an uncontrolled input keeps the number the user typed.
+   */
+  const [editRefusals, setEditRefusals] = useState(0);
 
   useEffect(() => {
     void window.editorAPI.getGothicInstall().then(setGothicInstall);
@@ -378,6 +387,10 @@ const WorldSurface: React.FC = () => {
       // committed before the read is even issued, which is what makes the revert
       // a rule rather than a coincidence.
       setClassProps(null);
+      // And re-key the base fields for the same reason: they read from the
+      // columnar index, which a refusal leaves exactly as it was, so no value
+      // change remounts them and a typed number would stay on screen.
+      setEditRefusals((at) => at + 1);
       // The viewport has already drawn the drag; left alone, the VOB would sit
       // where nothing else in the app agrees it is. Through `invertOp` rather
       // than by swapping `from` and `to` here: a rotation carries a box for each
@@ -467,6 +480,20 @@ const WorldSurface: React.FC = () => {
     // Each VOB turns about its own origin, and the delta composes on the left
     // so a selection of differently-oriented VOBs all turn the same way.
     void commitOps(rotateVobs(vobModelOf(current).reader, selected, delta, boundsOf));
+  }, [commitOps, boundsOf]);
+
+  /**
+   * A typed rotation from the property grid — the primary VOB alone, and an
+   * **absolute** pose rather than the delta a gizmo drag arrives as: the typed
+   * angles are the destination, and the grid only offers them for a single
+   * selection (absolute-vs-delta for a multi-selection is an undecided UI
+   * question, deliberately not answered here).
+   */
+  const handleRotateVob = useCallback((to: ZenRotation) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length !== 1) return;
+    const vob = selected[0];
+    void commitOps([rotateVob(vobModelOf(current).reader, vob, to, boundsOf(vob))]);
   }, [commitOps, boundsOf]);
 
   /**
@@ -984,8 +1011,10 @@ const WorldSurface: React.FC = () => {
                 <WorldPropertyGrid
                   summary={summary}
                   selection={selection}
+                  refusalGeneration={editRefusals}
                   onEditProps={handleEditProps}
                   onTranslate={handleTranslateSelection}
+                  onRotate={handleRotateVob}
                   classProps={classProps?.vob === primary ? classProps.props : null}
                   onEditClassProps={handleEditClassProps}
                 />

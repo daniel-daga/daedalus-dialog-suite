@@ -3,18 +3,18 @@ import {
   Box, Checkbox, Chip, FormControlLabel, Stack, TextField, Typography,
 } from '@mui/material';
 import {
-  classPropKeys, fieldOf,
+  classPropKeys, eulerToZenRotation, fieldOf, zenRotationToEuler,
   type ClassPropValue, type ClassProps, type FieldDescriptor,
-  type VobProps, type ZenPosition,
+  type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
 
 // The property grid for the selected VOB (level-editor.md §6, §7). It reads the
 // `VobIndex` the worker sent, and — since `SetVobProp` — it also writes: the
-// name, the visual, the six flags, the catalogued class fields, and the three
-// coordinates of the position. The rotation is the one transform it does not
-// write, and the reason is at that row.
+// name, the visual, the six flags, the catalogued class fields, the three
+// coordinates of the position, and (for a single selection) the three angles of
+// the rotation, through `zen-world/coords`' one matrix↔Euler conversion.
 //
 // Two conventions it must not quietly improve on:
 //
@@ -280,11 +280,74 @@ const CoordinateField: React.FC<{
   );
 };
 
+/** The angle names, in the order `ZenEulerDegrees` holds them. */
+const ANGLE_AXES = ['yaw', 'pitch', 'roll'] as const;
+
+/**
+ * One typed angle (level-editor.md §14.1 item 1.5, the rotation half).
+ *
+ * Shaped on `CoordinateField` — same `EditableField`, same local refusal
+ * counter, same `parseCoordinate` (an angle is degrees, but "not a number" and
+ * "a magnitude float32 cannot hold" are the same refusals).
+ *
+ * **The equality refusal is the load-bearing part, and it is per angle.** The
+ * read *normalizes*: 30.2 % of retail VOBs store a matrix that is
+ * non-orthonormal by more than 1e-6, so `eulerToZenRotation(zenRotationToEuler(M))`
+ * differs from `M` for a third of the world. Committing an angle the user did
+ * not change would therefore re-orthonormalize the matrix and rewrite bytes
+ * nobody asked to change. The comparison is against the *displayed* number as
+ * well as the exact one, because the display rounds ("30" on screen can be
+ * 30.000000000000004 decomposed, and retyping what is on screen is not an
+ * edit).
+ *
+ * A committed angle can legitimately come back different: the decomposition is
+ * canonical — yaw/roll in (-180, 180], pitch in [-90, 90] — so a committed 190
+ * remounts as -170. That is the same angle, not a defect to fight here.
+ */
+const AngleField: React.FC<{
+  vob: number;
+  axis: string;
+  value: number;
+  onCommit: (value: number) => void;
+}> = ({ vob, axis, value, onCommit }) => {
+  const [refusals, setRefusals] = useState(0);
+  const text = coordinate(value);
+
+  return (
+    <EditableField
+      key={`rotation-${vob}-${axis}-${text}-${refusals}`}
+      name={`rotation-${axis}`}
+      value={text}
+      onCommit={(typed) => {
+        const parsed = parseCoordinate(typed);
+        if (parsed === null || parsed === value || parsed === Number(text)) {
+          setRefusals((at) => at + 1);
+        } else onCommit(parsed);
+      }}
+    />
+  );
+};
+
 export interface WorldPropertyGridProps {
   summary: WorldSummary;
   /** The whole selection. The grid describes the last VOB in it — the one the
    *  gizmo anchors on — and says how many others an edit would take with it. */
   selection: readonly number[];
+  /**
+   * How many edits the main process has refused — bumped by the shell in
+   * `commitOps`' catch, and folded into every editable field's key.
+   *
+   * The local refusal counters above cover only the refusals a field decides
+   * itself. A refusal that comes back from the main process changes *nothing*:
+   * the world holds the value it always held, so the value in the key is
+   * unchanged, no field remounts, and an uncontrolled input goes on showing the
+   * number the user typed as though it had been taken
+   * (refactoring-targets.md §7). This counter is the remount that refusal was
+   * missing — the same rule the class section got when `setClassProps(null)`
+   * moved into that same catch, applied to the fields the columnar index backs
+   * and therefore never nulls.
+   */
+  refusalGeneration: number;
   /**
    * One property change, as the single key that changed.
    *
@@ -333,10 +396,26 @@ export interface WorldPropertyGridProps {
    * ends here.
    */
   onTranslate: (delta: ZenPosition) => void;
+  /**
+   * A typed angle, as the **absolute** rotation the described VOB should have —
+   * `rotateVob`'s shape, unlike the delta a gizmo drag or a typed coordinate
+   * leaves as.
+   *
+   * Absolute because the typed angles *are* the destination: the field shows
+   * the decomposed pose and the user replaced one angle of it. A delta would
+   * have to be computed against the stored matrix — which for the 30.2 % of
+   * retail VOBs that are non-orthonormal is not the matrix the angles came
+   * from, so composing back through it would smear the drift into the other
+   * axes. Only offered for a single selection; see the rotation row.
+   */
+  onRotate: (to: ZenRotation) => void;
 }
 
 const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
-  { summary, selection, onEditProps, classProps, onEditClassProps, onTranslate },
+  {
+    summary, selection, refusalGeneration,
+    onEditProps, classProps, onEditClassProps, onTranslate, onRotate,
+  },
 ) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
@@ -364,6 +443,21 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   // it does not have — 35 of the 37 in a retail world — and that empty list is
   // the whole test for whether there is a section to draw at all.
   const classFields = classPropKeys(className).flatMap((key) => fieldOf(className, key) ?? []);
+
+  // The described VOB's rotation as angles — for a single selection only, and
+  // null when no angles describe it. `zenRotationToEuler` **throws** on a
+  // reflection or a collapsed matrix (correctly: no triple of angles is either),
+  // and this is a render path, where an uncaught throw is a blank panel for the
+  // whole VOB rather than one unavailable row. Retail has zero of both, but a
+  // world this editor writes is not retail.
+  const euler = ((): ZenEulerDegrees | null => {
+    if (selection.length > 1) return null;
+    try {
+      return zenRotationToEuler(rotation);
+    } catch {
+      return null;
+    }
+  })();
 
   // Why a VOB that exists is not on screen. All three are measured, correct
   // behaviour rather than gaps (§3, "The unresolved visuals").
@@ -411,7 +505,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
       )}
       <Field label="Name" name="name">
         <EditableField
-          key={`name-${selectedVob}-${name}`}
+          key={`name-${selectedVob}-${name}-${refusalGeneration}`}
           name="name"
           value={name ?? ''}
           onCommit={(value) => onEditProps({ name: value })}
@@ -425,7 +519,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
             across the retail corpus). Offering the field and having the edit
             refused at the bottom of the stack is worse than not offering it. */}
         <EditableField
-          key={`visual-${selectedVob}-${visual}`}
+          key={`visual-${selectedVob}-${visual}-${refusalGeneration}`}
           name="visual"
           value={visual ?? ''}
           disabled={!visual || visualType === 'UNKNOWN'}
@@ -445,7 +539,11 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
         <Stack direction="row" spacing={0.5}>
           {AXES.map((axis, at) => (
             <CoordinateField
-              key={axis}
+              // The generation is in the *component's* key rather than a prop:
+              // remounting the whole field resets its local refusal count along
+              // with the input, which is exactly what a fresh look at the
+              // world's own value means.
+              key={`${axis}-${refusalGeneration}`}
               vob={selectedVob}
               axis={axis}
               value={position[at]}
@@ -459,14 +557,55 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
         </Stack>
       </Field>
       <Field label="Rotation" name="rotation">
-        {/* Read-only, and deliberately so (§14.1 item 1.5). Spacer takes
-            angles; a `zCVob` stores a 3x3 matrix, `zen-world` has no
-            matrix↔Euler conversion, and one hand-rolled here would author
-            angles nothing in the system round-trips. The gizmo is the only way
-            to turn a VOB until that conversion exists in the domain. */}
-        <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-line' }}>
-          {[0, 3, 6].map((at) => rotation.slice(at, at + 3).map(coordinate).join(', ')).join('\n')}
-        </Typography>
+        {/* Typed angles for a single selection, through `zen-world/coords`'
+            one matrix↔Euler conversion (intrinsic Y-X-Z, degrees). For a
+            **multi-selection the fields are deliberately absent**: whether a
+            typed angle should set every selected VOB to that absolute pose, or
+            turn each by a delta (`multiplyRotation(target, invert(current))`),
+            is an open UI decision — the board's typed-rotation card — and
+            until it is taken there is nothing correct to commit. The matrix is
+            shown read-only instead, as the whole row was before angles. */}
+        {selection.length > 1 || euler === null
+          ? (
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-line' }}>
+              {[0, 3, 6].map((at) => rotation.slice(at, at + 3).map(coordinate).join(', ')).join('\n')}
+            </Typography>
+          )
+          : (
+            <Stack direction="row" spacing={0.5}>
+              {ANGLE_AXES.map((axis, at) => (
+                <AngleField
+                  // The generation is in the component's key for the same
+                  // reason it is on `CoordinateField`: a main-process refusal
+                  // changes nothing in the world, so only this remounts the
+                  // field showing the angle the world still has.
+                  key={`${axis}-${refusalGeneration}`}
+                  vob={selectedVob}
+                  axis={axis}
+                  value={euler[at]}
+                  onCommit={(value) => {
+                    // The typed angle replaces one entry of the decomposed
+                    // pose; the other two stay at full precision, not at what
+                    // the display rounded them to.
+                    const typed = [...euler] as ZenEulerDegrees;
+                    typed[at] = value;
+                    onRotate(eulerToZenRotation(typed) as ZenRotation);
+                  }}
+                />
+              ))}
+            </Stack>
+          )}
+        {selection.length === 1 && euler === null && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="world-prop-rotation-unavailable"
+            sx={{ display: 'block' }}
+          >
+            No angles describe this matrix — it is a reflection or has collapsed
+            axes, which a rotation cannot be. The gizmo can still turn this VOB.
+          </Typography>
+        )}
       </Field>
       <Field label="Flags" name="flags">
         {/* Named, not a bit word: printing 3 tells nobody that a VOB is a
@@ -521,7 +660,15 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
               </Typography>
             )
             : classFields.map((classField) => (
-              <Field key={classField.key} label={classField.key} name={`class-${classField.key}`}>
+              <Field
+                // The class section is also unmounted whole by `classProps`
+                // going null in `commitOps`' catch; the generation is folded in
+                // anyway so a refused class edit follows the same rule as every
+                // other field rather than depending on that null alone.
+                key={`${classField.key}-${refusalGeneration}`}
+                label={classField.key}
+                name={`class-${classField.key}`}
+              >
                 <ClassField
                   vob={selectedVob}
                   field={classField}

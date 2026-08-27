@@ -2,7 +2,10 @@ import React from 'react';
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { createVobReader, type VobIndex, type WorldOp } from 'zen-world';
+import {
+  createVobReader, eulerToZenRotation, placeBounds,
+  type VobIndex, type WorldOp, type ZenRotation,
+} from 'zen-world';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import type { WaynetPayload, WorldSummary } from '../src/shared/worldTypes';
@@ -416,6 +419,71 @@ describe('a coordinate typed into the property grid', () => {
 
     expect(api.applyWorldOps).not.toHaveBeenCalled();
     expect(coordinate('x').value).toBe('10');
+  });
+
+  it('shows the world\'s own coordinate again when the main process refuses it', async () => {
+    // The live bug refactoring-targets.md §7 measured: a refused edit changes
+    // nothing in the world, so no value-carrying key changes and the
+    // uncontrolled input kept the typed 999 while the world holds 10. The fix
+    // is `commitOps`' catch bumping the refusal generation the grid folds into
+    // every field key — this drives the real catch, not a modelled prop.
+    await openWorld();
+    api.applyWorldOps.mockRejectedValueOnce(new Error('no vob at indexPath'));
+
+    type('x', '999');
+
+    expect(await screen.findByTestId('world-edit-error')).toHaveTextContent('no vob at indexPath');
+    await waitFor(() => expect(coordinate('x').value).toBe('10'));
+  });
+});
+
+// Typed rotation entry (level-editor.md §14.1 item 1.5, the rotation half).
+// The path is the point again — but unlike a coordinate, a typed angle leaves
+// as an **absolute** pose through `rotateVob`, not as a delta: the angles on
+// screen are the decomposed destination, and only a single selection offers
+// them (absolute-vs-delta for a multi-selection is an open UI decision).
+describe('an angle typed into the property grid', () => {
+  const angle = (axis: string) => screen.getByTestId(
+    `world-prop-rotation-${axis}-input`,
+  ) as HTMLInputElement;
+
+  it('becomes an absolute RotateVob carrying both poses and both boxes', async () => {
+    const summary = await openWorld();
+    expect(angle('yaw').value).toBe('0');
+
+    fireEvent.change(angle('yaw'), { target: { value: '90' } });
+    fireEvent.blur(angle('yaw'));
+
+    const identity: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    const to = eulerToZenRotation([90, 0, 0]) as ZenRotation;
+    // VOB 1's visual bounds from `openWorld`'s payload — the box a rotation
+    // refits, placed at the VOB's own position for each pose.
+    const bounds: [number, number, number, number, number, number] = [-1, 0, -10, 1, 2, 10];
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'RotateVob',
+      vob: 1,
+      path: '1',
+      from: identity,
+      to,
+      fromBbox: placeBounds(bounds, identity, [10, 20, 30]),
+      toBbox: placeBounds(bounds, to, [10, 20, 30]),
+    }]));
+    // And the projection followed, float32-rounded as the column stores it.
+    const stored = createVobReader(summary.vobIndex).rotation(1)!;
+    to.forEach((entry, at) => expect(stored[at]).toBeCloseTo(entry, 6));
+  });
+
+  it('is refused by the grid when the main process would be asked for nothing', async () => {
+    // The board's trap: the read normalizes, so for the 30.2 % of retail VOBs
+    // whose stored matrix is non-orthonormal, committing an angle the user did
+    // not change would re-orthonormalize the matrix and rewrite bytes nobody
+    // asked for. An unchanged displayed angle therefore never becomes an op.
+    await openWorld();
+
+    fireEvent.change(angle('yaw'), { target: { value: '0' } });
+    fireEvent.blur(angle('yaw'));
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 });
 

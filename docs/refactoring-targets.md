@@ -137,16 +137,18 @@ the input goes on showing the number the user typed as though it had been taken.
   rule rather than a coincidence. **Measured**, not reasoned: with the probe in
   place the failing order is `effect run → fetch resolved → one render`, against
   `effect run → render(null) → fetch resolved → render(props)` before.
-- **The base fields still have it, and no coincidence covers them.** Measured
-  2026-08-28: type `999` into position X, have `applyWorldOps` reject, and the
-  field keeps `999` while the world holds `10`. Same for the name and the
-  visual. They are read out of the columnar index, which is never `null`, so
-  there is no unmount to save them.
+- **The base fields had it too, and are fixed the first way (2026-08-28).** The
+  measured bug: type `999` into position X, have `applyWorldOps` reject, and
+  the field kept `999` while the world holds `10` — same for the name and the
+  visual, which read out of the columnar index, never `null`, so no unmount
+  saved them. The fix is the refusal generation: `WorldSurface` bumps
+  `editRefusals` in `commitOps`' catch (beside the `setClassProps(null)` above)
+  and the grid folds `refusalGeneration` into every editable field's key —
+  position, name, visual, the class fields and the rotation angles — so a
+  main-process refusal remounts them showing the world's own values, no value
+  change required.
 
-Fix direction: stop leaning on remount-by-key for the correction. Either the
-grid takes a refusal generation from the shell (one number, bumped in
-`commitOps`' catch, folded into every field key — the same idiom made explicit
-and no longer dependent on a value *changing*), or the fields become controlled
-and Escape stops being a manual `target.value =`. The first is small; the second
-is the honest one. Not done here because it lands squarely in
-`WorldPropertyGrid.tsx`, which had another agent's work in flight.
+What remains of this entry: the fields are still uncontrolled and still
+corrected by remount-by-key, with Escape a manual `target.value =`. Making them
+controlled stays the honest long-term shape; the generation makes the current
+one a rule rather than a coincidence.

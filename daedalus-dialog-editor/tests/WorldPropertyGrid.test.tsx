@@ -17,7 +17,7 @@
 
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { ClassProps, VobProps } from 'zen-world';
+import { eulerToZenRotation, type ClassProps, type VobProps, type ZenRotation } from 'zen-world';
 import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
 import WorldPropertyGrid from '../src/renderer/components/world/WorldPropertyGrid';
 
@@ -141,13 +141,23 @@ const onEditClass = (props: ClassProps) => { classEdits.push(props); };
 /** A typed coordinate arrives as a *delta*, which is the gizmo's own shape. */
 let moves: Array<[number, number, number]> = [];
 const onTranslate = (delta: [number, number, number]) => { moves.push(delta); };
-beforeEach(() => { edits = []; classEdits = []; moves = []; });
+/** A typed angle arrives as an *absolute* rotation — `rotateVob`'s shape. */
+let rotates: Array<ZenRotation> = [];
+const onRotate = (to: ZenRotation) => { rotates.push(to); };
+beforeEach(() => { edits = []; classEdits = []; moves = []; rotates = []; });
 
 /** The wiring every render needs. `classProps` is null by default because that
  *  is what a VOB of an uncatalogued class gets — nothing is fetched for one —
  *  and the tests that are about the class section hand it values themselves. */
 const wiring = {
-  onEditProps: onEdit, onEditClassProps: onEditClass, classProps: null, onTranslate,
+  onEditProps: onEdit,
+  onEditClassProps: onEditClass,
+  classProps: null,
+  onTranslate,
+  onRotate,
+  /** Bumped by the shell in `commitOps`' catch when the main process refuses an
+   *  edit — the tests that are about refusal hand it a bumped value themselves. */
+  refusalGeneration: 0,
 };
 
 describe('WorldPropertyGrid', () => {
@@ -545,9 +555,8 @@ describe('WorldPropertyGrid, class fields', () => {
 // undo, the history barrier and the atomic batch by the one path that already
 // exists, rather than by a second one that would have to be kept in step.
 //
-// Rotation stays read-only, deliberately: it is stored as a 3x3 matrix,
-// `zen-world` has no matrix↔Euler conversion, and a hand-rolled one in the
-// renderer would author angles nothing round-trips.
+// Rotation is typed entry too now — its own describe below, because it leaves
+// as an *absolute* matrix through `zen-world/coords` rather than as a delta.
 describe('WorldPropertyGrid, typed position', () => {
   const commitCoordinate = (axis: string, value: string) => {
     fireEvent.change(input(`position-${axis}`), { target: { value } });
@@ -635,11 +644,209 @@ describe('WorldPropertyGrid, typed position', () => {
     expect(input('position-x').value).toBe('0');
   });
 
-  it('leaves the rotation matrix as text', () => {
-    // Nine numbers, read-only: see the note at the head of this describe.
-    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+  it('shows the world\'s own value again after the main process refuses an edit', () => {
+    // The live bug (refactoring-targets.md §7): a refused edit was corrected by
+    // the field remounting through a key that carries the value — but a
+    // main-process refusal changes nothing in the world, so the key never
+    // changed, and the uncontrolled input went on showing the number the user
+    // typed as though it had been taken. The shell now bumps a refusal
+    // generation in `commitOps`' catch, and the grid folds it into every
+    // editable field's key: the remount is a rule rather than a value change.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />,
+    );
 
+    fireEvent.change(input('position-x'), { target: { value: '999' } });
+    fireEvent.blur(input('position-x'));
+    expect(moves).toEqual([[986.5, 0, 0]]);
+
+    // The main process refused the op: nothing in the world changed — the
+    // summary is the same object — and the only thing the shell has to say
+    // about it is the bumped generation.
+    rerender(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[1]}
+        {...wiring}
+        refusalGeneration={1}
+      />,
+    );
+
+    expect(input('position-x').value).toBe('12.5');
+  });
+
+  it('puts a refused name back too, not only a coordinate', () => {
+    // The name and the visual read from the same columnar index the position
+    // does, so they had the same bug for the same reason: no unmount, no key
+    // change, a typed name kept on screen after the world refused it.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />,
+    );
+
+    fireEvent.change(input('name'), { target: { value: 'REFUSED_NAME' } });
+    fireEvent.blur(input('name'));
+    expect(edits).toEqual([{ name: 'REFUSED_NAME' }]);
+
+    rerender(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[1]}
+        {...wiring}
+        refusalGeneration={1}
+      />,
+    );
+
+    expect(input('name').value).toBe('TORCH');
+  });
+
+});
+
+// Typed rotation entry (level-editor.md §14.1 item 1.5, the rotation half).
+//
+// A `zCVob` stores a row-major 3x3; a level designer types three angles. The
+// conversion is `zen-world/coords`' — intrinsic Y-X-Z, degrees, canonical
+// ranges yaw/roll (-180, 180], pitch [-90, 90] — and the grid's whole job is
+// to use it without inventing a second convention beside it.
+//
+// The trap this suite pins hardest: **the read normalizes.** 30.2 % of retail
+// VOBs are non-orthonormal, so `eulerToZenRotation(zenRotationToEuler(M))`
+// differs from `M` for a third of the world — a commit of an angle the user
+// did not change would re-orthonormalize the matrix and rewrite bytes nobody
+// asked for. The refusal of a value equal to the displayed one is therefore
+// applied per angle, exactly as the position fields refuse an unchanged
+// coordinate.
+describe('WorldPropertyGrid, typed rotation', () => {
+  // A quarter turn about the vertical, stored exactly: Ry(90) in row-major is
+  // [0,0,1, 0,1,0, -1,0,0], every entry exact in float32, so the decomposition
+  // answers 90/0/0 without float noise.
+  const YAW_90 = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  // The retail case: a matrix that is a rotation times a small uniform drift —
+  // non-orthonormal, as 12,514 of 41,393 retail VOBs are. Reading it shows the
+  // nearest rotation's angles; committing one of them unchanged would silently
+  // replace the matrix with the orthonormalized one.
+  const cy = Math.cos(Math.PI / 6);
+  const SKEWED = [cy * 1.02, 0, 0.5 * 1.02, 0, 1.02, 0, -0.5 * 1.02, 0, cy * 1.02];
+  const ROTATIONS = summaryOf(vobIndex([
+    { name: 'PLAIN' }, // identity
+    { name: 'TURNED', rot: YAW_90 },
+    { name: 'SKEWED', rot: SKEWED },
+    // A reflection: det -1, which no triple of angles describes. Retail has
+    // none, but an uncaught throw in a render path is a blank grid.
+    { name: 'MIRRORED', rot: [-1, 0, 0, 0, 1, 0, 0, 0, 1] },
+    // A collapsed matrix: no three independent axes.
+    { name: 'FLAT', rot: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  ]));
+
+  const commitAngle = (axis: string, value: string) => {
+    fireEvent.change(input(`rotation-${axis}`), { target: { value } });
+    fireEvent.blur(input(`rotation-${axis}`));
+  };
+
+  it('shows the stored rotation as yaw, pitch and roll in degrees', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('0');
+    expect(input('rotation-roll').value).toBe('0');
+  });
+
+  it('commits an absolute rotation with the one angle that changed', () => {
+    // Absolute, not a delta: the board's shape for a single selection is
+    // `rotateVob(..., eulerToZenRotation(typed), bounds)`. Compared exactly,
+    // because the expectation is computed by the very function the grid uses.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0]} {...wiring} />);
+
+    commitAngle('yaw', '90');
+
+    expect(rotates).toEqual([eulerToZenRotation([90, 0, 0])]);
+  });
+
+  it('keeps the other two angles as they were', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    commitAngle('pitch', '10');
+
+    expect(rotates).toHaveLength(1);
+    const expected = eulerToZenRotation([90, 10, 0]);
+    rotates[0].forEach((entry, at) => expect(entry).toBeCloseTo(expected[at], 10));
+  });
+
+  it('refuses an angle equal to the one displayed, per angle', () => {
+    // THE trap: this VOB's matrix is non-orthonormal, so committing the very
+    // angle on screen would re-orthonormalize it and change bytes nobody asked
+    // to change. The refusal is per angle — "30.0" is different text and the
+    // same angle.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[2]} {...wiring} />);
+    expect(input('rotation-yaw').value).toBe('30');
+
+    commitAngle('yaw', '30');
+    commitAngle('yaw', '30.0');
+    commitAngle('pitch', '0');
+    commitAngle('roll', '0');
+
+    expect(rotates).toEqual([]);
+  });
+
+  it('refuses an angle that is not a number, and shows the world\'s own again', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    commitAngle('yaw', 'north');
+    commitAngle('pitch', '');
+
+    expect(rotates).toEqual([]);
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('0');
+  });
+
+  it('does not keep a typed angle the main process refused', () => {
+    // The same rule the position fields got: a refusal changes nothing in the
+    // world, so only the bumped generation remounts the field.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={ROTATIONS} selection={[0]} {...wiring} />,
+    );
+
+    commitAngle('yaw', '45');
+    expect(rotates).toHaveLength(1);
+
+    rerender(
+      <WorldPropertyGrid
+        summary={ROTATIONS}
+        selection={[0]}
+        {...wiring}
+        refusalGeneration={1}
+      />,
+    );
+
+    expect(input('rotation-yaw').value).toBe('0');
+  });
+
+  it('hides angle entry for a multi-selection, and shows the matrix instead', () => {
+    // Whether a typed angle should set every selected VOB to that absolute
+    // pose, or turn each by a delta, is an open UI decision (the board's card).
+    // Until it is taken there is nothing correct to commit, so there is nothing
+    // to type.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
     expect(field('rotation')).toHaveTextContent('1, 0, 0');
-    expect(screen.queryByTestId('world-prop-rotation-x-input')).not.toBeInTheDocument();
+  });
+
+  it('says a reflection has no angles rather than crashing the grid', () => {
+    // `zenRotationToEuler` throws on a matrix with det < 0 — correctly, since
+    // no angles describe it — and an uncaught throw here is a blank panel for
+    // the whole VOB, not just the row.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[3]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
+    // The rest of the grid is intact.
+    expect(input('name').value).toBe('MIRRORED');
+  });
+
+  it('says a collapsed matrix has no angles either', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[4]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
   });
 });
