@@ -113,6 +113,104 @@
         "ai": null,
         "decal": null
       },
+      "childCount": 1
+    },
+    {
+      "path": "0/0/0",
+      "class": "zCVobLight",
+      "name": "FIXTURE_CAMPFIRE_LIGHT",
+      "position": [
+        10,
+        5,
+        20
+      ],
+      "rotation": [
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1
+      ],
+      "bbox": [
+        5,
+        0,
+        15,
+        15,
+        10,
+        25
+      ],
+      "visual": "",
+      "visualType": "UNKNOWN",
+      "flags": {
+        "showVisual": false,
+        "cdStatic": true,
+        "cdDynamic": true,
+        "vobStatic": false,
+        "ambient": false,
+        "physicsEnabled": false,
+        "spriteAlignment": 0,
+        "shadowType": 0,
+        "animMode": 0
+      },
+      "props": {
+        "presetName": "",
+        "bias": 0,
+        "animStrength": 0,
+        "farClipScale": 2,
+        "sleepMode": 0,
+        "nextOnTimer": 0,
+        "rigidBody": null,
+        "eventManager": null,
+        "ai": null,
+        "decal": null,
+        "preset": "",
+        "lightType": 0,
+        "range": 500,
+        "color": [
+          255,
+          200,
+          120,
+          255
+        ],
+        "coneAngle": 0,
+        "isStatic": false,
+        "quality": 1,
+        "lensflareFx": "",
+        "on": true,
+        "rangeAnimationScale": [
+          1,
+          0.5
+        ],
+        "rangeAnimationFps": 4,
+        "rangeAnimationSmooth": true,
+        "colorAnimationList": [
+          [
+            255,
+            255,
+            255,
+            255
+          ],
+          [
+            10,
+            20,
+            30,
+            255
+          ],
+          [
+            64,
+            64,
+            64,
+            255
+          ]
+        ],
+        "colorAnimationFps": 10,
+        "colorAnimationSmooth": true,
+        "canMove": false
+      },
       "childCount": 0
     },
     {
@@ -375,11 +473,11 @@
         "user",
         "END"
       ],
-      "date": "25.8.2026 13:14:03",
+      "date": "27.8.2026 10:11:43",
       "user": "Daniel"
     },
     "hashTable": {
-      "count": 38,
+      "count": 55,
       "keys": [
         {
           "key": "childs0",
@@ -412,171 +510,256 @@
           "hash": 88
         },
         {
-          "key": "itemInstance",
+          "key": "lightPresetInUse",
           "index": 6,
-          "hash": 37
+          "hash": 58
+        },
+        {
+          "key": "lightType",
+          "index": 7,
+          "hash": 83
+        },
+        {
+          "key": "range",
+          "index": 8,
+          "hash": 83
+        },
+        {
+          "key": "color",
+          "index": 9,
+          "hash": 19
+        },
+        {
+          "key": "spotConeAngle",
+          "index": 10,
+          "hash": 4
+        },
+        {
+          "key": "lightStatic",
+          "index": 11,
+          "hash": 58
+        },
+        {
+          "key": "lightQuality",
+          "index": 12,
+          "hash": 30
+        },
+        {
+          "key": "lensflareFX",
+          "index": 13,
+          "hash": 5
+        },
+        {
+          "key": "turnedOn",
+          "index": 14,
+          "hash": 65
+        },
+        {
+          "key": "rangeAniScale",
+          "index": 15,
+          "hash": 56
+        },
+        {
+          "key": "rangeAniFPS",
+          "index": 16,
+          "hash": 39
+        },
+        {
+          "key": "rangeAniSmooth",
+          "index": 17,
+          "hash": 82
+        },
+        {
+          "key": "colorAniList",
+          "index": 18,
+          "hash": 21
+        },
+        {
+          "key": "colorAniFPS",
+          "index": 19,
+          "hash": 88
+        },
+        {
+          "key": "colorAniSmooth",
+          "index": 20,
+          "hash": 90
+        },
+        {
+          "key": "canMove",
+          "index": 21,
+          "hash": 25
         },
         {
           "key": "childs3",
-          "index": 7,
+          "index": 22,
           "hash": 89
         },
         {
+          "key": "itemInstance",
+          "index": 23,
+          "hash": 37
+        },
+        {
+          "key": "childs4",
+          "index": 24,
+          "hash": 90
+        },
+        {
           "key": "focusName",
-          "index": 8,
+          "index": 25,
           "hash": 72
         },
         {
           "key": "hitpoints",
-          "index": 9,
+          "index": 26,
           "hash": 25
         },
         {
           "key": "damage",
-          "index": 10,
+          "index": 27,
           "hash": 85
         },
         {
           "key": "moveable",
-          "index": 11,
+          "index": 28,
           "hash": 15
         },
         {
           "key": "takeable",
-          "index": 12,
+          "index": 29,
           "hash": 22
         },
         {
           "key": "focusOverride",
-          "index": 13,
+          "index": 30,
           "hash": 78
         },
         {
           "key": "soundMaterial",
-          "index": 14,
+          "index": 31,
           "hash": 62
         },
         {
           "key": "visualDestroyed",
-          "index": 15,
+          "index": 32,
           "hash": 66
         },
         {
           "key": "owner",
-          "index": 16,
+          "index": 33,
           "hash": 0
         },
         {
           "key": "ownerGuild",
-          "index": 17,
+          "index": 34,
           "hash": 69
         },
         {
           "key": "isDestroyed",
-          "index": 18,
+          "index": 35,
           "hash": 2
         },
         {
           "key": "stateNum",
-          "index": 19,
+          "index": 36,
           "hash": 0
         },
         {
           "key": "triggerTarget",
-          "index": 20,
+          "index": 37,
           "hash": 17
         },
         {
           "key": "useWithItem",
-          "index": 21,
+          "index": 38,
           "hash": 20
         },
         {
           "key": "conditionFunc",
-          "index": 22,
+          "index": 39,
           "hash": 40
         },
         {
           "key": "onStateFunc",
-          "index": 23,
+          "index": 40,
           "hash": 8
         },
         {
           "key": "rewind",
-          "index": 24,
+          "index": 41,
           "hash": 72
         },
         {
           "key": "locked",
-          "index": 25,
+          "index": 42,
           "hash": 37
         },
         {
           "key": "keyInstance",
-          "index": 26,
+          "index": 43,
           "hash": 13
         },
         {
           "key": "pickLockStr",
-          "index": 27,
+          "index": 44,
           "hash": 90
         },
         {
           "key": "contains",
-          "index": 28,
+          "index": 45,
           "hash": 6
         },
         {
-          "key": "childs4",
-          "index": 29,
-          "hash": 90
+          "key": "childs5",
+          "index": 46,
+          "hash": 91
         },
         {
           "key": "waynetVersion",
-          "index": 30,
+          "index": 47,
           "hash": 31
         },
         {
           "key": "numWaypoints",
-          "index": 31,
+          "index": 48,
           "hash": 40
         },
         {
           "key": "wpName",
-          "index": 32,
+          "index": 49,
           "hash": 89
         },
         {
           "key": "waterDepth",
-          "index": 33,
+          "index": 50,
           "hash": 8
         },
         {
           "key": "underWater",
-          "index": 34,
+          "index": 51,
           "hash": 53
         },
         {
           "key": "position",
-          "index": 35,
+          "index": 52,
           "hash": 12
         },
         {
           "key": "direction",
-          "index": 36,
+          "index": 53,
           "hash": 2
         },
         {
           "key": "numWays",
-          "index": 37,
+          "index": 54,
           "hash": 35
         }
       ],
-      "physicalOrder": "sha256:0c68c8673c2b787b575ee59a8711b6e980bbd70b5875a0a2d1e701fd954e9f48"
+      "physicalOrder": "sha256:b14558fc2cfd858fa3d542d7f082c81ca70266a04003fce88f34d060d97c234b"
     },
     "frames": {
-      "total": 17,
-      "sequenceHash": "sha256:3d3b3995c6aae39d758941e89693478ed5a39cb722d6564e4fa2a56957c73293",
+      "total": 18,
+      "sequenceHash": "sha256:d57b22e6ac74835c3347cccf75ede945eef8749030b8a53566985a79f60ac079",
       "classes": {
         "EndMarker": {
           "count": 1,
@@ -624,6 +807,12 @@
           "count": 1,
           "versions": {
             "52224": 1
+          }
+        },
+        "zCVobLight:zCVob": {
+          "count": 1,
+          "versions": {
+            "39168": 1
           }
         },
         "zCVobSpot:zCVob": {
@@ -683,6 +872,10 @@
           ],
           [
             "childs4",
+            "INTEGER"
+          ],
+          [
+            "childs5",
             "INTEGER"
           ]
         ],
@@ -841,6 +1034,88 @@
         "objects": 1,
         "deviating": 0
       },
+      "zCVobLight:zCVob": {
+        "entries": [
+          [
+            "pack",
+            "INTEGER"
+          ],
+          [
+            "dataRaw",
+            "RAW"
+          ],
+          [
+            "vobName",
+            "STRING"
+          ],
+          [
+            "lightPresetInUse",
+            "STRING"
+          ],
+          [
+            "lightType",
+            "ENUM"
+          ],
+          [
+            "range",
+            "FLOAT"
+          ],
+          [
+            "color",
+            "COLOR"
+          ],
+          [
+            "spotConeAngle",
+            "FLOAT"
+          ],
+          [
+            "lightStatic",
+            "BOOL"
+          ],
+          [
+            "lightQuality",
+            "ENUM"
+          ],
+          [
+            "lensflareFX",
+            "STRING"
+          ],
+          [
+            "turnedOn",
+            "BOOL"
+          ],
+          [
+            "rangeAniScale",
+            "STRING"
+          ],
+          [
+            "rangeAniFPS",
+            "FLOAT"
+          ],
+          [
+            "rangeAniSmooth",
+            "BOOL"
+          ],
+          [
+            "colorAniList",
+            "STRING"
+          ],
+          [
+            "colorAniFPS",
+            "FLOAT"
+          ],
+          [
+            "colorAniSmooth",
+            "BOOL"
+          ],
+          [
+            "canMove",
+            "BOOL"
+          ]
+        ],
+        "objects": 1,
+        "deviating": 0
+      },
       "zCVobSpot:zCVob": {
         "entries": [
           [
@@ -906,9 +1181,9 @@
     },
     "stream": {
       "binSafeVersion": 2,
-      "declaredObjectCount": 10,
-      "events": 97,
-      "objects": 17,
+      "declaredObjectCount": 11,
+      "events": 119,
+      "objects": 18,
       "maxDepth": 4,
       "endsAtHashTable": true
     },
@@ -917,6 +1192,7 @@
         "oCItem:zCVob/dataRaw": "sha256:ff204b3b83e9515c17ba25958e1bd4d29a23f6bfb74a0b51979dd51cda0b3b83",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/dataRaw": "sha256:9160649f1c6c545bb25a9e2899a9657451afb5210c620e40cb36d11395c49bbc",
         "zCVob/dataRaw": "sha256:932ae2f5cb001c08816c3ee181ea87d65ab8464df741eb9e08b30c06ffa74104",
+        "zCVobLight:zCVob/dataRaw": "sha256:1867a1f37289970188e80096e19c468fd32f1b09eb02ca7e1a4689e50a28d6e6",
         "zCVobSpot:zCVob/dataRaw": "sha256:7e72d275a364222d7aac1d4661fd268915708fc5eca581b057ed9d4c59b464ed"
       },
       "bool": {
@@ -926,6 +1202,11 @@
         "oCMobContainer:oCMobInter:oCMOB:zCVob/moveable": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/rewind": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
         "oCMobContainer:oCMobInter:oCMOB:zCVob/takeable": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "zCVobLight:zCVob/canMove": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "zCVobLight:zCVob/colorAniSmooth": "sha256:67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
+        "zCVobLight:zCVob/lightStatic": "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "zCVobLight:zCVob/rangeAniSmooth": "sha256:67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
+        "zCVobLight:zCVob/turnedOn": "sha256:67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
         "zCWaypoint/underWater": "sha256:374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
       }
     },

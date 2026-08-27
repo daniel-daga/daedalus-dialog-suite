@@ -37,21 +37,28 @@ test('normalizeWorld meta describes the loaded archive', () => {
 
 test('normalizeWorld vobs are depth-first with index paths', () => {
   const dump = dumpFixture();
-  assert.strictEqual(dump.vobs.length, 4);
+  assert.strictEqual(dump.vobs.length, 5);
   assert.deepStrictEqual(
     dump.vobs.map((v) => v.path),
-    ['0', '0/0', '0/1', '0/2']
+    ['0', '0/0', '0/0/0', '0/1', '0/2']
   );
   assert.strictEqual(dump.vobs[0].class, 'zCVob');
   assert.strictEqual(dump.vobs[0].childCount, 3);
   assert.strictEqual(dump.vobs[1].name, 'FP_CAMPFIRE_ÄÖÜ_01');
   assert.strictEqual(dump.vobs[1].class, 'zCVobSpot');
-  assert.strictEqual(dump.vobs[2].class, 'oCItem');
-  assert.strictEqual(dump.vobs[2].props.instance, 'ITMW_1H_SWORD_01');
-  assert.strictEqual(dump.vobs[3].class, 'oCMobContainer');
-  assert.strictEqual(dump.vobs[3].props.locked, true);
-  assert.strictEqual(dump.vobs[3].props.key, 'ITKE_CHEST_01');
-  assert.strictEqual(dump.vobs[3].props.contents, 'ITMI_GOLD:25');
+  assert.strictEqual(dump.vobs[2].class, 'zCVobLight');
+  // Both ZenGin colorAniList forms: the greyscale scalars `255 ` and `64 `, and
+  // the triple `(10 20 30) `. The dump has only parsed colours, which is exactly
+  // why the form has to be re-derived at save time.
+  assert.deepStrictEqual(dump.vobs[2].props.colorAnimationList, [
+    [255, 255, 255, 255], [10, 20, 30, 255], [64, 64, 64, 255],
+  ]);
+  assert.strictEqual(dump.vobs[3].class, 'oCItem');
+  assert.strictEqual(dump.vobs[3].props.instance, 'ITMW_1H_SWORD_01');
+  assert.strictEqual(dump.vobs[4].class, 'oCMobContainer');
+  assert.strictEqual(dump.vobs[4].props.locked, true);
+  assert.strictEqual(dump.vobs[4].props.key, 'ITKE_CHEST_01');
+  assert.strictEqual(dump.vobs[4].props.contents, 'ITMI_GOLD:25');
   for (const vob of dump.vobs) {
     assert.strictEqual(vob.position.length, 3);
     assert.strictEqual(vob.rotation.length, 9);
@@ -91,7 +98,7 @@ test('normalizeWorld container section is computed from the archive bytes of the
   const { container } = dumpFixture();
   assert.deepStrictEqual(container, containerFromBuffer(fs.readFileSync(FIXTURE)));
   assert.strictEqual(container.stream.endsAtHashTable, true);
-  assert.strictEqual(container.hashTable.count, 38);
+  assert.strictEqual(container.hashTable.count, 55);
 });
 
 test('normalizeWorld reports no container section for a mutated handle', () => {

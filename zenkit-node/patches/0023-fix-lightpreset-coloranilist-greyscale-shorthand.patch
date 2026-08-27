@@ -1,0 +1,44 @@
+LightPreset: write a colorAniList element with r == g == b as a greyscale scalar.
+
+`colorAniList` is one string of ASCII colour tokens and ZenGin writes it in two
+forms — a bare greyscale scalar (`255 `) for a colour whose channels are equal,
+a parenthesized triple (`(64 128 128) `) for one whose channels differ. The
+ABNF comment in `LightPreset::load` above states exactly that, and the loader
+accepts both; `LightPreset::save` then re-emitted every element as a triple,
+because the parsed `std::vector<Color>` no longer carries which form it came
+from. So a world that stored a greyscale element could not be re-saved
+byte-identically — the only field a byte-diff of the retail corpus still
+reported.
+
+The channel values are the fact that decides the form. Measured over the three
+retail Gothic II worlds (NewWorld, OldWorld, AddonWorld) by walking the
+`colorAniList` BinSafe string entries directly: of 5,240 elements in 1,111
+strings, 26 are stored as greyscale scalars (8 / 2 / 16) and NONE of the 5,214
+triples has r == g == b. Emitting short exactly when r == g == b therefore
+re-emits all 1,111 retail strings byte-for-byte, and needs no public API and no
+retained original text.
+
+diff --git a/src/vobs/Light.cc b/src/vobs/Light.cc
+index f2d8201..ce5d7eb 100644
+--- a/src/vobs/Light.cc
++++ b/src/vobs/Light.cc
+@@ -104,8 +104,17 @@ namespace zenkit {
+ 			os.str("");
+ 			os.clear();
+ 			for (auto& c : this->color_animation_list) {
+-				os << "(" << static_cast<int>(c.r) << " " << static_cast<int>(c.g) << " " << static_cast<int>(c.b)
+-				   << ") ";
++				// ZenGin writes an element whose channels are equal as a bare greyscale
++				// scalar and only a differing one as a triple, and the loader above
++				// accepts both. Always emitting triples loses the shorthand: measured
++				// over the retail Gothic II worlds, 26 of the 5,240 elements are stored
++				// short and none of the 5,214 triples has r == g == b.
++				if (c.r == c.g && c.g == c.b) {
++					os << static_cast<int>(c.r) << " ";
++				} else {
++					os << "(" << static_cast<int>(c.r) << " " << static_cast<int>(c.g) << " "
++					   << static_cast<int>(c.b) << ") ";
++				}
+ 			}
+ 			w.write_string("colorAniList", os.str());
+ 

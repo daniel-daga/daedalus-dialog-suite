@@ -479,7 +479,7 @@ test('insertVob refuses a parentPath that names no VOB, before it makes one', ()
   const handle = load();
   const before = zenkit.worldStats(handle).vobCount;
 
-  for (const bad of ['9', '0/9', '0/0/0', 'abc', '', '0//1', '-1']) {
+  for (const bad of ['9', '0/9', '0/0/0/0', 'abc', '', '0//1', '-1']) {
     assert.throws(
       () => zenkit.insertVob(handle, bad, { position: [0, 0, 0] }), Error, bad,
     );
@@ -553,12 +553,14 @@ test('insertVob refuses a bad position, matrix, box or unknown key', () => {
 test('deleteVob removes the vob and its whole subtree', () => {
   const handle = load();
   const before = zenkit.worldStats(handle).vobCount;
-  const children = vobAt(dumpOf(handle), '0').childCount;
+  // Every VOB under `0`, at any depth — the fixture's root carries three
+  // children and one grandchild, so counting only the direct children would
+  // under-count the subtree.
+  const descendants = dumpOf(handle).vobs.filter((v) => v.path.startsWith('0/')).length;
 
   zenkit.deleteVob(handle, '0');
 
-  // The root and every descendant: the fixture's root carries three children.
-  assert.strictEqual(zenkit.worldStats(handle).vobCount, before - (1 + children));
+  assert.strictEqual(zenkit.worldStats(handle).vobCount, before - (1 + descendants));
   assert.strictEqual(dumpOf(handle).vobs.find((v) => v.path === '0/0'), undefined);
 });
 

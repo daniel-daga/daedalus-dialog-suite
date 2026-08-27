@@ -308,6 +308,23 @@ test('saveWorld writes oCMobContainer.locked=true as the BOOL raw value 0xFFFFFF
   });
 });
 
+// `colorAniList` is ONE string of ASCII colour tokens, and ZenGin writes an
+// element whose channels are equal as a bare greyscale scalar (`255 `) rather
+// than a triple. Measured over the three retail G2 worlds: of the 5,240 tokens
+// in their 1,111 `colorAniList` strings, 26 are written short (8 NewWorld,
+// 2 OldWorld, 16 AddonWorld) and not one of the 5,214 triples has r == g == b —
+// so "short iff r == g == b" re-emits all 1,111 strings byte-for-byte, and those
+// 26 tokens are exactly the residual the retail byte-diff still reported.
+test('saveWorld writes a colorAniList colour with r == g == b as a greyscale scalar', () => {
+  withTmpDir((dir) => {
+    const out = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(FIXTURE, 'g2'), out);
+    const values = binSafeEntries(fs.readFileSync(out), 'colorAniList', 0x01)
+      .map((payload) => payload.toString('latin1'));
+    assert.deepStrictEqual(values, ['255 (10 20 30) 64 ']);
+  });
+});
+
 test('saveWorld writes the nested material-list archive header like ZenGin', () => {
   withTmpDir((dir) => {
     const out = path.join(dir, 'resaved.zen');

@@ -12,7 +12,7 @@ test('loadWorld loads the golden fixture and reports exact stats', () => {
   const handle = zenkit.loadWorld(FIXTURE, 'g2');
   const stats = zenkit.worldStats(handle);
   assert.deepStrictEqual(stats, {
-    vobCount: 4,
+    vobCount: 5,
     waypointCount: 4,
     meshVertexCount: 4,
   });

@@ -9,6 +9,7 @@
 #include <zenkit/Stream.hh>
 #include <zenkit/Texture.hh>
 #include <zenkit/World.hh>
+#include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/MovableObject.hh>
 #include <zenkit/vobs/VirtualObject.hh>
@@ -365,6 +366,42 @@ std::shared_ptr<VirtualObject> BuildVobTree() {
   // Bit 15 of the packed G2 flag word carries engine memory garbage in retail
   // worlds; set it here so the round-trip of that bit is covered.
   spot->packed_reserved_bit = true;
+
+  // A dynamic light hung on the campfire, carrying a `colorAniList` in BOTH
+  // ZenGin forms: a bare greyscale scalar for a colour whose channels are equal
+  // (`255 `, `64 `) and a parenthesized triple for one whose channels differ.
+  // Retail worlds spell it exactly that way — measured over the three G2 worlds,
+  // 26 of the 5,240 animation colours are written short and not one of the 5,214
+  // triples has r == g == b — so a writer that emits only triples cannot
+  // reproduce those files. It is a child of the spot so no existing VOB's index
+  // path or sibling slot moves.
+  auto light = std::make_shared<VLight>();
+  light->type = VirtualObjectType::zCVobLight;
+  light->vob_name = "FIXTURE_CAMPFIRE_LIGHT";
+  light->position = Vec3 {10.0f, 5.0f, 20.0f};
+  light->bbox = AxisAlignedBoundingBox {Vec3 {5.0f, 0.0f, 15.0f}, Vec3 {15.0f, 10.0f, 25.0f}};
+  // The animation fields are only written for a dynamic light.
+  light->is_static = false;
+  light->preset = "";
+  light->light_type = LightType::POINT;
+  light->range = 500.0f;
+  light->color = Color {255, 200, 120, 255};
+  light->cone_angle = 0.0f;
+  light->quality = LightQuality::MEDIUM;
+  light->lensflare_fx = "";
+  light->on = true;
+  light->range_animation_scale = {1.0f, 0.5f};
+  light->range_animation_fps = 4.0f;
+  light->range_animation_smooth = true;
+  light->color_animation_list = {
+      Color {255, 255, 255, 255},  // greyscale shorthand: `255 `
+      Color {10, 20, 30, 255},     // triple: `(10 20 30) `
+      Color {64, 64, 64, 255},     // greyscale shorthand: `64 `
+  };
+  light->color_animation_fps = 10.0f;
+  light->color_animation_smooth = true;
+  light->can_move = false;
+  spot->children = {light};
 
   auto item = std::make_shared<VItem>();
   item->type = VirtualObjectType::oCItem;
