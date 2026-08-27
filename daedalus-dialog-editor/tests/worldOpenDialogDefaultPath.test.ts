@@ -1,6 +1,7 @@
 /**
- * `world:openDialog` should start where the worlds actually are: the Gothic
- * install the user already selected through `world:selectGothicInstall`.
+ * Both world pickers should start where the user already is. `world:openDialog`
+ * opens on the Gothic install's worlds; `world:selectGothicInstall` re-opens on
+ * the install it is about to replace.
  *
  * @jest-environment node
  */
@@ -111,5 +112,36 @@ describe('world:openDialog defaultPath', () => {
     expect(options.defaultPath).toBeUndefined();
     // The rest of the picker is unchanged.
     expect(options).toMatchObject({ properties: ['openFile'] });
+  });
+});
+
+describe('world:selectGothicInstall defaultPath', () => {
+  beforeEach(() => {
+    electron.__handlers.clear();
+    electron.__showOpenDialog.mockClear();
+    SettingsServiceMock.getGothicInstallPath.mockReset();
+    SettingsServiceMock.getGothicInstallPath.mockResolvedValue(null);
+    setupIpcHandlers();
+  });
+
+  async function invokeAndGetOptions(): Promise<OpenDialogOptions> {
+    const handler = electron.__handlers.get('world:selectGothicInstall');
+    expect(handler).toBeDefined();
+    await handler!({});
+    expect(electron.__showOpenDialog).toHaveBeenCalledTimes(1);
+    return electron.__showOpenDialog.mock.calls[0][0] as unknown as OpenDialogOptions;
+  }
+
+  it('re-opens on the stored install', async () => {
+    SettingsServiceMock.getGothicInstallPath.mockResolvedValue(INSTALL);
+
+    expect(await invokeAndGetOptions()).toMatchObject({ defaultPath: INSTALL });
+  });
+
+  it('passes no defaultPath when no install is stored yet', async () => {
+    const options = await invokeAndGetOptions();
+
+    expect(options.defaultPath).toBeUndefined();
+    expect(options).toMatchObject({ properties: ['openDirectory'] });
   });
 });

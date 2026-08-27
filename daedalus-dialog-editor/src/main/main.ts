@@ -613,9 +613,14 @@ export function setupIpcHandlers() {
 
   ipcMain.handle('world:selectGothicInstall', async () => {
     try {
+      // Re-selecting an install starts at the one it replaces, the mirror of
+      // world:openDialog above.
+      const storedPath = await settingsService.getGothicInstallPath();
+
       const result = await dialog.showOpenDialog({
         properties: ['openDirectory'],
         title: 'Select the Gothic installation directory',
+        ...(storedPath ? { defaultPath: storedPath } : {}),
       });
       if (result.canceled || result.filePaths.length === 0) return null;
 
