@@ -157,9 +157,25 @@ card waits on live at its pointer — put new prose there, not here.
 
 **UI/UX improvement**
 
-- Add multi-select in the world view (shift + click on objects in the world editor to multi select)
+*(empty — both cards landed, see Done)*
 
 ## Done
 
 *(emptied 2026-08-28 — Phase 1b's 36 cards were flushed after checking every one
 against `git log` and the docs. `git log` is the permanent record.)*
+
+- **Shift+click adds to the selection**, viewport and scene tree both. §7
+- **The rotate gizmo turns at a quarter of its old rate** —
+  `DampedTransformControls`, because the library takes no number for it. §7
+- **The orbit speed's test stopped asserting a number nobody kept** — master was
+  red since `d6118fa` changed `ORBIT_ROTATE_SPEED` 0.4 → 1 by hand. The test now
+  pins the wiring, not the value.
+
+**Not verified this session, and the reason to re-run before trusting the
+tree:** only the affected suites were run (`cameraNav`, `WorldSceneTree`,
+`WorldSurface.editing`, both `WorldViewport` suites, the two new ones), plus
+`typecheck:renderer` and `lint` — both clean. `test:stable:windows` was **not**
+run to completion. Nothing has watched either change in the running app.
+
+**Also on the tree and not mine:** an untracked `scripts/board-loop.sh`,
+uncommitted.
