@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { createVobReader, type VobIndex, type WorldOp } from 'zen-world';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
@@ -32,6 +32,9 @@ let mockFrameRequest: { vob: number } | null | undefined;
 let mockTerrainPoint: [number, number, number] | null | undefined;
 /** How bright the viewport is told to draw. */
 let mockExposure: number | undefined;
+/** The steps the viewport is told to quantise a drag to. */
+let mockSnapGrid: number | undefined;
+let mockSnapAngle: number | undefined;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 // The house pattern for react-window under jsdom, which has no layout — without
@@ -58,6 +61,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     frameRequest: { vob: number } | null;
     terrainPoint: [number, number, number] | null;
     exposure: number;
+    snapGrid: number;
+    snapAngle: number;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -72,6 +77,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     mockFrameRequest = props.frameRequest;
     mockTerrainPoint = props.terrainPoint;
     mockExposure = props.exposure;
+    mockSnapGrid = props.snapGrid;
+    mockSnapAngle = props.snapAngle;
     return (
       <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
@@ -277,6 +284,8 @@ beforeEach(() => {
   mockFrameRequest = undefined;
   mockTerrainPoint = undefined;
   mockExposure = undefined;
+  mockSnapGrid = undefined;
+  mockSnapAngle = undefined;
   mockVobProps = { class: 'zCVob' };
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
@@ -580,6 +589,53 @@ describe('the viewport brightness', () => {
     expect(mockAppliedOps ?? null).toBeNull();
   });
 
+});
+
+describe('the snap step', () => {
+  /** The one control, which means whichever step the gizmo mode is about. */
+  const chooseStep = async (label: string) => {
+    fireEvent.mouseDown(within(screen.getByTestId('world-snap')).getByRole('combobox'));
+    fireEvent.click(await screen.findByRole('option', { name: label }));
+  };
+
+  it('is free-form until a step is chosen, and then reaches the gizmo in centimetres', async () => {
+    // Free by default, so the gizmo behaves as it always has — and so
+    // `verify-world-edit.js`, which drags to exact coordinates, still lands on
+    // them.
+    await openWorld();
+    expect(mockSnapGrid).toBe(0);
+
+    await chooseStep('1 m');
+
+    // ZenGin centimetres, which is what every position in this app is in.
+    await waitFor(() => expect(mockSnapGrid).toBe(100));
+    // A view setting like the brightness: it changes how an edit is made and is
+    // not itself an edit.
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('offers angles in the turn mode and keeps both steps', async () => {
+    await openWorld();
+    await chooseStep('50 cm');
+    await waitFor(() => expect(mockSnapGrid).toBe(50));
+
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    // The control follows the mode: a distance is meaningless for a turn, so
+    // what it offers now is angles — and the angle step starts free.
+    await waitFor(() => expect(mockGizmoMode).toBe('rotate'));
+    expect(mockSnapAngle).toBe(0);
+
+    await chooseStep('45°');
+    // Degrees on the bar, radians on the wire — the gizmo turns in radians.
+    await waitFor(() => expect(mockSnapAngle).toBeCloseTo(Math.PI / 4, 10));
+
+    // And the move step survived the detour: switching back must not have
+    // reset the step the other mode was set to.
+    fireEvent.click(screen.getByTestId('world-gizmo-translate'));
+    await waitFor(() => expect(mockGizmoMode).toBe('translate'));
+    expect(mockSnapGrid).toBe(50);
+    expect(mockSnapAngle).toBeCloseTo(Math.PI / 4, 10);
+  });
 });
 
 describe('saving the world', () => {

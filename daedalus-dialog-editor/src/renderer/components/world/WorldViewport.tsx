@@ -19,6 +19,7 @@ import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
 import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
 import { attachBlenderNav, frameOn, frameVobs, pivotAt } from '../../world/cameraNav';
+import { snapDelta, snapTurn } from '../../world/snapping';
 import {
   runViewportBenchmark,
   type BenchmarkOptions,
@@ -170,6 +171,20 @@ export interface WorldViewportProps {
    * saved with the world.
    */
   exposure: number;
+  /**
+   * The grid step a drag is quantised to, in **ZenGin centimetres**, or 0 for a
+   * free-form drag.
+   *
+   * The *delta* is quantised, not the position it lands on — `snapping.ts` has
+   * the reasoning, and it is the same reason a typed coordinate is a delta. A
+   * multi-selection therefore keeps its spacing and moves by a whole number of
+   * steps, exactly as it does unsnapped.
+   */
+  snapGrid: number;
+  /** The angle step a turn is quantised to, in **radians**, or 0 for a
+   *  free-form turn. Also applied to the delta, and for a stronger reason: an
+   *  absolute angle is not something this app can read off a VOB. */
+  snapAngle: number;
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
   /**
@@ -211,7 +226,8 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
-  selectedWaypoint, frameRequest, terrainPoint, exposure, onSelectWaypoint, onMoveWaypoint,
+  selectedWaypoint, frameRequest, terrainPoint, exposure, snapGrid, snapAngle,
+  onSelectWaypoint, onMoveWaypoint,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -227,6 +243,12 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   onSelectWaypointRef.current = onSelectWaypoint;
   const onMoveWaypointRef = useRef(onMoveWaypoint);
   onMoveWaypointRef.current = onMoveWaypoint;
+  // Read by the drag, which happens outside React's render path — changing the
+  // step must not rebuild the scene, and must apply to the drag already in hand.
+  const snapGridRef = useRef(snapGrid);
+  snapGridRef.current = snapGrid;
+  const snapAngleRef = useRef(snapAngle);
+  snapAngleRef.current = snapAngle;
   // The overlay is only pickable while it is on screen, and the scene effect
   // does not re-run when it is toggled.
   const showWaynetRef = useRef(showWaynet);
@@ -557,9 +579,43 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       return mirrorRotation(rowMajor(turnMatrix.makeRotationFromQuaternion(turn)));
     };
 
+    /**
+     * Quantise the drag, by writing the snapped pose back onto the proxy.
+     *
+     * On the proxy rather than on the delta the commit reports, because the
+     * proxy is what everything downstream reads: the live preview, the two
+     * commits, a waypoint's destination and `verify-world-edit.js`'s harness all
+     * take their number from it, and snapping any one of them separately would
+     * be a second place the step has to be applied. `TransformControls`
+     * recomputes the pose from where the press left it on every pointer move, so
+     * writing back cannot accumulate — this is what its own snapping does.
+     */
+    const snapProxy = () => {
+      if (transform.getMode() === 'rotate') {
+        // The turn since the press, snapped and put back — the proxy's start
+        // orientation is arbitrary (`attach` resets it), so only the delta is a
+        // quantity a step means anything against.
+        turn.copy(proxyTurnFrom).invert().premultiply(proxy.quaternion);
+        snapTurn(turn, snapAngleRef.current);
+        proxy.quaternion.copy(proxyTurnFrom).premultiply(turn);
+        return;
+      }
+
+      const snapped = snapDelta([
+        proxy.position.x - proxyFrom.x,
+        proxy.position.y - proxyFrom.y,
+        proxy.position.z - proxyFrom.z,
+      ], snapGridRef.current);
+      proxy.position.set(
+        proxyFrom.x + snapped[0], proxyFrom.y + snapped[1], proxyFrom.z + snapped[2],
+      );
+    };
+
     // The live preview. The world in the main process still has the VOBs where
     // they were; this is the drag being drawn, and it is made real on release.
     transform.addEventListener('objectChange', () => {
+      snapProxy();
+
       if (gizmoWaypoint !== null) {
         // Straight into the array the point cloud and the edge lines share, so
         // the edges into this waypoint follow the drag instead of pointing at

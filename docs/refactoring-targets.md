@@ -110,3 +110,43 @@ helper and no production code calls it, so a `started = false` reset would have
 been error handling for a case that cannot happen — which the repo's rules
 forbid. It becomes a real defect the moment `dispose()` gets a production
 caller, and the fix at that point is one line.
+
+### 7. The property grid's uncontrolled fields are put right by an *incidental* render
+**Files:** `daedalus-dialog-editor/src/renderer/components/world/WorldPropertyGrid.tsx`,
+`WorldSurface.tsx`
+
+`EditableField` is uncontrolled, and everything that shows a value in the grid
+is corrected by **remounting** through a key that carries the value —
+`` `class-${vob}-${field.key}-${text}-${refusals}` ``,
+`` `position-${vob}-${axis}-${text}-${refusals}` ``, and the name and visual
+fields the same way. `refusals` counts only the *local* refusals the field
+decides itself (unparseable text, a number equal to the one already there).
+
+The hole is the refusal that comes back from the **main process**: nothing in
+the world changed, so `text` is what it always was, the key does not change, and
+the input goes on showing the number the user typed as though it had been taken.
+
+- **The class fields had this and were saved by a coincidence.** The re-read
+  effect sets `classProps` to `null` before it fetches, which unmounts the
+  section — but that `null` and the read that fills it back in are set a render
+  apart in the same tick, so whether the `null` is ever *committed* depends on
+  React happening to flush between them. Adding an unrelated MUI `Select` to the
+  World bar (the snap step, 2026-08-28) changed that flush and the revert
+  silently stopped happening; `WorldSurface`'s refusal path now sets
+  `setClassProps(null)` itself, before the read is issued, so the revert is a
+  rule rather than a coincidence. **Measured**, not reasoned: with the probe in
+  place the failing order is `effect run → fetch resolved → one render`, against
+  `effect run → render(null) → fetch resolved → render(props)` before.
+- **The base fields still have it, and no coincidence covers them.** Measured
+  2026-08-28: type `999` into position X, have `applyWorldOps` reject, and the
+  field keeps `999` while the world holds `10`. Same for the name and the
+  visual. They are read out of the columnar index, which is never `null`, so
+  there is no unmount to save them.
+
+Fix direction: stop leaning on remount-by-key for the correction. Either the
+grid takes a refusal generation from the shell (one number, bumped in
+`commitOps`' catch, folded into every field key — the same idiom made explicit
+and no longer dependent on a value *changing*), or the fields become controlled
+and Escape stops being a manual `target.value =`. The first is small; the second
+is the honest one. Not done here because it lands squarely in
+`WorldPropertyGrid.tsx`, which had another agent's work in flight.

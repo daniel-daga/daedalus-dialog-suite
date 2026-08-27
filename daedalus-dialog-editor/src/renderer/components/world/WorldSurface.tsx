@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, Paper, Slider, Stack, Tab, Tabs, TextField,
-  ToggleButton, ToggleButtonGroup, Typography,
+  DialogContentText, DialogTitle, FormControlLabel, MenuItem, Paper, Slider, Stack, Tab, Tabs,
+  TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
   addVob, applyWaypointPositions, classPropKeys, deleteVob, invertOp, isBarrierOp, isStructuralOp,
@@ -36,6 +36,23 @@ const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 /** A small MUI button's height, rounded up — what the placement bar's row
  *  reserves so it is the same height with a point and without one. */
 const BAR_HEIGHT = 31;
+
+/** What a move drag can be quantised to. **ZenGin centimetres** — every position
+ *  in this app is in them (`WorldPropertyGrid` says so too), so a metre is 100
+ *  and the labels say which is which. */
+const GRID_STEPS = [
+  { value: 0, label: 'Free' },
+  { value: 10, label: '10 cm' },
+  { value: 50, label: '50 cm' },
+  { value: 100, label: '1 m' },
+  { value: 500, label: '5 m' },
+];
+
+/** And a turn drag, in degrees — converted to radians on the way to the gizmo,
+ *  which is what it turns in. */
+const ANGLE_STEPS = [0, 5, 15, 45, 90].map((degrees) => ({
+  value: degrees, label: degrees === 0 ? 'Free' : `${degrees}°`,
+}));
 
 const WorldSurface: React.FC = () => {
   const status = useWorldStore((s) => s.status);
@@ -346,6 +363,21 @@ const WorldSurface: React.FC = () => {
       await applied(ops);
     } catch (failure) {
       editFailed(failure instanceof Error ? failure.message : String(failure));
+      // **Let go of the class fields here, and not only in the re-read effect.**
+      // The grid's inputs are uncontrolled and are put right by *remounting*
+      // through a key that carries the value — so a refused edit is only undone
+      // on screen if the fields unmount, and the value the re-read answers is by
+      // definition the value they already had: the key does not change, and
+      // nothing but a `null` in between takes the typed number off the screen.
+      //
+      // The effect below sets that `null` too, but a render later and in the
+      // same tick as the read that fills it back in — so whether it is ever
+      // *committed* depends on whether React happens to flush between the two,
+      // which any unrelated pending update in this component can change (adding
+      // a MUI `Select` to the bar above did exactly that). Set here it is
+      // committed before the read is even issued, which is what makes the revert
+      // a rule rather than a coincidence.
+      setClassProps(null);
       // The viewport has already drawn the drag; left alone, the VOB would sit
       // where nothing else in the app agrees it is. Through `invertOp` rather
       // than by swapping `from` and `to` here: a rotation carries a box for each
@@ -376,6 +408,20 @@ const WorldSurface: React.FC = () => {
   // nothing is scaled — a scale gizmo would author a representation ZenGin's
   // own tools never wrote (level-editor.md §7).
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate');
+
+  /**
+   * How far a drag is quantised, in ZenGin centimetres and in degrees — one
+   * value per gizmo mode, so switching mode and back does not forget the step.
+   *
+   * Component state beside the gizmo mode and the brightness, because it is the
+   * same kind of thing: it changes how an edit is *made*, produces no op of its
+   * own and is not part of the world. Free-form by default, so the gizmo behaves
+   * as it always has until somebody asks for a step — and so that
+   * `verify-world-edit.js`, which drags to exact coordinates, still lands on
+   * them.
+   */
+  const [snapGrid, setSnapGrid] = useState(0);
+  const [snapAngleDegrees, setSnapAngleDegrees] = useState(0);
 
   /**
    * The visual's own bounds for a VOB, from the payload the worker already
@@ -709,6 +755,37 @@ const WorldSurface: React.FC = () => {
               <ToggleButton value="rotate" data-testid="world-gizmo-rotate">Turn (E)</ToggleButton>
             </ToggleButtonGroup>
           )}
+          {/* The step the gizmo drags in, and it follows the mode rather than
+              being two controls: one of them is always meaningless, and the
+              steps for a distance and for an angle share nothing but the word.
+              Both values are kept, so a detour through the other mode does not
+              reset the one you set. */}
+          {summary && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" color="text.secondary" noWrap>
+                Snap
+              </Typography>
+              <TextField
+                select
+                size="small"
+                value={gizmoMode === 'rotate' ? snapAngleDegrees : snapGrid}
+                onChange={(event) => {
+                  const step = Number(event.target.value);
+                  if (gizmoMode === 'rotate') setSnapAngleDegrees(step);
+                  else setSnapGrid(step);
+                }}
+                aria-label="Snap step"
+                sx={{ width: 88, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+                data-testid="world-snap"
+              >
+                {(gizmoMode === 'rotate' ? ANGLE_STEPS : GRID_STEPS).map((step) => (
+                  <MenuItem key={step.value} value={step.value} sx={{ fontSize: 12 }}>
+                    {step.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Stack>
+          )}
           {/* The one destructive edit in the surface, and the only one behind a
               confirm. Exactly one VOB, never a selection: it renumbers, so each
               would need its own batch, and a button that removed only the
@@ -891,6 +968,8 @@ const WorldSurface: React.FC = () => {
               frameRequest={frameRequest}
               terrainPoint={terrainPoint}
               exposure={exposure}
+              snapGrid={snapGrid}
+              snapAngle={(snapAngleDegrees * Math.PI) / 180}
               onSelectWaypoint={selectWaypoint}
               onMoveWaypoint={moveWaypointTo}
             />
