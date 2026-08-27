@@ -68,6 +68,18 @@ declare global {
        *  ZenGin space — what the surface's placement flow reads. It stands in
        *  for the BVH raycast that turns a pixel into a point, and nothing else. */
       pickTerrain: (point: [number, number, number]) => void;
+      /**
+       * Render one frame from `from` looking at `at` — both in **ZenGin space** —
+       * once the scene is fully loaded, and hand back the pixels the GPU
+       * produced, base64 RGBA, bottom row first.
+       *
+       * For `scripts/verify-world-render.js`. Nothing about what was drawn is
+       * decided here: the frame is the app's own renderer, camera, scene and
+       * materials, and every judgement about it belongs to the caller.
+       */
+      renderFrom: (
+        from: [number, number, number], at: [number, number, number],
+      ) => Promise<{ width: number; height: number; rgba: string }>;
     };
   }
 }
@@ -603,6 +615,37 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       // into a point — everything above it, including the surface's placement
       // flow, is the real thing.
       pickTerrain: (point) => onPickRef.current(null, point, false),
+      renderFrom: async (from, at) => {
+        // A half-loaded scene is a different scene, and an untextured material
+        // draws its flat colour — which a pixel check would read as ground that
+        // is not there. Awaited rather than slept on, like `benchmark`.
+        await Promise.all([bvhReady, texturesReady]);
+
+        // The draw loop and OrbitControls both write the camera every frame.
+        cancelAnimationFrame(frame);
+        controls.enabled = false;
+        try {
+          camera.position.set(...zenToThree(from));
+          camera.lookAt(target.set(...zenToThree(at)));
+          camera.updateMatrixWorld();
+          renderer.render(scene, camera);
+
+          // The default framebuffer, read in the same task as the render that
+          // filled it — the pixels a human would have screenshotted.
+          const { width, height } = renderer.domElement;
+          const pixels = new Uint8Array(width * height * 4);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+          let binary = '';
+          for (let i = 0; i < pixels.length; i += 4096) {
+            binary += String.fromCharCode(...pixels.subarray(i, i + 4096));
+          }
+          return { width, height, rgba: btoa(binary) };
+        } finally {
+          controls.enabled = true;
+          draw();
+        }
+      },
       gizmoRotation: () => (gizmoVobs.length === 0 ? null : world.rotationOf(gizmoVobs[gizmoVobs.length - 1])),
       gizmoPosition: () => (gizmoVobs.length === 0
         ? null
