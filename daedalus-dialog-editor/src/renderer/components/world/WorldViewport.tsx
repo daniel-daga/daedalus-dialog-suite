@@ -887,8 +887,12 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   }, [mesh, visuals, bbox]);
 
   // The overlay lives and dies on its own, under the scene's converted root so
-  // it needs no conversion of its own. `mesh` is a dependency because a new
-  // world means a new root to hang it under, not because the waynet changed.
+  // it needs no conversion of its own. `mesh` and `visuals` are dependencies
+  // because a new world — and a structural op, which rebuilds the scene from
+  // `visuals` alone — means a new root to hang it under, not because the waynet
+  // changed. Without `visuals` the rebuild leaves the overlay on a root that
+  // has been disposed and the waynet silently vanishes until it is toggled off
+  // and on; the terrain marker below takes it for exactly the same reason.
   useEffect(() => {
     const world = sceneRef.current;
     if (world === null || waynet === null) return;
@@ -902,11 +906,15 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       overlay.dispose();
       overlayRef.current = null;
     };
-  }, [waynet, mesh]);
+  }, [waynet, mesh, visuals]);
 
+  // The same dependencies as the effect above, because a rebuilt overlay is a
+  // fresh one and `WaynetOverlay` starts hidden: without `visuals` a structural
+  // op re-attaches the waynet and never shows it, which looks the same as not
+  // re-attaching it at all.
   useEffect(() => {
     overlayRef.current?.setVisible(showWaynet);
-  }, [showWaynet, waynet, mesh]);
+  }, [showWaynet, waynet, mesh, visuals]);
 
   // The marker for the picked point, built and torn down exactly like the
   // overlay above — under the scene's converted root, so it needs no conversion

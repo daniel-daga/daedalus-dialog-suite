@@ -1,0 +1,247 @@
+/**
+ * The waynet overlay must survive the scene rebuild a structural op forces.
+ *
+ * The overlay hangs its group off the scene root, and the scene root is built
+ * inside the viewport's big scene effect — which re-runs whenever `visuals`
+ * changes, because a structural op (placing, deleting or reparenting a VOB)
+ * cannot be applied to the columnar projection and is answered by rebuilding
+ * from a fresh instanced payload. If the overlay's own effect does not take
+ * `visuals` too, the rebuild hands out a new root while the overlay stays
+ * attached to the disposed one: the waynet silently vanishes until it is
+ * toggled off and on. The terrain marker's effect already takes `visuals` for
+ * exactly this reason.
+ *
+ * Only what the viewport genuinely cannot have under jsdom is faked here — the
+ * WebGL renderer, the two example controls (ESM, and neither has anything to
+ * say about the scene graph), the BVH worker and the GPU picker. `WorldScene`
+ * and `WaynetOverlay` are the real classes, so the assertion below is about the
+ * real scene graph: after a `visuals`-only rebuild the overlay's group must be
+ * a child of the *current* root, not of the disposed one.
+ *
+ * @jest-environment jsdom
+ */
+
+import React from 'react';
+import { describe, it, expect, beforeEach } from '@jest/globals';
+import { render, act } from '@testing-library/react';
+import * as THREE from 'three';
+import type { InstancedPayload, WaynetPayload, WorldMeshPayload } from '../src/shared/worldTypes';
+
+// ── what jsdom cannot run ───────────────────────────────────────────────────
+
+jest.mock('three-mesh-bvh', () => ({ acceleratedRaycast: () => {} }));
+
+/** A canvas-backed stand-in for the WebGL renderer: jsdom has no GL context.
+ *  Everything else in `three` is the real thing. */
+jest.mock('three', () => {
+  const actual = jest.requireActual('three');
+  return {
+    ...actual,
+    WebGLRenderer: class {
+      domElement = document.createElement('canvas');
+      info = { render: { calls: 0, triangles: 0 } };
+      setPixelRatio() {}
+      setSize() {}
+      render() {}
+      dispose() {}
+      getContext() { return { finish: () => {}, readPixels: () => {} }; }
+    },
+  };
+});
+
+jest.mock('three/examples/jsm/controls/OrbitControls.js', () => {
+  const three = jest.requireActual('three');
+  return {
+    OrbitControls: class {
+      target = new three.Vector3();
+      enabled = true;
+      enableDamping = false;
+      rotateSpeed = 1;
+      mouseButtons: Record<string, unknown> = {};
+      update() { return false; }
+      dispose() {}
+    },
+  };
+});
+
+jest.mock('three/examples/jsm/controls/TransformControls.js', () => {
+  const three = jest.requireActual('three');
+  return {
+    TransformControls: class extends three.EventDispatcher {
+      enabled = false;
+      private helper = new three.Object3D();
+      private mode = 'translate';
+      setSpace() {}
+      getHelper() { return this.helper; }
+      setMode(mode: string) { this.mode = mode; }
+      getMode() { return this.mode; }
+      attach() { return this; }
+      detach() { return this; }
+      dispose() {}
+    },
+  };
+});
+
+jest.mock('../src/renderer/world/BvhBuilder', () => ({
+  BvhBuilder: class {
+    build() { return Promise.resolve(); }
+    dispose() {}
+  },
+}));
+
+jest.mock('../src/renderer/world/VobPicker', () => ({
+  VobPicker: class {
+    setInstancedMeshes() {}
+    warm() {}
+    pickAsync() { return Promise.resolve(-1); }
+    dispose() {}
+  },
+}));
+
+// ── the two real classes, recorded as they are built ────────────────────────
+
+const mockScenes: Array<{ root: THREE.Object3D }> = [];
+jest.mock('../src/renderer/world/WorldScene', () => {
+  const actual = jest.requireActual('../src/renderer/world/WorldScene');
+  return {
+    ...actual,
+    WorldScene: class extends actual.WorldScene {
+      constructor(...args: unknown[]) {
+        super(...args);
+        mockScenes.push(this as unknown as { root: THREE.Object3D });
+      }
+    },
+  };
+});
+
+const mockOverlays: Array<{ root: THREE.Object3D }> = [];
+jest.mock('../src/renderer/world/WaynetOverlay', () => {
+  const actual = jest.requireActual('../src/renderer/world/WaynetOverlay');
+  return {
+    ...actual,
+    WaynetOverlay: class extends actual.WaynetOverlay {
+      constructor(...args: unknown[]) {
+        super(...args);
+        mockOverlays.push(this as unknown as { root: THREE.Object3D });
+      }
+    },
+  };
+});
+
+// Below the mocks, which jest hoists above it anyway.
+import WorldViewport from '../src/renderer/components/world/WorldViewport';
+
+const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 100, 100, 100] };
+const BBOX = [0, 0, 0, 100, 100, 100];
+
+function instancedPayload(): InstancedPayload {
+  return {
+    visuals: [],
+    stats: {
+      visualsSeen: 0,
+      visualsResolved: 0,
+      vobsPlaced: 0,
+      instancedDrawGroups: 0,
+      levelCompos: 0,
+      unresolvedByType: {},
+    },
+  };
+}
+
+/** Two waypoints joined by one edge — enough for a real overlay. */
+function waynet(): WaynetPayload {
+  return {
+    count: 2,
+    names: ['A', 'B'],
+    positions: new Float32Array([0, 0, 0, 100, 0, 100]).buffer,
+    directions: new Float32Array([0, 0, 1, 0, 0, 1]).buffer,
+    waterDepths: new Float32Array([0, 0]).buffer,
+    flags: new Uint32Array([0, 0]).buffer,
+    edgeCount: 1,
+    edges: new Uint32Array([0, 1]).buffer,
+    danglingEdges: 0,
+  };
+}
+
+function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: boolean) {
+  return {
+    mesh: MESH,
+    visuals,
+    bbox: BBOX,
+    waynet: payload,
+    showWaynet,
+    loadTexture: async () => null,
+    onPick: () => {},
+    selection: [] as readonly number[],
+    onTranslateSelection: () => {},
+    gizmoMode: 'translate' as const,
+    onRotateSelection: () => {},
+    appliedOps: null,
+    selectedWaypoint: null,
+    frameRequest: null,
+    terrainPoint: null,
+    onSelectWaypoint: () => {},
+    onMoveWaypoint: () => {},
+  };
+}
+
+describe('WorldViewport — the waynet overlay across a structural rebuild', () => {
+  beforeEach(() => {
+    mockScenes.length = 0;
+    mockOverlays.length = 0;
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    };
+  });
+
+  it('re-attaches the overlay to the root a visuals-only rebuild hands out', () => {
+    const payload = waynet();
+    const { rerender, unmount } = render(
+      <WorldViewport {...props(instancedPayload(), payload, true)} />,
+    );
+
+    expect(mockScenes).toHaveLength(1);
+    expect(mockOverlays).toHaveLength(1);
+    expect(mockOverlays[0].root.parent).toBe(mockScenes[0].root);
+
+    // A structural op: the same world, the same waynet, a fresh instanced
+    // payload — which is what the World surface re-requests and hands down.
+    act(() => {
+      rerender(<WorldViewport {...props(instancedPayload(), payload, true)} />);
+    });
+
+    // The scene really was rebuilt, or there is nothing here to get wrong.
+    expect(mockScenes).toHaveLength(2);
+    expect(mockScenes[1].root).not.toBe(mockScenes[0].root);
+
+    // And the waynet is drawn under the root that is now on screen. Attached to
+    // the disposed one it is invisible until the overlay is toggled off and on.
+    const overlay = mockOverlays[mockOverlays.length - 1];
+    expect(overlay.root.parent).toBe(mockScenes[1].root);
+    expect(mockScenes[0].root.children).toHaveLength(0);
+
+    unmount();
+  });
+
+  it('leaves a shown waynet on screen across that rebuild', () => {
+    const payload = waynet();
+    const { rerender, unmount } = render(
+      <WorldViewport {...props(instancedPayload(), payload, true)} />,
+    );
+    expect(mockOverlays[0].root.visible).toBe(true);
+
+    act(() => {
+      rerender(<WorldViewport {...props(instancedPayload(), payload, true)} />);
+    });
+
+    // A rebuilt overlay is a fresh one and `WaynetOverlay` starts hidden, so
+    // the visibility effect has to follow the rebuild as well as the attachment
+    // — re-attached but never shown is the same vanished waynet.
+    expect(mockOverlays).toHaveLength(2);
+    const overlay = mockOverlays[mockOverlays.length - 1];
+    expect(overlay.root.visible).toBe(true);
+
+    unmount();
+  });
+});
