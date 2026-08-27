@@ -2738,14 +2738,28 @@ its own two strings, `levelName` and `startVob` — decided to be plain config
 rather than cross-references (nothing in the world names them back the way
 `target`/`vobTarget` are named), so they join instead of staying held out with
 the rest of the family's target strings. Appended to `BuildVisualVobTree` at
-path `1/13`. `zCMover`'s own fields (`behavior` is an enum and stays out; the
-rest is sized but untouched) and `oCMob*` are the remaining work.
+path `1/13`. `oCMob*` is the remaining work.
+
+`zCMover`'s own fields landed 2026-08-28: the inherited `VTrigger` twelve plus
+thirteen of its own fourteen — two delay/damage floats (`touchBlockerDamage`,
+`stayOpenTimeSec`), three bools (`locked`, `autoLink`, `autoRotate`) and eight
+sound names. `behavior`, `lerpMode` and `speedMode` are enums and stay out with
+the rest of the catalogue's enums; `keyframes` is an unbounded list. `speed` is
+held out for a reason none of the family's other held-out fields share:
+ZenKit's `VMover::save` writes `moveSpeed` (with the two lerp/speed enums)
+only when `keyframes` is non-empty, and this catalogue cannot author
+`keyframes` — so on any mover that animates from its visual instead of manual
+keyframes (most of them), a `speed` write is silently dropped on save, the same
+"legal write the engine ignores" shape as `randomDelay` below. Appended to
+`BuildVisualVobTree` at path `1/14`.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
-`mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries
-out-of-range values a dropdown destroys. Enums are also what is left of the
-"legal writes the engine ignores" question — `randomDelay` / `randomDelayVar`
-are read only when `mode` is RANDOM, and `mode` is precisely what cannot be set.
+`mode`, `volumeType`, `zCMover.lerpMode`/`speedMode` and their kin, where
+retail carries out-of-range values a dropdown destroys. Enums are also most of
+the "legal writes the engine ignores" question — `randomDelay` /
+`randomDelayVar` are read only when `mode` is RANDOM, and `mode` is precisely
+what cannot be set; `zCMover.speed` is the one instance of the same shape that
+is not an enum, held out for the `keyframes`-emptiness reason above instead.
 
 Also out: `isStatic` and anything else changing *which* fields the archive
 contains, list fields, and base-`zCVob` widening (§14.1 item 1.8). Alongside and

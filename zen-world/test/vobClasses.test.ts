@@ -29,9 +29,9 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCPFXController',
-      'zCTrigger', 'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight', 'zCVobSound',
-      'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
+      'oCItem', 'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCMover',
+      'zCPFXController', 'zCTrigger', 'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight',
+      'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
     ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
     expect(classPropKeys('zCVobLight')).toEqual(['range', 'color']);
@@ -143,6 +143,27 @@ describe('the per-class field catalogue', () => {
       .toEqual({ key: 'levelName', kind: 'string' });
     expect(fieldOf('oCTriggerChangeLevel', 'startVob'))
       .toEqual({ key: 'startVob', kind: 'string' });
+    // `zCMover` inherits the base twelve and adds thirteen of its own
+    // fourteen, in the order `VMover` declares them.
+    expect(classPropKeys('zCMover')).toEqual([
+      ...classPropKeys('zCTrigger'), 'touchBlockerDamage', 'stayOpenTimeSec', 'locked',
+      'autoLink', 'autoRotate', 'sfxOpenStart', 'sfxOpenEnd', 'sfxTransitioning',
+      'sfxCloseStart', 'sfxCloseEnd', 'sfxLock', 'sfxUnlock', 'sfxUseLocked',
+    ]);
+    for (const key of classPropKeys('zCTrigger')) {
+      expect(fieldOf('zCMover', key)).toEqual(fieldOf('zCTrigger', key));
+    }
+    expect(fieldOf('zCMover', 'touchBlockerDamage'))
+      .toEqual({ key: 'touchBlockerDamage', kind: 'float', min: 0 });
+    expect(fieldOf('zCMover', 'stayOpenTimeSec'))
+      .toEqual({ key: 'stayOpenTimeSec', kind: 'float', min: 0 });
+    expect(fieldOf('zCMover', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
+    // `speed` is held out: ZenKit only writes it (and the two lerp/speed
+    // enums) when `keyframes` is non-empty, and this catalogue cannot author
+    // `keyframes` — so it is a legal write the engine silently drops on the
+    // many movers that animate from their visual instead.
+    expect(fieldOf('zCMover', 'speed')).toBeNull();
+    expect(fieldOf('zCMover', 'sfxLock')).toEqual({ key: 'sfxLock', kind: 'string' });
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {

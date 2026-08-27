@@ -257,6 +257,39 @@ const OC_TRIGGER_CHANGE_LEVEL_FIELDS = [
   { key: 'startVob', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The base `VTrigger` twelve, plus thirteen of the fourteen fields `zCMover`
+ *  declares beyond them, in the order `VMover` declares them. `behavior`,
+ *  `lerpMode` and `speedMode` are enums and stay out with the rest of the
+ *  catalogue's enums; `keyframes` is an unbounded list and stays out with the
+ *  rest of those; the `s_*` save-game fields need nothing held out either.
+ *  The two delay/damage-shaped floats are bounded at 0 for the same reason
+ *  the base twelve's are — neither "damage to deal" nor "seconds to stay
+ *  open" has a meaning below zero.
+ *
+ *  `speed` is held out too, and for a reason none of the rest of the family
+ *  has: ZenKit's `VMover::save` writes `moveSpeed` (with `lerpMode` and
+ *  `speedMode`) only `if (!keyframes.empty())` — and this catalogue cannot
+ *  author `keyframes`, so on the many movers that drive their animation from
+ *  the visual instead of manual keyframes, a `speed` write is silently
+ *  dropped on save. The same "legal write the engine ignores" shape as
+ *  `zCVobSound`'s `randomDelay`. */
+const ZC_MOVER_FIELDS = [
+  ...ZC_TRIGGER_FIELDS,
+  { key: 'touchBlockerDamage', kind: 'float', min: 0 },
+  { key: 'stayOpenTimeSec', kind: 'float', min: 0 },
+  { key: 'locked', kind: 'bool' },
+  { key: 'autoLink', kind: 'bool' },
+  { key: 'autoRotate', kind: 'bool' },
+  { key: 'sfxOpenStart', kind: 'string' },
+  { key: 'sfxOpenEnd', kind: 'string' },
+  { key: 'sfxTransitioning', kind: 'string' },
+  { key: 'sfxCloseStart', kind: 'string' },
+  { key: 'sfxCloseEnd', kind: 'string' },
+  { key: 'sfxLock', kind: 'string' },
+  { key: 'sfxUnlock', kind: 'string' },
+  { key: 'sfxUseLocked', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -278,10 +311,11 @@ export const CLASS_FIELDS = {
   zCTriggerWorldStart: ZC_TRIGGER_WORLD_START_FIELDS,
   oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
   oCTriggerChangeLevel: OC_TRIGGER_CHANGE_LEVEL_FIELDS,
+  zCMover: ZC_MOVER_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has twelve, which is the point of asking through `fieldOf`. The
+ *  37 and this has thirteen, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;

@@ -1210,6 +1210,83 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (start_vob) change_level.start_vob = std::move(*start_vob);
       break;
     }
+    // The base `VTrigger` twelve, plus thirteen of the fourteen fields
+    // `VMover` declares beyond them: two delay/damage floats, three bools,
+    // and eight sound names. `behavior`, `lerp_mode` and `speed_mode` are
+    // enums and stay out with the rest of the catalogue's enums; `keyframes`
+    // is an unbounded list and stays out with the rest of those; the `s_*`
+    // fields are save-game only. `speed` is held out for a reason none of the
+    // rest of the family has: `VMover::save` writes `moveSpeed` only when
+    // `keyframes` is non-empty, which this op cannot author — see
+    // zen-world's `vobClasses.ts` for the full "legal write the engine
+    // ignores" note.
+    case zenkit::VirtualObjectType::zCMover: {
+      RequireClassKeys(env, props,
+                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
+                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
+                        "fireDelaySec", "touchBlockerDamage", "stayOpenTimeSec", "locked",
+                        "autoLink", "autoRotate", "sfxOpenStart", "sfxOpenEnd",
+                        "sfxTransitioning", "sfxCloseStart", "sfxCloseEnd", "sfxLock",
+                        "sfxUnlock", "sfxUseLocked"},
+                       class_name);
+      auto const start_enabled = OptionalBool(env, props, "startEnabled");
+      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
+      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
+      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
+      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
+      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
+      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
+      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
+      auto const max_activation_count =
+          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
+      auto const retrigger_delay_sec =
+          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
+      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
+      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      auto const touch_blocker_damage =
+          OptionalFloatIn(env, props, "touchBlockerDamage", 0, std::nullopt);
+      auto const stay_open_time_sec =
+          OptionalFloatIn(env, props, "stayOpenTimeSec", 0, std::nullopt);
+      auto const locked = OptionalBool(env, props, "locked");
+      auto const auto_link = OptionalBool(env, props, "autoLink");
+      auto const auto_rotate = OptionalBool(env, props, "autoRotate");
+      auto sfx_open_start = OptionalCp1252String(env, props, "sfxOpenStart");
+      auto sfx_open_end = OptionalCp1252String(env, props, "sfxOpenEnd");
+      auto sfx_transitioning = OptionalCp1252String(env, props, "sfxTransitioning");
+      auto sfx_close_start = OptionalCp1252String(env, props, "sfxCloseStart");
+      auto sfx_close_end = OptionalCp1252String(env, props, "sfxCloseEnd");
+      auto sfx_lock = OptionalCp1252String(env, props, "sfxLock");
+      auto sfx_unlock = OptionalCp1252String(env, props, "sfxUnlock");
+      auto sfx_use_locked = OptionalCp1252String(env, props, "sfxUseLocked");
+      auto& mover = static_cast<zenkit::VMover&>(*vob);
+      if (start_enabled.has_value()) mover.start_enabled = *start_enabled;
+      if (send_untrigger.has_value()) mover.send_untrigger = *send_untrigger;
+      if (react_to_on_trigger.has_value()) mover.react_to_on_trigger = *react_to_on_trigger;
+      if (react_to_on_touch.has_value()) mover.react_to_on_touch = *react_to_on_touch;
+      if (react_to_on_damage.has_value()) mover.react_to_on_damage = *react_to_on_damage;
+      if (respond_to_object.has_value()) mover.respond_to_object = *respond_to_object;
+      if (respond_to_pc.has_value()) mover.respond_to_pc = *respond_to_pc;
+      if (respond_to_npc.has_value()) mover.respond_to_npc = *respond_to_npc;
+      if (max_activation_count.has_value()) mover.max_activation_count = *max_activation_count;
+      if (retrigger_delay_sec.has_value()) mover.retrigger_delay_sec = *retrigger_delay_sec;
+      if (damage_threshold.has_value()) mover.damage_threshold = *damage_threshold;
+      if (fire_delay_sec.has_value()) mover.fire_delay_sec = *fire_delay_sec;
+      if (touch_blocker_damage.has_value()) mover.touch_blocker_damage = *touch_blocker_damage;
+      if (stay_open_time_sec.has_value()) mover.stay_open_time_sec = *stay_open_time_sec;
+      if (locked.has_value()) mover.locked = *locked;
+      if (auto_link.has_value()) mover.auto_link = *auto_link;
+      if (auto_rotate.has_value()) mover.auto_rotate = *auto_rotate;
+      if (sfx_open_start) mover.sfx_open_start = std::move(*sfx_open_start);
+      if (sfx_open_end) mover.sfx_open_end = std::move(*sfx_open_end);
+      if (sfx_transitioning) mover.sfx_transitioning = std::move(*sfx_transitioning);
+      if (sfx_close_start) mover.sfx_close_start = std::move(*sfx_close_start);
+      if (sfx_close_end) mover.sfx_close_end = std::move(*sfx_close_end);
+      if (sfx_lock) mover.sfx_lock = std::move(*sfx_lock);
+      if (sfx_unlock) mover.sfx_unlock = std::move(*sfx_unlock);
+      if (sfx_use_locked) mover.sfx_use_locked = std::move(*sfx_use_locked);
+      break;
+    }
     default:
       throw Napi::Error::New(env,
                              "no class properties are known for a " + std::string {class_name});

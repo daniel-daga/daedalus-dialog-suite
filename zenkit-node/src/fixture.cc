@@ -685,8 +685,45 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   change_level->level_name = "NEWWORLD.ZEN";
   change_level->start_vob = "START_VOB_ÄÖÜ";
 
+  auto mover = std::make_shared<VMover>();
+  mover->type = VirtualObjectType::zCMover;
+  mover->vob_name = "VOB_INDEX_MOVER";
+  mover->position = Vec3 {390.0f, 4.0f, 400.0f};
+  mover->bbox = AxisAlignedBoundingBox {Vec3 {389.0f, 3.0f, 399.0f}, Vec3 {391.0f, 5.0f, 401.0f}};
+  mover->target = "TARGET_VOB";
+  mover->start_enabled = true;
+  mover->send_untrigger = false;
+  mover->react_to_on_trigger = true;
+  mover->react_to_on_touch = false;
+  mover->react_to_on_damage = true;
+  mover->respond_to_object = false;
+  mover->respond_to_pc = true;
+  mover->respond_to_npc = false;
+  mover->vob_target = "VOB_TARGET_NAME";
+  mover->max_activation_count = 3;
+  mover->retrigger_delay_sec = 1.5f;
+  mover->damage_threshold = 10.0f;
+  mover->fire_delay_sec = 2.5f;
+  mover->touch_blocker_damage = 5.0f;
+  mover->stay_open_time_sec = 3.0f;
+  mover->locked = true;
+  mover->auto_link = false;
+  mover->auto_rotate = true;
+  // `speed` is left at its default: `VMover::save` only writes it (with
+  // `keyframes` empty here, as it is on any mover that animates from its
+  // visual) when `keyframes` is non-empty, so a non-zero fixture value
+  // would silently not round-trip and this fixture would be lying about it.
+  mover->sfx_open_start = "SFX_OPEN_START_ÄÖÜ";
+  mover->sfx_open_end = "SFX_OPEN_END";
+  mover->sfx_transitioning = "SFX_TRANSITIONING";
+  mover->sfx_close_start = "SFX_CLOSE_START";
+  mover->sfx_close_end = "SFX_CLOSE_END";
+  mover->sfx_lock = "SFX_LOCK";
+  mover->sfx_unlock = "SFX_UNLOCK";
+  mover->sfx_use_locked = "SFX_USE_LOCKED";
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
-                     trigger_script, trigger, change_level};
+                     trigger_script, trigger, change_level, mover};
   return root;
 }
 
