@@ -89,7 +89,7 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty — five cards landed this session; see Done)*
+*(empty — three cards landed this session; see Done)*
 
 ## Next
 
@@ -203,6 +203,18 @@ was true for so long nobody re-reads it.
     `instrument: 'none'` return on a failed load is no longer reached by any
     ASCII world, so that half of the old card is closed.
 
+- **`resavedSize` is fragile at a day or month boundary, not a second one.**
+  Found while making the ASCII stamp comparisons robust (Done), and left alone
+  deliberately. Patch `0018` formats the header stamp `"%d.%d.%d %02d:%02d:%02d"`
+  — hour, minute and second are zero-padded, **day and month are not** — so the
+  header's *length* changes when the day crosses 9→10 (or the month does), and
+  the re-save is then a different size from the original. That breaks
+  `assert.strictEqual(ascii.resavedSize, ascii.size)` (`test/roundtrip.test.js:165`)
+  and `row.wholeFileIdentical` with it; reproduced by rewriting the fixture's
+  stamp shorter before the re-save, `sizes 5064 5068`. Not fixed because the fix
+  changes what `resavedSize` *means* in the harness report — a stamp-stripped
+  size, or a second field beside it — and that is a report-shape decision for
+  Daniel rather than something to do unasked.
 - **A malformed world still crashes the reader — the hang was the small half.**
   The spin is fixed (patch `0027`, Done), but closing it turned up the size of
   what is left. Seeded fuzzing, 30 seeds of 100 corrupted bytes each over one
@@ -227,38 +239,25 @@ was true for so long nobody re-reads it.
   whether that's worth a rebuilt candidate is Daniel's call, not something to
   do unasked.
 
-- **`main.ts` does real work at import time.** Constructing `ParserService` at
-  module load spins up an 8-worker pool before anything asks for a parse —
-  `WorldService` is deliberately lazy by comparison (`main.ts:52` says why).
-  Found because the new `world:openDialog` test has to import `main.ts`: the
-  full Jest run then emits *"A worker process has failed to exit gracefully"* in
-  roughly half of runs, tests passing either way. Mocking `ParserService` in
-  that test reduced it and did not remove it. Worth checking against the
-  intermittent `3221226505` exits `test:matrix:windows` already exists for —
-  they may be the same handle.
+- **The leaked Jest worker handle is still unidentified, and `ParserService` was
+  not it.** The pool is lazy now (Done) and the warning *did* leave the two
+  suites that import `main.ts` — but the full editor run still prints *"A worker
+  process has failed to exit gracefully"*, measured 6 of 7 runs after the fix
+  against the "roughly half" the old card recorded before it. So the card's
+  hypothesis is disproved and the handle is somewhere else; the next step is a
+  `--detectOpenHandles` run, not another guess. The audit that came with the fix
+  narrows where it cannot be: every other service `main.ts` constructs at module
+  load is string/number arithmetic in its constructor — `LogService` opens its
+  file in `log()`, `SettingsService` only joins `userData`, and
+  `ProjectService` creates its `MetadataWorkerPool` inside `buildProjectIndex`
+  (`ProjectService.ts:129`). Still worth checking against the intermittent
+  `3221226505` exits `test:matrix:windows` exists for — they may be the same
+  handle.
 
-- **The waynet overlay goes missing after a structural edit.** Found while
-  landing the terrain marker, by symmetry, and not fixed because it wants its
-  own test. The overlay effect (`WorldViewport.tsx`, the one keyed
-  `[waynet, mesh]`) hangs its group off the scene root, but the scene effect it
-  hangs off is keyed `[mesh, visuals, bbox]` — and a structural op rebuilds from
-  `visuals` alone. So the rebuild hands out a new root while the overlay stays
-  attached to the disposed one: the waynet silently vanishes until it is
-  toggled off and on. The terrain marker's effect takes `visuals` for exactly
-  this reason and is the shape to copy.
-
-- **Four small things noticed while landing this session's cards.** None
-  blocking, all cheap, each one recorded because the finding is worth more than
-  the fix is expensive:
-  - **`tools/` is outside lint's globs** (`zenkit-node/package.json:14` covers
-    `lib`, `scripts`, `test`). `tools/README.md:95` says so deliberately, but
-    `tools/bytediff.js` is now the one consumer of shared `lib/` code that is
-    neither linted nor tested.
-  - **The ASCII round-trip tests assume one clock second.** Both the new
-    `differing: []` assertion and the existing `ascii.blob.identical` one
-    compare files carrying `date`/`user` stamps — in the top-level header *and*
-    in the nested `MeshAndBsp` archive header. Green today, flaky on a slow
-    machine at a second boundary.
+- **Two small things noticed while landing an earlier session's cards.** Neither
+  blocking, both cheap, each recorded because the finding is worth more than
+  the fix is expensive. (The other two — `tools/` outside lint's globs, and the
+  ASCII round-trip's clock-second assumption — landed; see Done.)
   - **The terrain bar reserves a hard-coded 31 px** for the button its picked
     state adds, derived from MUI's small-button metrics. If the theme ever sets
     a button height it drifts, and jsdom has no layout, so no test can catch it.
@@ -303,6 +302,69 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
 
 ## Done — Phase 1b
 
+- **The waynet overlay survives a structural edit.** The overlay effect was
+  keyed `[waynet, mesh]` while the scene effect it hangs off is keyed
+  `[mesh, visuals, bbox]`, so a `visuals`-only rebuild handed out a new root and
+  left the overlay attached to the disposed one. Both effects now take `visuals`,
+  copying the terrain marker's shape.
+  **The fix is two-part and that is the durable finding**: `WaynetOverlay.ts:116`
+  sets `root.visible = false` in the constructor, so adding `visuals` to only the
+  *attach* effect re-parents an overlay that is never shown — the identical
+  symptom with a different cause, and the attachment assertion stays green
+  through it. The visibility effect needed the same dep, and the second test
+  pins it; neither test passes on the partial fix. Any future viewport effect
+  that builds an object whose *state* a second effect applies has this trap.
+  Two costs accepted: the overlay is now torn down and rebuilt on every
+  structural op (2,959 waypoints on NewWorld — cheap beside the scene rebuild it
+  rides along with, and the alternative is making the overlay outlive the scene
+  the way `TextureCache` now does), and **no E2E can cover this** — the browser
+  harness refuses `openWorld` and two specs assert `world-viewport` has count 0,
+  so Jest is the whole regression net. This is also the first test that renders
+  the real `WorldViewport`, and it needed five module mocks (`WebGLRenderer`,
+  `three-mesh-bvh`, both example controls, `BvhBuilder`, `VobPicker`); a third
+  such test should promote them to a shared helper.
+- **The parser pool waits until something asks for a parse.** `main.ts`
+  constructed `ParserService` at module load and it spawned eight worker threads
+  in its constructor, before anything asked for a parse. The spawn loop moved
+  into a guarded `startPool()` that `parseSource` calls, so construction is now
+  string/number arithmetic — **the same shape `WorldService` already had**, which
+  is the correction the card needed: `main.ts:52` constructs `WorldService`
+  *eagerly* too, and the laziness lives inside the service. A true lazy
+  construction in `main.ts` was rejected as non-minimal, because `main.ts:47`
+  passes the instance to `ValidationService`. Doing it in the service fixes it
+  for every consumer, not just `main.ts`.
+  `worldOpenDialogDefaultPath.test.ts` dropped its `ParserService` mock and the
+  now-false comment claiming the pool would outlive the test — it exercises the
+  real service through `main.ts`, which is the strongest available proof.
+  **What it did not fix is now its own card in Next**: the full-suite worker-leak
+  warning is still there.
+- **`tools/` is linted, and the byte diff sees past a clock stamp.** Two cards,
+  one commit, both in `zenkit-node`.
+  The lint glob gains `tools/**/*.js` in `package.json` *and* in
+  `eslint.config.js` — the second is not optional, or the CommonJS globals block
+  does not apply and every file erupts in `no-undef`. All seven files were
+  already clean, so **the card's value was the structural gap, not a latent
+  bug**: `tools/bytediff.js` consumes shared `lib/` code. `tools/README.md`'s
+  deliberate "not linted" line went in the same change.
+  For the stamps, **the card's premise was wrong on two counts and the
+  measurement is the finding.** The nested `MeshAndBsp` header carries no
+  `date`/`user` at all (ZenKit's patched writer omits nested stamps, as ZenGin
+  does), and the top-level stamp reaches neither `differing` (events only) nor
+  `blob.identical` (the blob excludes the top-level header) — only
+  `textHeaderIdentical`, which no test asserted. Authoring the fixture, waiting
+  1.5 s and re-saving leaves both named assertions green. The fix landed anyway
+  so the property holds **by construction** rather than by the fixture happening
+  not to nest a stamp: `equalIgnoringStamps` in `lib/container-diff.js` (joining
+  `withoutHeaderStamps`, moved there out of `zen-roundtrip.js`) drops the stamp
+  *values* and never the lines, per span, so a length-changing stamp needs no
+  offset arithmetic. It is attempted only for spans containing `ZenGin Archive`,
+  which both keeps the cost off a retail world's hundreds of thousands of
+  ordinary events and states the rule: **bytes outside a header are compared
+  exactly**, so a writer regression anywhere else is still a difference. Proved
+  by perturbing one non-stamp blob byte and one `vobName` byte — both still
+  reported. A length-changing *nested* stamp is still reported too, deliberately:
+  the blob's declared size lives in the enclosing object frame, and normalizing
+  that would be normalizing framing.
 - **A malformed world no longer spins the reader forever.** Patch `0027`.
   `World::load`'s MeshAndBsp chunk scan trusted a length out of the file, and
   `ReadMemory::seek` refuses an out-of-range seek *silently* — so a length

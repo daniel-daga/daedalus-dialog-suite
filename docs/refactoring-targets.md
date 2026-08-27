@@ -93,3 +93,20 @@ still only a wart, with no slice yet identified that pays for it.
 Fix direction, unchanged: `WaynetPayload` moves to `zen-world` beside `VobIndex`
 and the editor re-exports it, matching what already happened for the VOB index.
 Small, but it touches every waynet import, so it wants its own commit.
+
+### 6. `ParserService.dispose()` leaves the service permanently dead, and now silently
+**File:** `daedalus-dialog-editor/src/main/services/ParserService.ts`
+
+`dispose()` terminates the pool and empties `workers`/`idleWorkers` with no path
+to respawn. Making the pool lazy (2026-08-28) did not change that, but it did
+change the failure mode: `started` stays `true` after a `dispose()`, so a later
+`parseSource` now takes the `if (!this.started)` branch as already-started,
+queues a request against an empty pool, and never settles — where before it
+queued against an empty pool just as surely, but without a flag implying
+otherwise.
+
+Deliberately not fixed there. `dispose()` is documented as a test/teardown
+helper and no production code calls it, so a `started = false` reset would have
+been error handling for a case that cannot happen — which the repo's rules
+forbid. It becomes a real defect the moment `dispose()` gets a production
+caller, and the fix at that point is one line.
