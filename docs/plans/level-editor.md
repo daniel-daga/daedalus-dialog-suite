@@ -2626,3 +2626,298 @@ confirm is enough; the fallback is the user's own save file either way.
 Serializing the subtree into the op, or snapshotting the world around it, stay
 open as later improvements. Neither is a prerequisite.
 
+
+---
+
+## 16. Open findings (2026-08-28)
+
+The long form of every open card on [`docs/BOARD.md`](../BOARD.md). The board
+carries one line and an owner per card and points here; this section carries the
+diagnosis, the measurement and the decision each one is waiting on. A card that
+closes takes its subsection with it — the commit is then the record.
+
+### 16.1 Nothing has watched the packaged renderer draw
+
+The addon half is closed: the packaged app opens a world in CI, so
+`npmRebuild: false` rests on a runtime verdict rather than on a reading of
+`binding.gyp`. But that smoke never creates a window — it opens the world
+through `WorldService` and exits. A packaged build in which the World surface
+renders nothing, or throws on first paint, passes every gate there is. Closing
+it needs a driver rather than an env var, which is why it is a different job
+from the one just done.
+
+### 16.2 Three shipped ops have no engine verdict
+
+`DeleteVob`, `MoveWaypoint` and `SetVobClassProp` all landed after candidate
+`03` was built, so Gate 2 covers five ops — `MoveVob`, `RotateVob`,
+`SetVobProp`, `AddVob`, `ReparentVob` — and not these. The acceptance record
+says so itself, under **"Not run and not claimed here either"** in its Gate 2
+section. Say **"Gate 2 passed for the ops it tested"**, never "Gate 2 passed".
+A removed subtree is still the edit ZenGin has the most room to disagree about.
+
+The `oCItem.instance` half is closed: the name a `SetVobClassProp` writes is
+checked against the parser's item index, so a typo cannot reach a save — but
+that is a check, not a verdict. Increment 2 widened the gap rather than closing
+it: five more classes are editable, and a sound or a fog zone written wrongly is
+*invisible in the viewport* — the first edits whose only witness is the engine.
+
+`verify-world-edit.js` sets no class property at all, so a rebuilt candidate
+would have to grow one before it is worth building. **Whether that rebuild is
+worth doing is Daniel's call** — it costs a staged candidate and two engine
+passes.
+
+### 16.3 Phase 1b-2 — the classes that are left
+
+Seven classes are editable and the catalogue has five kinds, so the kinds are no
+longer the constraint and the class list is again. Left: the trigger family,
+`oCMob*`, `zCPFXController`, `zCVobAnimate` — each one C++ case plus one
+`CLASS_FIELDS` entry plus its tests.
+
+Held out by decision rather than by time, and **enums are now the whole of it**:
+`mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries
+out-of-range values a dropdown destroys. Enums are also what is left of the
+"legal writes the engine ignores" question — `randomDelay` / `randomDelayVar`
+are read only when `mode` is RANDOM, and `mode` is precisely what cannot be set.
+
+Also out: `isStatic` and anything else changing *which* fields the archive
+contains, list fields, and base-`zCVob` widening (§14.1 item 1.8). Alongside and
+independent: class-specific *insertion* (item 1.3 — `insertItemVob` is in the
+binding and wired to nothing), and copy/paste (1.2). Numeric transform entry
+(1.5) is landed bar the multi-selection decision (§16.4); snapping (1.6) is half
+landed (§16.5). All still before Phase 1c in §11.
+
+### 16.4 Typed rotation — what is left needs Spacer and a UI decision, not code
+
+The three fields are in and the quiet-corruption trap is handled per angle, so
+the 30.2 % of retail VOBs that are non-orthonormal are not re-orthonormalized by
+a commit nobody made. Two things stayed open on purpose.
+
+**Absolute or delta for a multi-selection.** The fields are hidden for N VOBs
+rather than guessing. Single selection is absolute
+(`rotateVob(..., eulerToZenRotation(typed), bounds)`); N VOBs would be
+`multiplyRotation(target, invert(current))` and is a UI decision, not a
+derivation.
+
+**Spacer parity is unmeasured.** Nothing in the format, in ZenKit or here
+commits to an Euler order, so Y-X-Z was chosen on retail singularity counts
+(464 VOBs on XYZ's against 53 on YXZ's), not on a match to Spacer. Settling it
+needs Spacer itself — type an angle, save, read the matrix back. If it turns out
+different, only those two functions and their tests change.
+
+One thing users will see and may report as a bug: displayed angles are canonical
+— yaw/roll in (−180, 180], pitch in [−90, 90] — so a field committed at 190°
+remounts as −170°, and a pole pose remounts with roll 0. Both correct, both look
+like the editor changing their number.
+
+### 16.5 Snapping — drop-to-ground and align-to-normal
+
+Grid step and angle step landed. The two that are left are **not** blocked on a
+raycast, which is the thing worth knowing: the world mesh has a BVH. They are
+blocked because both are *per-VOB* answers — each VOB finds its own ground, its
+own normal — while `translateVobs`/`rotateVobs` take **one** delta for the whole
+selection. Doing them means a per-VOB op-building path, the second one this area
+has refused to grow since Phase 1b began.
+
+Align-to-normal additionally has to decide which axis of a visual is up, the same
+question that keeps a placed VOB at `IDENTITY`. Open and unacted: whether a
+*typed* coordinate should snap too (it does not — a typed number is an explicit
+destination).
+
+### 16.6 Every remaining catalogue bound rests on documentation, and one was wrong
+
+The two unmeasured bounds are closed, but the way they closed is the finding:
+the sweep that settled them also found `zCVobSound.volume` shipping `max: 100`
+on ZenKit's "percent (0-100)" wording while retail NewWorld holds 130 and 150 —
+the grid, the validator and the binding were all refusing values the game itself
+ships.
+
+**So a bound taken from ZenKit's docs rather than from a `normalizeWorld` sweep
+is a live refusal risk, not a cautious default.** `coneAngle` 0–360 and the two
+daytime hours 0–24 are the ones still standing on documentation alone; neither
+has been swept, and the sweep is cheap now that the script exists.
+
+### 16.7 Waynet editing — the edge ops, and add/delete/rename
+
+The gizmo landed, so the one op that exists is now reachable; nothing below is.
+
+**The addressing problem is the whole job and it is untouched.** `MoveWaypoint`
+addresses a waypoint by its index into the list `getWaynet` emits, and that is
+safe only because a move inserts, deletes and reorders nothing. Every op left
+here breaks it, and names cannot be the fix — nothing in the format promises
+they are unique, which is why the binding matches edge endpoints by pointer
+identity. **Retail happens to have no duplicate** — 24 worlds, 12,341 waypoints,
+0 collisions even case-insensitively — but that is a fact about the shipped data,
+not a guarantee about a world somebody edits, and an *op* that persists an
+address needs the guarantee. The jump (§16.8) can key on names precisely because
+a jump is read-only.
+
+The edge ops keep their original hazard: `free_point` is not a stored field, and
+`WayNet::save` writes only free points plus edge endpoints, so a non-free
+waypoint in no edge is dropped at save. Removing a waypoint's last edge therefore
+deletes the waypoint, which is why an edge op is not invertible as an edge op.
+Waypoint delete has a bounded version of the arbitrary-VOB-delete trap — a
+`WayPoint` is five scalar fields, so what an op cannot describe for free is its
+edge memberships, and those are an enumerable list.
+
+### 16.8 Jumping between a script reference and the place it names
+
+Daniel's idea, sized 2026-08-28. The core claim survived: **nothing in the
+parser records a waypoint-name string literal as a reference**, and that index,
+not the camera, is the job. `cross-references.ts` knows exactly two reference
+kinds and returns no file, line or column at all — it exists to serve
+rename/remove, so it is the right *shape* and the wrong *payload*. The camera is
+nearly free: `frameVobs` takes `bounds: null` for "a point rather than a thing
+with a size", and waynet positions are already ZenGin centimetres.
+
+**Four details the first sizing got wrong, and the fourth changes what to
+build.** The jump is at `WorldSurface.tsx:193-198`, not `:158`. `start_aiwp`
+does not exist in the G2 MDK — the field is `C_Npc.wp` (plus `spawnPoint`),
+literal-assigned in 2 places in the whole corpus. There is **one** request prop,
+not two: `frameSelection` is a closure inside the scene effect, so a waypoint
+jump is the *second* prop — exactly the trigger the imperative-handle note names.
+And the three carriers first listed were the least-used: measured over the MDK's
+1,725 `.d` files, `AI_GotoWP` has **6** literal waypoint sites against the `TA_*`
+daily routines' **6,223**. The routines are the feature; the interesting question
+a level editor answers is where an NPC stands at 08:00.
+
+**The extractor should not hardcode a call list.** 58 `TA_*` functions declare a
+parameter literally named `var string waypoint`, so the rule is derived from the
+project being edited — map a function to the index of such a parameter, then read
+the literal at that position. Only the engine externals (`AI_GotoWP`,
+`Npc_GetDistToWP` and ~4 more) need a seed table, and that set is closed. The one
+genuinely new parser capability is exposing function **parameters**.
+
+**The duplicate-name decision is answered by measurement: don't design for it.**
+24 worlds, 12,341 waypoints, **0 duplicate names**, not one even
+case-insensitively. Build the lookup multi-valued anyway (it costs nothing), jump
+to the first, and spend the effort on the real residue instead: 98.0 % of the
+6,529 literal sites resolve against all 24 worlds but only 84.3 % against the
+three main ones, so the UI must distinguish "no such waypoint" from **"not in
+*this* world"** or it will lie about the largest cluster of references in the
+corpus.
+
+**Phasing, and the half worth doing first is the back-direction.** W1 the index
+(medium — needs the parser change, and line/column must survive a path that today
+keeps only `node.text`); **W2 world → scripts (small-medium, and the one to land
+first)**: click a waypoint, see the routines that name it. It needs neither
+inherited decision, no viewport refactor and no new navigation model, and it
+delivers a Problems rule — 128 dangling waypoint sites — for free. W3 the
+imperative handle (small, ~60 lines net negative; do it immediately before the
+caller that justifies it, not earlier). W4 script → world is **large**, and not
+for the camera: it needs the mount-lifetime fix in `refactoring-targets.md`.
+
+Note a selected waypoint has **no UI at all** today, so W2 builds a panel from
+nothing rather than extending one.
+
+**The trap that would make W1 silently wrong**: an index built off
+`mergedSemanticModel` is capped at `PARSED_FILES_CAP = 512` against the MDK's
+1,725 files, and *which* files depends on the selected NPC — wrong by
+construction and non-deterministically so. It has to ride `buildProjectIndex`'s
+worker-pool pass, exactly as `voiceIds` does. Also: free points (`WP_STAND`,
+`WP_PICK`, …) are prefix-matched by the engine, so a strict exact-match Problems
+rule invents ~60 false findings.
+
+### 16.9 What is left of the ASCII writer — A2, A3 and A6
+
+A1, A4 and A5 landed, and the corpus now measures all 20 retail ASCII worlds
+instead of crashing on them. They classify **`semantic-drift`** in two findings
+across all 20. The counts below are `--drill` totals, not the capped quotas an
+ordinary run reports.
+
+**A6 — `physicsEnabled` is dropped on every save, 43,341 of the 43,469 findings
+a `--drill` run reports, and it is not an ASCII defect at all.**
+`VirtualObject.cc:251` writes packed bit 6 as `physics_enabled && rigid_body` on
+G2, but `rigid_body` is only ever filled inside `if (r.is_save_game())` (`:210`)
+— so in a *world* it is always empty and the flag is always lost. The
+`&& rigid_body` guard belongs at `:325`, where the rigid body is actually
+written, and it is already there; the fix is deleting it from `:251`. **This is
+the packed `zCVob` writer, so the BinSafe path the editor saves through has it
+too.** It changes no retail byte today — measured 0 `physicsEnabled` VOBs across
+NewWorld, OldWorld and AddonWorld, 41,393 VOBs — which is why the BinSafe worlds
+still classify `identical` and why nobody has seen it. A user-edited or modded
+world is another matter, and that is the editor's own save path. Not landed
+because it needs a fixture VOB with the flag set and, being a save-path byte
+change, the project's own engine-A/B rule.
+
+**A2 and A3 are unchanged and still chained.** A2 is dead code with no reachable
+switch: `VirtualObject.cc:12` has `static bool pack = true;`, `:336`
+`enable_packed_save` is its only writer, and grep over `src/`, `include/` and
+`zenkit-node/src/` finds **no caller at all** — so `:269`'s unpacked branch,
+which holds A3's only call site (`:272 write_mat3x3("trafoOSToWSRot")`), can
+never execute. A2's re-enabled path also has a second, undocumented
+**duplicate-entry bug**: `VirtualObject.cc:270-275` and `:297-307` both write
+`presetName`/`vobName`/`visual`, and the two `visual` writes are not even the
+same value (`visual_name` vs `visual->name`). ASCII entries are read
+positionally, so the extras are pure stream desync.
+
+**The lesson A5 taught, and it will repeat.** A5 was invisible to CI for one
+reason: `decalAlphaWeight` is the only `write_byte` field reachable outside a
+savegame and the authored fixture had no decal — so the fixture round-tripped
+clean while all 20 retail worlds failed at the first decal in the file. The
+fixture now hangs a `VisualDecal` on the chest. **Any writer path with no
+fixture field on it is a defect CI cannot see**, and the cheap audit is to walk
+`WriteArchive`'s methods and ask which have no fixture data behind them.
+
+**There is still no ZenGin-written ASCII fixture**, so CI cannot regression-test
+an ASCII round-trip against anything but ZenKit itself.
+`_authorFixtureWorld(..., 'ascii')` is ZenKit's own writer, so `--fixtures`
+proves self-consistency and nothing about the engine. A real ASCII fidelity
+result stays a developer-local `--root` run unless a small ZenGin-authored ASCII
+world is checked in.
+
+### 16.10 `resavedSize` is fragile at a day or month boundary, not a second one
+
+Found while making the ASCII stamp comparisons robust, and left alone
+deliberately. Patch `0018` formats the header stamp `"%d.%d.%d %02d:%02d:%02d"`
+— hour, minute and second are zero-padded, **day and month are not** — so the
+header's *length* changes when the day crosses 9→10 (or the month does), and the
+re-save is then a different size from the original. That breaks
+`assert.strictEqual(ascii.resavedSize, ascii.size)`
+(`test/roundtrip.test.js:165`) and `row.wholeFileIdentical` with it; reproduced
+by rewriting the fixture's stamp shorter before the re-save, `sizes 5064 5068`.
+
+Not fixed because the fix changes what `resavedSize` *means* in the harness
+report — a stamp-stripped size, or a second field beside it — and that is a
+report-shape decision for Daniel rather than something to do unasked.
+
+### 16.11 A malformed world still crashes the reader — the hang was the small half
+
+The spin is fixed (patch `0027`), but closing it turned up the size of what is
+left. Seeded fuzzing, 30 seeds of 100 corrupted bytes each over one BinSafe
+fixture: **19 crashed the child with `0xC0000005`**, one with `0xC0000374` (heap
+corruption), two hung, and only eight threw cleanly.
+
+So a malformed world still takes the editor's `zenkit.worker` down — by segfault
+now instead of by spinning — and **the worker isolation stays load-bearing:
+`loadWorld` is not crash-safe and must never be called on the main thread.**
+
+The shape of the job is unvalidated counts feeding `resize`/indexing throughout
+`Mesh.cc`, `BspTree.cc` and the VOB readers, and the underlying hazard beneath
+all of them is `ReadMemory::seek` (`vendor/ZenKit/src/Stream.cc:277-283`)
+**silently ignoring an out-of-range seek** rather than failing. Making it clamp
+or throw would fix the class in one place and change behaviour for every reader
+in ZenKit, which is why `0027` bounded its own loop instead. Until someone takes
+that decision, every chunk-walking loop has to carry its own bound.
+
+### 16.12 Two viewport constants only Daniel's hands can settle
+
+Both landed with numbers chosen by reasoning, and neither has a test that could
+ever judge them.
+
+**The pivot.** `ORBIT_ROTATE_SPEED = 0.4` against OrbitControls' 1.0, and
+`MIN_PIVOT_DISTANCE = 1` m. Two shapes to judge at the same time — whether the
+projection-onto-the-view-axis pivot reads right near a screen edge (the
+alternative is the literal picked point, which costs a view snap on every
+middle-press), and whether a VOB under the cursor ought to be a pivot target
+(it is not: ID-picking answers an id, not a point, and a CPU raycast over 724
+`InstancedMesh`es is the 14.2 ms the viewport exists to avoid — a *clicked* VOB
+is the fallback pivot, and interiors pivot on walls, which are world mesh).
+
+**The VOB outline.** Two things in it are unverifiable without a GPU: that the
+injected GLSL compiles at all — jsdom has no WebGL, so a shader-link error would
+surface as black or missing props at runtime, not as a red test — and whether
+`OUTLINE_DARKEN = 0.7` / `OUTLINE_POWER = 4` is the right faintness on retail
+NewWorld. Both constants are named in `WorldScene.ts`. Also unjudged: how it
+reads on alpha-tested foliage and on blended VOB materials, which get the term
+uniformly by design (a face-on billboard is untouched; an edge-on one dims
+slightly).

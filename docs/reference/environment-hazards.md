@@ -57,6 +57,24 @@ doc, not here. This file is only for the ground the code stands on.
   React 18 batches state updates, and a real driver dispatching a whole gesture
   in one `page.evaluate` reads state the handler has not flushed yet.
 
+## The intermittent `3221226505`, and what it is not
+
+`npm run test:matrix:windows` exists to reproduce an intermittent
+`3221226505` exit of the editor's Jest run. As of 2026-08-28 it is **still
+unexplained**, and one plausible-looking explanation has been ruled out.
+
+- **It is not the worker-handle warning.** That warning was a referenced
+  two-second timer in `FileWatcherService.notifySelfWrite`, and it is fixed.
+  25 full editor runs while closing it all exited 0, so the two never
+  reproduced together and share no cause: `0xC0000409` is a native
+  `__fastfail`, while a jest-worker force-kill is `SIGTERM`/`SIGKILL`.
+- **The first suspect is the native addon, not Jest.** A native abort with no
+  reproduction is the shape of a C++ failure, and `zenkit-node` is the only
+  native code in the run.
+- **`--detectOpenHandles` cannot help.** It implies `--runInBand`, so there are
+  no workers and the warning class of bug cannot occur under it at all. It is a
+  dead end by construction, not merely unlucky.
+
 ## Running a sabotage harness here
 
 A sabotage run breaks the code on purpose and checks the suite notices. On this

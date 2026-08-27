@@ -152,3 +152,63 @@ What remains of this entry: the fields are still uncontrolled and still
 corrected by remount-by-key, with Escape a manual `target.value =`. Making them
 controlled stays the honest long-term shape; the generation makes the current
 one a rule rather than a coincidence.
+
+---
+
+### 8. The World surface loses its geometry when you navigate away from it
+**Files:** `daedalus-dialog-editor/src/renderer/components/MainLayout.tsx:189`,
+`components/world/WorldSurface.tsx`
+
+Pre-existing and unowned. `MainLayout` renders `<WorldSurface>` under a
+*conditional*, unlike the dialog view which is deliberately kept mounted by a
+display toggle. `mesh`, `visuals` and `waynet` are local `useState` filled only
+inside `openWorld`, and there is no mount-time refetch — so leaving the World
+view and returning leaves `mesh === null`, the viewport guard renders nothing,
+and the world looks closed while `worldStore.status` still says open.
+
+**The fix is a decision nobody has taken:** keep tens of MB of buffers mounted,
+or refetch on mount and pay the latency.
+
+Hard prerequisite for the script → world direction of the waypoint jump
+(`docs/plans/level-editor.md` §16.8, W4).
+
+---
+
+### 9. The viewport wants an imperative handle
+**File:** `daedalus-dialog-editor/src/renderer/components/world/WorldViewport.tsx`
+
+`frameSelection` and the scene-tree jump both live inside the big scene effect,
+so reaching them needs a ref hop plus a request prop. A **third** viewport
+command should promote that to a handle rather than adding a second prop.
+
+Sized (§16.8, W3): small, ~60 lines net negative — the closures already exist and
+`frameVobRef` is already a ref. Do it immediately before the caller that
+justifies it, not earlier.
+
+**The one hazard:** the handle is only alive while the scene effect is, and that
+effect re-runs on `[mesh, visuals, bbox]` — a command requested during a rebuild
+must be a no-op, not a crash.
+
+---
+
+### 10. A third real-`WorldViewport` test should promote its five module mocks
+**File:** `daedalus-dialog-editor/src/renderer/components/world/__tests__/`
+
+The waynet-overlay regression test is the first that renders the real
+`WorldViewport`, and it needed five module mocks to do it: `WebGLRenderer`,
+`three-mesh-bvh`, both example controls, `BvhBuilder` and `VobPicker`. A second
+copy is tolerable; a third should become a shared helper.
+
+Jest is the whole regression net for this area — the browser harness refuses
+`openWorld` and two specs assert `world-viewport` has count 0 — so these tests
+will keep being written.
+
+---
+
+### 11. The terrain bar reserves a hard-coded 31 px
+**File:** `daedalus-dialog-editor/src/renderer/components/world/` (the World bar)
+
+The row reserves 31 px for the button its picked state adds, derived from MUI's
+small-button metrics, so the bar does not shove when a point is picked. If the
+theme ever sets a button height it drifts, and **jsdom has no layout, so no test
+can catch it.**
