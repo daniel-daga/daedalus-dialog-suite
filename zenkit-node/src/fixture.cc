@@ -13,6 +13,7 @@
 #include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/MovableObject.hh>
 #include <zenkit/vobs/Sound.hh>
+#include <zenkit/vobs/Trigger.hh>
 #include <zenkit/vobs/VirtualObject.hh>
 #include <zenkit/vobs/Zone.hh>
 #include <zenkit/world/BspTree.hh>
@@ -622,7 +623,16 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   pfx->kill_when_done = true;
   pfx->initially_running = true;
 
-  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx};
+  auto world_start = std::make_shared<VTriggerWorldStart>();
+  world_start->type = VirtualObjectType::zCTriggerWorldStart;
+  world_start->vob_name = "VOB_INDEX_TRIGGERWORLDSTART";
+  world_start->position = Vec3 {310.0f, 4.0f, 320.0f};
+  world_start->bbox =
+      AxisAlignedBoundingBox {Vec3 {309.0f, 3.0f, 319.0f}, Vec3 {311.0f, 5.0f, 321.0f}};
+  world_start->target = "TARGET_VOB";
+  world_start->fire_once = true;
+
+  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start};
   return root;
 }
 

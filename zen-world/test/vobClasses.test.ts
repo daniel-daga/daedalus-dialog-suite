@@ -29,8 +29,8 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCZoneMusic', 'zCPFXController', 'zCVobAnimate', 'zCVobLight', 'zCVobSound',
-      'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
+      'oCItem', 'oCZoneMusic', 'zCPFXController', 'zCTriggerWorldStart', 'zCVobAnimate',
+      'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
     ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
     expect(classPropKeys('zCVobLight')).toEqual(['range', 'color']);
@@ -112,6 +112,8 @@ describe('the per-class field catalogue', () => {
       .toEqual({ key: 'killWhenDone', kind: 'bool' });
     expect(fieldOf('zCPFXController', 'initiallyRunning'))
       .toEqual({ key: 'initiallyRunning', kind: 'bool' });
+    expect(classPropKeys('zCTriggerWorldStart')).toEqual(['fireOnce']);
+    expect(fieldOf('zCTriggerWorldStart', 'fireOnce')).toEqual({ key: 'fireOnce', kind: 'bool' });
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {

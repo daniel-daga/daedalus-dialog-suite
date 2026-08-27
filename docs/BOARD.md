@@ -119,8 +119,8 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **The classes that are left** — trigger family, `oCMob*`; enums are the
-  whole of what is held out. Unowned. §16.3
+- **The classes that are left** — rest of the trigger family, `oCMob*`; enums
+  are the whole of what is held out. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -159,23 +159,13 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-*(emptied 2026-08-28 — Phase 1b's 36 cards were flushed after checking every one
+*(emptied 2026-08-28 — the prior 6 cards were flushed after checking each one
 against `git log` and the docs. `git log` is the permanent record.)*
 
-- **Shift+click adds to the selection**, viewport and scene tree both. §7
-- **The rotate gizmo turns at a quarter of its old rate** —
-  `DampedTransformControls`, because the library takes no number for it. §7
-- **The orbit speed's test stopped asserting a number nobody kept** — master was
-  red since `d6118fa` changed `ORBIT_ROTATE_SPEED` 0.4 → 1 by hand. The test now
-  pins the wiring, not the value.
-- **`zCVobAnimate` joined the class-property catalogue** — `startOn` only,
-  round-tripped through `setVobClassProp`/save/reload. §16.3
-- **`coneAngle` and the two daytime hours are swept, not just documented** —
-  retail never varies `coneAngle` from 0 and keeps both hours well inside
-  0–24; neither bound changed. §16.6
-- **`zCPFXController` is now fully writable** — `pfxName` and `killWhenDone`
-  join `initiallyRunning`; the class is closed out. §16.3
+- **`zCTriggerWorldStart` joins the class-property catalogue** — its one
+  non-enum field, `fireOnce`, round-tripped through
+  `setVobClassProp`/save/reload. §16.3
 
 Verified this session: `zenkit-node` (build + full suite + lint), `zen-world`
 (test + lint + typecheck + build), `daedalus-dialog-editor` (build:main +
-typecheck:renderer + full Jest + lint) all green — `zCPFXController` change.
+typecheck:renderer + full Jest + lint) all green — `zCTriggerWorldStart` change.

@@ -198,6 +198,16 @@ const ZC_PFX_CONTROLLER_FIELDS = [
   { key: 'initiallyRunning', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The first field of the trigger family, and the one non-enum, non-list field
+ *  `zCTriggerWorldStart` has: whether the `OnTrigger` it fires at level load
+ *  fires only the first time the level loads. `target` is the class's other
+ *  field but is out for now with the rest of the family's target strings; its
+ *  save-game-only `s_has_fired` needs nothing held out either, the same shape
+ *  as `zCVobAnimate`'s one field. */
+const ZC_TRIGGER_WORLD_START_FIELDS = [
+  { key: 'fireOnce', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -215,10 +225,11 @@ export const CLASS_FIELDS = {
   oCZoneMusic: OC_ZONE_MUSIC_FIELDS,
   zCVobAnimate: ZC_VOB_ANIMATE_FIELDS,
   zCPFXController: ZC_PFX_CONTROLLER_FIELDS,
+  zCTriggerWorldStart: ZC_TRIGGER_WORLD_START_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has eight, which is the point of asking through `fieldOf`. The
+ *  37 and this has nine, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;

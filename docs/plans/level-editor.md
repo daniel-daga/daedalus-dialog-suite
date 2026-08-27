@@ -2690,9 +2690,10 @@ passes.
 
 ### 16.3 Phase 1b-2 — the classes that are left
 
-Seven classes are editable and the catalogue has five kinds, so the kinds are no
-longer the constraint and the class list is again. Left: the trigger family,
-`oCMob*` — each one C++ case plus one `CLASS_FIELDS` entry plus its tests.
+Eight classes are editable and the catalogue has five kinds, so the kinds are no
+longer the constraint and the class list is again. Left: the rest of the trigger
+family, `oCMob*` — each one C++ case plus one `CLASS_FIELDS` entry plus its
+tests.
 
 `zCVobAnimate` landed 2026-08-28: its one field, `startOn`, needed no enum and
 no decision — `s_is_running` is save-game only, exactly as the header marks
@@ -2701,6 +2702,14 @@ it, so the class had nothing else to hold out.
 `zCPFXController` is fully landed 2026-08-28: `initiallyRunning` first, then
 `pfxName` and `killWhenDone` in the same session — all three plain scalars,
 none an enum, so nothing on the class was held out by decision.
+
+`zCTriggerWorldStart` landed its one non-enum, non-list field 2026-08-28:
+`fireOnce` (`fire_once`), read as `fireOnce` on the get side already. `target`
+stays out with the rest of the trigger family's target strings, and
+`s_has_fired` is save-game only — the same "nothing else to hold out" shape as
+`zCVobAnimate`. The rest of the trigger family (`zCTrigger`, `zCMover`,
+`zCTriggerList`, `oCTriggerScript`, `oCTriggerChangeLevel`, `zCTriggerUntouch`)
+and `oCMob*` are still untouched on the write side.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries

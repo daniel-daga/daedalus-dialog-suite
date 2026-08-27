@@ -8,6 +8,7 @@
 #include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/Sound.hh>
+#include <zenkit/vobs/Trigger.hh>
 #include <zenkit/vobs/VirtualObject.hh>
 #include <zenkit/vobs/Zone.hh>
 #include <zenkit/world/WayNet.hh>
@@ -1099,6 +1100,18 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (pfx_name) pfx.pfx_name = std::move(*pfx_name);
       if (kill_when_done.has_value()) pfx.kill_when_done = *kill_when_done;
       if (initially_running.has_value()) pfx.initially_running = *initially_running;
+      break;
+    }
+    // The one field this op writes: whether the `OnTrigger` this class fires
+    // at level load fires only the first time the level loads. `target` is
+    // held out with the rest of the trigger family's target strings, and
+    // `s_has_fired` is save-game only, exactly as the header marks it — the
+    // same shape as `zCVobAnimate`'s one field.
+    case zenkit::VirtualObjectType::zCTriggerWorldStart: {
+      RequireClassKeys(env, props, {"fireOnce"}, class_name);
+      auto const fire_once = OptionalBool(env, props, "fireOnce");
+      auto& world_start = static_cast<zenkit::VTriggerWorldStart&>(*vob);
+      if (fire_once.has_value()) world_start.fire_once = *fire_once;
       break;
     }
     default:
