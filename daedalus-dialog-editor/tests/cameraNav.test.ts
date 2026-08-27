@@ -12,11 +12,27 @@
  */
 
 import * as THREE from 'three';
-import { navFor, frameOn } from '../src/renderer/world/cameraNav';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import {
+  navFor, frameOn, pivotAt, attachBlenderNav, ORBIT_ROTATE_SPEED,
+} from '../src/renderer/world/cameraNav';
 
 const press = (button: number, modifiers: Partial<MouseEvent> = {}) => ({
   button, shiftKey: false, ctrlKey: false, metaKey: false, ...modifiers,
 });
+
+/** Enough of an `OrbitControls` for the shim, which only writes two fields. */
+const fakeControls = () => ({
+  mouseButtons: { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN },
+  rotateSpeed: 1.0,
+}) as unknown as OrbitControls;
+
+const middleDown = (host: HTMLElement, modifiers: Partial<PointerEventInit> = {}) => {
+  // jsdom has no PointerEvent constructor; the shim reads only these fields.
+  const event = new MouseEvent('pointerdown', { button: 1, bubbles: true, ...modifiers });
+  host.dispatchEvent(event);
+  return event;
+};
 
 describe('cameraNav', () => {
   test('the left button never moves the camera — it belongs to selection', () => {
@@ -82,5 +98,113 @@ describe('cameraNav', () => {
 
     expect(camera.position.toArray().every(Number.isFinite)).toBe(true);
     expect(camera.position.distanceTo(target)).toBeGreaterThan(0);
+  });
+
+  test('the orbit is slowed off OrbitControls\' default, in one place', () => {
+    // OrbitControls' default of 1.0 turns the camera a full screen-width per
+    // screen-width of drag, which at this scene's scale reads as "too fast".
+    const controls = fakeControls();
+    attachBlenderNav(controls, document.createElement('div'));
+
+    expect(controls.rotateSpeed).toBe(ORBIT_ROTATE_SPEED);
+    expect(ORBIT_ROTATE_SPEED).toBeLessThan(1.0);
+    expect(ORBIT_ROTATE_SPEED).toBeGreaterThan(0);
+  });
+
+  test('a press that navigates asks for a pivot; one that selects does not', () => {
+    // The pivot has to be set *before* OrbitControls sees the press, which is
+    // why it hangs off this shim's capture listener rather than off a second
+    // one on the canvas.
+    const host = document.createElement('div');
+    const asked: string[] = [];
+    attachBlenderNav(fakeControls(), host, (event) => asked.push(`${event.button}`));
+
+    middleDown(host);
+    middleDown(host, { shiftKey: true });
+    middleDown(host, { ctrlKey: true });
+    host.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }));
+
+    // Orbit, pan and dolly all scale by the camera-to-target distance, so all
+    // three want the pivot moved; the left button never moves the camera.
+    expect(asked).toEqual(['1', '1', '1']);
+  });
+});
+
+describe('pivotAt', () => {
+  /** A camera at `from` looking at `at`, as OrbitControls leaves it. */
+  const looking = (from: [number, number, number], at: [number, number, number]) => {
+    const camera = new THREE.PerspectiveCamera(70, 1, 0.5, 4000);
+    camera.position.set(...from);
+    const target = new THREE.Vector3(...at);
+    camera.lookAt(target);
+    camera.updateMatrixWorld(true);
+    return { camera, target };
+  };
+
+  test('the pivot lands at the depth of the picked point and the view does not move', () => {
+    // The defect: the pivot sits at the centre of a 600 m island, so a dolly
+    // step, a pan and an orbit are all scaled by 600 m no matter how close to a
+    // wall the camera is.
+    const { camera, target } = looking([0, 0, 600], [0, 0, 0]);
+    const before = camera.matrixWorld.clone();
+
+    // 5 m in front of the camera, off to the side — what the cursor was over.
+    pivotAt(camera, target, new THREE.Vector3(2, 1, 595));
+
+    expect(camera.position.distanceTo(target)).toBeCloseTo(5, 6);
+
+    // OrbitControls re-aims the camera at the target every frame, so the move
+    // is only invisible if the new pivot is on the view axis: same forward,
+    // same up, therefore the very same pixels.
+    camera.lookAt(target);
+    camera.updateMatrixWorld(true);
+    camera.matrixWorld.elements.forEach((element, i) => {
+      expect(element).toBeCloseTo(before.elements[i], 6);
+    });
+  });
+
+  test('the pivot follows the camera rather than the axes', () => {
+    // Not axis-aligned, because the projection is a dot product and a test that
+    // only ever looks down -Z cannot tell a correct one from `pick.z`.
+    const { camera, target } = looking([10, 20, 30], [0, 0, 0]);
+    const direction = new THREE.Vector3();
+    camera.getWorldDirection(direction);
+    // Sideways from the axis by 3, at a depth of exactly 7.
+    const sideways = new THREE.Vector3().crossVectors(direction, camera.up).normalize();
+    const pick = camera.position.clone()
+      .addScaledVector(direction, 7)
+      .addScaledVector(sideways, 3);
+
+    pivotAt(camera, target, pick);
+
+    // The pivot is the *projection* onto the view axis: the depth survives, the
+    // sideways offset does not.
+    expect(camera.position.distanceTo(target)).toBeCloseTo(7, 5);
+    expect(target.distanceTo(camera.position.clone().addScaledVector(direction, 7))).toBeCloseTo(0, 5);
+  });
+
+  test('a pick right against the lens still leaves a pivot to navigate about', () => {
+    // Zoom into a wall and the point under the cursor is centimetres away. A
+    // pivot at zero distance scales every dolly step and pan to zero, which is
+    // navigation that has locked up.
+    const { camera, target } = looking([0, 0, 600], [0, 0, 0]);
+
+    pivotAt(camera, target, new THREE.Vector3(0, 0, 599.99));
+
+    const distance = camera.position.distanceTo(target);
+    expect(distance).toBeGreaterThan(camera.near);
+    expect(distance).toBeLessThan(5);
+  });
+
+  test('a point behind the camera is not a pivot', () => {
+    // Reachable through the last-pick fallback: select something, then turn
+    // away from it before starting a drag. Projecting it would put the pivot
+    // behind the lens and invert every orbit.
+    const { camera, target } = looking([0, 0, 600], [0, 0, 0]);
+    const unchanged = target.clone();
+
+    pivotAt(camera, target, new THREE.Vector3(0, 0, 900));
+
+    expect(target.toArray()).toEqual(unchanged.toArray());
   });
 });

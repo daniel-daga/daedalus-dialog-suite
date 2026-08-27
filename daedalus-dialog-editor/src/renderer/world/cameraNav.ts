@@ -14,6 +14,19 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js
 
 export type Nav = 'orbit' | 'pan' | 'dolly' | 'none';
 
+/**
+ * How far the camera swings per pixel of drag, against OrbitControls' own
+ * default of 1.0 — which turns the view through a full screen width for a drag
+ * of a screen width, and reads as "rotation too fast" in a world where the
+ * interesting distances are metres.
+ */
+export const ORBIT_ROTATE_SPEED = 0.4;
+
+/** Three units are metres here (`ZEN_TO_THREE_SCALE`), so this is one metre. A
+ *  pivot any closer scales the dolly step and the pan speed to nothing, which
+ *  is navigation that has locked up rather than navigation that is precise. */
+const MIN_PIVOT_DISTANCE = 1;
+
 /** Which navigation a press asks for, or `none` if the camera must not move. */
 export function navFor(event: {
   button: number; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean;
@@ -32,13 +45,26 @@ export function navFor(event: {
  * fire in the order they were added — an ordering that would depend on where
  * this call sits relative to `new OrbitControls`. A capture listener on the
  * parent is ahead of both, whatever that order is.
+ *
+ * `onNavStart` is called for a press that navigates, ahead of OrbitControls
+ * seeing it — the hook the caller moves the pivot from. It hangs off this
+ * listener rather than one of its own for exactly the ordering reason above:
+ * the pivot has to be in place before OrbitControls records where a drag began.
  */
-export function attachBlenderNav(controls: OrbitControls, host: HTMLElement): () => void {
+export function attachBlenderNav(
+  controls: OrbitControls,
+  host: HTMLElement,
+  onNavStart?: (event: PointerEvent) => void,
+): () => void {
   controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: null };
+  controls.rotateSpeed = ORBIT_ROTATE_SPEED;
 
   const onPointerDown = (event: PointerEvent) => {
     const nav = navFor(event);
     if (nav === 'none') return;
+    // Every one of the three is scaled by the camera-to-target distance, so
+    // every one of them wants the pivot on what is being looked at.
+    onNavStart?.(event);
     // Chromium answers a middle press with autoscroll, which captures the
     // pointer and leaves the drag half-delivered.
     event.preventDefault();
@@ -50,6 +76,45 @@ export function attachBlenderNav(controls: OrbitControls, host: HTMLElement): ()
 
   host.addEventListener('pointerdown', onPointerDown, { capture: true });
   return () => host.removeEventListener('pointerdown', onPointerDown, { capture: true });
+}
+
+// Scratch, so starting a drag allocates nothing.
+const viewDirection = new THREE.Vector3();
+const toPick = new THREE.Vector3();
+
+/**
+ * Put the orbit pivot on what the user just picked, without moving the view a
+ * single pixel — Blender's auto-depth, and the fix for four complaints at once.
+ *
+ * `controls.target` starts at the centre of a 600 m island and only `frameOn`
+ * ever moves it, and OrbitControls scales the dolly step, the pan speed *and*
+ * the orbit radius by the camera-to-target distance. So up against a wall the
+ * zoom overshoots, the pan crawls, and an orbit swings the camera through half
+ * the world instead of around what is being looked at.
+ *
+ * The pivot is the **projection of `pick` onto the view axis**, not `pick`
+ * itself. A pivot off the axis cannot be reached without also turning the
+ * camera — OrbitControls re-aims at the target on every `update()` — and a view
+ * that jumps when a drag begins is worse than the pivot being a hand's width to
+ * the side of the cursor. What matters to all three complaints is the
+ * *distance*, and the projection keeps that exactly.
+ *
+ * `target` is mutated in place, because it is `OrbitControls.target`.
+ */
+export function pivotAt(
+  camera: THREE.PerspectiveCamera,
+  target: THREE.Vector3,
+  pick: THREE.Vector3,
+): void {
+  camera.getWorldDirection(viewDirection);
+  const depth = viewDirection.dot(toPick.copy(pick).sub(camera.position));
+  // Behind the lens: reachable through the last-pick fallback, by turning away
+  // from the selection before starting a drag. Projecting it would put the
+  // pivot behind the camera and invert every orbit.
+  if (depth <= 0) return;
+
+  target.copy(camera.position)
+    .addScaledVector(viewDirection, Math.max(depth, MIN_PIVOT_DISTANCE));
 }
 
 /**

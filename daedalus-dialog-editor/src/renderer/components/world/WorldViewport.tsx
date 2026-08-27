@@ -17,7 +17,7 @@ import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
 import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
-import { attachBlenderNav, frameOn } from '../../world/cameraNav';
+import { attachBlenderNav, frameOn, pivotAt } from '../../world/cameraNav';
 import {
   runViewportBenchmark,
   type BenchmarkOptions,
@@ -248,11 +248,43 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       box.center[0] + span * 0.6, box.center[1] + span * 0.35, box.center[2] + span * 0.6,
     );
 
+    // Picking the world mesh: the pivot below reads it on every navigation
+    // press, and a click reads it when nothing else was hit. Declared here
+    // rather than beside the click handler because the pivot needs it first.
+    const raycaster = new THREE.Raycaster();
+    raycaster.firstHitOnly = true;
+    const pointer = new THREE.Vector2();
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(box.center[0], box.center[1], box.center[2]);
     controls.enableDamping = true;
-    // Blender's mapping: the middle button navigates, the left one selects.
-    const detachNav = attachBlenderNav(controls, host);
+
+    // Where the last click landed, in three space, or null before the first
+    // one. The fallback pivot for a drag that begins over the sky.
+    let lastPick: THREE.Vector3 | null = null;
+    const pivotUnderCursor = (event: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointer, camera);
+      // The world mesh only. The props are GPU ID-picked, which answers a VOB
+      // id asynchronously — no point, and a frame too late to pivot a drag that
+      // has already begun. A CPU raycast across the 724 InstancedMeshes is the
+      // 14.2 ms this viewport exists to avoid. Terrain, buildings and cave
+      // walls are all world mesh, so an interior pivots on the wall in front of
+      // the camera either way.
+      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
+      const at = hit ? hit.point : lastPick;
+      if (at !== null) pivotAt(camera, controls.target, at);
+    };
+
+    // Blender's mapping: the middle button navigates, the left one selects —
+    // and a navigation press first moves the pivot onto what is under the
+    // cursor, so the dolly step, the pan speed and the orbit radius are all
+    // scaled by the distance to *that* rather than to the middle of the island.
+    const detachNav = attachBlenderNav(controls, host, pivotUnderCursor);
 
     // A structural op — placing a VOB — cannot be applied to the columnar
     // projection, so the scene is rebuilt from the world (level-editor.md §7),
@@ -512,11 +544,16 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       }
     });
 
-    const raycaster = new THREE.Raycaster();
-    raycaster.firstHitOnly = true;
-    const pointer = new THREE.Vector2();
     // Scratch for the waypoint pick, so a click allocates no matrix.
     const toClip = new THREE.Matrix4();
+    // Scratch for a picked VOB's position on its way into `rememberPick`.
+    const pivotPoint = new THREE.Vector3();
+
+    /** Remember where a click landed, so a later drag over the sky still has a
+     *  pivot to fall back on. */
+    const rememberPick = (at: THREE.Vector3) => {
+      lastPick = (lastPick ?? new THREE.Vector3()).copy(at);
+    };
 
     const handleClick = async (event: MouseEvent) => {
       // Picking here would select whatever is behind the gizmo — usually
@@ -558,6 +595,8 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
       if (disposed) return;
       if (vob !== NO_PICK) {
+        const at = world.positionOf(vob);
+        if (at !== null) rememberPick(pivotPoint.set(...zenToThree(at)));
         onPickRef.current(vob, null, additive);
         return;
       }
@@ -569,6 +608,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       pointer.set((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
+      if (hit) rememberPick(hit.point);
       onPickRef.current(null, hit ? threeToZen(hit.point.toArray()) : null, additive);
     };
     renderer.domElement.addEventListener('click', handleClick);
