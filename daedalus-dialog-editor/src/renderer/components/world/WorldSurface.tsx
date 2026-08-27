@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, Paper, Stack, Tab, Tabs, TextField,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, FormControlLabel, Paper, Stack, Tab, Tabs, TextField,
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  addVob, invertOp, isStructuralOp, placeBounds, reparentVob, rotateVobs, setVobProps,
-  translateVobs,
+  addVob, invertOp, isStructuralOp, placeBounds, renumbersPaths, reparentVob, rotateVobs,
+  setVobProps, translateVobs,
   type NewVob, type VobProps, type ZenBounds, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
-import { useWorldStore } from '../../store/worldStore';
+import { primaryVob, useWorldStore } from '../../store/worldStore';
 import { vobModelOf } from '../../world/vobModel';
 import WorldViewport, { type GizmoMode } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
@@ -43,8 +43,17 @@ const WorldSurface: React.FC = () => {
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
   const [visuals, setVisuals] = useState<InstancedPayload | null>(null);
   const [terrainPoint, setTerrainPoint] = useState<[number, number, number] | null>(null);
-  /** The VOB being placed, while the dialog is open. Null when it is closed. */
-  const [placing, setPlacing] = useState<{ name: string; visual: string } | null>(null);
+  /**
+   * The VOB being placed, while the dialog is open. Null when it is closed.
+   *
+   * `parent` is a flat index or null for a root. It is offered as a choice
+   * rather than taken from the selection outright, because the two clicks that
+   * set up a parented placement — the ground, then the row — do not say which
+   * the user meant, and appending a root is the case that renumbers nothing.
+   */
+  const [placing, setPlacing] = useState<
+    { name: string; visual: string; parent: number | null } | null
+  >(null);
   // The left panel is the scene *or* the mounted assets, and the right panel
   // follows it: a VOB's properties belong beside the tree, an asset's preview
   // beside the browser.
@@ -199,6 +208,15 @@ const WorldSurface: React.FC = () => {
     setAppliedOps([...ops]);
     if (!ops.some(isStructuralOp)) return;
 
+    // A selection is a list of flat indices, and an op that renumbers leaves
+    // every one of them naming a VOB nobody picked — the property grid would
+    // describe it and the gizmo would sit on it. Cleared rather than followed:
+    // the moved VOB's new index is recoverable from its path, but the *other*
+    // VOBs in a multi-select are not, and a selection that silently lost some of
+    // its members is worse than one that says it is empty. Not the same
+    // condition as structural: an appended root shifts nothing.
+    if (ops.some(renumbersPaths)) useWorldStore.getState().selectVob(null);
+
     useWorldStore.getState().indexRefreshed(await window.editorAPI.refreshWorldIndex());
     setVisuals(await window.editorAPI.getWorldVisuals());
   }, []);
@@ -253,6 +271,24 @@ const WorldSurface: React.FC = () => {
     }
     return (vob: number) => byVob.get(vob) ?? null;
   }, [visuals]);
+
+  /**
+   * The VOB a placement could be parented to: the selected one, or null when
+   * nothing is selected and a root is the only thing on offer.
+   *
+   * The primary, for the same reason the property grid follows it — one VOB is
+   * the one the panels describe, and a placement under several parents is not a
+   * thing.
+   */
+  const parentCandidate = primaryVob(selection);
+  const parentLabel = useMemo(() => {
+    if (summary === null || parentCandidate === null) return '';
+    const { reader } = vobModelOf(summary);
+    // The same fallback the scene tree draws its rows with: most VOBs are
+    // unnamed, so the visual is the label, and the class is what is left.
+    return reader.name(parentCandidate) || reader.visual(parentCandidate)
+      || reader.className(parentCandidate);
+  }, [summary, parentCandidate]);
 
   const handleRotateSelection = useCallback((delta: ZenRotation) => {
     const { summary: current, selection: selected } = useWorldStore.getState();
@@ -313,7 +349,7 @@ const WorldSurface: React.FC = () => {
    * a placement — the index is re-read whole because the columnar projection
    * cannot reorder.
    */
-  const reparent = useCallback(async (vob: number, toParent: number, slot: number) => {
+  const reparent = useCallback(async (vob: number, toParent: number | null, slot: number) => {
     const { summary: current } = useWorldStore.getState();
     if (current === null) return;
     await commitOps([reparentVob(vobModelOf(current).reader, vob, toParent, slot)]);
@@ -332,8 +368,15 @@ const WorldSurface: React.FC = () => {
    * binding's default is a 10 cm cube that would cull a house. A visual that
    * does not resolve gets no box and keeps that default, which is the honest
    * answer — there is nothing to fit.
+   *
+   * `spec.parent` is a flat index or null for a root. Under a parent the op
+   * renumbers, so it goes alone in its batch — `commitOps` in `zen-world`
+   * enforces that rather than this side promising it — and `applied` clears the
+   * selection afterwards.
    */
-  const placeVob = useCallback(async (spec: { name: string; visual: string }) => {
+  const placeVob = useCallback(async (
+    spec: { name: string; visual: string; parent: number | null },
+  ) => {
     const { summary: current } = useWorldStore.getState();
     if (current === null || terrainPoint === null) return;
 
@@ -350,7 +393,7 @@ const WorldSurface: React.FC = () => {
       }),
     };
 
-    await commitOps([addVob(vobModelOf(current).reader, placed)]);
+    await commitOps([addVob(vobModelOf(current).reader, placed, spec.parent)]);
   }, [commitOps, terrainPoint]);
 
   useEffect(() => {
@@ -593,17 +636,26 @@ const WorldSurface: React.FC = () => {
         )}
       </Box>
 
-      {terrainPoint && selection.length === 0 && (
+      {terrainPoint && (
         <Paper square elevation={1} sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}>
           {/* Terrain is not a VOB, so it has no row and no properties — a hit
               reports the point rather than inventing a selection. ZenGin space,
               centimetres: the coordinates an op would carry, and the position a
-              placed VOB gets. */}
+              placed VOB gets.
+
+              It stays up while something is selected, which is what makes a
+              parented placement expressible: only a viewport pick replaces the
+              point, so clicking a row in the scene tree afterwards names a
+              parent without losing the ground the user chose. */}
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
               Terrain @ {terrainPoint.map((v) => Math.round(v)).join(', ')}
             </Typography>
-            <Button size="small" onClick={() => setPlacing({ name: '', visual: '' })} data-testid="world-place-vob">
+            <Button
+              size="small"
+              onClick={() => setPlacing({ name: '', visual: '', parent: null })}
+              data-testid="world-place-vob"
+            >
               Place VOB here…
             </Button>
           </Stack>
@@ -614,13 +666,35 @@ const WorldSurface: React.FC = () => {
         <DialogTitle>Place a VOB</DialogTitle>
         <DialogContent>
           <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
-            {/* Stated rather than hidden: it is the constraint the enumeration
-                imposes, and a user who expects the VOB under the selected node
-                should find out here and not from a scene tree. */}
-            It is appended as a root VOB at {terrainPoint?.map((v) => Math.round(v)).join(', ')}.
-            Placing one under a parent would renumber every VOB after it, which
-            no op can yet describe.
+            {/* Which list it is appended to is the one thing about this dialog
+                that changes the world's shape, so it is said before the fields
+                rather than left to be discovered from the scene tree. */}
+            {placing?.parent === null
+              ? `It is appended as a root VOB at ${terrainPoint?.map((v) => Math.round(v)).join(', ')}.`
+              : `It becomes the last child of ${parentLabel}, at `
+                + `${terrainPoint?.map((v) => Math.round(v)).join(', ')} — which renumbers `
+                + 'every VOB after that subtree.'}
           </DialogContentText>
+          {/* Offered only when there is a VOB to be a parent. A checkbox rather
+              than a picker: the selection is already the app's way of naming one
+              VOB, and a second one inside the dialog would be a tree the dialog
+              has no room for. */}
+          {parentCandidate !== null && (
+            <FormControlLabel
+              sx={{ display: 'block', mb: 1 }}
+              control={(
+                <Checkbox
+                  size="small"
+                  checked={placing?.parent !== null}
+                  onChange={(event) => setPlacing((was) => (was === null ? was : {
+                    ...was, parent: event.target.checked ? parentCandidate : null,
+                  }))}
+                  inputProps={{ 'data-testid': 'world-place-parent' } as React.InputHTMLAttributes<HTMLInputElement>}
+                />
+              )}
+              label={<Typography variant="caption">Place under {parentLabel}</Typography>}
+            />
+          )}
           <TextField
             autoFocus
             fullWidth

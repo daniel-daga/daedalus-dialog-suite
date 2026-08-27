@@ -103,10 +103,12 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     if (get().editError !== null) set({ editError: null });
   },
 
-  // The selection is kept: an added VOB is appended and takes the index one past
-  // the end, so nothing that was selected has been renumbered. An op that
-  // renumbered would have to clear it, which is one more reason there is no such
-  // op yet.
+  // The selection is kept, and whether that is right is the caller's to decide.
+  // A VOB appended to the *roots* takes the index one past the end, so nothing
+  // selected has been renumbered — but a reparent and a parented add both move
+  // every index after them, and the World surface clears the selection before
+  // it gets here (`renumbersPaths`). Clearing it unconditionally would drop a
+  // selection an ordinary placement leaves perfectly valid.
   indexRefreshed: (summary) => set({ summary, editError: null }),
 
   editFailed: (editError) => set({ editError }),

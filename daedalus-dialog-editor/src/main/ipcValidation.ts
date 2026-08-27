@@ -304,6 +304,14 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
     }
 
     if (op.op === 'AddVob') {
+      // The list it is appended to, and the field that decides whether the op
+      // renumbers. It walks the VOB tree in C++ just as `path` does, so it is
+      // checked in the same shape — null being the roots, and the one absence
+      // that means something here.
+      if (op.parentPath !== null
+        && (typeof op.parentPath !== 'string' || !INDEX_PATH.test(op.parentPath))) {
+        throw new Error('Invalid op: parentPath must be slot indices separated by "/", or null');
+      }
       // Exactly one side is null. Both null is an op that does nothing; neither
       // null is an add and a delete at once, and `writeOp` would read it as an
       // insert in one direction and an insert in the other — so the VOB would

@@ -712,24 +712,38 @@ std::shared_ptr<zenkit::Visual> AuthorVisual(Napi::Env env, std::string const& n
   throw Napi::Error::New(env, "opts.visual: no visual class is known for '" + ext + "'");
 }
 
-// insertVob(handle, opts) — appends a **root** zCVob and returns its index path.
+// insertVob(handle, parentPath | null, opts) — appends a zCVob to a parent's
+// children, or to the roots when the parent is null, and returns its index path.
 //
-// It takes no parent, and that is the design rather than a gap. Every VOB is
+// **A null parent renumbers nothing and a parent renumbers.** Every VOB is
 // enumerated depth-first and its flat index is its position in that traversal,
-// so a VOB inserted anywhere else renumbers every VOB after it — and every op
-// already in the history addresses a VOB by that number and by an index path
-// built from it. Appending a root is the one position that shifts nothing: it is
-// enumerated last and takes the index one past the end. Placing a VOB under a
-// parent is a real feature and it waits on an answer to that renumbering, which
-// is the same answer reparent and a general delete need.
+// so appending a root is the one insertion that shifts nothing: it is
+// enumerated last and takes the index one past the end. Appended under a parent
+// the new VOB is enumerated in the middle, and every VOB after that parent's
+// subtree moves up one. What makes that safe is not this call but the discipline
+// of the history that uses it — the same answer `reparentVob` needed: the redo
+// stack is cleared on every new edit and batches replay strictly LIFO, so an op
+// is only ever applied to a world in the enumeration it was recorded against.
+// The caller's own guard is the narrower one: an insert with a parent has to be
+// alone in its batch, because the other ops in it carry paths resolved before it
+// ran.
+//
+// It appends rather than taking a slot. Unlike a reparent, which has to be able
+// to put a VOB back exactly where it came from, an insert's inverse is a delete
+// of the VOB it just made — and the end of the list is where a delete leaves no
+// hole to reason about.
 Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapHandle(env, info[0]);
 
-  if (!info[1].IsObject() || info[1].IsArray()) {
+  std::vector<std::size_t> parent_indices;
+  bool const has_parent = !(info[1].IsNull() || info[1].IsUndefined());
+  if (has_parent) parent_indices = ParseIndexPath(env, info[1], "parentPath");
+
+  if (!info[2].IsObject() || info[2].IsArray()) {
     throw Napi::TypeError::New(env, "opts must be an object with at least a position");
   }
-  auto opts = info[1].As<Napi::Object>();
+  auto opts = info[2].As<Napi::Object>();
 
   static constexpr std::array<char const*, 10> kKnownKeys {
       "name",      "visual",   "position", "rotation", "bbox",
@@ -796,8 +810,16 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   vob->ambient = ambient ? *ambient : false;
   vob->physics_enabled = false;
 
-  handle->world->world_vobs.push_back(vob);
-  return Napi::String::New(env, std::to_string(handle->world->world_vobs.size() - 1));
+  auto* list = has_parent ? &ResolveVob(env, *handle, parent_indices, "parentPath")->children
+                          : &handle->world->world_vobs;
+  list->push_back(vob);
+
+  std::string landed;
+  if (has_parent) {
+    for (std::size_t const index : parent_indices) landed += std::to_string(index) + "/";
+  }
+  landed += std::to_string(list->size() - 1);
+  return Napi::String::New(env, landed);
 }
 
 // deleteVob(handle, indexPath) — removes the vob and its whole subtree.

@@ -167,10 +167,21 @@ export interface NewVob {
 
 export interface AddVob {
   op: 'AddVob';
-  /** The flat index it takes — one past the end, because it is enumerated last. */
+  /** The flat index it takes: one past the end for a root, because it is
+   *  enumerated last — and otherwise the index right after its parent's whole
+   *  subtree, which is where a depth-first traversal reaches a new last child. */
   vob: number;
-  /** The native address: the slot after the last root. */
+  /** The native address: the slot it lands in, under `parentPath`. */
   path: string;
+  /**
+   * The parent it is appended to; null is a root.
+   *
+   * It is the field that decides whether this op renumbers. A root is
+   * enumerated last and shifts nothing, so an add can share a batch; under a
+   * parent, every VOB after that parent's subtree moves up one and the op has
+   * to be alone in its batch. `renumbersPaths` is where that is read.
+   */
+  parentPath: string | null;
   /** Null means "not in the world". `from` is null for an add and `to` is null
    *  for its inverse, so `invertOp` swaps the two sides exactly as it does for
    *  every other op and a delete needs no special case. */
@@ -215,13 +226,17 @@ export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob {
  *
  * Not the same question as `isStructuralOp`, and the difference is what lets an
  * add share a batch. Every op in a batch carries a path resolved before the
- * batch ran, so an op that renumbers invalidates the ones after it — but
- * appending a root is enumerated last and shifts nothing, which is the whole
- * reason `insertVob` takes no parent. A reparent has two ends and everything
- * between them moves.
+ * batch ran, so an op that renumbers invalidates the ones after it — but a VOB
+ * appended to the *roots* is enumerated last and shifts nothing. A reparent has
+ * two ends and everything between them moves; an add with a parent is
+ * enumerated in the middle and everything after that parent's subtree moves.
+ *
+ * Exported because the renderer needs the same answer for a different reason:
+ * a selection is a list of flat indices, and after an op that renumbers there
+ * is no telling which VOB one of them now names.
  */
-function renumbersPaths(op: WorldOp): boolean {
-  return op.op === 'ReparentVob';
+export function renumbersPaths(op: WorldOp): boolean {
+  return op.op === 'ReparentVob' || (op.op === 'AddVob' && op.parentPath !== null);
 }
 
 /**
@@ -463,28 +478,72 @@ export function setVobProps(
 }
 
 /**
- * Place a new VOB in the world.
+ * Place a new VOB in the world — appended to `parent`'s children, or to the
+ * roots when `parent` is null.
  *
- * **It appends a root, and that is the design rather than a gap.** A VOB's flat
- * index is its position in a depth-first traversal, so a VOB added anywhere else
- * is enumerated before VOBs that already exist and renumbers every one of them —
- * and every op already in the history addresses a VOB both by that number and by
- * an index path built from it. Appending a root is the one position that shifts
- * nothing: it is enumerated last, and takes the index one past the end.
+ * **A root renumbers nothing and a parent renumbers**, and the whole difference
+ * between the two cases is that one sentence. A VOB's flat index is its position
+ * in a depth-first traversal, so a VOB appended to the roots is enumerated last
+ * and takes the index one past the end; one appended under a parent is
+ * enumerated as soon as that parent's subtree ends, and every VOB after it moves
+ * up by one — including every path in the same batch, which is why
+ * `renumbersPaths` says so and `commitOps` refuses the batch.
  *
- * Placing a VOB *under* a parent is a real feature. It waits on an answer to
- * that renumbering, which is the same answer a reparent and a general delete
- * both need.
+ * What makes the renumbering safe is the history's discipline rather than
+ * anything here, the same answer `reparentVob` needed: the redo stack is cleared
+ * on every new edit and batches replay strictly LIFO, so an op is only ever
+ * applied to a world in the enumeration it was recorded against.
  */
-export function addVob(reader: VobReader, spec: NewVob): AddVob {
-  // The slot it will occupy among the roots — the binding appends to the same
-  // list, so this is the path it comes back with, and `commitOps` refuses the
-  // op if it does not.
-  const { parent } = reader.columns;
-  let roots = 0;
-  for (let vob = 0; vob < reader.count; vob++) if (parent[vob] < 0) roots += 1;
+export function addVob(reader: VobReader, spec: NewVob, parent: number | null = null): AddVob {
+  const parentPath = parent === null ? null : vobIndexPath(reader, parent);
+  if (parent !== null && parentPath === null) {
+    throw new RangeError(`no VOB ${parent} in this world to place under`);
+  }
 
-  return { op: 'AddVob', vob: reader.count, path: String(roots), from: null, to: spec };
+  const columns = reader.columns;
+  if (parentPath === null) {
+    // The slot it will occupy among the roots — the binding appends to the same
+    // list, so this is the path it comes back with, and `commitOps` refuses the
+    // op if it does not.
+    let roots = 0;
+    for (let vob = 0; vob < reader.count; vob++) if (columns.parent[vob] < 0) roots += 1;
+    return {
+      op: 'AddVob', vob: reader.count, path: String(roots), parentPath: null, from: null, to: spec,
+    };
+  }
+
+  let children = 0;
+  for (let vob = 0; vob < reader.count; vob++) if (columns.parent[vob] === parent) children += 1;
+
+  return {
+    op: 'AddVob',
+    vob: subtreeEnd(reader, parent!),
+    path: `${parentPath}/${children}`,
+    parentPath,
+    from: null,
+    to: spec,
+  };
+}
+
+/**
+ * The flat index just past `vob`'s whole subtree — where a depth-first traversal
+ * reaches its new last child.
+ *
+ * A subtree is a contiguous run of indices because the enumeration is strictly
+ * pre-order (`CollectVobs` and the columnar builder are the same traversal), so
+ * this walks forward from `vob` while each index is still a descendant. The
+ * ancestor chain terminates: a parent is always enumerated before its children,
+ * so climbing from a later index either reaches `vob` or passes below it.
+ */
+function subtreeEnd(reader: VobReader, vob: number): number {
+  const { parent } = reader.columns;
+  let at = vob + 1;
+  for (; at < reader.count; at++) {
+    let ancestor = parent[at];
+    while (ancestor > vob) ancestor = parent[ancestor];
+    if (ancestor !== vob) break;
+  }
+  return at;
 }
 
 /**
@@ -582,9 +641,10 @@ export interface OpBinding {
   /** `bbox` is present only when a visual swap changed it — the binding refuses
    *  a box that no visual swap justifies, so it cannot be passed unconditionally. */
   setVobProp(path: string, props: VobProps & { bbox?: ZenBounds }): void;
-  /** Appends a root VOB and answers with the index path it landed at, which
-   *  `commitOps` checks against the one the op claims. */
-  insertVob(spec: NewVob): string;
+  /** Appends a VOB to `parentPath`'s children — null for a root — and answers
+   *  with the index path it landed at, which `commitOps` checks against the one
+   *  the op claims. */
+  insertVob(spec: NewVob, parentPath: string | null): string;
   deleteVob(path: string): void;
   /** Moves a VOB and its subtree into `parentPath` at `slot` — null for a root
    *  — and answers with the index path it landed at, which `commitOps` checks
@@ -627,14 +687,14 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
       binding.deleteVob(op.path);
       return;
     }
-    // The guard the enumeration needs. If the world has gained or lost a root
-    // since the op was made, the VOB lands at a different path — and this op's
-    // own inverse would then delete somebody else.
-    const landed = binding.insertVob(spec);
+    // The guard the enumeration needs. If the list it is appended to has gained
+    // or lost a VOB since the op was made, it lands at a different path — and
+    // this op's own inverse would then delete somebody else.
+    const landed = binding.insertVob(spec, op.parentPath);
     if (landed !== op.path) {
       binding.deleteVob(landed);
       throw new RangeError(
-        `the new vob landed at ${landed}, not ${op.path} — the world's roots have changed`,
+        `the new vob landed at ${landed}, not ${op.path} — the list it was appended to has changed`,
       );
     }
     return;
@@ -656,9 +716,11 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   // makes the ones after it address different VOBs. Refused here rather than
   // left to callers: the batch is where the addresses were resolved, and this is
   // the only place that can see the whole of one.
-  if (ops.length > 1 && ops.some(renumbersPaths)) {
+  const renumbering = ops.length > 1 ? ops.find(renumbersPaths) : undefined;
+  if (renumbering !== undefined) {
     throw new RangeError(
-      'a ReparentVob renumbers every path after it: it has to be the only op in its batch',
+      `a ${renumbering.op} that renumbers invalidates every path after it: `
+      + 'it has to be the only op in its batch',
     );
   }
 

@@ -382,7 +382,7 @@ test('insertVob appends a root vob and returns its path', () => {
   const before = zenkit.worldStats(handle).vobCount;
   const roots = dumpOf(handle).vobs.filter((v) => !v.path.includes('/')).length;
 
-  const at = zenkit.insertVob(handle, {
+  const at = zenkit.insertVob(handle, null, {
     name: 'PLACED_ÄÖÜ_01',
     visual: 'NW_CRATE.3DS',
     position: [10, 20, 30],
@@ -400,20 +400,91 @@ test('insertVob appends a root vob and returns its path', () => {
   assert.strictEqual(placed.flags.showVisual, true);
 });
 
-test('insertVob takes the index one past the end, renumbering nothing', () => {
-  // The reason it appends a root and takes no parent. A VOB inserted anywhere
-  // else is enumerated before some of the VOBs that already exist, and every one
-  // of those changes its flat index — which every op in the history carries.
+test('a root insert takes the index one past the end, renumbering nothing', () => {
+  // Why a null parent is worth keeping as its own case rather than a degenerate
+  // parent. A VOB appended to the roots is enumerated last; one appended
+  // anywhere else is enumerated before some of the VOBs that already exist, and
+  // every one of those changes its flat index — which every op in the history
+  // carries. The test below is the other half of that sentence.
   const handle = load();
   const before = dumpOf(load()).vobs;
 
-  zenkit.insertVob(handle, { visual: 'NW_CRATE.3DS', position: [0, 0, 0] });
+  zenkit.insertVob(handle, null, { visual: 'NW_CRATE.3DS', position: [0, 0, 0] });
 
   const after = dumpOf(handle).vobs;
   assert.strictEqual(after.length, before.length + 1);
   for (let i = 0; i < before.length; i++) {
     assert.deepStrictEqual(after[i], before[i], `vob ${i} moved or changed`);
   }
+});
+
+test('insertVob appends under a parent and answers with the path it landed at', () => {
+  const handle = load();
+  const children = vobAt(dumpOf(handle), '0').childCount;
+
+  const at = zenkit.insertVob(handle, '0', {
+    name: 'UNDER_ROOT_01', visual: 'NW_CRATE.3DS', position: [10, 20, 30],
+  });
+
+  assert.strictEqual(at, `0/${children}`);
+  const placed = vobAt(dumpOf(handle), at);
+  assert.strictEqual(placed.name, 'UNDER_ROOT_01');
+  assert.deepStrictEqual(placed.position, [10, 20, 30]);
+  assert.strictEqual(vobAt(dumpOf(handle), '0').childCount, children + 1);
+});
+
+test('insertVob under a parent renumbers every VOB after that parent’s subtree', () => {
+  // The claim the doc comment makes, measured rather than asserted about the
+  // implementation. A root appended first sits after the fixture's whole tree;
+  // inserting under `0` puts a VOB in the middle of the enumeration and the
+  // root moves up one — which is exactly why an insert with a parent has to be
+  // alone in its batch.
+  const handle = load();
+  const root = zenkit.insertVob(handle, null, { name: 'LAST_ROOT', position: [0, 0, 0] });
+  const was = dumpOf(handle).vobs.findIndex((v) => v.path === root);
+
+  zenkit.insertVob(handle, '0', { name: 'MIDDLE', position: [0, 0, 0] });
+
+  const after = dumpOf(handle).vobs;
+  assert.strictEqual(after.findIndex((v) => v.path === root), was + 1);
+  // And its path is untouched: a sibling list it is not in cannot renumber it.
+  assert.strictEqual(after.find((v) => v.name === 'LAST_ROOT').path, root);
+});
+
+test('deleteVob undoes a parented insert exactly, through the writer', () => {
+  // The pair is what makes the op invertible, and the parented half of it is
+  // the one that could leave a hole in a *child* list rather than in the roots —
+  // which `CollectVobs` and `CountVobs` both skip, so it reads identical in
+  // every dump and only the writer ever sees it.
+  const handle = load();
+  const before = dumpOf(load());
+
+  const at = zenkit.insertVob(handle, '0', {
+    name: 'TEMPORARY_CHILD', visual: 'A.3DS', position: [7, 8, 9],
+  });
+  assert.strictEqual(at, '0/3');
+  zenkit.deleteVob(handle, at);
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-child-')), 'deleted.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+  assert.strictEqual(reloaded.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.strictEqual(reloaded.vobs[i].path, before.vobs[i].path);
+    assert.strictEqual(reloaded.vobs[i].name, before.vobs[i].name);
+  }
+});
+
+test('insertVob refuses a parentPath that names no VOB, before it makes one', () => {
+  const handle = load();
+  const before = zenkit.worldStats(handle).vobCount;
+
+  for (const bad of ['9', '0/9', '0/0/0', 'abc', '', '0//1', '-1']) {
+    assert.throws(
+      () => zenkit.insertVob(handle, bad, { position: [0, 0, 0] }), Error, bad,
+    );
+  }
+  assert.strictEqual(zenkit.worldStats(handle).vobCount, before);
 });
 
 test('insertVob picks the visual class from the extension, by the measured majority', () => {
@@ -425,7 +496,7 @@ test('insertVob picks the visual class from the extension, by the measured major
     ['D.MMS', 'MORPH_MESH'],
     ['E.PFX', 'PARTICLE_EFFECT'],
   ]) {
-    const at = zenkit.insertVob(handle, { visual, position: [0, 0, 0] });
+    const at = zenkit.insertVob(handle, null, { visual, position: [0, 0, 0] });
     assert.strictEqual(vobAt(dumpOf(handle), at).visualType, type, visual);
   }
 });
@@ -435,15 +506,15 @@ test('insertVob refuses a visual it cannot author', () => {
   // A decal carries its own dimension, offset, alpha function and weight; a
   // zCDecal authored without them is a visual ZenGin never wrote. Refusing is
   // the honest answer until this API takes them.
-  assert.throws(() => zenkit.insertVob(handle, { visual: 'X.TGA', position: [0, 0, 0] }), /decal/i);
+  assert.throws(() => zenkit.insertVob(handle, null, { visual: 'X.TGA', position: [0, 0, 0] }), /decal/i);
   for (const bad of ['X.MRM', 'X', 'X.WAV', '.3DS.']) {
-    assert.throws(() => zenkit.insertVob(handle, { visual: bad, position: [0, 0, 0] }), Error, bad);
+    assert.throws(() => zenkit.insertVob(handle, null, { visual: bad, position: [0, 0, 0] }), Error, bad);
   }
 });
 
 test('insertVob without a visual makes a VOB with none, like an inserted item', () => {
   const handle = load();
-  const at = zenkit.insertVob(handle, { name: 'MARKER', position: [1, 2, 3] });
+  const at = zenkit.insertVob(handle, null, { name: 'MARKER', position: [1, 2, 3] });
 
   const placed = vobAt(dumpOf(handle), at);
   assert.strictEqual(placed.visual, null);
@@ -453,7 +524,7 @@ test('insertVob without a visual makes a VOB with none, like an inserted item', 
 
 test('insertVob writes the rotation, box and flags it is given', () => {
   const handle = load();
-  const at = zenkit.insertVob(handle, {
+  const at = zenkit.insertVob(handle, null, {
     visual: 'A.3DS',
     position: [0, 0, 0],
     rotation: ROTATION_90_Y,
@@ -471,12 +542,12 @@ test('insertVob writes the rotation, box and flags it is given', () => {
 
 test('insertVob refuses a bad position, matrix, box or unknown key', () => {
   const handle = load();
-  assert.throws(() => zenkit.insertVob(handle, {}), /position/);
-  assert.throws(() => zenkit.insertVob(handle, { position: [1, 2] }), /position/);
-  assert.throws(() => zenkit.insertVob(handle, { position: [0, 0, 0], rotation: [1, 2, 3] }), /rotation/);
-  assert.throws(() => zenkit.insertVob(handle, { position: [0, 0, 0], bbox: [1, 2, 3] }), /bbox/);
-  assert.throws(() => zenkit.insertVob(handle, { position: [0, 0, 0], parent: '0' }), /parent/);
-  assert.throws(() => zenkit.insertVob(handle, null), Error);
+  assert.throws(() => zenkit.insertVob(handle, null, {}), /position/);
+  assert.throws(() => zenkit.insertVob(handle, null, { position: [1, 2] }), /position/);
+  assert.throws(() => zenkit.insertVob(handle, null, { position: [0, 0, 0], rotation: [1, 2, 3] }), /rotation/);
+  assert.throws(() => zenkit.insertVob(handle, null, { position: [0, 0, 0], bbox: [1, 2, 3] }), /bbox/);
+  assert.throws(() => zenkit.insertVob(handle, null, { position: [0, 0, 0], parent: '0' }), /parent/);
+  assert.throws(() => zenkit.insertVob(handle, null, null), Error);
 });
 
 test('deleteVob removes the vob and its whole subtree', () => {
@@ -497,7 +568,7 @@ test('deleteVob undoes an insert exactly, leaving the world as it was', () => {
   const handle = load();
   const before = dumpOf(load());
 
-  const at = zenkit.insertVob(handle, {
+  const at = zenkit.insertVob(handle, null, {
     name: 'TEMPORARY', visual: 'A.3DS', position: [7, 8, 9],
   });
   zenkit.deleteVob(handle, at);
@@ -534,7 +605,7 @@ test('deleteVob throws on a bad index path', () => {
 
 test('an inserted vob survives a save and reload', () => {
   const handle = load();
-  const at = zenkit.insertVob(handle, {
+  const at = zenkit.insertVob(handle, null, {
     name: 'PLACED_SAVED', visual: 'NW_CRATE.3DS',
     position: [11, 22, 33], rotation: ROTATION_90_Y, bbox: [-1, -2, -3, 4, 5, 6],
   });
@@ -671,7 +742,7 @@ test('reparentVob moves a vob into another parent at the slot it was given', () 
 test('reparentVob carries the whole subtree with it', () => {
   const handle = load();
   // Give the chest a child first, so there is a subtree to lose.
-  const extra = zenkit.insertVob(handle, { name: 'CARGO', position: [1, 2, 3] });
+  const extra = zenkit.insertVob(handle, null, { name: 'CARGO', position: [1, 2, 3] });
   zenkit.reparentVob(handle, extra, '0/2', 0);
   assert.strictEqual(vobAt(dumpOf(handle), '0/2/0').name, 'CARGO');
 

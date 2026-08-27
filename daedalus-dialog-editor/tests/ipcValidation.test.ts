@@ -444,9 +444,24 @@ describe('assertApplyOpsRequest', () => {
       op: 'AddVob',
       vob: 12,
       path: '3',
+      parentPath: null,
       from: null,
       to: { name: 'PLACED', visual: 'CRATE.3DS', position: [1, 2, 3] },
     };
+
+    it('is accepted under a parent as well as at the roots', () => {
+      // `parentPath` reaches C++ and walks the VOB tree, exactly as an op's
+      // `path` does — so it is checked in the same shape and not merely for
+      // being a string.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, path: '2/1', parentPath: '2' }],
+      })).not.toThrow();
+      for (const bad of ['', '/', '0//2', 'a/b', '0/2/', 3, undefined]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, parentPath: bad }],
+        })).toThrow(/parentPath/);
+      }
+    });
 
     it('is accepted in either direction', () => {
       expect(() => assertApplyOpsRequest({ ops: [add] })).not.toThrow();

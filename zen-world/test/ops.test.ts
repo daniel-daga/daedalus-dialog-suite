@@ -27,6 +27,7 @@ import {
   moveVob,
   multiplyRotation,
   placeBounds,
+  renumbersPaths,
   rotateVob,
   rotateVobs,
   setVobProp,
@@ -594,7 +595,9 @@ describe('an add op', () => {
 
     // Three VOBs, two of them roots: the new one is enumerated last, so it gets
     // index 3 — and it is the third root, so its path is '2'.
-    expect(op).toEqual({ op: 'AddVob', vob: 3, path: '2', from: null, to: SPEC });
+    expect(op).toEqual({
+      op: 'AddVob', vob: 3, path: '2', parentPath: null, from: null, to: SPEC,
+    });
   });
 
   it('carries a null `from`, because the VOB is not there yet', () => {
@@ -603,8 +606,94 @@ describe('an add op', () => {
     const op = addVob(reader(), SPEC);
     const back = invertOp(op);
 
-    expect(back).toEqual({ op: 'AddVob', vob: 3, path: '2', from: SPEC, to: null });
+    expect(back).toEqual({
+      op: 'AddVob', vob: 3, path: '2', parentPath: null, from: SPEC, to: null,
+    });
     expect(invertOp(back)).toEqual(op);
+  });
+
+  it('lands after a parent’s last child, and is enumerated after its subtree', () => {
+    // ROOT_A holds one child, so the new VOB is its second — path '0/1'. It is
+    // enumerated depth-first, so it comes after ROOT_A's whole subtree and
+    // before ROOT_B: index 2, which is the index ROOT_B had.
+    const op = addVob(reader(), SPEC, 0);
+
+    expect(op).toEqual({
+      op: 'AddVob', vob: 2, path: '0/1', parentPath: '0', from: null, to: SPEC,
+    });
+  });
+
+  it('is refused for a parent that is not in the index', () => {
+    expect(() => addVob(reader(), SPEC, 9)).toThrow(/9/);
+  });
+
+  it('is enumerated after a *whole* subtree, not merely after the parent', () => {
+    // The branch the fixture above never reaches: with only children, the walk
+    // past the subtree never has to climb more than one link, and an index that
+    // stopped at the first non-child would be indistinguishable. A grandchild is
+    // the shape that tells them apart.
+    //
+    //  vob 0 ── vob 1 ── vob 2 (grandchild)
+    //  vob 3 (root 1)
+    const deep = createVobReader(vobIndex([
+      { childIndex: 0 },
+      { parent: 0, childIndex: 0 },
+      { parent: 1, childIndex: 0 },
+      { childIndex: 1 },
+    ]));
+
+    // Appended under vob 0 it is enumerated after vob 2, not after vob 1.
+    expect(addVob(deep, SPEC, 0).vob).toBe(3);
+    // And under vob 1 it comes after its only child.
+    expect(addVob(deep, SPEC, 1)).toMatchObject({ vob: 3, path: '0/0/1', parentPath: '0/0' });
+    // A leaf's new child is enumerated immediately after it.
+    expect(addVob(deep, SPEC, 2)).toMatchObject({ vob: 3, path: '0/0/0/0' });
+    // And the last root's, at the very end.
+    expect(addVob(deep, SPEC, 3)).toMatchObject({ vob: 4, path: '1/0' });
+  });
+
+  it('renumbers when it has a parent, and not when it does not', () => {
+    // The distinction the batch guard is built on, and the reason the predicate
+    // is narrower than `isStructuralOp`: both of these change how many VOBs
+    // there are, and only one of them changes what the others are *called*.
+    expect(renumbersPaths(addVob(reader(), SPEC, 0))).toBe(true);
+    expect(renumbersPaths(addVob(reader(), SPEC))).toBe(false);
+    expect(isStructuralOp(addVob(reader(), SPEC, 0))).toBe(true);
+  });
+
+  it('has to be alone in its batch when it has a parent, and need not be otherwise', () => {
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      insertVob: (_spec, parentPath) => (parentPath === null ? '2' : `${parentPath}/1`),
+      deleteVob: () => {},
+      reparentVob: () => { throw new Error('not a reparent'); },
+    };
+    const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(binding, [addVob(reader(), SPEC, 0), move]))
+      .toThrow(/only op in its batch/);
+    // The other half of the same sentence: an appended root renumbers nothing,
+    // so the batches an add already appears in are untouched.
+    expect(() => commitOps(binding, [addVob(reader(), SPEC), move])).not.toThrow();
+  });
+
+  it('reaches the binding with the parent it was made for', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      insertVob: (spec, parentPath) => {
+        calls.push(`insert ${spec.name} under ${String(parentPath)}`);
+        return '0/1';
+      },
+      deleteVob: (path) => { calls.push(`delete ${path}`); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+    };
+    const op = addVob(reader(), SPEC, 0);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual(['insert PLACED under 0', 'delete 0/1']);
   });
 
   it('reaches the binding as an insert one way and a delete the other', () => {
@@ -775,9 +864,10 @@ describe('a reparent op', () => {
   it('has to be the only op in its batch, and an add does not', () => {
     // The distinction the batch guard rests on. Every op in a batch carries a
     // path resolved *before* the batch ran, so an op that renumbers invalidates
-    // the ones after it — but appending a root renumbers nothing, which is the
-    // whole reason `insertVob` takes no parent. Refusing both would break the
-    // multi-op batches an add legitimately appears in.
+    // the ones after it — but appending a *root* renumbers nothing, because it
+    // is enumerated last. Refusing every add would break the multi-op batches
+    // one legitimately appears in; an add with a parent is refused with the
+    // reparent, and that case is in the add's own describe.
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',

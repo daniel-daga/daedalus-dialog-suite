@@ -347,21 +347,29 @@ change the box.
 **No engine verdict covers any of this** — like the rotation before it, it is
 Gate 2's business.
 
-### `insertVob(handle, opts)`, `deleteVob(handle, indexPath)` and `reparentVob(handle, fromPath, parentPath | null, slot)`
+### `insertVob(handle, parentPath | null, opts)`, `deleteVob(handle, indexPath)` and `reparentVob(handle, fromPath, parentPath | null, slot)`
 
-The structural three. `insertVob` appends a **root** `zCVob` and returns its
-index path; `deleteVob` removes a VOB and its whole subtree; `reparentVob` moves
-one, with its subtree, into another parent at a given slot, and returns the path
-it landed at.
+The structural three. `insertVob` appends a `zCVob` to a parent's children — or
+to the roots, for a null parent — and returns the index path it landed at;
+`deleteVob` removes a VOB and its whole subtree; `reparentVob` moves one, with
+its subtree, into another parent at a given slot, and returns the path it landed
+at.
 
-**`insertVob` takes no parent, and that is the design rather than a gap.** Every
-VOB is enumerated depth-first and its flat index is its position in that
-traversal, so a VOB inserted anywhere else renumbers every VOB after it — and
-every op already in the history addresses a VOB both by that number and by an
-index path built from it. Appending a root is the one position that shifts
-nothing: it is enumerated last and takes the index one past the end. Placing a
-VOB *under a parent* is a real feature and is still not built, but it is no
-longer blocked — see `reparentVob` below for the answer.
+**A null parent renumbers nothing and a parent renumbers.** Every VOB is
+enumerated depth-first and its flat index is its position in that traversal, so
+appending a root is the one insertion that shifts nothing: it is enumerated last
+and takes the index one past the end. Appended under a parent, the new VOB is
+enumerated in the middle and every VOB after that parent's subtree moves up one —
+and every op already in the history addresses a VOB both by that number and by an
+index path built from it. What makes that safe is the discipline of the history
+rather than the call, exactly as it is for `reparentVob` below; the caller's own
+guard is the narrower one, that an insert with a parent has to be alone in its
+batch.
+
+**It appends rather than taking a slot**, which is the one place it deliberately
+differs from `reparentVob`. A reparent has to be able to put a VOB back exactly
+where it came from; an insert's inverse is a delete of the VOB it just made, and
+the end of the list is where a delete leaves no hole to reason about.
 
 `opts` is `{ name?, visual?, position, rotation?, bbox?, showVisual?, cdStatic?,
 cdDynamic?, vobStatic?, ambient? }`; only `position` is required and an
@@ -396,7 +404,8 @@ arbitrary retail VOB — an `oCMobInter` carries per-class properties, children,
 AI and an event manager that no op describes — so deleting one is not yet
 invertible and the editor does not offer it. Note that this is the *only* thing
 still blocking a general delete: renumbering, which used to be the other half of
-the objection, was answered by `reparentVob` below.
+the objection, was answered by `reparentVob` below — and a parented `insertVob`
+is that answer being used a second time.
 
 **`reparentVob` renumbers, and no slot avoids that** — a move has two ends and
 every VOB between them changes its flat index. It is safe because of how the

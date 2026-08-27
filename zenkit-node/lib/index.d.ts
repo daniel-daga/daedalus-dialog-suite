@@ -197,14 +197,24 @@ export interface NewVob {
   ambient?: boolean;
 }
 /**
- * Append a **root** `zCVob` and return its index path.
+ * Append a `zCVob` to `parentPath`'s children — `null` for a root — and return
+ * the index path it landed at.
  *
- * It takes no parent by design. A VOB's flat index is its position in a
- * depth-first traversal, so one inserted anywhere else renumbers every VOB after
- * it — and every op in the history addresses a VOB by that number. Appending a
- * root is the one position that shifts nothing.
+ * **A null parent renumbers nothing and a parent renumbers.** A VOB's flat index
+ * is its position in a depth-first traversal, so a root is enumerated last and
+ * shifts nothing, while one appended under a parent is enumerated in the middle
+ * and moves every VOB after that parent's subtree up by one. That is safe for
+ * the same reason `reparentVob` is — the history replays batches strictly LIFO
+ * against the enumeration each op was recorded in — and the caller's own guard
+ * is the narrower one: an insert with a parent has to be alone in its batch.
+ *
+ * It appends rather than taking a slot, unlike `reparentVob`, because its
+ * inverse is a delete of the VOB it just made rather than a move back to a
+ * position that has to be remembered.
  */
-export function insertVob(handle: WorldHandle, opts: NewVob): string;
+export function insertVob(
+  handle: WorldHandle, parentPath: string | null, opts: NewVob,
+): string;
 /**
  * Remove a VOB and its whole subtree.
  *

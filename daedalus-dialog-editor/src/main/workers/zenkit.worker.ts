@@ -232,7 +232,7 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
       setVobPosition: (path, to) => zenkit.setVobPosition(handle!, path, to),
       setVobRotation: (path, to, bbox) => zenkit.setVobRotation(handle!, path, to, bbox),
       setVobProp: (path, props) => zenkit.setVobProp(handle!, path, props),
-      insertVob: (spec) => zenkit.insertVob(handle!, spec),
+      insertVob: (spec, parentPath) => zenkit.insertVob(handle!, parentPath, spec),
       deleteVob: (path) => zenkit.deleteVob(handle!, path),
       reparentVob: (from, parentPath, slot) => zenkit.reparentVob(handle!, from, parentPath, slot),
     },

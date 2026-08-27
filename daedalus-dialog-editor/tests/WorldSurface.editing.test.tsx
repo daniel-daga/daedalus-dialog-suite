@@ -507,6 +507,77 @@ describe('placing a VOB', () => {
     });
   });
 
+  it('becomes an AddVob under the selected VOB when the dialog is told to', async () => {
+    // The parent is the selected VOB rather than anything chosen in the dialog:
+    // a terrain point survives a click in the scene tree — only a viewport pick
+    // replaces it — so "click the ground, then click the parent" is the gesture,
+    // and the dialog only has to say which of the two it will use.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    act(() => useWorldStore.getState().selectVob(0));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+    fireEvent.click(screen.getByTestId('world-place-parent'));
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CRATE.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: 'AddVob',
+      // VOB 0 has no children, so the new one is its first — and it is
+      // enumerated as soon as VOB 0's subtree ends, which is index 1.
+      vob: 1,
+      path: '0/0',
+      parentPath: '0',
+      to: { visual: 'NW_CRATE.3DS', position: TERRAIN },
+    });
+  });
+
+  it('offers no parent when nothing is selected, and places a root', async () => {
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    act(() => useWorldStore.getState().selectVob(null));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    // Asserted while the dialog is open, or it is absent for the trivial reason.
+    expect(screen.getByTestId('world-place-visual')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-place-parent')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CRATE.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops[0]).toMatchObject({ op: 'AddVob', parentPath: null, path: '2' });
+  });
+
+  it('clears the selection after an op that renumbers, and keeps it otherwise', async () => {
+    // A selection is a list of flat indices, and after a reparent or a parented
+    // add there is no telling which VOB one of them now names — the property
+    // grid would describe a VOB the user never picked. An appended root
+    // renumbers nothing, so that selection is still the same VOBs.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValue(summary as never);
+    api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await place('NW_CRATE.3DS');
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
+    act(() => useWorldStore.getState().selectVob(1));
+    expect(useWorldStore.getState().selection).toEqual([1]);
+
+    fireEvent.dragStart(screen.getByTestId('world-vob-row-1'));
+    fireEvent.drop(screen.getByTestId('world-vob-row-0'));
+
+    await waitFor(() => expect(useWorldStore.getState().selection).toEqual([]));
+  });
+
   it('fits the box from the visual placed at that point, not the binding default', async () => {
     // The engine culls by the box, and the binding's fallback is a 10 cm cube —
     // which would cull a house. The bounds are the visual's own, in the visual's
