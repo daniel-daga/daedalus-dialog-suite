@@ -70,26 +70,6 @@ was true for so long nobody re-reads it.
 
 ---
 
-## Blocked on Daniel
-
-- **Gate 2 — the engine verdict for a UI-edited world.** The Phase 1b milestone,
-  and the one thing here that cannot be automated. Four candidates are staged in
-  `%TEMP%\gate2-candidate` (rebuild with
-  `node daedalus-dialog-editor/scripts/build-gate2-candidate.js`); `03` carries
-  23,291 VOBs including a placed crate, a turned table, a renamed-and-refitted
-  VOB and one *retail* VOB raised and turned. Control first, same session,
-  fullscreen. **Rows 7, 8 and 9 must actually run this time** — bed/chest/mobsi,
-  a sound or zone VOB, a savegame round-trip. They were defensible as ⏸ for a
-  bit-identical re-save and are not for an edited world.
-  **No staged candidate has a VOB deleted from it, or a waypoint moved.** Both
-  landed after `03` was built. A removed subtree is the edit ZenGin has the most
-  room to disagree about — a `LEVEL-VOB` child list is where its own tooling put
-  everything — and a moved waypoint is the first edit that is not in the VOB
-  tree at all, so it is the only one whose verdict says anything about
-  `WayNet::save`. Rebuilding the candidates to include either would invalidate
-  the staged set, so whether Gate 2 waits for that is Daniel's call, not
-  something to do unasked.
-
 ## Now
 
 *(empty — the waypoint gizmo landed; see Done)*
@@ -165,9 +145,24 @@ was true for so long nobody re-reads it.
   the abort used to kill it. Not yet reproduced into a test.
 - `.MMB` authoring has no ZenKit writer at all.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
+- **Gate 2 covered no deleted VOB and no moved waypoint** — both landed after
+  the staged candidate was built (2026-08-27 run, Done). A removed subtree and
+  a moved waypoint are still the two edits with no engine verdict of their own;
+  whether that's worth a rebuilt candidate is Daniel's call, not something to
+  do unasked.
 
 ## Done — Phase 1b
 
+- **Gate 2 — the engine verdict for a UI-edited world.** Four candidates run
+  through both Spacer2 and Gothic2 (`zenkit-node/docs/engine-acceptance-2026-08-25.md`
+  §8, 2026-08-27 run): all clean loads, no captured assertion, `03-ui-edited.zen`
+  (built through the real editor UI) the headline result — the first engine run
+  of a world the app itself edited, carrying `MoveVob`/`RotateVob`/`SetVobProp`/
+  `AddVob`/`ReparentVob` and a retail VOB's re-fitted bounding box. Rows 7–9
+  (bed/chest/mobsi, sound/zone trigger, savegame round-trip) recorded passed on
+  Daniel's word; the record notes the wall-clock doesn't independently
+  corroborate the depth of that exercise, so revisit there first if either op
+  set is later found to disagree with the engine.
 - **The waypoint gizmo — the UI for an op that had none.** Picking a waypoint
   out of the overlay, the gizmo on it, the drag, the live preview, the commit,
   undo/redo, and `expectedWaypointMoves` in `verify-world-edit.js` moved from 0
