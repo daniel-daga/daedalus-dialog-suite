@@ -50,7 +50,14 @@
       "dist/shared/**/*",
       "node_modules/safe-buffer/**/*",
       "node_modules/safer-buffer/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/zenkit-node/vendor/**",
+      "!node_modules/zenkit-node/vendor-build/**",
+      "!node_modules/zenkit-node/build/Release/obj/**",
+      "!node_modules/zenkit-node/build/Release/*.{iobj,ipdb,exp,lib}"
+    ],
+    "asarUnpack": [
+      "**/node_modules/zenkit-node/**/*.node"
     ],
     "directories": {
       "buildResources": "assets"

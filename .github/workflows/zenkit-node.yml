@@ -1,6 +1,12 @@
 name: zenkit-node
 
-# Path-filtered so dialog-only PRs are not slowed down (level-editor-phase-0.md §4).
+# Manual escape hatch only. The addon's real gate is the `zenkit-node-tests` job
+# in all-tests.yml, which runs the same recipe on every push and PR and is what
+# build-windows.yml gates a release on; the path filter this workflow used to
+# carry is exactly the hole that gate closes, so leaving the push/PR triggers on
+# would only pay for a second Windows build of the same thing. Kept dispatchable
+# for re-running the addon suite alone (e.g. after a vendor/ZenKit patch) without
+# the rest of the matrix.
 #
 # NOTE: a green run here is a NO-REGRESSION claim against our own synthetic
 # golden fixtures (claim C2) — it is NOT a fidelity claim about real Gothic
@@ -8,16 +14,6 @@ name: zenkit-node
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, master]
-    paths:
-      - 'zenkit-node/**'
-      - '.github/workflows/zenkit-node.yml'
-  pull_request:
-    branches: [main, master]
-    paths:
-      - 'zenkit-node/**'
-      - '.github/workflows/zenkit-node.yml'
 
 permissions:
   contents: read

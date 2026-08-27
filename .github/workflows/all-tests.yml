@@ -41,6 +41,58 @@ jobs:
       - name: Lint zen-world
         run: pnpm --filter zen-world run lint
 
+  zenkit-node-tests:
+    name: zenkit-node (native addon)
+    # In the release gate on purpose: build-windows.yml calls this workflow, so
+    # the addon the packaged app dlopens is built and tested before a dispatch
+    # can publish. It is also the only job that catches a change in `zen-world`
+    # or the editor's `zenkit.worker.ts` breaking the binding contract — the old
+    # path-filtered zenkit-node.yml never ran for those.
+    #
+    # windows-2022, not windows-latest: the latest image ships Visual Studio 18,
+    # which node-gyp 11.5.0 cannot identify, so the daedalus-parser workspace's
+    # install dies before any of our code runs. Revisit when node-gyp knows VS 18.
+    #
+    # A green run here is a NO-REGRESSION claim against our own synthetic golden
+    # fixtures (claim C2) — NOT a fidelity claim about real Gothic worlds (C1).
+    # See zenkit-node/README.md.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      # pnpm install triggers the zenkit-node install hook, which runs the
+      # two-stage source build (CMake pre-step, then node-gyp) when no prebuild
+      # matches — which is always the case in CI. The hook skips that build when
+      # CI is set unless ZENKIT_NODE_FORCE_BUILD=1 (zenkit-node/scripts/install.js).
+      - name: Install dependencies (builds the addon)
+        run: pnpm install --frozen-lockfile
+        env:
+          ZENKIT_NODE_FORCE_BUILD: '1'
+
+      - name: Run zenkit-node tests
+        run: pnpm --filter zenkit-node test
+
+      # The harness itself, in its CI mode. Prints its own claim line, which
+      # says in as many words that this is C2 and not fidelity.
+      - name: zen-roundtrip (C2, fixtures)
+        run: pnpm --filter zenkit-node zen-roundtrip -- --fixtures --strict
+
+      - name: Lint zenkit-node
+        run: pnpm --filter zenkit-node run lint
+
   editor-tests:
     runs-on: ubuntu-latest
     steps:
@@ -59,6 +111,13 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # zen-world/dist is what `zen-world`'s package exports resolve to, and it
+      # is produced by that package's postinstall hook. Building it explicitly
+      # means an --ignore-scripts install (or a skipped build script) fails on
+      # this line instead of surfacing as an unresolvable import three steps later.
+      - name: Build zen-world
+        run: pnpm --filter zen-world run build
 
       - name: Typecheck editor main process
         run: pnpm --filter daedalus-dialog-editor run build:main
@@ -112,6 +171,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # See the note in editor-tests: zen-world/dist is an install-time artifact,
+      # and the harness build imports it.
+      - name: Build zen-world
+        run: pnpm --filter zen-world run build
 
       - name: Install Playwright browsers
         run: pnpm --filter daedalus-dialog-editor exec playwright install --with-deps chromium

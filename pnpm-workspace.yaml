@@ -7,6 +7,10 @@ packages:
 onlyBuiltDependencies:
   - electron
   - zenkit-node
+  # zen-world's postinstall is what produces zen-world/dist, which its package
+  # exports point at — four jobs and the editor build depend on it. Declared so
+  # the hook is visible here rather than only in zen-world/package.json.
+  - zen-world
   - esbuild
   - tree-sitter
   - tree-sitter-cli

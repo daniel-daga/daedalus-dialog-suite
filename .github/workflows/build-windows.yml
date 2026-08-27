@@ -75,7 +75,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
+    # submodules: the zenkit-node addon is built from vendor/ZenKit sources.
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
     - name: Compute build version
       id: version
@@ -100,8 +103,15 @@ jobs:
         node-version: '20'
         cache: 'pnpm'
 
-    - name: Install dependencies
+    # ZENKIT_NODE_FORCE_BUILD: zenkit-node/scripts/install.js skips the source
+    # build whenever CI is set, so without this the installer would ship a World
+    # surface with no addon behind it. `npmRebuild: false` means electron-builder
+    # will not rebuild it either — this install is the only chance to produce
+    # build/Release/zenkit_node.node, and the asar check below enforces that.
+    - name: Install dependencies (builds the native addon)
       run: pnpm install --frozen-lockfile
+      env:
+        ZENKIT_NODE_FORCE_BUILD: '1'
 
     - name: Stamp build version into package.json
       shell: pwsh
@@ -149,6 +159,25 @@ jobs:
           process.exit(1);
         }
         console.log('Packaged buffer modules verified:', { hasSafeBuffer, hasSaferBuffer, files: files.length });
+
+        // The native addon behind the World surface. Two distinct failures are
+        // possible and both are silent until a user opens a world: the addon was
+        // never built (CI skips the source build without ZENKIT_NODE_FORCE_BUILD,
+        // and npmRebuild is false), or it was built but left INSIDE the asar,
+        // where node-gyp-build cannot dlopen it. Assert on both.
+        const addonEntries = files.filter((f) => f.endsWith('zenkit_node.node'));
+        if (addonEntries.length === 0) {
+          console.error('zenkit_node.node is not packaged: the addon was not built before packaging.');
+          process.exit(1);
+        }
+        const unpackedRoot = appAsarPath + '.unpacked';
+        const fs = require('fs');
+        const unpacked = addonEntries.filter((f) => fs.existsSync(path.join(unpackedRoot, f)));
+        if (unpacked.length === 0) {
+          console.error('zenkit_node.node is packed inside app.asar — asarUnpack did not match:', addonEntries);
+          process.exit(1);
+        }
+        console.log('Packaged native addon verified (unpacked):', unpacked);
         '@ | node -
 
     - name: Smoke-test packaged app startup
