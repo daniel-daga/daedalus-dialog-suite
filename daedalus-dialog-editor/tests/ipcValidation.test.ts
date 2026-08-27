@@ -501,4 +501,59 @@ describe('assertApplyOpsRequest', () => {
       })).toThrow(/bbox/);
     });
   });
+
+  describe('a reparent', () => {
+    // The op the scene tree's drag and drop sends. It is the first op with no
+    // top-level `path` — a move has two ends and carries one on each side — and
+    // that is exactly what a validator written around `op.path` refuses.
+    const reparent = {
+      op: 'ReparentVob',
+      vob: 5,
+      from: { path: '2/1', parentPath: '2', slot: 1 },
+      to: { path: '7/0', parentPath: '7', slot: 0 },
+    };
+
+    it('is accepted, and so is its inverse', () => {
+      expect(() => assertApplyOpsRequest({ ops: [reparent] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...reparent, from: reparent.to, to: reparent.from }],
+      })).not.toThrow();
+    });
+
+    it('is accepted with a null parent — a VOB promoted to a root', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...reparent, to: { path: '9', parentPath: null, slot: 9 } }],
+      })).not.toThrow();
+    });
+
+    it('rejects a side that is not a slot', () => {
+      for (const bad of [null, '2/1', { path: '2/1', slot: 1 }, { parentPath: '2', slot: 1 }]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...reparent, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...reparent, from: bad }] })).toThrow(/from/);
+      }
+    });
+
+    it('rejects paths that are not slot indices, on either side', () => {
+      // Both reach C++ and address the VOB tree with it — `to.parentPath` is
+      // where the subtree lands, and a bad one moves the wrong VOB.
+      for (const bad of ['', '/', '0//2', 'a/b', '0/2/', 3, null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...reparent, to: { ...reparent.to, path: bad } }],
+        })).toThrow(/path/);
+      }
+      for (const bad of ['', '/', '0//2', 'a/b', 3]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...reparent, to: { ...reparent.to, parentPath: bad } }],
+        })).toThrow(/parentPath/);
+      }
+    });
+
+    it('rejects a slot that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...reparent, to: { ...reparent.to, slot: bad } }],
+        })).toThrow(/slot/);
+      }
+    });
+  });
 });

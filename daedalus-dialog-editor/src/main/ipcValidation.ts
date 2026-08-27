@@ -226,6 +226,31 @@ const NEW_VOB_FLAG_KEYS = [
   'showVisual', 'vobStatic', 'ambient', 'cdStatic', 'cdDynamic',
 ];
 
+/**
+ * One end of a reparent — the path, the parent that holds it and the slot in
+ * that parent's children.
+ *
+ * All three reach C++: `reparentVob` walks the VOB tree by `parentPath`, indexes
+ * the children list by `slot`, and the caller checks the path it answers with
+ * against `path`. A null `parentPath` is a root and is the one legitimate
+ * absence here — everything else is a required field.
+ */
+function assertVobSlot(value: unknown, side: string): void {
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid op: ${side} must be a slot — a path, a parentPath and a slot`);
+  }
+  if (typeof value.path !== 'string' || !INDEX_PATH.test(value.path)) {
+    throw new Error(`Invalid op: ${side}.path must be slot indices separated by "/"`);
+  }
+  if (value.parentPath !== null
+    && (typeof value.parentPath !== 'string' || !INDEX_PATH.test(value.parentPath))) {
+    throw new Error(`Invalid op: ${side}.parentPath must be slot indices separated by "/", or null`);
+  }
+  if (typeof value.slot !== 'number' || !Number.isInteger(value.slot) || value.slot < 0) {
+    throw new Error(`Invalid op: ${side}.slot must be a non-negative integer`);
+  }
+}
+
 export function assertApplyOpsRequest(request: unknown): asserts request is { ops: WorldOp[] } {
   if (!isPlainObject(request)) {
     throw new Error('Invalid ops request: expected a plain object');
@@ -236,12 +261,23 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
   for (const op of request.ops) {
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
-      && op.op !== 'AddVob') {
+      && op.op !== 'AddVob' && op.op !== 'ReparentVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
     if (typeof op.vob !== 'number' || !Number.isInteger(op.vob) || op.vob < 0) {
       throw new Error('Invalid op: vob must be a non-negative integer');
     }
+
+    // Before the `path` check, because a reparent is the one op with no
+    // top-level path: a move has two ends and carries one on each side. A
+    // validator written around `op.path` refuses it outright, which is what kept
+    // the scene tree's drag and drop from ever reaching the binding.
+    if (op.op === 'ReparentVob') {
+      assertVobSlot(op.from, 'from');
+      assertVobSlot(op.to, 'to');
+      continue;
+    }
+
     if (typeof op.path !== 'string' || !INDEX_PATH.test(op.path)) {
       throw new Error('Invalid op: path must be slot indices separated by "/"');
     }
