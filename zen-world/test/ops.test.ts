@@ -23,7 +23,9 @@ import {
   reparentVob,
   commitOps,
   createVobReader,
+  deleteVob,
   invertOp,
+  isBarrierOp,
   isStructuralOp,
   moveVob,
   moveWaypoint,
@@ -768,6 +770,92 @@ describe('an add op', () => {
     expect(() => applyOps(live, [addVob(live, SPEC)])).toThrow(/structural|re-read/i);
     expect(isStructuralOp(addVob(live, SPEC))).toBe(true);
     expect(isStructuralOp(moveVob(live, 0, [1, 2, 3]))).toBe(false);
+  });
+});
+
+describe('a delete op', () => {
+  // The op §15 unblocked. The objection was never renumbering, it was
+  // invertibility — an `oCMobInter` carries per-class properties, children, an
+  // AI and an event manager that no op describes. §15 withdrew it: the original
+  // Spacer has no undo at all, so an unundoable delete is already parity. What
+  // replaces `invertOp` as the gate is narrower and is the whole of what this op
+  // owes — the history has to record it as a **barrier**, and the user has to be
+  // told before it lands.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A' },
+    { parent: 0, childIndex: 0, name: 'CHILD' },
+    { childIndex: 1, name: 'ROOT_B' },
+  ]));
+
+  const SPEC: NewVob = { name: 'PLACED', visual: 'CRATE.3DS', position: [10, 20, 30] };
+
+  it('carries the flat index and the native path, and nothing else', () => {
+    // Deliberately *not* an `AddVob` with a null `to`. That shape means "the op
+    // describes this VOB completely", which is exactly what is not true of a
+    // retail one — and it is what lets `invertOp` refuse this and not that.
+    expect(deleteVob(reader(), 1)).toEqual({ op: 'DeleteVob', vob: 1, path: '0/0' });
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => deleteVob(reader(), 9)).toThrow(/9/);
+  });
+
+  it('renumbers whatever it removes — a root included', () => {
+    // The one place it is not the mirror of an add. An appended root is
+    // enumerated last and shifts nothing, which is why `renumbersPaths` is false
+    // for one; a *removed* root takes every VOB after it down by one, and there
+    // is no position in the tree where that is not true.
+    expect(renumbersPaths(deleteVob(reader(), 2))).toBe(true);
+    expect(renumbersPaths(deleteVob(reader(), 0))).toBe(true);
+    expect(isStructuralOp(deleteVob(reader(), 1))).toBe(true);
+  });
+
+  it('has no inverse, and says so rather than inventing one', () => {
+    // An inverse built from the columns would insert a bare `zCVob` with the
+    // name and visual of an `oCMobInter` — the undo would look like it worked
+    // and would have thrown the VOB's class, its children and its AI away.
+    expect(() => invertOp(deleteVob(reader(), 1))).toThrow(/barrier|inverse/i);
+    expect(isBarrierOp(deleteVob(reader(), 1))).toBe(true);
+    expect(isBarrierOp(addVob(reader(), SPEC))).toBe(false);
+    expect(isBarrierOp(moveVob(reader(), 0, [1, 2, 3]))).toBe(false);
+  });
+
+  it('reaches the binding as a delete of the path it carries', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: (path) => { calls.push(`delete ${path}`); return undefined; },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    };
+
+    commitOps(binding, [deleteVob(reader(), 1)]);
+
+    expect(calls).toEqual(['delete 0/0']);
+  });
+
+  it('has to be alone in its batch', () => {
+    // Because it renumbers: every other op in the batch carries a path resolved
+    // before the batch ran, and a delete moves the VOB each of them names.
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      insertVob: () => '2',
+      deleteVob: () => {},
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    };
+    const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(binding, [deleteVob(reader(), 1), move]))
+      .toThrow(/only op in its batch/);
+  });
+
+  it('cannot be applied to the projection, and says so', () => {
+    const live = reader();
+    expect(() => applyOps(live, [deleteVob(live, 1)])).toThrow(/structural|re-read/i);
   });
 });
 

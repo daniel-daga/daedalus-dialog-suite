@@ -5,8 +5,8 @@ import {
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  addVob, invertOp, isStructuralOp, placeBounds, renumbersPaths, reparentVob, rotateVobs,
-  setVobProps, translateVobs,
+  addVob, deleteVob, invertOp, isBarrierOp, isStructuralOp, placeBounds, renumbersPaths,
+  reparentVob, rotateVobs, setVobProps, translateVobs,
   type NewVob, type VobProps, type ZenBounds, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
@@ -54,6 +54,10 @@ const WorldSurface: React.FC = () => {
   const [placing, setPlacing] = useState<
     { name: string; visual: string; parent: number | null } | null
   >(null);
+  /** The VOB the delete warning is about, or null when it is closed. A flat
+   *  index rather than a boolean: the dialog names what it is about to remove,
+   *  and the selection can change under an open dialog. */
+  const [deleting, setDeleting] = useState<number | null>(null);
   // The left panel is the scene *or* the mounted assets, and the right panel
   // follows it: a VOB's properties belong beside the tree, an asset's preview
   // beside the browser.
@@ -232,7 +236,11 @@ const WorldSurface: React.FC = () => {
       // where nothing else in the app agrees it is. Through `invertOp` rather
       // than by swapping `from` and `to` here: a rotation carries a box for each
       // pose, and swapping only the matrix is half an inverse.
-      setAppliedOps(ops.map(invertOp));
+      //
+      // A barrier op is dropped rather than inverted, and needs no inverse here:
+      // what this puts back is the viewport's *optimistic* draw of a gizmo drag,
+      // and a delete is never drawn before the main process has taken it.
+      setAppliedOps(ops.filter((op) => !isBarrierOp(op)).map(invertOp));
     }
   }, [applied]);
 
@@ -281,14 +289,17 @@ const WorldSurface: React.FC = () => {
    * thing.
    */
   const parentCandidate = primaryVob(selection);
-  const parentLabel = useMemo(() => {
-    if (summary === null || parentCandidate === null) return '';
+
+  /** How a VOB is named in a dialog: the same fallback the scene tree draws its
+   *  rows with, because most VOBs are unnamed — the visual is the label, and the
+   *  class is what is left. */
+  const labelOf = useCallback((vob: number | null) => {
+    if (summary === null || vob === null) return '';
     const { reader } = vobModelOf(summary);
-    // The same fallback the scene tree draws its rows with: most VOBs are
-    // unnamed, so the visual is the label, and the class is what is left.
-    return reader.name(parentCandidate) || reader.visual(parentCandidate)
-      || reader.className(parentCandidate);
-  }, [summary, parentCandidate]);
+    return reader.name(vob) || reader.visual(vob) || reader.className(vob);
+  }, [summary]);
+
+  const parentLabel = labelOf(parentCandidate);
 
   const handleRotateSelection = useCallback((delta: ZenRotation) => {
     const { summary: current, selection: selected } = useWorldStore.getState();
@@ -396,6 +407,28 @@ const WorldSurface: React.FC = () => {
     await commitOps([addVob(vobModelOf(current).reader, placed, spec.parent)]);
   }, [commitOps, terrainPoint]);
 
+  /**
+   * Remove a VOB and its whole subtree — **the one edit here that cannot be
+   * undone** (level-editor.md §15).
+   *
+   * The op carries an address and nothing else, because what it would need to
+   * carry to be invertible is what no op can describe: an `oCMobInter`'s
+   * per-class properties, its children, its AI, its event manager. §15 settled
+   * that this ships anyway — the original Spacer has no undo at all, so an
+   * unundoable delete is already parity — and put one requirement in place of
+   * the inverse: the user is told first. That is the dialog below, and it is why
+   * this is the only edit in the surface behind a confirm.
+   *
+   * One VOB, never a selection of them, and alone in its batch: a delete
+   * renumbers every VOB after it, so a second one in the same batch would
+   * address a VOB that had moved.
+   */
+  const removeVob = useCallback(async (vob: number) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null) return;
+    await commitOps([deleteVob(vobModelOf(current).reader, vob)]);
+  }, [commitOps]);
+
   useEffect(() => {
     if (summary === null) return undefined;
 
@@ -494,6 +527,22 @@ const WorldSurface: React.FC = () => {
               <ToggleButton value="rotate" data-testid="world-gizmo-rotate">Turn (E)</ToggleButton>
             </ToggleButtonGroup>
           )}
+          {/* The one destructive edit in the surface, and the only one behind a
+              confirm. Exactly one VOB, never a selection: it renumbers, so each
+              would need its own batch, and a button that removed only the
+              primary of five is the surprise the dialog exists to prevent. */}
+          {summary && (
+            <Button
+              size="small"
+              color="error"
+              variant="outlined"
+              disabled={selection.length !== 1}
+              onClick={() => setDeleting(selection[0])}
+              data-testid="world-delete-vob"
+            >
+              Delete VOB
+            </Button>
+          )}
           {summary && (
             <Stack direction="row" spacing={1}>
               <Chip size="small" label={`${summary.stats.vobCount.toLocaleString()} VOBs`} />
@@ -552,6 +601,44 @@ const WorldSurface: React.FC = () => {
           <Button onClick={() => setConfirmingSave(false)} data-testid="world-save-cancel">Cancel</Button>
           <Button onClick={saveWorld} variant="contained" data-testid="world-save-confirm">
             Choose a file…
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* The requirement §15 put in place of an inverse. Every other edit in
+          this surface undoes, so the thing the user has to be told is not that
+          a delete is destructive — it is that this one takes the undo stack
+          with it. Spacer has no undo at all, which is why the op ships; it is
+          not why the warning is optional. */}
+      <Dialog open={deleting !== null} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete {labelOf(deleting)}?</DialogTitle>
+        <DialogContent>
+          <DialogContentText component="div" variant="body2" data-testid="world-delete-warning">
+            <p>
+              <strong>This cannot be undone.</strong> A deleted VOB carries per-class properties,
+              children, an AI and an event manager that an op has no way to describe, so there is
+              nothing to put back — and the earlier edits go with it: the undo history is cleared,
+              because every entry in it addresses VOBs by numbers this delete has just changed.
+            </p>
+            <p>
+              The VOB and everything below it in the scene tree is removed. The world in the editor
+              changes; the file on disk does not until it is saved.
+            </p>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleting(null)} data-testid="world-delete-cancel">Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            data-testid="world-delete-confirm"
+            onClick={() => {
+              const vob = deleting;
+              setDeleting(null);
+              if (vob !== null) void removeVob(vob);
+            }}
+          >
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

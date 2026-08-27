@@ -470,6 +470,110 @@ describe('saving the world', () => {
   });
 });
 
+describe('deleting a VOB', () => {
+  // The op §15 unblocked, and the half of it that is *not* the op: a delete has
+  // no inverse, so the history clears rather than recording it — and the one
+  // requirement §15 put in place of invertibility is that the user knows that
+  // before it lands, because ours undoes everything else.
+
+  /** Select one VOB and ask to delete it, without confirming. */
+  async function askToDelete(vob: number) {
+    act(() => useWorldStore.getState().selectVob(vob));
+    fireEvent.click(await screen.findByTestId('world-delete-vob'));
+  }
+
+  it('is a DeleteVob for the selected VOB, once the warning is confirmed', async () => {
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await askToDelete(1);
+    fireEvent.click(screen.getByTestId('world-delete-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    // Alone in its batch, because it renumbers — `commitOps` enforces that, and
+    // there is nothing here for it to share a batch with anyway.
+    expect(ops).toEqual([{ op: 'DeleteVob', vob: 1, path: '1' }]);
+  });
+
+  it('warns that the edit cannot be undone and that the history goes with it', async () => {
+    // Not decoration and not a generic "are you sure": every other edit in this
+    // surface is undoable, so a delete that quietly made the previous twenty
+    // unundoable is the surprise. Spacer has no undo at all, which is why the
+    // op ships — not why the warning is optional.
+    await openWorld();
+
+    await askToDelete(1);
+
+    const warning = screen.getByTestId('world-delete-warning');
+    expect(warning).toHaveTextContent(/cannot be undone/i);
+    expect(warning).toHaveTextContent(/undo history|undo stack|earlier edits/i);
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when the warning is dismissed', async () => {
+    await openWorld();
+
+    await askToDelete(1);
+    fireEvent.click(screen.getByTestId('world-delete-cancel'));
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    // Removed rather than merely hidden — the dialog closes on its own animation.
+    await waitFor(() => expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument());
+  });
+
+  it('is offered for exactly one VOB, never for a selection of them', async () => {
+    // Every other edit here applies to the whole selection — one gizmo drags
+    // all of them. A delete cannot: it renumbers, so each one would need its own
+    // batch against a re-read index, and a button that deleted only the primary
+    // of five would be a surprise of exactly the kind this dialog exists to
+    // prevent.
+    await openWorld();
+
+    act(() => useWorldStore.getState().selectVob(null));
+    expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
+
+    act(() => useWorldStore.getState().selectVob(0));
+    expect(screen.getByTestId('world-delete-vob')).toBeEnabled();
+
+    act(() => useWorldStore.getState().toggleVob(1));
+    expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
+  });
+
+  it('re-reads the index and drops the selection, because it renumbers', async () => {
+    // The columnar projection cannot lose a row, and every VOB after the deleted
+    // one has changed its flat index — so a selection kept would name a VOB
+    // nobody picked, and the property grid would describe it.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(
+      { ...summary, vobIndex: vobIndex([[0, 0, 0]]) } as never,
+    );
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await askToDelete(1);
+    fireEvent.click(screen.getByTestId('world-delete-confirm'));
+
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
+    await waitFor(() => expect(useWorldStore.getState().selection).toEqual([]));
+    expect(useWorldStore.getState().summary!.vobIndex.count).toBe(1);
+  });
+
+  it('says so and changes nothing when the main process refuses it', async () => {
+    const summary = await openWorld();
+    api.applyWorldOps.mockRejectedValueOnce(new Error('no vob at indexPath'));
+
+    await askToDelete(1);
+    fireEvent.click(screen.getByTestId('world-delete-confirm'));
+
+    expect(await screen.findByTestId('world-edit-error')).toHaveTextContent(/no vob at indexPath/);
+    // Not refreshed: nothing was deleted, so the index the panels read is still
+    // the world's.
+    expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+    expect(summary.vobIndex.count).toBe(2);
+  });
+});
+
 describe('placing a VOB', () => {
   /** Pick terrain, open the dialog, fill it in and confirm. */
   async function place(visual: string, name = '') {

@@ -1592,9 +1592,10 @@ The consequences worth keeping:
   completely.** Undo deletes it, redo makes it again from the same spec, and
   nothing is snapshotted beside the history. That is emphatically **not** true of
   an arbitrary retail VOB — an `oCMobInter` carries per-class properties,
-  children, an AI and an event manager that no op describes — so deleting one is
-  a different feature that needs a different answer, and the editor does not
-  offer it.
+  children, an AI and an event manager that no op describes. *(That is why
+  deleting one is `DeleteVob` rather than this shape with a null `to`, and why it
+  is the one op with no inverse. It landed on 2026-08-27 — "The delete, and the
+  barrier that replaces its inverse" below.)*
 - **The projection cannot follow it.** The columnar index cannot grow, so
   `applyOps` refuses a structural op *by name* rather than skipping it, and the
   index is re-read whole (`refreshIndex` — from the world the worker already
@@ -1628,8 +1629,9 @@ all three waiting on the same answer: placing a VOB **under a parent**,
 `ReparentVob`, and deleting an arbitrary VOB. And no engine verdict covers a
 world with a VOB added to it. *(The answer landed on 2026-08-27 — see "The
 renumbering answer" below. It is the history's LIFO discipline, not a property
-of the ops. `ReparentVob` landed with it, and placing under a parent on
-2026-08-28; a general delete is still open, and on a different objection.)*
+of the ops. `ReparentVob` landed with it, placing under a parent on 2026-08-28,
+and the general delete on 2026-08-27 — the objection against it was never
+renumbering.)*
 
 #### Two defects the viewport shipped with, and the shape they share (2026-08-26/27)
 
@@ -1734,8 +1736,9 @@ properties, children, an AI and an event manager that no op describes, so undo
 cannot rebuild one. That needs a way to snapshot a subtree, and it is a
 different feature. *(Placing a VOB under a parent and the between-rows drop both
 landed on 2026-08-28 — below. **The invertibility objection was withdrawn on
-2026-08-27 — §15.** The op is unblocked; what it owes now is a history barrier,
-not an inverse.)*
+2026-08-27 — §15**, and the delete landed the same day with a history barrier in
+place of an inverse — below. The subtree snapshot stays open as an improvement,
+not as a prerequisite.)*
 
 #### The reparent that never reached the binding, and the parent an insert can now take (2026-08-28)
 
@@ -1814,6 +1817,72 @@ path, but the *other* members of a multi-select are not, and a selection that
 quietly lost some of them is worse than one that says it is empty. `worldStore`
 documented the opposite ("there is no such op yet") for as long as `ReparentVob`
 has existed.
+
+#### The delete, and the barrier that replaces its inverse (2026-08-27)
+
+`DeleteVob` landed — the first op that ships **without** an inverse, on §15's
+decision. What it settled, in the order the code forced the questions:
+
+**It is not an `AddVob` with a null `to`, and that was the whole design
+question.** §7 built that shape deliberately: a null side means "not in the
+world", so `invertOp` turns an add into a delete by swapping the sides and
+neither needs a case of its own. The shape carries a `NewVob` on the other side,
+and *what it means* is "this op describes the VOB completely" — true of a VOB
+the editor authored from a spec, false of every retail one. Reusing it would
+have made the delete of an `oCMobInter` look invertible: the undo would insert a
+bare `zCVob` wearing its name and visual, and would have thrown its class, its
+children, its AI and its event manager away while reporting success. So a
+separate op, carrying an address and nothing else, and `invertOp` refuses it.
+`AddVob`'s null-side rule is untouched and still the inverse of a placement.
+
+**`renumbersPaths` has no exception for a deleted root**, which is where it
+stops being the mirror of an add. An appended root is enumerated last and shifts
+nothing — that is the distinction the predicate was introduced to keep. A
+*removed* root takes every VOB after it down by one, and there is no position in
+the tree where a delete does not renumber. So a delete is always alone in its
+batch.
+
+**The barrier is the history's, not the op's.** `WorldService.applyOps` clears
+**both** stacks when a batch contains one, and clearing only the entry it would
+have made is not enough: every batch already on the undo stack addresses VOBs by
+flat indices and index paths that this delete has just moved, so replaying one
+would edit whatever has since taken that address. Cleared after the worker
+confirms, so a refused delete costs the user nothing.
+
+**Three dispatches, not one, and only one of them is `invertOp`.** The refusal
+lives in `invertOp` and in `writeOp`'s reverse direction, sharing one error
+because two dispatches disagreeing about a barrier is how one quietly becomes
+half-invertible. The third was found by a failing test rather than by reading:
+the World surface's `commitOps` catch does `ops.map(invertOp)` to put the
+viewport's *optimistic* draw back when an op is refused, and it threw on a
+refused delete. Barrier ops are filtered out there — nothing is drawn before the
+main process takes a delete, so there is nothing to put back.
+
+**The validator refuses a delete carrying anything but its address.** The usual
+reason plus one: an extra `from` on a `DeleteVob` is either a mislabelled
+`AddVob` or something reaching for the inverse this op does not have, and both
+are better refused at the boundary than silently ignored by the writer. Same
+lesson as `ReparentVob` — `assertApplyOpsRequest` is the one layer every suite
+mocks past, so the branch and its cases landed in the same change as the op.
+
+**The UI half is a confirm, and it is the only one in the surface.** §15's
+requirement is not "warn that delete is destructive" — it is that the user knows
+the undo stack goes with it, because everything else here undoes. Exactly one
+VOB, never a selection: each delete renumbers, so a second would need its own
+batch against a re-read index, and a button that removed only the primary of
+five is the surprise the dialog exists to prevent.
+
+**Proved end to end on NewWorld**, not on a fixture:
+`verify-world-pipeline.js` now deletes the last root through the real
+`WorldService`, after an ordinary invertible edit so that a cleared stack is
+distinguishable from an empty one. 23,288 VOBs → 18,828: the subtree really goes
+with the VOB, which no unit test observes because no fixture has a 4,460-VOB
+child list. It runs last and never undoes — nothing after it may assume the
+world is the one that was opened.
+
+Still open, and neither a prerequisite: serialising the subtree into the op, and
+the describe-it-completely fallback. Both would turn the barrier back into an
+inverse.
 
 #### What the real-app driver had to be taught, to be worth running (2026-08-28)
 
@@ -2068,7 +2137,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 
 | # | Missing | Status | Note |
 |---|---|---|---|
-| 1.1 | **Delete an arbitrary retail VOB** | planned (§7) | `deleteVob` exists in the binding; only its undo was unsolved, and §15 withdrew that objection. |
+| 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
 | 1.2 | **Copy / paste / duplicate**, incl. subtree | unscheduled → 1b-2 | The most-used Spacer verb after move. Same undo question as delete, same answer. A cross-world clipboard only if part-to-part copying is wanted. |
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
 | 1.4 | **Class-specific property editing** | unscheduled → 1b-2 | The property grid shows eight `zCVob` scalars. Every class above carries its own field set — trigger targets, mover keyframes, item instance, light colour/range/dynamic, zone falloffs, sound radius/volume/mode. The largest single volume of work in this section, and what decides whether the editor is usable for quest scripting at all. The only prior trace of it is §4's sketch line `getVobProperties(h, vobId): VobProps`, which the shipped binding does not implement — and which is a *read* anyway. |

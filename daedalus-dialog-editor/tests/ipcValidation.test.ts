@@ -572,6 +572,46 @@ describe('assertApplyOpsRequest', () => {
     });
   });
 
+  describe('a delete', () => {
+    // The op with no inverse (§15). It carries a `vob` and a `path` and nothing
+    // else, which makes it the one op where an extra field is the interesting
+    // case: a `from` on it would be somebody constructing an `AddVob`-shaped
+    // delete, and that shape means "this op describes the VOB completely".
+    const remove = { op: 'DeleteVob', vob: 5, path: '2/1' };
+
+    it('is accepted with just a vob and a path', () => {
+      expect(() => assertApplyOpsRequest({ ops: [remove] })).not.toThrow();
+    });
+
+    it('is accepted for a root', () => {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...remove, vob: 0, path: '0' }] }))
+        .not.toThrow();
+    });
+
+    it('rejects a path that is not slot indices', () => {
+      for (const bad of ['', '/', '0//2', 'a/b', '2/1/', 3, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, path: bad }] })).toThrow(/path/);
+      }
+    });
+
+    it('rejects a vob that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, vob: bad }] })).toThrow(/vob/);
+      }
+    });
+
+    it('rejects anything beyond the address it is allowed to carry', () => {
+      // The op is uninvertible on purpose, and a delete that arrived carrying a
+      // `from` is either a mislabelled `AddVob` or something reaching for an
+      // inverse this op does not have. Either way the honest answer is a
+      // refusal at the boundary rather than a field the writer silently ignores.
+      for (const extra of ['from', 'to', 'parentPath', 'fromBbox']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, [extra]: null }] }))
+          .toThrow(new RegExp(extra));
+      }
+    });
+  });
+
   describe('a waypoint move', () => {
     // The first op that is not about a VOB at all. A reparent got as far as
     // needing to sit before the `path` check; this one carries neither `path`

@@ -222,6 +222,9 @@ describe('the op log', () => {
   };
 
   const A = move(1, '0/4', [0, 0, 0], [10, 0, 0]);
+  /** The one op with no inverse (§15) — it addresses a VOB and carries nothing
+   *  a replay could use. */
+  const DELETE = { op: 'DeleteVob' as const, vob: 1, path: '0/4' };
   const B = move(2, '0/5', [0, 0, 0], [20, 0, 0]);
 
   /** Apply a batch and let the worker confirm it. */
@@ -231,6 +234,48 @@ describe('the op log', () => {
     worker.replyLast('applyOps', null);
     await pending;
   }
+
+  test('a barrier op clears the history rather than being recorded in it', async () => {
+    // §15: a delete has no inverse, so the history cannot replay it backwards.
+    // What it must not do is leave the *earlier* batches undoable — they were
+    // recorded against an enumeration a delete has just renumbered, so undoing
+    // one now would move whatever VOB has since taken that index. Cleared both
+    // ways, and the user is told before the op lands, which is the surface's
+    // half of the same decision.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const removing = service.applyOps([DELETE]);
+    await tick();
+    worker.replyLast('applyOps', null);
+    await removing;
+
+    // Not the delete itself, and not the move that came before it.
+    await expect(service.undo()).resolves.toBeNull();
+    await expect(service.redo()).resolves.toBeNull();
+    // The world really was edited — the clearing is the history's, not a refusal.
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(2);
+    service.close();
+  });
+
+  test('a barrier the worker refused leaves the history alone', async () => {
+    // The stacks are cleared only once the world has actually changed. A delete
+    // that never happened renumbered nothing, so the batches before it are still
+    // undoable — and throwing them away would be a data loss caused by an error.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const failing = service.applyOps([DELETE]);
+    await tick();
+    worker.fail('applyOps', 'no vob at indexPath');
+    await expect(failing).rejects.toThrow('no vob at indexPath');
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(undone).resolves.toEqual([{ ...A, from: A.to, to: A.from }]);
+    service.close();
+  });
 
   test('an edit goes to the worker as ops', async () => {
     const { worker, service } = await openedService();

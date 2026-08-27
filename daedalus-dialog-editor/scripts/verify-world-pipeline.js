@@ -29,7 +29,7 @@ const path = require('path');
 const DIST = path.join(__dirname, '..', 'dist', 'main');
 const { WorldService } = require(path.join(DIST, 'services', 'WorldService.js'));
 const {
-  createVobReader, gothicAssetSources, moveVob, moveWaypoint,
+  createVobReader, deleteVob, gothicAssetSources, moveVob, moveWaypoint,
 } = require(path.join(__dirname, '..', '..', 'zen-world', 'dist', 'cjs', 'index.js'));
 
 function arg(name, fallback) {
@@ -116,6 +116,9 @@ async function main() {
 
   await verifyOneEdit(service, index, visuals);
   await verifyWaypointEdit(service, index);
+  // Last, because it is the one edit that cannot be taken back: everything
+  // above restores the world it ran against, and this leaves it one VOB short.
+  await verifyDelete(service, index);
 
   service.close();
 
@@ -268,6 +271,53 @@ async function verifyWaypointEdit(service, index) {
   console.log('\none waypoint edit, batched with a VOB move\n');
   row('Waypoint', `${waypoint} of ${names.length} — ${op.name}`);
   row('Moved / undone / redone', `${op.from.map(Math.round).join(', ')} -> ${op.to.map(Math.round).join(', ')} -> back`);
+}
+
+/**
+ * The delete, and the barrier it puts in the history (level-editor.md §15).
+ *
+ * The op with no inverse, so what this proves is the half that is not a round
+ * trip: the world really loses the VOB *and its subtree*, and the history is
+ * left with nothing to replay — including the perfectly good edit made just
+ * before it, which addressed VOBs by indices this delete has renumbered.
+ *
+ * A real retail VOB rather than one the driver placed. An added VOB is
+ * describable by the op that made it, which is exactly the case §15 is not
+ * about; a retail one carries per-class properties, children and an AI that no
+ * op describes, and it is the one this feature had to be unblocked for.
+ *
+ * It runs last and never undoes, so nothing after it may assume the world is
+ * the one that was opened. The file on disk is untouched — this driver never
+ * saves.
+ */
+async function verifyDelete(service, index) {
+  const reader = createVobReader(index);
+  // The last root: a whole subtree, and the one position where what is removed
+  // is unambiguous from the columns alone.
+  let last = -1;
+  for (let vob = 0; vob < reader.count; vob++) if (reader.columns.parent[vob] < 0) last = vob;
+  if (last === -1) { check(false, 'the world has no root VOB to delete'); return; }
+
+  const label = reader.name(last) || reader.visual(last) || reader.className(last);
+  const op = deleteVob(reader, last);
+
+  // An ordinary, invertible edit first — the thing the barrier has to take with
+  // it. Without one the cleared stack is indistinguishable from an empty one.
+  const from = reader.position(0);
+  await service.applyOps([moveVob(reader, 0, [from[0] + 100, from[1], from[2]])]);
+
+  await service.applyOps([op]);
+  const after = await service.refreshIndex();
+  check(after.vobIndex.count < index.count, 'the delete removed no VOB at all');
+
+  check(await service.undo() === null, 'the delete left the history undoable — the barrier did not clear it');
+  check(await service.redo() === null, 'the delete left a redo stack behind');
+
+  const row = (label_, value) => console.log(`  ${String(label_).padEnd(34)}${value}`);
+  console.log('\none delete, and the history barrier\n');
+  row('VOB', `${op.vob} at ${op.path} — ${label}`);
+  row('VOBs before / after', `${index.count} -> ${after.vobIndex.count}`);
+  row('History after it', 'nothing to undo, nothing to redo');
 }
 
 main().catch((error) => { console.error('FAILED:', error); process.exit(1); });

@@ -58,6 +58,9 @@ was true for so long nobody re-reads it.
 - **The addon was rebuilt this session and `binding.gyp` changed**, so every
   other machine and CI must rebuild — a stale `.node` predates the exception fix
   below and still aborts the process on a bad world.
+- **`zen-world` and the editor's `dist/main` were rebuilt this session** —
+  `DeleteVob` is new in both, and the editor reads `zen-world/dist`, not its
+  source.
 - **Nothing else needs rebuilding on this machine.** On another, or after any change
   to `coords`, `binding.cc` or anything `zen-world` exports:
   `cd zenkit-node && node scripts/build-zenkit.js && npx node-gyp rebuild`, then
@@ -78,22 +81,19 @@ was true for so long nobody re-reads it.
   fullscreen. **Rows 7, 8 and 9 must actually run this time** — bed/chest/mobsi,
   a sound or zone VOB, a savegame round-trip. They were defensible as ⏸ for a
   bit-identical re-save and are not for an edited world.
+  **No staged candidate has a VOB deleted from it.** `DeleteVob` landed after
+  `03` was built, and a removed subtree is the edit ZenGin has the most room to
+  disagree about — a `LEVEL-VOB` child list is where its own tooling put
+  everything. Rebuilding the candidates to include one would invalidate the
+  staged set, so whether Gate 2 waits for that is Daniel's call, not something
+  to do unasked.
 
 ## Now
 
-*(empty — the exception fix and `MoveWaypoint` both landed; see Done)*
+*(empty — `DeleteVob` landed; see Done)*
 
 ## Next
 
-- **Deleting an arbitrary VOB — unblocked, and no longer a design question.**
-  Daniel's call, 2026-08-27: the original Spacer has no undo at all, so an
-  unundoable delete is already parity and invertibility does not gate the op.
-  Written up as the plan's §15. `deleteVob` exists in the binding; what the op
-  owes is the *other* half — the history recording it as a barrier that clears
-  the undo stack, and the user being told so before it lands. Neither the
-  subtree snapshot nor the describe-it-completely fallback is a prerequisite any
-  more; both stay open as improvements. `assertApplyOpsRequest` needs its branch
-  in the same change, as always.
 - **Phase 1b-2, class-aware editing — the largest unscheduled thing here.**
   Found by inventorying Spacer parity (plan §14): the two items carrying the
   most modding value had no entry anywhere in the plan. `insertVob` authors a
@@ -178,6 +178,18 @@ was true for so long nobody re-reads it.
 
 ## Done — Phase 1b
 
+- **`DeleteVob` — the first op that ships without an inverse.** The op, the
+  validator branch, the history barrier in `WorldService.applyOps` (both stacks,
+  after the worker confirms), the confirm dialog that says the undo history goes
+  with it, and end-to-end coverage in `verify-world-pipeline.js` against
+  NewWorld — the last root took its whole 4,460-VOB subtree with it and the
+  history came back empty. Not an `AddVob` with a null `to`: that shape means
+  "the op describes this VOB completely", and reusing it would have made the
+  undo of a deleted `oCMobInter` look like it worked. Written up as the plan's
+  "The delete, and the barrier that replaces its inverse". A third dispatch
+  nobody had listed turned up in the World surface — `commitOps`' catch inverts
+  the batch to put the viewport's optimistic draw back, and threw on a refused
+  delete.
 - `MoveVob`, `RotateVob`, `SetVobProp` — gizmos, multi-select, property grid.
 - `AddVob` — terrain placement, at the roots or under the selected VOB.
 - `ReparentVob` — drag onto a row, or between rows at a chosen slot.

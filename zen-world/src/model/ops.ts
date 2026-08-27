@@ -20,11 +20,16 @@
 // which is what would make undo depend on the world still being the one the op
 // was recorded against.
 //
-// Only `MoveVob` exists, because `setVobPosition` is the only mutation the
-// binding has that the engine has accepted (acceptance record §8 row 10: the
-// moved VOB and the inserted item both passed in the real game). The rest of
-// §7's list — reparent, set-prop, add, delete, waynet edges — arrives when the
-// binding call for it does, not before.
+// **One op has no inverse**, and it is the exception the other two facts are
+// stated before. `DeleteVob` cannot describe what it removed — a retail VOB
+// carries per-class properties, children, an AI and an event manager that no op
+// has a field for — so it ships as a *barrier*: `invertOp` refuses it and the
+// history clears rather than replaying it (§15; the original Spacer has no undo
+// at all, so an unundoable delete is already parity). `isBarrierOp` is the
+// predicate that says so, and everything else here is still invertible.
+//
+// Of §7's list only the waynet *edge* ops are still missing; they arrive when
+// the binding call for them does, not before.
 
 import type { VobReader } from './vobTree';
 
@@ -237,7 +242,33 @@ export interface MoveWaypoint {
   to: ZenPosition;
 }
 
-export type WorldOp = MoveVob | RotateVob | SetVobProp | AddVob | ReparentVob | MoveWaypoint;
+/**
+ * The removal of a VOB and its whole subtree — **the one op with no inverse.**
+ *
+ * Deliberately not an `AddVob` with a null `to`. That shape carries a `NewVob`
+ * on its other side and means "this op describes the VOB completely", which is
+ * true of a VOB the editor itself authored and false of every retail one: an
+ * `oCMobInter` carries per-class properties, children, an AI and an event
+ * manager that a `NewVob` has no field for. An inverse built out of the columns
+ * would insert a bare `zCVob` wearing its name, and the undo would look like it
+ * worked.
+ *
+ * So it ships uninvertible, which §15 settled: the original Spacer has no undo
+ * at all, so an unundoable delete is already parity, and `invertOp` is no longer
+ * the gate a new op has to pass. What replaces it is narrower and is the whole
+ * of what this op owes — `isBarrierOp` is true, the history clears its stacks
+ * rather than recording something it cannot replay, and the user is told before
+ * it lands. Serialising the subtree into the op stays open as an improvement;
+ * it is not a prerequisite.
+ */
+export interface DeleteVob {
+  op: 'DeleteVob';
+  vob: number;
+  path: string;
+}
+
+export type WorldOp =
+  MoveVob | RotateVob | SetVobProp | AddVob | ReparentVob | MoveWaypoint | DeleteVob;
 
 /**
  * The tail of every dispatch over `WorldOp`.
@@ -261,8 +292,8 @@ function unreachableOp(op: never): never {
  * writes into columns that already exist; this one changes how many there are,
  * so the renderer's projection cannot follow it and has to be re-read.
  */
-export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob {
-  return op.op === 'AddVob' || op.op === 'ReparentVob';
+export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob | DeleteVob {
+  return op.op === 'AddVob' || op.op === 'ReparentVob' || op.op === 'DeleteVob';
 }
 
 /**
@@ -294,7 +325,33 @@ export function isWaynetOp(op: WorldOp): op is MoveWaypoint {
 }
 
 export function renumbersPaths(op: WorldOp): boolean {
-  return op.op === 'ReparentVob' || (op.op === 'AddVob' && op.parentPath !== null);
+  // A delete has no exception to match the appended root's. An add can be
+  // enumerated last and shift nothing; a removal takes every VOB after it down
+  // by one wherever it sits, roots included.
+  return op.op === 'ReparentVob' || op.op === 'DeleteVob'
+    || (op.op === 'AddVob' && op.parentPath !== null);
+}
+
+/**
+ * Is this op a barrier — one the history cannot replay backwards?
+ *
+ * The predicate that replaced `invertOp` as the gate (§15). `WorldService` reads
+ * it to clear both stacks instead of pushing a batch it could never undo, and
+ * the World surface reads it to warn before the op lands. Its whole membership
+ * is `DeleteVob`, and the point of asking by predicate rather than by name is
+ * that the next uninvertible op joins it without either caller learning a
+ * second name.
+ */
+export function isBarrierOp(op: WorldOp): op is DeleteVob {
+  return op.op === 'DeleteVob';
+}
+
+/** Why a barrier op has no inverse — thrown by both dispatches that would need
+ *  one, so the two cannot drift into disagreeing about it. */
+function barrierError(op: WorldOp): RangeError {
+  return new RangeError(
+    `${op.op} is a barrier: it has no inverse, and the history clears rather than replaying it`,
+  );
 }
 
 /**
@@ -696,8 +753,27 @@ function landingPath(from: string, parentPath: string | null, slot: number): str
   return `${destination.join('/')}/${slot}`;
 }
 
-/** The op that undoes `op` — pure, and an ordinary op in its own right. */
-export function invertOp(op: WorldOp): WorldOp {
+/**
+ * Remove a VOB, and with it every VOB under it — the binding erases the slot
+ * rather than blanking it, so no hole is left for the writer to trip over.
+ *
+ * The whole builder is an address lookup, because the op carries nothing else:
+ * what a delete would have to carry to be invertible is the one thing it cannot
+ * get (`DeleteVob`, above). The flat index rides along for the same reason every
+ * op has one — it is what the renderer selected — even though the projection
+ * cannot follow this op and re-reads the index whole.
+ */
+export function deleteVob(reader: VobReader, vob: number): DeleteVob {
+  const path = vobIndexPath(reader, vob);
+  if (path === null) throw new RangeError(`no VOB ${vob} in this world`);
+  return { op: 'DeleteVob', vob, path };
+}
+
+/** The op that undoes `op` — pure, and an ordinary op in its own right, for
+ *  every op that has one. A barrier does not, and is refused rather than given
+ *  an inverse that would restore something else. */
+export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
+  if (isBarrierOp(op)) throw barrierError(op);
   // The box is half of what these two write. Swapping only the matrix — or only
   // the props — undoes the visible half and leaves the VOB culled by a box
   // fitted to something it is no longer. The two branches are written out
@@ -798,6 +874,16 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   }
   if (op.op === 'MoveWaypoint') {
     binding.setWaypointPosition(op.waypoint, op.name, op[direction]);
+    return;
+  }
+  if (op.op === 'DeleteVob') {
+    // Forward only. `renumbersPaths` keeps a delete alone in its batch, so there
+    // is no later op to fail and unwind it — and nothing to unwind it *with*,
+    // which is the same refusal `invertOp` makes and deliberately the same
+    // error, because two dispatches disagreeing about it is how a barrier would
+    // quietly become half-invertible.
+    if (direction === 'from') throw barrierError(op);
+    binding.deleteVob(op.path);
     return;
   }
   if (op.op === 'MoveVob') {

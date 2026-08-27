@@ -2,7 +2,7 @@ import { Worker } from 'worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import { invertOp } from 'zen-world';
+import { invertOp, isBarrierOp } from 'zen-world';
 import { WorkerRequestError } from './WorkerRequestError';
 import type {
   DecodedTexture,
@@ -161,6 +161,21 @@ export class WorldService {
   applyOps(ops: readonly WorldOp[]): Promise<void> {
     return this.serialized(async () => {
       await this.requestOnOpenWorld<null>('applyOps', { ops });
+
+      // A barrier op has no inverse (§15), and recording it would leave `undo`
+      // reaching for one. Both stacks go, not just the entry it would have
+      // made: a barrier is structural and renumbers, so every batch already on
+      // the undo stack addresses VOBs by indices and paths this edit has just
+      // moved — replaying one would edit whatever has since taken that address.
+      // Cleared *after* the worker confirms, so a refused delete costs the user
+      // nothing. The World surface warns before it lands; this is only the
+      // half that cannot be worked around.
+      if (ops.some(isBarrierOp)) {
+        this.undoStack.length = 0;
+        this.redoStack.length = 0;
+        return;
+      }
+
       this.undoStack.push([...ops]);
       this.redoStack.length = 0;
     });

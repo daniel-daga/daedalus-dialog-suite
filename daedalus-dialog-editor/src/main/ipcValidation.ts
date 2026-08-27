@@ -261,7 +261,8 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
   for (const op of request.ops) {
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
-      && op.op !== 'AddVob' && op.op !== 'ReparentVob' && op.op !== 'MoveWaypoint') {
+      && op.op !== 'AddVob' && op.op !== 'ReparentVob' && op.op !== 'MoveWaypoint'
+      && op.op !== 'DeleteVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
 
@@ -304,6 +305,21 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
 
     if (typeof op.path !== 'string' || !INDEX_PATH.test(op.path)) {
       throw new Error('Invalid op: path must be slot indices separated by "/"');
+    }
+
+    if (op.op === 'DeleteVob') {
+      // A `vob` and a `path`, both already checked above, and **nothing else**.
+      // The exhaustive key check is not tidiness here: this is the one op with
+      // no inverse (§15), so a delete arriving with a `from` is either a
+      // mislabelled `AddVob` — whose null-side rule means "the op describes the
+      // VOB completely" — or something reaching for an inverse that does not
+      // exist. Ignoring the field would let both through as an ordinary delete.
+      for (const key of Object.keys(op)) {
+        if (key !== 'op' && key !== 'vob' && key !== 'path') {
+          throw new Error(`Invalid op: a DeleteVob carries only a vob and a path, not ${key}`);
+        }
+      }
+      continue;
     }
 
     if (op.op === 'RotateVob') {
