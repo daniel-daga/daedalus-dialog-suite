@@ -468,6 +468,91 @@ export function translateVobs(
 }
 
 /**
+ * Drop each selected VOB straight to a ground point found for it alone — a
+ * per-VOB batch, unlike `translateVobs`: there is no shared delta, because
+ * each VOB's ground point comes from its own downward raycast rather than
+ * from one drag gizmo. Still one atomic batch and one undo entry, and still
+ * refused whole rather than partially applied when a VOB is not in the index.
+ */
+export function dropVobsToGround(
+  reader: VobReader,
+  drops: readonly { vob: number; ground: ZenPosition }[],
+): MoveVob[] {
+  return drops.map(({ vob, ground }) => moveVob(reader, vob, ground));
+}
+
+/**
+ * The rotation matrix that carries unit vector `from` onto unit vector `to`
+ * by the shortest arc (Rodrigues' formula, about their cross product). Falls
+ * back to an arbitrary perpendicular axis for the antiparallel case, where the
+ * cross product is zero and any axis through that pair is a valid 180° turn.
+ */
+function rotationBetween(from: ZenPosition, to: ZenPosition): ZenRotation {
+  const dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+  const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  if (dot > 1 - 1e-9) return IDENTITY;
+
+  let axis: ZenPosition = [
+    from[1] * to[2] - from[2] * to[1],
+    from[2] * to[0] - from[0] * to[2],
+    from[0] * to[1] - from[1] * to[0],
+  ];
+  let sin = Math.hypot(axis[0], axis[1], axis[2]);
+
+  if (dot < -1 + 1e-9) {
+    // Antiparallel: the cross product is ~zero, so pick any axis perpendicular
+    // to `from` instead of the one between the (undefined) pair.
+    const reference: ZenPosition = Math.abs(from[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    axis = [
+      from[1] * reference[2] - from[2] * reference[1],
+      from[2] * reference[0] - from[0] * reference[2],
+      from[0] * reference[1] - from[1] * reference[0],
+    ];
+    sin = Math.hypot(axis[0], axis[1], axis[2]);
+  }
+
+  const [x, y, z] = [axis[0] / sin, axis[1] / sin, axis[2] / sin];
+  const oneMinusCos = 1 - dot;
+
+  // I + sin(θ)·K + (1 - cos θ)·K², K the cross-product matrix of the axis.
+  return [
+    dot + x * x * oneMinusCos, x * y * oneMinusCos - z * sin, x * z * oneMinusCos + y * sin,
+    y * x * oneMinusCos + z * sin, dot + y * y * oneMinusCos, y * z * oneMinusCos - x * sin,
+    z * x * oneMinusCos - y * sin, z * y * oneMinusCos + x * sin, dot + z * z * oneMinusCos,
+  ];
+}
+
+/**
+ * Turn each selected VOB so its local **+Y axis** aligns to a hit normal found
+ * for it alone (level-editor.md §16.5) — the engine is Y-up, so +Y is the
+ * standard default, with no per-visual-class exception. A per-VOB batch for
+ * the same reason `dropVobsToGround` is: each VOB's normal comes from its own
+ * raycast, not from one shared delta.
+ *
+ * The turn is composed on the left, same as `rotateVobs`: it rotates the VOB's
+ * current local Y axis (the matrix's middle column) onto the normal, in world
+ * space, leaving whatever the VOB's orientation already had about that axis
+ * alone rather than resetting it.
+ */
+export function alignVobsToNormal(
+  reader: VobReader,
+  hits: readonly { vob: number; normal: ZenPosition }[],
+  boundsOf: (vob: number) => ZenBounds | null,
+): RotateVob[] {
+  return hits.map(({ vob, normal }) => {
+    const from = reader.rotation(vob);
+    if (from === null) throw new RangeError(`no vob ${vob} in the index`);
+
+    const currentUp: ZenPosition = [from[1], from[4], from[7]];
+    const length = Math.hypot(normal[0], normal[1], normal[2]);
+    const unitNormal: ZenPosition = [normal[0] / length, normal[1] / length, normal[2] / length];
+    const delta = rotationBetween(currentUp, unitNormal);
+
+    return rotateVob(reader, vob, multiplyRotation(delta, from as ZenRotation), boundsOf(vob));
+  });
+}
+
+/**
  * A move of one waypoint, in ZenGin space.
  *
  * Takes the waynet payload's own columns rather than a reader, because there is

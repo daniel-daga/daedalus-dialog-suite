@@ -2798,8 +2798,8 @@ Also out: `isStatic` and anything else changing *which* fields the archive
 contains, list fields, and base-`zCVob` widening (§14.1 item 1.8). Alongside and
 independent: class-specific *insertion* (item 1.3 — `insertItemVob` is in the
 binding and wired to nothing), and copy/paste (1.2). Numeric transform entry
-(1.5) is landed bar the multi-selection decision (§16.4); snapping (1.6) is half
-landed (§16.5). All still before Phase 1c in §11.
+(1.5) is landed bar the multi-selection decision (§16.4); snapping (1.6) is
+fully landed (§16.5). All still before Phase 1c in §11.
 
 ### 16.4 Typed rotation — what is left needs Spacer and a UI decision, not code
 
@@ -2824,19 +2824,35 @@ One thing users will see and may report as a bug: displayed angles are canonical
 remounts as −170°, and a pole pose remounts with roll 0. Both correct, both look
 like the editor changing their number.
 
-### 16.5 Snapping — drop-to-ground and align-to-normal
+### 16.5 Snapping — drop-to-ground and align-to-normal (landed)
 
-Grid step and angle step landed. The two that are left are **not** blocked on a
-raycast, which is the thing worth knowing: the world mesh has a BVH. They are
-blocked because both are *per-VOB* answers — each VOB finds its own ground, its
-own normal — while `translateVobs`/`rotateVobs` take **one** delta for the whole
-selection. Doing them means a per-VOB op-building path, the second one this area
-has refused to grow since Phase 1b began.
+Grid step and angle step landed first. The two that were left were **not**
+blocked on a raycast — the world mesh already had a BVH — but on both being
+*per-VOB* answers — each VOB finds its own ground, its own normal — while
+`translateVobs`/`rotateVobs` take **one** delta for the whole selection. That
+meant a per-VOB op-building path, which `zen-world` now has:
+`dropVobsToGround` and `alignVobsToNormal` each take a list of `{ vob, ... }`
+hits rather than a shared delta, batching to one `MoveVob`/`RotateVob` per VOB
+and one undo entry, exactly as `translateVobs`/`rotateVobs` do for a shared
+delta.
 
-Align-to-normal additionally has to decide which axis of a visual is up, the same
-question that keeps a placed VOB at `IDENTITY`. Open and unacted: whether a
-*typed* coordinate should snap too (it does not — a typed number is an explicit
-destination).
+Align-to-normal turns local **+Y** onto the hit normal — the engine is Y-up, so
++Y is the standard default, with no per-visual-class exception (the open
+question of "which axis is up for this visual" that keeps a placed VOB at
+`IDENTITY` is not reopened here). The turn composes on the left, same as
+`rotateVobs`, so whatever the VOB's orientation already had about that axis
+survives.
+
+The raycast itself lives on `WorldViewport` as an imperative handle
+(`WorldViewportHandle.raycastDown`) — the one thing the World surface needs
+from the viewport that is a query rather than a prop, answered synchronously
+against the existing BVH in response to a toolbar click. `WorldSurface` casts
+down from each selected VOB's own position, in flat-index order, and drops any
+VOB whose ray missed rather than refusing the whole batch — a VOB over the
+sky or off the edge of the mesh is left where it was, and the rest still land.
+
+Confirmed not reopened: a *typed* coordinate does not snap (a typed number is
+an explicit destination).
 
 ### 16.6 Every remaining catalogue bound rests on documentation, and one was wrong
 

@@ -1,11 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback, useEffect, useMemo, useRef, useState,
+} from 'react';
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogContentText, DialogTitle, FormControlLabel, MenuItem, Paper, Slider, Stack, Tab, Tabs,
   TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  addVob, applyWaypointPositions, classPropKeys, deleteVob, invertOp, isBarrierOp, isStructuralOp,
+  addVob, alignVobsToNormal, applyWaypointPositions, classPropKeys, deleteVob, dropVobsToGround,
+  invertOp, isBarrierOp, isStructuralOp,
   isWaynetOp, moveWaypoint, placeBounds, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
   type ClassProps, type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
@@ -15,7 +18,7 @@ import { primaryVob, useWorldStore } from '../../store/worldStore';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE, MAX_EXPOSURE, MIN_EXPOSURE } from '../../world/WorldScene';
-import WorldViewport, { type GizmoMode } from './WorldViewport';
+import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
@@ -481,6 +484,60 @@ const WorldSurface: React.FC = () => {
   }, [visuals]);
 
   /**
+   * The imperative handle onto the viewport (level-editor.md §16.5) — the one
+   * thing drop-to-ground and align-to-normal need that is a query rather than a
+   * prop: a per-VOB downward raycast against the world mesh, answered
+   * synchronously in response to a toolbar click.
+   */
+  const viewportRef = useRef<WorldViewportHandle>(null);
+
+  /**
+   * Drop each selected VOB straight to its own ground point — a per-VOB batch,
+   * unlike a gizmo drag: there is no shared delta, because each VOB's ground
+   * comes from its own downward raycast. A VOB with no hit (over the sky, off
+   * the edge of the mesh) is left out rather than refusing the whole batch;
+   * the rest still land.
+   */
+  const handleDropToGround = useCallback(() => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const viewport = viewportRef.current;
+    if (current === null || viewport === null || selected.length === 0) return;
+
+    const reader = vobModelOf(current).reader;
+    const drops: { vob: number; ground: ZenPosition }[] = [];
+    for (const vob of selected) {
+      const from = reader.position(vob);
+      if (from === null) continue;
+      const hit = viewport.raycastDown(from);
+      if (hit !== null) drops.push({ vob, ground: hit.point });
+    }
+    if (drops.length === 0) return;
+    void commitOps(dropVobsToGround(reader, drops));
+  }, [commitOps]);
+
+  /**
+   * Turn each selected VOB's local +Y onto its own hit normal — the same
+   * per-VOB batch as a drop, and for the same reason: each VOB's normal comes
+   * from its own raycast, not from one shared delta.
+   */
+  const handleAlignToNormal = useCallback(() => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const viewport = viewportRef.current;
+    if (current === null || viewport === null || selected.length === 0) return;
+
+    const reader = vobModelOf(current).reader;
+    const hits: { vob: number; normal: ZenPosition }[] = [];
+    for (const vob of selected) {
+      const from = reader.position(vob);
+      if (from === null) continue;
+      const hit = viewport.raycastDown(from);
+      if (hit !== null) hits.push({ vob, normal: hit.normal });
+    }
+    if (hits.length === 0) return;
+    void commitOps(alignVobsToNormal(reader, hits, boundsOf));
+  }, [commitOps, boundsOf]);
+
+  /**
    * The VOB a placement could be parented to: the selected one, or null when
    * nothing is selected and a root is the only thing on offer.
    *
@@ -840,6 +897,32 @@ const WorldSurface: React.FC = () => {
               </TextField>
             </Stack>
           )}
+          {/* Snapping's per-VOB half (level-editor.md §16.5) — unlike the
+              gizmo, which drives the whole selection from one shared delta,
+              each of these finds its own ground point or its own normal, so
+              they act on the selection whatever its size. */}
+          {summary && (
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={selection.length === 0}
+                onClick={handleDropToGround}
+                data-testid="world-drop-to-ground"
+              >
+                Drop to ground
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={selection.length === 0}
+                onClick={handleAlignToNormal}
+                data-testid="world-align-to-normal"
+              >
+                Align to normal
+              </Button>
+            </Stack>
+          )}
           {/* The one destructive edit in the surface, and the only one behind a
               confirm. Exactly one VOB, never a selection: it renumbers, so each
               would need its own batch, and a button that removed only the
@@ -1006,6 +1089,7 @@ const WorldSurface: React.FC = () => {
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
           {mesh && visuals && summary && (
             <WorldViewport
+              ref={viewportRef}
               mesh={mesh}
               visuals={visuals}
               bbox={summary.bbox}

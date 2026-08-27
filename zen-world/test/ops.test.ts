@@ -18,12 +18,14 @@
 
 import {
   addVob,
+  alignVobsToNormal,
   applyOps,
   applyWaypointPositions,
   reparentVob,
   commitOps,
   createVobReader,
   deleteVob,
+  dropVobsToGround,
   invertOp,
   isBarrierOp,
   isStructuralOp,
@@ -250,6 +252,58 @@ describe('a multi-select drag', () => {
   });
 });
 
+describe('a drop to ground', () => {
+  // Unlike `translateVobs`, there is no shared delta: each VOB found its own
+  // ground point independently (its own downward raycast), so the batch takes
+  // a destination per VOB rather than one delta for the whole selection.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+    { parent: 0, childIndex: 5, pos: [-1, -2, -3] },
+  ]));
+
+  it('moves each VOB straight to its own ground point', () => {
+    const ops = dropVobsToGround(reader(), [
+      { vob: 0, ground: [100, 5, 300] },
+      { vob: 2, ground: [-1, -50, -3] },
+    ]);
+
+    expect(ops).toEqual([
+      { op: 'MoveVob', vob: 0, path: '0', from: [100, 200, 300], to: [100, 5, 300] },
+      { op: 'MoveVob', vob: 2, path: '0/5', from: [-1, -2, -3], to: [-1, -50, -3] },
+    ]);
+  });
+
+  it('inverts as a batch — the whole selection goes back where it came from', () => {
+    const index = vobIndex([
+      { childIndex: 0, pos: [100, 200, 300] },
+      { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+    ]);
+    const live = createVobReader(index);
+    const ops = dropVobsToGround(live, [
+      { vob: 0, ground: [100, 5, 300] },
+      { vob: 1, ground: [10, -8, 30] },
+    ]);
+
+    applyOps(live, ops);
+    applyOps(live, [...ops].reverse().map(invertOp));
+
+    expect(live.position(0)).toEqual([100, 200, 300]);
+    expect(live.position(1)).toEqual([10, 20, 30]);
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(dropVobsToGround(reader(), [])).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    expect(() => dropVobsToGround(reader(), [
+      { vob: 0, ground: [1, 2, 3] },
+      { vob: 9, ground: [4, 5, 6] },
+    ])).toThrow(/9/);
+  });
+});
+
 describe('a rotate op', () => {
   // The second mutation the binding has. Two things separate it from a move:
   //
@@ -463,6 +517,72 @@ describe('a multi-select turn', () => {
 
     expect(multiplyRotation(a, b)).toEqual([1, 3, 2, 4, 6, 5, 7, 9, 8]);
     expect(multiplyRotation(b, a)).toEqual([1, 2, 3, 7, 8, 9, 4, 5, 6]);
+  });
+});
+
+describe('an align to normal', () => {
+  // Aligns each VOB's local +Y axis to its own hit normal (level-editor.md
+  // §16.5) — the engine is Y-up, so +Y is the standard "up" default, and there
+  // is deliberately no per-visual-class exception to it. Like a drop to
+  // ground, there is no shared delta: each VOB found its own normal.
+  const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const BOUNDS: ZenBounds = [-1, 0, -10, 1, 2, 10];
+
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+  ]));
+
+  it('leaves an already-upright VOB alone when the normal is straight up', () => {
+    const ops = alignVobsToNormal(reader(), [{ vob: 0, normal: [0, 1, 0] }], () => BOUNDS);
+
+    expect(ops[0].to).toEqual(IDENTITY);
+  });
+
+  it('rotates local +Y onto the given normal', () => {
+    // Written out via Rodrigues' formula rather than derived from the
+    // implementation: an implementation that aligned the wrong axis, or
+    // aligned it backwards, would still pass a test built the same way it was.
+    const ops = alignVobsToNormal(reader(), [{ vob: 1, normal: [1, 0, 0] }], () => BOUNDS);
+
+    expect(ops[0].to).toEqual([0, 1, 0, -1, 0, 0, 0, 0, 1]);
+    // The rotated local Y axis (the matrix's middle column) is the normal.
+    const [, y1, , , y4, , , y7] = ops[0].to;
+    expect([y1, y4, y7]).toEqual([1, 0, 0]);
+  });
+
+  it('refits the bounding box for both poses, same as a rotate op', () => {
+    const ops = alignVobsToNormal(reader(), [{ vob: 1, normal: [1, 0, 0] }], () => BOUNDS);
+
+    expect(ops[0].fromBbox).not.toBeNull();
+    expect(ops[0].toBbox).not.toBeNull();
+    expect(ops[0].toBbox).not.toEqual(ops[0].fromBbox);
+  });
+
+  it('asks for each VOB\'s own bounds, and takes null for an answer', () => {
+    const asked: number[] = [];
+    const ops = alignVobsToNormal(reader(), [
+      { vob: 0, normal: [1, 0, 0] },
+      { vob: 1, normal: [0, 1, 0] },
+    ], (vob) => {
+      asked.push(vob);
+      return vob === 0 ? BOUNDS : null;
+    });
+
+    expect(asked).toEqual([0, 1]);
+    expect(ops[0].toBbox).not.toBeNull();
+    expect(ops[1].toBbox).toBeNull();
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(alignVobsToNormal(reader(), [], () => null)).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    expect(() => alignVobsToNormal(reader(), [
+      { vob: 0, normal: [0, 1, 0] },
+      { vob: 9, normal: [0, 1, 0] },
+    ], () => null)).toThrow(/9/);
   });
 });
 

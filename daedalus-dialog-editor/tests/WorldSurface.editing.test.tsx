@@ -39,6 +39,13 @@ let mockExposure: number | undefined;
 /** The steps the viewport is told to quantise a drag to. */
 let mockSnapGrid: number | undefined;
 let mockSnapAngle: number | undefined;
+/** The viewport's imperative raycast — drop-to-ground and align-to-normal's
+ *  only way to ask it anything. A `jest.fn` rather than a fixed answer, so
+ *  each test says what the ray hits. */
+const mockRaycastDown = jest.fn() as jest.Mock<
+  { point: [number, number, number]; normal: [number, number, number] } | null,
+  [[number, number, number]]
+>;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 // The house pattern for react-window under jsdom, which has no layout — without
@@ -48,9 +55,11 @@ jest.mock('react-virtualized-auto-sizer', () => (props: {
   children: (size: { height: number; width: number }) => React.ReactNode;
 }) => props.children({ height: 600, width: 320 }));
 
-jest.mock('../src/renderer/components/world/WorldViewport', () => ({
+jest.mock('../src/renderer/components/world/WorldViewport', () => {
+  const ReactActual = jest.requireActual('react') as typeof React;
+  return {
   __esModule: true,
-  default: (props: {
+  default: ReactActual.forwardRef((props: {
     onTranslateSelection: (delta: [number, number, number]) => void;
     onRotateSelection: (delta: number[]) => void;
     onPick: (
@@ -73,7 +82,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
       from: [number, number, number],
       to: [number, number, number],
     ) => void;
-  }) => {
+  }, ref: React.Ref<{ raycastDown: typeof mockRaycastDown }>) => {
     mockAppliedOps = props.appliedOps;
     mockSelection = props.selection;
     mockGizmoMode = props.gizmoMode;
@@ -83,6 +92,10 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     mockExposure = props.exposure;
     mockSnapGrid = props.snapGrid;
     mockSnapAngle = props.snapAngle;
+    // The imperative surface drop-to-ground and align-to-normal call directly
+    // — see `WorldViewportHandle`'s doc — stood in by one jest.fn so the shell
+    // side can be tested without a WebGL raycast.
+    ReactActual.useImperativeHandle(ref, () => ({ raycastDown: mockRaycastDown }));
     return (
       <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
@@ -119,8 +132,9 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
         </button>
       </div>
     );
-  },
-}));
+  }),
+  };
+});
 
 /** Where a terrain click lands — ZenGin centimetres, deliberately not round. */
 const TERRAIN: [number, number, number] = [1500.5, -220, 3300.25];
@@ -291,6 +305,7 @@ beforeEach(() => {
   mockSnapGrid = undefined;
   mockSnapAngle = undefined;
   mockVobProps = { class: 'zCVob' };
+  mockRaycastDown.mockReset();
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
 
@@ -1577,5 +1592,103 @@ describe('jumping to a VOB from the scene tree', () => {
     fireEvent.doubleClick(screen.getByTestId('world-vob-row-0'));
     await waitFor(() => expect(mockFrameRequest).not.toBe(first));
     expect(mockFrameRequest).toEqual({ vob: 0 });
+  });
+});
+
+// Snapping's per-VOB half (level-editor.md §16.5): unlike the gizmo, which
+// drives the whole selection from one shared delta, a drop or an align finds
+// each VOB's own ground point or own normal through a raycast the shell asks
+// the viewport for directly, then builds one batch through `dropVobsToGround`
+// or `alignVobsToNormal` — the same commit path as every other edit here.
+describe('drop to ground', () => {
+  it('is disabled with nothing selected, and reachable with something', async () => {
+    await openWorld();
+    act(() => useWorldStore.getState().selectVob(null));
+    expect(screen.getByTestId('world-drop-to-ground')).toBeDisabled();
+
+    act(() => useWorldStore.getState().selectVob(1));
+    expect(screen.getByTestId('world-drop-to-ground')).toBeEnabled();
+  });
+
+  it('casts down from the VOB\'s own position and commits a MoveVob to the hit point', async () => {
+    const summary = await openWorld();
+    mockRaycastDown.mockReturnValueOnce({ point: [10, 5, 30], normal: [0, 1, 0] });
+
+    fireEvent.click(screen.getByTestId('world-drop-to-ground'));
+
+    expect(mockRaycastDown).toHaveBeenCalledWith([10, 20, 30]);
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
+      { op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [10, 5, 30] },
+    ]));
+    expect(createVobReader(summary.vobIndex).position(1)).toEqual([10, 5, 30]);
+  });
+
+  it('is one batch for a multi-selection, each VOB cast from its own position', async () => {
+    await openWorld();
+    act(() => useWorldStore.getState().toggleVob(0));
+    mockRaycastDown.mockImplementation((origin) => ({ point: [origin[0], 0, origin[2]], normal: [0, 1, 0] }));
+
+    fireEvent.click(screen.getByTestId('world-drop-to-ground'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(api.applyWorldOps).toHaveBeenCalledWith([
+      { op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [10, 0, 30] },
+      { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [0, 0, 0] },
+    ]);
+  });
+
+  it('sends no op at all when nothing was hit — over the sky, off the mesh', async () => {
+    await openWorld();
+    mockRaycastDown.mockReturnValueOnce(null);
+
+    fireEvent.click(screen.getByTestId('world-drop-to-ground'));
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+});
+
+describe('align to normal', () => {
+  it('is disabled with nothing selected, and reachable with something', async () => {
+    await openWorld();
+    act(() => useWorldStore.getState().selectVob(null));
+    expect(screen.getByTestId('world-align-to-normal')).toBeDisabled();
+
+    act(() => useWorldStore.getState().selectVob(1));
+    expect(screen.getByTestId('world-align-to-normal')).toBeEnabled();
+  });
+
+  it('turns local +Y onto the raycast\'s normal, refitting the box like any rotate', async () => {
+    // VOB 1 sits at [10, 20, 30] with identity rotation and the bounds
+    // `openWorld` gives it, [-1, 0, -10, 1, 2, 10] — the same fixture
+    // `ops.test.ts`'s "rotates local +Y onto the given normal" uses, so the
+    // matrix is the one already proven there.
+    const summary = await openWorld();
+    mockRaycastDown.mockReturnValueOnce({ point: [10, 5, 30], normal: [1, 0, 0] });
+
+    fireEvent.click(screen.getByTestId('world-align-to-normal'));
+
+    expect(mockRaycastDown).toHaveBeenCalledWith([10, 20, 30]);
+    const identity: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    const to: ZenRotation = [0, 1, 0, -1, 0, 0, 0, 0, 1];
+    const bounds: [number, number, number, number, number, number] = [-1, 0, -10, 1, 2, 10];
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'RotateVob',
+      vob: 1,
+      path: '1',
+      from: identity,
+      to,
+      fromBbox: placeBounds(bounds, identity, [10, 20, 30]),
+      toBbox: placeBounds(bounds, to, [10, 20, 30]),
+    }]));
+    expect(createVobReader(summary.vobIndex).rotation(1)).toEqual(to);
+  });
+
+  it('sends no op at all when nothing was hit', async () => {
+    await openWorld();
+    mockRaycastDown.mockReturnValueOnce(null);
+
+    fireEvent.click(screen.getByTestId('world-align-to-normal'));
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 });

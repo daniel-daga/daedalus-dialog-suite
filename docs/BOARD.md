@@ -121,8 +121,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
-- **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
-  op-building path, not on a raycast. Unowned. §16.5
 
 **Waynet, and the scripts that name it**
 
@@ -161,7 +159,10 @@ card waits on live at its pointer — put new prose there, not here.
   `oCMob*`** — `slot`/`vobTree` on Fire; `locked`/`pickString` on Container and
   Door, `key` and Container's `contents` held out as unvalidated cross-
   references. §16.3
+- **Snapping — drop-to-ground and align-to-normal landed** — a per-VOB batch
+  in `zen-world` (`dropVobsToGround`, `alignVobsToNormal`, aligning local +Y),
+  a `WorldViewport` imperative raycast handle, and two World-surface toolbar
+  buttons wired through the existing `commitOps` path. §16.5
 
-Verified this session: `zenkit-node` (rebuild + full suite + lint), `zen-world`
-(test/lint/typecheck/build), editor (build:main/typecheck:renderer/Jest/lint)
-all green.
+Verified this session: `zen-world` (test/lint/typecheck/build), editor
+(build:main/typecheck:renderer/Jest/lint) all green.

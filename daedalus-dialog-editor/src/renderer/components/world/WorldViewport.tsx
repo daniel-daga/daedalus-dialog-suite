@@ -1,11 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useImperativeHandle, useRef } from 'react';
 import { Box } from '@mui/material';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
   multiplyRotation, mirrorRotation, threeToZen, zenToThree, zenBoxToThree,
-  isWaynetOp, type ZenRotation,
+  isWaynetOp, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
@@ -205,6 +205,29 @@ export interface WorldViewportProps {
 
 export type GizmoMode = 'translate' | 'rotate';
 
+/**
+ * The imperative surface `WorldSurface` calls directly, for the one thing that
+ * is a query rather than a callback: drop-to-ground and align-to-normal need a
+ * per-VOB raycast answered synchronously, in response to a toolbar click
+ * rather than a gizmo drag — everything else here is a prop, either data going
+ * down or a finished edit coming back up through a callback.
+ *
+ * `window.__worldViewport` is not it: that global exists solely for scripts
+ * and tests to drive the viewport as if a user did (`scripts/verify-world-edit.js`,
+ * `WorldViewport.snapping.test.tsx`) and no production component reads it. A
+ * real sibling asking the viewport something is a `ref`, the pattern
+ * `ActionCard.tsx` already uses for the same reason.
+ */
+export interface WorldViewportHandle {
+  /**
+   * A ray straight down from `origin` (ZenGin space) against the world mesh —
+   * the terrain, a building, a cave wall. Returns the hit point and its
+   * world-space normal, both in ZenGin space, or null for a miss (over the
+   * sky, or off the edge of the mesh).
+   */
+  raycastDown: (origin: ZenPosition) => { point: ZenPosition; normal: ZenPosition } | null;
+}
+
 /** What the selection and edit effects need of the imperative viewport, so
  *  neither of them can tear the scene down and rebuild 31 MB of buffers. */
 interface Gizmo {
@@ -224,16 +247,45 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
   return out as ZenRotation;
 }
 
-const WorldViewport: React.FC<WorldViewportProps> = ({
+const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, frameRequest, terrainPoint, exposure, snapGrid, snapAngle,
   onSelectWaypoint, onMoveWaypoint,
-}) => {
+}, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
   // for the waynet does not rebuild 31 MB of geometry.
   const sceneRef = useRef<WorldScene | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    raycastDown: (origin) => {
+      const world = sceneRef.current;
+      if (world === null) return null;
+
+      const raycaster = new THREE.Raycaster();
+      raycaster.firstHitOnly = true;
+      raycaster.set(
+        new THREE.Vector3(...zenToThree(origin)),
+        new THREE.Vector3(...zenToThree([0, -1, 0])).normalize(),
+      );
+      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
+      if (!hit || !hit.face) return null;
+
+      // `.face.normal` is in the mesh's local space; `transformDirection` puts
+      // it in three-space by the mesh's own matrixWorld, mirror included —
+      // the inverse-transpose it uses is exactly what a mirror needs and a
+      // plain matrix multiply would get backwards.
+      const worldNormal = hit.face.normal.clone()
+        .transformDirection(hit.object.matrixWorld).normalize();
+
+      return {
+        point: threeToZen(hit.point.toArray() as [number, number, number]),
+        normal: threeToZen(worldNormal.toArray() as [number, number, number]),
+      };
+    },
+  }), []);
+
   const overlayRef = useRef<WaynetOverlay | null>(null);
   const gizmoRef = useRef<Gizmo | null>(null);
   const onTranslateRef = useRef(onTranslateSelection);
@@ -1089,6 +1141,8 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   }, [appliedOps]);
 
   return <Box ref={hostRef} data-testid="world-viewport" sx={{ width: '100%', height: '100%', minHeight: 0 }} />;
-};
+});
+
+WorldViewport.displayName = 'WorldViewport';
 
 export default WorldViewport;
