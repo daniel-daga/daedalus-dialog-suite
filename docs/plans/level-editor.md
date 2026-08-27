@@ -2759,8 +2759,14 @@ ships.
 
 **So a bound taken from ZenKit's docs rather than from a `normalizeWorld` sweep
 is a live refusal risk, not a cautious default.** `coneAngle` 0–360 and the two
-daytime hours 0–24 are the ones still standing on documentation alone; neither
-has been swept, and the sweep is cheap now that the script exists.
+daytime hours 0–24 were the ones still standing on documentation alone; swept
+2026-08-28 over the same three worlds, both are confirmed rather than
+falsified. `coneAngle` is `0` on all 1,237 `zCVobSound`/`zCVobSoundDaytime`
+VOBs in the corpus — retail never uses a directional cone, so nothing tests the
+upper bound, but nothing refutes it either. The 84 `zCVobSoundDaytime` VOBs
+hold `startTime` in [5, 8] and `endTime` in [12, 23], comfortably inside 0–24.
+Every catalogue bound has now been swept at least once; none remain
+documentation-only.
 
 ### 16.7 Waynet editing — the edge ops, and add/delete/rename
 

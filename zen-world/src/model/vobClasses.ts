@@ -95,6 +95,11 @@ const ZC_VOB_LIGHT_FIELDS = [
  * `volume` has no maximum, against ZenKit's own "percent (0-100)" doc comment:
  * measured 2026-08-27 over the three retail worlds, NewWorld holds 130 on two
  * sounds and 150 on four, so a max of 100 refuses values the game itself ships.
+ *
+ * `coneAngle` 0-360 was documentation-only until swept 2026-08-27 over the same
+ * three worlds: every one of 1,237 `zCVobSound`/`zCVobSoundDaytime` VOBs holds
+ * `0` (retail never uses a directional cone), so nothing in the corpus tests the
+ * bound — but nothing refutes it either, and 0-360 is what a cone angle means.
  */
 const ZC_VOB_SOUND_FIELDS = [
   { key: 'soundName', kind: 'string' },
@@ -114,6 +119,11 @@ const ZC_VOB_SOUND_FIELDS = [
  *
  * The two times are hours of the day, `13.5` being 13:30. They are bounded
  * rather than wrapped: a caller who means midnight means 0.
+ *
+ * 0-24 was documentation-only until swept 2026-08-27 over the three retail
+ * worlds: 84 `zCVobSoundDaytime` VOBs hold `startTime` in [5, 8] and `endTime`
+ * in [12, 23] — well inside the bound, so the sweep confirms rather than
+ * falsifies it.
  */
 const ZC_VOB_SOUND_DAYTIME_FIELDS = [
   ...ZC_VOB_SOUND_FIELDS,

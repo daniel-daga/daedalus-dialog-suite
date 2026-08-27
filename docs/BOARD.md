@@ -125,8 +125,6 @@ card waits on live at its pointer — put new prose there, not here.
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
   op-building path, not on a raycast. Unowned. §16.5
-- **`coneAngle` and the two daytime hours rest on ZenKit's docs** — and the one
-  bound that did was refusing retail data. Sweep is cheap. Unowned. §16.6
 
 **Waynet, and the scripts that name it**
 
@@ -172,6 +170,9 @@ against `git log` and the docs. `git log` is the permanent record.)*
   pins the wiring, not the value.
 - **`zCVobAnimate` joined the class-property catalogue** — `startOn` only,
   round-tripped through `setVobClassProp`/save/reload. §16.3
+- **`coneAngle` and the two daytime hours are swept, not just documented** —
+  retail never varies `coneAngle` from 0 and keeps both hours well inside
+  0–24; neither bound changed. §16.6
 
 Verified this session: `zenkit-node` (build + full suite + lint), `zen-world`
 (test + lint + typecheck + build), `daedalus-dialog-editor` (build:main +
