@@ -32,6 +32,10 @@ import WorldAssetPreview from './WorldAssetPreview';
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
+/** A small MUI button's height, rounded up — what the placement bar's row
+ *  reserves so it is the same height with a point and without one. */
+const BAR_HEIGHT = 31;
+
 const WorldSurface: React.FC = () => {
   const status = useWorldStore((s) => s.status);
   const summary = useWorldStore((s) => s.summary);
@@ -854,6 +858,7 @@ const WorldSurface: React.FC = () => {
               appliedOps={appliedOps}
               selectedWaypoint={selectedWaypoint}
               frameRequest={frameRequest}
+              terrainPoint={terrainPoint}
               onSelectWaypoint={selectWaypoint}
               onMoveWaypoint={moveWaypointTo}
             />
@@ -877,8 +882,13 @@ const WorldSurface: React.FC = () => {
         )}
       </Box>
 
-      {terrainPoint && (
-        <Paper square elevation={1} sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}>
+      {summary && (
+        <Paper
+          square
+          elevation={1}
+          sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}
+          data-testid="world-terrain-bar"
+        >
           {/* Terrain is not a VOB, so it has no row and no properties — a hit
               reports the point rather than inventing a selection. ZenGin space,
               centimetres: the coordinates an op would carry, and the position a
@@ -887,18 +897,33 @@ const WorldSurface: React.FC = () => {
               It stays up while something is selected, which is what makes a
               parented placement expressible: only a viewport pick replaces the
               point, so clicking a row in the scene tree afterwards names a
-              parent without losing the ground the user chose. */}
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
-              Terrain @ {terrainPoint.map((v) => Math.round(v)).join(', ')}
-            </Typography>
-            <Button
-              size="small"
-              onClick={() => setPlacing({ name: '', visual: '', parent: null })}
-              data-testid="world-place-vob"
-            >
-              Place VOB here…
-            </Button>
+              parent without losing the ground the user chose.
+
+              Mounted whether or not there is a point, because mounting it on the
+              first hit shortened the viewport by its own height at the instant of
+              the click — the picture moves out from under the cursor that picked
+              it. That is also why the row reserves the height of the button it
+              only sometimes carries: a bar that changes height is the same
+              shove. */}
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: BAR_HEIGHT }}>
+            {terrainPoint === null ? (
+              <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
+                Click the ground to choose where a VOB goes.
+              </Typography>
+            ) : (
+              <>
+                <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
+                  Terrain @ {terrainPoint.map((v) => Math.round(v)).join(', ')}
+                </Typography>
+                <Button
+                  size="small"
+                  onClick={() => setPlacing({ name: '', visual: '', parent: null })}
+                  data-testid="world-place-vob"
+                >
+                  Place VOB here…
+                </Button>
+              </>
+            )}
           </Stack>
         </Paper>
       )}

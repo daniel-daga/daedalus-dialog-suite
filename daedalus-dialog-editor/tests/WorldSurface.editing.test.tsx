@@ -28,6 +28,8 @@ const DRAG: [number, number, number] = [1, 2, 3];
 let mockGizmoMode: string | undefined;
 let mockSelectedWaypoint: number | null | undefined;
 let mockFrameRequest: { vob: number } | null | undefined;
+/** What the viewport is told to draw a marker at. */
+let mockTerrainPoint: [number, number, number] | null | undefined;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 // The house pattern for react-window under jsdom, which has no layout — without
@@ -52,6 +54,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     appliedOps: WorldOp[] | null;
     selectedWaypoint: number | null;
     frameRequest: { vob: number } | null;
+    terrainPoint: [number, number, number] | null;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -64,6 +67,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     mockGizmoMode = props.gizmoMode;
     mockSelectedWaypoint = props.selectedWaypoint;
     mockFrameRequest = props.frameRequest;
+    mockTerrainPoint = props.terrainPoint;
     return (
       <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
@@ -92,6 +96,11 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
             placed VOB goes. */}
         <button type="button" data-testid="stub-pick-terrain" onClick={() => props.onPick(null, TERRAIN, false)}>
           pick terrain
+        </button>
+        {/* And a click that hit a VOB: it selects, and reports no point — the
+            ground the last pick chose is no longer what a placement would use. */}
+        <button type="button" data-testid="stub-pick-vob" onClick={() => props.onPick(1, null, false)}>
+          pick vob
         </button>
       </div>
     );
@@ -256,6 +265,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockAppliedOps = undefined;
   mockFrameRequest = undefined;
+  mockTerrainPoint = undefined;
   mockVobProps = { class: 'zCVob' };
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
@@ -909,6 +919,38 @@ describe('placing a VOB', () => {
 
     await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalled());
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+  });
+
+  it('keeps the bar mounted, so a pick does not resize the viewport under the click', async () => {
+    // Mounting the bar on the first terrain hit shortened the viewport by its
+    // height the moment a point landed, which moves the picture out from under
+    // the cursor that picked it. So it is there before the first pick, and it
+    // is the *same* element after — a remount is the same shove.
+    await openWorld();
+    const before = screen.getByTestId('world-terrain-bar');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+
+    expect(await screen.findByTestId('world-place-vob')).toBeInTheDocument();
+    expect(screen.getByTestId('world-terrain-bar')).toBe(before);
+  });
+
+  it('tells the viewport where to draw the point the bar names', async () => {
+    // "Place VOB here…" names coordinates, and coordinates are not a place
+    // anybody can see. The viewport draws a marker there; this is the only
+    // seam between the two.
+    await openWorld();
+    expect(mockTerrainPoint).toBeNull();
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(mockTerrainPoint).toEqual(TERRAIN));
+
+    // And it goes away with the point: a hit on a VOB is not a point on the
+    // ground, and a marker left behind names a placement that is no longer on
+    // offer.
+    fireEvent.click(screen.getByTestId('stub-pick-vob'));
+    await waitFor(() => expect(screen.queryByTestId('world-place-vob')).not.toBeInTheDocument());
+    expect(mockTerrainPoint).toBeNull();
   });
 
   it('cannot be reached without a point to place at', async () => {

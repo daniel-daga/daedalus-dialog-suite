@@ -12,6 +12,7 @@ import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
+import { TerrainMarker } from '../../world/TerrainMarker';
 import { WorldScene, textureCacheFor, type TextureCache } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
@@ -153,6 +154,14 @@ export interface WorldViewportProps {
    * somewhere else. Null before any has been made.
    */
   frameRequest: { vob: number } | null;
+  /**
+   * The last point picked on the terrain, in **ZenGin space** — the one the
+   * placement bar names — or null when there is none.
+   *
+   * Drawn as a marker, because the bar offers to place a VOB at coordinates and
+   * coordinates are not somewhere the user can see.
+   */
+  terrainPoint: [number, number, number] | null;
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
   /**
@@ -194,7 +203,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
-  selectedWaypoint, frameRequest, onSelectWaypoint, onMoveWaypoint,
+  selectedWaypoint, frameRequest, terrainPoint, onSelectWaypoint, onMoveWaypoint,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -898,6 +907,27 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   useEffect(() => {
     overlayRef.current?.setVisible(showWaynet);
   }, [showWaynet, waynet, mesh]);
+
+  // The marker for the picked point, built and torn down exactly like the
+  // overlay above — under the scene's converted root, so it needs no conversion
+  // of its own. `mesh` and `visuals` are dependencies because a structural op
+  // rebuilds the scene and with it the root this hangs under, not because the
+  // point changed; without them the marker is left on a scene that has been
+  // disposed, which is precisely the placement it was drawn for. Built per
+  // point rather than moved: a click is not a frame, and this way the point
+  // that is gone takes its geometry with it.
+  useEffect(() => {
+    const world = sceneRef.current;
+    if (world === null || terrainPoint === null) return;
+
+    const marker = new TerrainMarker(terrainPoint);
+    world.root.add(marker.root);
+
+    return () => {
+      world.root.remove(marker.root);
+      marker.dispose();
+    };
+  }, [terrainPoint, mesh, visuals]);
 
   // The gizmo follows the selection. `mesh` is a dependency because a new
   // world's scene is a new gizmo, not because the selection changed.
