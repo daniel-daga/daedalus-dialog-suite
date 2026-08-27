@@ -113,6 +113,26 @@ describe('an edit reaching the renderer', () => {
     expect(reader.position(0)).toEqual([0, 0, 0]);
   });
 
+  it('applies the VOB half of a batch that also moves a waypoint', () => {
+    // A waynet op is **not** structural — it changes no enumeration — so the
+    // guard above does not catch it, and it has no row in these columns either,
+    // so `applyOps` refuses it by name. Partitioned rather than guarded,
+    // because by the time the renderer sees a batch the authoritative world has
+    // already been committed: throwing here would leave the world one edit
+    // ahead of a history that cannot undo it, and drop the VOB move on the
+    // floor as well.
+    const { summary } = opened();
+    const reader = vobModelOf(summary).reader;
+    const ops: WorldOp[] = [
+      moveVob(reader, 0, [5, 5, 5]),
+      { op: 'MoveWaypoint', waypoint: 2, name: 'WP_CITY_01', from: [0, 0, 0], to: [9, 9, 9] },
+    ];
+
+    expect(() => useWorldStore.getState().applyEdit(ops)).not.toThrow();
+
+    expect(reader.position(0)).toEqual([5, 5, 5]);
+  });
+
   it('takes a re-read index whole, because its columns are new buffers', () => {
     // `vobModelOf` caches its reader against the summary object. A refreshed
     // index is a different set of `ArrayBuffer`s, so anything still reading the

@@ -261,9 +261,33 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
   for (const op of request.ops) {
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
-      && op.op !== 'AddVob' && op.op !== 'ReparentVob') {
+      && op.op !== 'AddVob' && op.op !== 'ReparentVob' && op.op !== 'MoveWaypoint') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
+
+    // Before the `vob` check, not merely before the `path` check: a waynet op
+    // is not about a VOB at all and carries neither field. The reparent branch
+    // below sits after `vob` and could afford to, because a reparent still has
+    // one; put this one there and the op is refused with a message about a
+    // field it has no business having.
+    if (op.op === 'MoveWaypoint') {
+      if (typeof op.waypoint !== 'number' || !Number.isInteger(op.waypoint) || op.waypoint < 0) {
+        throw new Error('Invalid op: waypoint must be a non-negative integer');
+      }
+      // The name is the guard the bare index needs, so an absent one is not a
+      // tolerable omission: a wrong waypoint index always resolves to a
+      // waypoint, and moves it.
+      if (typeof op.name !== 'string') {
+        throw new Error('Invalid op: name must be the waypoint\'s name');
+      }
+      for (const field of ['from', 'to'] as const) {
+        if (!isFiniteNumbers(op[field], 3)) {
+          throw new Error(`Invalid op: ${field} must be three finite numbers`);
+        }
+      }
+      continue;
+    }
+
     if (typeof op.vob !== 'number' || !Number.isInteger(op.vob) || op.vob < 0) {
       throw new Error('Invalid op: vob must be a non-negative integer');
     }

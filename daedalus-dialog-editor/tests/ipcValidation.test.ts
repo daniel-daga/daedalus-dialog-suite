@@ -571,4 +571,50 @@ describe('assertApplyOpsRequest', () => {
       }
     });
   });
+
+  describe('a waypoint move', () => {
+    // The first op that is not about a VOB at all. A reparent got as far as
+    // needing to sit before the `path` check; this one carries neither `path`
+    // nor `vob`, so it has to sit before the `vob` check as well — and the
+    // failure of getting that wrong is not a refusal the caller can read, it is
+    // a message about a field the op has no business having.
+    const move = {
+      op: 'MoveWaypoint', waypoint: 12, name: 'WP_CITY_01',
+      from: [1, 2, 3], to: [4, 5, 6],
+    };
+
+    it('is accepted carrying no vob and no path at all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [move] })).not.toThrow();
+    });
+
+    it('is accepted alongside a VOB op in one batch', () => {
+      // Neither structural nor renumbering, so it may share a batch — and the
+      // validator must not be the layer that decides otherwise.
+      expect(() => assertApplyOpsRequest({
+        ops: [move, { op: 'MoveVob', vob: 3, path: '0/1', from: [0, 0, 0], to: [1, 1, 1] }],
+      })).not.toThrow();
+    });
+
+    it('rejects a waypoint index that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, waypoint: bad }] }))
+          .toThrow(/waypoint/);
+      }
+    });
+
+    it('rejects a missing name — the guard is not an optional extra', () => {
+      // Without it the op addresses a waypoint by a bare index, and a stale
+      // index always resolves to a waypoint rather than to nothing.
+      for (const bad of [undefined, null, 12, {}]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, name: bad }] })).toThrow(/name/);
+      }
+    });
+
+    it('rejects a side that is not three finite numbers', () => {
+      for (const bad of [[1, 2], [1, 2, 3, 4], [1, 2, NaN], [1, 2, Infinity], '1,2,3', null]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, from: bad }] })).toThrow(/from/);
+      }
+    });
+  });
 });

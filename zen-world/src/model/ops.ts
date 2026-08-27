@@ -208,7 +208,51 @@ export interface ReparentVob {
   to: VobSlot;
 }
 
-export type WorldOp = MoveVob | RotateVob | SetVobProp | AddVob | ReparentVob;
+/**
+ * A move of one waypoint — the first op that is not about a VOB at all.
+ *
+ * There is no index path, because a waynet is a flat list plus an edge set and
+ * not a tree. The address is the waypoint's index into the point list
+ * `getWaynet` emits, which is safe for a *move* and for nothing else: the
+ * binding fills that list once at load and never reorders it, and a move cannot
+ * insert, delete or reorder, so the enumeration the op was made against is the
+ * enumeration it is applied against.
+ *
+ * It carries the name as well, because the failure mode of a bare index is not
+ * the failure mode of a path. A stale path usually resolves to nothing and the
+ * binding says so; a stale index always resolves to *some* waypoint and moves
+ * it. One string compare is the only guard the address admits.
+ *
+ * Deliberately not addressed *by* the name: nothing in the format promises a
+ * waypoint name is unique, which is why the binding matches edge endpoints by
+ * pointer identity rather than by name.
+ */
+export interface MoveWaypoint {
+  op: 'MoveWaypoint';
+  /** The index into the point list `getWaynet` emits. */
+  waypoint: number;
+  /** The name that index had when the op was made — checked, never resolved. */
+  name: string;
+  from: ZenPosition;
+  to: ZenPosition;
+}
+
+export type WorldOp = MoveVob | RotateVob | SetVobProp | AddVob | ReparentVob | MoveWaypoint;
+
+/**
+ * The tail of every dispatch over `WorldOp`.
+ *
+ * Each of the three used to end in a bare `MoveVob`, so an op kind nobody wrote
+ * a branch for was silently treated as a move: `writeOp` would send it to
+ * `setVobPosition`, `applyOps` would write `positions[NaN]` — dropped by the
+ * spec, so nothing moved and the caller was told a VOB had — and `invertOp`
+ * would happen to be right, which is the worst of the three. `WorldOp` is a
+ * compile-time claim about data that arrives over IPC, so the refusal has to
+ * exist at runtime too.
+ */
+function unreachableOp(op: never): never {
+  throw new RangeError(`unknown op ${(op as WorldOp).op}`);
+}
 
 /**
  * Does this op change how many VOBs there are, and therefore the enumeration?
@@ -235,6 +279,20 @@ export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob {
  * a selection is a list of flat indices, and after an op that renumbers there
  * is no telling which VOB one of them now names.
  */
+/**
+ * Does this op write the waynet rather than a VOB?
+ *
+ * The partition every consumer of a batch needs. `isStructuralOp` is false for a
+ * waynet op — correctly, it changes no enumeration — and the projection path is
+ * `applyOps`, which has only VOB columns to write. Without this the op reaches
+ * `applyOps` and is refused *after* `commitOps` has already changed the
+ * authoritative world, leaving the world one edit ahead of a history that
+ * cannot undo it.
+ */
+export function isWaynetOp(op: WorldOp): op is MoveWaypoint {
+  return op.op === 'MoveWaypoint';
+}
+
 export function renumbersPaths(op: WorldOp): boolean {
   return op.op === 'ReparentVob' || (op.op === 'AddVob' && op.parentPath !== null);
 }
@@ -291,6 +349,35 @@ export function translateVobs(
     if (from === null) throw new RangeError(`no vob ${vob} in the index`);
     return moveVob(reader, vob, [from[0] + delta[0], from[1] + delta[1], from[2] + delta[2]]);
   });
+}
+
+/**
+ * A move of one waypoint, in ZenGin space.
+ *
+ * Takes the waynet payload's own columns rather than a reader, because there is
+ * no waynet equivalent of `VobReader` and this op needs no part of one: an index
+ * into `positions`, and the name at the same index. `from` is read out of the
+ * payload for the same reason every other op reads it — undo replays an op and
+ * never consults a snapshot beside the history.
+ */
+export function moveWaypoint(
+  positions: Float32Array,
+  names: readonly string[],
+  waypoint: number,
+  to: ZenPosition,
+): MoveWaypoint {
+  if (waypoint < 0 || waypoint >= names.length) {
+    throw new RangeError(`no waypoint ${waypoint} in the waynet`);
+  }
+
+  const at = waypoint * 3;
+  return {
+    op: 'MoveWaypoint',
+    waypoint,
+    name: names[waypoint],
+    from: [positions[at], positions[at + 1], positions[at + 2]],
+    to,
+  };
 }
 
 /**
@@ -630,7 +717,13 @@ export function invertOp(op: WorldOp): WorldOp {
   if (op.op === 'ReparentVob') {
     return { ...op, from: op.to, to: op.from };
   }
-  return { ...op, from: op.to, to: op.from };
+  if (op.op === 'MoveWaypoint') {
+    return { ...op, from: op.to, to: op.from };
+  }
+  if (op.op === 'MoveVob') {
+    return { ...op, from: op.to, to: op.from };
+  }
+  return unreachableOp(op);
 }
 
 /** The slice of the binding an op needs. Injected, like every other binding
@@ -650,6 +743,10 @@ export interface OpBinding {
    *  — and answers with the index path it landed at, which `commitOps` checks
    *  against the one the op predicted. */
   reparentVob(from: string, parentPath: string | null, slot: number): string;
+  /** Moves the waypoint at `waypoint` in `getWaynet`'s point list. `name` is the
+   *  guard, not the address: the binding refuses a mismatch rather than moving
+   *  whichever waypoint the index now names. */
+  setWaypointPosition(waypoint: number, name: string, to: ZenPosition): void;
 }
 
 /** One op against the world, and its own inverse — the two directions
@@ -699,7 +796,15 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
     }
     return;
   }
-  binding.setVobPosition(op.path, op[direction]);
+  if (op.op === 'MoveWaypoint') {
+    binding.setWaypointPosition(op.waypoint, op.name, op[direction]);
+    return;
+  }
+  if (op.op === 'MoveVob') {
+    binding.setVobPosition(op.path, op[direction]);
+    return;
+  }
+  unreachableOp(op);
 }
 
 /**
@@ -758,6 +863,35 @@ const FLAG_BITS: ReadonlyArray<[keyof VobProps, number]> = [
   ['cdStatic', 0b001000], ['cdDynamic', 0b010000], ['physicsEnabled', 0b100000],
 ];
 
+/**
+ * Apply waynet ops to the overlay's own positions column, and answer which
+ * waypoints moved.
+ *
+ * The waynet counterpart of `applyOps`, and separate from it because the two
+ * write different payloads: `applyOps` has the columnar VOB index, this has the
+ * `Float32Array` the point cloud and the edge lines *share*. Written in place
+ * rather than rebuilt, because that sharing is the thing keeping the two in
+ * agreement.
+ */
+export function applyWaypointPositions(
+  positions: Float32Array, ops: readonly MoveWaypoint[],
+): number[] {
+  const touched: number[] = [];
+
+  for (const op of ops) {
+    const at = op.waypoint * 3;
+    if (at < 0 || at + 2 >= positions.length) {
+      throw new RangeError(`no waypoint ${op.waypoint} in the waynet`);
+    }
+    positions[at] = op.to[0];
+    positions[at + 1] = op.to[1];
+    positions[at + 2] = op.to[2];
+    touched.push(op.waypoint);
+  }
+
+  return touched;
+}
+
 export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
   const { positions, rotations, flags, nameIndex, visualIndex } = reader.columns;
   const touched: number[] = [];
@@ -771,6 +905,15 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
       // world.
       throw new RangeError(
         `${op.op} is structural: re-read the index rather than applying it to the projection`,
+      );
+    }
+    if (op.op === 'MoveWaypoint') {
+      // Refused by name rather than skipped, for the same reason a structural op
+      // is: these are the *VOB* columns and a waypoint has no row in them. The
+      // caller partitions the batch — a silent skip would leave the overlay
+      // drawing a waypoint the world no longer has there.
+      throw new RangeError(
+        'MoveWaypoint is a waynet op: it does not project onto the vob columns',
       );
     }
     if (op.op === 'SetVobProp') {
@@ -793,10 +936,12 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
       // A rotation is not a move: the position column is not the op's to touch,
       // and the matrix goes in row-major, which is the order it came out in.
       rotations.set(op.to, op.vob * 9);
-    } else {
+    } else if (op.op === 'MoveVob') {
       positions[op.vob * 3] = op.to[0];
       positions[op.vob * 3 + 1] = op.to[1];
       positions[op.vob * 3 + 2] = op.to[2];
+    } else {
+      unreachableOp(op);
     }
     touched.push(op.vob);
   }

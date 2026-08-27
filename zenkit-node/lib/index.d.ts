@@ -244,6 +244,26 @@ export function reparentVob(
   handle: WorldHandle, fromPath: string, parentPath: string | null, slot: number,
 ): string;
 /**
+ * Move one waypoint. The first mutation here that is not about a VOB.
+ *
+ * `waypoint` indexes the same filtered, stored-order point list `getWaynet`
+ * emits, which is a safe address for a move and for nothing else: a move
+ * inserts, deletes and reorders nothing, so the enumeration the caller read is
+ * the enumeration this writes into.
+ *
+ * `name` is a **guard, not an address**. A stale index path usually resolves to
+ * nothing and this binding says so; a stale waypoint index always resolves to
+ * some waypoint and would move it in silence. It throws on a mismatch. Nothing
+ * in the format promises waypoint names are unique, which is why the name
+ * cannot be the address either.
+ *
+ * There is no bbox counterpart to `setVobPosition`'s — a waypoint has no
+ * bounding box — and `direction` is deliberately left alone.
+ */
+export function setWaypointPosition(
+  handle: WorldHandle, waypoint: number, name: string, position: readonly [number, number, number],
+): void;
+/**
  * Write the world to `path`, through a temp file and a rename.
  *
  * **Throws for a world that was not loaded from a `zCArchiverBinSafe`

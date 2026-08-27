@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { applyOps, createVobReader, isStructuralOp } from 'zen-world';
+import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
 import type { WorldOp, WorldSummary } from '../../shared/worldTypes';
 
 /**
@@ -99,7 +99,14 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     //
     // React sees nothing change, which is why what re-renders the panels is the
     // World surface's own `appliedOps` state rather than anything here.
-    applyOps(createVobReader(summary.vobIndex), ops);
+    //
+    // Waynet ops are filtered rather than left to `applyOps`, which refuses one
+    // by name: they have no row in these columns, but they are not structural
+    // either, so the guard above does not catch them and the refusal would
+    // throw here — after the authoritative world had already been committed.
+    // The waynet overlay's own payload is updated by the World surface, which
+    // is the only place that holds one.
+    applyOps(createVobReader(summary.vobIndex), ops.filter((op) => !isWaynetOp(op)));
     if (get().editError !== null) set({ editError: null });
   },
 

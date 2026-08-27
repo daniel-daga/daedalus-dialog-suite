@@ -6,7 +6,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
   multiplyRotation, mirrorRotation, threeToZen, zenToThree, zenBoxToThree,
-  ZEN_TO_THREE_SCALE, type ZenRotation,
+  isWaynetOp, ZEN_TO_THREE_SCALE, type ZenRotation,
 } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
@@ -733,7 +733,13 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // The gizmo has to follow the VOBs it is attached to, or it is left
     // floating where they used to be — an undo of a multi-select drag moves
     // every one of them.
-    if (appliedOps.some((op) => selection.includes(op.vob))) gizmoRef.current?.attach(selection);
+    // A waynet op has no `vob` and moves nothing the gizmo is ever attached to,
+    // so it is excluded here rather than defaulted: `selection.includes(
+    // undefined)` is false by luck rather than by intent, and the next op
+    // without a `vob` might not be so harmless.
+    if (appliedOps.some((op) => !isWaynetOp(op) && selection.includes(op.vob))) {
+      gizmoRef.current?.attach(selection);
+    }
     // `selection` is deliberately not a dependency: this effect is about ops
     // arriving, and re-running it on a selection change would re-apply them.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -29,7 +29,7 @@ const path = require('path');
 const DIST = path.join(__dirname, '..', 'dist', 'main');
 const { WorldService } = require(path.join(DIST, 'services', 'WorldService.js'));
 const {
-  createVobReader, gothicAssetSources, moveVob,
+  createVobReader, gothicAssetSources, moveVob, moveWaypoint,
 } = require(path.join(__dirname, '..', '..', 'zen-world', 'dist', 'cjs', 'index.js'));
 
 function arg(name, fallback) {
@@ -115,6 +115,7 @@ async function main() {
   row('World bbox (ZenGin space)', summary.bbox.map((v) => Math.round(v)).join(', '));
 
   await verifyOneEdit(service, index, visuals);
+  await verifyWaypointEdit(service, index);
 
   service.close();
 
@@ -201,6 +202,72 @@ async function verifyOneEdit(service, index, visuals) {
   row('VOB', `${vob} — ${reader.name(vob) || reader.visual(vob) || reader.className(vob)}`);
   row('Flat index -> index path', `${vob} -> ${op.path}`);
   row('Moved / undone / redone', `${from.map(Math.round).join(', ')} -> ${op.to.map(Math.round).join(', ')} -> back`);
+}
+
+/**
+ * The same round trip for the first op that is not about a VOB.
+ *
+ * A waypoint's address is a bare index into the point list `getWaynet` emits,
+ * with the name carried as a guard, so what this proves that no fixture can is
+ * that the index the *renderer* reads and the index the *binding* writes are
+ * the same number on a world with 23,288 VOBs and a real waynet — not on a
+ * four-waypoint fixture where an off-by-one has nowhere to hide.
+ *
+ * It goes through `service.applyOps`, so it does **not** exercise
+ * `assertApplyOpsRequest`; that layer's proof is `tests/ipcValidation.test.ts`,
+ * and the two are not redundant. It also crosses the partition that keeps a
+ * waynet op out of `applyOps` — a batch mixing one with a VOB move is the case
+ * that used to commit the world and then throw on the projection.
+ */
+async function verifyWaypointEdit(service, index) {
+  const waynet = await service.getWaynet();
+  const names = waynet.names;
+  if (names.length === 0) { check(false, 'the world has no waypoints to edit'); return; }
+
+  // Not waypoint 0: the first entry's index agrees with every plausible
+  // off-by-one and with an unfiltered list, so it is the one address that
+  // proves nothing.
+  const waypoint = Math.min(7, names.length - 1);
+  const positions = new Float32Array(waynet.positions);
+  const op = moveWaypoint(positions, names, waypoint, [
+    positions[waypoint * 3] + 500,
+    positions[waypoint * 3 + 1] + 500,
+    positions[waypoint * 3 + 2] + 500,
+  ]);
+
+  // Read back through the whole pipeline, not out of the payload we just used:
+  // the worker calls `getWaynet` fresh every time and caches nothing.
+  const positionOf = async () => {
+    const fresh = await service.getWaynet();
+    const at = fresh.names.indexOf(op.name);
+    if (at === -1) return null;
+    const column = new Float32Array(fresh.positions);
+    return [column[at * 3], column[at * 3 + 1], column[at * 3 + 2]];
+  };
+  const near = (a, b) => a !== null && b !== null
+    && a.every((value, i) => Math.abs(value - b[i]) < 0.5);
+
+  check(near(await positionOf(), op.from), 'the waynet payload disagrees with itself before any edit');
+
+  // Mixed with a VOB move on purpose: neither op renumbers, so they may share a
+  // batch, and the partition is only exercised when one actually does.
+  const reader = createVobReader(index);
+  const vobFrom = reader.position(0);
+  await service.applyOps([op, moveVob(reader, 0, [vobFrom[0] + 100, vobFrom[1], vobFrom[2]])]);
+  check(near(await positionOf(), op.to), 'the waypoint did not move');
+
+  check(await service.undo(), 'undo found nothing to undo');
+  check(near(await positionOf(), op.from), 'undo did not put the waypoint back');
+
+  check(await service.redo(), 'redo found nothing to redo');
+  check(near(await positionOf(), op.to), 'redo did not move the waypoint again');
+  check(await service.undo(), 'the second undo found nothing');
+  check(near(await positionOf(), op.from), 'the world was left with the waypoint moved');
+
+  const row = (label, value) => console.log(`  ${String(label).padEnd(34)}${value}`);
+  console.log('\none waypoint edit, batched with a VOB move\n');
+  row('Waypoint', `${waypoint} of ${names.length} — ${op.name}`);
+  row('Moved / undone / redone', `${op.from.map(Math.round).join(', ')} -> ${op.to.map(Math.round).join(', ')} -> back`);
 }
 
 main().catch((error) => { console.error('FAILED:', error); process.exit(1); });

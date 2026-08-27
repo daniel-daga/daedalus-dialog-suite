@@ -8,6 +8,7 @@ import {
   createVobReader,
   groupTransferables,
   isStructuralOp,
+  isWaynetOp,
   visualBounds,
   type MeshChunk,
   type SceneBinding,
@@ -235,6 +236,8 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
       insertVob: (spec, parentPath) => zenkit.insertVob(handle!, parentPath, spec),
       deleteVob: (path) => zenkit.deleteVob(handle!, path),
       reparentVob: (from, parentPath, slot) => zenkit.reparentVob(handle!, from, parentPath, slot),
+      setWaypointPosition: (waypoint, name, to) =>
+        zenkit.setWaypointPosition(handle!, waypoint, name, to),
     },
     payload.ops,
   );
@@ -242,7 +245,13 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
   // cannot be patched — `applyOps` refuses one by name. The index this thread
   // keeps is re-read instead, and the renderer asks for it with `refreshIndex`.
   if (payload.ops.some(isStructuralOp)) index = zenkit.vobIndex(handle!);
-  else applyOps(createVobReader(index!), payload.ops);
+  // A waynet op is not structural — it changes no enumeration — but it has no
+  // row in the VOB columns either, and `applyOps` refuses it by name. Partition
+  // rather than guard the whole batch: the refusal would land *after* the world
+  // was already committed above, leaving it one edit ahead of a history that
+  // cannot undo it. The waynet payload itself is re-read on demand and cached
+  // nowhere here, so there is nothing on this side to patch.
+  else applyOps(createVobReader(index!), payload.ops.filter((op) => !isWaynetOp(op)));
   return { result: null, transfer: [] };
 }
 

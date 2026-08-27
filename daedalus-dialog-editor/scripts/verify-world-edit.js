@@ -569,12 +569,53 @@ async function main() {
     }
     check(differing.length === 1 && differing[0] === Number(expectedPath),
       `${differing.length} VOBs differ from the original (${differing.slice(0, 5)}), expected only ${expectedPath}`);
-    // The structures Phase 1 never edits, and the ones the engine computes
-    // collision from.
-    for (const section of ['mesh', 'bsp', 'waynet']) {
+    // The structures nothing here edits, and the ones the engine computes
+    // collision from. `mesh` and `bsp` stay whole-section equality: no op in
+    // this project touches either, and saying so is the point.
+    for (const section of ['mesh', 'bsp']) {
       check(JSON.stringify(original[section]) === JSON.stringify(dump[section]),
         `the saved world's ${section} differs from the original`);
     }
+    // The waynet is checked **differentially**, in the same shape as the VOB
+    // comparison above, rather than as one whole-section equality.
+    //
+    // It was whole-section equality for as long as no op could touch it. The
+    // first waynet op retires that claim, and an assertion that only knows how
+    // to say "identical" has to be replaced *before* the op that makes it false
+    // exists — otherwise the first waypoint move turns a real regression check
+    // into a red row somebody deletes. Two properties of the dump make the
+    // differential form cheap: waypoints are sorted by name and a move does not
+    // rename, so the array order is stable; and edges are sorted
+    // order-insensitively, so edge equality is not order noise.
+    // Zero, because nothing this driver does moves a waypoint yet: the op path
+    // exists but no UI gesture produces one. This is the number the waypoint
+    // gizmo slice changes, and it is a named constant rather than a literal so
+    // that slice has one place to look.
+    const expectedWaypointMoves = 0;
+    check(original.waynet.waypoints.length === dump.waynet.waypoints.length,
+      `the saved world has ${dump.waynet.waypoints.length} waypoints, `
+      + `the original ${original.waynet.waypoints.length}`);
+    const movedWaypoints = [];
+    for (let at = 0; at < Math.min(original.waynet.waypoints.length, dump.waynet.waypoints.length); at++) {
+      const was = original.waynet.waypoints[at];
+      const now = dump.waynet.waypoints[at];
+      if (JSON.stringify(was) === JSON.stringify(now)) continue;
+      // Named, and narrowed to *what* differs: a waypoint that changed anything
+      // but its position is a different bug from one that moved.
+      movedWaypoints.push(
+        JSON.stringify({ ...now, position: was.position }) === JSON.stringify(was)
+          ? `${now.name} (position)`
+          : `${now.name} (NOT just its position)`,
+      );
+    }
+    check(movedWaypoints.length === expectedWaypointMoves,
+      `${movedWaypoints.length} waypoints differ from the original `
+      + `(${movedWaypoints.slice(0, 5)}), expected ${expectedWaypointMoves}`);
+    // A move cannot touch an edge — a moved waypoint is the same object every
+    // edge already points at — and an assertion that says so is worth more than
+    // one that does not look.
+    check(JSON.stringify(original.waynet.edges) === JSON.stringify(dump.waynet.edges),
+      "the saved world's waynet edges differ from the original");
     changed = differing.length;
   } else {
     check(false, `nothing was written to ${SAVE_TO}`);
@@ -701,7 +742,7 @@ async function main() {
   row('Saved and re-loaded', saved
     ? `VOB ${selected} is at ${saved.position.map(Math.round).join(', ')} in the file`
     : 'FAILED');
-  row('  VOBs differing', changed === null ? 'not compared' : `${changed} of ${'23,288'} — mesh, bsp and waynet identical`);
+  row('  VOBs differing', changed === null ? 'not compared' : `${changed} of ${'23,288'} — mesh and bsp identical, waynet compared waypoint by waypoint`);
   if (both) {
     row('Multi-select', `${both.first} + ${both.second}, one gizmo, one batch`);
     row('  kept their spacing', [0, 1, 2]

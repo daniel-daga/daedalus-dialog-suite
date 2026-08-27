@@ -1311,7 +1311,7 @@ Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle) {
 // Names are not interned, unlike `vobIndex`'s. Waypoint names are effectively
 // unique — that is what they are for — so a dictionary would be 1:1 and cost a
 // second array to say so.
-Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle) {
+std::vector<std::shared_ptr<WayPoint>> CollectWaypoints(WorldHandle const& handle) {
   auto const* way_net = handle.world->way_net.get();
 
   std::vector<std::shared_ptr<WayPoint>> points;
@@ -1320,6 +1320,17 @@ Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle) {
       if (point != nullptr) points.push_back(point);
     }
   }
+  return points;
+}
+
+Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle) {
+  auto const* way_net = handle.world->way_net.get();
+
+  // The one definition of what a waypoint's index *means*. A mutation that
+  // filtered the null entries a second time would agree with this list only for
+  // as long as both authors remembered to — and an index that means something
+  // slightly different moves the wrong waypoint rather than failing.
+  std::vector<std::shared_ptr<WayPoint>> points = CollectWaypoints(handle);
 
   std::vector<float> positions;
   std::vector<float> directions;

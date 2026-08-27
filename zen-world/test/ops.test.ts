@@ -19,12 +19,14 @@
 import {
   addVob,
   applyOps,
+  applyWaypointPositions,
   reparentVob,
   commitOps,
   createVobReader,
   invertOp,
   isStructuralOp,
   moveVob,
+  moveWaypoint,
   multiplyRotation,
   placeBounds,
   renumbersPaths,
@@ -34,6 +36,7 @@ import {
   setVobProps,
   translateVobs,
   vobIndexPath,
+  type MoveWaypoint,
   type NewVob,
   type OpBinding,
   type RotateVob,
@@ -170,7 +173,9 @@ describe('a move op', () => {
     expect(undo.to).toEqual([10, 20, 30]);
     // Same VOB, same native address: an inverse is an op like any other and
     // goes through the same path.
-    expect(undo.vob).toBe(op.vob);
+    // Narrowed for the same reason the line below is: `vob` stopped being a
+    // field every op has when the first waynet op arrived.
+    expect(undo.op === 'MoveVob' && undo.vob).toBe(op.vob);
     // Narrowed because `invertOp` answers a `WorldOp`, and a reparent addresses
     // a VOB by two slots rather than by one path.
     expect(undo.op === 'MoveVob' && undo.path).toBe(op.path);
@@ -332,6 +337,7 @@ describe('a rotate op', () => {
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
 
     commitOps(binding, [rotateVob(reader(), 1, QUARTER_Y, BOUNDS)]);
@@ -350,6 +356,7 @@ describe('a rotate op', () => {
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
 
@@ -667,6 +674,7 @@ describe('an add op', () => {
       insertVob: (_spec, parentPath) => (parentPath === null ? '2' : `${parentPath}/1`),
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
 
@@ -687,6 +695,7 @@ describe('an add op', () => {
       },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     const op = addVob(reader(), SPEC, 0);
 
@@ -705,6 +714,7 @@ describe('an add op', () => {
       insertVob: (spec) => { calls.push(`insert ${spec.name}`); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     const op = addVob(reader(), SPEC);
 
@@ -723,6 +733,7 @@ describe('an add op', () => {
       insertVob: () => '7',
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
 
     expect(() => commitOps(binding, [addVob(reader(), SPEC)])).toThrow(/7|2/);
@@ -736,6 +747,7 @@ describe('an add op', () => {
       insertVob: () => { calls.push('insert'); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
 
     expect(() => commitOps(binding, [
@@ -822,6 +834,7 @@ describe('a reparent op', () => {
         calls.push(`${from} -> ${parent}[${slot}]`);
         return parent === null ? String(slot) : `${parent}/${slot}`;
       },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     const op = reparentVob(reader(), 2, 1, 0);
 
@@ -836,6 +849,7 @@ describe('a reparent op', () => {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       insertVob: () => '0', deleteVob: () => {},
       reparentVob: () => '9/9',
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
 
     expect(() => commitOps(binding, [reparentVob(reader(), 2, 1, 0)])).toThrow(/9\/9|0\/0\/0/);
@@ -871,6 +885,7 @@ describe('a reparent op', () => {
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     const live = reader();
 
@@ -992,6 +1007,7 @@ describe('committing ops to the world', () => {
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     return { binding, calls };
   }
@@ -1038,6 +1054,7 @@ describe('committing ops to the world', () => {
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
     const box: ZenBounds = [0, 0, 0, 1, 1, 1];
 
@@ -1064,6 +1081,7 @@ describe('committing ops to the world', () => {
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
 
     expect(() => commitOps(binding, [
@@ -1085,5 +1103,142 @@ describe('committing ops to the world', () => {
       [1, 1, 1], [2, 2, 2],       // applied
       [1, 1, 1], [0, 0, 0],       // unwound back to front
     ]);
+  });
+});
+
+describe('moving a waypoint', () => {
+  // The first op that is not about a VOB at all, and the first whose address is
+  // a bare index. A waynet is a flat list plus an edge set, so there is no path
+  // to resolve — and no path is exactly what makes every VOB-shaped dispatch
+  // below it dangerous: a wrong index always resolves to *some* waypoint.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+  const positions = () => Float32Array.from([0, 0, 0, 10, 20, 30, 40, 50, 60]);
+
+  function waynetBinding(refuse?: string) {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: (path, to) => calls.push(['position', path, to]),
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: (waypoint, name, to) => {
+        if (name === refuse) throw new Error(`no waypoint ${name}`);
+        calls.push(['waypoint', waypoint, name, to]);
+      },
+    };
+    return { binding, calls };
+  }
+
+  it('carries the waypoint\'s own origin and its name, read out of the payload', () => {
+    // `from` comes out of the positions column rather than from the caller, for
+    // the same reason every other op reads it: undo replays an op and never
+    // consults a snapshot beside the history.
+    const op = moveWaypoint(positions(), NAMES, 1, [11, 21, 31]);
+
+    expect(op).toEqual({
+      op: 'MoveWaypoint', waypoint: 1, name: 'WP_FIXTURE_A',
+      from: [10, 20, 30], to: [11, 21, 31],
+    });
+  });
+
+  it('is refused for a waypoint that is not in the payload', () => {
+    expect(() => moveWaypoint(positions(), NAMES, 3, [0, 0, 0])).toThrow(/3/);
+    expect(() => moveWaypoint(positions(), NAMES, -1, [0, 0, 0])).toThrow(/-1/);
+  });
+
+  it('inverts by swapping the two sides, and is its own round trip', () => {
+    const op = moveWaypoint(positions(), NAMES, 2, [41, 51, 61]);
+    const undo = invertOp(op) as MoveWaypoint;
+
+    expect(undo.from).toEqual(op.to);
+    expect(undo.to).toEqual(op.from);
+    expect(undo.name).toBe('WP_FIXTURE_B');
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('reaches the binding as setWaypointPosition, carrying the name as a guard', () => {
+    // The name is the only defence an index-addressed op has. A stale VOB path
+    // usually resolves to nothing; a stale waypoint index always resolves to a
+    // waypoint, and moves the wrong one in silence.
+    const { binding, calls } = waynetBinding();
+
+    commitOps(binding, [moveWaypoint(positions(), NAMES, 1, [11, 21, 31])]);
+
+    expect(calls).toEqual([['waypoint', 1, 'WP_FIXTURE_A', [11, 21, 31]]]);
+  });
+
+  it('is unwound by its own inverse when a later op in the batch is refused', () => {
+    const { binding, calls } = waynetBinding('WP_FIXTURE_B');
+
+    expect(() => commitOps(binding, [
+      moveWaypoint(positions(), NAMES, 1, [11, 21, 31]),
+      moveWaypoint(positions(), NAMES, 2, [41, 51, 61]),
+    ])).toThrow('no waypoint WP_FIXTURE_B');
+
+    expect(calls).toEqual([
+      ['waypoint', 1, 'WP_FIXTURE_A', [11, 21, 31]],
+      ['waypoint', 1, 'WP_FIXTURE_A', [10, 20, 30]],   // unwound
+    ]);
+  });
+
+  it('is neither structural nor renumbering', () => {
+    // Both answers are what let a waypoint move share a batch with a VOB move,
+    // and `isStructuralOp` being false is what routes it into `applyOps` — which
+    // is why the next test matters as much as this one.
+    const op = moveWaypoint(positions(), NAMES, 1, [11, 21, 31]);
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    // The VOB columns have nowhere to put it. Before this refusal existed the
+    // op fell through to the position write, where `op.vob` is `undefined`: a
+    // `Float32Array` drops a write at a NaN index, so nothing moved and the
+    // caller was still told a VOB had.
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+    const op = moveWaypoint(positions(), NAMES, 1, [11, 21, 31]);
+
+    // Matched on the reason, not on the op's name: the exhaustiveness tail also
+    // refuses this op and also names it, so `/MoveWaypoint/` alone cannot tell
+    // "the columns have no row for it" from "nobody wrote a branch".
+    expect(() => applyOps(live, [op])).toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+
+  it('writes the overlay column the points and the edge lines share', () => {
+    // One `Float32Array` backs both, so writing it in place is what keeps a
+    // moved waypoint and the edges into it from disagreeing.
+    const column = positions();
+
+    const touched = applyWaypointPositions(column, [
+      moveWaypoint(column, NAMES, 1, [11, 21, 31]),
+      moveWaypoint(column, NAMES, 2, [41, 51, 61]),
+    ]);
+
+    expect(Array.from(column)).toEqual([0, 0, 0, 11, 21, 31, 41, 51, 61]);
+    expect(touched).toEqual([1, 2]);
+  });
+
+  it('refuses to write past the end of that column', () => {
+    const column = positions();
+    const op: MoveWaypoint = {
+      op: 'MoveWaypoint', waypoint: 3, name: 'WP_GONE', from: [0, 0, 0], to: [1, 1, 1],
+    };
+
+    expect(() => applyWaypointPositions(column, [op])).toThrow(/3/);
+  });
+
+  it('leaves an unknown op kind refused rather than moving a VOB', () => {
+    // The tail of every dispatch used to be `MoveVob`, so an op kind nobody
+    // wrote a branch for was silently treated as a move. `WorldOp` is a
+    // compile-time claim about data that arrives over IPC.
+    const { binding } = waynetBinding();
+    const bogus = { op: 'ScaleVob', vob: 0, path: '0/1', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(binding, [bogus as unknown as WorldOp])).toThrow(/ScaleVob/);
   });
 });

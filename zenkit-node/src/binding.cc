@@ -475,6 +475,48 @@ Napi::Value SetVobPosition(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// setWaypointPosition(handle, waypoint, name, [x, y, z]) — moves one waypoint.
+//
+// `waypoint` is an index into the same filtered, stored-order point list
+// `getWaynet` emits (`CollectWaypoints` is the one definition of it), and
+// `name` is a guard rather than an address. The two failure modes are not the
+// same as a VOB's: a stale index path usually resolves to nothing and this
+// binding says so, but a stale waypoint index always resolves to *a* waypoint
+// and would move it in silence. Names are not unique by the format's rules,
+// which is why the name cannot be the address either — so it is checked and
+// never resolved.
+//
+// No bbox counterpart to SetVobPosition's: a WayPoint is a name, a position, a
+// direction, a water depth and two flags, and has no bounding box at all.
+// `direction` is left alone deliberately — a move is a move.
+Napi::Value SetWaypointPosition(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  if (!info[1].IsNumber()) {
+    throw Napi::TypeError::New(env, "waypoint must be a number");
+  }
+  auto const requested = info[1].As<Napi::Number>().Int64Value();
+  if (!info[2].IsString()) {
+    throw Napi::TypeError::New(env, "name must be a string");
+  }
+  auto const name = info[2].As<Napi::String>().Utf8Value();
+  auto position = Vec3FromValue(env, info[3], "position");
+
+  auto points = CollectWaypoints(*handle);
+  if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
+    throw Napi::Error::New(env, "no waypoint at " + std::to_string(requested));
+  }
+
+  auto const& point = points[static_cast<std::size_t>(requested)];
+  if (point->name != name) {
+    throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is " + point->name
+                                  + ", not " + name + " — the waynet has changed under this op");
+  }
+
+  point->position = position;
+  return env.Undefined();
+}
+
 // Reads `count` numbers out of a JS array. The matrix and the box are both
 // read positionally by native code, so a wrong length is refused rather than
 // padded — a short matrix would leave uninitialized rows in a struct ZenKit
@@ -1100,6 +1142,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("insertVob", Napi::Function::New(env, InsertVob));
   exports.Set("deleteVob", Napi::Function::New(env, DeleteVob));
   exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));
+  exports.Set("setWaypointPosition", Napi::Function::New(env, SetWaypointPosition));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));

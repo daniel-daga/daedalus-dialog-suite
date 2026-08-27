@@ -4,8 +4,11 @@
 
 #include <napi.h>
 #include <zenkit/Mesh.hh>
+#include <zenkit/world/WayNet.hh>
 
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 #include "world_handle.hh"
 
@@ -28,6 +31,13 @@ Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle);
 // same enumeration in the same order, reduced to identity, placement, visual
 // and the flags that decide whether a VOB is drawn.
 Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle);
+
+// The waynet's points in stored order, with the null slots dropped — and so
+// the definition of what a waypoint *index* means everywhere. Shared, because
+// a mutation that re-derived the same filter would agree with getWaynet only
+// for as long as both stayed in step, and a stale waypoint index always
+// resolves to some waypoint rather than to nothing.
+std::vector<std::shared_ptr<zenkit::WayPoint>> CollectWaypoints(WorldHandle const& handle);
 
 // The waynet as a drawable graph: stored order, edges as index pairs. The
 // diff-oriented waynet section of normalizeWorld is a different thing.
