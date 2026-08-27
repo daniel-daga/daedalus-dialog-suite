@@ -417,10 +417,13 @@ test('saveWorld round-trips bit 15 of the packed zCVob flag word', () => {
 // path has had no fidelity work either. A save that silently produces a file
 // nothing can re-open is worse than no save, so saveWorld refuses.
 //
-// The guard is exercised on a BINARY world because an ASCII one can never
-// reach it: loading ZenKit's own ASCII output aborts the process, so an ASCII
-// handle cannot be produced in-process at all. Both go through the same
-// `format != BINSAFE` check.
+// The guard is exercised on a BINARY world because an ASCII one still cannot
+// reach it: loading ZenKit's own ASCII output fails, so an ASCII handle cannot
+// be produced in-process. It now fails by *throwing* — it used to abort the
+// whole process, which is a defect in this addon's build rather than in the
+// ASCII writer (see the `_HAS_EXCEPTIONS` note in binding.gyp), and the abort
+// was load-bearing for this comment but never for the guard. Both formats go
+// through the same `format != BINSAFE` check.
 function withBinaryWorld(fn) {
   withTmpDir((dir) => {
     const authored = path.join(dir, 'authored.zen');
