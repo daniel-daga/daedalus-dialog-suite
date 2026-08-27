@@ -82,10 +82,14 @@ const ZC_VOB_LIGHT_FIELDS = [
  * the engine reads them only when `mode` is RANDOM, and `mode` is precisely what
  * this catalogue cannot set — so both would be legal writes the engine ignores,
  * which reads to a user as the editor having done nothing.
+ *
+ * `volume` has no maximum, against ZenKit's own "percent (0-100)" doc comment:
+ * measured 2026-08-27 over the three retail worlds, NewWorld holds 130 on two
+ * sounds and 150 on four, so a max of 100 refuses values the game itself ships.
  */
 const ZC_VOB_SOUND_FIELDS = [
   { key: 'soundName', kind: 'string' },
-  { key: 'volume', kind: 'float', min: 0, max: 100 },
+  { key: 'volume', kind: 'float', min: 0 },
   { key: 'radius', kind: 'float', min: 0 },
   { key: 'coneAngle', kind: 'float', min: 0, max: 360 },
   { key: 'initiallyPlaying', kind: 'bool' },
@@ -109,12 +113,14 @@ const ZC_VOB_SOUND_DAYTIME_FIELDS = [
   { key: 'soundName2', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** `innerRangePercentage` is bounded below and **not** above: nothing measured
- *  says whether ZenGin stores it as 0..1 or as 0..100, and a maximum guessed
- *  wrong refuses a value the retail world already contains. */
+/** `innerRangePercentage` is stored 0..1, not 0..100 — measured, 2026-08-27,
+ *  because ZenKit's docs say "Unknown": across the three retail worlds every
+ *  stored value (far-plane and fog zones alike, placed and `…Default`) is in
+ *  [0.1, 1.0], and the world-default zones hold exactly 1.0 — 100% stored as
+ *  1.0. Hence `max: 1`. */
 const ZC_ZONE_VOB_FAR_PLANE_FIELDS = [
   { key: 'vobFarPlaneZ', kind: 'float', min: 0 },
-  { key: 'innerRangePercentage', kind: 'float', min: 0 },
+  { key: 'innerRangePercentage', kind: 'float', min: 0, max: 1 },
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
@@ -126,7 +132,8 @@ const ZC_ZONE_VOB_FAR_PLANE_FIELDS = [
  */
 const ZC_ZONE_Z_FOG_FIELDS = [
   { key: 'rangeCenter', kind: 'float', min: 0 },
-  { key: 'innerRangePercentage', kind: 'float', min: 0 },
+  // 0..1 by the same measurement as the far-plane zone's entry above.
+  { key: 'innerRangePercentage', kind: 'float', min: 0, max: 1 },
   { key: 'fadeOutSky', kind: 'bool' },
   { key: 'overrideColor', kind: 'bool' },
   { key: 'color', kind: 'color', min: 0, max: 255 },
@@ -138,10 +145,11 @@ const ZC_ZONE_Z_FOG_FIELDS = [
  *
  * `priority` is the catalogue's first `int`, and it is the field the `int` kind
  * exists for: it is an `int32_t` in the struct, and offered as a `float` it
- * would take `2.5`, truncate on the cast and report success. Its `min: 0` is
- * ZenKit's own documented floor ("`0` is the lowest possible priority") rather
- * than a measurement, which is the one thing to re-check if a retail world is
- * ever found holding a negative one.
+ * would take `2.5`, truncate on the cast and report success. Its `min: 0` was
+ * ZenKit's documented floor ("`0` is the lowest possible priority") and is now
+ * also measured (2026-08-27): across the three retail worlds the observed
+ * priorities run 0 (the three `oCZoneMusicDefault`s) to 30 (AddonWorld), with
+ * no negative anywhere.
  *
  * Neither float is bounded. ZenKit documents both as "unclear", ZenGin's reverb
  * level is negative decibels, and an invented bound refuses data a world holds.

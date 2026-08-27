@@ -70,25 +70,37 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('zCVobLight', 'range')).toEqual({ key: 'range', kind: 'float', min: 0 });
     expect(fieldOf('zCVobLight', 'color'))
       .toEqual({ key: 'color', kind: 'color', min: 0, max: 255 });
+    // No maximum on the sound volume, deliberately: ZenKit documents it as
+    // "percent (0-100)", but retail NewWorld holds 130 on two sounds and 150 on
+    // four — measured 2026-08-27 over all three retail worlds — so a max of 100
+    // refuses values the game itself ships.
     expect(fieldOf('zCVobSound', 'volume'))
-      .toEqual({ key: 'volume', kind: 'float', min: 0, max: 100 });
+      .toEqual({ key: 'volume', kind: 'float', min: 0 });
     expect(fieldOf('zCVobSoundDaytime', 'startTime'))
       .toEqual({ key: 'startTime', kind: 'float', min: 0, max: 24 });
-    // Two fields with no bound at all, and each is a decision: `reverb` is
-    // negative decibels in ZenGin, and `innerRangePercentage` is stored as 0..1
-    // or as 0..100 depending on nothing anybody has measured — so an upper bound
-    // invented here would refuse a value a retail world already contains.
+    // `reverb` has no bound at all: it is negative decibels in ZenGin (retail
+    // holds -10 to -3.219 and nothing positive), so a `min: 0` would refuse
+    // every music zone in the game.
     expect(fieldOf('oCZoneMusic', 'reverb')).toEqual({ key: 'reverb', kind: 'float' });
+    // 0..1, not 0..100: measured over the three retail worlds every stored
+    // value is in [0.1, 1.0] and the world-default zones hold exactly 1.0 —
+    // 100% stored as 1.0. ZenKit's own docs say "Unknown", so the measurement
+    // is the whole evidence.
     expect(fieldOf('zCZoneZFog', 'innerRangePercentage'))
-      .toEqual({ key: 'innerRangePercentage', kind: 'float', min: 0 });
+      .toEqual({ key: 'innerRangePercentage', kind: 'float', min: 0, max: 1 });
+    expect(fieldOf('zCZoneVobFarPlane', 'innerRangePercentage'))
+      .toEqual({ key: 'innerRangePercentage', kind: 'float', min: 0, max: 1 });
     // A boolean carries no bounds at all — there is nothing between false and
     // true to refuse — and the descriptor says so by omitting both.
     expect(fieldOf('zCVobSound', 'obstruction'))
       .toEqual({ key: 'obstruction', kind: 'bool' });
     expect(fieldOf('zCZoneZFog', 'overrideColor'))
       .toEqual({ key: 'overrideColor', kind: 'bool' });
-    // The only `int` so far, and it is bounded below rather than not at all:
-    // ZenKit documents `0` as the lowest possible priority.
+    // The only `int` so far, and it is bounded below rather than not at all.
+    // The floor was ZenKit's documentation ("`0` is the lowest possible
+    // priority") and is now also measured: across the three retail worlds the
+    // observed priorities are 0 (the three `oCZoneMusicDefault`s) through 30
+    // (AddonWorld), with no negative anywhere.
     expect(fieldOf('oCZoneMusic', 'priority'))
       .toEqual({ key: 'priority', kind: 'int', min: 0 });
   });

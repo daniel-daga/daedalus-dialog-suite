@@ -1199,22 +1199,40 @@ test('setVobClassProp refuses an out-of-bounds sound or zone value, and writes n
   const handle = zenkit.loadWorld(authored(), 'g2');
   const before = zenkit.getVobProps(handle, '1/3');
 
-  for (const bad of [-0.5, 100.5]) {
-    assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { volume: bad }), /volume/);
-  }
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { volume: -0.5 }), /volume/);
   assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { coneAngle: 361 }), /coneAngle/);
   assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { radius: -1 }), /radius/);
   assert.throws(() => zenkit.setVobClassProp(handle, '1/4', { startTime: 24.5 }), /startTime/);
   assert.throws(() => zenkit.setVobClassProp(handle, '1/5', { vobFarPlaneZ: -1 }), /vobFarPlaneZ/);
   assert.throws(() => zenkit.setVobClassProp(handle, '1/6', { rangeCenter: -1 }), /rangeCenter/);
+  // `innerRangePercentage` is stored 0..1 — measured over the three retail
+  // worlds (every value in [0.1, 1.0], the `…Default` zones exactly 1.0), where
+  // ZenKit's docs say "Unknown". So 1.5 is refused on both zone classes.
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '1/5', { innerRangePercentage: 1.5 }),
+    /innerRangePercentage/,
+  );
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '1/6', { innerRangePercentage: 1.5 }),
+    /innerRangePercentage/,
+  );
 
   // The valid half of a refused pair must not have been written: everything is
   // validated before anything is assigned.
   assert.throws(
-    () => zenkit.setVobClassProp(handle, '1/3', { soundName: 'OW_NEW', volume: 200 }),
+    () => zenkit.setVobClassProp(handle, '1/3', { soundName: 'OW_NEW', volume: -5 }),
     /volume/,
   );
   assert.deepStrictEqual(zenkit.getVobProps(handle, '1/3'), before);
+});
+
+test('setVobClassProp takes a sound volume above 100, which retail NewWorld holds', () => {
+  // ZenKit documents `volume` as "percent (0-100)", and retail NewWorld holds
+  // 130 on two sounds and 150 on four (measured 2026-08-27) — so there is no
+  // maximum, and a bound of 100 would refuse values the game itself ships.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  zenkit.setVobClassProp(handle, '1/3', { volume: 150 });
+  assert.strictEqual(zenkit.getVobProps(handle, '1/3').volume, 150);
 });
 
 test('setVobClassProp takes a negative music reverb, which is why it has no lower bound', () => {

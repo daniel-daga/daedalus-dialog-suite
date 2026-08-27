@@ -573,22 +573,34 @@ describe('assertApplyOpsRequest', () => {
       })).toThrow(/oCZoneMusic has no class property color/);
     });
 
-    it('refuses a sound volume outside 0-100 and a daytime hour outside 0-24', () => {
-      // Both bounds are the catalogue's. `volume` is a percentage and `startTime`
-      // is an hour of the day — 24 is a bound and not a modulus, so a caller
-      // meaning midnight means 0.
-      expect(() => assertApplyOpsRequest({
-        ops: [{ ...sound, from: { volume: 50 }, to: { volume: 101 } }],
-      })).toThrow(/to\.volume must be 100 or less/);
+    it('refuses a negative sound volume, a daytime hour outside 0-24, and an inner range above 1', () => {
+      // All bounds are the catalogue's. `startTime`/`endTime` are hours of the
+      // day — 24 is a bound and not a modulus, so a caller meaning midnight
+      // means 0.
       expect(() => assertApplyOpsRequest({
         ops: [{ ...sound, from: { volume: 50 }, to: { volume: -1 } }],
       })).toThrow(/to\.volume must be 0 or greater/);
+      // No maximum on the volume: retail NewWorld holds 130 and 150 (measured
+      // 2026-08-27), so ZenKit's "percent (0-100)" doc is wrong against the
+      // game's own data and a max of 100 would refuse it.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...sound, from: { volume: 50 }, to: { volume: 150 } }],
+      })).not.toThrow();
       expect(() => assertApplyOpsRequest({
         ops: [{ ...daytime, from: { endTime: 20 }, to: { endTime: 24.5 } }],
       })).toThrow(/to\.endTime must be 24 or less/);
       expect(() => assertApplyOpsRequest({
         ops: [{ ...sound, from: { coneAngle: 0 }, to: { coneAngle: 361 } }],
       })).toThrow(/to\.coneAngle must be 360 or less/);
+      // `innerRangePercentage` is stored 0..1, not 0..100 — measured over the
+      // three retail worlds (every value in [0.1, 1.0], the `…Default` zones
+      // exactly 1.0), where ZenKit's docs say "Unknown".
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...fog, from: { innerRangePercentage: 0.5 }, to: { innerRangePercentage: 1.5 } }],
+      })).toThrow(/to\.innerRangePercentage must be 1 or less/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...farPlane, from: { innerRangePercentage: 0.5 }, to: { innerRangePercentage: 1.5 } }],
+      })).toThrow(/to\.innerRangePercentage must be 1 or less/);
     });
 
     it('accepts the booleans and the one integer, and refuses each as the other kind', () => {

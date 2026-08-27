@@ -962,7 +962,10 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       // Everything read and bounded before anything is assigned, so a refused
       // `endTime` cannot leave a written `soundName` behind it.
       auto sound_name = OptionalCp1252String(env, props, "soundName");
-      auto const volume = OptionalFloatIn(env, props, "volume", 0, 100);
+      // No maximum, against ZenKit's "percent (0-100)" doc comment: retail
+      // NewWorld holds 130 on two sounds and 150 on four (measured 2026-08-27),
+      // so a max of 100 refuses values the game itself ships.
+      auto const volume = OptionalFloatIn(env, props, "volume", 0, std::nullopt);
       auto const radius = OptionalFloatIn(env, props, "radius", 0, std::nullopt);
       auto const cone_angle = OptionalFloatIn(env, props, "coneAngle", 0, 360);
       auto const initially_playing = OptionalBool(env, props, "initiallyPlaying");
@@ -1006,10 +1009,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     case zenkit::VirtualObjectType::zCZoneVobFarPlane: {
       RequireClassKeys(env, props, {"vobFarPlaneZ", "innerRangePercentage"}, class_name);
       auto const far_plane_z = OptionalFloatIn(env, props, "vobFarPlaneZ", 0, std::nullopt);
-      // Not bounded above at 1 or at 100: nothing measured says which of the two
-      // conventions ZenGin stores here, and a bound guessed wrong refuses a
-      // retail value the world already contains.
-      auto const inner = OptionalFloatIn(env, props, "innerRangePercentage", 0, std::nullopt);
+      // 0..1, not 0..100 — measured 2026-08-27 over the three retail worlds:
+      // every stored value is in [0.1, 1.0] and the `…Default` zones hold
+      // exactly 1.0 (100% stored as 1.0). ZenKit's docs say "Unknown", so the
+      // measurement is the whole evidence.
+      auto const inner = OptionalFloatIn(env, props, "innerRangePercentage", 0, 1);
 
       auto& zone = static_cast<zenkit::VZoneFarPlane&>(*vob);
       if (far_plane_z) zone.vob_far_plane_z = *far_plane_z;
@@ -1022,7 +1026,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
           {"rangeCenter", "innerRangePercentage", "fadeOutSky", "overrideColor", "color"},
           class_name);
       auto const range_center = OptionalFloatIn(env, props, "rangeCenter", 0, std::nullopt);
-      auto const inner = OptionalFloatIn(env, props, "innerRangePercentage", 0, std::nullopt);
+      // 0..1 by the same measurement as the far-plane case above.
+      auto const inner = OptionalFloatIn(env, props, "innerRangePercentage", 0, 1);
       auto const fade_out_sky = OptionalBool(env, props, "fadeOutSky");
       auto const override_color = OptionalBool(env, props, "overrideColor");
       auto const color = OptionalColor(env, props, "color");
@@ -1050,9 +1055,10 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
                        {"enabled", "priority", "ellipsoid", "reverb", "volume", "loop"},
                        class_name);
       auto const enabled = OptionalBool(env, props, "enabled");
-      // ZenKit documents `0` as the lowest possible priority, so that is the
-      // floor — a documented one rather than a measured one, which is the thing
-      // to re-check if a retail world is ever found holding a negative.
+      // ZenKit documents `0` as the lowest possible priority, and the floor is
+      // now also measured (2026-08-27): across the three retail worlds the
+      // observed priorities run 0 (the `oCZoneMusicDefault`s) to 30
+      // (AddonWorld), with no negative anywhere.
       auto const priority = OptionalInt32(env, props, "priority", 0, std::nullopt);
       auto const ellipsoid = OptionalBool(env, props, "ellipsoid");
       // Unbounded, both floats: ZenKit documents each as "unclear", ZenGin's

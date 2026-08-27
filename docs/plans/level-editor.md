@@ -2181,12 +2181,13 @@ Not a class at all. Two kinds, and the nine fields the five classes of increment
   it, rather than one validator that happens to remember. `OptionalInt32` also
   refuses anything outside the 32-bit range: a value past 2^31 is not a large
   priority, it is a wrap.
-- **`priority`'s `min: 0` is documented, not measured.** ZenKit says "`0` is the
-  lowest possible priority", which is a stronger warrant than the guess
-  `innerRangePercentage` refused to make — but it is still not a
-  `normalizeWorld` sweep, so a retail world found holding a negative priority is
-  the thing that falsifies it. Every other new field is a boolean and carries no
-  bounds at all: there is nothing between false and true to refuse.
+- **`priority`'s `min: 0` is documented *and* measured.** ZenKit says "`0` is
+  the lowest possible priority", and the 2026-08-27 `normalizeWorld` sweep over
+  the three retail worlds corroborates it: observed priorities run 0 (the three
+  `oCZoneMusicDefault`s) through 30 (AddonWorld — NewWorld tops out at 3,
+  OldWorld at 1), with no negative anywhere in 62 music zones. Every other new
+  field is a boolean and carries no bounds at all: there is nothing between
+  false and true to refuse.
 - **A boolean is a checkbox, and it is the one kind that is not text.** Every
   other kind round-trips through `formatted`/`parse`, because one text control
   over a catalogue table beats a widget per kind. A boolean goes the other way
@@ -2215,15 +2216,21 @@ Not a class at all. Two kinds, and the nine fields the five classes of increment
   RANDOM, and `mode` is exactly what cannot be set. They are plain floats and
   are the cheapest thing here to add if a random ambient sound ever needs
   tuning.
-- **A bound is only written down where something measured it.** `volume` is
-  0–100 because ZenKit documents the field as a percentage, `coneAngle` 0–360,
-  and the two daytime hours 0–24 (24 is a bound and not a modulus — midnight is
-  0). `innerRangePercentage` is bounded **below only**: nothing measured says
-  whether ZenGin stores it as 0..1 or as 0..100, and a maximum guessed wrong
-  refuses a value a retail world already holds. `oCZoneMusic.reverb` has no
-  bound at all in either direction, because ZenGin's reverb level is negative
-  decibels — a `min: 0` copied from the light's `range` would refuse every music
-  zone in the game.
+- **A bound is only written down where something measured it — and the
+  2026-08-27 `normalizeWorld` sweep over the three retail worlds settled the two
+  that shipped unmeasured, plus one that was wrong.** `innerRangePercentage` is
+  **0..1**: every stored value across NewWorld/OldWorld/AddonWorld (far-plane and
+  fog zones, placed and `…Default` alike) is in [0.1, 1.0], and the world-default
+  zones hold exactly 1.0 — 100% stored as 1.0 — where ZenKit's docs say
+  "Unknown"; so `max: 1` now, in the catalogue and the binding. `volume` on
+  `zCVobSound` lost its maximum: ZenKit documents "percent (0-100)", but retail
+  NewWorld holds 130 on two sounds and 150 on four, so a max of 100 refused
+  values the game itself ships. `coneAngle` stays 0–360 and the two daytime
+  hours 0–24 (24 is a bound and not a modulus — midnight is 0).
+  `oCZoneMusic.reverb` has no bound at all in either direction, because ZenGin's
+  reverb level is negative decibels — retail holds −10 to −3.219 and nothing
+  positive, so a `min: 0` copied from the light's `range` would refuse every
+  music zone in the game.
 - **The `…Default` zone variants are deliberately absent** from both tables.
   `zCZoneZFogDefault`, `zCZoneVobFarPlaneDefault` and `oCZoneMusicDefault` are a
   world's fallback settings rather than placed zones; adding a C++ case without
