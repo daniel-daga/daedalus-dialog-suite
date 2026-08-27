@@ -617,15 +617,59 @@ pack=0 / pack=1   original 1277 / 0   re-save 0 / 1277
 
 | # | Defect | Evidence |
 |---|---|---|
-| **A1** | `WriteArchiveAscii::write_raw` emits a **stale second hex digit** for every byte below `0x10`. `std::to_chars` does not null-terminate, so `buf[1]` still holds the previous byte's low nibble and the `buf[1] == '\0'` branch is only ever taken on the first byte of the file. **Every raw entry the ASCII writer produces is corrupt.** | The LEVEL-VOB's `trafoOSToWSPos=vec3:0 0 0` re-saves as packed bytes `05 05 05 05 05 05 05 05 05 05 05 05` — `6.25e-36` per axis instead of `0` — and the identity rotation as `0505803f 0f0f0f0f…0f0f803f`. The filler byte is always the previous byte's low nibble. |
-| **A2** | `VirtualObject::save` writes VOBs **packed unconditionally** (a file-static `pack = true`), so a world loaded unpacked is written packed. | All 1277 OldCamp VOBs are `pack=int:0` in the original and `pack=int:1` in the re-save; the ASCII tail loses 43.9%. |
-| **A3** | `WriteArchiveAscii::write_mat3x3` writes a `rawFloat:` entry, but `ReadArchiveAscii::read_mat3x3` reads a `raw:` entry — and **ZenGin writes `raw:`**. The unpacked path could not be read back either. | All 1277 original `trafoOSToWSRot` entries are `raw:`; ZenKit's writer would emit `rawFloat:`. |
-| **A4** | The top-level ASCII header's `objects` field is padded to a different width than ZenGin's. | `objects 1835     ` (original) vs `objects 1835       ` (re-save). |
+| **A1** — FIXED, patch 0024 | `WriteArchiveAscii::write_raw` emits a **stale second hex digit** for every byte below `0x10`. `std::to_chars` does not null-terminate, so `buf[1]` still holds the previous byte's low nibble and the `buf[1] == '\0'` branch is only ever taken on the first byte of the file. **Every raw entry the ASCII writer produces is corrupt.** | The LEVEL-VOB's `trafoOSToWSPos=vec3:0 0 0` re-saves as packed bytes `05 05 05 05 05 05 05 05 05 05 05 05` — `6.25e-36` per axis instead of `0` — and the identity rotation as `0505803f 0f0f0f0f…0f0f803f`. The filler byte is always the previous byte's low nibble. |
+| **A2** — open | `VirtualObject::save` writes VOBs **packed unconditionally** (a file-static `pack = true`), so a world loaded unpacked is written packed. | All 1277 OldCamp VOBs are `pack=int:0` in the original and `pack=int:1` in the re-save; the ASCII tail loses 43.9%. |
+| **A3** — open, unreachable while A2 stands | `WriteArchiveAscii::write_mat3x3` writes a `rawFloat:` entry, but `ReadArchiveAscii::read_mat3x3` reads a `raw:` entry — and **ZenGin writes `raw:`**. The unpacked path could not be read back either. | All 1277 original `trafoOSToWSRot` entries are `raw:`; ZenKit's writer would emit `rawFloat:`. |
+| **A4** — FIXED, patch 0025 | The top-level ASCII header's `objects` field is padded to a different width than ZenGin's. | `objects 1835     ` (original) vs `objects 1835       ` (re-save). |
 
 The one piece of good news: **the `MeshAndBsp` blob is byte-identical on the
 ASCII path too** (2,914,946 B on OldCamp), because it is written by the same
 patched `Mesh`/`BspTree` code the BinSafe result already validates. Whatever
 an ASCII patch series would have to fix, it is all above the blob.
+
+### 10.4 The ASCII writer, 2026-08-27 — three patches and a corpus that measures
+
+§10.2 was written when no ASCII world survived a re-save. Three patches later
+every one of them does. Same command, same install, same day's binary:
+
+```
+before  28 .zen found;  4 measured, 20 crashed,    0 unreadable, 4 skipped
+after   28 .zen found; 24 measured,  0 crashed,    0 unreadable, 4 skipped
+        (24 container-instrumented)
+VERDICTS: 4× identical [BIN_SAFE], 4× not-a-world [ASCII], 20× semantic-drift [ASCII]
+```
+
+| Patch | Defect | Result |
+|---|---|---|
+| `0024` | **A1** — `write_raw` read a hex digit `std::to_chars` never wrote, so every byte below `0x10` carried the previous byte's low nibble | Every `raw:` entry now decodes to the bytes the packer produced, asserted byte-exactly against the BinSafe fixture in `test/container.test.js`. It was also the reload blocker: the corruption landed in the packed `zCVob` flag word and `VirtualObject::load` then demanded an object frame where the archive held an entry |
+| `0025` | **A4** — the header's `objects` field padded to 11 where ZenGin pads to 9 | Retail `OldCamp.zen` re-saves with `objects 1835     `, byte-identical to the original line |
+| `0026` | **A5**, new — `write_byte`/`write_word` emitted `byte:`/`word:` type tokens that `ReadArchiveAscii::read_byte`/`read_word` reject (both call `read_entry("int")`) | Found by the corpus run after 0024: 19 of the 20 worlds still failed, at the first `decalAlphaWeight` in the file. ZenGin settles it — 144,111 `int:` entries across the 24 ASCII worlds and **zero** `byte:` or `word:`. This is what took the corpus from 0 measured ASCII worlds to 20 |
+
+**A5 was invisible to CI and had to be made visible.** `decalAlphaWeight` is the
+only `write_byte` field reachable outside a savegame, and the authored fixture
+had no decal — so the fixture round-tripped clean while all 20 retail worlds
+failed. `BuildVobTree` now hangs a `VisualDecal` on the chest (no VOB added, no
+index path moved), which is why the fixture's object count is 12 and its frame
+count 19. Anything with a `byte`- or `word`-typed field is worth the same
+treatment.
+
+**What this does not claim.** The fixture is authored by ZenKit's own ASCII
+writer, so `--fixtures` proves self-consistency and nothing about ZenGin. There
+is still no ZenGin-written ASCII fixture in the repository, and `saveWorld`
+stays BinSafe-only: 20 worlds classifying `semantic-drift` is a measurement,
+not a passing grade, and no ASCII world has been through the engine.
+
+**What the 20 drifts are — two findings, and only two.** The instrument names
+them exactly, across all 20 worlds:
+
+| Finding | Count | Diagnosis |
+|---|---|---|
+| `vobs[].flags.physicsEnabled` true → false | 396 | **A6**, new. `VirtualObject.cc:251` writes packed bit 6 as `physics_enabled && rigid_body` on G2, but `rigid_body` is only ever populated inside `if (r.is_save_game())` (`:210`). In a world, `rigid_body` is always empty, so every `physicsEnabled` flag is dropped on save. The `&& rigid_body` guard belongs at `:325`, where the rigid body is actually written, and it is already there. **Not ASCII-specific — it is the packed `zCVob` writer, so the BinSafe path the editor saves through has it too.** It changes no retail byte today: measured 0 `physicsEnabled` VOBs across NewWorld, OldWorld and AddonWorld (41,393 VOBs), which is why those three still classify `identical`. A user-edited or modded world is another matter |
+| `vobs[].flags.animMode` | 4 | Undiagnosed. Four VOBs in the whole corpus |
+
+A2 and A3 remain open and are unchanged by all of this: both live on the
+unpacked write path, which nothing reaches while `VirtualObject.cc:12`'s
+file-static `pack` is unconditionally true and has no caller to flip it.
 
 ### 10.3 Scope decision — Phase 0 covers the BinSafe path only
 

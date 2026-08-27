@@ -322,7 +322,9 @@ test('containerFromBuffer covers an ASCII archive instead of reporting covered:f
     ]);
     assert.match(container.header.date, /^\d{1,2}\.\d{1,2}\.\d{4} \d{2}:\d{2}:\d{2}$/);
 
-    assert.strictEqual(container.frames.total, 18);
+    // 19, not 18: the chest carries a zCDecal visual, which is a frame of its
+    // own — the fixture's only `write_byte` field (patch 0026).
+    assert.strictEqual(container.frames.total, 19);
     assert.deepStrictEqual(container.frames.classes['zCVob'], { count: 1, versions: { 52224: 1 } });
     assert.match(container.frames.sequenceHash, /^sha256:[0-9a-f]{64}$/);
     assert.deepStrictEqual(container.schemas['oCItem:zCVob'], {
@@ -330,7 +332,7 @@ test('containerFromBuffer covers an ASCII archive instead of reporting covered:f
       objects: 1,
       deviating: 0,
     });
-    assert.strictEqual(container.stream.objects, 18);
+    assert.strictEqual(container.stream.objects, 19);
     assert.strictEqual(container.stream.maxDepth, 4);
     assert.strictEqual(container.stream.balanced, true);
     assert.strictEqual(container.stream.indentExact, true);
@@ -347,48 +349,51 @@ test('containerFromBuffer covers an ASCII archive instead of reporting covered:f
   });
 });
 
-// A4 — the top-level `objects` field is padded to 11 characters where ZenGin
-// pads to 9 (`objects 1835     ` in retail OldCamp.zen). The field is a
-// container fact and nothing in the parsed structs can see it, so the walker
-// keeps the line verbatim. THIS ASSERTION PINS A KNOWN DEFECT: when A4 is
-// fixed it must go red and be rewritten to 9.
-test('the ASCII container section exposes A4 — the 11-wide `objects` field', () => {
+// A4, fixed (patch 0025) — the top-level `objects` field is padded to the 9
+// characters ZenGin writes (`objects 1835     ` in retail OldCamp.zen), not 11.
+// The field is a container fact and nothing in the parsed structs can see it,
+// so the walker keeps the line verbatim and this is the only place the width
+// can be asserted at all. `declared` is the count, and is unrelated.
+test('the ASCII `objects` field is padded to the 9 characters ZenGin writes', () => {
   withAsciiFixture((buf) => {
     const container = containerFromBuffer(buf);
-    assert.strictEqual(container.objects.declared, 11);
-    assert.strictEqual(container.objects.line, `objects ${'11'.padEnd(11)}`);
-    assert.notStrictEqual(container.objects.line, `objects ${'11'.padEnd(9)}`);
+    assert.strictEqual(container.objects.declared, 12);
+    assert.strictEqual(container.objects.line, `objects ${'12'.padEnd(9)}`);
   });
 });
 
-// A1 — `WriteArchiveAscii::write_raw` never null-terminates `std::to_chars`'s
-// buffer, so every byte below 0x10 is written with the PREVIOUS byte's low
-// nibble as its second hex digit. The BinSafe fixture is the same world through
-// the same packer, so its `dataRaw` payload is the byte string the ASCII hex
-// should decode to. THIS ASSERTION PINS A KNOWN DEFECT.
-test('the ASCII container section exposes A1 — every raw entry is corrupt', () => {
+// A1, fixed (patch 0024) — `WriteArchiveAscii::write_raw` used to read a hex
+// digit `std::to_chars` never wrote, so every byte below 0x10 carried the
+// PREVIOUS byte's low nibble as its second digit — 49 of these 83 bytes. The
+// BinSafe fixture is the same world through the same packer, so its `dataRaw`
+// payload is exactly the byte string the ASCII hex must decode to: a
+// zero-tolerance assertion, and the one that catches the defect coming back.
+test('every ASCII raw entry decodes to the bytes the packer produced', () => {
   withAsciiFixture((buf) => {
     const binSafe = fs.readFileSync(FIXTURE);
     const expected = Buffer.from(rawText([...walk(binSafe)], binSafe, 'oCItem:zCVob', 'dataRaw'), 'latin1');
     const actual = Buffer.from(rawText(asciiEvents(buf), buf, 'oCItem:zCVob', 'dataRaw'), 'hex');
 
     assert.strictEqual(actual.length, expected.length, 'the packed struct must be the same length either way');
-    assert.ok(!actual.equals(expected), 'A1 is fixed — rewrite this test');
+    // The bytes A1 corrupted are the sub-0x10 ones, and this entry has 49 of
+    // them — an equality that would otherwise hold vacuously.
+    assert.ok(expected.filter((v) => v < 0x10).length >= 40, 'the fixture must still exercise sub-0x10 bytes');
+    assert.deepStrictEqual(actual, expected);
+  });
+});
 
-    // Not merely "it differs": the emitted bytes are exactly what A1's model
-    // predicts. `buf[1]` starts as '\0' per call, so the first sub-0x10 byte of
-    // an entry survives; after that it holds the low digit of the last byte
-    // that needed two, and every sub-0x10 byte inherits it.
-    let stale = null;
-    const predicted = Buffer.from(expected.map((v) => {
-      if (v >= 0x10) { stale = v & 0x0f; return v; }
-      return stale === null ? v : (v << 4) | stale;
-    }));
-    assert.deepStrictEqual(actual, predicted);
-
-    let corrupted = 0;
-    for (let i = 0; i < expected.length; i++) if (actual[i] !== expected[i]) corrupted += 1;
-    assert.strictEqual(corrupted, 49, "49 of the 83 packed bytes come out wrong");
+// A5, fixed (patch 0026) — `WriteArchiveAscii` spelled a byte `byte:` and a word
+// `word:`, tokens its own reader rejects (`read_entry("int")`) and ZenGin never
+// writes: 144,111 `int:` entries across the 24 ASCII worlds of a retail Gothic II
+// install, and zero of either. The chest's `decalAlphaWeight` is the fixture's
+// only field on that path, and the whole reason it is there.
+test('an ASCII byte field is written with the `int` token ZenGin and the reader use', () => {
+  withAsciiFixture((buf) => {
+    const text = buf.toString('latin1');
+    assert.match(text, /decalAlphaWeight=int:200/);
+    // Not just this field: neither token belongs in a ZenGin ASCII archive.
+    assert.ok(!/=byte:/.test(text), 'no entry may carry a `byte:` type token');
+    assert.ok(!/=word:/.test(text), 'no entry may carry a `word:` type token');
   });
 });
 
@@ -420,8 +425,8 @@ test('a re-padded ASCII `objects` field is semantic-drift naming the objects lin
   withAsciiFixture((buf) => {
     const at = buf.indexOf('objects ', 0, 'latin1');
     const mutant = Buffer.concat([
-      buf.subarray(0, at), Buffer.from(`objects ${'11'.padEnd(9)}`, 'latin1'),
-      buf.subarray(at + `objects ${'11'.padEnd(11)}`.length),
+      buf.subarray(0, at), Buffer.from(`objects ${'12'.padEnd(11)}`, 'latin1'),
+      buf.subarray(at + `objects ${'12'.padEnd(9)}`.length),
     ]);
     assertDriftAt(classifyAsciiPair(buf, mutant), /^container\.objects\.line$/);
   });

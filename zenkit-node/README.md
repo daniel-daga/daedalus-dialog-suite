@@ -433,8 +433,12 @@ misplaced.
 **Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
 was loaded from a `zCArchiverBinSafe` archive: that is the only writer path
 verified byte-for-byte against the retail corpus and in the original engine.
-ZenKit's ASCII writer corrupts every raw entry it emits and cannot re-load its
-own output at all, and the BINARY path has had no fidelity work
+Patches 0024–0026 fixed defects A1, A4 and A5, so ZenKit's ASCII writer now
+re-loads its own output and all 20 of a retail install's ASCII worlds are
+measured rather than crashed — but they classify `semantic-drift`, not
+`identical`, and no ASCII world has been through the engine. A2, A3 and the
+newly found A6 are open (§10.4).
+The BINARY path has had no fidelity work at all
 (`docs/engine-acceptance-2026-08-25.md` §10.2, §10.3). Diagnostics that mean to
 measure those paths pass `saveWorld(handle, path, { allowNonBinSafe: true })`,
 as `scripts/zen-roundtrip.js` does.
@@ -530,9 +534,10 @@ block Gate 1 (plan §3), as do `crashed` and — outside the classifier —
 nothing else. `not-a-world` is a skip, not a failure: four of the install's
 `.zen` files are VOB libraries with no `MeshAndBsp`.
 
-Every world is measured **in a child process**. ZenKit can abort the process
-outright (`0xC0000409`) on the ASCII path, and a crash has to be recorded as a
-result rather than end the run.
+Every world is measured **in a child process**. ZenKit aborted the process
+outright (`0xC0000409`) on the ASCII path until the `_HAS_EXCEPTIONS` fix, and
+a malformed BinSafe world can still hang the reader indefinitely — a crash or
+a hang has to be recorded as a result rather than end the run.
 
 The summary always prints a `COVERAGE:` line counted against **every file
 found**, not every file that survived, plus the claim the run carries. A
@@ -572,15 +577,23 @@ load the result to get a container section back.
 install — has its own walker in `lib/container-ascii.js`, emitting the same
 event vocabulary and the same section shape over a line-oriented stream, plus
 two facts only that format has: the top-level `objects` line **verbatim**
-(ZenGin pads that field to 9 characters and ZenKit to 11 — defect A4) and
-whether `write_indent()`'s leading tabs match the object depth. A RAW payload is
-hashed as the **hex text** the file holds, not the bytes it decodes to, because
-A1 is a corruption of that text. **BINARY has no walker**: for it the section is
+(the field is fixed-width, and ZenKit padded it to 11 where ZenGin pads to 9
+until patch 0025 — defect A4) and whether `write_indent()`'s leading tabs match
+the object depth. A RAW payload is hashed as the **hex text** the file holds,
+not the bytes it decodes to, because A1 was a corruption of that text and a
+hash of the decoded bytes could not have seen it. **BINARY has no walker**: for it the section is
 `{ archiver, format, covered: false, header }` and nothing more, and
 `classifyDumps` returns `containerCoverage: false` for the pair.
 
-**The ASCII writer is still not usable** — ZenKit cannot re-load its own ASCII
-output, and every raw entry it writes is corrupt. The walker exists so the
-harness can *fail* on that rather than answer `covered: false` for the format
-under test; it fixes nothing. The evidence and the resulting scope decision are
-in the acceptance record §10; read it before trusting an ASCII round-trip.
+**The ASCII writer is usable but not yet trusted.** A1, A4 and A5 are fixed
+(patches 0024–0026): ZenKit re-loads its own ASCII output, the authored fixture
+round-trips `identical` fully instrumented, and a retail G2 install's 20 ASCII
+worlds went from 20 crashed to 20 measured. They classify **`semantic-drift`**,
+which is the instrument working, not the writer passing — 396 of the 400
+findings are the newly-found A6 (`physicsEnabled` dropped by the packed `zCVob`
+writer, which is *not* ASCII-specific). A2 and A3 also remain open, both on the
+unpacked write path that nothing reaches while `VirtualObject.cc`'s file-static
+`pack` is unconditionally true. And **no ZenGin-written ASCII fixture exists**,
+so the checked-in corpus can only ever prove that ZenKit agrees with itself.
+`saveWorld` is still BinSafe-only for all of those reasons. The evidence is in
+the acceptance record §10.2 and §10.4.

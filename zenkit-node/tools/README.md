@@ -25,8 +25,9 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   **BinSafe *and* ASCII**, dispatched on the archive header — the ASCII writer's
   A1–A4 (`../docs/engine-acceptance-2026-08-25.md` §10.2) live in an entry stream
   `walk()` cannot parse, and until this dispatched the tool could only read the
-  format that already round-trips. BINARY still has no walker and is refused
-  rather than guessed at.
+  format that already round-trips. It is what pinned A1 and A4 byte-exactly and
+  what confirmed patches 0024/0025 fixed them. BINARY still has no walker and is
+  refused rather than guessed at.
   **Read the `COVERAGE` line first.** It accounts for every byte of the file
   (text header + every event span + the trailing region, which is the hash table
   on BinSafe and empty on ASCII) and reports the gap; only with `gap 0` does

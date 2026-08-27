@@ -1,0 +1,55 @@
+ArchiveAscii: write a byte and a word with the `int` type token, as ZenGin does.
+
+ASCII archive entries carry a type token that the reader checks, and
+`WriteArchiveAscii` spelled two of them in a vocabulary nothing reads.
+`write_byte` emitted `name=byte:200` and `write_word` `name=word:...`, but
+`ReadArchiveAscii::read_byte` and `::read_word` both call `read_entry("int")`
+and throw `type mismatch: expected int, got: byte` on anything else. The
+archive was therefore unreadable by its own reader at the first byte or word
+entry it contained.
+
+ZenGin settles which side is wrong. Across the 24 `zCArchiverGeneric` worlds of
+a retail Gothic II install:
+
+    =int:       144111
+    =byte:           0
+    =word:           0
+
+and `OldCamp.zen` writes the field this surfaced on as
+`decalAlphaWeight=int:200`. The reader is right; the writer was inventing
+tokens.
+
+The practical effect was total: `decalAlphaWeight` (`VisualDecal::save`) is the
+only `write_byte` call reachable outside a savegame, and 19 of the install's 20
+ASCII worlds carry at least one decal — so every one of them failed to re-load
+after a re-save, at the first decal in the file. Fixing it is what takes the
+ASCII round-trip from "loads back" (patch 0024) to "loads back completely".
+
+Same defect class as 0004 (`alphaFunc` written bool, read enum) and A3
+(`write_mat3x3` writes `rawFloat:` where the reader wants `raw:`), which is
+still open.
+
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -312,14 +312,19 @@
+ 		this->write_entry(name, "float", std::to_string(v));
+ 	}
+ 
++	// The type token is `int`, not `byte`/`word`. ReadArchiveAscii::read_byte
++	// and ::read_word both call read_entry("int"), and ZenGin agrees: across the
++	// 24 ASCII worlds of a retail Gothic II install there are 144,111 `int:`
++	// entries and not one `byte:` or `word:`. Writing the narrower token made
++	// the archive unreadable by this very reader at the first such entry.
+ 	void WriteArchiveAscii::write_byte(std::string_view name, std::uint8_t v) {
+ 		std::array<char, std::numeric_limits<uint8_t>::digits10 + 1> buf {};
+-		this->write_entry(name, "byte", intosv(buf, v));
++		this->write_entry(name, "int", intosv(buf, v));
+ 	}
+ 
+ 	void WriteArchiveAscii::write_word(std::string_view name, std::uint16_t v) {
+ 		std::array<char, std::numeric_limits<uint16_t>::digits10 + 1> buf {};
+-		this->write_entry(name, "word", intosv(buf, v));
++		this->write_entry(name, "int", intosv(buf, v));
+ 	}
+ 
+ 	void WriteArchiveAscii::write_enum(std::string_view name, std::uint32_t v) {

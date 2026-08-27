@@ -433,6 +433,26 @@ std::shared_ptr<VirtualObject> BuildVobTree() {
   container->pick_string = "LRRL";
   container->contents = "ITMI_GOLD:25";
 
+  // A decal visual on the chest, for one reason: `decalAlphaWeight` is the only
+  // field in a non-savegame world that goes through `WriteArchive::write_byte`,
+  // and ZenKit's ASCII writer used to emit it with a `byte:` type token its own
+  // reader — and ZenGin — spell `int:` (defect A5, patch 0026). Without a byte
+  // field anywhere in the fixture that mismatch was invisible to CI while it
+  // made every one of the 24 retail ASCII worlds fail to re-load. Hung on an
+  // existing VOB rather than added as one, so no index path or sibling slot
+  // moves.
+  auto decal = std::make_shared<VisualDecal>();
+  decal->name = "FIXTURE_DECAL.TGA";
+  decal->type = VisualType::DECAL;
+  decal->dimension = Vec2 {40.0f, 40.0f};
+  decal->offset = Vec2 {0.0f, 0.0f};
+  decal->two_sided = true;
+  decal->alpha_func = AlphaFunction::BLEND;
+  decal->texture_anim_fps = 0.0f;
+  decal->alpha_weight = 200;
+  decal->ignore_daylight = false;
+  container->visual = decal;
+
   root->children = {spot, item, container};
   return root;
 }

@@ -938,31 +938,38 @@ Only 4 of the 28 `.zen` files in a retail G2 install are BinSafe: `NewWorld`,
 `OldWorld`, `AddonWorld`, `DragonIsland`. All four round-trip `identical` with
 a byte-identical mesh/BSP blob and a coverage gap of 0. The other 24 are
 `zCArchiverGeneric`/ASCII — 20 worlds plus 4 VOB libraries that are not worlds
-at all — and the T8 run over the whole install found:
+at all — and the T8 run over the whole install found **all 20 ASCII worlds
+aborting the process when their own re-save was loaded back**
+(`STATUS_STACK_BUFFER_OVERRUN`, `0xC0000409`), traced to four named writer
+defects A1–A4.
 
-- **all 20 ASCII worlds abort the process when their own re-save is loaded
-  back** (`STATUS_STACK_BUFFER_OVERRUN`, `0xC0000409`). So does a 4 KB world
-  authored by ZenKit's own ASCII writer. ZenKit cannot read what it writes.
-- **every raw entry the ASCII writer produces is corrupt** — `write_raw` emits
-  a stale second hex digit for each byte below `0x10`, so a `vec3 0 0 0`
-  re-saves as `05 05 05 05 05 05 05 05 05 05 05 05`.
-- **VOB representation is not preserved**: all 1277 OldCamp VOBs go from
-  `pack=0` to `pack=1`, and the ASCII body loses 43.9%.
-- `write_mat3x3` writes `rawFloat:` where both `read_mat3x3` and ZenGin use
-  `raw:`.
+**Three of those are now fixed** (patches `0024`–`0026`, 2026-08-27, §10.4 of the
+acceptance record): A1 the corrupt hex, A4 the header padding, and A5 — a fifth
+defect the corpus only exposed once A1 let a file load far enough to reach it,
+`write_byte`/`write_word` emitting type tokens the reader rejects. The same
+command over the same install now reports **24 of 28 measured, 0 crashed, 0
+unreadable**, all 24 container-instrumented.
 
-Fixing that is a patch series the size of 0010–0019 plus an engine A/B per
-patch — a second T6.5, not a finishing touch — and it is not what Phase 0 exists
-to answer. The blocking risk *is* retired: the four whole worlds the editor
-would actually open re-serialize and load. The `*_Part_*.zen` files are Spacer's
-compile-time source layers, not the worlds the engine loads.
+**That changes the coverage, not the claim.** The 20 ASCII worlds classify
+`semantic-drift`, not `identical`, and no ASCII world has been through the
+engine. What remains:
 
-**The consequence for Phase 1a is a hard one and is not optional:** the binding
-must **refuse to save** a non-BinSafe world until that series lands. A save that
-corrupts every raw entry and cannot be re-opened is worse than no save at all.
+- **A6** — `physicsEnabled` dropped on every save, 396 of the 400 findings, and
+  **not an ASCII defect**: it is the packed `zCVob` writer
+  (`VirtualObject.cc:251` gating bit 6 on a `rigid_body` only savegames fill),
+  so the BinSafe path this plan's save pipeline uses has it too. It changes no
+  retail byte today — 0 `physicsEnabled` VOBs across 41,393 in the three
+  measurable BinSafe worlds — which is why it went unseen.
+- **A2 and A3**, both on the unpacked write path that nothing reaches while
+  `VirtualObject.cc:12`'s file-static `pack` is unconditionally true.
+- **`animMode` on 4 VOBs**, undiagnosed.
 
-Evidence, the four named defects and the full corpus table:
-`zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.
+**The Phase 1a consequence is unchanged and is not optional:** the binding
+still **refuses to save** a non-BinSafe world. "Loads back" is not "is
+faithful", and until an ASCII world has an engine verdict the refusal stands.
+
+Evidence, the named defects and the full corpus tables:
+`zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.2 and §10.4.
 
 #### What the `*_Part_*` files actually are, and why we are downstream of them
 
@@ -2367,7 +2374,7 @@ the format promises they are unique.
 
 | # | Missing | Status | Note |
 |---|---|---|---|
-| 3.1 | **ASCII / BINARY ZEN save** | measured, deferred (§5) | Not an oversight. T8 found all 20 ASCII worlds abort the process when their own re-save is loaded back, and every raw entry ZenKit's ASCII writer emits is corrupt. Closing it is an upstream patch series plus a second engine pass. Only 4 of 28 retail `.zen` files are BinSafe, and Blender/KrxImpExp exports are not among them. |
+| 3.1 | **ASCII / BINARY ZEN save** | measured, deferred (§5) | Not an oversight, and half-closed since. T8 found all 20 ASCII worlds aborting the process when their own re-save was loaded back; patches `0024`–`0026` fixed A1, A4 and A5, and all 20 now load, save and re-load (§10.4). They still classify `semantic-drift` — A6, A2, A3 — and none has an engine verdict, so `saveWorld` stays BinSafe-only. BINARY has had no fidelity work at all. Only 4 of 28 retail `.zen` files are BinSafe, and Blender/KrxImpExp exports are not among them. |
 | 3.2 | **Static light recompute** | warning planned (§11) | Spacer re-bakes vertex lighting; we do not, so moving geometry or a light leaves stale lightmaps. Phase 1b promises the warning. The bake stays out. |
 | 3.3 | **Merge/import another ZEN, export a selection** | planned (Phase 3) | Spacer's part workflow depends on it. |
 | 3.4 | **Portal / sector work** | planned (Phase 2) | Face selection, material assignment, leak detection. |

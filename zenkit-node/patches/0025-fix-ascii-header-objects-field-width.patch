@@ -1,0 +1,32 @@
+ArchiveAscii: pad the top-level `objects` count to 9 characters, as ZenGin does.
+
+The ASCII header's object count is a fixed-width field. ZenGin writes it 9
+characters wide; `WriteArchiveAscii::write_header` terminated its scratch
+buffer at index 11 and wrote an 11-wide one, so every ASCII archive ZenKit
+produces differs from an engine-written one in the header even when every
+object below it is byte-identical.
+
+Measured against retail `OldCamp.zen` (docs/engine-acceptance-2026-08-25.md
+§10.2, defect A4): `objects 1835     ` in the original against
+`objects 1835       ` in the re-save.
+
+This is the same defect patch 0013 fixed for `zCArchiverBinary`, which padded
+to 10; the two writers had picked two different wrong widths.
+
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -455,9 +455,12 @@
+ 		this->_m_write->write_line(username);
+ 		this->_m_write->write_line("END");
+ 
++		// ZenGin pads the object count to 9 characters, not 11 (`objects 1835 `
++		// plus five spaces in retail OldCamp.zen). The field is fixed-width in
++		// the file, so a wider one is a byte difference on every ASCII archive.
+ 		memset(date_buffer, ' ', 20);
+-		date_buffer[11] = '\0';
+-		std::to_chars(date_buffer, date_buffer + 10, _m_index);
++		date_buffer[9] = '\0';
++		std::to_chars(date_buffer, date_buffer + 9, _m_index);
+ 
+ 		this->_m_write->write_string("objects ");
+ 		this->_m_write->write_line(date_buffer);

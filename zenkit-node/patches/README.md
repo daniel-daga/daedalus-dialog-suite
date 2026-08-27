@@ -9,6 +9,11 @@ Upstream is pinned at `1ff081c`, which is still `origin/main`. **None of these h
 been fixed upstream.** Side branches (`dev/v2-next`,
 `refactor/spec-compliant-archives`) were not checked and could carry overlapping work.
 
+`0024`–`0026` all touch `src/archive/ArchiveAscii.cc` in different functions and
+apply in any order relative to each other, but they are numbered in the order
+they were found: `0026` is only *reachable* once `0024` lets a file load far
+enough to hit a byte entry.
+
 ## Order matters in three places
 
 These are not independent patches that happen to be numbered.
@@ -34,7 +39,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (15)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (18)
 
 | Patch | What it fixes |
 |---|---|
@@ -53,9 +58,17 @@ regardless of what upstream does with it.
 | `0021` | `TextureBuilder` pushed mipmaps largest-first; load, `data(level)` and save all assume smallest-first |
 | `0022` | `ModelMesh::save` packed every attachment into one `PROTO` chunk; load takes one per chunk, so N−1 were silently lost |
 | `0023` | `colorAniList` re-emitted every element as a triple, losing ZenGin's greyscale shorthand — see the patch header for the retail measurement |
+| `0024` | `WriteArchiveAscii::write_raw` decided how many hex digits `std::to_chars` wrote by testing a null terminator `to_chars` never writes — every byte below `0x10` got the previous byte's low nibble, and ZenKit could not re-load its own ASCII output |
+| `0025` | The ASCII header's `objects` count padded to 11 characters where ZenGin pads to 9 (the same defect `0013` fixed for `zCArchiverBinary`, which had picked 10) |
+| `0026` | `WriteArchiveAscii::write_byte`/`write_word` emitted `byte:`/`word:` type tokens that `ReadArchiveAscii::read_byte`/`read_word` reject and ZenGin never writes (144,111 `int:` and zero of either across a retail install's 24 ASCII worlds) |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
+`0024` and `0026` are now just as strong and arguably stronger: each is a
+self-evident writer/reader disagreement that made ZenKit unable to read its own
+ASCII output, with no API change and a one-line diff. Together with `0025` they
+took a retail G2 install's ASCII worlds from 20 crashed to 20 measured
+(`../docs/engine-acceptance-2026-08-25.md` §10.4).
 
 ### Upstreamable with work — each adds public API purely to preserve original bytes (7)
 
