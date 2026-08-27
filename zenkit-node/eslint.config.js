@@ -8,7 +8,7 @@ module.exports = [
   },
   js.configs.recommended,
   {
-    files: ['lib/**/*.js', 'scripts/**/*.js', 'test/**/*.js'],
+    files: ['lib/**/*.js', 'scripts/**/*.js', 'test/**/*.js', 'tools/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'commonjs',

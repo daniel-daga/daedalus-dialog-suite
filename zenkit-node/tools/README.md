@@ -25,6 +25,11 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   The diff itself is `../lib/container-diff.js`, shared with
   `../scripts/zen-roundtrip.js`'s report; this file is the printer, so the two
   cannot again disagree about which formats exist.
+  A span that differs **only** in an archive header's `date`/`user` VALUES is
+  reported identical — two files written a second apart carry different stamps,
+  and a world nests archives, so the `MeshAndBsp` blob has a header of its own.
+  Only the values are dropped, never the lines: a missing or added stamp line is
+  real drift, and every byte outside a header is compared exactly.
   **BinSafe *and* ASCII**, dispatched on the archive header — the ASCII writer's
   A1–A4 (`../docs/engine-acceptance-2026-08-25.md` §10.2) live in an entry stream
   `walk()` cannot parse, and until this dispatched the tool could only read the
@@ -95,5 +100,9 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   window carries the file/line/condition, the "Breakpoint" window does not.
   (`engine-batch.ps1` does this for you.)
 
-These are developer tools, not part of the addon or its test suite; the walkers
-they share are covered by `test/container.test.js`.
+These are developer tools and not part of the addon or its test suite, but they
+**are** linted with everything else (`tools/**/*.js` is in `package.json`'s
+`lint` script and in `eslint.config.js`): `bytediff.js` consumes the shared
+`lib/` walkers, and a consumer that is neither linted nor tested is a consumer
+nothing checks at all. The walkers themselves are covered by
+`test/container.test.js`.

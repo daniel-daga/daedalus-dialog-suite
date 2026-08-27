@@ -15,6 +15,7 @@ const { spawnSync } = require('node:child_process');
 
 const zenkit = require('..');
 const { walk } = require('../lib/container.js');
+const { byteDiff } = require('../lib/container-diff.js');
 
 const HARNESS = path.join(__dirname, '..', 'scripts', 'zen-roundtrip.js');
 const FIXTURE = path.join(__dirname, 'fixtures', 'minimal.g2.zen');
@@ -202,6 +203,92 @@ test('an ASCII world gets an event-aligned byte diff, not a whole-file fallback'
     assert.strictEqual(diff.coverage.accounted, size);
     assert.ok(diff.identicalEventBytes > 0, 'no event bytes were compared at all');
     assert.match(proc.stdout, /ascii\.zen\s+identical\s+.*gap 0, 0 differing events/);
+  });
+});
+
+// The two assertions above compare two files that were written at two different
+// moments, and every ZenGin archive header carries a `date`/`user` stamp taken
+// from the clock at write time. A world nests archives, so there are two places
+// such a stamp can sit: the top-level header and the `MeshAndBsp` blob's own.
+// Neither is a fact about the writer, and the stamp's rendered length varies too
+// (`%d.%d.%d` — patch 0018 — so day 9 → 10 is a byte longer). The diff therefore
+// has to survive a stamp difference in either header, of either length.
+//
+// What it must NOT survive is anything else, which is the second half of this
+// test: the same pair with one non-stamp byte perturbed — once inside the blob,
+// once inside an entry — must still be reported as differing. A comparison that
+// normalized more than the stamp values would pass a writer regression through.
+const HEADER_LINES = /(ZenGin Archive\nver 1\n[^\n]*\n[^\n]*\nsaveGame \d+\n)(date [^\n]*\nuser [^\n]*\n)?(END\n)/;
+
+function blobAt(buf) {
+  const marker = '[MeshAndBsp % 0 0]';
+  const at = buf.indexOf(marker, 0, 'latin1');
+  assert.ok(at >= 0, 'fixture has no MeshAndBsp blob');
+  let p = at + marker.length;
+  while (p < buf.length && (buf[p] === 0x0a || buf[p] === 0x0d || buf[p] === 0x09)) p += 1;
+  return { sizeAt: p + 4, start: p + 8, size: buf.readUInt32LE(p + 4) };
+}
+
+// Stamp both archive headers — the top-level one and the nested one inside the
+// blob — and patch the blob's declared size to match.
+//
+// The nested stamp is deliberately the SAME length on both sides while the
+// top-level one is not. That is the clock, exactly: `%d.%d.%d %02d:%02d:%02d`
+// changes every second and changes length only when the day or month crosses a
+// digit (patch 0018). A nested stamp of a different length makes the blob a
+// different size, and the declared size in the enclosing object frame is a
+// container fact the diff must go on reporting — so the length case is proved
+// where it costs nothing, on the top-level header, which nothing frames.
+function stamped(buf, top, nested) {
+  const blob = blobAt(buf);
+  const restamp = (b, stamp) =>
+    Buffer.from(b.toString('latin1').replace(HEADER_LINES, `$1${stamp}$3`), 'latin1');
+
+  const head = restamp(buf.subarray(0, blob.start), top);
+  const body = restamp(buf.subarray(blob.start, blob.start + blob.size), nested);
+  head.writeUInt32LE(body.length, blob.sizeAt + (head.length - blob.start));
+  return Buffer.concat([head, body, buf.subarray(blob.start + blob.size)]);
+}
+
+test('the byte diff sees past a header stamp in either archive header, and nothing else', () => {
+  withTmpDir((dir) => {
+    const at = path.join(dir, 'ascii.zen');
+    zenkit._authorFixtureWorld(at, 'ascii', 'g2');
+    const base = fs.readFileSync(at);
+
+    const a = stamped(base, 'date 9.1.2026 07:00:00\nuser Daniel\n', 'date 9.1.2026 07:00:00\nuser aaaaaa\n');
+    const b = stamped(base, 'date 10.12.2026 07:00:01\nuser someone-else\n', 'date 9.1.2026 07:00:01\nuser bbbbbb\n');
+    assert.notStrictEqual(a.length, b.length, 'the top-level stamps must differ in length');
+
+    const clean = byteDiff(a, b, false);
+    assert.strictEqual(clean.kind, 'event-aligned', JSON.stringify(clean));
+    assert.strictEqual(clean.aligned, true, JSON.stringify(clean.alignBreak));
+    assert.strictEqual(clean.coverage.gap, 0);
+    assert.strictEqual(clean.textHeaderIdentical, true);
+    assert.strictEqual(clean.trailerIdentical, true);
+    assert.deepStrictEqual(clean.differing, []);
+
+    // A byte of the blob that is not part of a stamp is still a difference.
+    const blobPerturbed = Buffer.from(b);
+    const blob = blobAt(blobPerturbed);
+    const off = blob.start + blob.size - 1;
+    blobPerturbed[off] ^= 0xff;
+    const blobDiff = byteDiff(a, blobPerturbed, false);
+    assert.ok(
+      blobDiff.differing.some((d) => /rawBlob/.test(d.key)),
+      `a perturbed blob byte went unreported: ${JSON.stringify(blobDiff.differing)}`
+    );
+
+    // And so is a byte of an ordinary entry.
+    const entryPerturbed = Buffer.from(b);
+    const vobName = entryPerturbed.indexOf('vobName=string:FIXTURE_ROOT', blob.start + blob.size, 'latin1');
+    assert.ok(vobName > 0, 'expected an entry payload after the blob');
+    entryPerturbed[vobName + 'vobName=string:'.length] = 0x58;
+    const entryDiff = byteDiff(a, entryPerturbed, false);
+    assert.ok(
+      entryDiff.differing.length > 0,
+      'a perturbed entry byte went unreported'
+    );
   });
 });
 

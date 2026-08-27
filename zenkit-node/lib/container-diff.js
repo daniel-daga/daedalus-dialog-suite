@@ -25,6 +25,34 @@
 const { walk, readHeader } = require('./container.js');
 const { walkAscii } = require('./container-ascii.js');
 
+// Every ZenGin archive header carries a `date`/`user` stamp taken from the clock
+// at write time, and a world nests archives — the `MeshAndBsp` blob has a header
+// of its own. Two files written a second apart therefore differ in bytes that
+// say nothing about the writer, and patch 0018's `%d.%d.%d` means the stamp's
+// *length* varies too, so the difference is not even offset-preserving.
+//
+// Only the VALUES are dropped, never the lines: `container.js`'s `headerSection`
+// makes the same split for the same reason, and a missing or added stamp line is
+// real drift (ZenGin omits them in nested headers).
+const HEADER_STAMPS =
+  /(ZenGin Archive\nver 1\n[^\n]*\n[^\n]*\nsaveGame \d+\n)date [^\n]*\nuser [^\n]*\n(END\n)/g;
+const ARCHIVE_MAGIC = Buffer.from('ZenGin Archive', 'latin1');
+
+function withoutHeaderStamps(buf) {
+  return Buffer.from(buf.toString('latin1').replace(HEADER_STAMPS, '$1date\nuser\n$2'), 'latin1');
+}
+
+// Byte equality that a clock tick cannot break. The strip is attempted only for
+// spans that actually contain an archive header, which keeps the cost off the
+// hundreds of thousands of ordinary events a retail world has — and states the
+// rule the normalization is allowed to have: bytes outside a header are compared
+// exactly, so a writer regression anywhere else is still a difference.
+function equalIgnoringStamps(a, b) {
+  if (a.equals(b)) return true;
+  if (a.indexOf(ARCHIVE_MAGIC) < 0 || b.indexOf(ARCHIVE_MAGIC) < 0) return false;
+  return withoutHeaderStamps(a).equals(withoutHeaderStamps(b));
+}
+
 function walkerFor(buf) {
   const format = readHeader(buf).lines[3];
   if (format === 'BIN_SAFE') return walk;
@@ -82,9 +110,9 @@ function byteDiff(a, b, drill) {
     events: [sa.length, sb.length],
     aligned: true,
     coverage: { accounted, total: a.length, gap: a.length - accounted },
-    textHeaderIdentical: headA.equals(headB),
+    textHeaderIdentical: equalIgnoringStamps(headA, headB),
     // The BinSafe hash table, or — on ASCII, which has none — an empty region.
-    trailerIdentical: tailA.equals(tailB),
+    trailerIdentical: equalIgnoringStamps(tailA, tailB),
     identicalEventBytes: 0,
     differing: [],
     samples: [],
@@ -110,7 +138,7 @@ function byteDiff(a, b, drill) {
     }
     const ba = a.subarray(x.start, x.end);
     const bb = b.subarray(y.start, y.end);
-    if (ba.equals(bb)) {
+    if (equalIgnoringStamps(ba, bb)) {
       result.identicalEventBytes += ba.length;
       continue;
     }
@@ -141,4 +169,4 @@ function byteDiff(a, b, drill) {
   return result;
 }
 
-module.exports = { byteDiff, walkerFor, streamEnd, spans };
+module.exports = { byteDiff, walkerFor, streamEnd, spans, withoutHeaderStamps, equalIgnoringStamps };

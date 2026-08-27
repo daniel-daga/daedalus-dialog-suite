@@ -34,7 +34,7 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const { classifyDumps } = require('../lib/classify.js');
-const { byteDiff } = require('../lib/container-diff.js');
+const { byteDiff, withoutHeaderStamps, equalIgnoringStamps } = require('../lib/container-diff.js');
 
 const BLOCKING = new Set(['semantic-drift', 'unreadable', 'crashed']);
 
@@ -73,16 +73,12 @@ function parseArgs(argv) {
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
-// Blank the variable `date `/`user ` values in every ZenGin archive header (a
-// world nests archives — the MeshAndBsp chunk carries its own). Two saves of one
-// handle can straddle a second, so the raw bytes are compared too and reported
-// separately: `deterministic` must mean "the writer is deterministic", not "the
-// clock did not tick".
-function withoutHeaderStamps(buf) {
-  const header =
-    /(ZenGin Archive\nver 1\n[^\n]*\n[^\n]*\nsaveGame \d+\n)date [^\n]*\nuser [^\n]*\n(END\n)/g;
-  return Buffer.from(buf.toString('latin1').replace(header, '$1date\nuser\n$2'), 'latin1');
-}
+// `withoutHeaderStamps` blanks the variable `date `/`user ` values in every
+// ZenGin archive header (a world nests archives — the MeshAndBsp chunk carries
+// its own). Two saves of one handle can straddle a second, so the raw bytes are
+// compared too and reported separately: `deterministic` must mean "the writer is
+// deterministic", not "the clock did not tick". It lives in container-diff.js
+// because the event-aligned diff needs exactly the same rule.
 
 function archiveKind(buf) {
   const head = buf.toString('latin1', 0, 256).split('\n');
@@ -150,7 +146,9 @@ function measure(file, game, drill) {
     const blobA = blobOf(original);
     const blobB = blobOf(resaved);
     row.blob = blobA && blobB
-      ? { original: blobA.length, resaved: blobB.length, identical: blobA.equals(blobB) }
+      // Stamp-insensitive for the same reason `deterministic` is: the blob is a
+      // nested archive and carries a header of its own.
+      ? { original: blobA.length, resaved: blobB.length, identical: equalIgnoringStamps(blobA, blobB) }
       : null;
 
     let reloaded;
