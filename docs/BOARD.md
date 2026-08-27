@@ -13,6 +13,7 @@ handovers cost an hour a session:
 | a decision or a measurement | `docs/plans/level-editor.md` §7 |
 | build and test commands | `CLAUDE.md`, and each workspace's `README.md` |
 | machine and toolchain hazards | `docs/reference/environment-hazards.md` |
+| a known wart nobody is fixing yet | `docs/refactoring-targets.md` |
 | the Gate 2 checklist | `zenkit-node/docs/engine-acceptance-2026-08-25.md` §8 |
 
 **Rules.** A card is one line and an owner. A card moves to Done only when its
@@ -26,6 +27,20 @@ uncommitted work is invisible to it. Commit the board update in the same
 session, and split unrelated work into separate commits. Stage with
 `git add -A -- . ':!zenkit-node/vendor/ZenKit'` — the submodule is the applied
 patch series and is never committed.
+
+**Anything said about future work is written down before the session ends.**
+Every caveat, every "worth remembering next time", every open question, every
+defect noticed and not fixed — if it would change what somebody does next, it
+goes in a file, not in a chat reply. A finding that exists only in a
+conversation is lost the moment the conversation is, and the next session pays
+to rediscover it. Route it by the table above: a fact about the code goes to the
+plan, a fact about this machine to `environment-hazards.md`, a card to Next or
+Blocked here. Say where it went, so the routing can be corrected.
+
+**A doc that has gone stale is a defect.** When work invalidates something a
+file asserts, fix it in the same change — including comments that record a
+constraint the work has just removed. The claim to check hardest is the one that
+was true for so long nobody re-reads it.
 
 ---
 
@@ -86,6 +101,17 @@ patch series and is never committed.
   indices only. `verify-world-edit.js`'s waynet assertion is already
   differential and already has an `expectedWaypointMoves` constant sitting at 0
   — that is the one number the gizmo slice changes.
+  **Save needs nothing from this slice, asked and answered:** there is no dirty
+  flag on the world at all. `WorldSurface.tsx:166-187` saves whatever the worker
+  holds whenever a world is open, so a waypoint move is savable exactly like a
+  VOB move and no gating had to learn about it.
+  **`zen-world`'s `applyWaypointPositions` is exported, tested and called by
+  nothing** — it is the overlay-projection half of this op, and the gizmo slice
+  is what will use it. Flagged rather than left to be rediscovered as dead code:
+  if that slice is not the next thing to land, delete it and let the slice add
+  it back. It writes the payload's `Float32Array` in place because the point
+  cloud and the edge lines share one `BufferAttribute` (`WaynetOverlay.ts:44,
+  83`), and that sharing is what keeps the two from disagreeing.
   The edge ops keep their original hazard: `free_point` is not a stored field,
   and `WayNet::save` writes only free points plus edge endpoints, so a non-free
   waypoint in no edge is dropped at save. Removing a waypoint's last edge
@@ -122,8 +148,17 @@ patch series and is never committed.
   `['crashed','unreadable','ok']` — the whole outcome space — and does not pass
   `--strict`, even though `crashed` is already in `zen-roundtrip.js:38`'s
   `BLOCKING` set. A full fix of A1–A4 would leave the suite green and unchanged.
-- **A malformed BinSafe world hangs the reader** — found in passing, unrelated to
-  A1–A5. `loadWorld` on a BinSafe file with ~500 corrupted bytes neither crashes
+  So the harness owes three things before any defect fix is provable: a
+  `lib/container-ascii.js` walker so `containerFromBuffer` stops answering
+  `covered:false` for the very format under test; a `tools/bytediff.js` that is
+  not wired to `walk()`'s BinSafe assumptions; and `roundtrip.test.js`'s
+  three-way `assert.ok` replaced by an exact expected status plus a `--strict`
+  run. Fix order after that is A1 (its assertion is a pure string check on the
+  emitted file and needs no reload), then A2, then A2b, then A3; A4 is
+  independent and can ride along any time.
+- **A malformed BinSafe world hangs the reader** — found in passing, and separate
+  from both the ASCII defects and the exception fix.
+  `loadWorld` on a BinSafe file with ~500 corrupted bytes neither crashes
   nor throws; it spun to 202 s CPU with growing RSS before being killed. An
   unbounded length read. It will hang the editor's `zenkit.worker` the same way
   the abort used to kill it. Not yet reproduced into a test.
