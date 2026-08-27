@@ -517,6 +517,38 @@ async function main() {
   //
   // Saving and re-loading closes that. The file is read here, in this process,
   // by the binding itself — nothing of the app's is in the path.
+
+  // ── a waypoint, which is not a VOB ────────────────────────────────────────
+  //
+  // Done before the VOB is re-selected, and deliberately: picking a waypoint
+  // gives up the VOB selection — one gizmo — and the property grid below reads
+  // the selected VOB's index to find it in the saved file.
+  //
+  // The waynet has to be switched on first. That is what fetches the payload,
+  // and a waypoint that is not drawn cannot be picked: there is no overlay to
+  // pick it out of.
+  let waypointMoved = null;
+  await page.getByTestId('world-waynet-toggle').click();
+  await page.evaluate(() => globalThis.__worldViewport.pickWaypoint(0));
+  const waypointHome = await expect_(
+    async () => (await page.evaluate(() => globalThis.__worldViewport.gizmoPosition())) !== null,
+    'the gizmo never attached to a waypoint — the overlay may not have loaded',
+  ) ? await page.evaluate(() => globalThis.__worldViewport.gizmoPosition()) : null;
+
+  if (waypointHome !== null) {
+    const waypointAway = waypointHome.map((value) => value + NUDGE);
+    await page.evaluate((target) => globalThis.__worldViewport.dragGizmo(target), waypointAway);
+    // The gizmo is the only projection there is for a waypoint — it has no row
+    // in the scene tree and no properties in the grid. The witness that matters
+    // is the saved file, and that is `expectedWaypointMoves` below.
+    const landed = await page.evaluate(() => globalThis.__worldViewport.gizmoPosition());
+    check(near(landed, waypointAway),
+      `the gizmo is at ${landed?.map(Math.round)} after the waypoint drag, not ${waypointAway.map(Math.round)}`);
+    check(await page.getByTestId('world-edit-error').count() === 0,
+      'the waypoint move was refused');
+    waypointMoved = `waypoint 0 ${waypointHome.map(Math.round).join(', ')} -> ${waypointAway.map(Math.round).join(', ')}`;
+  }
+
   await clickRow(selected);
   const home = await readGrid();
   const away = home.map((value) => value + NUDGE);
@@ -532,6 +564,8 @@ async function main() {
 
   let saved = null;
   let changed = null;
+  /** How the waynet differed, for the summary — measured, not assumed. */
+  let waypointsChanged = null;
   if (fs.existsSync(SAVE_TO)) {
     const zenkit = require('zenkit-node');
     const dump = zenkit.normalizeWorld(zenkit.loadWorld(SAVE_TO, 'g2'));
@@ -587,11 +621,12 @@ async function main() {
     // differential form cheap: waypoints are sorted by name and a move does not
     // rename, so the array order is stable; and edges are sorted
     // order-insensitively, so edge equality is not order noise.
-    // Zero, because nothing this driver does moves a waypoint yet: the op path
-    // exists but no UI gesture produces one. This is the number the waypoint
-    // gizmo slice changes, and it is a named constant rather than a literal so
-    // that slice has one place to look.
-    const expectedWaypointMoves = 0;
+    // One: the waypoint gizmo above drags waypoint 0 and does not undo it.
+    // Still a named constant rather than a literal, because it is the number
+    // that says how much of the waynet this driver is allowed to have touched —
+    // and the assertion below narrows a difference to *position*, so a waypoint
+    // that changed anything else is a red row whatever this says.
+    const expectedWaypointMoves = 1;
     check(original.waynet.waypoints.length === dump.waynet.waypoints.length,
       `the saved world has ${dump.waynet.waypoints.length} waypoints, `
       + `the original ${original.waynet.waypoints.length}`);
@@ -608,6 +643,7 @@ async function main() {
           : `${now.name} (NOT just its position)`,
       );
     }
+    waypointsChanged = movedWaypoints;
     check(movedWaypoints.length === expectedWaypointMoves,
       `${movedWaypoints.length} waypoints differ from the original `
       + `(${movedWaypoints.slice(0, 5)}), expected ${expectedWaypointMoves}`);
@@ -739,9 +775,13 @@ async function main() {
   row('Placed under a parent', parented ?? 'not exercised — no rows in the tree');
   row('Reparented', reparented ?? 'not exercised — fewer than two rows in the tree');
   row('Dropped between rows', slotted ?? 'not exercised — the top two rows are indistinguishable');
+  row('Waypoint moved', waypointMoved ?? 'FAILED — the gizmo never took a waypoint');
   row('Saved and re-loaded', saved
     ? `VOB ${selected} is at ${saved.position.map(Math.round).join(', ')} in the file`
     : 'FAILED');
+  row('  waypoints differing', waypointsChanged === null
+    ? 'not compared'
+    : `${waypointsChanged.length} of ${'2,959'} — ${waypointsChanged.join(', ') || 'none'}`);
   row('  VOBs differing', changed === null ? 'not compared' : `${changed} of ${'23,288'} — mesh and bsp identical, waynet compared waypoint by waypoint`);
   if (both) {
     row('Multi-select', `${both.first} + ${both.second}, one gizmo, one batch`);

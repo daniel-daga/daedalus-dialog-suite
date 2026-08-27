@@ -1884,6 +1884,66 @@ Still open, and neither a prerequisite: serialising the subtree into the op, and
 the describe-it-completely fallback. Both would turn the barrier back into an
 inverse.
 
+#### The waypoint gizmo — the UI for an op that had none (2026-08-28)
+
+`MoveWaypoint` landed with no gesture that produced one. This is that gesture,
+and four things about it were decided by the waynet being a different shape from
+the VOB tree rather than by anything the gizmo wanted.
+
+**One gizmo, so one selection.** `selectedWaypoint` is its own field on
+`worldStore` and is never held at the same time as `selection`: each pick clears
+the other. Not fastidiousness — the mode keys, the property grid and the **Delete
+VOB** button all follow `selection`, so a VOB selection standing behind a picked
+waypoint is a delete aimed at something the user cannot see.
+
+**The pick is a projection, not a raycast.** `THREE.Points.raycast` is the
+obvious answer and the wrong one: its threshold is in *world units*, while the
+overlay draws with `sizeAttenuation: false`, so every waypoint is the same 3.5 px
+whatever its distance. A world-unit threshold tuned to work up close cannot be
+clicked at range, and one tuned for range swallows half the net up close. So
+`pickWaypoint` projects every waypoint and measures the threshold in pixels,
+where the sizes actually are equal. Looping over all 2,959 sounds worse than it
+is: it runs once per click, not once per frame — unlike the props, which is
+exactly why those are GPU ID-picked.
+
+**The waynet is picked before the VOBs**, and only while it is switched on. It
+draws with `depthTest: false` — over everything, the whole reason a waynet
+inside a building is visible at all — so picking it second means clicking a dot
+that is plainly on top and selecting the wall behind it.
+
+**The waynet forced an asymmetry on where `from` comes from.** Every other op in
+this surface reads `from` out of the columnar index at commit time, and can,
+because the live preview writes *instance matrices* — a different array. The
+waynet has one `Float32Array` for both: the point cloud and the edge lines share
+it, deliberately, so an edge cannot point at a stale waypoint. That sharing is
+what makes the preview destructive. By the time the drag ends, the position the
+op has to carry as `from` has been overwritten with `to`. So the viewport records
+it at the press and hands it up with the drag, and the shell writes it back
+before building the op — which keeps the op coming out of `moveWaypoint`, with
+its range check and the name the address is guarded by, rather than being
+assembled by hand at the call site.
+
+**`applyWaypointPositions` is called once, in `applied`** — the same function
+undo and redo come through, which is why it is there and not beside the commit.
+It writes the *payload*, and the overlay's position attribute is a view over that
+same buffer, so there is no second copy to keep in step: the viewport only asks
+for the upload. `WaynetOverlay.test.ts` pins the view-not-a-copy, because a copy
+would fail silently — the file would save the move and the overlay would go on
+drawing the old position until the world was reopened.
+
+Translate only. `MoveWaypoint` is the only waynet op there is; a waypoint does
+carry a direction, but nothing writes one, so a rotate ring would turn something
+the world would never be told about.
+
+`verify-world-edit.js`'s `expectedWaypointMoves` moves from 0 to 1 — the number
+§14.2 said this slice would change — and the driver's waynet comparison was
+already differential and already narrowed a difference to *position*, so a
+waypoint that changed anything else is a red row regardless.
+
+Still not done, and unchanged by this: the edge ops, and waypoint add, delete and
+rename. §14.2's addressing problem is untouched, because a move is precisely the
+op that does not need it solved.
+
 #### What the real-app driver had to be taught, to be worth running (2026-08-28)
 
 `verify-world-edit.js` reported the reparent as a pass throughout the period the
@@ -2154,6 +2214,9 @@ correct and a third mode would author a representation ZenGin does not have.
 Only `MoveWaypoint` exists. Parity wants add, delete, rename, connect and
 disconnect edges, freepoint authoring (the `FP_` convention), and waypoint
 direction — which the binding deliberately leaves alone.
+
+The gizmo that produces a `MoveWaypoint` landed 2026-08-28 (§7), so the one op
+that exists is now reachable from the UI. Everything below still is not.
 
 §7's op list already ends "… waynet edge ops", so this is *planned*. What it
 does not carry is the actual work: **addressing**. `MoveWaypoint` addresses a

@@ -119,6 +119,83 @@ describe('WaynetOverlay', () => {
     expect(overlay.waypoints.geometry.getAttribute('position').count).toBe(4);
   });
 
+  // ── the waypoint gizmo's half of the overlay ──────────────────────────────
+  //
+  // A waypoint move reaches the overlay by two different routes, and they are
+  // different on purpose. The *drag preview* is the viewport writing what the
+  // gizmo is doing right now — the world in the main process still has the
+  // waypoint where it was. An *applied* op is the World surface writing the
+  // payload once main has taken it, through `zen-world`'s
+  // `applyWaypointPositions`, which is the same function undo and redo go
+  // through.
+
+  it('draws out of the payload buffer rather than a copy of it', () => {
+    // Load-bearing, and silent when wrong: the surface applies a committed
+    // waypoint move to the *payload*, and the overlay is expected to be drawing
+    // the very same memory. A copy here would leave the two disagreeing — the
+    // file would save the move and the overlay would keep drawing the old
+    // position until the world was reopened.
+    const payload = waynet();
+    const overlay = new WaynetOverlay(payload);
+    const attribute = overlay.waypoints.geometry.getAttribute('position');
+
+    expect((attribute.array as Float32Array).buffer).toBe(payload.positions);
+
+    new Float32Array(payload.positions).set([1234, 5678, 9012], 1 * 3);
+    expect([attribute.getX(1), attribute.getY(1), attribute.getZ(1)])
+      .toEqual([1234, 5678, 9012]);
+  });
+
+  it('reports a waypoint position in ZenGin space, for the gizmo to sit on', () => {
+    const overlay = new WaynetOverlay(waynet());
+    expect(overlay.positionOf(2)).toEqual([9000, 0, 1000]);
+  });
+
+  it('previews a drag into the buffer the edges share, and asks for the upload', () => {
+    // The edges have to follow: an edge into a waypoint the preview has moved
+    // is otherwise a line to where it used to be, for as long as the drag lasts.
+    const overlay = new WaynetOverlay(waynet());
+    const points = overlay.waypoints.geometry.getAttribute('position');
+    const version = points.version;
+
+    overlay.setPosition(1, [2000, 300, 400]);
+
+    expect(overlay.positionOf(1)).toEqual([2000, 300, 400]);
+    expect(overlay.edges.geometry.getAttribute('position').getX(1)).toBe(2000);
+    // `needsUpdate` is write-only — it bumps `version`, which is what the
+    // renderer actually compares. Without it the GPU keeps drawing the buffer
+    // it was first handed and the drag is invisible until something else
+    // happens to dirty the geometry.
+    expect(points.version).toBeGreaterThan(version);
+  });
+
+  it('uploads again when the payload was written from outside', () => {
+    // The applied path: the surface has already written the payload through
+    // `applyWaypointPositions`, so there is nothing for the overlay to write —
+    // only the upload to ask for, which nothing else would.
+    const payload = waynet();
+    const overlay = new WaynetOverlay(payload);
+    const points = overlay.waypoints.geometry.getAttribute('position');
+    const version = points.version;
+
+    new Float32Array(payload.positions).set([7, 8, 9], 0);
+    overlay.refresh();
+
+    expect(points.version).toBeGreaterThan(version);
+    expect(overlay.positionOf(0)).toEqual([7, 8, 9]);
+  });
+
+  it('refuses a waypoint it does not have', () => {
+    // The overlay and the world are two projections of one waynet, and an index
+    // that is valid in neither is a bug worth hearing about rather than a
+    // silent write past the end of a typed array — which a `Float32Array`
+    // drops, leaving the caller told the waypoint moved.
+    const overlay = new WaynetOverlay(waynet());
+
+    expect(() => overlay.setPosition(4, [0, 0, 0])).toThrow(/4/);
+    expect(() => overlay.positionOf(-1)).toThrow(/-1/);
+  });
+
   it('releases its buffers when disposed', () => {
     const overlay = new WaynetOverlay(waynet());
     const disposed: string[] = [];

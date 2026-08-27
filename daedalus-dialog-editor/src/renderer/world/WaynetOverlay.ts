@@ -39,9 +39,23 @@ export class WaynetOverlay {
   private geometry = new THREE.BufferGeometry();
   private edgeGeometry = new THREE.BufferGeometry();
   private materials: THREE.Material[] = [];
+  /**
+   * Every waypoint's position, ZenGin centimetres, three floats each — and a
+   * **view over the payload's own buffer**, not a copy of it.
+   *
+   * Public because the viewport picks a waypoint by projecting all of them
+   * (`pickWaypoint`), which needs the column rather than one entry at a time.
+   *
+   * That is what lets a committed waypoint move be applied once, to the
+   * payload, by `zen-world`'s `applyWaypointPositions` — the overlay is already
+   * drawing that memory. A copy here would need a second write and would be
+   * wrong for as long as anybody forgot it.
+   */
+  readonly positions: Float32Array;
 
   constructor(payload: WaynetPayload) {
     const position = new THREE.BufferAttribute(new Float32Array(payload.positions), 3);
+    this.positions = position.array as Float32Array;
     const flags = new Uint32Array(payload.flags);
 
     const colors = new Float32Array(payload.count * 3);
@@ -104,6 +118,52 @@ export class WaynetOverlay {
 
   setVisible(visible: boolean): void {
     this.root.visible = visible;
+  }
+
+  /** Where a waypoint sits, in ZenGin centimetres — the space the gizmo's proxy
+   *  works in, because both hang under the same mirrored root. */
+  positionOf(waypoint: number): [number, number, number] {
+    const at = this.at(waypoint);
+    return [this.positions[at], this.positions[at + 1], this.positions[at + 2]];
+  }
+
+  /**
+   * Draw a waypoint somewhere else — the gizmo's live preview.
+   *
+   * The world in the main process still has it where it was; this is the drag
+   * being drawn, and it is made real on release, exactly as a VOB drag is. The
+   * edges follow for free, because they index this same buffer.
+   */
+  setPosition(waypoint: number, to: readonly [number, number, number]): void {
+    const at = this.at(waypoint);
+    this.positions[at] = to[0];
+    this.positions[at + 1] = to[1];
+    this.positions[at + 2] = to[2];
+    this.refresh();
+  }
+
+  /**
+   * Upload the positions again, after something outside wrote them.
+   *
+   * That something is the World surface, applying a committed waypoint move —
+   * or an undo, or a redo — to the payload through `zen-world`'s
+   * `applyWaypointPositions`. This buffer *is* the payload's, so there is
+   * nothing to copy across; without the flag the GPU simply keeps drawing what
+   * it was first handed.
+   */
+  refresh(): void {
+    this.geometry.getAttribute('position').needsUpdate = true;
+  }
+
+  /** The offset of a waypoint's x, or a refusal. A write past the end of a
+   *  `Float32Array` is dropped silently, which would leave the caller told the
+   *  waypoint moved. */
+  private at(waypoint: number): number {
+    const at = waypoint * 3;
+    if (at < 0 || at + 2 >= this.positions.length) {
+      throw new RangeError(`no waypoint ${waypoint} in the overlay`);
+    }
+    return at;
   }
 
   dispose(): void {

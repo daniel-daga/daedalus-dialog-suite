@@ -5,9 +5,10 @@ import {
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  addVob, deleteVob, invertOp, isBarrierOp, isStructuralOp, placeBounds, renumbersPaths,
+  addVob, applyWaypointPositions, deleteVob, invertOp, isBarrierOp, isStructuralOp, isWaynetOp,
+  moveWaypoint, placeBounds, renumbersPaths,
   reparentVob, rotateVobs, setVobProps, translateVobs,
-  type NewVob, type VobProps, type ZenBounds, type ZenRotation,
+  type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { primaryVob, useWorldStore } from '../../store/worldStore';
@@ -37,7 +38,10 @@ const WorldSurface: React.FC = () => {
   const error = useWorldStore((s) => s.error);
   const editError = useWorldStore((s) => s.editError);
   const selection = useWorldStore((s) => s.selection);
-  const { beginOpen, openSucceeded, openFailed, selectVob, toggleVob } = useWorldStore.getState();
+  const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
+  const {
+    beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
+  } = useWorldStore.getState();
 
   const [gothicInstall, setGothicInstall] = useState<string | null>(null);
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
@@ -112,8 +116,12 @@ const WorldSurface: React.FC = () => {
   const toggleWaynet = useCallback(async () => {
     const next = !showWaynet;
     setShowWaynet(next);
+    // The overlay is hidden rather than destroyed, so nothing else would notice
+    // a waypoint still being selected — and the gizmo would go on standing, and
+    // dragging, where there is no longer a dot to see.
+    if (!next) selectWaypoint(null);
     if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
-  }, [showWaynet, waynet]);
+  }, [showWaynet, waynet, selectWaypoint]);
 
   const listAssets = useCallback(
     (assetPath: string) => window.editorAPI.listWorldAssets(assetPath),
@@ -209,6 +217,21 @@ const WorldSurface: React.FC = () => {
    */
   const applied = useCallback(async (ops: readonly WorldOp[]) => {
     useWorldStore.getState().applyEdit(ops);
+
+    // The waynet's half of the projection. The store's `applyEdit` writes the
+    // VOB columns and filters these out — a waypoint has no row in them — so
+    // this is the only place a committed waypoint move reaches the renderer.
+    // The payload is the one the overlay is drawing: its position attribute is
+    // a *view* over this buffer, so writing it here is writing what is on
+    // screen, and the viewport only has to ask for the upload.
+    //
+    // Undo and redo come through here as well, which is the whole reason it is
+    // in `applied` rather than beside the commit.
+    const waynetOps = ops.filter(isWaynetOp);
+    if (waynetOps.length > 0 && waynet !== null) {
+      applyWaypointPositions(new Float32Array(waynet.positions), waynetOps);
+    }
+
     setAppliedOps([...ops]);
     if (!ops.some(isStructuralOp)) return;
 
@@ -223,7 +246,7 @@ const WorldSurface: React.FC = () => {
 
     useWorldStore.getState().indexRefreshed(await window.editorAPI.refreshWorldIndex());
     setVisuals(await window.editorAPI.getWorldVisuals());
-  }, []);
+  }, [waynet]);
 
   const commitOps = useCallback(async (ops: WorldOp[]) => {
     const { editFailed } = useWorldStore.getState();
@@ -406,6 +429,30 @@ const WorldSurface: React.FC = () => {
 
     await commitOps([addVob(vobModelOf(current).reader, placed, spec.parent)]);
   }, [commitOps, terrainPoint]);
+
+  /**
+   * A finished waypoint drag — the waynet's counterpart of a gizmo move.
+   *
+   * One waypoint, so this takes a destination where a VOB drag takes a delta:
+   * there is no selection whose spacing has to survive.
+   *
+   * `from` comes from the viewport rather than being read here, and that is the
+   * one asymmetry with every other op in this surface. A VOB drag reads `from`
+   * out of the columnar index, which the live preview never wrote — it writes
+   * instance matrices instead, and the two are separate. The waynet has one
+   * array for both, so by the time the drag ends the preview has already put
+   * `to` where `from` used to be. The viewport recorded it at the press; it is
+   * put back here so that `moveWaypoint` — and with it the range check and the
+   * name the op is guarded by — reads the position the waypoint actually had.
+   */
+  const moveWaypointTo = useCallback((
+    waypoint: number, from: ZenPosition, to: ZenPosition,
+  ) => {
+    if (waynet === null) return;
+    const positions = new Float32Array(waynet.positions);
+    positions.set(from, waypoint * 3);
+    void commitOps([moveWaypoint(positions, waynet.names, waypoint, to)]);
+  }, [commitOps, waynet]);
 
   /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
@@ -704,6 +751,9 @@ const WorldSurface: React.FC = () => {
               gizmoMode={gizmoMode}
               onRotateSelection={handleRotateSelection}
               appliedOps={appliedOps}
+              selectedWaypoint={selectedWaypoint}
+              onSelectWaypoint={selectWaypoint}
+              onMoveWaypoint={moveWaypointTo}
             />
           )}
         </Box>

@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 import { createVobReader, type VobIndex, type WorldOp } from 'zen-world';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
 import { useWorldStore } from '../src/renderer/store/worldStore';
-import type { WorldSummary } from '../src/shared/worldTypes';
+import type { WaynetPayload, WorldSummary } from '../src/shared/worldTypes';
 
 /**
  * The World surface's half of an edit (level-editor.md §7, Phase 1b).
@@ -26,6 +26,7 @@ let mockSelection: readonly number[] | undefined;
 /** The drag the stub fires — VOB 1 sits at [10, 20, 30], so this is `MOVE`. */
 const DRAG: [number, number, number] = [1, 2, 3];
 let mockGizmoMode: string | undefined;
+let mockSelectedWaypoint: number | null | undefined;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 // The house pattern for react-window under jsdom, which has no layout — without
@@ -48,14 +49,37 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     gizmoMode: string;
     selection: readonly number[];
     appliedOps: WorldOp[] | null;
+    selectedWaypoint: number | null;
+    onSelectWaypoint: (waypoint: number | null) => void;
+    onMoveWaypoint: (
+      waypoint: number,
+      from: [number, number, number],
+      to: [number, number, number],
+    ) => void;
   }) => {
     mockAppliedOps = props.appliedOps;
     mockSelection = props.selection;
     mockGizmoMode = props.gizmoMode;
+    mockSelectedWaypoint = props.selectedWaypoint;
     return (
       <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
           drag
+        </button>
+        {/* The waynet overlay's own pick, and its own drag. The viewport reports
+            `from` as well as `to` because it recorded where the waypoint was
+            when the drag began — its live preview has since written that
+            position out of the payload, which is the array the op would
+            otherwise read `from` out of. */}
+        <button type="button" data-testid="stub-pick-waypoint" onClick={() => props.onSelectWaypoint(1)}>
+          pick waypoint
+        </button>
+        <button
+          type="button"
+          data-testid="stub-drag-waypoint"
+          onClick={() => props.onMoveWaypoint(1, WAYPOINT_WAS, WAYPOINT_TO)}
+        >
+          drag waypoint
         </button>
         <button type="button" data-testid="stub-turn" onClick={() => props.onRotateSelection(TURN)}>
           turn
@@ -73,6 +97,36 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
 
 /** Where a terrain click lands — ZenGin centimetres, deliberately not round. */
 const TERRAIN: [number, number, number] = [1500.5, -220, 3300.25];
+
+/** Waypoint 1's position in the payload below, and where the stub drags it. */
+const WAYPOINT_WAS: [number, number, number] = [1000, 0, 1000];
+const WAYPOINT_TO: [number, number, number] = [1400, 50, 900];
+
+/**
+ * A three-waypoint waynet, in the shape `getWaynet` emits it.
+ *
+ * Fresh per test, because the overlay draws a *view* over `positions` and an
+ * applied move writes it in place — a shared fixture would carry one test's
+ * move into the next.
+ */
+function waynetPayload(): WaynetPayload {
+  return {
+    count: 3,
+    names: ['WP_START', 'WP_MIDDLE', 'WP_END'],
+    positions: new Float32Array([0, 0, 0, ...WAYPOINT_WAS, 2000, 0, 2000]).buffer,
+    directions: new Float32Array(9).buffer,
+    waterDepths: new Int32Array(3).buffer,
+    flags: new Uint32Array(3).buffer,
+    edgeCount: 2,
+    edges: new Uint32Array([0, 1, 1, 2]).buffer,
+    danglingEdges: 0,
+  };
+}
+
+/** The op a drag of waypoint 1 has to become. */
+const WAYPOINT_MOVE: WorldOp = {
+  op: 'MoveWaypoint', waypoint: 1, name: 'WP_MIDDLE', from: WAYPOINT_WAS, to: WAYPOINT_TO,
+};
 
 function vobIndex(positions: Array<[number, number, number]>): VobIndex {
   const count = positions.length;
@@ -886,5 +940,139 @@ describe('undo and redo in the World view', () => {
     pressUndo();
 
     expect(api.undoWorldEdit).not.toHaveBeenCalled();
+  });
+});
+
+describe('a waypoint dragged in the viewport', () => {
+  /**
+   * Open a world and turn the waynet on, which is what fetches the payload.
+   *
+   * A waypoint cannot be picked before that, and deliberately: the overlay is
+   * the only thing that draws one, and it is off until asked for.
+   */
+  async function openWithWaynet(): Promise<WaynetPayload> {
+    await openWorld();
+    const payload = waynetPayload();
+    api.getWorldWaynet.mockResolvedValueOnce(payload as never);
+
+    fireEvent.click(screen.getByTestId('world-waynet-toggle'));
+    await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalled());
+    return payload;
+  }
+
+  it('becomes a MoveWaypoint carrying where it was, and reaches the main process', async () => {
+    // The name rides along with the index because a stale index always resolves
+    // to *some* waypoint and moves it, where a stale path resolves to nothing.
+    // One string compare is the only guard the address admits.
+    await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-drag-waypoint'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([WAYPOINT_MOVE]));
+  });
+
+  it('writes the committed move into the payload the overlay draws', async () => {
+    // The overlay's position attribute is a view over this very buffer, so this
+    // is what makes the moved waypoint — and every edge into it — stay where it
+    // was put. Nothing else writes it: the VOB projection has no row for a
+    // waypoint and refuses the op by name.
+    const payload = await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-drag-waypoint'));
+
+    await waitFor(() => expect(Array.from(new Float32Array(payload.positions).slice(3, 6)))
+      .toEqual(WAYPOINT_TO));
+  });
+
+  it('does not touch the payload until the main process has taken the op', async () => {
+    const payload = await openWithWaynet();
+    let take = (): void => undefined;
+    api.applyWorldOps.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      take = () => resolve(undefined);
+    }));
+
+    fireEvent.click(screen.getByTestId('stub-drag-waypoint'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(Array.from(new Float32Array(payload.positions).slice(3, 6))).toEqual(WAYPOINT_WAS);
+
+    take();
+    await waitFor(() => expect(Array.from(new Float32Array(payload.positions).slice(3, 6)))
+      .toEqual(WAYPOINT_TO));
+  });
+
+  it('puts the waypoint back when the op is refused, and says so', async () => {
+    // The viewport has already drawn the drag into the payload. Left alone the
+    // waypoint sits where the world does not have it, and it is the *file* that
+    // would disagree — a waypoint has no property grid to notice it.
+    const payload = await openWithWaynet();
+    api.applyWorldOps.mockRejectedValueOnce(new Error('waypoint 1 is not WP_MIDDLE'));
+
+    fireEvent.click(screen.getByTestId('stub-drag-waypoint'));
+
+    await waitFor(() => expect(mockAppliedOps)
+      .toEqual([{ ...WAYPOINT_MOVE, from: WAYPOINT_TO, to: WAYPOINT_WAS }]));
+    expect(Array.from(new Float32Array(payload.positions).slice(3, 6))).toEqual(WAYPOINT_WAS);
+    expect(await screen.findByTestId('world-edit-error')).toHaveTextContent('WP_MIDDLE');
+  });
+
+  it('is undone through the same path a VOB move is', async () => {
+    // Undo does not go back through `commitOps` — the op log is in the main
+    // process and it says what it undid. An undone waypoint move has to reach
+    // the payload the same way the commit did, or the overlay keeps drawing the
+    // move after the world has dropped it.
+    const payload = await openWithWaynet();
+    fireEvent.click(screen.getByTestId('stub-drag-waypoint'));
+    await waitFor(() => expect(Array.from(new Float32Array(payload.positions).slice(3, 6)))
+      .toEqual(WAYPOINT_TO));
+
+    api.undoWorldEdit.mockResolvedValueOnce(
+      [{ ...WAYPOINT_MOVE, from: WAYPOINT_TO, to: WAYPOINT_WAS }] as never,
+    );
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(Array.from(new Float32Array(payload.positions).slice(3, 6)))
+      .toEqual(WAYPOINT_WAS));
+  });
+
+  it('does not ask for a fresh VOB index — a waypoint renumbers nothing', async () => {
+    // A waynet op is not structural: it changes no enumeration, so the columnar
+    // projection and the instanced scene are both still correct. Re-reading
+    // either would cost what an open costs, and would re-frame the camera away
+    // from the waypoint that was just dragged.
+    await openWithWaynet();
+    api.refreshWorldIndex.mockClear();
+    api.getWorldVisuals.mockClear();
+
+    fireEvent.click(screen.getByTestId('stub-drag-waypoint'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+    expect(api.getWorldVisuals).not.toHaveBeenCalled();
+  });
+
+  it('lets go of the waypoint when the overlay is switched off', async () => {
+    // The overlay is hidden, not destroyed, so nothing else would notice. A
+    // gizmo left standing on a waypoint that is no longer drawn is a gizmo in
+    // mid-air — and it is still draggable, which would commit a move to a
+    // waypoint the user cannot see.
+    await openWithWaynet();
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+    await waitFor(() => expect(mockSelectedWaypoint).toBe(1));
+
+    fireEvent.click(screen.getByTestId('world-waynet-toggle'));
+
+    await waitFor(() => expect(mockSelectedWaypoint).toBeNull());
+  });
+
+  it('hands the picked waypoint back down, and lets go of the VOB selection', async () => {
+    // One gizmo. The VOB selection standing behind a selected waypoint is what
+    // would make the Delete VOB button act on something invisible.
+    await openWithWaynet();
+    expect(mockSelection).toEqual([1]);
+
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+
+    await waitFor(() => expect(mockSelectedWaypoint).toBe(1));
+    expect(mockSelection).toEqual([]);
   });
 });

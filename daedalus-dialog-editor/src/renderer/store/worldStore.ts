@@ -29,6 +29,17 @@ interface WorldStore {
    * meant to be one op each.
    */
   selection: readonly number[];
+  /**
+   * The waypoint the gizmo is on instead, or null.
+   *
+   * Separate from `selection` rather than folded into it, and never held at the
+   * same time as one: a waypoint is not a VOB — it has no row in the columnar
+   * index, no properties in the grid and no place in the scene tree — but there
+   * is only *one* gizmo, and the mode keys and the delete button follow the
+   * same selection it does. Two selections standing at once would make every
+   * one of those ambiguous.
+   */
+  selectedWaypoint: number | null;
   /** A refused edit. Deliberately not `error`/`status: 'error'`, which replaces
    *  the whole surface: the world is still open and still correct. */
   editError: string | null;
@@ -40,6 +51,9 @@ interface WorldStore {
   selectVob: (vob: number | null) => void;
   /** Add or remove one VOB — a Ctrl/Cmd click, which is how a batch is built. */
   toggleVob: (vob: number) => void;
+  /** Put the gizmo on a waypoint instead — the waynet overlay's own pick.
+   *  `null` clears it. */
+  selectWaypoint: (waypoint: number | null) => void;
   /** Apply ops the main process has already applied to the authoritative world. */
   applyEdit: (ops: readonly WorldOp[]) => void;
   /** A re-read of the VOB enumeration after a structural edit. The columns are
@@ -55,6 +69,7 @@ const EMPTY = {
   summary: null,
   error: null,
   selection: [] as readonly number[],
+  selectedWaypoint: null as number | null,
   editError: null,
 };
 
@@ -68,14 +83,19 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   beginOpen: () => set({ ...EMPTY, status: 'opening' }),
   openSucceeded: (summary) => set({ ...EMPTY, status: 'ready', summary }),
   openFailed: (error) => set({ ...EMPTY, status: 'error', error }),
-  selectVob: (vob) => set({ selection: vob === null ? [] : [vob] }),
+  // Both VOB picks drop the waypoint, and the waypoint pick drops them, for the
+  // reason `selectedWaypoint` documents: one gizmo.
+  selectVob: (vob) => set({ selection: vob === null ? [] : [vob], selectedWaypoint: null }),
 
   toggleVob: (vob) => set(({ selection }) => ({
     selection: selection.includes(vob)
       ? selection.filter((selected) => selected !== vob)
       // Appended, so the VOB just added is the one the gizmo anchors on.
       : [...selection, vob],
+    selectedWaypoint: null,
   })),
+
+  selectWaypoint: (selectedWaypoint) => set({ selectedWaypoint, selection: [] }),
 
   applyEdit: (ops) => {
     const summary = get().summary;

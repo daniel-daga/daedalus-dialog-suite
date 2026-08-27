@@ -16,6 +16,7 @@ import { WorldScene } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
+import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
 import { attachBlenderNav, frameOn } from '../../world/cameraNav';
 import {
   runViewportBenchmark,
@@ -62,6 +63,9 @@ declare global {
       turnGizmo: (axis: [number, number, number], radians: number) => void;
       /** Where the gizmo currently sits, in ZenGin space, or null if detached. */
       gizmoPosition: () => [number, number, number] | null;
+      /** Report a click that hit a waypoint in the waynet overlay. It stands in
+       *  for `pickWaypoint`'s projection and nothing else. */
+      pickWaypoint: (waypoint: number) => void;
       /** The anchor VOB's 3x3 as drawn, row-major, or null if detached. */
       gizmoRotation: () => number[] | null;
       /** Report a click that hit the world mesh rather than a VOB, at a point in
@@ -131,6 +135,29 @@ export interface WorldViewportProps {
   /** Ops the main process has applied — a committed edit, an undo, a redo, or
    *  the reversal of a refused one. The scene follows them. */
   appliedOps: WorldOp[] | null;
+  /**
+   * The waypoint the gizmo is on **instead of** the VOBs, or null.
+   *
+   * Never both: there is one gizmo, and a waypoint is not a VOB — it has no row
+   * in the columnar index, no properties and no place in the scene tree. The
+   * store keeps the two exclusive; this is where that shows up on screen.
+   */
+  selectedWaypoint: number | null;
+  /** A click that hit a waypoint in the overlay. */
+  onSelectWaypoint: (waypoint: number | null) => void;
+  /**
+   * A finished waypoint drag, in **ZenGin space** — a destination rather than a
+   * delta, because one waypoint moves and there is no spacing to keep.
+   *
+   * `from` goes with it. The overlay's positions are one array shared by the
+   * point cloud and the edges, so the live preview has already written `to`
+   * over the position the op needs to carry; the shell puts it back with this.
+   */
+  onMoveWaypoint: (
+    waypoint: number,
+    from: [number, number, number],
+    to: [number, number, number],
+  ) => void;
 }
 
 export type GizmoMode = 'translate' | 'rotate';
@@ -139,6 +166,8 @@ export type GizmoMode = 'translate' | 'rotate';
  *  neither of them can tear the scene down and rebuild 31 MB of buffers. */
 interface Gizmo {
   attach: (selection: readonly number[]) => void;
+  /** The other thing the gizmo can be on. Null detaches it. */
+  attachWaypoint: (waypoint: number | null) => void;
   setMode: (mode: GizmoMode) => void;
 }
 
@@ -155,6 +184,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
+  selectedWaypoint, onSelectWaypoint, onMoveWaypoint,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -166,6 +196,14 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   onTranslateRef.current = onTranslateSelection;
   const onRotateRef = useRef(onRotateSelection);
   onRotateRef.current = onRotateSelection;
+  const onSelectWaypointRef = useRef(onSelectWaypoint);
+  onSelectWaypointRef.current = onSelectWaypoint;
+  const onMoveWaypointRef = useRef(onMoveWaypoint);
+  onMoveWaypointRef.current = onMoveWaypoint;
+  // The overlay is only pickable while it is on screen, and the scene effect
+  // does not re-run when it is toggled.
+  const showWaynetRef = useRef(showWaynet);
+  showWaynetRef.current = showWaynet;
   // Read through refs so a parent re-render cannot tear the scene down and
   // rebuild 31 MB of buffers just because a callback identity changed.
   const onPickRef = useRef(onPick);
@@ -282,6 +320,12 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // still in the batch: the op is built from the index, which knows where
     // they are, and only the preview needs an instance.
     let gizmoVobs: readonly number[] = [];
+    // The other thing the gizmo can be on, and never at the same time as the
+    // VOBs above. A waypoint's position is in the *same* space as the proxy's
+    // local one — the overlay hangs under the same mirrored root — so unlike a
+    // VOB there is nothing to convert on the way in or out.
+    let gizmoWaypoint: number | null = null;
+    let waypointFrom: [number, number, number] | null = null;
     const dragFrom = new Map<number, [number, number, number]>();
     const turnFrom = new Map<number, ZenRotation>();
     const proxyFrom = new THREE.Vector3();
@@ -295,17 +339,19 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // This one is consumed by the click it belongs to.
     let endedDrag = false;
 
+    const detach = () => {
+      transform.detach();
+      transform.enabled = false;
+      transform.getHelper().visible = false;
+    };
+
     const attach = (vobs: readonly number[]) => {
       // The gizmo sits on the last selected VOB that is actually drawn.
       const position = world.anchorOf(vobs);
       gizmoVobs = position === null ? [] : vobs;
+      gizmoWaypoint = null;
 
-      if (position === null) {
-        transform.detach();
-        transform.enabled = false;
-        transform.getHelper().visible = false;
-        return;
-      }
+      if (position === null) { detach(); return; }
       proxy.position.set(position[0], position[1], position[2]);
       // The proxy's own orientation is reset on every attach: the gizmo reports
       // a *delta* from where it was picked up, so what it starts from only has
@@ -315,9 +361,39 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       transform.enabled = true;
       transform.getHelper().visible = true;
     };
+    /**
+     * Put the gizmo on a waypoint instead.
+     *
+     * Translate only, and that is a fact about the op set rather than about the
+     * gizmo: `MoveWaypoint` is the only waynet op there is. A waypoint does
+     * carry a direction, but nothing writes one yet, so a rotate ring here
+     * would turn something the world would never be told about.
+     */
+    const attachWaypoint = (waypoint: number | null) => {
+      gizmoVobs = [];
+      gizmoWaypoint = null;
+
+      const overlay = overlayRef.current;
+      if (waypoint === null || overlay === null) { detach(); return; }
+
+      gizmoWaypoint = waypoint;
+      const position = overlay.positionOf(waypoint);
+      proxy.position.set(position[0], position[1], position[2]);
+      proxy.quaternion.identity();
+      transform.setMode('translate');
+      transform.attach(proxy);
+      transform.enabled = true;
+      transform.getHelper().visible = true;
+    };
+
     gizmoRef.current = {
       attach,
-      setMode: (mode) => transform.setMode(mode),
+      attachWaypoint,
+      // The mode buttons and the W/E keys keep working while a waypoint is
+      // selected; they just have nothing to switch to. Ignored rather than
+      // disabled, so the mode the VOBs were in survives a detour through the
+      // waynet.
+      setMode: (mode) => transform.setMode(gizmoWaypoint === null ? mode : 'translate'),
     };
 
     // A drag must not also orbit the camera.
@@ -328,7 +404,13 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       if (dragging) {
         // Where everything was when the drag began. Read once: the preview
         // writes the instance matrices this would otherwise be read back out
-        // of, so a per-frame read would compound the delta.
+        // of, so a per-frame read would compound the delta. For a waypoint,
+        // reading once is not an optimisation but the only way to still know
+        // where it started — the preview writes the overlay's own positions,
+        // which is the array this would be read out of.
+        waypointFrom = gizmoWaypoint === null
+          ? null
+          : overlayRef.current?.positionOf(gizmoWaypoint) ?? null;
         proxyFrom.copy(proxy.position);
         proxyTurnFrom.copy(proxy.quaternion);
         dragFrom.clear();
@@ -343,6 +425,20 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       }
 
       endedDrag = true;
+
+      if (gizmoWaypoint !== null) {
+        const from = waypointFrom;
+        if (from === null) return;
+        const to: [number, number, number] = [
+          proxy.position.x, proxy.position.y, proxy.position.z,
+        ];
+        // A click that dragged nothing. Committing it would put an op on the
+        // undo stack that undoes nothing.
+        if (to.every((component, axis) => component === from[axis])) return;
+        onMoveWaypointRef.current(gizmoWaypoint, from, to);
+        return;
+      }
+
       if (gizmoVobs.length === 0) return;
 
       if (transform.getMode() === 'rotate') {
@@ -390,6 +486,16 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // The live preview. The world in the main process still has the VOBs where
     // they were; this is the drag being drawn, and it is made real on release.
     transform.addEventListener('objectChange', () => {
+      if (gizmoWaypoint !== null) {
+        // Straight into the array the point cloud and the edge lines share, so
+        // the edges into this waypoint follow the drag instead of pointing at
+        // where it used to be for as long as the drag lasts.
+        overlayRef.current?.setPosition(gizmoWaypoint, [
+          proxy.position.x, proxy.position.y, proxy.position.z,
+        ]);
+        return;
+      }
+
       if (transform.getMode() === 'rotate') {
         const delta = turnDelta();
         if (delta === null) return;
@@ -409,6 +515,8 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     const raycaster = new THREE.Raycaster();
     raycaster.firstHitOnly = true;
     const pointer = new THREE.Vector2();
+    // Scratch for the waypoint pick, so a click allocates no matrix.
+    const toClip = new THREE.Matrix4();
 
     const handleClick = async (event: MouseEvent) => {
       // Picking here would select whatever is behind the gizmo — usually
@@ -425,6 +533,27 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       // Read before the await: a modifier released while the readback is in
       // flight would otherwise turn a Ctrl+click into a plain one.
       const additive = event.ctrlKey || event.metaKey;
+
+      // The waynet first, and only while it is on screen. It draws with
+      // `depthTest: false` — over everything, including whatever VOB is behind
+      // it — so picking it second would mean clicking a dot that is plainly on
+      // top and selecting the wall behind it. Ctrl does not apply: one waypoint
+      // is the whole selection, so there is no batch to add to.
+      const overlay = overlayRef.current;
+      if (showWaynetRef.current && overlay !== null) {
+        // Projection x view x the mirrored root, because the overlay's
+        // positions are ZenGin centimetres and the root is what puts them in
+        // the world.
+        camera.updateMatrixWorld();
+        world.root.updateMatrixWorld();
+        const waypoint = pickWaypoint(
+          overlay.positions,
+          toClip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+            .multiply(world.root.matrixWorld),
+          x, y, rect.width, rect.height,
+        );
+        if (waypoint !== NO_WAYPOINT) { onSelectWaypointRef.current(waypoint); return; }
+      }
 
       const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
       if (disposed) return;
@@ -580,7 +709,9 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     window.__worldViewport = {
       benchmark,
       dragGizmo: (to) => {
-        if (gizmoVobs.length === 0) throw new Error('no VOB is selected');
+        if (gizmoVobs.length === 0 && gizmoWaypoint === null) {
+          throw new Error('nothing is selected');
+        }
         // The whole sequence a real drag fires, in order: the press is what
         // records where everything started, and a delta measured from a stale
         // origin is the defect this stands to catch.
@@ -615,6 +746,10 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       // into a point — everything above it, including the surface's placement
       // flow, is the real thing.
       pickTerrain: (point) => onPickRef.current(null, point, false),
+      // A click that hit a waypoint in the overlay. It stands in for precisely
+      // the projection in `pickWaypoint` — turning a pixel into an index — and
+      // everything below it, including the gizmo, is the real thing.
+      pickWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
       renderFrom: async (from, at) => {
         // A half-loaded scene is a different scene, and an untextured material
         // draws its flat colour — which a pixel check would read as ground that
@@ -647,7 +782,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
         }
       },
       gizmoRotation: () => (gizmoVobs.length === 0 ? null : world.rotationOf(gizmoVobs[gizmoVobs.length - 1])),
-      gizmoPosition: () => (gizmoVobs.length === 0
+      gizmoPosition: () => (gizmoVobs.length === 0 && gizmoWaypoint === null
         ? null
         : [proxy.position.x, proxy.position.y, proxy.position.z]),
     };
@@ -705,9 +840,18 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
 
   // The gizmo follows the selection. `mesh` is a dependency because a new
   // world's scene is a new gizmo, not because the selection changed.
+  //
+  // A waypoint wins when there is one, and the store guarantees there is never
+  // both — but the order is written down rather than left to that guarantee,
+  // because the two arrive as separate props and a render between the two sets
+  // would otherwise decide it.
   useEffect(() => {
-    gizmoRef.current?.attach(selection);
-  }, [selection, mesh, visuals]);
+    if (selectedWaypoint !== null) gizmoRef.current?.attachWaypoint(selectedWaypoint);
+    else gizmoRef.current?.attach(selection);
+    // `waynet` is a dependency because the overlay is what a waypoint's position
+    // is read from, and it arrives after a waypoint can be selected: the payload
+    // is fetched the first time the overlay is switched on.
+  }, [selection, selectedWaypoint, waynet, mesh, visuals]);
 
   useEffect(() => {
     gizmoRef.current?.setMode(gizmoMode);
@@ -720,6 +864,16 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   useEffect(() => {
     const world = sceneRef.current;
     if (world === null || appliedOps === null) return;
+
+    // The World surface has already written the waynet payload — which is this
+    // buffer — through `applyWaypointPositions`. All that is left is the upload,
+    // and putting the gizmo back on the waypoint if it was the one that moved:
+    // an undo of a waypoint drag otherwise leaves it floating where the
+    // waypoint used to be.
+    if (appliedOps.some(isWaynetOp)) {
+      overlayRef.current?.refresh();
+      if (selectedWaypoint !== null) gizmoRef.current?.attachWaypoint(selectedWaypoint);
+    }
 
     for (const op of appliedOps) {
       if (op.op === 'RotateVob') world.rotateVob(op.vob, op.to);

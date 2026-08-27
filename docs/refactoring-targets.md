@@ -82,8 +82,14 @@ there: the op needed no cross-package type at all once its factory took the
 payload's own columns — `(positions, names, waypoint, to)` — so moving
 `WaynetPayload` would have been adjacent refactoring the change did not need.
 
-It starts to cost something at the waypoint gizmo slice, where the renderer, the
-store and the op model all handle waypoints and only two of the three can name
-the type. Fix direction: `WaynetPayload` moves to `zen-world` beside `VobIndex`
+**It was predicted to start costing something at the waypoint gizmo slice, and
+it did not** (landed 2026-08-28). The prediction assumed the store would have to
+name the type; it holds `selectedWaypoint: number | null` and names nothing, the
+overlay and the viewport are both editor-side already, and the two `zen-world`
+functions the slice uses take the payload's raw columns — `Float32Array` and
+`string[]` — for the same reason `moveWaypoint`'s factory does. So the split is
+still only a wart, with no slice yet identified that pays for it.
+
+Fix direction, unchanged: `WaynetPayload` moves to `zen-world` beside `VobIndex`
 and the editor re-exports it, matching what already happened for the VOB index.
 Small, but it touches every waynet import, so it wants its own commit.

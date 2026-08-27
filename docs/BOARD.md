@@ -53,14 +53,14 @@ was true for so long nobody re-reads it.
   committed: it is the applied patch series. Stage with
   `git add -A -- . ':!zenkit-node/vendor/ZenKit'`, or name paths explicitly.
   Anything else showing as modified is unfinished work.
-- 51 commits ahead of `master`, deliberately unmerged: merging before an engine
+- 52 commits ahead of `master`, deliberately unmerged: merging before an engine
   verdict would put an unverified world editor on master.
 - **The addon was rebuilt this session and `binding.gyp` changed**, so every
   other machine and CI must rebuild — a stale `.node` predates the exception fix
   below and still aborts the process on a bad world.
-- **`zen-world` and the editor's `dist/main` were rebuilt this session** —
-  `DeleteVob` is new in both, and the editor reads `zen-world/dist`, not its
-  source.
+- **`zen-world` and the editor's whole `dist/` were rebuilt this session** —
+  `DeleteVob` and the waypoint gizmo are in both, and the editor reads
+  `zen-world/dist`, not its source.
 - **Nothing else needs rebuilding on this machine.** On another, or after any change
   to `coords`, `binding.cc` or anything `zen-world` exports:
   `cd zenkit-node && node scripts/build-zenkit.js && npx node-gyp rebuild`, then
@@ -81,16 +81,18 @@ was true for so long nobody re-reads it.
   fullscreen. **Rows 7, 8 and 9 must actually run this time** — bed/chest/mobsi,
   a sound or zone VOB, a savegame round-trip. They were defensible as ⏸ for a
   bit-identical re-save and are not for an edited world.
-  **No staged candidate has a VOB deleted from it.** `DeleteVob` landed after
-  `03` was built, and a removed subtree is the edit ZenGin has the most room to
-  disagree about — a `LEVEL-VOB` child list is where its own tooling put
-  everything. Rebuilding the candidates to include one would invalidate the
-  staged set, so whether Gate 2 waits for that is Daniel's call, not something
-  to do unasked.
+  **No staged candidate has a VOB deleted from it, or a waypoint moved.** Both
+  landed after `03` was built. A removed subtree is the edit ZenGin has the most
+  room to disagree about — a `LEVEL-VOB` child list is where its own tooling put
+  everything — and a moved waypoint is the first edit that is not in the VOB
+  tree at all, so it is the only one whose verdict says anything about
+  `WayNet::save`. Rebuilding the candidates to include either would invalidate
+  the staged set, so whether Gate 2 waits for that is Daniel's call, not
+  something to do unasked.
 
 ## Now
 
-*(empty — `DeleteVob` landed; see Done)*
+*(empty — the waypoint gizmo landed; see Done)*
 
 ## Next
 
@@ -103,26 +105,14 @@ was true for so long nobody re-reads it.
   which is why it is its own phase and not a card's worth of work. Scheduled
   before Phase 1c in the plan's §11: the Daedalus overlay reads a world, and
   this is what makes the world worth reading.
-- **Waynet editing — the waypoint gizmo, and the edge ops.** `MoveWaypoint`
-  itself is done (see Done below); what is left is the UI that produces one and
-  the ops that renumber. The gizmo is a bigger change than the op was:
-  `WorldViewport` couples the gizmo to VOBs throughout (`gizmoVobs`,
-  `world.anchorOf`, `world.moveVob`), picking a waypoint needs a `THREE.Points`
-  raycast with a pixel threshold, and the selection model is `number[]` of VOB
-  indices only. `verify-world-edit.js`'s waynet assertion is already
-  differential and already has an `expectedWaypointMoves` constant sitting at 0
-  — that is the one number the gizmo slice changes.
-  **Save needs nothing from this slice, asked and answered:** there is no dirty
-  flag on the world at all. `WorldSurface.tsx:166-187` saves whatever the worker
-  holds whenever a world is open, so a waypoint move is savable exactly like a
-  VOB move and no gating had to learn about it.
-  **`zen-world`'s `applyWaypointPositions` is exported, tested and called by
-  nothing** — it is the overlay-projection half of this op, and the gizmo slice
-  is what will use it. Flagged rather than left to be rediscovered as dead code:
-  if that slice is not the next thing to land, delete it and let the slice add
-  it back. It writes the payload's `Float32Array` in place because the point
-  cloud and the edge lines share one `BufferAttribute` (`WaynetOverlay.ts:44,
-  83`), and that sharing is what keeps the two from disagreeing.
+- **Waynet editing — the edge ops, and add/delete/rename.** The gizmo landed
+  (see Done), so the one op that exists is now reachable; nothing below is.
+  **The addressing problem is the whole job and it is untouched.**
+  `MoveWaypoint` addresses a waypoint by its index into the list `getWaynet`
+  emits, and that is safe only because a move inserts, deletes and reorders
+  nothing. Every op left here breaks it, and names cannot be the fix — nothing
+  in the format promises they are unique, which is why the binding matches edge
+  endpoints by pointer identity.
   The edge ops keep their original hazard: `free_point` is not a stored field,
   and `WayNet::save` writes only free points plus edge endpoints, so a non-free
   waypoint in no edge is dropped at save. Removing a waypoint's last edge
@@ -178,6 +168,28 @@ was true for so long nobody re-reads it.
 
 ## Done — Phase 1b
 
+- **The waypoint gizmo — the UI for an op that had none.** Picking a waypoint
+  out of the overlay, the gizmo on it, the drag, the live preview, the commit,
+  undo/redo, and `expectedWaypointMoves` in `verify-world-edit.js` moved from 0
+  to 1. Driven end to end against NewWorld: one waypoint differs in the saved
+  file, `TOT`, position only, and the edges are unchanged.
+  Four things the shape of the waynet decided rather than the gizmo:
+  **one gizmo means one selection** — `selectedWaypoint` is never held beside
+  `selection`, because the mode keys, the property grid and the Delete VOB
+  button all follow the latter; **the pick is a projection, not a raycast** —
+  `THREE.Points.raycast`'s threshold is world units and the overlay is
+  `sizeAttenuation: false`, so `pickWaypoint` projects all 2,959 and measures
+  in pixels, which is affordable once per click and would not be per frame;
+  **the waynet is picked before the VOBs**, because `depthTest: false` means a
+  dot plainly on top would otherwise select the wall behind it; and **the
+  preview destroys the `from` the op needs** — every other op reads `from` out
+  of the columnar index, which the preview never writes, but the point cloud
+  and the edges share one array, so the viewport carries `from` up from the
+  press and the shell writes it back before calling `moveWaypoint`.
+  `applyWaypointPositions` is no longer dead: it is called once, in `applied`,
+  which is the same path undo and redo take.
+  One wart found and fixed in passing: hiding the overlay left the gizmo
+  standing — and draggable — on a waypoint nothing was drawing.
 - **`DeleteVob` — the first op that ships without an inverse.** The op, the
   validator branch, the history barrier in `WorldService.applyOps` (both stacks,
   after the worker confirms), the confirm dialog that says the undo history goes

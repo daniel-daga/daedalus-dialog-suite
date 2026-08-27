@@ -257,6 +257,57 @@ describe('the selection a batch edit is made from', () => {
   });
 });
 
+describe('the waypoint the gizmo can be on instead', () => {
+  beforeEach(() => { opened(); });
+
+  it('is nothing until a waypoint is picked', () => {
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+  });
+
+  it('gives up the VOB selection, because there is one gizmo', () => {
+    // Not two selections side by side. The gizmo drives one thing, and so do
+    // the mode keys and the delete button — a VOB selection still standing
+    // behind a selected waypoint is a delete aimed at something invisible.
+    useWorldStore.getState().selectVob(1);
+
+    useWorldStore.getState().selectWaypoint(7);
+
+    expect(useWorldStore.getState().selectedWaypoint).toBe(7);
+    expect(useWorldStore.getState().selection).toEqual([]);
+  });
+
+  it('is given up again by picking a VOB, whichever way it is picked', () => {
+    for (const pick of [
+      () => useWorldStore.getState().selectVob(1),
+      () => useWorldStore.getState().toggleVob(1),
+    ]) {
+      useWorldStore.getState().selectWaypoint(7);
+      pick();
+      expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+    }
+  });
+
+  it('survives waypoint 0, which is an ordinary waypoint', () => {
+    // The empty answer is null rather than a falsy number precisely so that the
+    // first waypoint in the list is selectable like any other.
+    useWorldStore.getState().selectWaypoint(0);
+    expect(useWorldStore.getState().selectedWaypoint).toBe(0);
+
+    useWorldStore.getState().selectWaypoint(null);
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+  });
+
+  it('is emptied by opening another world', () => {
+    // A waypoint index addresses a different waypoint in the next world, for
+    // exactly the reason a VOB index does.
+    useWorldStore.getState().selectWaypoint(7);
+
+    useWorldStore.getState().openSucceeded(summaryWith([[0, 0, 0]]));
+
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+  });
+});
+
 describe('the reader the panels share', () => {
   it('sees the same buffers the store holds — not a copy of them', () => {
     // If `openSucceeded` ever copied the index, every edit would land in one of
