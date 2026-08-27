@@ -655,6 +655,29 @@ describe('placing a VOB', () => {
     await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
   });
 
+  it('reparents to a position between rows, including back out to the roots', async () => {
+    // The half a drop *onto* a row cannot express: there is no row that means
+    // "a root", so before the insertion line existed the only way into the root
+    // list was to have never left it. The null parent goes all the way through —
+    // the op, the IPC validator and the binding all take one.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.dragStart(screen.getByTestId('world-vob-row-1'));
+    fireEvent.drop(screen.getByTestId('world-vob-drop-before-0'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const ops = api.applyWorldOps.mock.calls.at(-1)![0] as WorldOp[];
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: 'ReparentVob',
+      vob: 1,
+      from: { path: '1', parentPath: null, slot: 1 },
+      to: { path: '0', parentPath: null, slot: 0 },
+    });
+  });
+
   it('does not re-read anything when the edit was refused', async () => {
     await openWorld();
     api.applyWorldOps.mockRejectedValueOnce(new Error('no vob at 2') as never);

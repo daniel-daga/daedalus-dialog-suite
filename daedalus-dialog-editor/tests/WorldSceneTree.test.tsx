@@ -282,6 +282,193 @@ describe('WorldSceneTree', () => {
     expect(onReparent).toHaveBeenCalledWith(0, 4, 0);
   });
 
+  describe('a drop between rows', () => {
+    // The gesture the "drop onto a row" rule could not express: a position in a
+    // list, rather than the end of one. Every gap is read as "immediately before
+    // the row under the line", which is what gives it one meaning where the
+    // depth changes — the row below is the only one whose own list the line is
+    // actually inside.
+    const strip = (edge: string, vob: number) => screen.getByTestId(`world-vob-drop-${edge}-${vob}`);
+
+    function tree(onReparent: jest.Mock) {
+      render(<WorldSceneTree
+        summary={NESTED}
+        selection={[]}
+        onSelect={jest.fn()}
+        onReparent={onReparent}
+      />);
+      // CASTLE open, so the rows are 0, 1, 2, 4 and both lists are reachable.
+      fireEvent.click(screen.getByTestId('world-vob-toggle-0'));
+    }
+
+    it('lands before the row the line is under, in that row’s own list', () => {
+      const onReparent = jest.fn();
+      tree(onReparent);
+
+      // WELL, a root, dropped on the line above the unnamed compo: it becomes
+      // CASTLE's second child, where the compo is now.
+      fireEvent.dragStart(row(4)!);
+      fireEvent.drop(strip('before', 2));
+
+      expect(onReparent).toHaveBeenCalledWith(4, 0, 1);
+    });
+
+    it('lands among the roots when the row under the line is a root', () => {
+      // The case a drop *onto* a row cannot express at all: there is no row to
+      // drop onto that means "a root", so before this landed the only way into
+      // the root list was to have never left it.
+      const onReparent = jest.fn();
+      tree(onReparent);
+
+      fireEvent.dragStart(row(1)!);
+      fireEvent.drop(strip('before', 0));
+
+      expect(onReparent).toHaveBeenCalledWith(1, null, 0);
+    });
+
+    it('appends to the last row’s list when dropped under the last row', () => {
+      // The one "after" in the tree, and the reason it exists: nothing is below
+      // the last row, so the gap under it belongs to no row below.
+      const onReparent = jest.fn();
+      tree(onReparent);
+
+      fireEvent.dragStart(row(1)!);
+      fireEvent.drop(strip('after', 4));
+
+      // WELL is root slot 1, so after it is root slot 2.
+      expect(onReparent).toHaveBeenCalledWith(1, null, 2);
+    });
+
+    it('counts the slot in the list as it will be once the VOB has left it', () => {
+      // The off-by-one that is a misplaced VOB rather than an error: within one
+      // list the removal vacates a slot before the insert happens, so a
+      // destination later in that same list has already shifted down one.
+      //
+      // Three siblings, because two cannot tell the two answers apart: moving
+      // the first of two before the second is where it already is, and the tree
+      // refuses it as a no-op before the arithmetic is ever reached. This is the
+      // shape that exercises it — A dropped before C is [B, A, C], and passing
+      // the unadjusted 2 would make it [B, C, A].
+      const onReparent = jest.fn();
+      //  0 "P" ── 1 "A", 2 "B", 3 "C"
+      render(<WorldSceneTree
+        summary={summaryOf(vobIndex([
+          { name: 'P' },
+          { parent: 0, childIndex: 0, name: 'A' },
+          { parent: 0, childIndex: 1, name: 'B' },
+          { parent: 0, childIndex: 2, name: 'C' },
+        ]))}
+        selection={[]}
+        onSelect={jest.fn()}
+        onReparent={onReparent}
+      />);
+      fireEvent.click(screen.getByTestId('world-vob-toggle-0'));
+
+      fireEvent.dragStart(row(1)!);
+      fireEvent.drop(strip('before', 3));
+
+      expect(onReparent).toHaveBeenCalledWith(1, 0, 1);
+    });
+
+    it('refuses a landing whose parent is inside the subtree being dragged', () => {
+      // The same destruction the drop-onto rule refuses: a subtree under its own
+      // descendant is unreachable from the roots, so it is not enumerated, not
+      // counted and not written.
+      const onReparent = jest.fn();
+      tree(onReparent);
+      fireEvent.click(screen.getByTestId('world-vob-toggle-2'));
+
+      // The line above TORCH is inside the compo, which is CASTLE's own child.
+      fireEvent.dragStart(row(0)!);
+      fireEvent.drop(strip('before', 3));
+      expect(onReparent).not.toHaveBeenCalled();
+
+      // And its own edges are not a destination either.
+      fireEvent.dragStart(row(2)!);
+      fireEvent.drop(strip('before', 2));
+      expect(onReparent).not.toHaveBeenCalled();
+    });
+
+    it('refuses a landing that is where the VOB already is', () => {
+      // A no-op reparent is still an op: a batch, an entry in the history and a
+      // full re-read of the index for a world that did not change. And it is
+      // the rule that refuses a row's own edges, which is why there is no
+      // separate guard for them — both of those compute the slot the VOB is in.
+      const onReparent = jest.fn();
+      //  0 "P" ── 1 "A", 2 "B", 3 "C"
+      render(<WorldSceneTree
+        summary={summaryOf(vobIndex([
+          { name: 'P' },
+          { parent: 0, childIndex: 0, name: 'A' },
+          { parent: 0, childIndex: 1, name: 'B' },
+          { parent: 0, childIndex: 2, name: 'C' },
+        ]))}
+        selection={[]}
+        onSelect={jest.fn()}
+        onReparent={onReparent}
+      />);
+      fireEvent.click(screen.getByTestId('world-vob-toggle-0'));
+
+      // The line above B is where A already is — a different row, and still the
+      // same world. This is the one that reaches the rule; the two below reach
+      // it through a row's own edges.
+      fireEvent.dragStart(row(1)!);
+      fireEvent.drop(strip('before', 2));
+      expect(onReparent).not.toHaveBeenCalled();
+
+      fireEvent.dragStart(row(1)!);
+      fireEvent.drop(strip('before', 1));
+      expect(onReparent).not.toHaveBeenCalled();
+
+      fireEvent.dragStart(row(3)!);
+      fireEvent.drop(strip('after', 3));
+      expect(onReparent).not.toHaveBeenCalled();
+    });
+
+    it('draws the insertion line in one gap, and only over a legal one', () => {
+      const onReparent = jest.fn();
+      tree(onReparent);
+
+      fireEvent.dragStart(row(4)!);
+      fireEvent.dragOver(strip('before', 2));
+      expect(strip('before', 2)).toHaveAttribute('data-active', 'true');
+      expect(strip('before', 1)).not.toHaveAttribute('data-active');
+
+      // Moving to another gap moves the line rather than lighting a second one.
+      fireEvent.dragLeave(strip('before', 2));
+      fireEvent.dragOver(strip('before', 1));
+      expect(strip('before', 1)).toHaveAttribute('data-active', 'true');
+      expect(strip('before', 2)).not.toHaveAttribute('data-active');
+
+      // And a gap that cannot be landed in never lights up: the drag is over
+      // WELL's own position.
+      fireEvent.dragLeave(strip('before', 1));
+      fireEvent.dragOver(strip('before', 4));
+      expect(strip('before', 4)).not.toHaveAttribute('data-active');
+    });
+
+    it('forgets a drag that ended without a drop', () => {
+      // A drag abandoned outside the tree delivers no drop anywhere, so nothing
+      // else ever clears it — and the next pass over a row's edge would draw an
+      // insertion line for a drag that is not happening, and drop on it.
+      const onReparent = jest.fn();
+      tree(onReparent);
+
+      fireEvent.dragStart(row(4)!);
+      fireEvent.dragEnd(row(4)!);
+
+      fireEvent.dragOver(strip('before', 2));
+      expect(strip('before', 2)).not.toHaveAttribute('data-active');
+      fireEvent.drop(strip('before', 2));
+      expect(onReparent).not.toHaveBeenCalled();
+    });
+
+    it('has no strips at all on a read-only tree', () => {
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+      expect(screen.queryByTestId('world-vob-drop-before-0')).not.toBeInTheDocument();
+    });
+  });
+
   it('does not drag at all when no handler is given', () => {
     // The tree is a Phase 1a read-only surface without one, and a row that
     // looks draggable but drops nowhere is worse than a row that does not.

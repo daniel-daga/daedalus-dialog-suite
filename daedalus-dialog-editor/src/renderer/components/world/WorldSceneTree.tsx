@@ -26,6 +26,13 @@ import { vobModelOf } from '../../world/vobModel';
 
 const ROW_HEIGHT = 28;
 const INDENT = 14;
+/** How much of a row belongs to the gap above or below it. A quarter: enough to
+ *  hit deliberately, small enough that the row itself is still the easy target,
+ *  since becoming a child is the commoner move. */
+const EDGE_HEIGHT = 7;
+
+/** Which side of a row a between-rows drop is pointing at. */
+export type DropEdge = 'before' | 'after';
 
 interface RowData {
   rows: VobRow[];
@@ -37,18 +44,85 @@ interface RowData {
   /** Absent on a read-only tree, and then no row is draggable at all — a row
    *  that looks draggable and drops nowhere is worse than one that does not. */
   onDragVob?: (vob: number) => void;
+  /** A drag that ended anywhere — including outside the tree, where no drop is
+   *  ever delivered. Without it an abandoned drag stays in flight and the next
+   *  pass over a row's edge draws an insertion line for it. */
+  onDragEnd: () => void;
   onDropOn?: (vob: number) => void;
   /** Whether the drag in flight may land on this row. Drives `preventDefault`
    *  on dragover, which is what decides whether the browser offers a drop
    *  cursor at all — so an impossible target says so before the mouse is let
    *  go, and the drop event never fires for it. */
   canDropOn: (vob: number) => boolean;
+  /** The between-rows half of the same three: whether the gap is a legal
+   *  landing, what to do when it is dropped on, and which gap the drag is over
+   *  so exactly one line is drawn. */
+  canDropBetween: (vob: number, edge: DropEdge) => boolean;
+  onDropBetween?: (vob: number, edge: DropEdge) => void;
+  hovering: { vob: number; edge: DropEdge } | null;
+  onHoverEdge: (at: { vob: number; edge: DropEdge } | null) => void;
 }
+
+/**
+ * The strip along a row's edge that means "between the rows", and the insertion
+ * line it draws when a drag is over it.
+ *
+ * A strip of its own rather than a zone measured off the pointer's Y within the
+ * row: the row is the drop target for "become this VOB's child", and splitting
+ * one element's height between two meanings makes both of them a guess about
+ * where the mouse was. Two elements, two handlers, and the boundary is where the
+ * user can see it.
+ */
+const DropStrip: React.FC<{
+  vob: number;
+  edge: DropEdge;
+  data: RowData;
+}> = ({ vob, edge, data }) => {
+  const { canDropBetween, onDropBetween, hovering, onHoverEdge } = data;
+  const active = hovering !== null && hovering.vob === vob && hovering.edge === edge;
+
+  return (
+    <Box
+      data-testid={`world-vob-drop-${edge}-${vob}`}
+      data-active={active ? 'true' : undefined}
+      onDragOver={(event) => {
+        if (!canDropBetween(vob, edge)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        // Only on a change. `dragover` fires continuously while the pointer is
+        // held still, and setting the same value on every one of them would
+        // re-render a virtualized tree several times a second for no change.
+        if (!active) onHoverEdge({ vob, edge });
+      }}
+      onDragLeave={() => { if (active) onHoverEdge(null); }}
+      onDrop={onDropBetween === undefined ? undefined : (event) => {
+        event.preventDefault();
+        // Or the row underneath takes the same drop as "become my child".
+        event.stopPropagation();
+        onDropBetween(vob, edge);
+      }}
+      sx={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        [edge === 'before' ? 'top' : 'bottom']: 0,
+        height: `${EDGE_HEIGHT}px`,
+        zIndex: 2,
+        [edge === 'before' ? 'borderTop' : 'borderBottom']: 2,
+        borderColor: active ? 'primary.main' : 'transparent',
+      }}
+    />
+  );
+};
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   const { rows, reader, expanded, selected, onSelect, onToggle } = data;
   const { onDragVob, onDropOn, canDropOn } = data;
   const { vob, depth, hasChildren } = rows[index];
+  // Every gap is "before the row under the line", which is what makes a gap mean
+  // exactly one thing at a change of depth. The last row is the exception it has
+  // to be: there is no row below it, so it carries the only "after" there is.
+  const isLast = index === rows.length - 1;
 
   // Most VOBs are unnamed — retail NewWorld's 23,288 carry 2,654 distinct
   // names — so the visual is the label when the name is empty. Falling straight
@@ -68,6 +142,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       onClick={(event) => onSelect(vob, event.ctrlKey || event.metaKey)}
       draggable={onDragVob !== undefined}
       onDragStart={onDragVob === undefined ? undefined : () => onDragVob(vob)}
+      onDragEnd={onDragVob === undefined ? undefined : data.onDragEnd}
       onDragOver={(event) => { if (canDropOn(vob)) event.preventDefault(); }}
       onDrop={onDropOn === undefined ? undefined : (event) => { event.preventDefault(); onDropOn(vob); }}
       style={style}
@@ -78,6 +153,8 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         '&:hover': { bgcolor: isSelected ? 'action.selected' : 'action.hover' },
       }}
     >
+      {onDropOn !== undefined && <DropStrip vob={vob} edge="before" data={data} />}
+      {onDropOn !== undefined && isLast && <DropStrip vob={vob} edge="after" data={data} />}
       <Box
         component="span"
         data-testid={hasChildren ? `world-vob-toggle-${vob}` : undefined}
@@ -108,16 +185,23 @@ export interface WorldSceneTreeProps {
    *  replacing it, which is how a multi-select batch is built. */
   onSelect: (vob: number, additive: boolean) => void;
   /**
-   * Move `vob` into `toParent` at `slot` — absent on a read-only tree, and then
-   * nothing in it is draggable.
+   * Move `vob` into `toParent` at `slot` — `null` for a root. Absent on a
+   * read-only tree, and then nothing in it is draggable.
    *
-   * A drop **onto** a row rather than between rows, because the gesture has to
-   * be unambiguous without an insertion indicator, and "becomes a child of what
-   * you dropped it on" is the one reading that needs no extra UI. The slot is
-   * therefore always the end of that parent's children, which is all a drop with
-   * no position in it can honestly mean.
+   * Two gestures reach it. A drop **onto** a row means "become this VOB's last
+   * child": the one reading a drop with no position in it can honestly have.
+   * A drop on the thin strip at a row's edge means **between** the rows, and
+   * every gap is read as "immediately before the row under the line" — which is
+   * what gives a gap one meaning where the depth changes, since the row below is
+   * the only one whose own list the line is actually inside. The last visible
+   * row carries the only "after" there is, because nothing is under it.
+   *
+   * `slot` is an index into the destination list **as it will be once the VOB
+   * has been removed from where it was**, which is the convention `reparentVob`
+   * takes and the only one that can express "move it two places later in its own
+   * list".
    */
-  onReparent?: (vob: number, toParent: number, slot: number) => void;
+  onReparent?: (vob: number, toParent: number | null, slot: number) => void;
 }
 
 const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
@@ -163,6 +247,8 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   }, []);
 
   const [dragging, setDragging] = useState<number | null>(null);
+  /** The one gap the insertion line is drawn in, while a drag is over it. */
+  const [hovering, setHovering] = useState<{ vob: number; edge: DropEdge } | null>(null);
 
   // A VOB dropped into its own subtree is unreachable from the roots: not
   // enumerated, not counted, not written. The op refuses it and so does the
@@ -174,12 +260,78 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   const onDropOn = useCallback((target: number) => {
     const vob = dragging;
     setDragging(null);
+    setHovering(null);
     // Checked again rather than trusted: `canDropOn` gates the browser's drop
     // cursor, and a drop can still be delivered by anything that dispatches the
     // event itself.
     if (vob === null || onReparent === undefined || !canDropOn(target)) return;
     onReparent(vob, target, tree.children(target).length);
   }, [dragging, onReparent, tree, canDropOn]);
+
+  const onDragEnd = useCallback(() => {
+    setDragging(null);
+    setHovering(null);
+  }, []);
+
+  /** The list a VOB sits in, and the list a drop beside it would go into. */
+  const listOf = useCallback((vob: number) => {
+    const parent = tree.parent(vob);
+    return {
+      parent: parent < 0 ? null : parent,
+      siblings: parent < 0 ? tree.roots : tree.children(parent),
+    };
+  }, [tree]);
+
+  /**
+   * Where a drop on `vob`'s `edge` would put the VOB being dragged, or null when
+   * it would not put it anywhere.
+   *
+   * The slot is an index into the destination list **after the removal**, which
+   * is what `reparentVob` takes: the removal vacates a slot before the insert
+   * happens, so a destination later in the VOB's own list has already shifted
+   * down one by the time it is used. Off by one here is a VOB that lands on the
+   * wrong side of its neighbour — a move, not a failure, so nothing reports it.
+   */
+  const landingAt = useCallback((target: number, edge: DropEdge) => {
+    if (dragging === null) return null;
+
+    const { parent, siblings } = listOf(target);
+    // The destination's *parent* is what must not be inside the dragged
+    // subtree — a root has none, and is always reachable.
+    if (parent !== null
+      && (parent === dragging || tree.ancestors(parent).includes(dragging))) return null;
+
+    let slot = siblings.indexOf(target) + (edge === 'after' ? 1 : 0);
+    const from = listOf(dragging);
+    if (from.parent === parent) {
+      const was = from.siblings.indexOf(dragging);
+      if (was < slot) slot -= 1;
+      // The VOB is already there. A no-op is still an op — a batch, an entry in
+      // the history and a full re-read of the index — so it is refused as a
+      // landing rather than sent. This is also what refuses a row's own edges
+      // without a guard of their own: both of them compute the slot the VOB is
+      // in already.
+      if (was === slot) return null;
+    }
+    return { parent, slot };
+  }, [dragging, listOf, tree]);
+
+  const canDropBetween = useCallback(
+    (target: number, edge: DropEdge) => landingAt(target, edge) !== null,
+    [landingAt],
+  );
+
+  const onDropBetween = useCallback((target: number, edge: DropEdge) => {
+    const vob = dragging;
+    const landing = landingAt(target, edge);
+    setDragging(null);
+    setHovering(null);
+    // Checked through `landingAt` again for the same reason `onDropOn` re-checks:
+    // dragover gates the browser's drop cursor, not anything that dispatches the
+    // event itself.
+    if (vob === null || onReparent === undefined || landing === null) return;
+    onReparent(vob, landing.parent, landing.slot);
+  }, [dragging, landingAt, onReparent]);
 
   const itemData = useMemo<RowData>(
     () => ({
@@ -190,10 +342,16 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       onSelect,
       onToggle,
       canDropOn,
+      canDropBetween,
+      hovering,
+      onHoverEdge: setHovering,
+      onDragEnd,
       onDragVob: onReparent === undefined ? undefined : setDragging,
       onDropOn: onReparent === undefined ? undefined : onDropOn,
+      onDropBetween: onReparent === undefined ? undefined : onDropBetween,
     }),
-    [rows, reader, expanded, selected, onSelect, onToggle, canDropOn, onReparent, onDropOn],
+    [rows, reader, expanded, selected, onSelect, onToggle, canDropOn, onReparent, onDropOn,
+      canDropBetween, onDropBetween, hovering, onDragEnd],
   );
 
   return (
