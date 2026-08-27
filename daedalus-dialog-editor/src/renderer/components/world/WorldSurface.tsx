@@ -197,7 +197,8 @@ const WorldSurface: React.FC = () => {
     [],
   );
 
-  // A plain click replaces the selection; Ctrl/Cmd adds to it. One rule for
+  // A plain click replaces the selection; Shift, Ctrl or Cmd adds to it. One
+  // rule for
   // both panels — the tree is the only way to reach a VOB the viewport cannot
   // draw (a decal, a sound VOB), and the viewport the only way to reach one the
   // tree has not been scrolled to.
@@ -225,7 +226,8 @@ const WorldSurface: React.FC = () => {
   const handlePick = useCallback((
     vob: number | null, point: [number, number, number] | null, additive: boolean,
   ) => {
-    // A Ctrl+click that misses must not empty a selection someone is building.
+    // An additive click that misses must not empty a selection someone is
+    // building.
     if (vob !== null) handleSelect(vob, additive);
     else if (!additive) selectVob(null);
     setTerrainPoint(point);

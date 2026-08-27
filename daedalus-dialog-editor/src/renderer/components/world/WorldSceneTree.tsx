@@ -143,7 +143,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       aria-selected={isSelected}
       aria-expanded={hasChildren ? expanded.has(vob) : undefined}
       data-testid={`world-vob-row-${vob}`}
-      onClick={(event) => onSelect(vob, event.ctrlKey || event.metaKey)}
+      onClick={(event) => onSelect(vob, event.shiftKey || event.ctrlKey || event.metaKey)}
       onDoubleClick={onFocus === undefined ? undefined : () => onFocus(vob)}
       draggable={onDragVob !== undefined}
       onDragStart={onDragVob === undefined ? undefined : () => onDragVob(vob)}
@@ -182,7 +182,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       {/* The discoverable half of the jump — a double-click is not something
           anyone finds by looking. It stops the click rather than letting it
           reach the row: the row's handler is what adds and removes in a
-          Ctrl-click batch, and a locator that also toggled membership would
+          Shift-click batch, and a locator that also toggled membership would
           take a VOB out of the selection it was asked to fly to. */}
       {onFocus !== undefined && (
         <Box
@@ -209,8 +209,8 @@ export interface WorldSceneTreeProps {
   /** Indices into the `VobIndex` — names are not unique and rows move. The last
    *  is the one the viewport and the property grid follow. */
   selection: readonly number[];
-  /** `additive` is a Ctrl/Cmd click: add this VOB to the selection rather than
-   *  replacing it, which is how a multi-select batch is built. */
+  /** `additive` is a Shift/Ctrl/Cmd click: add this VOB to the selection rather
+   *  than replacing it, which is how a multi-select batch is built. */
   onSelect: (vob: number, additive: boolean) => void;
   /**
    * Jump the viewport's camera to this VOB and leave the orbit pivot on it — a
@@ -249,7 +249,7 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   const selected = useMemo(() => new Set(selection), [selection]);
   // Only the primary is followed. Expanding and scrolling to every VOB of a
   // large selection would fight the user for the scroll position on every
-  // Ctrl+click.
+  // additive click.
   const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set<number>());
   const rows = useMemo(() => flattenVisible(tree, expanded), [tree, expanded]);

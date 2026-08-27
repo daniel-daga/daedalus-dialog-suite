@@ -163,17 +163,21 @@ describe('WorldSceneTree', () => {
     expect(onSelect).toHaveBeenCalledWith(4, false);
   });
 
-  it('asks to add to the selection on a Ctrl or Meta click, and to replace it otherwise', async () => {
+  it('asks to add to the selection on a Shift, Ctrl or Meta click, and to replace it otherwise', async () => {
     // The tree is the only place a VOB the viewport cannot show — a decal, a
-    // sound VOB, anything unplaced — can be added to a batch at all.
+    // sound VOB, anything unplaced — can be added to a batch at all. All three
+    // modifiers, because the row and the viewport pick answer to the same
+    // gesture and Shift is the one every level editor puts it on.
     const user = userEvent.setup();
     const onSelect = jest.fn();
     render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
 
-    await user.keyboard('{Control>}');
-    await user.click(row(4)!);
-    await user.keyboard('{/Control}');
-    expect(onSelect).toHaveBeenLastCalledWith(4, true);
+    for (const modifier of ['Control', 'Meta', 'Shift']) {
+      await user.keyboard(`{${modifier}>}`);
+      await user.click(row(4)!);
+      await user.keyboard(`{/${modifier}}`);
+      expect(onSelect).toHaveBeenLastCalledWith(4, true);
+    }
 
     await user.click(row(4)!);
     expect(onSelect).toHaveBeenLastCalledWith(4, false);

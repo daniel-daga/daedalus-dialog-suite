@@ -2,7 +2,6 @@ import React, { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
   multiplyRotation, mirrorRotation, threeToZen, zenToThree, zenBoxToThree,
@@ -11,6 +10,7 @@ import {
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
+import { DampedTransformControls } from '../../world/DampedTransformControls';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { TerrainMarker } from '../../world/TerrainMarker';
 import { WorldScene, textureCacheFor, type TextureCache } from '../../world/WorldScene';
@@ -113,7 +113,8 @@ export interface WorldViewportProps {
   onPick: (
     vob: number | null,
     point: [number, number, number] | null,
-    /** Ctrl/Cmd was held: add to the selection rather than replacing it. */
+    /** Shift, Ctrl or Cmd was held: add to the selection rather than
+     *  replacing it. */
     additive: boolean,
   ) => void;
   /** What the gizmo drives. Empty hides it; the gizmo sits on the last entry. */
@@ -404,7 +405,9 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     const proxy = new THREE.Object3D();
     world.root.add(proxy);
 
-    const transform = new TransformControls(camera, renderer.domElement);
+    // Damped rather than the library's own, because its rotate rate is a
+    // turntable's — see `DampedTransformControls`.
+    const transform = new DampedTransformControls(camera, renderer.domElement);
     transform.setSpace('world');
     scene.add(transform.getHelper());
     transform.enabled = false;
@@ -666,14 +669,18 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       // rather than stalled on, so the draw loop keeps running underneath it —
       // and the world can be closed while a pick is still in flight.
       // Read before the await: a modifier released while the readback is in
-      // flight would otherwise turn a Ctrl+click into a plain one.
-      const additive = event.ctrlKey || event.metaKey;
+      // flight would otherwise turn a Shift+click into a plain one.
+      //
+      // Shift is free for this because panning is on Shift+*middle*
+      // (`cameraNav.navFor`), so no left-button gesture is spoken for — and it
+      // is the modifier a level editor is reached for with.
+      const additive = event.shiftKey || event.ctrlKey || event.metaKey;
 
       // The waynet first, and only while it is on screen. It draws with
       // `depthTest: false` — over everything, including whatever VOB is behind
       // it — so picking it second would mean clicking a dot that is plainly on
-      // top and selecting the wall behind it. Ctrl does not apply: one waypoint
-      // is the whole selection, so there is no batch to add to.
+      // top and selecting the wall behind it. The modifiers do not apply: one
+      // waypoint is the whole selection, so there is no batch to add to.
       const overlay = overlayRef.current;
       if (showWaynetRef.current && overlay !== null) {
         // Projection x view x the mirrored root, because the overlay's

@@ -1209,6 +1209,27 @@ than fixtures:
   a convenience either: the orbit pivot starts at the centre of a 600 m island,
   so without a way to move it every orbit up close swings the camera through
   half the world.
+- **Adding to a selection is Shift, Ctrl or Cmd, in both panels**
+  (2026-08-28). Ctrl/Cmd was there from the start and Shift is the gesture a
+  level editor is actually reached for with; it is free precisely because
+  panning is on Shift+**middle** (the bullet above), so no left-button gesture
+  was spoken for. One rule for the viewport pick and the scene-tree row, because
+  the tree is the only way to reach a VOB the viewport cannot draw and the
+  viewport the only way to reach one the tree has not been scrolled to.
+- **The rotate gizmo is damped to a quarter of `TransformControls`' rate**
+  (2026-08-28). Its own rate is `20 / <camera-to-pivot distance>` radians per
+  unit of pointer travel — a turntable's, and in a 600 m world where the camera
+  is metres from the barrel it is turning, a short flick spins the VOB through
+  several turns. Nothing in the library takes a number for it: the rate is a
+  local `const` in `pointerMove`, and the `rotationAngle` it produces is defined
+  `configurable: false`, so it cannot be wrapped on the instance either. What is
+  reachable is the pointer, and the angle is linear in the travel since the
+  press — so `DampedTransformControls` scales that travel and the turn scales
+  with it, *inside* the gizmo, which keeps the ring, the live preview and the
+  committed op the same number. Deliberately not applied to translation (world
+  units, already one-to-one with the cursor) and deliberately not applied to
+  `__worldViewport.turnGizmo`, which stands in for this pointer maths rather
+  than running it — so `verify-world-edit.js` still means the radians it says.
 - **A structural edit must not move the camera.** The scene is rebuilt from the
   world after one, which is the same path an open takes and therefore re-framed
   the camera from the bbox — throwing away the view a placement was aimed from,
@@ -1390,8 +1411,9 @@ the UI, and one decision underneath it.
   no-op op; with fifty selected it is fifty ops on the undo stack for a batch
   that undoes nothing.
 - **The modifier is read before the pick's `await`.** The prop pick is
-  asynchronous now (§3), and a Ctrl released during the readback would turn a
-  Ctrl+click into a plain one — which empties the selection being built.
+  asynchronous now (§3), and a modifier released during the readback would turn
+  an additive click into a plain one — which empties the selection being
+  built.
 - The selection is one ordered list in `worldStore`, without duplicates: a
   repeat would put two ops on one VOB in a batch meant to hold one each. The
   property grid describes the last VOB and says how many are going with it,
