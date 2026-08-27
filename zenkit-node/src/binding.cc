@@ -7,7 +7,9 @@
 #include <zenkit/World.hh>
 #include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/Misc.hh>
+#include <zenkit/vobs/Sound.hh>
 #include <zenkit/vobs/VirtualObject.hh>
+#include <zenkit/vobs/Zone.hh>
 #include <zenkit/world/WayNet.hh>
 
 #include <algorithm>
@@ -793,6 +795,50 @@ std::optional<zenkit::Color> OptionalColor(Napi::Env env, Napi::Object props, ch
   return zenkit::Color {channels[0], channels[1], channels[2], channels[3]};
 }
 
+// A number as an error message should spell it: std::to_string(0.0f) is
+// "0.000000", and a refusal that reads "must be between 0.000000 and 360.000000"
+// is a worse message than the bound deserves.
+std::string NumberText(float value) {
+  std::string text = std::to_string(value);
+  if (text.find('.') == std::string::npos) return text;
+  text.erase(text.find_last_not_of('0') + 1);
+  if (!text.empty() && text.back() == '.') text.pop_back();
+  return text;
+}
+
+// OptionalFloat with the catalogue's bounds applied. The bounds are duplicated
+// in `zen-world`'s CLASS_FIELDS on purpose — the grid needs them to refuse a
+// typed value before it commits one — and this is the copy that is load-bearing:
+// the IPC validator can be bypassed by anything that reaches the binding
+// directly, and every one of these fields is invisible in the viewport.
+std::optional<float> OptionalFloatIn(Napi::Env env,
+                                     Napi::Object props,
+                                     char const* key,
+                                     std::optional<float> min,
+                                     std::optional<float> max) {
+  auto const value = OptionalFloat(env, props, key);
+  if (!value) return std::nullopt;
+  if (min && *value < *min) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be " + NumberText(*min)
+                                    + " or greater");
+  }
+  if (max && *value > *max) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be " + NumberText(*max)
+                                    + " or less");
+  }
+  return value;
+}
+
+// RequiredCp1252String for a key that may simply be absent. Every string field
+// past `oCItem.instance` is one of several on its class, so "set the sound name
+// and leave the radius alone" has to be expressible.
+std::optional<std::string> OptionalCp1252String(Napi::Env env,
+                                                Napi::Object props,
+                                                char const* key) {
+  if (props.Get(key).IsUndefined()) return std::nullopt;
+  return RequiredCp1252String(env, props, key);
+}
+
 // setVobClassProp(handle, indexPath, props) — the fields a VOB has because of
 // the class it is, rather than because it is a `zCVob`.
 //
@@ -850,6 +896,108 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto& light = static_cast<zenkit::VLight&>(*vob);
       if (range) light.range = *range;
       if (color) light.color = *color;
+      break;
+    }
+    // The sound family, in one case because `zCVobSoundDaytime` **is** a
+    // `zCVobSound`: it derives from it, so its case inherits every base field
+    // and adds three, rather than restating a second key list that would agree
+    // with the first only for as long as both were remembered. An editor that
+    // offered a radius on one and not the other would be describing the class
+    // hierarchy wrongly.
+    //
+    // What is deliberately not here, by the catalogue's own rules: `mode` and
+    // `volumeType` are enums; `initiallyPlaying`, `ambient3d` and `obstruction`
+    // are booleans and the catalogue has no boolean kind; and `randomDelay` /
+    // `randomDelayVar` are read by the engine only when `mode` is RANDOM, which
+    // is a mode this op cannot set.
+    case zenkit::VirtualObjectType::zCVobSound:
+    case zenkit::VirtualObjectType::zCVobSoundDaytime: {
+      bool const daytime = vob->type == zenkit::VirtualObjectType::zCVobSoundDaytime;
+      if (daytime) {
+        RequireClassKeys(env, props,
+                         {"soundName", "volume", "radius", "coneAngle", "startTime", "endTime",
+                          "soundName2"},
+                         class_name);
+      } else {
+        RequireClassKeys(env, props, {"soundName", "volume", "radius", "coneAngle"}, class_name);
+      }
+      // Everything read and bounded before anything is assigned, so a refused
+      // `endTime` cannot leave a written `soundName` behind it.
+      auto sound_name = OptionalCp1252String(env, props, "soundName");
+      auto const volume = OptionalFloatIn(env, props, "volume", 0, 100);
+      auto const radius = OptionalFloatIn(env, props, "radius", 0, std::nullopt);
+      auto const cone_angle = OptionalFloatIn(env, props, "coneAngle", 0, 360);
+      std::optional<float> start_time;
+      std::optional<float> end_time;
+      std::optional<std::string> sound_name2;
+      if (daytime) {
+        // Hours of the day, `13.5` being 13:30. 24 is a bound and not a
+        // modulus: a caller meaning midnight means 0.
+        start_time = OptionalFloatIn(env, props, "startTime", 0, 24);
+        end_time = OptionalFloatIn(env, props, "endTime", 0, 24);
+        sound_name2 = OptionalCp1252String(env, props, "soundName2");
+      }
+
+      auto& sound = static_cast<zenkit::VSound&>(*vob);
+      if (sound_name) sound.sound_name = std::move(*sound_name);
+      if (volume) sound.volume = *volume;
+      if (radius) sound.radius = *radius;
+      if (cone_angle) sound.cone_angle = *cone_angle;
+      if (daytime) {
+        auto& at_time = static_cast<zenkit::VSoundDaytime&>(*vob);
+        if (start_time) at_time.start_time = *start_time;
+        if (end_time) at_time.end_time = *end_time;
+        if (sound_name2) at_time.sound_name2 = std::move(*sound_name2);
+      }
+      break;
+    }
+    // The zones. Only the `Default` variants' base classes are here — a
+    // `zCZoneZFogDefault` is the world's fallback fog rather than a placed zone,
+    // and giving it a case here without an entry in the catalogue next door
+    // would be a class the grid cannot draw and the IPC validator refuses.
+    case zenkit::VirtualObjectType::zCZoneVobFarPlane: {
+      RequireClassKeys(env, props, {"vobFarPlaneZ", "innerRangePercentage"}, class_name);
+      auto const far_plane_z = OptionalFloatIn(env, props, "vobFarPlaneZ", 0, std::nullopt);
+      // Not bounded above at 1 or at 100: nothing measured says which of the two
+      // conventions ZenGin stores here, and a bound guessed wrong refuses a
+      // retail value the world already contains.
+      auto const inner = OptionalFloatIn(env, props, "innerRangePercentage", 0, std::nullopt);
+
+      auto& zone = static_cast<zenkit::VZoneFarPlane&>(*vob);
+      if (far_plane_z) zone.vob_far_plane_z = *far_plane_z;
+      if (inner) zone.inner_range_percentage = *inner;
+      break;
+    }
+    case zenkit::VirtualObjectType::zCZoneZFog: {
+      RequireClassKeys(env, props, {"rangeCenter", "innerRangePercentage", "color"}, class_name);
+      auto const range_center = OptionalFloatIn(env, props, "rangeCenter", 0, std::nullopt);
+      auto const inner = OptionalFloatIn(env, props, "innerRangePercentage", 0, std::nullopt);
+      auto const color = OptionalColor(env, props, "color");
+
+      // `overrideColor` decides whether the engine reads that colour at all, and
+      // it is a boolean this op cannot set — so writing a fog colour on a zone
+      // that does not override is a legal write with no visible effect, not a
+      // refusal.
+      auto& fog = static_cast<zenkit::VZoneFog&>(*vob);
+      if (range_center) fog.range_center = *range_center;
+      if (inner) fog.inner_range_percentage = *inner;
+      if (color) fog.color = *color;
+      break;
+    }
+    case zenkit::VirtualObjectType::oCZoneMusic: {
+      // Two floats out of six fields. `enabled`, `ellipsoid` and `loop` are
+      // booleans and `priority` is an `int32_t`; the catalogue has neither kind,
+      // and writing an integer field through a float would truncate silently.
+      RequireClassKeys(env, props, {"reverb", "volume"}, class_name);
+      // Unbounded, both of them: ZenKit documents each as "unclear", ZenGin's
+      // reverb level is negative decibels, and a bound invented here is a
+      // refusal of data the world already holds.
+      auto const reverb = OptionalFloat(env, props, "reverb");
+      auto const volume = OptionalFloat(env, props, "volume");
+
+      auto& music = static_cast<zenkit::VZoneMusic&>(*vob);
+      if (reverb) music.reverb = *reverb;
+      if (volume) music.volume = *volume;
       break;
     }
     default:

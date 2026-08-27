@@ -23,13 +23,39 @@ describe('the per-class field catalogue', () => {
     }
   });
 
-  it('catalogues the two classes this increment writes, and only those', () => {
+  it('catalogues the classes the increments so far write, and only those', () => {
     // The table is additive per class, so what is *not* in it is the statement:
     // a class with no entry has no class section in the grid and no legal key at
-    // any layer below it.
-    expect(Object.keys(CLASS_FIELDS).sort()).toEqual(['oCItem', 'zCVobLight']);
+    // any layer below it. The `…Default` zone variants are the pointed absence —
+    // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
+    expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
+      'oCItem', 'oCZoneMusic', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
+      'zCZoneVobFarPlane', 'zCZoneZFog',
+    ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
     expect(classPropKeys('zCVobLight')).toEqual(['range', 'color']);
+    expect(classPropKeys('zCVobSound')).toEqual(['soundName', 'volume', 'radius', 'coneAngle']);
+    expect(classPropKeys('zCZoneVobFarPlane'))
+      .toEqual(['vobFarPlaneZ', 'innerRangePercentage']);
+    expect(classPropKeys('zCZoneZFog'))
+      .toEqual(['rangeCenter', 'innerRangePercentage', 'color']);
+    expect(classPropKeys('oCZoneMusic')).toEqual(['reverb', 'volume']);
+    for (const absent of ['zCZoneZFogDefault', 'zCZoneVobFarPlaneDefault', 'oCZoneMusicDefault']) {
+      expect(classPropKeys(absent)).toEqual([]);
+    }
+  });
+
+  it('gives the daytime sound the base sound fields as well as its own three', () => {
+    // `zCVobSoundDaytime` derives from `zCVobSound`, and the binding's case is a
+    // fallthrough onto the same `VSound` members for exactly that reason. A
+    // catalogue that listed only the three extra fields would draw a daytime
+    // sound with no volume and no radius, and refuse an op that set one.
+    expect(classPropKeys('zCVobSoundDaytime')).toEqual([
+      ...classPropKeys('zCVobSound'), 'startTime', 'endTime', 'soundName2',
+    ]);
+    for (const key of classPropKeys('zCVobSound')) {
+      expect(fieldOf('zCVobSoundDaytime', key)).toEqual(fieldOf('zCVobSound', key));
+    }
   });
 
   it('records the bounds a value is refused by, per kind', () => {
@@ -40,6 +66,17 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('zCVobLight', 'range')).toEqual({ key: 'range', kind: 'float', min: 0 });
     expect(fieldOf('zCVobLight', 'color'))
       .toEqual({ key: 'color', kind: 'color', min: 0, max: 255 });
+    expect(fieldOf('zCVobSound', 'volume'))
+      .toEqual({ key: 'volume', kind: 'float', min: 0, max: 100 });
+    expect(fieldOf('zCVobSoundDaytime', 'startTime'))
+      .toEqual({ key: 'startTime', kind: 'float', min: 0, max: 24 });
+    // Two fields with no bound at all, and each is a decision: `reverb` is
+    // negative decibels in ZenGin, and `innerRangePercentage` is stored as 0..1
+    // or as 0..100 depending on nothing anybody has measured — so an upper bound
+    // invented here would refuse a value a retail world already contains.
+    expect(fieldOf('oCZoneMusic', 'reverb')).toEqual({ key: 'reverb', kind: 'float' });
+    expect(fieldOf('zCZoneZFog', 'innerRangePercentage'))
+      .toEqual({ key: 'innerRangePercentage', kind: 'float', min: 0 });
   });
 
   it('answers null for a key of another class, and for a class it does not have', () => {

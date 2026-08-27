@@ -1013,3 +1013,168 @@ test('setVobClassProp survives a save and reload', () => {
   assert.strictEqual(vobAt(reloaded, '0/0/0').props.range, 1250.5);
   assert.deepStrictEqual(vobAt(reloaded, '0/0/0').props.color, [10, 20, 30, 255]);
 });
+
+// The sound family and the zones — class properties, increment 2
+// (level-editor.md §14.1 item 1.4).
+//
+// These VOBs are in the mesh-extraction variant only, so the checked-in golden
+// fixture's VOBs stay exactly where they were. Their paths are under the second
+// root tree: `1/3` sound, `1/4` daytime sound, `1/5` far plane, `1/6` fog,
+// `1/7` music.
+//
+// The per-key round trip below is what ties the C++ switch to `zen-world`'s
+// CLASS_FIELDS catalogue. There is no shared constant between the two and there
+// cannot be one, so the contract is this: every key the catalogue lists is
+// written here, saved, re-loaded and read back. A key in the catalogue the
+// binding does not write, or writes into the wrong member, fails here and
+// nowhere else — every layer above this one mocks the binding out.
+
+const CLASS_PROP_ROUND_TRIP = [
+  ['1/3', 'zCVobSound', {
+    soundName: 'OW_WOLF_ÄÖÜ', volume: 77.5, radius: 3125.25, coneAngle: 135.5,
+  }],
+  ['1/4', 'zCVobSoundDaytime', {
+    // The base sound fields *and* the derived three: the case is one
+    // fallthrough onto the same VSound members, and a derived class writing
+    // only its own three would pass every test that did not name a base field.
+    soundName: 'OW_DAY', volume: 12.5, radius: 4096, coneAngle: 45,
+    startTime: 5.25, endTime: 21.75, soundName2: 'OW_NIGHT_ÄÖÜ',
+  }],
+  ['1/5', 'zCZoneVobFarPlane', { vobFarPlaneZ: 14000.5, innerRangePercentage: 0.125 }],
+  ['1/6', 'zCZoneZFog', {
+    rangeCenter: 9000.5, innerRangePercentage: 0.375, color: [10, 20, 30, 240],
+  }],
+  ['1/7', 'oCZoneMusic', { reverb: -42.5, volume: 0.75 }],
+];
+
+test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {
+  const file = authored();
+  const handle = zenkit.loadWorld(file, 'g2');
+
+  for (const [at, className, props] of CLASS_PROP_ROUND_TRIP) {
+    assert.strictEqual(zenkit.getVobProps(handle, at).class, className, at);
+    zenkit.setVobClassProp(handle, at, props);
+  }
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-class2-rt-')), 'class2.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = zenkit.loadWorld(out, 'g2');
+
+  for (const [at, className, props] of CLASS_PROP_ROUND_TRIP) {
+    const read = zenkit.getVobProps(reloaded, at);
+    assert.strictEqual(read.class, className, at);
+    for (const [key, value] of Object.entries(props)) {
+      assert.deepStrictEqual(read[key], value, `${className}.${key}`);
+    }
+  }
+});
+
+test('setVobClassProp leaves every other field of these classes alone', () => {
+  // The enums, the booleans and the random delays are all fields this op
+  // deliberately cannot set. A case that assigned a whole struct instead of
+  // member by member would reset them, and nothing above C++ would notice.
+  const file = authored();
+  const handle = zenkit.loadWorld(file, 'g2');
+  const fresh = zenkit.loadWorld(file, 'g2');
+
+  for (const [at, , props] of CLASS_PROP_ROUND_TRIP) {
+    const before = zenkit.getVobProps(fresh, at);
+    zenkit.setVobClassProp(handle, at, props);
+    const after = zenkit.getVobProps(handle, at);
+
+    for (const key of Object.keys(before)) {
+      if (key in props) continue;
+      assert.deepStrictEqual(after[key], before[key], `${at}.${key}`);
+    }
+  }
+});
+
+test('setVobClassProp writes one key of these classes without touching its siblings', () => {
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  const before = zenkit.getVobProps(handle, '1/6');
+
+  zenkit.setVobClassProp(handle, '1/6', { rangeCenter: 1234.5 });
+
+  const after = zenkit.getVobProps(handle, '1/6');
+  assert.strictEqual(after.rangeCenter, 1234.5);
+  assert.strictEqual(after.innerRangePercentage, before.innerRangePercentage);
+  assert.deepStrictEqual(after.color, before.color);
+});
+
+test('setVobClassProp refuses a daytime-only key on a plain sound, and takes a base key on a daytime one', () => {
+  // The one refusal the inheritance makes possible: `radius` is legal on both,
+  // `startTime` on only the derived one. A case that flattened the two would
+  // write `startTime` onto a VSound that has no such member.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { startTime: 6 }), /zCVobSound/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { soundName2: 'X' }), /zCVobSound/);
+  zenkit.setVobClassProp(handle, '1/4', { radius: 999 });
+  assert.strictEqual(zenkit.getVobProps(handle, '1/4').radius, 999);
+});
+
+test('setVobClassProp refuses a zone field on the wrong zone, naming the class', () => {
+  // Three unrelated classes that read like one family — the mistake this op
+  // carries a class name to catch.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '1/5', { rangeCenter: 1 }),
+    /zCZoneVobFarPlane/,
+  );
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/6', { vobFarPlaneZ: 1 }), /zCZoneZFog/);
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '1/7', { color: [0, 0, 0, 255] }),
+    /oCZoneMusic/,
+  );
+  // And the fields these classes have that the catalogue deliberately excludes:
+  // the enums, the booleans, and oCZoneMusic's int32 priority.
+  for (const [at, bad] of [['1/3', { mode: 1 }], ['1/3', { obstruction: true }],
+    ['1/6', { fadeOutSky: true }], ['1/7', { priority: 3 }], ['1/7', { enabled: true }]]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, at, bad), Error, at);
+  }
+});
+
+test('setVobClassProp refuses an out-of-bounds sound or zone value, and writes nothing', () => {
+  // The bounds are duplicated in `zen-world`'s catalogue for the grid's sake;
+  // this is the copy that is load-bearing, because the IPC validator is bypassed
+  // by anything that reaches the binding directly.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  const before = zenkit.getVobProps(handle, '1/3');
+
+  for (const bad of [-0.5, 100.5]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { volume: bad }), /volume/);
+  }
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { coneAngle: 361 }), /coneAngle/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { radius: -1 }), /radius/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/4', { startTime: 24.5 }), /startTime/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/5', { vobFarPlaneZ: -1 }), /vobFarPlaneZ/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/6', { rangeCenter: -1 }), /rangeCenter/);
+
+  // The valid half of a refused pair must not have been written: everything is
+  // validated before anything is assigned.
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '1/3', { soundName: 'OW_NEW', volume: 200 }),
+    /volume/,
+  );
+  assert.deepStrictEqual(zenkit.getVobProps(handle, '1/3'), before);
+});
+
+test('setVobClassProp takes a negative music reverb, which is why it has no lower bound', () => {
+  // ZenGin's reverb level is negative decibels. A `min: 0` copied from the
+  // light's range would refuse every music zone in a retail world.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  zenkit.setVobClassProp(handle, '1/7', { reverb: -100 });
+  assert.strictEqual(zenkit.getVobProps(handle, '1/7').reverb, -100);
+  for (const bad of [NaN, Infinity, '0', null]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '1/7', { reverb: bad }), /reverb/);
+  }
+});
+
+test('setVobClassProp refuses a sound name that is not a string', () => {
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  for (const bad of [42, null, ['OW'], true]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { soundName: bad }), /soundName/);
+  }
+  assert.throws(() => zenkit.setVobClassProp(handle, '1/4', { soundName2: 42 }), /soundName2/);
+});

@@ -12,7 +12,9 @@
 #include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/MovableObject.hh>
+#include <zenkit/vobs/Sound.hh>
 #include <zenkit/vobs/VirtualObject.hh>
+#include <zenkit/vobs/Zone.hh>
 #include <zenkit/world/BspTree.hh>
 #include <zenkit/world/WayNet.hh>
 
@@ -521,7 +523,89 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   c->bbox = AxisAlignedBoundingBox {Vec3 {149.0f, 2.0f, 159.0f}, Vec3 {151.0f, 4.0f, 161.0f}};
   c->visual = nullptr;
 
-  root->children = {a, b, c};
+  // The sound family and the zones — the classes `setVobClassProp` learned in
+  // Phase 1b-2 increment 2. They are authored here, into the mesh-extraction
+  // variant only, for exactly the reason this second tree exists at all: the
+  // checked-in golden fixture's VOBs must not move, and a per-class write needs
+  // a VOB of the class to write on. Every field is set explicitly, including
+  // the ones this op does not write — a case that reset a neighbouring field
+  // would otherwise have nothing to be caught by.
+  auto sound = std::make_shared<VSound>();
+  sound->type = VirtualObjectType::zCVobSound;
+  sound->vob_name = "VOB_INDEX_SOUND";
+  sound->position = Vec3 {170.0f, 4.0f, 180.0f};
+  sound->bbox = AxisAlignedBoundingBox {Vec3 {169.0f, 3.0f, 179.0f}, Vec3 {171.0f, 5.0f, 181.0f}};
+  sound->volume = 50.0f;
+  sound->mode = SoundMode::LOOP;
+  sound->random_delay = 5.0f;
+  sound->random_delay_var = 2.0f;
+  sound->initially_playing = true;
+  sound->ambient3d = false;
+  sound->obstruction = true;
+  sound->cone_angle = 0.0f;
+  sound->volume_type = SoundTriggerVolumeType::SPHERICAL;
+  sound->radius = 1500.0f;
+  sound->sound_name = "OW_CRICKET";
+
+  // `zCVobSoundDaytime` derives from `zCVobSound`, so it is here to prove the
+  // derived case still writes the *base* fields and not only its own three.
+  auto daytime = std::make_shared<VSoundDaytime>();
+  daytime->type = VirtualObjectType::zCVobSoundDaytime;
+  daytime->vob_name = "VOB_INDEX_SOUND_DAYTIME";
+  daytime->position = Vec3 {190.0f, 4.0f, 200.0f};
+  daytime->bbox =
+      AxisAlignedBoundingBox {Vec3 {189.0f, 3.0f, 199.0f}, Vec3 {191.0f, 5.0f, 201.0f}};
+  daytime->volume = 80.0f;
+  daytime->mode = SoundMode::RANDOM;
+  daytime->random_delay = 30.0f;
+  daytime->random_delay_var = 10.0f;
+  daytime->initially_playing = false;
+  daytime->ambient3d = true;
+  daytime->obstruction = false;
+  daytime->cone_angle = 90.0f;
+  daytime->volume_type = SoundTriggerVolumeType::ELLIPSOIDAL;
+  daytime->radius = 2500.0f;
+  daytime->sound_name = "OW_BIRD_DAY";
+  daytime->start_time = 6.0f;
+  daytime->end_time = 20.0f;
+  daytime->sound_name2 = "OW_OWL_NIGHT";
+
+  // VZoneFarPlane's two floats have no default initializer in ZenKit at all,
+  // so a fixture that left them alone would round-trip whatever was on the
+  // stack.
+  auto far_plane = std::make_shared<VZoneFarPlane>();
+  far_plane->type = VirtualObjectType::zCZoneVobFarPlane;
+  far_plane->vob_name = "VOB_INDEX_FARPLANE";
+  far_plane->position = Vec3 {210.0f, 4.0f, 220.0f};
+  far_plane->bbox =
+      AxisAlignedBoundingBox {Vec3 {209.0f, 3.0f, 219.0f}, Vec3 {211.0f, 5.0f, 221.0f}};
+  far_plane->vob_far_plane_z = 8000.0f;
+  far_plane->inner_range_percentage = 0.75f;
+
+  auto fog = std::make_shared<VZoneFog>();
+  fog->type = VirtualObjectType::zCZoneZFog;
+  fog->vob_name = "VOB_INDEX_FOG";
+  fog->position = Vec3 {230.0f, 4.0f, 240.0f};
+  fog->bbox = AxisAlignedBoundingBox {Vec3 {229.0f, 3.0f, 239.0f}, Vec3 {231.0f, 5.0f, 241.0f}};
+  fog->range_center = 12000.0f;
+  fog->inner_range_percentage = 0.5f;
+  fog->color = Color {120, 130, 140, 255};
+  fog->fade_out_sky = true;
+  fog->override_color = false;
+
+  auto music = std::make_shared<VZoneMusic>();
+  music->type = VirtualObjectType::oCZoneMusic;
+  music->vob_name = "VOB_INDEX_MUSIC";
+  music->position = Vec3 {250.0f, 4.0f, 260.0f};
+  music->bbox = AxisAlignedBoundingBox {Vec3 {249.0f, 3.0f, 259.0f}, Vec3 {251.0f, 5.0f, 261.0f}};
+  music->enabled = true;
+  music->priority = 2;
+  music->ellipsoid = false;
+  music->reverb = -30.0f;
+  music->volume = 0.5f;
+  music->loop = true;
+
+  root->children = {a, b, c, sound, daytime, far_plane, fog, music};
   return root;
 }
 

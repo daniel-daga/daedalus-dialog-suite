@@ -490,9 +490,130 @@ describe('assertApplyOpsRequest', () => {
       to: { range: 2000, color: [200, 200, 255, 255] },
     };
 
+    // Increment 2's classes: the sound family and the zones. Each is one
+    // catalogue entry away from the two above, and this validator reads the
+    // catalogue — so what these cases actually pin is that the entry is *there*,
+    // which is the half of the change that `assertApplyOpsRequest` is famous for
+    // being shipped without (`ReparentVob`).
+    const sound = {
+      op: 'SetVobClassProp',
+      vob: 11,
+      path: '0/12',
+      className: 'zCVobSound',
+      from: { soundName: 'OW_CRICKET', volume: 50, radius: 1500, coneAngle: 0 },
+      to: { soundName: 'OW_OWL', volume: 80, radius: 2500, coneAngle: 90 },
+    };
+    const daytime = {
+      ...sound,
+      className: 'zCVobSoundDaytime',
+      from: { ...sound.from, startTime: 6, endTime: 20, soundName2: 'OW_OWL_NIGHT' },
+      to: { ...sound.to, startTime: 8, endTime: 18, soundName2: 'OW_WOLF_NIGHT' },
+    };
+    const fog = {
+      op: 'SetVobClassProp',
+      vob: 12,
+      path: '0/13',
+      className: 'zCZoneZFog',
+      from: { rangeCenter: 12000, innerRangePercentage: 0.5, color: [120, 130, 140, 255] },
+      to: { rangeCenter: 9000, innerRangePercentage: 0.25, color: [10, 20, 30, 255] },
+    };
+    const farPlane = {
+      op: 'SetVobClassProp',
+      vob: 13,
+      path: '0/14',
+      className: 'zCZoneVobFarPlane',
+      from: { vobFarPlaneZ: 8000, innerRangePercentage: 0.75 },
+      to: { vobFarPlaneZ: 12000, innerRangePercentage: 0.5 },
+    };
+    const music = {
+      op: 'SetVobClassProp',
+      vob: 14,
+      path: '0/15',
+      className: 'oCZoneMusic',
+      from: { reverb: -30, volume: 0.5 },
+      to: { reverb: -10, volume: 0.9 },
+    };
+
     it('accepts an item instance and a light', () => {
       expect(() => assertApplyOpsRequest({ ops: [instance] })).not.toThrow();
       expect(() => assertApplyOpsRequest({ ops: [light] })).not.toThrow();
+    });
+
+    it('accepts the sound family and the three zones', () => {
+      for (const op of [sound, daytime, fog, farPlane, music]) {
+        expect(() => assertApplyOpsRequest({ ops: [op] })).not.toThrow();
+      }
+    });
+
+    it('accepts a base sound field on a daytime sound, and refuses it the other way', () => {
+      // The inheritance, at the layer that decides legality. `zCVobSoundDaytime`
+      // derives from `zCVobSound`, so `radius` is legal on both — while
+      // `startTime` is legal only on the derived one, and a catalogue that
+      // flattened the two would let it through on a plain sound the binding
+      // would then refuse mid-batch.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...daytime, from: { radius: 1500 }, to: { radius: 2500 } }],
+      })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...sound, from: { startTime: 6 }, to: { startTime: 8 } }],
+      })).toThrow(/zCVobSound has no class property startTime/);
+    });
+
+    it('refuses a zone field on the wrong zone', () => {
+      // The three zones are three unrelated classes that read like one family,
+      // which is exactly the mistake this op carries a `className` to catch.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...farPlane, from: { rangeCenter: 1 }, to: { rangeCenter: 2 } }],
+      })).toThrow(/zCZoneVobFarPlane has no class property rangeCenter/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...fog, from: { vobFarPlaneZ: 1 }, to: { vobFarPlaneZ: 2 } }],
+      })).toThrow(/zCZoneZFog has no class property vobFarPlaneZ/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...music, from: { color: [0, 0, 0, 255] }, to: { color: [1, 1, 1, 255] } }],
+      })).toThrow(/oCZoneMusic has no class property color/);
+    });
+
+    it('refuses a sound volume outside 0-100 and a daytime hour outside 0-24', () => {
+      // Both bounds are the catalogue's. `volume` is a percentage and `startTime`
+      // is an hour of the day — 24 is a bound and not a modulus, so a caller
+      // meaning midnight means 0.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...sound, from: { volume: 50 }, to: { volume: 101 } }],
+      })).toThrow(/to\.volume must be 100 or less/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...sound, from: { volume: 50 }, to: { volume: -1 } }],
+      })).toThrow(/to\.volume must be 0 or greater/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...daytime, from: { endTime: 20 }, to: { endTime: 24.5 } }],
+      })).toThrow(/to\.endTime must be 24 or less/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...sound, from: { coneAngle: 0 }, to: { coneAngle: 361 } }],
+      })).toThrow(/to\.coneAngle must be 360 or less/);
+    });
+
+    it('accepts a negative music reverb, which is the whole reason it has no bound', () => {
+      // ZenGin's reverb level is negative decibels. A `min: 0` copied from the
+      // light's range would refuse every music zone in a retail world.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...music, from: { reverb: -100 }, to: { reverb: -0.5 } }],
+      })).not.toThrow();
+      // …and it is still a number.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...music, from: { reverb: -100 }, to: { reverb: '-1' } }],
+      })).toThrow(/to\.reverb must be a finite number/);
+    });
+
+    it('refuses a sound name that is not a string, and a fog colour that is not four channels', () => {
+      for (const bad of [42, null, ['OW'], true]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...sound, from: { soundName: 'OW_CRICKET' }, to: { soundName: bad } }],
+        })).toThrow(/to\.soundName must be a string/);
+      }
+      for (const bad of [[120, 130, 140], [120, 130, 140, 256], [120, 130, 140.5, 255], 'grey']) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...fog, from: { color: [0, 0, 0, 255] }, to: { color: bad } }],
+        })).toThrow(/to\.color must be four whole channels/);
+      }
     });
 
     it('accepts one key of a class that has two', () => {
@@ -526,7 +647,7 @@ describe('assertApplyOpsRequest', () => {
     });
 
     it('rejects a class the catalogue does not know', () => {
-      // A world has 37 classes and the catalogue has two. With no entry there is
+      // A world has 37 classes and the catalogue has seven. With no entry there is
       // no key the op could legally carry, so the refusal is the class itself
       // rather than every key of it in turn.
       for (const bad of ['oCMobContainer', 'zCVob', '', 'toString', 42, null, undefined]) {

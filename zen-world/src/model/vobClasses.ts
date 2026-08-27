@@ -69,6 +69,70 @@ const ZC_VOB_LIGHT_FIELDS = [
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
+ * What a sound is: which script instance it plays, how loud, how far, and the
+ * cone it is audible in.
+ *
+ * `mode` and `volumeType` are enums and `initiallyPlaying`/`ambient3d`/
+ * `obstruction` are booleans, so both groups are out by the rules at the top of
+ * this file. `randomDelay` and `randomDelayVar` are left out for a third reason
+ * that is neither: the engine reads them only when `mode` is RANDOM, and `mode`
+ * is precisely what this catalogue cannot set.
+ */
+const ZC_VOB_SOUND_FIELDS = [
+  { key: 'soundName', kind: 'string' },
+  { key: 'volume', kind: 'float', min: 0, max: 100 },
+  { key: 'radius', kind: 'float', min: 0 },
+  { key: 'coneAngle', kind: 'float', min: 0, max: 360 },
+] as const satisfies readonly FieldDescriptor[];
+
+/**
+ * `zCVobSoundDaytime` **derives from** `zCVobSound`, so its entry inherits the
+ * base fields rather than restating them — the binding's case does the same, and
+ * an editor that offered a radius on one and not on the other would be
+ * describing the class hierarchy wrongly.
+ *
+ * The two times are hours of the day, `13.5` being 13:30. They are bounded
+ * rather than wrapped: a caller who means midnight means 0.
+ */
+const ZC_VOB_SOUND_DAYTIME_FIELDS = [
+  ...ZC_VOB_SOUND_FIELDS,
+  { key: 'startTime', kind: 'float', min: 0, max: 24 },
+  { key: 'endTime', kind: 'float', min: 0, max: 24 },
+  { key: 'soundName2', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** `innerRangePercentage` is bounded below and **not** above: nothing measured
+ *  says whether ZenGin stores it as 0..1 or as 0..100, and a maximum guessed
+ *  wrong refuses a value the retail world already contains. */
+const ZC_ZONE_VOB_FAR_PLANE_FIELDS = [
+  { key: 'vobFarPlaneZ', kind: 'float', min: 0 },
+  { key: 'innerRangePercentage', kind: 'float', min: 0 },
+] as const satisfies readonly FieldDescriptor[];
+
+/** `fadeOutSky` and `overrideColor` are booleans and out with the rest of them.
+ *  The colour is still offered on a zone that does not override — the engine
+ *  then ignores it, which is a write with no effect rather than a wrong one. */
+const ZC_ZONE_Z_FOG_FIELDS = [
+  { key: 'rangeCenter', kind: 'float', min: 0 },
+  { key: 'innerRangePercentage', kind: 'float', min: 0 },
+  { key: 'color', kind: 'color', min: 0, max: 255 },
+] as const satisfies readonly FieldDescriptor[];
+
+/**
+ * Two floats out of six fields, and the four that are missing are the ones a
+ * level designer reaches for: `enabled`, `ellipsoid` and `loop` are booleans and
+ * `priority` is an `int32`. The catalogue has neither kind, and an integer field
+ * written through a float truncates silently.
+ *
+ * Neither float is bounded. ZenKit documents both as "unclear", ZenGin's reverb
+ * level is negative decibels, and an invented bound refuses data a world holds.
+ */
+const OC_ZONE_MUSIC_FIELDS = [
+  { key: 'reverb', kind: 'float' },
+  { key: 'volume', kind: 'float' },
+] as const satisfies readonly FieldDescriptor[];
+
+/**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
  * `as const satisfies` for the same reason `PROP_KEYS` has it: the literal types
@@ -78,10 +142,17 @@ const ZC_VOB_LIGHT_FIELDS = [
 export const CLASS_FIELDS = {
   oCItem: OC_ITEM_FIELDS,
   zCVobLight: ZC_VOB_LIGHT_FIELDS,
+  zCVobSound: ZC_VOB_SOUND_FIELDS,
+  zCVobSoundDaytime: ZC_VOB_SOUND_DAYTIME_FIELDS,
+  zCZoneVobFarPlane: ZC_ZONE_VOB_FAR_PLANE_FIELDS,
+  zCZoneZFog: ZC_ZONE_Z_FOG_FIELDS,
+  oCZoneMusic: OC_ZONE_MUSIC_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has two, which is the point of asking through `fieldOf`. */
+ *  37 and this has seven, which is the point of asking through `fieldOf`. The
+ *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
+ *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;
 
 /** Shared rather than allocated per miss: `classPropKeys` is called on every
