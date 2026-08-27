@@ -4,6 +4,8 @@ This directory is the canonical home for repository-level documentation.
 
 ## Structure
 
+- `BOARD.md` - what is in flight, who owns it, and the state of the tree. Read it
+  first; update it last. It holds only what nothing else holds.
 - `architecture/` - durable architecture and boundary decisions.
 - `reference/` - durable implementation references and behavior mappings.
 - `plans/` - active implementation plans that are still in progress.
@@ -26,6 +28,7 @@ This directory is the canonical home for repository-level documentation.
 - [reference/autocomplete-fields.md](reference/autocomplete-fields.md)
 - [reference/dialog-authoring-automations.md](reference/dialog-authoring-automations.md)
 - [reference/parser-roundtrip-scope.md](reference/parser-roundtrip-scope.md)
+- [reference/environment-hazards.md](reference/environment-hazards.md)
 
 ## Active Plans
 

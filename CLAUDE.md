@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-At the start of every session, read `AGENTS.md` in the repository root and follow all instructions there. Also read the relevant workspace-level `AGENTS.md` when working inside `daedalus-dialog-editor/` or `daedalus-parser/`.
+At the start of every session, read [`docs/BOARD.md`](docs/BOARD.md) — what is in flight, who owns it, and the state of the tree — and then `AGENTS.md` in the repository root, following all instructions there. Also read the relevant workspace-level `AGENTS.md` when working inside `daedalus-dialog-editor/` or `daedalus-parser/`.
+
+**Update the board at the end of a session.** It replaces the long handover prompts: a card is one line and an owner, and nothing goes on it that `git log`, the plan, this file or [`docs/reference/environment-hazards.md`](docs/reference/environment-hazards.md) already holds.
 
 ---
 
