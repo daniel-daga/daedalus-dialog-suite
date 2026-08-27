@@ -662,8 +662,31 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   trigger->damage_threshold = 10.0f;
   trigger->fire_delay_sec = 2.5f;
 
+  auto change_level = std::make_shared<VTriggerChangeLevel>();
+  change_level->type = VirtualObjectType::oCTriggerChangeLevel;
+  change_level->vob_name = "VOB_INDEX_TRIGGERCHANGELEVEL";
+  change_level->position = Vec3 {370.0f, 4.0f, 380.0f};
+  change_level->bbox =
+      AxisAlignedBoundingBox {Vec3 {369.0f, 3.0f, 379.0f}, Vec3 {371.0f, 5.0f, 381.0f}};
+  change_level->target = "TARGET_VOB";
+  change_level->start_enabled = true;
+  change_level->send_untrigger = false;
+  change_level->react_to_on_trigger = true;
+  change_level->react_to_on_touch = false;
+  change_level->react_to_on_damage = true;
+  change_level->respond_to_object = false;
+  change_level->respond_to_pc = true;
+  change_level->respond_to_npc = false;
+  change_level->vob_target = "VOB_TARGET_NAME";
+  change_level->max_activation_count = 3;
+  change_level->retrigger_delay_sec = 1.5f;
+  change_level->damage_threshold = 10.0f;
+  change_level->fire_delay_sec = 2.5f;
+  change_level->level_name = "NEWWORLD.ZEN";
+  change_level->start_vob = "START_VOB_ÄÖÜ";
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
-                     trigger_script, trigger};
+                     trigger_script, trigger, change_level};
   return root;
 }
 

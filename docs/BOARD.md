@@ -119,9 +119,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **The classes that are left — `zCMover`, `oCTriggerChangeLevel`,
-  `oCMob*`** — `zCTrigger`'s own base fields landed; `zCTriggerUntouch` and
-  `zCTriggerList` turned out to have no eligible field at all. Unowned. §16.3
+- **The classes that are left — `zCMover`, `oCMob*`** — `zCTrigger`'s own
+  base fields landed; `zCTriggerUntouch` and `zCTriggerList` turned out to
+  have no eligible field at all. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -163,18 +163,13 @@ card waits on live at its pointer — put new prose there, not here.
 *(emptied 2026-08-28 — the prior 6 cards were flushed after checking each one
 against `git log` and the docs. `git log` is the permanent record.)*
 
-- **`zCTriggerWorldStart` joins the class-property catalogue** — its one
-  non-enum field, `fireOnce`, round-tripped through
-  `setVobClassProp`/save/reload. §16.3
-- **`oCTriggerScript` joins the class-property catalogue** — its one field,
-  `function`, round-tripped through `setVobClassProp`/save/reload;
-  `zCTriggerUntouch` and `zCTriggerList` found to have no eligible field. §16.3
-- **`zCTrigger`'s own base fields join the class-property catalogue** — eight
-  bools, four numerics, round-tripped. Found and fixed a genuine ZenKit
+- **`zCTriggerWorldStart`, `oCTriggerScript`, `zCTrigger`'s own base fields and
+  `oCTriggerChangeLevel` all join the class-property catalogue** — round-tripped
+  through `setVobClassProp`/save/reload. Found and fixed a genuine ZenKit
   writer/reader asymmetry along the way (`VTrigger::save` echoed the stale
-  packed `flags`/`filterFlags` bytes, dropping any of the eight on save) —
-  patched as `0028`. §16.3
+  packed `flags`/`filterFlags` bytes, dropping any of the eight `zCTrigger`
+  bools on save) — patched as `0028`. §16.3
 
 Verified this session: `zenkit-node` (rebuild + full suite + lint), `zen-world`
-(test/lint/typecheck/build), editor (build:main/typecheck/Jest/lint) all
-green — `zCTrigger` base-fields change plus vendor patch `0028`.
+(test/lint/typecheck/build), editor (build:main/typecheck:renderer/Jest/lint)
+all green.

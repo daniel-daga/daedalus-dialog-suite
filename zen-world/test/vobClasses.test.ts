@@ -29,9 +29,9 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCTriggerScript', 'oCZoneMusic', 'zCPFXController', 'zCTrigger',
-      'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
-      'zCZoneVobFarPlane', 'zCZoneZFog',
+      'oCItem', 'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCPFXController',
+      'zCTrigger', 'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight', 'zCVobSound',
+      'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
     ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
     expect(classPropKeys('zCVobLight')).toEqual(['range', 'color']);
@@ -130,6 +130,19 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('zCTrigger', 'fireDelaySec'))
       .toEqual({ key: 'fireDelaySec', kind: 'float', min: 0 });
     expect(fieldOf('zCTrigger', 'startEnabled')).toEqual({ key: 'startEnabled', kind: 'bool' });
+    // `oCTriggerChangeLevel` inherits the base twelve and adds its own two —
+    // plain config, not cross-references the way `target`/`vobTarget` are, so
+    // they join rather than stay held out with the family's target strings.
+    expect(classPropKeys('oCTriggerChangeLevel')).toEqual([
+      ...classPropKeys('zCTrigger'), 'levelName', 'startVob',
+    ]);
+    for (const key of classPropKeys('zCTrigger')) {
+      expect(fieldOf('oCTriggerChangeLevel', key)).toEqual(fieldOf('zCTrigger', key));
+    }
+    expect(fieldOf('oCTriggerChangeLevel', 'levelName'))
+      .toEqual({ key: 'levelName', kind: 'string' });
+    expect(fieldOf('oCTriggerChangeLevel', 'startVob'))
+      .toEqual({ key: 'startVob', kind: 'string' });
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {

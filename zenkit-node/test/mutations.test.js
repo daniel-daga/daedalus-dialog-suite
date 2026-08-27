@@ -1066,6 +1066,12 @@ const CLASS_PROP_ROUND_TRIP = [
     reactToOnDamage: false, respondToObject: true, respondToPc: false, respondToNpc: true,
     maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 99.5, fireDelaySec: 0.25,
   }],
+  ['1/13', 'oCTriggerChangeLevel', {
+    startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
+    reactToOnDamage: false, respondToObject: true, respondToPc: false, respondToNpc: true,
+    maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 99.5, fireDelaySec: 0.25,
+    levelName: 'OTHERWORLD.ZEN', startVob: 'OTHER_START_VOB',
+  }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {

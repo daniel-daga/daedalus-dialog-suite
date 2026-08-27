@@ -246,6 +246,17 @@ const OC_TRIGGER_SCRIPT_FIELDS = [
   { key: 'function', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The base `VTrigger` twelve, plus `oCTriggerChangeLevel`'s own two: the
+ *  level to load and the VObject to place the player at in it. Both are
+ *  plain config, not cross-references the way `target`/`vobTarget` are —
+ *  nothing in the world names them back — so they join rather than stay held
+ *  out with the rest of the family's target strings. */
+const OC_TRIGGER_CHANGE_LEVEL_FIELDS = [
+  ...ZC_TRIGGER_FIELDS,
+  { key: 'levelName', kind: 'string' },
+  { key: 'startVob', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -266,10 +277,11 @@ export const CLASS_FIELDS = {
   zCTrigger: ZC_TRIGGER_FIELDS,
   zCTriggerWorldStart: ZC_TRIGGER_WORLD_START_FIELDS,
   oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
+  oCTriggerChangeLevel: OC_TRIGGER_CHANGE_LEVEL_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has eleven, which is the point of asking through `fieldOf`. The
+ *  37 and this has twelve, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;

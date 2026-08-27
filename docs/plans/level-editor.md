@@ -2729,14 +2729,17 @@ deprecated raw `flags`/`filterFlags` bytes `load()` unpacks into those eight
 bools, verbatim, rather than reconstructing them from the bools — so setting
 any of the eight and saving silently reverted to whatever the archive held at
 load. `zCMover` and `oCTriggerChangeLevel` both derive from `VTrigger` and
-inherit these twelve once their own case is added, which is the remaining
-work: `zCMover`'s own fields (`behavior` is an enum and stays out; the rest is
-sized but untouched) and `oCTriggerChangeLevel`'s two strings (`levelName`,
-`startVob` — plain config, not cross-references, so the "target strings stay
-out" rule does not obviously extend to them and that is a decision for
-whoever picks it up). `oCMob*` is untouched. `zCTrigger` was appended to
+inherit these twelve once their own case is added. `zCTrigger` was appended to
 `BuildVisualVobTree`'s mesh-extraction-only fixture (path `1/12`), so the
 checked-in golden fixture is unaffected.
+
+`oCTriggerChangeLevel` landed 2026-08-28: the inherited `VTrigger` twelve plus
+its own two strings, `levelName` and `startVob` — decided to be plain config
+rather than cross-references (nothing in the world names them back the way
+`target`/`vobTarget` are named), so they join instead of staying held out with
+the rest of the family's target strings. Appended to `BuildVisualVobTree` at
+path `1/13`. `zCMover`'s own fields (`behavior` is an enum and stays out; the
+rest is sized but untouched) and `oCMob*` are the remaining work.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries

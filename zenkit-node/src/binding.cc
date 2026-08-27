@@ -1165,6 +1165,51 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (function) trigger_script.function = std::move(*function);
       break;
     }
+    // The base `VTrigger` twelve, plus this class's own two: the level to
+    // load and the VObject to place the player at in it. Both are plain
+    // config, not cross-references the way `target`/`vobTarget` are — nothing
+    // in the world names them back — so they join rather than stay held out
+    // with the rest of the family's target strings.
+    case zenkit::VirtualObjectType::oCTriggerChangeLevel: {
+      RequireClassKeys(env, props,
+                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
+                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
+                        "fireDelaySec", "levelName", "startVob"},
+                       class_name);
+      auto const start_enabled = OptionalBool(env, props, "startEnabled");
+      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
+      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
+      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
+      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
+      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
+      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
+      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
+      auto const max_activation_count =
+          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
+      auto const retrigger_delay_sec =
+          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
+      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
+      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      auto level_name = OptionalCp1252String(env, props, "levelName");
+      auto start_vob = OptionalCp1252String(env, props, "startVob");
+      auto& change_level = static_cast<zenkit::VTriggerChangeLevel&>(*vob);
+      if (start_enabled.has_value()) change_level.start_enabled = *start_enabled;
+      if (send_untrigger.has_value()) change_level.send_untrigger = *send_untrigger;
+      if (react_to_on_trigger.has_value()) change_level.react_to_on_trigger = *react_to_on_trigger;
+      if (react_to_on_touch.has_value()) change_level.react_to_on_touch = *react_to_on_touch;
+      if (react_to_on_damage.has_value()) change_level.react_to_on_damage = *react_to_on_damage;
+      if (respond_to_object.has_value()) change_level.respond_to_object = *respond_to_object;
+      if (respond_to_pc.has_value()) change_level.respond_to_pc = *respond_to_pc;
+      if (respond_to_npc.has_value()) change_level.respond_to_npc = *respond_to_npc;
+      if (max_activation_count.has_value()) change_level.max_activation_count = *max_activation_count;
+      if (retrigger_delay_sec.has_value()) change_level.retrigger_delay_sec = *retrigger_delay_sec;
+      if (damage_threshold.has_value()) change_level.damage_threshold = *damage_threshold;
+      if (fire_delay_sec.has_value()) change_level.fire_delay_sec = *fire_delay_sec;
+      if (level_name) change_level.level_name = std::move(*level_name);
+      if (start_vob) change_level.start_vob = std::move(*start_vob);
+      break;
+    }
     default:
       throw Napi::Error::New(env,
                              "no class properties are known for a " + std::string {class_name});
