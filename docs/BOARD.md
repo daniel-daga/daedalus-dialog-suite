@@ -62,7 +62,11 @@ was true for so long nobody re-reads it.
   parent. Merging is not releasing: `build-windows.yml` is `workflow_dispatch:`
   and nothing else, so a push to master builds no installer, cuts no release and
   touches no update feed. Anything about shipping is the dispatch's decision,
-  not this one — and the two gaps below have to close before that dispatch.
+  not this one. The release-gate gaps that used to be named here are **all
+  closed** — the addon is asserted present and unpacked, and the packaged app
+  now opens a world in CI. What a dispatch would still ship unproven is in Next:
+  three ops with no engine verdict, and a packaged renderer nothing has watched
+  draw.
 - **The addon and the vendored ZenKit were both rebuilt this session**, so every
   other machine and CI must rebuild — and here it is `vendor-build/` too, not
   just `build/`: patches `0024`–`0026` change `ArchiveAscii.cc`, `0027` changes
@@ -105,17 +109,20 @@ card by answering it rather than by changing code; see Done)*
 
 ## Next
 
-- **The release gate's last unmade claim is made** (Done) — the packaged app
-  opens a world in CI now, so `npmRebuild: false` rests on a runtime verdict
-  rather than on a reading of `binding.gyp`. What the smoke does **not** cover
-  is the renderer: it never creates a window, so nothing in CI proves the World
-  surface *draws* in a packaged build. That is a different gap from the one just
-  closed, it needs a driver rather than an env var, and no card claims it.
+- **Nothing has watched the packaged renderer draw.** The addon half is closed
+  (Done): the packaged app opens a world in CI, so `npmRebuild: false` rests on
+  a runtime verdict rather than on a reading of `binding.gyp`. But that smoke
+  never creates a window — it opens the world through `WorldService` and exits.
+  So a packaged build in which the World surface renders nothing, or throws on
+  first paint, would pass every gate there is. Closing it needs a driver rather
+  than an env var, which is why it is a different job from the one just done.
 
 - **Three shipped ops have no engine verdict.** `DeleteVob`, `MoveWaypoint` and
   `SetVobClassProp` all landed after candidate `03` was built, so Gate 2 covers
-  the ops that existed on 2026-08-27 and not these — the acceptance record says
-  so itself at `engine-acceptance-2026-08-25.md:851-854`. Say "Gate 2 passed for
+  five ops — `MoveVob`, `RotateVob`, `SetVobProp`, `AddVob`, `ReparentVob` — and
+  not these. The acceptance record now says so itself, under **"Not run and not
+  claimed here either"** in its Gate 2 section; it did not before, and this
+  card cited a line range that said nothing of the kind. Say "Gate 2 passed for
   the ops it tested", not "Gate 2 passed". A removed subtree is still the edit
   ZenGin has the most room to disagree about. **The `oCItem.instance` half of
   this card is closed** (Done): the name a `SetVobClassProp` writes is now
@@ -125,7 +132,9 @@ card by answering it rather than by changing code; see Done)*
   editable (Done), and a sound or a fog zone written wrongly is *invisible in
   the viewport* — the first edits whose only witness is the engine.
   `verify-world-edit.js` sets no class property at all, so a rebuilt candidate
-  would have to grow one before it is worth building.
+  would have to grow one before it is worth building. **Whether that rebuild is
+  worth doing is Daniel's call, not something to do unasked** — it costs a
+  staged candidate and two engine passes.
 - **Phase 1b-2, class-aware editing — the classes that are left.** Seven classes
   are editable and the catalogue now has five kinds (Done), so the kinds card is
   closed and the class list is the constraint again. Left: the trigger family,
@@ -140,8 +149,9 @@ card by answering it rather than by changing code; see Done)*
   fields the archive contains, list fields, and base-`zCVob` widening (§14.1
   item 1.8). Alongside and independent: class-specific *insertion* (item 1.3 —
   `insertItemVob` is in the binding and wired to nothing), copy/paste (1.2).
-  Numeric transform entry (1.5) and snapping (1.6) are both **half landed** —
-  their own cards below. Still before Phase 1c in §11.
+  Numeric transform entry (1.5) is **landed** now that rotation joined position,
+  bar the multi-selection decision; snapping (1.6) is still **half landed**.
+  Both have their own cards below. Still before Phase 1c in §11.
 
 - **Typed rotation landed, and what is left of it needs Spacer and a UI
   decision, not code.** The three fields are in (Done) and the quiet-corruption
@@ -192,7 +202,12 @@ card by answering it rather than by changing code; see Done)*
   emits, and that is safe only because a move inserts, deletes and reorders
   nothing. Every op left here breaks it, and names cannot be the fix — nothing
   in the format promises they are unique, which is why the binding matches edge
-  endpoints by pointer identity.
+  endpoints by pointer identity. **Retail happens to have no duplicate** — 24
+  worlds, 12,341 waypoints, 0 collisions even case-insensitively, measured while
+  sizing the jump card below — but that is a fact about the shipped data, not a
+  guarantee about a world somebody edits, and an *op* that persists an address
+  needs the guarantee. The jump card can key on names precisely because a jump
+  is read-only.
   The edge ops keep their original hazard: `free_point` is not a stored field,
   and `WayNet::save` writes only free points plus edge endpoints, so a non-free
   waypoint in no edge is dropped at save. Removing a waypoint's last edge
@@ -365,11 +380,6 @@ card by answering it rather than by changing code; see Done)*
   chunk-walking loop has to carry its own bound.
 - `.MMB` authoring has no ZenKit writer at all.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
-- **Gate 2 covered no deleted VOB and no moved waypoint** — both landed after
-  the staged candidate was built (2026-08-27 run, Done). A removed subtree and
-  a moved waypoint are still the two edits with no engine verdict of their own;
-  whether that's worth a rebuilt candidate is Daniel's call, not something to
-  do unasked.
 
 - **`3221226505` is still unexplained, and the worker-handle warning was not
   it.** The warning is closed (Done) — it was a referenced timer in

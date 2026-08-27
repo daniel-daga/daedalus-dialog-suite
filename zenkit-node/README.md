@@ -547,6 +547,15 @@ world the container instrument could not read is reported `struct-only` and is
 never a fidelity pass. `--drill` adds the first differing bytes per structure
 to the report; `--report-dir` writes `zen-roundtrip.json`.
 
+**Findings are capped at 20 per world unless you pass `--drill`, and the
+listed count is therefore a quota, not a total.** Read `findingTotal` — a row
+also carries `findingsTruncated`, and the summary line says `N findings, 20
+shown (--drill for all)` whenever it capped. This matters more than it sounds:
+one defect that fires on every VOB fills every world's quota from `vobs[0]`
+upward and hides everything that sorts after it. That is exactly how an
+`animMode` drift affecting 128 VOBs was recorded as affecting 4 — the four
+times a bad VOB happened to sort inside the cap.
+
 The in-engine acceptance pass (plan §5) is the second, independent instrument —
 results live in `docs/engine-acceptance-<date>.md`.
 
@@ -591,11 +600,17 @@ hash of the decoded bytes could not have seen it. **BINARY has no walker**: for 
 (patches 0024–0026): ZenKit re-loads its own ASCII output, the authored fixture
 round-trips `identical` fully instrumented, and a retail G2 install's 20 ASCII
 worlds went from 20 crashed to 20 measured. They classify **`semantic-drift`**,
-which is the instrument working, not the writer passing — 396 of the 400
-findings are the newly-found A6 (`physicsEnabled` dropped by the packed `zCVob`
-writer, which is *not* ASCII-specific). A2 and A3 also remain open, both on the
-unpacked write path that nothing reaches while `VirtualObject.cc`'s file-static
-`pack` is unconditionally true. And **no ZenGin-written ASCII fixture exists**,
+which is the instrument working, not the writer passing — 43,341 of the 43,469
+findings a `--drill` run reports are the newly-found A6 (`physicsEnabled`
+dropped by the packed `zCVob` writer, which is *not* ASCII-specific). The
+remaining 128 are `animMode`, and that one is **diagnosed and unfixable in
+principle**: 130 retail `oCMobContainer` chests store a heap-pointer-shaped
+`visualAniMode` that ZenKit narrows twice — uint32 to the `uint8_t`
+`AnimationType` on load, then to two bits by the packed writer — so the format
+has nowhere to put the value. The editor's BinSafe path is unaffected, measured:
+a packed reader can only produce 0–3 and the mask is the identity there. A2 and
+A3 also remain open, both on the unpacked write path that nothing reaches while
+`VirtualObject.cc`'s file-static `pack` is unconditionally true. And **no ZenGin-written ASCII fixture exists**,
 so the checked-in corpus can only ever prove that ZenKit agrees with itself.
 `saveWorld` is still BinSafe-only for all of those reasons. The evidence is in
 the acceptance record §10.2 and §10.4.
