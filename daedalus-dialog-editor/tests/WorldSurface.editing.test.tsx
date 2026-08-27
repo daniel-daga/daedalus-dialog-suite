@@ -8,6 +8,7 @@ import {
 } from 'zen-world';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
 import { useWorldStore } from '../src/renderer/store/worldStore';
+import { useProjectStore } from '../src/renderer/store/projectStore';
 import type { WaynetPayload, WorldSummary } from '../src/shared/worldTypes';
 
 /**
@@ -293,7 +294,12 @@ beforeEach(() => {
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
 
-afterEach(() => { useWorldStore.getState().reset(); });
+afterEach(() => {
+  useWorldStore.getState().reset();
+  // The item index is seeded by two tests below; left standing it would refuse
+  // an instance in every test after them.
+  useProjectStore.getState().closeProject();
+});
 
 describe('a VOB dragged in the viewport', () => {
   it('becomes an op carrying where it came from, and reaches the main process', async () => {
@@ -1451,6 +1457,68 @@ describe('a class property edited in the grid', () => {
     mockVobProps = LIGHT_PROPS;
     await act(async () => { useWorldStore.getState().selectVob(1); });
     expect(rangeInput().value).toBe('2000');
+  });
+
+  // The item index (level-editor.md §14.1; the board's "SetVobClassProp writes
+  // oCItem.instance as free text" card). The grid's own tests take the index as
+  // a prop; these two are about the wiring that fills it, which is the only
+  // place in the app where the World surface reads the dialog side's project
+  // model at all.
+  const openItem = async () => {
+    mockVobProps = ITEM_PROPS;
+    await openWorld('oCItem');
+    await screen.findByTestId('world-prop-class-instance-input');
+  };
+  const commitInstance = (value: string) => {
+    const field = screen.getByTestId('world-prop-class-instance-input') as HTMLInputElement;
+    fireEvent.change(field, { target: { value } });
+    fireEvent.blur(field);
+  };
+
+  it('never sends an item instance the project does not declare', async () => {
+    // The whole point: a typo'd instance is invisible in the viewport, invisible
+    // in the file, and crashes ZenGin when the item is spawned. Nothing below
+    // this can catch it — the main process holds no item index — so the op must
+    // not exist in the first place.
+    useProjectStore.setState({
+      mergedSemanticModel: {
+        ...useProjectStore.getState().mergedSemanticModel,
+        items: { ITMW_1H_SWORD_01: { name: 'ITMW_1H_SWORD_01' }, ITMW_2H_AXE_01: { name: 'ITMW_2H_AXE_01' } },
+      },
+    } as never);
+    await openItem();
+
+    commitInstance('ITMW_1H_SWROD_01');
+
+    await waitFor(() => expect(
+      (screen.getByTestId('world-prop-class-instance-input') as HTMLInputElement).value,
+    ).toBe('ITMW_1H_SWORD_01'));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('sends a declared instance typed in another case, because Daedalus is case-insensitive', async () => {
+    // The parser keys `items` by the name as it was *written* — so a script
+    // declaring `instance itmw_2h_axe_01(C_Item)` puts a lowercase key in the
+    // map, and the folding has to happen on the index side as well as on the
+    // typed side. The value committed is still the one the user typed.
+    useProjectStore.setState({
+      mergedSemanticModel: {
+        ...useProjectStore.getState().mergedSemanticModel,
+        items: { itmw_2h_axe_01: { name: 'itmw_2h_axe_01' } },
+      },
+    } as never);
+    await openItem();
+
+    commitInstance('ITMW_2H_AXE_01');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'SetVobClassProp',
+      vob: 1,
+      path: '1',
+      className: 'oCItem',
+      from: { instance: 'ITMW_1H_SWORD_01' },
+      to: { instance: 'ITMW_2H_AXE_01' },
+    }]));
   });
 
   it('reads the fields again after an undo, so the grid follows the world', async () => {

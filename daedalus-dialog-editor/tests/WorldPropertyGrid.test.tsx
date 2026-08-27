@@ -158,6 +158,9 @@ const wiring = {
   /** Bumped by the shell in `commitOps`' catch when the main process refuses an
    *  edit — the tests that are about refusal hand it a bumped value themselves. */
   refusalGeneration: 0,
+  /** No script project loaded, which is what a world opened on its own has —
+   *  the tests that are about the item index hand it names themselves. */
+  itemInstances: new Set<string>(),
 };
 
 describe('WorldPropertyGrid', () => {
@@ -464,6 +467,90 @@ describe('WorldPropertyGrid, class fields', () => {
 
     expect(classEdits).toEqual([]);
     expect(input('class-color').value).toBe('255, 220, 180, 255');
+  });
+
+  // The item index (level-editor.md §14.1, the board's "SetVobClassProp writes
+  // oCItem.instance as free text" card). An `oCItem` spawns the Daedalus
+  // instance it names and ZenGin crashes on one no script declares, so this is
+  // the one class field whose legal values are a set the app already knows —
+  // when a script project is loaded. When one is not, it knows nothing, and
+  // refusing on an empty index would take the field away from anybody editing a
+  // world on its own.
+  const ITEMS = new Set(['ITMW_1H_SWORD_01', 'ITMW_2H_AXE_01']);
+
+  it('refuses an item instance no loaded script declares', () => {
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+
+    // One transposition away from a real name — the typo the engine crashes on,
+    // and the one no shape check can catch.
+    fireEvent.change(input('class-instance'), { target: { value: 'ITMW_1H_SWROD_01' } });
+    fireEvent.blur(input('class-instance'));
+
+    expect(classEdits).toEqual([]);
+    // And the field shows the instance the world has again, rather than the one
+    // it just refused to write.
+    expect(input('class-instance').value).toBe('ITMW_1H_SWORD_01');
+  });
+
+  it('takes a declared instance whatever its case, because Daedalus is case-insensitive', () => {
+    // The parser keys `items` by the name as it was *written*, so a lookup that
+    // compared verbatim would refuse `itmw_2h_axe_01` — which names the same
+    // symbol and is what a user typing from memory writes.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+
+    fireEvent.change(input('class-instance'), { target: { value: 'itmw_2h_axe_01' } });
+    fireEvent.blur(input('class-instance'));
+
+    // Committed as typed: the case the user chose is the case the world gets,
+    // exactly as the free-text field always did.
+    expect(classEdits).toEqual([{ instance: 'itmw_2h_axe_01' }]);
+  });
+
+  it('writes any instance at all when no script project is loaded', () => {
+    // A world can legitimately be opened with no project behind it, and an empty
+    // index is "nothing is known", never "nothing is legal". The field is free
+    // text again, exactly as it was before the index existed.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={new Set()} />,
+    );
+
+    fireEvent.change(input('class-instance'), { target: { value: 'ITMW_1H_SWROD_01' } });
+    fireEvent.blur(input('class-instance'));
+
+    expect(classEdits).toEqual([{ instance: 'ITMW_1H_SWROD_01' }]);
+  });
+
+  it('checks the instance and nothing else against the index', () => {
+    // The index is item instances. A light's range is a number and a sound name
+    // is a file in the VFS; neither is in it, and a check that ran on every
+    // string field would refuse both.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} itemInstances={ITEMS} />,
+    );
+
+    fireEvent.change(input('class-range'), { target: { value: '3000' } });
+    fireEvent.blur(input('class-range'));
+
+    expect(classEdits).toEqual([{ range: 3000 }]);
+  });
+
+  it('says what the instance field is checked against, rather than refusing silently', () => {
+    const checked = render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+    expect(field('class-instance')).toHaveTextContent(/item instance/i);
+    checked.unmount();
+
+    // …and says nothing when there is no index to check against, because then
+    // there is no rule to explain.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={new Set()} />,
+    );
+    expect(field('class-instance')).not.toHaveTextContent(/item instance/i);
   });
 
   it('says the class section is about the primary VOB alone', () => {

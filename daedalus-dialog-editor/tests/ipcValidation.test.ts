@@ -545,6 +545,46 @@ describe('assertApplyOpsRequest', () => {
       }
     });
 
+    it('refuses an item instance that is not the shape of a Daedalus symbol', () => {
+      // `oCItem.instance` is the one class field whose value is a *name in
+      // another file*, and ZenGin crashes on one no script declares
+      // (level-editor.md §14.1). *Which* names exist is not a question this
+      // process can answer — it holds no item index — so what it refuses is the
+      // shape: anything that could not be a Daedalus symbol could not be an
+      // instance either, whatever scripts are loaded.
+      for (const bad of ['ITMW 1H SWORD', '', '1SWORD', 'ITMW-1H', 'ITMW_1H_SWORD_01\n', '"X"']) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...instance, from: { instance: 'ITMW_1H_SWORD_01' }, to: { instance: bad } }],
+        })).toThrow(/to\.instance must be a Daedalus instance name/);
+      }
+      // A leading underscore is legal Daedalus, and so is a name with no digits.
+      for (const good of ['_HIDDEN_ITEM', 'ItMw_1h_Sword_01', 'X']) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...instance, from: { instance: 'ITMW_1H_SWORD_01' }, to: { instance: good } }],
+        })).not.toThrow();
+      }
+    });
+
+    it('takes an op that repairs an instance the world already holds', () => {
+      // `to` is checked and `from` deliberately is not. `from` is the value the
+      // world *has*, and a third-party or hand-edited world is free to hold
+      // something the shape check refuses — refusing it here would block the one
+      // edit that repairs it, and would block the undo of an edit that has
+      // already applied.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...instance, from: { instance: '' }, to: { instance: 'ITMW_2H_AXE_01' } }],
+      })).not.toThrow();
+    });
+
+    it('leaves every other class string alone', () => {
+      // The shape check is `oCItem.instance` and nothing else. A sound name is a
+      // file name in the VFS, not a symbol, and refusing a dot or a space in one
+      // would refuse retail data.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...sound, from: { soundName: 'OW_CRICKET' }, to: { soundName: 'OW CRICKET.WAV' } }],
+      })).not.toThrow();
+    });
+
     it('accepts a base sound field on a daytime sound, and refuses it the other way', () => {
       // The inheritance, at the layer that decides legality. `zCVobSoundDaytime`
       // derives from `zCVobSound`, so `radius` is legal on both — while

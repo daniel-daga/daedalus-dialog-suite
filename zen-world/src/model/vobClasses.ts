@@ -61,9 +61,18 @@ export interface FieldDescriptor {
   max?: number;
 }
 
-/** The Daedalus instance the item spawns from — free text at this layer, with
- *  the same trust level `name` has: validating it against the parser's item
- *  index would couple the World surface to the semantic model. */
+/** The Daedalus instance the item spawns from — free text *at this layer*, with
+ *  the same trust level `name` has.
+ *
+ *  It is no longer free text end to end. `zen-world` is a pure domain package
+ *  and holds no script project, so the catalogue cannot say which instances
+ *  exist; the two layers that can, do. The editor's property grid refuses a name
+ *  absent from the parser's item index when one is loaded (and refuses nothing
+ *  when none is, since a world may be edited with no project open), and
+ *  `assertApplyOpsRequest` refuses a `to.instance` that is not the shape of a
+ *  Daedalus symbol — the strongest check a process holding no item index can
+ *  make. A name no script declares crashes ZenGin when the item spawns
+ *  (level-editor.md §14.1). */
 const OC_ITEM_FIELDS = [
   { key: 'instance', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];

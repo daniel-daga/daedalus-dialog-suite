@@ -187,8 +187,21 @@ const ClassField: React.FC<{
   vob: number;
   field: FieldDescriptor;
   value: ClassPropValue;
+  /**
+   * The values this field is allowed to take, uppercased — or undefined when
+   * nothing constrains it, which is every field but one.
+   *
+   * Uppercased because Daedalus symbol names are case-insensitive and the parser
+   * keys its index by the name as it was *written*: a verbatim lookup would
+   * refuse `itmw_2h_axe_01`, which names the same symbol. The comparison is
+   * case-folded; the value committed is the one the user typed.
+   */
+  knownValues?: ReadonlySet<string>;
+  helper?: string;
   onCommit: (value: ClassPropValue) => void;
-}> = ({ vob, field, value, onCommit }) => {
+}> = ({
+  vob, field, value, knownValues, helper, onCommit,
+}) => {
   const [refusals, setRefusals] = useState(0);
 
   // A boolean is a checkbox, controlled, exactly like the six base flags above:
@@ -214,10 +227,16 @@ const ClassField: React.FC<{
       key={`class-${vob}-${field.key}-${text}-${refusals}`}
       name={`class-${field.key}`}
       value={text}
+      helper={helper}
       onCommit={(typed) => {
         const parsed = parse(field, typed);
-        if (parsed === null) setRefusals((at) => at + 1);
-        else onCommit(parsed);
+        // A value outside the allowed set is refused by the same route a value
+        // the field cannot hold is: nothing is sent, and the field remounts
+        // showing what the world has. The two are the same refusal to a user.
+        if (parsed === null
+          || (knownValues !== undefined && !knownValues.has(String(parsed).toUpperCase()))) {
+          setRefusals((at) => at + 1);
+        } else onCommit(parsed);
       }}
     />
   );
@@ -384,6 +403,25 @@ export interface WorldPropertyGridProps {
    */
   onEditClassProps: (props: ClassProps) => void;
   /**
+   * Every item instance the loaded script project declares, **uppercased** —
+   * the parser's `items` map, which is `C_ITEM` instances and nothing else.
+   *
+   * It is here for one field: an `oCItem` spawns the Daedalus instance it names,
+   * and ZenGin crashes on a name no script declares (level-editor.md §14.1). A
+   * typo is invisible in the viewport, invisible in the file, and survives every
+   * check the save pipeline has, so this is the only layer that can catch it —
+   * `assertApplyOpsRequest` cannot, because the main process holds no item
+   * index at all (see `ipcValidation.ts`, `DAEDALUS_INSTANCE`).
+   *
+   * **Empty means "nothing is known", never "nothing is legal".** A world can be
+   * opened with no script project behind it, and the index is also empty until
+   * ingestion has merged the item files, so an empty set refuses nothing and the
+   * field is the free text it always was. That is the whole reason this refusal
+   * lives here rather than in the main process: a hard refusal cannot know
+   * whether an index it does not have would have allowed the name.
+   */
+  itemInstances: ReadonlySet<string>;
+  /**
    * A typed coordinate, as the **delta** it moves the described VOB by — the
    * gizmo's own shape, and the gizmo's own handler.
    *
@@ -414,7 +452,7 @@ export interface WorldPropertyGridProps {
 const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   {
     summary, selection, refusalGeneration,
-    onEditProps, classProps, onEditClassProps, onTranslate, onRotate,
+    onEditProps, classProps, onEditClassProps, itemInstances, onTranslate, onRotate,
   },
 ) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
@@ -443,6 +481,16 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   // it does not have — 35 of the 37 in a retail world — and that empty list is
   // the whole test for whether there is a section to draw at all.
   const classFields = classPropKeys(className).flatMap((key) => fieldOf(className, key) ?? []);
+
+  // The one catalogued field whose legal values are a set this app already
+  // holds. Undefined for every other field and for every class, so nothing else
+  // is constrained: a sound name is a file in the VFS and a light's range is a
+  // number, and neither is in an item index.
+  const knownValuesFor = (key: string): ReadonlySet<string> | undefined => (
+    className === 'oCItem' && key === 'instance' && itemInstances.size > 0
+      ? itemInstances
+      : undefined
+  );
 
   // The described VOB's rotation as angles — for a single selection only, and
   // null when no angles describe it. `zenRotationToEuler` **throws** on a
@@ -673,6 +721,14 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                   vob={selectedVob}
                   field={classField}
                   value={classProps[classField.key]}
+                  knownValues={knownValuesFor(classField.key)}
+                  // Stated up front rather than only on a refusal: a field that
+                  // silently declines what was typed is the complaint the
+                  // refusal idiom's remount already comes close to, and the rule
+                  // is worth knowing before it bites.
+                  helper={knownValuesFor(classField.key) === undefined
+                    ? undefined
+                    : 'Must be an item instance declared by the loaded scripts.'}
                   onCommit={(value) => onEditClassProps({ [classField.key]: value })}
                 />
               </Field>

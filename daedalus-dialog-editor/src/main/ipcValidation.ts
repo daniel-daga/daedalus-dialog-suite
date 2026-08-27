@@ -174,6 +174,23 @@ export function assertTextureRequest(
 /** Slots down the children lists, as `setVobPosition` parses it: "0", "0/4". */
 const INDEX_PATH = /^\d+(\/\d+)*$/;
 
+/**
+ * A Daedalus symbol name: a letter or an underscore, then letters, digits and
+ * underscores — the identifier the grammar accepts, and therefore the only shape
+ * an `oCItem.instance` can name (`daedalus-parser/grammar.js`).
+ *
+ * This is the whole of what the *main process* can say about an item instance.
+ * Which instances a project actually declares is the renderer's question and
+ * only the renderer's: nothing here holds an item index — `ProjectIndex` carries
+ * NPCs, dialogs, routines and voice ids and no instances at all, and
+ * `ProjectService.primedModels` is a take-once hand-off cache of at most
+ * `MAX_PRIMED_MODELS` per-file models, deliberately not a second copy of the
+ * renderer's. Building one here would be a new index pass, a new IPC and a
+ * lifetime coupling of `WorldService` to `ProjectService`, and it would still
+ * have to let every world through that is edited with no script project open.
+ */
+const DAEDALUS_INSTANCE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 function isFiniteNumbers(value: unknown, count: number): boolean {
   return Array.isArray(value) && value.length === count
     && value.every((component) => typeof component === 'number' && Number.isFinite(component));
@@ -536,6 +553,24 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       // an unchecked `from` is the side an undo writes — so skipping it would
       // hand C++ a colour nobody looked at, at the moment the user is trying to
       // get back to where they were.
+      // The one class field whose value is a name in *another file*: an `oCItem`
+      // spawns the Daedalus instance it names, and a name no script declares is
+      // a documented ZenGin crash (level-editor.md §14.1). The renderer refuses
+      // a name absent from the project's item index; this is the half of it that
+      // holds with no project loaded at all — a value that could not be a
+      // Daedalus symbol could not be an instance under any scripts.
+      //
+      // **`to` only, deliberately.** `from` is the value the world already
+      // holds, and a hand-edited or third-party world is free to hold something
+      // this shape refuses. Checking it would refuse the one edit that repairs
+      // such a VOB, and refuse the undo of an edit that has already applied.
+      const to = op.to as Record<string, unknown>;
+      if (className === 'oCItem' && typeof to.instance === 'string'
+        && !DAEDALUS_INSTANCE.test(to.instance)) {
+        throw new Error(
+          `Invalid op: to.instance must be a Daedalus instance name, not ${JSON.stringify(to.instance)}`,
+        );
+      }
       const keys = sides.map((side) => Object.keys(op[side] as object).sort());
       if (keys[0].length === 0) throw new Error('Invalid op: sets no class properties');
       if (keys[0].join() !== keys[1].join()) {

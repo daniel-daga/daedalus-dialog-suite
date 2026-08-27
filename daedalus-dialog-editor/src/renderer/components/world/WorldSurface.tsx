@@ -12,6 +12,7 @@ import {
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { primaryVob, useWorldStore } from '../../store/worldStore';
+import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE, MAX_EXPOSURE, MIN_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode } from './WorldViewport';
@@ -111,6 +112,30 @@ const WorldSurface: React.FC = () => {
    * re-keys and an uncontrolled input keeps the number the user typed.
    */
   const [editRefusals, setEditRefusals] = useState(0);
+
+  /**
+   * The item instances the loaded script project declares — the first thing the
+   * World surface reads out of the *dialog* side of the app.
+   *
+   * It is here for one field: `oCItem.instance` names a Daedalus instance and
+   * ZenGin crashes on a name no script declares (level-editor.md §14.1). The
+   * main process cannot make that check — it holds no item index (see
+   * `ipcValidation.ts`) — and it must not be a hard refusal anywhere, because a
+   * world can legitimately be edited with no project open. So it is a renderer
+   * refusal over whatever index happens to be there, and an absent one refuses
+   * nothing.
+   *
+   * `mergedSemanticModel` is merged per category with a stable identity
+   * (`projectStore.ts`'s `mergeCache`), so this memo recomputes when the item
+   * files are ingested and not on every unrelated project edit. Uppercased once,
+   * here, because Daedalus symbols are case-insensitive and the parser keys the
+   * map by the name as it was written.
+   */
+  const items = useProjectStore((s) => s.mergedSemanticModel.items);
+  const itemInstances = useMemo(
+    () => new Set(Object.keys(items ?? {}).map((name) => name.toUpperCase())),
+    [items],
+  );
 
   useEffect(() => {
     void window.editorAPI.getGothicInstall().then(setGothicInstall);
@@ -1017,6 +1042,7 @@ const WorldSurface: React.FC = () => {
                   onRotate={handleRotateVob}
                   classProps={classProps?.vob === primary ? classProps.props : null}
                   onEditClassProps={handleEditClassProps}
+                  itemInstances={itemInstances}
                 />
               )}
           </Box>

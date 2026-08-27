@@ -2123,7 +2123,8 @@ binding and is wired to nothing, which makes it adjacent and tempting, but it is
 `AddVob` with a different invariant. And **validating `instance` against the
 parser's item index** — a real hazard, since an unknown instance crashes the
 engine, but it couples the World surface to the semantic model; the field ships
-as free text at the trust level `name` already has.
+as free text at the trust level `name` already has. *(Closed 2026-08-28 — see
+"The item instance stops being free text" below.)*
 
 Still open, both noted rather than fixed: the re-fetch is unconditional, so
 committing a gizmo drag on a light flashes the class section's loading line
@@ -2247,6 +2248,69 @@ Still open, and inherited unchanged from increment 1: **no engine verdict covers
 a class-edited world**, and these five classes are further from one than
 `oCItem`/`zCVobLight` are — a sound or a fog zone written wrongly is silent in
 the viewport and audible only in the engine.
+
+#### The item instance stops being free text (2026-08-28)
+
+`oCItem.instance` is the only class field whose value is a **name in another
+file**, and a name no script declares crashes ZenGin when the item spawns
+(§14.1). Increment 1 shipped it as free text with the reason written down; this
+closes that, and **where** it closes it is the durable part.
+
+**The main process cannot make this check, and that is a fact about the
+architecture rather than a gap to fill.** It holds no item index and nothing in
+it is one round trip away from being one: `ProjectIndex` (`shared/types.ts`)
+carries NPCs, dialogs, routines, prototypes and voice ids and **no instances at
+all**, and `ProjectService.primedModels` is a *take-once* hand-off cache of at
+most `MAX_PRIMED_MODELS` per-file semantic models — deliberately not a second
+copy of the renderer's, and emptied as it is read. `ParserService` is stateless.
+Making `assertApplyOpsRequest` able to answer "does this instance exist" means a
+new project-wide index pass, a new IPC, and a lifetime coupling of
+`WorldService` to `ProjectService`.
+
+**And even with the index it could not be a hard refusal**, which is the reason
+that survives the architecture: a world may legitimately be opened and edited
+with **no script project loaded**, and the renderer's own index is empty until
+ingestion has merged the item files. A validator that refuses an unknown name
+must first know that "unknown" is not "unasked", and the main process cannot.
+
+So the enforcement is split, each half as strong as its layer allows:
+
+- **The renderer refuses a name the loaded project does not declare.**
+  `WorldSurface` reads `mergedSemanticModel.items` — the parser's `C_ITEM`
+  instances, uppercased once — and hands it to `WorldPropertyGrid`, which
+  refuses through the same route a value out of bounds already takes: nothing is
+  sent, no op is built, and the field remounts showing the world's own value.
+  **An empty index means "nothing is known", never "nothing is legal"**, so a
+  world edited with no project open behaves exactly as it did before. The field
+  carries a helper naming the rule whenever the rule is active, because a field
+  that silently declines what was typed is the complaint the refusal idiom
+  already comes close to.
+- **The main process refuses a `to.instance` that is not the shape of a Daedalus
+  symbol** (`DAEDALUS_INSTANCE` in `ipcValidation.ts`) — the strongest statement
+  a process with no index can make, and one that holds with no project loaded.
+  `to` **only**, deliberately: `from` is the value the world already holds, and a
+  hand-edited or third-party world is free to hold something the shape refuses —
+  checking it would refuse the one edit that repairs such a VOB, and refuse the
+  undo of an edit that has already applied.
+
+**Daedalus is case-insensitive and the parser keys `items` by the name as it was
+written**, so the fold has to happen on *both* sides — the index is uppercased
+where it is built, the typed value where it is compared — and the value committed
+is still the one the user typed. Both directions have their own test; each was
+verified by breaking one fold at a time.
+
+Not done, and each for a reason: **an autocomplete against the index**. The
+obvious reuse is `VariableAutocomplete`, and it does not fit — it calls
+`onChange` on every keystroke where the grid commits on blur or Enter, so wiring
+it as-is would build an op per character, and its "Add …" affordance offers to
+author a Daedalus symbol from the level editor. Making it fit means local draft
+state and a second commit path beside `EditableField`'s, which is more machinery
+than the refusal is. A `<datalist>` on the existing input is the cheap version if
+suggestion is ever wanted. **A refusal for the other direction** — an item
+instance that exists in the scripts but whose *world* VOB is gone — is script→
+world, which is the cross-reference job in §14.4, not this one. And **partial
+ingestion can refuse a real name**: the index converges, the refusal writes
+nothing, and the alternative is not enforcing at all.
 
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
@@ -2460,7 +2524,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
 | 1.2 | **Copy / paste / duplicate**, incl. subtree | unscheduled → 1b-2 | The most-used Spacer verb after move. Same undo question as delete, same answer. A cross-world clipboard only if part-to-part copying is wanted. |
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
-| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), enums (retail carries out-of-range values a dropdown would destroy), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
+| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), enums (retail carries out-of-range values a dropdown would destroy), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
 | 1.5 | **Numeric transform entry** | **partial** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half now has its domain conversion, and the grid is still read-only.** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` (2026-08-28) with the round-trip tolerance test the old wording asked for; what is left is three more fields in `WorldPropertyGrid`. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
 | 1.6 | **Snapping** | **partial** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal are still out**, and not for want of a raycast — the world mesh has a BVH and the terrain pick already uses it. They are out because both are *per-VOB* answers (each VOB finds its own ground, its own normal) and the commit path takes one delta for the whole selection: `translateVobs`/`rotateVobs` would need a per-VOB variant, which is a second op-building path and the thing the gizmo work has avoided since Phase 1b began. Align-to-normal additionally has to decide which axis of a visual is up — the same question that keeps a placed VOB unrotated (`IDENTITY` in `WorldSurface`). |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
