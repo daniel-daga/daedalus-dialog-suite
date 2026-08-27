@@ -88,6 +88,16 @@ const SUMMARY = {
   timings: { load: 216, openVfs: 12 },
 };
 
+/** Any edit will do where the point is only that it is *an* edit — the op log's
+ *  own batches are built in its describe below. */
+const MOVE = {
+  op: 'MoveVob' as const,
+  vob: 1,
+  path: '0/4',
+  from: [0, 0, 0] as [number, number, number],
+  to: [10, 0, 0] as [number, number, number],
+};
+
 describe('WorldService', () => {
   test('openWorld forwards the request and resolves with the worker summary', async () => {
     const { worker, service } = makeService();
@@ -191,6 +201,50 @@ describe('WorldService', () => {
     // openWorld makes it answerable — with the wrong world.
     const { service } = makeService();
     await expect(service.getWorldMesh()).rejects.toThrow(/no world is open/i);
+    service.close();
+  });
+
+  test('getVobProps asks the worker for one VOB by its native path', async () => {
+    // The per-class fields are not in the columnar index — it interns the class
+    // *name* and nothing else — so this is a read of the world the worker holds,
+    // addressed the way every op addresses a VOB.
+    const { worker, service } = await openedService();
+
+    const props = service.getVobProps('0/4');
+    expect(worker.sent.at(-1)).toMatchObject({ op: 'vobProps', payload: { path: '0/4' } });
+
+    worker.reply('vobProps', { class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255] });
+    await expect(props).resolves.toEqual({
+      class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255],
+    });
+    service.close();
+  });
+
+  test('class props are read beside an edit in flight, not queued behind it', async () => {
+    // The edits are serialized (`serialized`) because two overlapping replays
+    // read the same top of the stack. A read changes nothing and unwinds
+    // nothing, and putting it in that queue would make the grid wait out an
+    // edit's 120 s timeout to show a field.
+    const { worker, service } = await openedService();
+
+    const edit = service.applyOps([MOVE]);
+    await tick();
+    expect(worker.sent.at(-1)?.op).toBe('applyOps');
+
+    const props = service.getVobProps('0/4');
+    expect(worker.sent.at(-1)).toMatchObject({ op: 'vobProps', payload: { path: '0/4' } });
+
+    worker.reply('vobProps', { class: 'oCItem', instance: 'ITMW_1H_SWORD_01' });
+    await expect(props).resolves.toEqual({ class: 'oCItem', instance: 'ITMW_1H_SWORD_01' });
+
+    worker.replyLast('applyOps', null);
+    await edit;
+    service.close();
+  });
+
+  test('asking for class props before a world is open is refused, not queued', async () => {
+    const { service } = makeService();
+    await expect(service.getVobProps('0/4')).rejects.toThrow(/no world is open/i);
     service.close();
   });
 

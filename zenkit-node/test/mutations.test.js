@@ -853,3 +853,163 @@ test('reparentVob follows a destination that the removal itself renumbers', () =
   assert.strictEqual(vobAt(dump, '0/1/0').name, 'FP_CAMPFIRE_ÄÖÜ_01');
   assert.strictEqual(vobAt(dump, '0').childCount, 2);
 });
+
+// getVobProps / setVobClassProp — the per-class pair (level-editor.md §7).
+//
+// The read is an export, not a new reader: `normalizeWorld` has dispatched on
+// `VirtualObject::type` and emitted every class-specific field since phase 0,
+// and it was unreachable only because it sat in an anonymous namespace behind
+// the 933 ms dump. A second field mapping would be a second hand-maintained
+// mirror of the vendor headers, and the two would agree only for as long as
+// both were remembered — which is what the deep-equal below is for.
+//
+// The write resolves the VOB *before* it looks at the keys, unlike setVobProp,
+// because the legal key set is a function of `vob->type`. A key that is legal
+// on some other class is the mistake this op invites, so every refusal names
+// the class it was asked about.
+
+test('getVobProps reads the item instance the fixture authored', () => {
+  const handle = load();
+  const props = zenkit.getVobProps(handle, '0/1');
+
+  assert.strictEqual(props.class, 'oCItem');
+  assert.strictEqual(props.instance, 'ITMW_1H_SWORD_01');
+});
+
+test('getVobProps answers exactly what normalizeWorld reports for the same vob', () => {
+  // The one assertion that stops the two readers drifting. They are the same
+  // function; if this ever fails, someone gave the op path its own mapping.
+  const handle = load();
+  const dump = dumpOf(handle);
+
+  for (const at of ['0', '0/0', '0/0/0', '0/1', '0/2']) {
+    const { class: className, ...props } = zenkit.getVobProps(handle, at);
+    assert.strictEqual(className, vobAt(dump, at).class, at);
+    assert.deepStrictEqual(props, vobAt(dump, at).props, at);
+  }
+});
+
+test('getVobProps throws on a bad index path', () => {
+  const handle = load();
+  for (const bad of ['9', '0/9', '0/1/0', 'abc', '', '0//1', '-1']) {
+    assert.throws(() => zenkit.getVobProps(handle, bad), Error, bad);
+  }
+});
+
+test('setVobClassProp writes the item instance, through cp1252', () => {
+  const handle = load();
+  zenkit.setVobClassProp(handle, '0/1', { instance: 'ITMW_ÄXT_01' });
+
+  assert.strictEqual(zenkit.getVobProps(handle, '0/1').instance, 'ITMW_ÄXT_01');
+  assert.strictEqual(vobAt(dumpOf(handle), '0/1').props.instance, 'ITMW_ÄXT_01');
+});
+
+test('setVobClassProp writes the light range and colour, and nothing beside them', () => {
+  // The light carries seventeen fields the op does not name, three of them the
+  // animation vectors that only exist because the fixture light is dynamic. A
+  // writer that rebuilt the LightPreset instead of assigning two members would
+  // pass on the two it was given and silently reset the rest.
+  const handle = load();
+  const before = vobAt(dumpOf(load()), '0/0/0').props;
+
+  zenkit.setVobClassProp(handle, '0/0/0', { range: 1250.5, color: [10, 20, 30, 255] });
+
+  const after = vobAt(dumpOf(handle), '0/0/0').props;
+  assert.strictEqual(after.range, 1250.5);
+  assert.deepStrictEqual(after.color, [10, 20, 30, 255]);
+  for (const key of Object.keys(before)) {
+    if (key === 'range' || key === 'color') continue;
+    assert.deepStrictEqual(after[key], before[key], key);
+  }
+});
+
+test('setVobClassProp refuses a key that belongs to another class, naming the class', () => {
+  // The failure this op is shaped around: `range` is a real key, spelled
+  // correctly, on a VOB that has no such field. Nothing above C++ knows the
+  // class from the index path alone.
+  const handle = load();
+
+  assert.throws(() => zenkit.setVobClassProp(handle, '0/1', { range: 500 }), /oCItem/);
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '0/0/0', { instance: 'ITMW_1H_SWORD_01' }),
+    /zCVobLight/,
+  );
+  assert.strictEqual(vobAt(dumpOf(handle), '0/1').props.instance, 'ITMW_1H_SWORD_01');
+});
+
+test('setVobClassProp refuses a class it has no field table for', () => {
+  // A class arrives here one case at a time; the ones that have not are refused
+  // by name rather than accepted and silently ignored.
+  const handle = load();
+  assert.throws(() => zenkit.setVobClassProp(handle, '0', { instance: 'X' }), /zCVob/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '0/2', { range: 1 }), /oCMobContainer/);
+});
+
+test('setVobClassProp refuses an unknown key, an empty props object and a non-object', () => {
+  const handle = load();
+  assert.throws(() => zenkit.setVobClassProp(handle, '0/1', { Instance: 'X' }), /Instance/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '0/0/0', { rangee: 1 }), /rangee/);
+  assert.throws(() => zenkit.setVobClassProp(handle, '0/1', {}), /at least one/);
+  for (const bad of [null, undefined, 'instance', 42, []]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '0/1', bad), Error);
+  }
+  for (const bad of ['9', '0/9', 'abc', '', '0//1', '-1']) {
+    assert.throws(() => zenkit.setVobClassProp(handle, bad, { instance: 'X' }), Error, bad);
+  }
+});
+
+test('setVobClassProp refuses a wrongly typed value, and writes nothing when it does', () => {
+  // Same rule as setVobProp: everything is validated before anything is
+  // written, because a half-applied props object is a state no op describes and
+  // undo would not restore it. The colour is checked after a refused range for
+  // exactly that reason — it is the valid half of the pair.
+  const handle = load();
+  const before = vobAt(dumpOf(load()), '0/0/0').props;
+
+  assert.throws(() => zenkit.setVobClassProp(handle, '0/1', { instance: 42 }), /instance/);
+  for (const bad of [NaN, Infinity, -1, '500', null, [500]]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '0/0/0', { range: bad }), /range/);
+  }
+  for (const bad of [[1, 2, 3], [1, 2, 3, 4, 5], [0, 0, 0, 256], [0, 0, -1, 0],
+    [0, 0, 0, 1.5], ['0', 0, 0, 0], 'white', 255, null]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '0/0/0', { color: bad }), /color/);
+  }
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '0/0/0', { color: [1, 2, 3, 4], range: -1 }),
+    /range/,
+  );
+
+  assert.deepStrictEqual(vobAt(dumpOf(handle), '0/0/0').props, before);
+});
+
+test('setVobClassProp changes only the targeted vob', () => {
+  const handle = load();
+  zenkit.setVobClassProp(handle, '0/0/0', { range: 42 });
+
+  const mutated = dumpOf(handle);
+  const fresh = dumpOf(load());
+  for (let i = 0; i < fresh.vobs.length; i++) {
+    if (fresh.vobs[i].path === '0/0/0') continue;
+    assert.deepStrictEqual(mutated.vobs[i], fresh.vobs[i]);
+  }
+  assert.deepStrictEqual(mutated.mesh, fresh.mesh);
+  assert.deepStrictEqual(mutated.bsp, fresh.bsp);
+  assert.deepStrictEqual(mutated.waynet, fresh.waynet);
+});
+
+test('setVobClassProp survives a save and reload', () => {
+  // The only test that proves ZenKit's per-class save() actually emits these
+  // fields: everything above it reads the same in-memory structs the write
+  // touched, and would pass for a field the writer drops on the floor.
+  const handle = load();
+  zenkit.setVobClassProp(handle, '0/1', { instance: 'ITMW_ÄXT_01' });
+  zenkit.setVobClassProp(handle, '0/0/0', { range: 1250.5, color: [10, 20, 30, 255] });
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-class-rt-')), 'class.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+
+  assert.strictEqual(vobAt(reloaded, '0/1').props.instance, 'ITMW_ÄXT_01');
+  assert.strictEqual(vobAt(reloaded, '0/0/0').props.range, 1250.5);
+  assert.deepStrictEqual(vobAt(reloaded, '0/0/0').props.color, [10, 20, 30, 255]);
+});

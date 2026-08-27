@@ -87,7 +87,7 @@ export interface DecodedTexture {
 
 export type WorldWorkerOp =
   | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'visualBounds'
-  | 'refreshIndex' | 'applyOps' | 'save' | 'close';
+  | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
 
 /**
  * The bounds of a visual that is **not** in the scene — what a visual swap needs
@@ -100,6 +100,19 @@ export type WorldWorkerOp =
  */
 export interface VisualBoundsRequest {
   name: string;
+}
+
+/**
+ * The per-class fields of one VOB, addressed by its native index path.
+ *
+ * A read, and one that has to be asked for every time: the columnar index
+ * interns a VOB's class *name* and carries no per-class data at all, so there is
+ * nothing in the summary to project this from. The path rather than the flat
+ * index, because that is the address every op resolves through and the one the
+ * binding walks.
+ */
+export interface VobPropsRequest {
+  path: string;
 }
 
 /** The payload of an `applyOps` request. Undo and redo are the same request

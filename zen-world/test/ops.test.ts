@@ -27,6 +27,7 @@ import {
   invertOp,
   isBarrierOp,
   isStructuralOp,
+  isWaynetOp,
   moveVob,
   moveWaypoint,
   multiplyRotation,
@@ -34,10 +35,12 @@ import {
   renumbersPaths,
   rotateVob,
   rotateVobs,
+  setVobClassProp,
   setVobProp,
   setVobProps,
   translateVobs,
   vobIndexPath,
+  type ClassProps,
   type MoveWaypoint,
   type NewVob,
   type OpBinding,
@@ -45,6 +48,7 @@ import {
   type VobFlags,
   type VobIndex,
   type VobProps,
+  type VobReader,
   type WorldOp,
   type ZenBounds,
   type ZenRotation,
@@ -56,6 +60,10 @@ interface Spec {
   pos?: [number, number, number];
   name?: string;
   visual?: string;
+  /** The VOB's class. Defaulted rather than required, because every op before
+   *  the class-property one is about the base `zCVob` and reads the class for
+   *  nothing — the fixture said so by hardcoding a one-entry dictionary. */
+  cls?: string;
   flags?: Partial<VobFlags>;
 }
 
@@ -97,6 +105,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
 
   const names = intern(vobs.map((vob) => vob.name));
   const visuals = intern(vobs.map((vob) => vob.visual));
+  const classes = intern(vobs.map((vob) => vob.cls ?? 'zCVob'));
 
   return {
     count: vobs.length,
@@ -105,7 +114,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     positions: positions.buffer,
     rotations: rotations.buffer,
     flags: flags.buffer,
-    classes: ['zCVob'], classIndex: new Uint32Array(vobs.length).buffer,
+    classes: classes.dictionary, classIndex: classes.index,
     names: names.dictionary, nameIndex: names.index,
     visuals: visuals.dictionary, visualIndex: visuals.index,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(vobs.length).buffer,
@@ -336,6 +345,7 @@ describe('a rotate op', () => {
       setVobPosition: (path, to) => calls.push(['position', path, to]),
       setVobRotation: (path, to, bbox) => calls.push(['rotation', path, to, bbox]),
       setVobProp: (path, props) => calls.push(['props', path, props]),
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -355,6 +365,7 @@ describe('a rotate op', () => {
       setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); calls.push(`move ${path}`); },
       setVobRotation: (path) => calls.push(`rotate ${path}`),
       setVobProp: (path) => calls.push(`props ${path}`),
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -584,6 +595,187 @@ describe('a multi-select property edit', () => {
   });
 });
 
+describe('a class-property op', () => {
+  // The first op whose fields are not on `zCVob` at all, and the first whose
+  // `from` cannot be read out of the index: the columnar payload interns the
+  // class *name* and carries nothing else per class, so an `oCItem`'s instance
+  // and a `zCVobLight`'s range are simply not in it. That one fact is why this
+  // is a separate op with a caller-supplied `from` rather than eight more
+  // optional keys on `SetVobProp`.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT' },
+    { parent: 0, childIndex: 4, cls: 'oCItem', name: 'ITEM_01', visual: 'ITMW.3DS' },
+    { parent: 0, childIndex: 5, cls: 'zCVobLight', name: 'LIGHT_01' },
+  ]));
+
+  it('carries the class, both addresses, and a `from` with exactly the keys `to` has', () => {
+    const op = setVobClassProp(reader(), 1, { instance: 'ITMW_1H_SWORD_01' }, { instance: 'ITMI_GOLD' });
+
+    expect(op).toEqual({
+      op: 'SetVobClassProp',
+      vob: 1,
+      path: '0/4',
+      className: 'oCItem',
+      from: { instance: 'ITMW_1H_SWORD_01' },
+      to: { instance: 'ITMI_GOLD' },
+    });
+    expect(Object.keys(op.from)).toEqual(Object.keys(op.to));
+  });
+
+  it('takes `from` from the caller and never asks the index for it', () => {
+    // The index cannot answer, so an implementation that reached for it would
+    // write `undefined` into `from` and read identically on the `to` side — the
+    // reader counts the calls instead, the way `createVobReader`'s own test
+    // counts column views. `MoveWaypoint` is the precedent for a caller-supplied
+    // origin: what is forbidden is reading `from` back out of the *native world*
+    // at apply time, not being handed it when the op is made.
+    const live = createVobReader(vobIndex([
+      { childIndex: 0, cls: 'zCVobLight', name: 'LIGHT_01' },
+    ]));
+    let reads = 0;
+    const counted: VobReader = {
+      ...live,
+      name: (vob) => { reads += 1; return live.name(vob); },
+      visual: (vob) => { reads += 1; return live.visual(vob); },
+      flags: (vob) => { reads += 1; return live.flags(vob); },
+    };
+
+    const op = setVobClassProp(counted, 0, { range: 1500, color: [255, 200, 100, 255] }, { range: 3000 });
+
+    expect(op.from).toEqual({ range: 1500 });
+    expect(op.to).toEqual({ range: 3000 });
+    expect(reads).toBe(0);
+  });
+
+  it('orders the keys by the catalogue, whatever order the grid emitted them in', () => {
+    const op = setVobClassProp(
+      reader(), 2,
+      { range: 1500, color: [255, 255, 255, 255] },
+      { color: [10, 20, 30, 255], range: 3000 },
+    );
+
+    expect(Object.keys(op.to)).toEqual(['range', 'color']);
+    expect(Object.keys(op.from)).toEqual(['range', 'color']);
+  });
+
+  it('refuses a key the VOB\'s class does not have', () => {
+    // Refused *here*, in the builder, rather than by the binding halfway down a
+    // batch: nothing between `setVobProp`'s first line and its last checks a
+    // class, which is exactly what a per-class op cannot afford.
+    expect(() => setVobClassProp(reader(), 1, { range: 1500 }, { range: 3000 }))
+      .toThrow(/oCItem/);
+  });
+
+  it('refuses a key no class has, and a VOB of a class the catalogue does not know', () => {
+    expect(() => setVobClassProp(reader(), 1, { hitpoints: 40 }, { hitpoints: 50 }))
+      .toThrow(/hitpoints/);
+    // ROOT is a plain `zCVob`: it has no class section at all, so every key is
+    // a key its class does not have.
+    expect(() => setVobClassProp(reader(), 0, { instance: 'A' }, { instance: 'B' }))
+      .toThrow(/zCVob/);
+  });
+
+  it('refuses a `to` key that `current` has no value for', () => {
+    // A one-sided op is an inverse that writes `undefined` into the world. The
+    // same-keys-on-both-sides invariant is checked again at the IPC boundary,
+    // and this is where it is first knowable.
+    expect(() => setVobClassProp(reader(), 2, { color: [255, 255, 255, 255] }, { range: 3000 }))
+      .toThrow(/range/);
+  });
+
+  it('is refused when it would set nothing, and for a VOB that is not in the index', () => {
+    expect(() => setVobClassProp(reader(), 1, { instance: 'A' }, {})).toThrow(/at least one/);
+    expect(() => setVobClassProp(reader(), 9, { instance: 'A' }, { instance: 'B' })).toThrow(/9/);
+  });
+
+  it('inverts by swapping the two sides, carrying the class through unchanged', () => {
+    // The class is directionally symmetric — undoing an edit to an `oCItem`
+    // still addresses an `oCItem` — so it needs no swap of its own, and the
+    // round trip is what says the branch did not invent one.
+    const op = setVobClassProp(reader(), 2, { range: 1500 }, { range: 3000 });
+    const back = invertOp(op);
+
+    expect(back).toEqual({ ...op, from: op.to, to: op.from });
+    expect(back.op === 'SetVobClassProp' && back.className).toBe('zCVobLight');
+    expect(invertOp(back)).toEqual(op);
+  });
+
+  it('reaches the binding as setVobClassProp, in whichever direction it is written', () => {
+    const calls: Array<[string, ClassProps]> = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a base property change'); },
+      setVobClassProp: (path, props) => { calls.push([path, props]); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    };
+    const op = setVobClassProp(reader(), 1, { instance: 'ITMW_1H_SWORD_01' }, { instance: 'ITMI_GOLD' });
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual([
+      ['0/4', { instance: 'ITMI_GOLD' }],
+      ['0/4', { instance: 'ITMW_1H_SWORD_01' }],
+    ]);
+  });
+
+  it('is unwound in the `from` direction when a later op in the batch is refused', () => {
+    // The half `invertOp` does not give: `commitOps` replays the applied ops
+    // backwards through `writeOp`'s *other* direction, so a branch that only
+    // ever read `op.to` would leave the edited field standing after a refusal.
+    const calls: Array<[string, ClassProps]> = [];
+    const binding: OpBinding = {
+      setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a base property change'); },
+      setVobClassProp: (path, props) => { calls.push([path, props]); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    };
+
+    expect(() => commitOps(binding, [
+      setVobClassProp(reader(), 2, { range: 1500 }, { range: 3000 }),
+      { op: 'MoveVob', vob: 0, path: '9/9', from: [0, 0, 0], to: [1, 1, 1] },
+    ])).toThrow('no vob');
+
+    expect(calls).toEqual([['0/5', { range: 3000 }], ['0/5', { range: 1500 }]]);
+  });
+
+  it('is none of the four things a batch partitions on', () => {
+    // It writes one VOB in place, so it shares a batch with a move exactly as a
+    // base property edit does — and it has an inverse, so the history keeps it.
+    const op = setVobClassProp(reader(), 1, { instance: 'A' }, { instance: 'B' });
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(isWaynetOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(isBarrierOp(op)).toBe(false);
+  });
+
+  it('touches the VOB in the projection and writes nothing into it', () => {
+    // There is no column to write: the index has the class name and not one
+    // field of the class. `touched` is still owed, because it is what re-attaches
+    // the gizmo and re-renders the panels — and a refusal here would arrive
+    // *after* `commitOps` had already changed the authoritative world.
+    const live = reader();
+    const before = Array.from(live.columns.flags);
+
+    const touched = applyOps(live, [setVobClassProp(live, 1, { instance: 'A' }, { instance: 'B' })]);
+
+    expect(touched).toEqual([1]);
+    expect(Array.from(live.columns.flags)).toEqual(before);
+    expect(live.name(1)).toBe('ITEM_01');
+    expect(live.visual(1)).toBe('ITMW.3DS');
+    expect(live.className(1)).toBe('oCItem');
+  });
+});
+
 describe('an add op', () => {
   // The first op that changes the *shape* of the world rather than a VOB in it,
   // and the enumeration is what constrains it: a VOB's flat index is its
@@ -673,6 +865,7 @@ describe('an add op', () => {
   it('has to be alone in its batch when it has a parent, and need not be otherwise', () => {
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (_spec, parentPath) => (parentPath === null ? '2' : `${parentPath}/1`),
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -691,6 +884,7 @@ describe('an add op', () => {
     const calls: string[] = [];
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (spec, parentPath) => {
         calls.push(`insert ${spec.name} under ${String(parentPath)}`);
         return '0/1';
@@ -713,6 +907,7 @@ describe('an add op', () => {
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (spec) => { calls.push(`insert ${spec.name}`); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -732,6 +927,7 @@ describe('an add op', () => {
     // own inverse would then delete somebody else.
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '7',
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -746,6 +942,7 @@ describe('an add op', () => {
     const binding: OpBinding = {
       setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); },
       setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { calls.push('insert'); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -826,6 +1023,7 @@ describe('a delete op', () => {
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('not an insert'); },
       deleteVob: (path) => { calls.push(`delete ${path}`); return undefined; },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -842,6 +1040,7 @@ describe('a delete op', () => {
     // before the batch ran, and a delete moves the VOB each of them names.
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '2',
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -916,6 +1115,7 @@ describe('a reparent op', () => {
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('not an insert'); },
       deleteVob: () => { throw new Error('not a delete'); },
       reparentVob: (from, parent, slot) => {
@@ -935,6 +1135,7 @@ describe('a reparent op', () => {
   it('refuses a move that did not land where the op says it would', () => {
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '0', deleteVob: () => {},
       reparentVob: () => '9/9',
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
@@ -972,6 +1173,7 @@ describe('a reparent op', () => {
     // reparent, and that case is in the add's own describe.
     const binding: OpBinding = {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     };
@@ -1092,6 +1294,7 @@ describe('committing ops to the world', () => {
       },
       setVobRotation: () => { throw new Error('these batches are moves only'); },
       setVobProp: () => { throw new Error('these batches are moves only'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -1139,6 +1342,7 @@ describe('committing ops to the world', () => {
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: (path, props) => { calls.push([path, props]); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -1166,6 +1370,7 @@ describe('committing ops to the world', () => {
         if (path === '0/2') throw new Error(`no vob at ${path}`);
         calls.push([path, props]);
       },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
@@ -1208,6 +1413,7 @@ describe('moving a waypoint', () => {
       setVobPosition: (path, to) => calls.push(['position', path, to]),
       setVobRotation: () => { throw new Error('not a rotation'); },
       setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },

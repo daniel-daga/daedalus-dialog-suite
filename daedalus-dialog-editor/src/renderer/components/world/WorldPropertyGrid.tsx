@@ -1,8 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box, Checkbox, Chip, FormControlLabel, Stack, TextField, Typography,
 } from '@mui/material';
-import type { VobProps } from 'zen-world';
+import {
+  classPropKeys, fieldOf,
+  type ClassPropValue, type ClassProps, type FieldDescriptor, type VobProps,
+} from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
 
@@ -100,6 +103,92 @@ const EditableField: React.FC<{
   />
 );
 
+/**
+ * A class field's value as text, and text back to a value of its kind.
+ *
+ * Text for all three kinds, a colour included, because the alternative is three
+ * input widgets where the catalogue has one table — and because the four
+ * channels of a `zCVobLight.color` are one value the op carries whole, not four
+ * fields whose inverse would restore three of them.
+ *
+ * `parse` answers null for anything the field cannot hold, and null is the whole
+ * of the refusal: nothing is sent, and the catalogue's own bounds are what it
+ * checks against, so the number the grid rejects is the number C++ would have
+ * rejected — at the bottom of a batch that may already have applied.
+ */
+const formatted = (value: ClassPropValue): string => {
+  // The same rounding the coordinates get, and for the same reason: a float32
+  // range that came out of the archive prints as 299.99998474121094 otherwise,
+  // and a user who edits the colour beside it has not asked to see that.
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return coordinate(value);
+  return value.map(coordinate).join(', ');
+};
+
+const parse = (field: FieldDescriptor, text: string): ClassPropValue | null => {
+  if (field.kind === 'string') return text;
+
+  const within = (value: number) => Number.isFinite(value)
+    && (field.min === undefined || value >= field.min)
+    && (field.max === undefined || value <= field.max);
+
+  if (field.kind === 'float') {
+    // `Number('')` is 0, and an emptied field is not a request to set zero.
+    const value = text.trim() === '' ? NaN : Number(text);
+    return within(value) ? value : null;
+  }
+
+  const parts = text.split(',');
+  if (parts.length !== 4) return null;
+  // The same rule the float branch above states, and for the same reason:
+  // `Number('')` is 0, so "255,,180,255" would parse as a green of 0 and commit
+  // it. A typo that dropped a channel is not a request to darken the light.
+  if (parts.some((part) => part.trim() === '')) return null;
+  const channels = parts.map((part) => Number(part.trim()));
+  // Integers, because a channel is a byte in the archive and 127.5 is written
+  // as something else entirely.
+  return channels.every((channel) => Number.isInteger(channel) && within(channel))
+    ? channels
+    : null;
+};
+
+/**
+ * One catalogued class field.
+ *
+ * It reuses `EditableField` rather than growing a second text input, so the
+ * blur/Enter/Escape rules and the value-in-the-key remount are the ones already
+ * proven above — with the VOB in the key as well, since the selection can move
+ * to another VOB of the same class while a value is half typed.
+ *
+ * The refusal counter is the part `EditableField` cannot do on its own: a
+ * refused value is not a commit, so nothing changes and nothing re-renders, and
+ * an uncontrolled input goes on showing a range the light does not have. Bumping
+ * it remounts through the same key, which is Escape's behaviour reached by a
+ * different route.
+ */
+const ClassField: React.FC<{
+  vob: number;
+  field: FieldDescriptor;
+  value: ClassPropValue;
+  onCommit: (value: ClassPropValue) => void;
+}> = ({ vob, field, value, onCommit }) => {
+  const [refusals, setRefusals] = useState(0);
+  const text = formatted(value);
+
+  return (
+    <EditableField
+      key={`class-${vob}-${field.key}-${text}-${refusals}`}
+      name={`class-${field.key}`}
+      value={text}
+      onCommit={(typed) => {
+        const parsed = parse(field, typed);
+        if (parsed === null) setRefusals((at) => at + 1);
+        else onCommit(parsed);
+      }}
+    />
+  );
+};
+
 export interface WorldPropertyGridProps {
   summary: WorldSummary;
   /** The whole selection. The grid describes the last VOB in it — the one the
@@ -113,10 +202,37 @@ export interface WorldPropertyGridProps {
    * restores fields nobody edited, and nothing would show it until an undo.
    */
   onEditProps: (props: VobProps) => void;
+  /**
+   * The described VOB's per-class fields, as `getVobProps` answered them — the
+   * whole props object, base fields and all — or null while that read is in
+   * flight.
+   *
+   * None of this is in the columnar index: it interns a class *name* and carries
+   * not one field of the class, so it arrives over IPC and one round trip behind
+   * the selection. Null therefore means "not here yet", never "empty", and the
+   * grid says so rather than drawing fields that would write a blank on blur.
+   *
+   * **It must be the described VOB's.** The fields drawn come from the catalogue
+   * by that VOB's class, and nothing in a props object says which VOB it was
+   * read for — so props belonging to another one pass as a loaded read and the
+   * grid indexes keys they do not have. Keeping the two in step is the caller's:
+   * it tags the read with its VOB and answers null on a mismatch, because its
+   * own effect learns of a selection change a render too late.
+   */
+  classProps: ClassProps | null;
+  /**
+   * One class field change, as the single key that changed — and on the
+   * described VOB alone.
+   *
+   * Alone because each VOB in a batch would need its own fetched `from` and a
+   * selection can hold mixed classes, which is a lazy read per VOB and a guard
+   * that does not exist yet (level-editor.md §14.1 item 1.4, D7).
+   */
+  onEditClassProps: (props: ClassProps) => void;
 }
 
 const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
-  { summary, selection, onEditProps },
+  { summary, selection, onEditProps, classProps, onEditClassProps },
 ) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
@@ -140,6 +256,10 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   const flags = reader.flags(selectedVob);
   const parent = tree.parent(selectedVob);
   const children = tree.children(selectedVob).length;
+  // The catalogue's own order and its own descriptors. It answers [] for a class
+  // it does not have — 35 of the 37 in a retail world — and that empty list is
+  // the whole test for whether there is a section to draw at all.
+  const classFields = classPropKeys(className).flatMap((key) => fieldOf(className, key) ?? []);
 
   // Why a VOB that exists is not on screen. All three are measured, correct
   // behaviour rather than gaps (§3, "The unresolved visuals").
@@ -247,6 +367,48 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
           ))}
         </Stack>
       </Field>
+      {/* The fields that make a VOB the thing it *is* — an item's Daedalus
+          instance, a light's range and colour. They sit after the base ones
+          rather than among them because they are read over IPC and the base ones
+          are read out of the index: everything above is on screen the moment the
+          selection moves, and this can still be arriving. */}
+      {classFields.length > 0 && (
+        <Box
+          data-testid="world-prop-class-section"
+          sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}
+        >
+          {selection.length > 1 && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              data-testid="world-prop-class-scope"
+              sx={{ display: 'block', mb: 0.5 }}
+            >
+              {`${className} fields are edited on this VOB only, not on the other ${selection.length - 1} selected.`}
+            </Typography>
+          )}
+          {classProps === null
+            ? (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                data-testid="world-prop-class-loading"
+              >
+                {`Reading this ${className}'s fields…`}
+              </Typography>
+            )
+            : classFields.map((classField) => (
+              <Field key={classField.key} label={classField.key} name={`class-${classField.key}`}>
+                <ClassField
+                  vob={selectedVob}
+                  field={classField}
+                  value={classProps[classField.key]}
+                  onCommit={(value) => onEditClassProps({ [classField.key]: value })}
+                />
+              </Field>
+            ))}
+        </Box>
+      )}
       <Field label="Parent" name="parent">
         <Typography variant="caption" color={parent < 0 ? 'text.secondary' : 'text.primary'}>
           {parent < 0

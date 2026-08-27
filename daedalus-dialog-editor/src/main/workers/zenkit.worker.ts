@@ -17,6 +17,7 @@ import {
 import type {
   ApplyOpsRequest,
   VisualBoundsRequest,
+  VobPropsRequest,
   SaveWorldRequest,
   DecodedTexture,
   InstancedPayload,
@@ -212,6 +213,20 @@ function boundsOfVisual(
 }
 
 /**
+ * The per-class fields of one VOB — what a `SetVobClassProp` needs for its
+ * `from` and what the grid shows.
+ *
+ * Read from `handle!`, never from `index`: the columnar projection carries a
+ * VOB's class *name* and no per-class data whatsoever, and it is re-read only
+ * after a structural op, so it would answer with pre-edit values for the rest of
+ * a session anyway. This goes to the world itself, which is the only thing in
+ * this process that is authoritative about it.
+ */
+function propsOfVob(payload: VobPropsRequest): { result: unknown; transfer: ArrayBuffer[] } {
+  return { result: zenkit.getVobProps(handle!, payload.path), transfer: [] };
+}
+
+/**
  * An edit (level-editor.md §7, Phase 1b). The world in this thread is the
  * authoritative one; the renderer's index is a projection of it.
  *
@@ -223,7 +238,10 @@ function boundsOfVisual(
  * carries both poses' boxes; the engine has **not** accepted a rotated VOB yet,
  * and that is Gate 2's business. `setVobProp` writes only the keys the op names
  * and refuses an unrecognised one, and it takes a box only for a visual swap —
- * the one property change that can move the box. The batch is atomic, and the
+ * the one property change that can move the box. `setVobClassProp` takes no
+ * class from the op at all — it resolves the VOB and switches on its real type,
+ * so the op's `className` is a declaration the binding re-checks rather than
+ * trusts. The batch is atomic, and the
  * index this thread keeps is updated only after the world is, so `visuals` never
  * places a VOB where an op failed to move it.
  */
@@ -233,6 +251,7 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
       setVobPosition: (path, to) => zenkit.setVobPosition(handle!, path, to),
       setVobRotation: (path, to, bbox) => zenkit.setVobRotation(handle!, path, to, bbox),
       setVobProp: (path, props) => zenkit.setVobProp(handle!, path, props),
+      setVobClassProp: (path, props) => zenkit.setVobClassProp(handle!, path, props),
       insertVob: (spec, parentPath) => zenkit.insertVob(handle!, parentPath, spec),
       deleteVob: (path) => zenkit.deleteVob(handle!, path),
       reparentVob: (from, parentPath, slot) => zenkit.reparentVob(handle!, from, parentPath, slot),
@@ -311,6 +330,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'assets': return assets(message.payload as { path: string });
     case 'waynet': return waynet();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);
+    case 'vobProps': return propsOfVob(message.payload as VobPropsRequest);
     case 'refreshIndex': return refreshIndex();
     case 'applyOps': return applyOpsRequest(message.payload as ApplyOpsRequest);
     case 'save': return save(message.payload as SaveWorldRequest);

@@ -296,9 +296,16 @@ std::uint32_t BspTreeDepth(BspTree const& bsp) {
 }
 
 // ---------------------------------------------------------------------------
-// VOB class names, exactly the ZenGin class identifiers.
+// VOB class names, exactly the ZenGin class identifiers. Declared in the header
+// and therefore lifted out of the anonymous namespace — the mutation path names
+// the class in every refusal it makes, and a second switch would answer with a
+// different vocabulary the moment either side gained a class.
 
-char const* VobClassName(VirtualObjectType type) {
+}  // namespace
+
+char const* VobClassName(zenkit::VirtualObjectType type) {
+  using namespace zenkit;
+
   switch (type) {
     case VirtualObjectType::zCVob: return "zCVob";
     case VirtualObjectType::zCVobLevelCompo: return "zCVobLevelCompo";
@@ -347,6 +354,10 @@ char const* VobClassName(VirtualObjectType type) {
     default: return "unknown";
   }
 }
+
+namespace {
+
+using namespace zenkit;
 
 char const* VisualTypeName(VisualType type) {
   switch (type) {
@@ -777,7 +788,17 @@ void PutCutsceneCameraProps(Napi::Env env, Napi::Object props, VCutsceneCamera c
 // Dispatch on VirtualObjectType with static_cast instead of dynamic_cast:
 // node-gyp compiles with RTTI disabled on Windows (/GR-), and the load path
 // guarantees `type` matches the concrete class it constructed.
-Napi::Object BuildProps(Napi::Env env, VirtualObject const& vob) {
+//
+// Declared in the header, so it too leaves the anonymous namespace: the
+// per-VOB read the editor asks for is this function and nothing else. The
+// `Put*Props` helpers below it stay private — they are the arms of this switch,
+// not an API. It still calls them by unqualified name because they are members
+// of the same translation unit's anonymous namespace.
+
+}  // namespace
+
+Napi::Object VobProps(Napi::Env env, zenkit::VirtualObject const& vob) {
+  using namespace zenkit;
   auto props = Napi::Object::New(env);
   PutBaseProps(env, props, vob);
 
@@ -995,6 +1016,10 @@ Napi::Object BuildProps(Napi::Env env, VirtualObject const& vob) {
   return props;
 }
 
+namespace {
+
+using namespace zenkit;
+
 // ---------------------------------------------------------------------------
 // Section builders.
 
@@ -1036,7 +1061,7 @@ void CollectVobs(Napi::Env env,
     flags.Set("animMode", EnumI(env, vob->anim_mode));
     entry.Set("flags", flags);
 
-    entry.Set("props", BuildProps(env, *vob));
+    entry.Set("props", VobProps(env, *vob));
     entry.Set("childCount", NumI(env, vob->children.size()));
 
     out.Set(out_index++, entry);

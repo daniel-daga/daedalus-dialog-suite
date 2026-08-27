@@ -6,6 +6,7 @@
  * with a clear error rather than reaching deep service internals.
  */
 
+import { classPropKeys, fieldOf, type FieldDescriptor } from 'zen-world';
 import type { WorldOp } from '../shared/worldTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -182,6 +183,66 @@ function isZenPosition(value: unknown): value is [number, number, number] {
   return isFiniteNumbers(value, 3);
 }
 
+/** A colour is four channels — r, g, b and the alpha ZenGin keeps — each a whole
+ *  number, because the archive stores each in a byte. Fixed arity, since the
+ *  binding reads them positionally: a three-element colour would leave one
+ *  channel to whatever the struct happened to hold. */
+function isColorChannels(value: unknown, min: number, max: number): boolean {
+  return Array.isArray(value) && value.length === 4
+    && value.every((channel) => typeof channel === 'number' && Number.isInteger(channel)
+      && channel >= min && channel <= max);
+}
+
+/**
+ * Check one class-property value against its catalogue descriptor.
+ *
+ * The bounds are read off the descriptor rather than written here, so the number
+ * a light's range is refused below is the same number the grid rejects a typed
+ * value with — the reason the catalogue carries them at all (`vobClasses.ts`).
+ */
+function assertClassPropValue(field: FieldDescriptor, side: string, value: unknown): void {
+  const where = `${side}.${field.key}`;
+  if (field.kind === 'string') {
+    if (typeof value !== 'string') {
+      throw new Error(`Invalid op: ${where} must be a string`);
+    }
+    return;
+  }
+  if (field.kind === 'color') {
+    if (!isColorChannels(value, field.min ?? 0, field.max ?? 255)) {
+      throw new Error(`Invalid op: ${where} must be four whole channels ${field.min ?? 0}-${field.max ?? 255}`);
+    }
+    return;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`Invalid op: ${where} must be a finite number`);
+  }
+  if (field.min !== undefined && value < field.min) {
+    throw new Error(`Invalid op: ${where} must be ${field.min} or greater`);
+  }
+  if (field.max !== undefined && value > field.max) {
+    throw new Error(`Invalid op: ${where} must be ${field.max} or less`);
+  }
+}
+
+/**
+ * Assert a class-property read (level-editor.md §7).
+ *
+ * A read, but the path is parsed in C++ and used to walk the VOB tree, so it is
+ * held to exactly the shape the ops are: the same regex, refused here rather
+ * than handed to `ParseIndexPath` to reject.
+ */
+export function assertVobPropsRequest(
+  request: unknown,
+): asserts request is { path: string } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid vob props request: expected a plain object');
+  }
+  if (typeof request.path !== 'string' || !INDEX_PATH.test(request.path)) {
+    throw new Error('Invalid vob props request: path must be slot indices separated by "/"');
+  }
+}
+
 /**
  * Assert a save request (level-editor.md §5).
  *
@@ -261,8 +322,8 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
   for (const op of request.ops) {
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
-      && op.op !== 'AddVob' && op.op !== 'ReparentVob' && op.op !== 'MoveWaypoint'
-      && op.op !== 'DeleteVob') {
+      && op.op !== 'SetVobClassProp' && op.op !== 'AddVob' && op.op !== 'ReparentVob'
+      && op.op !== 'MoveWaypoint' && op.op !== 'DeleteVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
 
@@ -420,6 +481,57 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
         // than at the bottom of a batch that has already applied.
         if (op[field] !== null && !('visual' in (op.to as object))) {
           throw new Error(`Invalid op: ${field} is only meaningful with a change of visual`);
+        }
+      }
+      continue;
+    }
+
+    if (op.op === 'SetVobClassProp') {
+      // The first op whose legal key set depends on which VOB it addresses, and
+      // this validator is stateless with respect to the world: no index, no
+      // handle, nothing but the payload. `className` is therefore the only thing
+      // that can make a key legal here — a declaration of intent the binding
+      // re-checks against the VOB's real type, exactly as `writeOp` re-checks
+      // the path a reparent landed on.
+      //
+      // The catalogue in `zen-world` is what decides, rather than a fourth
+      // hand-maintained allowlist beside `VOB_FLAG_KEYS`: the op builder, this
+      // check and the property grid all read the one table, so adding a class is
+      // one entry rather than three that have to agree by hand.
+      if (typeof op.className !== 'string' || classPropKeys(op.className).length === 0) {
+        throw new Error(`Invalid op: no class properties are known for ${String(op.className)}`);
+      }
+      const className = op.className;
+      const sides = ['from', 'to'] as const;
+      for (const side of sides) {
+        if (!isPlainObject(op[side])) {
+          throw new Error(`Invalid op: ${side} must be an object of class properties`);
+        }
+        for (const [key, value] of Object.entries(op[side])) {
+          const field = fieldOf(className, key);
+          if (field === null) {
+            throw new Error(`Invalid op: a ${className} has no class property ${key}`);
+          }
+          assertClassPropValue(field, side, value);
+        }
+      }
+      // Both sides walked, not just `to`: the walk is what refuses a value, and
+      // an unchecked `from` is the side an undo writes — so skipping it would
+      // hand C++ a colour nobody looked at, at the moment the user is trying to
+      // get back to where they were.
+      const keys = sides.map((side) => Object.keys(op[side] as object).sort());
+      if (keys[0].length === 0) throw new Error('Invalid op: sets no class properties');
+      if (keys[0].join() !== keys[1].join()) {
+        throw new Error('Invalid op: from and to must carry the same class properties');
+      }
+      // Exhaustively, in the `DeleteVob` idiom: no field in this slice can move
+      // the culling box, so the op has no `fromBbox`/`toBbox` — and an op that
+      // arrived carrying one is either a `SetVobProp` mislabelled or a caller
+      // expecting a refit that will not happen.
+      for (const key of Object.keys(op)) {
+        if (key !== 'op' && key !== 'vob' && key !== 'path' && key !== 'className'
+          && key !== 'from' && key !== 'to') {
+          throw new Error(`Invalid op: a SetVobClassProp carries no ${key}`);
         }
       }
       continue;

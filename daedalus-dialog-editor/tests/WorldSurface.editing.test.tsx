@@ -128,7 +128,10 @@ const WAYPOINT_MOVE: WorldOp = {
   op: 'MoveWaypoint', waypoint: 1, name: 'WP_MIDDLE', from: WAYPOINT_WAS, to: WAYPOINT_TO,
 };
 
-function vobIndex(positions: Array<[number, number, number]>): VobIndex {
+function vobIndex(
+  positions: Array<[number, number, number]>,
+  cls: string | readonly string[] = 'zCVob',
+): VobIndex {
   const count = positions.length;
   const columns = new Float32Array(count * 3);
   positions.forEach((position, i) => columns.set(position, i * 3));
@@ -139,6 +142,15 @@ function vobIndex(positions: Array<[number, number, number]>): VobIndex {
   const rotations = new Float32Array(count * 9);
   for (let i = 0; i < count; i++) rotations.set([1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
 
+  // One class name for the whole index, or one per VOB when a list is given.
+  // The list is not a convenience: a single class means the selection can never
+  // move between two *catalogued* classes, and that is exactly the move where
+  // the class fields drawn and the props fetched can disagree.
+  const perVob = typeof cls === 'string' ? positions.map(() => cls) : cls;
+  const classes = [...new Set(perVob)];
+  const classIndex = new Uint32Array(count);
+  perVob.forEach((name, i) => { classIndex[i] = classes.indexOf(name); });
+
   return {
     count,
     parent: new Int32Array(count).fill(-1).buffer,
@@ -146,7 +158,7 @@ function vobIndex(positions: Array<[number, number, number]>): VobIndex {
     positions: columns.buffer,
     rotations: rotations.buffer,
     flags: new Uint32Array(count).buffer,
-    classes: ['zCVob'], classIndex: new Uint32Array(count).buffer,
+    classes, classIndex: classIndex.buffer,
     names: ['BARREL'], nameIndex: new Uint32Array(count).buffer,
     visuals: ['BARREL.3DS'], visualIndex: new Uint32Array(count).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
@@ -160,6 +172,17 @@ const SUMMARY: WorldSummary = {
   stats: { vobCount: 2, materials: 1, worldDrawGroups: 1, worldTriangles: 1 },
   timings: {},
 };
+
+/**
+ * What the per-class read answers, in the shape the binding sends it: the whole
+ * props object, base fields and all. A mutable module-level value rather than a
+ * `mockResolvedValue`, because the read is re-issued on every applied batch and
+ * an implementation set in one test would outlive it — `clearAllMocks` clears
+ * calls, not implementations.
+ */
+let mockVobProps: Record<string, unknown> = { class: 'zCVob' };
+const LIGHT_PROPS = { class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255] };
+const ITEM_PROPS = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01' };
 
 const MOVE: WorldOp = {
   op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [11, 22, 33],
@@ -176,6 +199,7 @@ const api = {
   listWorldAssets: jest.fn(async () => null),
   getWorldWaynet: jest.fn(),
   getVisualBounds: jest.fn(async (): Promise<number[] | null> => null),
+  getVobProps: jest.fn(async (): Promise<Record<string, unknown>> => mockVobProps),
   refreshWorldIndex: jest.fn(),
   applyWorldOps: jest.fn(async () => undefined),
   undoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
@@ -194,8 +218,8 @@ const api = {
  * has nothing to drag: VOB 1 is selected here as the gizmo's own attachment
  * would do it.
  */
-async function openWorld() {
-  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+async function openWorld(cls?: string | readonly string[]) {
+  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], cls) };
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
@@ -218,13 +242,17 @@ async function openWorld() {
   render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
   await screen.findByTestId('stub-drag');
-  act(() => useWorldStore.getState().selectVob(1));
+  // Awaited, not the bare synchronous `act`: selecting a VOB of a catalogued
+  // class issues the per-class read, and its answer lands a microtask after the
+  // selection — outside an `act` that has already returned.
+  await act(async () => { useWorldStore.getState().selectVob(1); });
   return summary;
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockAppliedOps = undefined;
+  mockVobProps = { class: 'zCVob' };
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
 
@@ -1074,5 +1102,123 @@ describe('a waypoint dragged in the viewport', () => {
 
     await waitFor(() => expect(mockSelectedWaypoint).toBe(1));
     expect(mockSelection).toEqual([]);
+  });
+});
+
+describe('a class property edited in the grid', () => {
+  /** VOB 1 as a light, with its class fields already on screen. */
+  async function openLight() {
+    mockVobProps = LIGHT_PROPS;
+    const summary = await openWorld('zCVobLight');
+    await screen.findByTestId('world-prop-class-range-input');
+    return summary;
+  }
+
+  const rangeInput = () => screen.getByTestId('world-prop-class-range-input') as HTMLInputElement;
+  const commitRange = (value: string) => {
+    fireEvent.change(rangeInput(), { target: { value } });
+    fireEvent.blur(rangeInput());
+  };
+
+  it('reads the primary VOB\'s class fields by its native path', async () => {
+    // Not the flat index: a VOB has two addresses (§7) and everything below the
+    // renderer resolves the path. And not out of the columnar index at all —
+    // it interns a class *name* and carries not one field of the class.
+    await openLight();
+
+    expect(api.getVobProps).toHaveBeenCalledWith('1');
+    expect(rangeInput().value).toBe('2000');
+  });
+
+  it('asks for nothing at all for a class the catalogue does not have', async () => {
+    // 35 of the 37 classes in a retail world, and a selection moves with every
+    // click. An IPC round trip per click that can only answer "nothing to edit"
+    // is a round trip for nothing.
+    await openWorld();
+
+    await waitFor(() => expect(api.getWorldVisuals).toHaveBeenCalled());
+    expect(api.getVobProps).not.toHaveBeenCalled();
+  });
+
+  it('becomes a SetVobClassProp whose `from` is what the read answered', async () => {
+    // The `from` side cannot come from the index the way a move's does, and it
+    // cannot be read back at apply time either — by then the world holds `to`.
+    // The read is what makes the op invertible, which is why the edit waits for
+    // it rather than sending `to` alone.
+    await openLight();
+
+    commitRange('3000');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'SetVobClassProp',
+      vob: 1,
+      path: '1',
+      className: 'zCVobLight',
+      // Only the key that changed. The read answered a colour as well, and an op
+      // carrying it would build an inverse restoring a colour nobody edited.
+      from: { range: 2000 },
+      to: { range: 3000 },
+    }]));
+  });
+
+  it('reads the fields again when the edit is refused, instead of showing what was typed', async () => {
+    // The refusal is the case the columnar edits do not have: a move that is
+    // refused is put back by inverting the op, and there is nothing to invert
+    // here — the grid is showing a number that only ever existed in an input.
+    await openLight();
+    api.applyWorldOps.mockRejectedValueOnce(new Error('props.range must be zero or greater'));
+
+    commitRange('3000');
+
+    expect(await screen.findByTestId('world-edit-error')).toHaveTextContent('zero or greater');
+    await waitFor(() => expect(rangeInput().value).toBe('2000'));
+  });
+
+  it('draws no fields at all while the props still belong to the last VOB', async () => {
+    // The fetch lives in an effect, and an effect runs *after* the commit it
+    // belongs to — so the render caused by the selection moving reaches the grid
+    // with the new VOB and the props of the old one. The grid picks its fields
+    // out of the catalogue by the new VOB's class, so it would index an oCItem's
+    // `instance` on a light's props, get `undefined`, and throw while rendering:
+    // the app-level boundary replaces the whole editor with its fallback.
+    //
+    // Both directions, because both are a class the catalogue has fields for and
+    // neither one's props can stand in for the other's.
+    mockVobProps = LIGHT_PROPS;
+    await openWorld(['oCItem', 'zCVobLight']);
+    await screen.findByTestId('world-prop-class-range-input');
+
+    mockVobProps = ITEM_PROPS;
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+    expect((screen.getByTestId('world-prop-class-instance-input') as HTMLInputElement).value)
+      .toBe('ITMW_1H_SWORD_01');
+
+    mockVobProps = LIGHT_PROPS;
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    expect(rangeInput().value).toBe('2000');
+  });
+
+  it('reads the fields again after an undo, so the grid follows the world', async () => {
+    // An undo does not come back through `commitOps` — the op log is in the main
+    // process — and `applyEdit` writes no column for a class field, by design.
+    // The read is the only way this side learns the value changed.
+    await openLight();
+    mockVobProps = { ...LIGHT_PROPS, range: 3000 };
+
+    commitRange('3000');
+    await waitFor(() => expect(rangeInput().value).toBe('3000'));
+
+    mockVobProps = LIGHT_PROPS;
+    api.undoWorldEdit.mockResolvedValueOnce([{
+      op: 'SetVobClassProp',
+      vob: 1,
+      path: '1',
+      className: 'zCVobLight',
+      from: { range: 3000 },
+      to: { range: 2000 },
+    }] as never);
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(rangeInput().value).toBe('2000'));
   });
 });

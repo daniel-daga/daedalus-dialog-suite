@@ -139,6 +139,20 @@ export class WorldService {
   }
 
   /**
+   * The per-class fields of one VOB, by its native index path.
+   *
+   * Deliberately **not** inside `serialized`: that queue exists so two edits
+   * cannot both read the same top of the undo stack, and this reads no stack and
+   * unwinds nothing. Putting it there would make the property grid wait out an
+   * edit's 120 s timeout to show a field, for no invariant at all — the world it
+   * reads is the same one either way, and the renderer re-asks after every
+   * applied batch.
+   */
+  getVobProps(path: string): Promise<Record<string, unknown>> {
+    return this.requestOnOpenWorld<Record<string, unknown>>('vobProps', { path });
+  }
+
+  /**
    * The VOB enumeration again, after a structural edit changed it.
    *
    * A flat index is a VOB's position in a depth-first traversal, so an added VOB

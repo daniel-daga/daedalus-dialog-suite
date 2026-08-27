@@ -4,6 +4,7 @@
 
 #include <napi.h>
 #include <zenkit/Mesh.hh>
+#include <zenkit/vobs/VirtualObject.hh>
 #include <zenkit/world/WayNet.hh>
 
 #include <cstdint>
@@ -23,6 +24,18 @@ std::uint32_t PackPolygonFlags(zenkit::PolygonFlagSet const& flags, bool is_g2);
 // structs ZenKit's *load* path populated — never through any save()/
 // WriteArchive machinery, which is the code under test.
 Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle);
+
+// The ZenGin class identifier for a VOB's type — the `class` field of the dump,
+// and the name a per-class refusal in the binding has to say out loud. Shared so
+// the mutation path and the dump cannot disagree about what a VOB is.
+char const* VobClassName(zenkit::VirtualObjectType type);
+
+// Every property of one VOB: the base `zCVob` fields plus whatever its concrete
+// class adds, with the same camelCase keys the dump's per-VOB `props` object
+// carries — because it *is* that object. Exported rather than reimplemented: a
+// second field mapping would be a second hand-maintained mirror of the vendor
+// headers, and the two would agree only for as long as both were remembered.
+Napi::Object VobProps(Napi::Env env, zenkit::VirtualObject const& vob);
 
 // vobIndex(handle) — the VOB enumeration the renderer actually needs, as
 // columnar transferables with the repeated strings interned. NormalizeWorld is

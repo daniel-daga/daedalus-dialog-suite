@@ -802,6 +802,12 @@ normalizeWorld(pathOrHandle): NormalizedDump       // for the semantic diff harn
 openVfs(paths): VfsHandle                          // VDF/mod archives for the asset browser
 ```
 
+Names above are the design-time sketch, not the shipped surface — several
+differ (`worldIndex` shipped as `vobIndex`). `getVobProperties` shipped as
+**`getVobProps(h, indexPath)`** in 2026-08-28's class-property slice (§7), and
+addressed by native index path rather than by a VOB id, because a VOB has two
+addresses and every op already resolves the path.
+
 The addon runs inside a **worker thread in the Electron main process**
 (`MetadataWorkerPool` precedent): a native crash kills the worker, not the
 app, and long loads never block the UI or IPC.
@@ -1168,8 +1174,9 @@ than fixtures:
   memoized components"). Mesh/texture payloads flow as transferable
   `ArrayBuffer`s straight into Three.js `BufferGeometry`/textures, bypassing
   React entirely.
-- **All edits are ops** (`MoveVob`, `ReparentVob`, `SetVobProp`, `AddVob`,
-  `DeleteVob`, waynet edge ops …) defined in `zen-world` with inverses.
+- **All edits are ops** (`MoveVob`, `ReparentVob`, `SetVobProp`,
+  `SetVobClassProp`, `AddVob`, `DeleteVob`, waynet edge ops …) defined in
+  `zen-world` with inverses.
   Gizmo drags preview locally in the viewport; on commit the op goes to
   `WorldService`, applies to the authoritative native model, and lands in the
   history stack. Undo/redo replays inverse ops through the same path —
@@ -1988,6 +1995,137 @@ it did a moment earlier — an assertion written against it silently checks the
 wrong VOB. The between-rows step compares the top two rows' *labels* across the
 drop instead, and skips itself, saying so, when those two labels are equal.
 
+#### Class properties — the item instance and the light (2026-08-28)
+
+§14.1's row 1.4 is the largest single item in the parity inventory, so it lands
+one class at a time. The first increment is **two classes and three fields**:
+`oCItem.instance` (5,022 VOBs, 12.1 % of retail) and `zCVobLight`'s `range` and
+`color` (4,649 VOBs, 11.2 %). Together 23.4 % of every retail VOB — counted over
+the same 41,393 the rest of this file means by retail, the three main worlds and
+not `DragonIsland` (whose 2,261 VOBs would add 108 items and 612 lights, and
+which no other measurement here includes). Chosen not for the share but because
+between them they are a cp1252 string, a bounded scalar and
+a fixed-arity integer array — every value kind the machinery has to grow, with no
+enum, no list and no inheritance chain deeper than one.
+
+**The read was already written and unreachable.** `normalize.cc`'s `BuildProps`
+dispatches on `VirtualObject::type` and emits every class-specific field of every
+class the binding knows, and has since Phase 0 — but it sat in an anonymous
+namespace and was called only from `CollectVobs`, on the whole-world
+`normalizeWorld` dump the worker rejects for costing 933 ms. So the read half of
+this was an **export, not an implementation**: `BuildProps` and `VobClassName`
+were promoted into `normalize.hh` and `getVobProps(handle, indexPath)` calls the
+same function `normalizeWorld` does. That deliberately couples them — a change to
+either moves the golden dumps in `normalizeWorld.test.js` and `roundtrip.test.js`
+— which is the point, because the alternative is two hand-maintained mirrors of
+the vendor headers drifting apart in silence.
+
+**The read is a prerequisite of building the op, not a display convenience.**
+Every other property op reads its `from` out of the columnar index; the index
+carries no per-class data at all, only the interned class *name*. So
+`setVobClassProp(reader, vob, current, to)` takes the current values from the
+caller, the way `moveWaypoint` does for the waynet, and keeps only the keys `to`
+names. What stays forbidden is reading `from` back from the native world at apply
+time — passing it at build time is not that.
+
+- **A new op, not a widened `SetVobProp`.** Four things break on widening, all
+  of them code rather than taste: `setVobProp`'s `from` loop is typed by the
+  index's accessors and has none per class; `applyOps`' projection has no column
+  and a typed array in a transferred payload cannot grow; `setVobProp` performs
+  no class check anywhere, so `{ range: 500 }` on an `oCItem` would build
+  cleanly and be refused by C++ halfway through a batch; and `PROP_KEYS` would
+  become a union of ~135 keys, most illegal for most VOBs, multiplying the
+  "added to the type, forgot the list" trap its own comment warns about. A
+  separate op also sheds `fromBbox`/`toBbox` — no field in this slice can move
+  the culling box — rather than carrying two permanent `null`s forever.
+- **The op declares its `className`, and the binding does not believe it.**
+  `assertApplyOpsRequest` is stateless with respect to the world: it sees
+  `op.vob` and `op.path`, has no index and no handle, and therefore cannot tell
+  whether `range` is legal for this VOB unless the op says what the VOB is. So
+  the class is stamped from `reader.className(vob)` at build time and is a
+  declaration of intent — `setVobClassProp` in C++ takes **no** class argument,
+  resolves the VOB first and switches on its real `vob->type`, so a lie is
+  refused by the key check naming the actual class. Same shape as `writeOp`
+  re-checking `landed !== destination.path` for a reparent. It is directionally
+  symmetric, so `invertOp`'s `{ ...op, from: op.to, to: op.from }` carries it
+  through unchanged.
+- **One catalogue, in `zen-world`.** Three allowlists already had to move in
+  lockstep with nothing shared between them — `kKnownKeys` in the binding,
+  `VOB_FLAG_KEYS` in the validator, `PROP_KEYS` in the op model. A fourth would
+  have been worse than the first three, so `zen-world/src/model/vobClasses.ts`
+  is the single table the builder, the IPC validator and the grid all read:
+  class → key → kind (`string` / `float` / `color`) and bounds. Adding a class
+  to the UI is one entry in it. The C++ table stays separate and unavoidable;
+  what ties it to the TS one is a per-key round-trip test in
+  `mutations.test.js`, not a shared constant. The catalogue is read through
+  `classPropKeys` / `fieldOf` rather than indexed directly, because a class name
+  is a boundary value and `CLASS_FIELDS['toString']` on a plain object literal
+  answers with a *function* — which behind a `?? []` would hand the grid a
+  method to iterate.
+- **The read is addressed by native index path, the op by both.** A VOB has two
+  addresses, and the renderer already resolves the path for every op it builds,
+  so `world:vobProps` takes the path and validates it with the same
+  `INDEX_PATH` regex every other world IPC uses. It sits **outside**
+  `serialized()` in `WorldService` — it is a read, and queueing it behind a
+  120 s edit timeout would stall the panel on an edit it does not depend on.
+- **`applyOps` touches the VOB and writes nothing.** Not a fall-through to
+  `unreachableOp`, not the structural throw, and deliberately not a new
+  partition predicate in the `isWaynetOp` mould: a filter-it-out design has to
+  be applied identically in the worker and in the store, and forgetting one
+  leaves the world one edit ahead of a projection that threw *after* the commit.
+  `touched` is what re-attaches the gizmo and re-renders the panels, so the VOB
+  is reported touched and no column is written. One branch, one function, both
+  callers.
+- **The values are React state on `WorldSurface`, not the store and not a
+  summary-keyed cache.** `worldStore.applyEdit` writes into the existing
+  `ArrayBuffer`s and deliberately does not change the identity of `summary`, so
+  a `WeakMap` keyed on it — the `vobModelOf` pattern — would serve pre-edit
+  class props forever. The fetch is re-issued from `applied()`, which covers
+  commit, undo and redo, and from `commitOps`' catch, where a refused edit would
+  otherwise leave the grid showing what the user typed. The grid itself stays
+  synchronous and prop-driven, so its fixture has no async in it.
+- **Class fields edit the primary VOB only; base scalars keep batching.**
+  `setVobProps` builds one op per VOB each with its own `from`, precisely
+  because a shared `from` reads correct on a selection of one — which is every
+  unit test. A class-field batch needs N reads before the edit and has no guard
+  for a selection of mixed classes, so under a multi-selection the section says
+  in as many words that it applies to the described VOB alone.
+
+**Refusing a typed value had to un-type the field, not just drop the write.** A
+refused parse is not a commit, so nothing re-renders and the uncontrolled input
+goes on showing a colour the world does not have — the same defect the property
+grid shipped with and fixed by keying on the value. The class fields fold a
+refusal counter into that key, which is Escape's behaviour reached by a different
+route.
+
+Deliberately out, and each for a reason rather than for time. **`isStatic`**
+changes *which fields the archive contains* — ZenKit writes the animation block
+only when it is false — so its inverse does not restore the world; it needs an op
+carrying the animation vectors in `from`. **Enums** (`lightType`, sound `mode`,
+`lerpMode`), because retail data contains out-of-range values — `zCMover.lerpMode`
+is 120 on three VOBs — and a dropdown that cannot represent junk destroys it on
+write; that decision belongs with the first class that needs one. **List fields**
+(`colorAnimationList`, trigger targets, mover keyframes), the first unbounded
+payloads in the op set, needing a length cap and a nested-record assertion
+`ipcValidation.ts` has no idiom for. **The rest of `zCVob`** (§14.1 item 1.8),
+where the measured hazard is that retail `farClipScale` is `20901904` on 33 VOBs
+and `4.43e-33` on 17 — uninitialised memory Piranha Bytes shipped, which a grid
+that writes back on blur would move under the fidelity gate.
+**Class-specific insertion** (item 1.3): `insertItemVob` already exists in the
+binding and is wired to nothing, which makes it adjacent and tempting, but it is
+`AddVob` with a different invariant. And **validating `instance` against the
+parser's item index** — a real hazard, since an unknown instance crashes the
+engine, but it couples the World surface to the semantic model; the field ships
+as free text at the trust level `name` already has.
+
+Still open, both noted rather than fixed: the re-fetch is unconditional, so
+committing a gizmo drag on a light flashes the class section's loading line
+before the re-read lands — narrowing it to ops that touch the primary VOB would
+be a second rule to keep in step with `applied()`. And **no engine verdict covers
+a class-edited world**; like every op before it, that is Gate 2's business, and
+`verify-world-edit.js` does not yet set an instance or a range on retail
+NewWorld.
+
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
 Rotation is the next op, and it cannot be built the way `MoveVob` was.
@@ -2200,7 +2338,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
 | 1.2 | **Copy / paste / duplicate**, incl. subtree | unscheduled → 1b-2 | The most-used Spacer verb after move. Same undo question as delete, same answer. A cross-world clipboard only if part-to-part copying is wanted. |
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
-| 1.4 | **Class-specific property editing** | unscheduled → 1b-2 | The property grid shows eight `zCVob` scalars. Every class above carries its own field set — trigger targets, mover keyframes, item instance, light colour/range/dynamic, zone falloffs, sound radius/volume/mode. The largest single volume of work in this section, and what decides whether the editor is usable for quest scripting at all. The only prior trace of it is §4's sketch line `getVobProperties(h, vobId): VobProps`, which the shipped binding does not implement — and which is a *read* anyway. |
+| 1.4 | **Class-specific property editing** | **partial** (§7) | Two classes landed 2026-08-28: `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), enums (retail carries out-of-range values a dropdown would destroy), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
 | 1.5 | **Numeric transform entry** | unscheduled → 1b-2 | Position and rotation render as read-only monospace text. Spacer takes typed coordinates and angles. |
 | 1.6 | **Snapping** | unscheduled → 1b-2 | Drop-to-ground, align to surface normal, grid step, angle step. The gizmo is free-form only. |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |

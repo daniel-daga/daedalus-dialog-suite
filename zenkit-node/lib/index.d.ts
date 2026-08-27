@@ -170,6 +170,31 @@ export interface VobProps {
  * no op describes, and undo could not restore it.
  */
 export function setVobProp(handle: WorldHandle, indexPath: string, props: VobProps): void;
+/**
+ * Every property of one VOB — the base `zCVob` fields and whatever its concrete
+ * class adds — under the same camelCase keys `normalizeWorld` dumps, because it
+ * is the same reader. `class` is the ZenGin class identifier.
+ *
+ * The shape is per class and is therefore left open: `zen-world`'s field
+ * catalogue decides which of these keys are editable, and it is the only place
+ * that decision is written down.
+ */
+export function getVobProps(
+  handle: WorldHandle, indexPath: string,
+): { class: string } & Record<string, unknown>;
+/**
+ * Set the properties one VOB has because of the class it *is*, rather than
+ * because it is a `zCVob` — `oCItem.instance`, `zCVobLight.range`/`color`.
+ *
+ * Unlike `setVobProp` this resolves the VOB before it looks at a key, because
+ * the legal key set is a function of the VOB's class. A key that is real and
+ * legal on some other class is refused by name, as is a class with no fields
+ * here at all: an edit that reported success and then was not in the file is the
+ * failure mode of accepting either.
+ */
+export function setVobClassProp(
+  handle: WorldHandle, indexPath: string, props: Record<string, string | number | readonly number[]>,
+): void;
 /** A VOB to author. Only `position` is required; an unrecognised key is refused. */
 export interface NewVob {
   name?: string;

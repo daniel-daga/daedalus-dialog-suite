@@ -5,6 +5,7 @@
 #include <zenkit/Misc.hh>
 #include <zenkit/Stream.hh>
 #include <zenkit/World.hh>
+#include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/VirtualObject.hh>
 #include <zenkit/world/WayNet.hh>
@@ -17,6 +18,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -435,6 +437,27 @@ std::shared_ptr<zenkit::VirtualObject> ResolveVob(Napi::Env env,
   return vob;
 }
 
+// getVobProps(handle, indexPath) — every property of one VOB: the base `zCVob`
+// fields and whatever its concrete class adds, plus the class name under
+// `class`. It lives down here among the mutations only because it is addressed
+// the way they are, by the index path they all resolve.
+//
+// It is literally the reader `normalizeWorld` uses (src/normalize.cc). The dump
+// as a whole is 933 ms on retail NewWorld and unusable per selection, but the
+// per-VOB half of it is cheap, and a second field mapping would be a second
+// hand-maintained mirror of the vendor headers that agreed with the first only
+// for as long as both were remembered.
+Napi::Value GetVobProps(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto indices = ParseIndexPath(env, info[1], "indexPath");
+
+  auto vob = ResolveVob(env, *handle, indices, "indexPath");
+  auto props = zenkit_node::VobProps(env, *vob);
+  props.Set("class", Napi::String::New(env, zenkit_node::VobClassName(vob->type)));
+  return props;
+}
+
 zenkit::Vec3 Vec3FromValue(Napi::Env env, Napi::Value value, char const* label) {
   if (!value.IsArray()) {
     throw Napi::TypeError::New(env, std::string {label} + " must be an array of 3 numbers");
@@ -694,6 +717,145 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   if (vob_static) vob->vob_static = *vob_static;
   if (ambient) vob->ambient = *ambient;
   if (physics_enabled) vob->physics_enabled = *physics_enabled;
+
+  return env.Undefined();
+}
+
+// The per-class key check, in setVobProp's shape but with the class in the
+// message: the mistake this op invites is not a misspelling but a key that is
+// real and legal on some *other* class, and "unknown property 'range'" does not
+// say why it was refused. The empty-props refusal lives here too, so a class
+// with no case at all is still refused for being that class.
+void RequireClassKeys(Napi::Env env,
+                      Napi::Object props,
+                      std::initializer_list<char const*> known,
+                      char const* class_name) {
+  auto names = props.GetPropertyNames();
+  if (names.Length() == 0) {
+    throw Napi::Error::New(env, "props must set at least one property");
+  }
+  for (std::uint32_t i = 0; i < names.Length(); ++i) {
+    std::string const key = names.Get(i).As<Napi::String>().Utf8Value();
+    if (std::find_if(known.begin(), known.end(),
+                     [&key](char const* candidate) { return key == candidate; }) == known.end()) {
+      throw Napi::Error::New(env, "props: a " + std::string {class_name} + " has no property '" +
+                                      key + "'");
+    }
+  }
+}
+
+// The OptionalBool idiom for a scalar. Non-finite is refused here rather than
+// per field: an infinity or a NaN written into the archive is a number the
+// engine reads back and computes with, and no field in this op has a use for
+// either.
+std::optional<float> OptionalFloat(Napi::Env env, Napi::Object props, char const* key) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsNumber()) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be a number");
+  }
+  double const number = value.As<Napi::Number>().DoubleValue();
+  if (!std::isfinite(number)) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be a finite number");
+  }
+  return static_cast<float>(number);
+}
+
+// A zCOLOR is four bytes and normalizeWorld emits them as `[r, g, b, a]`; this
+// reads back exactly that, because the read and the write have to name the same
+// thing the same way or the grid cannot round-trip its own value. The channels
+// are bounded and required integral rather than truncated on the cast: 255.5 and
+// 256 are both a caller meaning something this cannot store.
+std::optional<zenkit::Color> OptionalColor(Napi::Env env, Napi::Object props, char const* key) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsArray()) {
+    throw Napi::TypeError::New(env,
+                               std::string {"props."} + key + " must be an array of 4 numbers");
+  }
+  auto arr = value.As<Napi::Array>();
+  if (arr.Length() != 4) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must have exactly 4 elements");
+  }
+  unsigned char channels[4];
+  for (std::uint32_t i = 0; i < 4; ++i) {
+    Napi::Value const element = arr.Get(i);
+    if (!element.IsNumber()) {
+      throw Napi::TypeError::New(env, std::string {"props."} + key + " channels must be numbers");
+    }
+    double const channel = element.As<Napi::Number>().DoubleValue();
+    if (!(channel >= 0 && channel <= 255) || channel != std::floor(channel)) {
+      throw Napi::Error::New(env,
+                             std::string {"props."} + key + " channels must be integers 0-255");
+    }
+    channels[i] = static_cast<unsigned char>(channel);
+  }
+  return zenkit::Color {channels[0], channels[1], channels[2], channels[3]};
+}
+
+// setVobClassProp(handle, indexPath, props) — the fields a VOB has because of
+// the class it is, rather than because it is a `zCVob`.
+//
+// It resolves the VOB **before** it looks at a single key, which is the one
+// structural difference from setVobProp: the legal key set is a function of
+// `vob->type`, so there is no allowlist to check the props against until the
+// class is known. Everything is still validated before anything is written, for
+// the reason setVobProp gives — a half-applied props object is a state no op
+// describes, and undo would not restore it.
+//
+// Classes arrive here one at a time, and `default:` refuses by name rather than
+// accepting and ignoring: a class whose fields nothing here can write is one
+// whose edit would report success and then not be in the file. The `static_cast`
+// down to the concrete class is the same one normalize.cc makes and rests on the
+// same two facts — RTTI is off (/GR-), and the load path guarantees `type`
+// matches the class it constructed.
+Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto indices = ParseIndexPath(env, info[1], "indexPath");
+
+  if (!info[2].IsObject() || info[2].IsArray()) {
+    throw Napi::TypeError::New(env, "props must be an object");
+  }
+  auto props = info[2].As<Napi::Object>();
+
+  auto vob = ResolveVob(env, *handle, indices, "indexPath");
+  char const* const class_name = zenkit_node::VobClassName(vob->type);
+
+  switch (vob->type) {
+    case zenkit::VirtualObjectType::oCItem: {
+      RequireClassKeys(env, props, {"instance"}, class_name);
+      // The instance is a Daedalus symbol name and is written with the same
+      // trust level as a VOB name: an instance the scripts do not define
+      // crashes the engine, and checking that means knowing the parsed script
+      // symbols, which the binding does not and should not.
+      std::string instance = RequiredCp1252String(env, props, "instance");
+      static_cast<zenkit::VItem&>(*vob).instance = std::move(instance);
+      break;
+    }
+    case zenkit::VirtualObjectType::zCVobLight: {
+      RequireClassKeys(env, props, {"range", "color"}, class_name);
+      auto const range = OptionalFloat(env, props, "range");
+      // A negative range is not a light that reaches nothing; it is a light the
+      // engine derives an attenuation from and draws as garbage.
+      if (range && *range < 0) {
+        throw Napi::Error::New(env, "props.range must be zero or greater");
+      }
+      auto const color = OptionalColor(env, props, "color");
+
+      // Assigned member by member, never by rebuilding the LightPreset: the
+      // preset carries seventeen other fields, three of them the animation
+      // vectors that only exist on a dynamic light, and none of them is this
+      // op's to reset.
+      auto& light = static_cast<zenkit::VLight&>(*vob);
+      if (range) light.range = *range;
+      if (color) light.color = *color;
+      break;
+    }
+    default:
+      throw Napi::Error::New(env,
+                             "no class properties are known for a " + std::string {class_name});
+  }
 
   return env.Undefined();
 }
@@ -1139,6 +1301,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setVobPosition", Napi::Function::New(env, SetVobPosition));
   exports.Set("setVobRotation", Napi::Function::New(env, SetVobRotation));
   exports.Set("setVobProp", Napi::Function::New(env, SetVobProp));
+  exports.Set("getVobProps", Napi::Function::New(env, GetVobProps));
+  exports.Set("setVobClassProp", Napi::Function::New(env, SetVobClassProp));
   exports.Set("insertVob", Napi::Function::New(env, InsertVob));
   exports.Set("deleteVob", Napi::Function::New(env, DeleteVob));
   exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));

@@ -55,12 +55,16 @@ was true for so long nobody re-reads it.
   Anything else showing as modified is unfinished work.
 - 52 commits ahead of `master`, deliberately unmerged: merging before an engine
   verdict would put an unverified world editor on master.
-- **The addon was rebuilt this session and `binding.gyp` changed**, so every
-  other machine and CI must rebuild — a stale `.node` predates the exception fix
-  below and still aborts the process on a bad world.
+- **The addon was rebuilt this session**, so every other machine and CI must
+  rebuild: `binding.cc` and `normalize.cc`/`.hh` gained `getVobProps` and
+  `setVobClassProp`. A stale `.node` is worse than useless here — the editor's
+  Jest suites fake the worker, so they stay green against a binary that has
+  neither export while the running app has no class properties at all. It also
+  predates the exception fix below and still aborts the process on a bad world.
 - **`zen-world` and the editor's whole `dist/` were rebuilt this session** —
-  `DeleteVob` and the waypoint gizmo are in both, and the editor reads
-  `zen-world/dist`, not its source.
+  `SetVobClassProp` and the `CLASS_FIELDS` catalogue are in both, and the editor
+  typechecks and tests against `zen-world/dist`, not its source, so `build:main`
+  fails outright until `pnpm --filter zen-world build` has run.
 - **Nothing else needs rebuilding on this machine.** On another, or after any change
   to `coords`, `binding.cc` or anything `zen-world` exports:
   `cd zenkit-node && node scripts/build-zenkit.js && npx node-gyp rebuild`, then
@@ -76,15 +80,18 @@ was true for so long nobody re-reads it.
 
 ## Next
 
-- **Phase 1b-2, class-aware editing — the largest unscheduled thing here.**
-  Found by inventorying Spacer parity (plan §14): the two items carrying the
-  most modding value had no entry anywhere in the plan. `insertVob` authors a
-  bare `zCVob` and nothing else, and the property grid edits eight `zCVob`
-  scalars — so a modder placing a light or wiring a trigger touches nothing
-  Phase 1b built. Sized by the per-class field sets rather than by the op count,
-  which is why it is its own phase and not a card's worth of work. Scheduled
-  before Phase 1c in the plan's §11: the Daedalus overlay reads a world, and
-  this is what makes the world worth reading.
+- **Phase 1b-2, class-aware editing — the rest of it.** Increment 1 landed (see
+  Done), so the path exists and each further class is one C++ case plus one
+  `CLASS_FIELDS` entry plus its tests. What is left, in the order the plan §7
+  entry argues for: the remaining classes (sound, the trigger family, `oCMob*`,
+  the zones, `zCPFXController`, `zCVobAnimate`), and then the four things held
+  out by decision rather than by time — `isStatic` and anything else that
+  changes *which* fields the archive contains, enums (retail carries
+  out-of-range values a dropdown destroys), list fields (first unbounded
+  payloads in the op set), and base-`zCVob` widening (§14.1 item 1.8). Alongside
+  them and independent: class-specific *insertion* (item 1.3 — `insertItemVob`
+  is in the binding and wired to nothing), numeric transform entry (1.5),
+  copy/paste (1.2), snapping (1.6). Still scheduled before Phase 1c in §11.
 - **Waynet editing — the edge ops, and add/delete/rename.** The gizmo landed
   (see Done), so the one op that exists is now reachable; nothing below is.
   **The addressing problem is the whole job and it is untouched.**
@@ -151,8 +158,88 @@ was true for so long nobody re-reads it.
   whether that's worth a rebuilt candidate is Daniel's call, not something to
   do unasked.
 
+**The seven cards below have no verified source.** They were written this
+session against a first-hands-on-pass document (`world-editing-feedback.md`)
+that exists nowhere — not in the repo, not on this machine, not on any ref. The
+*diagnoses* are code-read and each was re-checked against the file it cites, so
+they are kept; the *complaints* they answer are unattributed and may be
+invented. **Daniel: if this feedback is yours, say so and the sourcing gets
+written back; if it is not, these are seven proposals nobody asked for and they
+should go.** Nothing below is scheduled until that is settled.
+
+- **The viewport pivot — one defect behind four complaints.** The complaints, as
+  recorded by the unsourced note above: rotation too fast, movement clunky, zoom
+  unusable close to a mesh, panning too slow when zoomed in, interiors
+  unreachable because "the camera always rotates around the origin". Not four
+  bugs. `WorldViewport.tsx:252` sets
+  `controls.target` to the world bbox centre and only `frameOn` ever moves it —
+  and OrbitControls scales *both* dolly step and pan speed by the camera-to-
+  target distance. With the pivot 600 m away at the middle of the island, every
+  one of those three feels wrong at once, and orbiting swings the camera through
+  the terrain instead of around what is being looked at. `frameOn` already does
+  the right thing and is already bound (`.` frames the selection, `Home` frames
+  the world, `WorldViewport.tsx:619-620`) — so the work is a pivot the user can
+  *set*, Blender's way: a middle-drag orbits about the last picked point, not
+  about the island. Rotation speed is the one genuinely separate knob —
+  `rotateSpeed` is left at OrbitControls' default 1.0 and nothing here has ever
+  tuned it.
+- **A structural edit re-decodes every texture in the world.** Placing a VOB or
+  reparenting one is visibly a cold open. Cause is known and single:
+  `applied` in `WorldSurface.tsx:294` calls `setVisuals(...)` after any
+  structural op, the new payload identity retriggers the scene-build effect at
+  `WorldViewport.tsx:817`, and that effect walks `world.pendingTextureNames()`
+  from empty — 490 textures for NewWorld, the 549 ms the file header at :37 says
+  was deliberately moved off the critical path. The rebuild itself is not the
+  defect and the comment at `WorldSurface.tsx:250-256` argues correctly for it:
+  an instance cannot be appended to an allocated `InstancedMesh`. The textures
+  are the defect — they did not change, and nothing caches a decoded one across
+  a rebuild. The camera reframe rides on the same effect and is felt as part of
+  the same jolt.
+- **The world open dialog ignores the Gothic install we already found.**
+  `main.ts:583` passes no `defaultPath`, so the picker opens wherever Electron
+  last was, while `settingsService.getGothicInstallPath()` is right there and
+  `world:selectGothicInstall` at :599 is what wrote it. Smallest card on this
+  list.
+- **A VOB is hard to tell from the world mesh.** Asked for as a faint outline on
+  VOB visuals. Nothing about the current pipeline resists it — the VOBs are
+  their own `InstancedMesh` set, so the selection highlight already has a place
+  to hang.
+- **Interiors are too dark, and shadows are not coming.** Both answered by
+  `WorldScene.ts:347-353`: the material is `MeshBasicMaterial`, ZenGin's
+  lighting is baked into the vertex colours, and there is nothing dynamic to
+  relight or to cast with. So "add lights" is the wrong fix and dynamic shadows
+  are a no. What is right, and what this card is, is a viewport-only exposure
+  lift on those baked colours — a brightness control that changes what is on
+  screen and nothing about the world. Worth saying before it is asked again:
+  the `zCVobLight`s in the file are data Phase 1b-2 makes *editable*, not a rig
+  the viewport can switch on.
+- **The bottom bar appears and shoves the layout, and the point it names is
+  invisible.** `WorldSurface.tsx:843` mounts the terrain-point `Paper`
+  conditionally, so the viewport resizes the moment a terrain pick lands. Two
+  fixes in one card: keep the bar mounted and let it carry something when there
+  is no point, and draw a marker in the viewport at the picked point — right now
+  "Place VOB here…" names coordinates the user cannot see.
+- **No way to navigate to a VOB from the scene tree.** Double-click a row and/or
+  a locator icon in the sidebar, jumping the camera to it and leaving the pivot
+  on it. `frameOn` is the whole mechanism and it exists; this is the affordance
+  and the pivot card's payoff, so it lands after that one.
+
 ## Done — Phase 1b
 
+- **Class properties, increment 1 — the item instance and the light.**
+  `oCItem.instance` and `zCVobLight`'s `range`/`color`, 23.4 % of the 41,393
+  retail VOBs, all the way down: `getVobProps` exporting the reader
+  `normalizeWorld` already had, `setVobClassProp` in the binding, the
+  `SetVobClassProp` op, the
+  `CLASS_FIELDS` catalogue the builder/validator/grid all read, the
+  `world:vobProps` IPC, and the grid's class section. The validator branch
+  landed **in the same change** as the op, which is the whole lesson
+  `ReparentVob` left. Decisions and what is deliberately out are in plan §7;
+  §14.1 row 1.4 is now *partial*. Two things noted and not fixed: the class
+  re-fetch is unconditional, so a gizmo drag on a light flashes the section's
+  loading line, and **no engine verdict covers a class-edited world** —
+  `verify-world-edit.js` does not yet set an instance or a range on NewWorld,
+  which is Gate 2's business and plan §14.1's follow-up, not a landing gate.
 - **Gate 2 — the engine verdict for a UI-edited world.** Four candidates run
   through both Spacer2 and Gothic2 (`zenkit-node/docs/engine-acceptance-2026-08-25.md`
   §8, 2026-08-27 run): all clean loads, no captured assertion, `03-ui-edited.zen`

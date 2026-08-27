@@ -5,10 +5,10 @@ import {
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  addVob, applyWaypointPositions, deleteVob, invertOp, isBarrierOp, isStructuralOp, isWaynetOp,
-  moveWaypoint, placeBounds, renumbersPaths,
-  reparentVob, rotateVobs, setVobProps, translateVobs,
-  type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
+  addVob, applyWaypointPositions, classPropKeys, deleteVob, invertOp, isBarrierOp, isStructuralOp,
+  isWaynetOp, moveWaypoint, placeBounds, renumbersPaths,
+  reparentVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
+  type ClassProps, type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { primaryVob, useWorldStore } from '../../store/worldStore';
@@ -163,6 +163,64 @@ const WorldSurface: React.FC = () => {
   // handing it the ops that were applied is smaller than either a callback ref
   // or a second copy of the world.
   const [appliedOps, setAppliedOps] = useState<WorldOp[] | null>(null);
+
+  /**
+   * The primary VOB's per-class fields — an item's Daedalus instance, a light's
+   * range and colour (level-editor.md §14.1 item 1.4).
+   *
+   * **React state here rather than in the store or in a cache beside the
+   * summary.** `applyEdit` writes into the existing `ArrayBuffer`s and
+   * deliberately does not change the identity of `summary`, so the `WeakMap`
+   * pattern `vobModelOf` uses would key on an object that never changes and go
+   * on serving pre-edit values for the life of the world. And there is no column
+   * for any of this: the index interns a class *name* and carries not one field
+   * of the class, which is why it is a fetch at all.
+   *
+   * Re-issued on `appliedOps` as well as on the selection, and that covers more
+   * than it looks like: a commit, an undo, a redo and a *refusal* all set it —
+   * the last of which is the one that matters, because a refused edit otherwise
+   * leaves the grid showing the number the user typed as though the world had
+   * taken it. The generation guard is not optional either: the read is not
+   * serialized against edits in the main process, so two fetches genuinely
+   * overlap and the slower one must not win.
+   *
+   * **It is tagged with the VOB it was read for, and the tag is load-bearing.**
+   * The grid picks its fields out of the catalogue by the *selected* VOB's
+   * class, so the fields and this object have to come from the same VOB — and an
+   * effect cannot establish that, because it runs a render too late: the render
+   * the selection change causes reaches the grid with the new VOB and the props
+   * of the old one. Two catalogued classes then disagree about which keys exist,
+   * the grid reads a key the props do not have, and the whole editor is replaced
+   * by the error boundary's fallback. A mismatched tag reads as "not here yet",
+   * which is what it is.
+   */
+  const [classProps, setClassProps] = useState<{ vob: number; props: ClassProps } | null>(null);
+  const primary = primaryVob(selection);
+
+  useEffect(() => {
+    setClassProps(null);
+    if (summary === null || primary === null) return undefined;
+
+    const { reader } = vobModelOf(summary);
+    const className = reader.className(primary);
+    // Nothing is asked for a class the catalogue has no fields for — 35 of the
+    // 37 in a retail world, and the selection moves with every click.
+    if (className === null || classPropKeys(className).length === 0) return undefined;
+    const path = vobIndexPath(reader, primary);
+    if (path === null) return undefined;
+
+    let current = true;
+    void window.editorAPI.getVobProps(path)
+      // The whole props object, base fields and all: it is the reader
+      // `normalizeWorld` uses, and the grid picks the catalogued keys out of it.
+      .then((props) => {
+        if (current) setClassProps({ vob: primary, props: props as ClassProps });
+      })
+      // A world that has been closed under the fetch, or a path that no longer
+      // resolves. The grid says it is waiting, which is what it is doing.
+      .catch(() => { if (current) setClassProps(null); });
+    return () => { current = false; };
+  }, [summary, primary, appliedOps]);
 
   // ── saving (level-editor.md §5) ───────────────────────────────────────────
   //
@@ -372,6 +430,28 @@ const WorldSurface: React.FC = () => {
       setVisuals(await window.editorAPI.getWorldVisuals());
     }
   }, [commitOps, boundsOf]);
+
+  /**
+   * A class field change from the grid — the primary VOB alone.
+   *
+   * Alone, where every other edit in this surface takes the whole selection:
+   * each VOB in a batch would need its own fetched `from`, a selection can hold
+   * mixed classes, and there is no guard for that equivalent to the "not in the
+   * index" refusal every other op gets for free (§14.1 item 1.4, D7).
+   *
+   * The fetched props are the whole `from` side. They are passed rather than
+   * read back at apply time for the reason no op reads `from` from the world:
+   * by then the world holds `to`, and the inverse would restore it.
+   */
+  const handleEditClassProps = useCallback(async (props: ClassProps) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const vob = primaryVob(selected);
+    // The tag again: the fetched props are the whole `from` side, so props read
+    // for another VOB would build an op — and an inverse — out of values that
+    // VOB never had.
+    if (current === null || vob === null || classProps?.vob !== vob) return;
+    await commitOps([setVobClassProp(vobModelOf(current).reader, vob, classProps.props, props)]);
+  }, [commitOps, classProps]);
 
   /**
    * Move a VOB into another parent — the scene tree's drag and drop.
@@ -767,6 +847,8 @@ const WorldSurface: React.FC = () => {
                   summary={summary}
                   selection={selection}
                   onEditProps={handleEditProps}
+                  classProps={classProps?.vob === primary ? classProps.props : null}
+                  onEditClassProps={handleEditClassProps}
                 />
               )}
           </Box>

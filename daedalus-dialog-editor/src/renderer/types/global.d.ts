@@ -173,6 +173,10 @@ export interface EditorAPI {
    *  the one bounds not already in the renderer, because a visual the world does
    *  not use has no instance. Null for a name that does not resolve. */
   getVisualBounds: (name: string) => Promise<number[] | null>;
+  /** The per-class fields of one VOB, by its native index path — the `from` side
+   *  of a class-property edit and what the grid shows. Asked for every time: the
+   *  columnar index interns a class name and carries no per-class data. */
+  getVobProps: (path: string) => Promise<Record<string, unknown>>;
   /** The VOB enumeration again, after a structural edit changed it. A flat index
    *  is a position in a depth-first traversal, so an added VOB changes how many
    *  there are and the columnar projection cannot be patched. */

@@ -32,6 +32,7 @@
 // the binding call for them does, not before.
 
 import type { VobReader } from './vobTree';
+import { classPropKeys, fieldOf, type ClassProps } from './vobClasses';
 
 /** ZenGin space, centimetres — unconverted, exactly as the binding takes it. */
 export type ZenPosition = [number, number, number];
@@ -141,6 +142,63 @@ export interface SetVobProp {
    */
   fromBbox: ZenBounds | null;
   toBbox: ZenBounds | null;
+}
+
+/**
+ * Set the properties a VOB has by virtue of its *class* — an `oCItem`'s Daedalus
+ * instance, a `zCVobLight`'s range and colour.
+ *
+ * A second op rather than eight more optional keys on `VobProps`, and every
+ * reason is code rather than taste. `setVobProp` reads `from` out of the
+ * columnar index, and the index carries no per-class data at all — only the
+ * interned class *name* — so there is nothing there to read a class field's
+ * origin from. `applyOps` has no column to project one into, and a typed array
+ * in a transferred payload cannot grow one. `setVobProp` performs no class check
+ * between its first line and its last, so `{ range: 500 }` on an `oCItem` would
+ * build cleanly and be refused only by the binding, in the middle of a batch.
+ * And a shared key list would become a union of every key of every class, most
+ * of them illegal for most VOBs, which multiplies exactly the trap `PROP_KEYS`
+ * warns about.
+ *
+ * It also sheds `fromBbox`/`toBbox`: no field in the catalogue can change the
+ * box the engine culls by, and two permanently-null fields are two fields every
+ * layer downstream has to keep excusing.
+ */
+export interface SetVobClassProp {
+  op: 'SetVobClassProp';
+  /** The flat index into `vobIndex` — what the UI selected. */
+  vob: number;
+  /** The native address, `setVobClassProp`'s `indexPath`. */
+  path: string;
+  /**
+   * The class the VOB had when the op was made — a declaration of intent, not a
+   * truth.
+   *
+   * The editor's IPC assertion is stateless with respect to the world: it sees
+   * the op and has no index and no handle, so without a declared class it cannot
+   * tell that a key is legal for the VOB the op names, and a cross-class key
+   * would be discovered in C++ at the bottom of a partly-applied batch. The
+   * binding still switches on the VOB's *actual* type and refuses a key that
+   * class does not have, the same way `writeOp` re-checks where a reparent
+   * actually landed. Being directionally symmetric, it survives `invertOp`'s
+   * swap of the two sides untouched — undoing an edit to an `oCItem` still
+   * addresses an `oCItem`.
+   */
+  className: string;
+  /**
+   * The fields as they were and as they are to become — **the same keys on both
+   * sides**, exactly as `SetVobProp` requires and for the same reason: an
+   * inverse carrying more restores fields the op never touched, one carrying
+   * fewer leaves one unrestored, and neither is visible until someone undoes.
+   *
+   * `from` is supplied by the caller rather than read out of the index, because
+   * the index cannot answer. `MoveWaypoint` is the precedent — its origin comes
+   * out of the payload the caller holds, because there is no reader for a
+   * waynet. What stays forbidden is reading `from` back out of the *native
+   * world* at apply time; being handed it when the op is made is not that.
+   */
+  from: ClassProps;
+  to: ClassProps;
 }
 
 /**
@@ -268,7 +326,8 @@ export interface DeleteVob {
 }
 
 export type WorldOp =
-  MoveVob | RotateVob | SetVobProp | AddVob | ReparentVob | MoveWaypoint | DeleteVob;
+  MoveVob | RotateVob | SetVobProp | SetVobClassProp | AddVob | ReparentVob
+  | MoveWaypoint | DeleteVob;
 
 /**
  * The tail of every dispatch over `WorldOp`.
@@ -622,6 +681,60 @@ export function setVobProps(
 }
 
 /**
+ * Set class fields on one VOB, given what it currently holds.
+ *
+ * `current` is the props the reader in `zenkit-node` answered for this VOB — the
+ * whole of the `from` side, because the columnar index has none of it. It is
+ * taken as a whole rather than per key so the caller passes what it fetched
+ * unchanged; the op keeps only the keys `to` names.
+ *
+ * The four refusals are all here rather than at the binding, because every one
+ * of them is knowable before the world is touched and the alternative is a batch
+ * that has already half-applied: an edit that sets nothing (fifty VOBs and a
+ * dialog dismissed unchanged), a VOB that is not in the index, a key that this
+ * VOB's class does not have, and a key with no value on the `from` side — which
+ * would be an inverse that writes `undefined` into the world.
+ *
+ * The class is stamped from the reader rather than taken from the caller: a
+ * caller that could name the class could name the wrong one, and the op is
+ * addressed by a path the same reader resolved.
+ */
+export function setVobClassProp(
+  reader: VobReader, vob: number, current: ClassProps, to: ClassProps,
+): SetVobClassProp {
+  const named = Object.keys(to).filter((key) => to[key] !== undefined);
+  if (named.length === 0) {
+    throw new RangeError('a class property op must set at least one property');
+  }
+
+  const path = vobIndexPath(reader, vob);
+  const className = reader.className(vob);
+  if (path === null || className === null) throw new RangeError(`no vob ${vob} in the index`);
+
+  for (const key of named) {
+    if (fieldOf(className, key) === null) {
+      throw new RangeError(`a ${className} has no class property ${key}`);
+    }
+    if (current[key] === undefined) {
+      throw new RangeError(`no current value for ${key}: its inverse would restore nothing`);
+    }
+  }
+
+  // Catalogue order rather than the order the grid emitted, so two ops built
+  // from the same edit are the same object — the property grid iterates a record
+  // and the history compares ops.
+  const keys = classPropKeys(className).filter((key) => named.includes(key));
+  return {
+    op: 'SetVobClassProp',
+    vob,
+    path,
+    className,
+    from: Object.fromEntries(keys.map((key) => [key, current[key]])),
+    to: Object.fromEntries(keys.map((key) => [key, to[key]])),
+  };
+}
+
+/**
  * Place a new VOB in the world — appended to `parent`'s children, or to the
  * roots when `parent` is null.
  *
@@ -785,6 +898,11 @@ export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
   if (op.op === 'SetVobProp') {
     return { ...op, from: op.to, to: op.from, fromBbox: op.toBbox, toBbox: op.fromBbox };
   }
+  if (op.op === 'SetVobClassProp') {
+    // No box to swap and no class to swap: the class is the same VOB's on both
+    // sides, so the plain swap is the whole inverse.
+    return { ...op, from: op.to, to: op.from };
+  }
   if (op.op === 'AddVob') {
     // A null side means "not in the world", so swapping the two sides turns an
     // add into a delete and back with no special case of its own.
@@ -810,6 +928,12 @@ export interface OpBinding {
   /** `bbox` is present only when a visual swap changed it — the binding refuses
    *  a box that no visual swap justifies, so it cannot be passed unconditionally. */
   setVobProp(path: string, props: VobProps & { bbox?: ZenBounds }): void;
+  /** Writes the fields a VOB has by virtue of its class. It takes no class name
+   *  because it does not need one: it resolves the VOB and switches on the type
+   *  it actually has, so a key of another class is refused by that class's own
+   *  key table. The `className` the op carries is for the layers that cannot
+   *  resolve a VOB at all. */
+  setVobClassProp(path: string, props: ClassProps): void;
   /** Appends a VOB to `parentPath`'s children — null for a root — and answers
    *  with the index path it landed at, which `commitOps` checks against the one
    *  the op claims. */
@@ -837,6 +961,13 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   if (op.op === 'SetVobProp') {
     const bbox = direction === 'to' ? op.toBbox : op.fromBbox;
     binding.setVobProp(op.path, bbox === null ? op[direction] : { ...op[direction], bbox });
+    return;
+  }
+  if (op.op === 'SetVobClassProp') {
+    // Both directions off the one side `direction` names — `commitOps` unwinds a
+    // refused batch by replaying the applied ops through `'from'`, so a branch
+    // that only ever read `op.to` would leave the field standing.
+    binding.setVobClassProp(op.path, op[direction]);
     return;
   }
   if (op.op === 'ReparentVob') {
@@ -1018,6 +1149,15 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
         if (op.to[flag]) flags[op.vob] |= bit;
         else flags[op.vob] &= ~bit;
       }
+    } else if (op.op === 'SetVobClassProp') {
+      // Nothing to write, and said so out loud. The index has the class name and
+      // not one field of the class, so this op has no column — but it is still
+      // *touched*, because `touched` is what re-attaches the gizmo and re-renders
+      // the panels. The alternative shapes both fail worse: falling through to
+      // the exhaustiveness tail throws after `commitOps` has already changed the
+      // authoritative world, and filtering it out upstream is a partition every
+      // caller would have to make identically, with the world one edit ahead of
+      // the projection for whichever one forgot.
     } else if (op.op === 'RotateVob') {
       // A rotation is not a move: the position column is not the op's to touch,
       // and the matrix goes in row-major, which is the order it came out in.

@@ -21,6 +21,7 @@ import {
   assertSaveFileOptions,
   assertOpenWorldRequest,
   assertTextureRequest,
+  assertVobPropsRequest,
   assertApplyOpsRequest,
   assertSaveWorldRequest,
   sanitizeRendererErrorPayload,
@@ -688,6 +689,15 @@ function setupIpcHandlers() {
       throw new Error('Invalid visual bounds request: name must be a non-empty string');
     }
     return worldService.getVisualBounds(name);
+  });
+
+  // The per-class fields of one VOB. A read of the world the worker holds — the
+  // columnar index carries none of this — and the address is a path down that
+  // world's tree, not a filesystem path, so the whitelist has nothing to say
+  // about it and the shape assertion is the whole boundary.
+  ipcMain.handle('world:vobProps', async (_event, request: unknown) => {
+    assertVobPropsRequest(request);
+    return worldService.getVobProps(request.path);
   });
 
   // The VOB enumeration again, after a structural edit changed it. It reads the
