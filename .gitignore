@@ -15,6 +15,9 @@ mdk/
 /verification_quest_layout.png
 /todos.txt
 
+# Generated corpus/roundtrip output
+/reports/
+
 .claude/*
 !.claude/skills/
 !.claude/skills/**
