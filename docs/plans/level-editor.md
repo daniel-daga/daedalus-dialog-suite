@@ -1628,7 +1628,8 @@ all three waiting on the same answer: placing a VOB **under a parent**,
 `ReparentVob`, and deleting an arbitrary VOB. And no engine verdict covers a
 world with a VOB added to it. *(The answer landed on 2026-08-27 — see "The
 renumbering answer" below. It is the history's LIFO discipline, not a property
-of the ops.)*
+of the ops. `ReparentVob` landed with it, and placing under a parent on
+2026-08-28; a general delete is still open, and on a different objection.)*
 
 #### Two defects the viewport shipped with, and the shape they share (2026-08-26/27)
 
@@ -1727,13 +1728,134 @@ Three sabotages, all caught, and one of them was found by asking which branch no
 test reached: the index adjustment was covered by nothing until a test moved a
 VOB into a *later sibling* of itself, which is the only shape that exercises it.
 
-Still missing: placing a VOB under a parent (the same call, once the placement
-UI takes a parent), the drag-and-drop that would let a user reparent anything,
-and **deleting an arbitrary retail VOB** — which is not blocked by renumbering
-at all but by invertibility: an `oCMobInter` carries per-class properties,
-children, an AI and an event manager that no op describes, so undo cannot
-rebuild one. That needs a way to snapshot a subtree, and it is a different
-feature.
+Still missing: **deleting an arbitrary retail VOB** — which is not blocked by
+renumbering at all but by invertibility: an `oCMobInter` carries per-class
+properties, children, an AI and an event manager that no op describes, so undo
+cannot rebuild one. That needs a way to snapshot a subtree, and it is a
+different feature. *(Placing a VOB under a parent and the between-rows drop both
+landed on 2026-08-28 — below.)*
+
+#### The reparent that never reached the binding, and the parent an insert can now take (2026-08-28)
+
+**`ReparentVob` was refused at the IPC boundary for as long as it existed.**
+`assertApplyOpsRequest` checks an op's kind against a list, and the list was
+never extended — so every drag-and-drop reparent in the running app came back
+as `Invalid op: unknown op ReparentVob`, was caught by `commitOps` and shown as
+an edit error. Three suites cover that gesture and all three were green,
+because **every one of them mocks `applyWorldOps`**: the renderer test stubs the
+IPC, the op test injects a fake binding, and the binding test calls C++ directly.
+Nothing owned the seam between them. It is the same shape as the winding defect
+— each half correct, the join untested — and the fix is the same shape too: the
+validator now has a `ReparentVob` branch, and `ipcValidation.test.ts` has the
+cases that would have caught it.
+
+The op is also the first with **no top-level `path`**: a move has two ends and
+carries one on each side, so the branch has to run *before* the loop's `op.path`
+check rather than after it. A validator written around a field every op used to
+have is what refused the first op that did not.
+
+**`insertVob` now takes a parent**, `insertVob(handle, parentPath | null, opts)`
+— the shape `insertItemVob` already had. A null parent renumbers nothing and a
+parent renumbers, and the whole design is that one sentence: appended to the
+roots a VOB is enumerated last, appended under a parent it is enumerated as soon
+as that parent's subtree ends and every VOB after it moves up one. The safety
+argument is the history's LIFO discipline, exactly as it is for a reparent; the
+op-level guard is the narrower `renumbersPaths`, which is now `ReparentVob ||
+(AddVob && parentPath !== null)` rather than a test of the op's name. **An
+appended root still shares a batch**, which is the distinction that predicate was
+introduced to keep.
+
+It **appends rather than taking a slot**, which is the one place it deliberately
+differs from `reparentVob`. A reparent has to be able to put a VOB back exactly
+where it came from, so it needs a slot to be invertible; an insert's inverse is a
+delete of the VOB it just made, and the end of a list is where a delete leaves no
+hole to reason about.
+
+`AddVob.vob` — the flat index — is computed for the parented case by walking
+forward past the parent's whole subtree. That is sound **because the enumeration
+is strictly pre-order**: `CollectVobs` and the columnar builder are the same
+traversal, so a subtree is a contiguous run of indices. The branch that climbs
+more than one link was reached by nothing until a test used a *grandchild*, which
+is the only shape that exercises it — the same gap `reparentVob`'s index
+adjustment had.
+
+**The gesture is two clicks and a checkbox, and it works because a terrain point
+survives a click in the scene tree.** Only a viewport pick replaces the point, so
+"click the ground, then click the parent, then confirm" needs no new state: the
+placement bar, which used to hide itself whenever anything was selected, now
+stays up and the dialog says which list it will append to.
+
+**A drop between rows means "immediately before the row under the line."** That
+is the rule that gives a gap one meaning where the depth changes: the row below
+is the only one whose own list the line is actually inside, so a drop under a
+deeply nested last child means "before the next row at *its* depth", never one of
+the outer levels the pixels also touch. The last visible row carries the only
+"after" in the tree, because nothing is under it. The hit zone is a strip element
+of its own rather than a zone measured off the pointer's Y — splitting one
+element's height between two meanings makes both of them a guess about where the
+mouse was.
+
+The slot it passes is an index into the destination list **as it will be once the
+VOB has left it**, which is the convention `reparentVob` takes. Within one list
+that is a subtraction, and it needs **three siblings to test**: moving the first
+of two before the second is where it already is, and the tree refuses that as a
+no-op before the arithmetic is reached. A no-op is refused because it is still an
+op — a batch, a history entry and a full re-read of the index for a world that
+did not change — and that rule is also what refuses a row's own edges, so they
+need no guard of their own.
+
+**A selection does not survive an op that renumbers.** It is a list of flat
+indices, and afterwards there is no telling which VOB one of them names — the
+property grid would describe a VOB nobody picked and the gizmo would sit on it.
+Cleared rather than followed: the moved VOB's new index is recoverable from its
+path, but the *other* members of a multi-select are not, and a selection that
+quietly lost some of them is worse than one that says it is empty. `worldStore`
+documented the opposite ("there is no such op yet") for as long as `ReparentVob`
+has existed.
+
+#### What the real-app driver had to be taught, to be worth running (2026-08-28)
+
+`verify-world-edit.js` reported the reparent as a pass throughout the period the
+IPC validator was refusing every one of them. **Two separate reasons, and both
+are general.**
+
+**Its assertion could not fail.** It checked that the VOB count held across the
+reparent — and a reparent moves a VOB and never loses one, so a *refused* op
+holds the count exactly as a successful one does. The row now checks the tree:
+both VOBs involved are roots, so one that really became another's child is no
+longer a row of its own. That check does fail without the validator branch,
+measured by putting the defect back and running it.
+
+**Its drag never happened.** All three events were dispatched in one
+`page.evaluate`, and React 18 batches the `setDragging` that `dragstart` does —
+so a `drop` in the same JS task ran before the flush, read "nothing is being
+dragged" and returned, with no op, no error, and nothing for any assertion to
+see. A real drag is three user gestures in three tasks; the driver is now three
+`page.evaluate` calls. **The component tests could not have found this**:
+`fireEvent` wraps every call in `act()`, which flushes between them. That is the
+same class of gap as the mocked IPC — a seam that only exists outside the test
+harness.
+
+**Three assertions that look discriminating and are not**, all three measured by
+sabotage rather than argued about, on the question "did this VOB go under the
+parent or to the roots?":
+
+- the VOB count — identical for both;
+- the number of rendered rows, or of top-level rows — the tree is virtualized,
+  so it is the viewport's worth either way;
+- **finding a row with the placed VOB's name** — which passes for a root too,
+  because the tree is still scrolled to where the previous step's placement was
+  and the last root is on screen. This one went green on the sabotage.
+
+What separates them is the flat index in the row's `data-testid`, because that
+*is* the difference between the two cases: a root takes the index one past the
+end, a child is enumerated as soon as its parent's subtree ends.
+
+**And an index in a `data-testid` is not a stable name for a VOB.** After a
+reparent the enumeration changes, so `world-vob-row-5` means a different VOB than
+it did a moment earlier — an assertion written against it silently checks the
+wrong VOB. The between-rows step compares the top two rows' *labels* across the
+drop instead, and skips itself, saying so, when those two labels are equal.
 
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
