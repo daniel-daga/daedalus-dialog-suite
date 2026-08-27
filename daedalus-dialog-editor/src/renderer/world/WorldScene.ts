@@ -53,13 +53,11 @@ const OUTLINE_DARKEN = 0.7;
 const OUTLINE_POWER = 4.0;
 
 /**
- * The `onBeforeCompile` every VOB material shares.
+ * The silhouette half of the `onBeforeCompile` every VOB material shares.
  *
- * One module-level function on purpose: `customProgramCacheKey` defaults to
- * `onBeforeCompile.toString()`, so all VOB materials land on one program and
- * the untouched world-mesh materials — which keep `Material`'s no-op hook —
- * land on another. A hook created per material would compare the same way, but
- * this makes the sharing the reason rather than the coincidence.
+ * It is not installed directly: `vobShading` wraps it together with the
+ * exposure term, and the note there about `customProgramCacheKey` is what keeps
+ * the VOB program and the world-mesh program apart.
  */
 function outlineVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
   shader.vertexShader = `varying vec3 vVobNormal;\nvarying vec3 vVobView;\n${
@@ -86,6 +84,74 @@ function outlineVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
   #include <opaque_fragment>`,
     )
   }`;
+}
+
+/**
+ * Viewport exposure: a multiplier on the outgoing light of every surface in the
+ * world, world mesh and VOBs alike.
+ *
+ * Interiors are dark because ZenGin baked them dark — the lighting is in the
+ * vertex colours and there is no light in this scene to turn up. Adding one
+ * would be wrong twice over: `MeshBasicMaterial` has nothing to relight, and a
+ * light the engine does not have would draw a world the game never shows. So
+ * this is not lighting. It is the last multiply before the fragment is written,
+ * a brightness knob on the *picture* — it changes no vertex colour, produces no
+ * op, and dirties nothing.
+ *
+ * It rides a **uniform**, not a recompiled shader: dragging a slider would
+ * otherwise recompile every program in the scene on every pointer move. And it
+ * is one uniform object shared by every material, so a change is one assignment
+ * for the whole world rather than a walk over ~1,500 of them.
+ *
+ * 1 is unchanged. Below it dims, above it lifts — 4 is two stops, which is as
+ * far as a linear multiply on already-baked colours is worth pushing before
+ * everything lit is a white sheet.
+ */
+export const DEFAULT_EXPOSURE = 1;
+export const MIN_EXPOSURE = 0.5;
+export const MAX_EXPOSURE = 4;
+
+/** The shared uniform, in the shape `shader.uniforms` takes. */
+type Exposure = { value: number };
+
+function exposeBakedLight(
+  shader: THREE.WebGLProgramParametersWithUniforms, exposure: Exposure,
+): void {
+  shader.uniforms.uExposure = exposure;
+  shader.fragmentShader = `uniform float uExposure;\n${
+    shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      // After the texture, the baked colour and the outline, and before the
+      // fragment is written: the term is on the finished picture, which is what
+      // makes it a viewport setting rather than a change to the world.
+      `outgoingLight *= uExposure;
+  #include <opaque_fragment>`,
+    )
+  }`;
+}
+
+/**
+ * The two `onBeforeCompile` hooks, one per material kind.
+ *
+ * They must stay **textually different**, not merely different objects:
+ * `customProgramCacheKey` defaults to `onBeforeCompile.toString()`, so two
+ * closures with the same body would collide and whichever kind compiled first
+ * would decide the program for both — the world mesh would grow the VOB
+ * outline, or the VOBs would lose it. Each `WorldScene` makes one of each and
+ * hands the same function to every material of that kind, so the sharing is the
+ * reason rather than the coincidence.
+ */
+function worldShading(exposure: Exposure) {
+  return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
+    exposeBakedLight(shader, exposure);
+  };
+}
+
+function vobShading(exposure: Exposure) {
+  return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
+    outlineVobs(shader);
+    exposeBakedLight(shader, exposure);
+  };
 }
 
 interface TextureSlot {
@@ -162,6 +228,11 @@ export class WorldScene {
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
 
+  /** The one exposure uniform every material in this scene points at. */
+  private readonly exposure: Exposure = { value: DEFAULT_EXPOSURE };
+  private readonly shadeWorld = worldShading(this.exposure);
+  private readonly shadeVob = vobShading(this.exposure);
+
   /** @param textureCache decoded pixels kept across the rebuild a structural op
    *   forces, and the owner of their disposal. Null decodes from scratch and
    *   disposes what it decoded. */
@@ -169,6 +240,16 @@ export class WorldScene {
     this.root.matrixAutoUpdate = false;
     this.root.matrix.fromArray([...ROOT_MATRIX]);
     this.root.matrixWorldNeedsUpdate = true;
+  }
+
+  /**
+   * Lift or dim what is on screen — see `DEFAULT_EXPOSURE`.
+   *
+   * One assignment for the whole scene, and no recompile: the value is read by
+   * the next frame the render loop draws. Nothing about the world changes.
+   */
+  setExposure(value: number): void {
+    this.exposure.value = value;
   }
 
   setWorldMesh(payload: WorldMeshPayload): void {
@@ -488,16 +569,19 @@ export class WorldScene {
   }
 
   /** @param vob whether this draws a VOB rather than the world mesh — the one
-   *   difference is the silhouette outline, see `outlineVobs`. */
+   *   difference is the silhouette outline, see `outlineVobs`. Both kinds carry
+   *   the exposure term: an interior's walls are world mesh, so a brightness
+   *   control the world mesh did not take would light nothing that is dark. */
   private material(group: DrawGroup, vob = false): THREE.MeshBasicMaterial {
     // MeshBasicMaterial, not a lit one: ZenGin's lighting is baked into the
     // vertex colours and there is nothing dynamic in an editor viewport to
-    // relight it with.
+    // relight it with. Which is also why brightness is `setExposure` and not a
+    // light — see `DEFAULT_EXPOSURE`.
     const material = new THREE.MeshBasicMaterial({
       vertexColors: group.lights !== null,
       side: THREE.FrontSide,
     });
-    if (vob) material.onBeforeCompile = outlineVobs;
+    material.onBeforeCompile = vob ? this.shadeVob : this.shadeWorld;
 
     if (group.texture === '') {
       material.color.setRGB(

@@ -17,7 +17,7 @@
 import * as THREE from 'three';
 import { ROOT_MATRIX } from 'zen-world';
 import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
-import { WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
+import { DEFAULT_EXPOSURE, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
 
 function group(overrides: Partial<DrawGroup> = {}): DrawGroup {
   return {
@@ -63,6 +63,21 @@ function visual(overrides: Partial<InstancedVisual> = {}): InstancedVisual {
     bounds: [0, 0, 0, 100, 100, 0],
     ...overrides,
   };
+}
+
+/** Run a material's `onBeforeCompile` over the stock basic shader and hand back
+ *  what it made of it — the only way to see an injected term without a GPU. */
+function compile(material: THREE.MeshBasicMaterial) {
+  const shader = {
+    vertexShader: THREE.ShaderLib.basic.vertexShader,
+    fragmentShader: THREE.ShaderLib.basic.fragmentShader,
+    uniforms: {} as Record<string, { value: number }>,
+  };
+  material.onBeforeCompile(
+    shader as unknown as THREE.WebGLProgramParametersWithUniforms,
+    null as unknown as THREE.WebGLRenderer,
+  );
+  return shader;
 }
 
 describe('WorldScene', () => {
@@ -622,19 +637,6 @@ describe('WorldScene', () => {
     // pass. A second draw per VOB visual is 724 extra draw calls a frame.
     expect(scene.root.children).toHaveLength(2);
 
-    const compile = (material: THREE.MeshBasicMaterial) => {
-      const shader = {
-        vertexShader: THREE.ShaderLib.basic.vertexShader,
-        fragmentShader: THREE.ShaderLib.basic.fragmentShader,
-        uniforms: {},
-      };
-      material.onBeforeCompile(
-        shader as unknown as THREE.WebGLProgramParametersWithUniforms,
-        null as unknown as THREE.WebGLRenderer,
-      );
-      return shader;
-    };
-
     const vobShader = compile(vob);
     // The silhouette term itself: a view-space normal carried across, the
     // instance's own rotation folded into it (every VOB is an instance, so a
@@ -655,9 +657,56 @@ describe('WorldScene', () => {
     const power = Number(/pow\(\s*1\.0 - vobFacing,\s*([0-9.]+)\s*\)/.exec(vobShader.fragmentShader)?.[1]);
     expect(power).toBeGreaterThanOrEqual(2);
 
-    // And the world mesh compiles the stock shader, untouched.
+    // And the world mesh gets none of it: its vertex shader is the stock one,
+    // and the only thing its fragment shader gained is the exposure term below.
     const worldShader = compile(world);
     expect(worldShader.vertexShader).toBe(THREE.ShaderLib.basic.vertexShader);
-    expect(worldShader.fragmentShader).toBe(THREE.ShaderLib.basic.fragmentShader);
+    expect(worldShader.fragmentShader).not.toContain('vVobNormal');
+    expect(worldShader.fragmentShader).not.toMatch(/outgoingLight \*= mix\(/);
+  });
+
+  test('brightness is one shared uniform that lifts the picture and nothing else', () => {
+    // "Interiors are too dark" (2026-08-27). ZenGin's light is baked into the
+    // vertex colours and MeshBasicMaterial has nothing to relight, so the fix
+    // is an exposure multiply on the finished fragment — a viewport setting.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    const worldMesh = scene.root.children[0] as THREE.Mesh;
+    const world = worldMesh.material as THREE.MeshBasicMaterial;
+    const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+
+    const worldShader = compile(world);
+    const vobShader = compile(vob);
+
+    // An interior's walls are world mesh, so a control the world mesh did not
+    // take would leave everything that is actually dark exactly as dark.
+    expect(worldShader.fragmentShader).toContain('outgoingLight *= uExposure;');
+    expect(vobShader.fragmentShader).toContain('outgoingLight *= uExposure;');
+    expect(worldShader.fragmentShader).toContain('uniform float uExposure;');
+    // After the silhouette outline, not instead of it: the two multiply.
+    expect(vobShader.fragmentShader.indexOf('outgoingLight *= mix('))
+      .toBeLessThan(vobShader.fragmentShader.indexOf('outgoingLight *= uExposure;'));
+
+    // ONE uniform object for the whole scene, so a slider drag is one
+    // assignment rather than a walk over every material in the world.
+    expect(worldShader.uniforms.uExposure).toBe(vobShader.uniforms.uExposure);
+    expect(worldShader.uniforms.uExposure.value).toBe(DEFAULT_EXPOSURE);
+
+    // And it is written, not recompiled: `Material.version` is what a
+    // `needsUpdate` would bump, and a recompile per pointer move is the cost
+    // this uniform exists to avoid.
+    const versions = [world.version, vob.version];
+    const baked = (worldMesh.geometry.getAttribute('color').array as Float32Array).slice();
+
+    scene.setExposure(2.5);
+
+    expect(worldShader.uniforms.uExposure.value).toBe(2.5);
+    expect(vobShader.uniforms.uExposure.value).toBe(2.5);
+    expect([world.version, vob.version]).toEqual(versions);
+    // Nothing about the world moved: the baked vertex colours are the world's
+    // own data, and this changes what is drawn from them, not them.
+    expect(worldMesh.geometry.getAttribute('color').array).toEqual(baked);
   });
 });

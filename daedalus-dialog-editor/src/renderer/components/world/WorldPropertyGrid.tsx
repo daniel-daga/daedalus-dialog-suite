@@ -4,14 +4,17 @@ import {
 } from '@mui/material';
 import {
   classPropKeys, fieldOf,
-  type ClassPropValue, type ClassProps, type FieldDescriptor, type VobProps,
+  type ClassPropValue, type ClassProps, type FieldDescriptor,
+  type VobProps, type ZenPosition,
 } from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
 
 // The property grid for the selected VOB (level-editor.md §6, §7). It reads the
 // `VobIndex` the worker sent, and — since `SetVobProp` — it also writes: the
-// name, the visual and the six flags.
+// name, the visual, the six flags, the catalogued class fields, and the three
+// coordinates of the position. The rotation is the one transform it does not
+// write, and the reason is at that row.
 //
 // Two conventions it must not quietly improve on:
 //
@@ -50,7 +53,9 @@ const Field: React.FC<{ label: string; name: string; children: React.ReactNode }
     <Typography variant="caption" color="text.secondary" sx={{ minWidth: 84, flexShrink: 0 }}>
       {label}
     </Typography>
-    <Box data-testid={`world-prop-${name}`} sx={{ minWidth: 0, wordBreak: 'break-word' }}>
+    {/* The value column grows: three coordinate inputs side by side in a 300 px
+        panel overflow it otherwise, and the inputs are already `fullWidth`. */}
+    <Box data-testid={`world-prop-${name}`} sx={{ flexGrow: 1, minWidth: 0, wordBreak: 'break-word' }}>
       {children}
     </Box>
   </Box>
@@ -189,6 +194,63 @@ const ClassField: React.FC<{
   );
 };
 
+/** The axes, in the order the index stores them. */
+const AXES = ['x', 'y', 'z'] as const;
+
+/**
+ * A coordinate, from text, or null for anything that is not one.
+ *
+ * Null is the whole of the refusal, exactly as it is for a class field: nothing
+ * is sent, so a number the binding would reject never reaches the bottom of a
+ * batch that has already applied its other ops. The float32 check is not
+ * decoration — the archive holds a float32 and the binding takes one, so a
+ * magnitude beyond it would arrive as an Infinity.
+ */
+const parseCoordinate = (text: string): number | null => {
+  // `Number('')` is 0, and an emptied field is not a request to set zero.
+  if (text.trim() === '') return null;
+  const value = Number(text);
+  return Number.isFinite(value) && Number.isFinite(Math.fround(value)) ? value : null;
+};
+
+/**
+ * One typed coordinate (level-editor.md §14.1 item 1.5).
+ *
+ * It reuses `EditableField` for the same reason `ClassField` does: the
+ * blur/Enter/Escape rules and the value-in-the-key remount are already proven,
+ * and a second text input would be a second set of them to keep in step. The
+ * refusal counter is likewise the part `EditableField` cannot do alone — a
+ * refused value is not a commit, so nothing re-renders and an uncontrolled input
+ * would go on showing a coordinate the world does not have.
+ *
+ * A number equal to the one already there is refused by the same route rather
+ * than sent: "12.50" is different text and the same coordinate, and committing
+ * it would be a zero-delta op per selected VOB on the undo stack — the rule the
+ * name field and the gizmo both already have.
+ */
+const CoordinateField: React.FC<{
+  vob: number;
+  axis: string;
+  value: number;
+  onCommit: (value: number) => void;
+}> = ({ vob, axis, value, onCommit }) => {
+  const [refusals, setRefusals] = useState(0);
+  const text = coordinate(value);
+
+  return (
+    <EditableField
+      key={`position-${vob}-${axis}-${text}-${refusals}`}
+      name={`position-${axis}`}
+      value={text}
+      onCommit={(typed) => {
+        const parsed = parseCoordinate(typed);
+        if (parsed === null || parsed === value) setRefusals((at) => at + 1);
+        else onCommit(parsed);
+      }}
+    />
+  );
+};
+
 export interface WorldPropertyGridProps {
   summary: WorldSummary;
   /** The whole selection. The grid describes the last VOB in it — the one the
@@ -229,10 +291,23 @@ export interface WorldPropertyGridProps {
    * that does not exist yet (level-editor.md §14.1 item 1.4, D7).
    */
   onEditClassProps: (props: ClassProps) => void;
+  /**
+   * A typed coordinate, as the **delta** it moves the described VOB by — the
+   * gizmo's own shape, and the gizmo's own handler.
+   *
+   * A delta rather than the destination because a typed coordinate is the same
+   * edit a drag is, and a drag of a multi-selection moves every VOB by one
+   * delta: an absolute applied to all of them would stack the selection on one
+   * point, and each op would lose the `from` that makes the batch invertible.
+   * Sending it this way also means there is no second op-building path to keep
+   * in step with `translateVobs` — the difference between typing and dragging
+   * ends here.
+   */
+  onTranslate: (delta: ZenPosition) => void;
 }
 
 const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
-  { summary, selection, onEditProps, classProps, onEditClassProps },
+  { summary, selection, onEditProps, classProps, onEditClassProps, onTranslate },
 ) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
@@ -335,12 +410,31 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
         <Typography variant="caption">{visualType}</Typography>
       </Field>
       <Field label="Position" name="position">
-        {/* ZenGin space, centimetres — see the note at the top of this file. */}
-        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-          {position.map(coordinate).join(', ')}
-        </Typography>
+        {/* ZenGin space, centimetres — see the note at the top of this file.
+            Typed, and it leaves as a delta: the destination is this axis
+            changed and the other two left alone. */}
+        <Stack direction="row" spacing={0.5}>
+          {AXES.map((axis, at) => (
+            <CoordinateField
+              key={axis}
+              vob={selectedVob}
+              axis={axis}
+              value={position[at]}
+              onCommit={(value) => {
+                const delta: ZenPosition = [0, 0, 0];
+                delta[at] = value - position[at];
+                onTranslate(delta);
+              }}
+            />
+          ))}
+        </Stack>
       </Field>
       <Field label="Rotation" name="rotation">
+        {/* Read-only, and deliberately so (§14.1 item 1.5). Spacer takes
+            angles; a `zCVob` stores a 3x3 matrix, `zen-world` has no
+            matrix↔Euler conversion, and one hand-rolled here would author
+            angles nothing in the system round-trips. The gizmo is the only way
+            to turn a VOB until that conversion exists in the domain. */}
         <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-line' }}>
           {[0, 3, 6].map((at) => rotation.slice(at, at + 3).map(coordinate).join(', ')).join('\n')}
         </Typography>

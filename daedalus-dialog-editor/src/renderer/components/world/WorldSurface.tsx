@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, Paper, Stack, Tab, Tabs, TextField,
+  DialogContentText, DialogTitle, FormControlLabel, Paper, Slider, Stack, Tab, Tabs, TextField,
   ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
@@ -13,6 +13,7 @@ import {
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { primaryVob, useWorldStore } from '../../store/worldStore';
 import { vobModelOf } from '../../world/vobModel';
+import { DEFAULT_EXPOSURE, MAX_EXPOSURE, MIN_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
@@ -76,6 +77,14 @@ const WorldSurface: React.FC = () => {
   // the cold open.
   const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
+  /**
+   * How bright the viewport draws — component state, beside `showWaynet` and
+   * the gizmo mode, because it is the same kind of thing they are: a setting
+   * about the picture, not about the world. It reaches nothing but the
+   * viewport, so it produces no op and cannot make the world dirty, and it is
+   * not persisted for the same reason nothing else on this bar is.
+   */
+  const [exposure, setExposure] = useState(DEFAULT_EXPOSURE);
 
   useEffect(() => {
     void window.editorAPI.getGothicInstall().then(setGothicInstall);
@@ -655,6 +664,28 @@ const WorldSurface: React.FC = () => {
               Waynet
             </Button>
           )}
+          {/* Brightness, beside the other view toggles and deliberately not
+              near anything that edits: ZenGin's lighting is baked into the
+              vertex colours, so an interior is dark in the file and there is no
+              light in this scene to turn up. This lifts the picture and nothing
+              else — no op, no dirty world, nothing saved. */}
+          {summary && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ width: 170 }}>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                Brightness
+              </Typography>
+              <Slider
+                size="small"
+                min={MIN_EXPOSURE}
+                max={MAX_EXPOSURE}
+                step={0.1}
+                value={exposure}
+                onChange={(_event, next) => setExposure(next as number)}
+                aria-label="Brightness"
+                data-testid="world-exposure"
+              />
+            </Stack>
+          )}
           {summary && (
             <Button
               size="small"
@@ -859,6 +890,7 @@ const WorldSurface: React.FC = () => {
               selectedWaypoint={selectedWaypoint}
               frameRequest={frameRequest}
               terrainPoint={terrainPoint}
+              exposure={exposure}
               onSelectWaypoint={selectWaypoint}
               onMoveWaypoint={moveWaypointTo}
             />
@@ -874,6 +906,7 @@ const WorldSurface: React.FC = () => {
                   summary={summary}
                   selection={selection}
                   onEditProps={handleEditProps}
+                  onTranslate={handleTranslateSelection}
                   classProps={classProps?.vob === primary ? classProps.props : null}
                   onEditClassProps={handleEditClassProps}
                 />

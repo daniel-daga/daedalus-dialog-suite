@@ -30,6 +30,8 @@ let mockSelectedWaypoint: number | null | undefined;
 let mockFrameRequest: { vob: number } | null | undefined;
 /** What the viewport is told to draw a marker at. */
 let mockTerrainPoint: [number, number, number] | null | undefined;
+/** How bright the viewport is told to draw. */
+let mockExposure: number | undefined;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 // The house pattern for react-window under jsdom, which has no layout — without
@@ -55,6 +57,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     selectedWaypoint: number | null;
     frameRequest: { vob: number } | null;
     terrainPoint: [number, number, number] | null;
+    exposure: number;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -68,6 +71,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     mockSelectedWaypoint = props.selectedWaypoint;
     mockFrameRequest = props.frameRequest;
     mockTerrainPoint = props.terrainPoint;
+    mockExposure = props.exposure;
     return (
       <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
@@ -200,6 +204,12 @@ const MOVE: WorldOp = {
   op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [11, 22, 33],
 };
 
+/** One axis of the property grid's typed position — an input, so its value is
+ *  not its text content. */
+const coordinate = (axis: string) => screen.getByTestId(
+  `world-prop-position-${axis}-input`,
+) as HTMLInputElement;
+
 const api = {
   getGothicInstall: jest.fn(async () => 'C:/Gothic II'),
   selectGothicInstall: jest.fn(),
@@ -266,6 +276,7 @@ beforeEach(() => {
   mockAppliedOps = undefined;
   mockFrameRequest = undefined;
   mockTerrainPoint = undefined;
+  mockExposure = undefined;
   mockVobProps = { class: 'zCVob' };
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
@@ -327,11 +338,15 @@ describe('a VOB dragged in the viewport', () => {
     // rows in jsdom, and which panel did the selecting is not what is under
     // test here.
     act(() => useWorldStore.getState().selectVob(1));
-    expect(screen.getByTestId('world-prop-position')).toHaveTextContent('10, 20, 30');
+    expect(coordinate('x').value).toBe('10');
+    expect(coordinate('y').value).toBe('20');
+    expect(coordinate('z').value).toBe('30');
 
     fireEvent.click(screen.getByTestId('stub-drag'));
 
-    await waitFor(() => expect(screen.getByTestId('world-prop-position')).toHaveTextContent('11, 22, 33'));
+    await waitFor(() => expect(coordinate('x').value).toBe('11'));
+    expect(coordinate('y').value).toBe('22');
+    expect(coordinate('z').value).toBe('33');
   });
 
   it('hands the applied ops to the viewport, so the scene follows the index', async () => {
@@ -340,6 +355,58 @@ describe('a VOB dragged in the viewport', () => {
     fireEvent.click(screen.getByTestId('stub-drag'));
 
     await waitFor(() => expect(mockAppliedOps).toEqual([MOVE]));
+  });
+});
+
+// Typed transform entry (level-editor.md §14.1 item 1.5). The point of these is
+// the *path*: a coordinate typed into the grid must become the same `MoveVob`
+// batch a drag becomes, through `translateVobs` and `commitOps`, so that undo,
+// the atomic batch and the refusal-unwind are the ones already proven above.
+describe('a coordinate typed into the property grid', () => {
+  const type = (axis: string, value: string) => {
+    const at = coordinate(axis);
+    fireEvent.change(at, { target: { value } });
+    fireEvent.blur(at);
+  };
+
+  it('becomes the same MoveVob a drag would, carrying where the VOB was', async () => {
+    const summary = await openWorld();
+
+    type('x', '110');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [110, 20, 30],
+    }]));
+    expect(createVobReader(summary.vobIndex).position(1)).toEqual([110, 20, 30]);
+  });
+
+  it('moves the whole selection by the delta, exactly as the gizmo does', async () => {
+    // The grid describes one VOB and says an edit here takes the selection with
+    // it. A typed *absolute* applied to every VOB would stack them on one point.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().toggleVob(0); });
+    // VOB 0 is the primary now — the last one added, the one the grid
+    // describes — and it sits at the origin.
+    expect(coordinate('x').value).toBe('0');
+
+    type('x', '100');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
+      { op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [110, 20, 30] },
+      { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [100, 0, 0] },
+    ]));
+  });
+
+  it('builds no op at all for a coordinate it cannot hold', async () => {
+    // Refused before an op exists, which is the whole rule: a value the binding
+    // would reject must not arrive at the bottom of a batch that has already
+    // applied its other ops.
+    await openWorld();
+
+    type('x', 'over there');
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    expect(coordinate('x').value).toBe('10');
   });
 });
 
@@ -495,6 +562,24 @@ describe('a turn of the gizmo', () => {
     expect(mockGizmoMode).toBe('translate');
     document.body.removeChild(field);
   });
+});
+
+describe('the viewport brightness', () => {
+  it('lifts the viewport brightness without touching the world', async () => {
+    // "Interiors are too dark" (2026-08-27): ZenGin's lighting is baked into
+    // the vertex colours, so there is no light to add and the answer is an
+    // exposure lift on the picture. It reaches the viewport and nothing else —
+    // no op, so no edit for the main process to take and nothing to save.
+    await openWorld();
+    expect(mockExposure).toBe(1);
+
+    fireEvent.change(screen.getByLabelText('Brightness'), { target: { value: '2.5' } });
+
+    await waitFor(() => expect(mockExposure).toBe(2.5));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    expect(mockAppliedOps ?? null).toBeNull();
+  });
+
 });
 
 describe('saving the world', () => {

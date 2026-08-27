@@ -162,6 +162,14 @@ export interface WorldViewportProps {
    * coordinates are not somewhere the user can see.
    */
   terrainPoint: [number, number, number] | null;
+  /**
+   * How bright to draw what is on screen — 1 is the world's own baked light.
+   *
+   * A view setting and nothing else (`WorldScene.setExposure`): it is a uniform
+   * on the finished fragment, so it produces no op, dirties nothing, and is not
+   * saved with the world.
+   */
+  exposure: number;
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
   /**
@@ -203,7 +211,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
-  selectedWaypoint, frameRequest, terrainPoint, onSelectWaypoint, onMoveWaypoint,
+  selectedWaypoint, frameRequest, terrainPoint, exposure, onSelectWaypoint, onMoveWaypoint,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -955,6 +963,18 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   useEffect(() => {
     gizmoRef.current?.setMode(gizmoMode);
   }, [gizmoMode, mesh, visuals]);
+
+  // Brightness. One uniform write for the whole scene, picked up by the next
+  // frame the render loop draws — no recompile, and nothing to invalidate, so a
+  // slider drag costs one assignment per pointer move.
+  //
+  // `mesh` and `visuals` are dependencies for the reason the waynet's
+  // visibility effect gives: a structural op rebuilds the scene, and a fresh
+  // `WorldScene` starts at `DEFAULT_EXPOSURE` — without them a world placed
+  // with the brightness turned up would snap back to unchanged.
+  useEffect(() => {
+    sceneRef.current?.setExposure(exposure);
+  }, [exposure, mesh, visuals]);
 
   // A jump asked for from the scene tree. It fires on the request's identity,
   // not on the VOB — see `frameRequest`.

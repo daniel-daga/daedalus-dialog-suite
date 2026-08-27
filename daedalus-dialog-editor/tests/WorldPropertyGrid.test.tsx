@@ -124,12 +124,17 @@ let edits: Array<VobProps> = [];
 const onEdit = (props: VobProps) => { edits.push(props); };
 let classEdits: Array<ClassProps> = [];
 const onEditClass = (props: ClassProps) => { classEdits.push(props); };
-beforeEach(() => { edits = []; classEdits = []; });
+/** A typed coordinate arrives as a *delta*, which is the gizmo's own shape. */
+let moves: Array<[number, number, number]> = [];
+const onTranslate = (delta: [number, number, number]) => { moves.push(delta); };
+beforeEach(() => { edits = []; classEdits = []; moves = []; });
 
 /** The wiring every render needs. `classProps` is null by default because that
  *  is what a VOB of an uncatalogued class gets — nothing is fetched for one —
  *  and the tests that are about the class section hand it values themselves. */
-const wiring = { onEditProps: onEdit, onEditClassProps: onEditClass, classProps: null };
+const wiring = {
+  onEditProps: onEdit, onEditClassProps: onEditClass, classProps: null, onTranslate,
+};
 
 describe('WorldPropertyGrid', () => {
   it('says nothing is selected rather than showing an empty grid', () => {
@@ -152,13 +157,13 @@ describe('WorldPropertyGrid', () => {
   it('shows the position in ZenGin centimetres, unconverted', () => {
     // The single conversion is one mirrored root node in the viewport (§7).
     // Nothing else in the codebase converts, and this grid is the place it
-    // would be most tempting to.
+    // would be most tempting to. The coordinates are typed entry now, so what
+    // they show is three inputs' values rather than the row's text.
     render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
 
-    const position = field('position').textContent ?? '';
-    expect(position).toContain('12.5');
-    expect(position).toContain('4400');
-    expect(position).toContain('-73.25');
+    expect(input('position-x').value).toBe('12.5');
+    expect(input('position-y').value).toBe('4400');
+    expect(input('position-z').value).toBe('-73.25');
   });
 
   it('names the flag bits instead of printing the word', () => {
@@ -449,5 +454,112 @@ describe('WorldPropertyGrid, class fields', () => {
   it('says nothing about scope when one VOB is selected', () => {
     render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
     expect(screen.queryByTestId('world-prop-class-scope')).not.toBeInTheDocument();
+  });
+});
+
+// Typed transform entry (level-editor.md §14.1 item 1.5).
+//
+// The coordinates were read-only monospace text; Spacer takes them typed. What
+// this has to get right is that a typed coordinate is *the same edit the gizmo
+// makes* — it leaves as a delta, so it goes down `translateVobs` and reaches
+// undo, the history barrier and the atomic batch by the one path that already
+// exists, rather than by a second one that would have to be kept in step.
+//
+// Rotation stays read-only, deliberately: it is stored as a 3x3 matrix,
+// `zen-world` has no matrix↔Euler conversion, and a hand-rolled one in the
+// renderer would author angles nothing round-trips.
+describe('WorldPropertyGrid, typed position', () => {
+  const commitCoordinate = (axis: string, value: string) => {
+    fireEvent.change(input(`position-${axis}`), { target: { value } });
+    fireEvent.blur(input(`position-${axis}`));
+  };
+
+  it('sends the difference on one axis, and nothing on the other two', () => {
+    // A delta and not a destination, because that is what a drag of a
+    // multi-select produces: the VOBs keep the spacing they had, and each op
+    // still carries its own VOB's origin.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('x', '112.5');
+
+    expect(moves).toEqual([[100, 0, 0]]);
+  });
+
+  it('moves a coordinate that is negative in the file', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('z', '-70.25');
+
+    expect(moves).toEqual([[0, 0, 3]]);
+  });
+
+  it('commits on Enter without waiting for a blur', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('position-y'), { target: { value: '4500' } });
+    fireEvent.keyDown(input('position-y'), { key: 'Enter' });
+
+    expect(moves).toEqual([[0, 100, 0]]);
+  });
+
+  it('reverts to the VOB\'s own coordinate on Escape', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('position-x'), { target: { value: '999' } });
+    fireEvent.keyDown(input('position-x'), { key: 'Escape' });
+
+    expect(input('position-x').value).toBe('12.5');
+    expect(moves).toEqual([]);
+  });
+
+  it('refuses a coordinate that is not a number, before an op exists', () => {
+    // Refused here rather than committed and rejected: an op that reached the
+    // batch would be refused by the binding halfway through one that may
+    // already have applied. The field shows the world's own value again, which
+    // is the same rule Escape follows.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('x', 'over there');
+    commitCoordinate('y', '');
+    // Float32 is what the archive holds and what the binding takes; a magnitude
+    // it cannot hold would arrive as an Infinity.
+    commitCoordinate('z', '1e39');
+
+    expect(moves).toEqual([]);
+    expect(input('position-x').value).toBe('12.5');
+    expect(input('position-y').value).toBe('4400');
+    expect(input('position-z').value).toBe('-73.25');
+  });
+
+  it('sends nothing when the number typed is the number already there', () => {
+    // "12.50" is different text and the same coordinate. Sent, it would be a
+    // zero-delta op on the undo stack for every VOB in the selection — the rule
+    // the name field and the gizmo both already have.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('x', '12.50');
+
+    expect(moves).toEqual([]);
+  });
+
+  it('shows the next VOB\'s coordinates when the selection moves', () => {
+    // The same uncontrolled-input trap the name field has: a half-typed
+    // coordinate must not follow the selection and be written on the next blur.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />,
+    );
+    fireEvent.change(input('position-x'), { target: { value: '999' } });
+
+    rerender(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} />);
+
+    expect(input('position-x').value).toBe('0');
+  });
+
+  it('leaves the rotation matrix as text', () => {
+    // Nine numbers, read-only: see the note at the head of this describe.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    expect(field('rotation')).toHaveTextContent('1, 0, 0');
+    expect(screen.queryByTestId('world-prop-rotation-x-input')).not.toBeInTheDocument();
   });
 });
