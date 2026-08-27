@@ -22,15 +22,33 @@ Every one of these was measured on retail data, and every one of them fails
 *silently* — which is why they are here, with tests, instead of inline in a
 viewport.
 
-- **One mirrored root is the whole conversion.** ZenGin is left-handed and
-  measures in centimetres. `ROOT_MATRIX` negates X and scales to metres, and
-  because a mirror has a negative determinant it also flips the rasteriser's
-  front/back test — which is what settles triangle winding. Measured across the
-  retail corpus, a triangle in stored index order read right-handed points
-  *against* the normals ZenGin stored on its corners, uniformly. So indices stay
-  in stored order, positions stay in ZenGin space, and every material stays
-  single-sided. Nothing reaches for `DoubleSide` to make a wrong choice
-  invisible.
+- **One mirrored root is the whole *positional* conversion.** ZenGin is
+  left-handed and measures in centimetres; `ROOT_MATRIX` negates X and scales to
+  metres, so positions stay in ZenGin space everywhere above the renderer and a
+  VOB's local transform in the scene graph *is* its ZenGin placement.
+- **Winding and rotation do not ride on that mirror, and believing they did
+  shipped two defects.** Both were corrected on 2026-08-26/27, both had been
+  live since the viewport was built, and both were green in CI throughout:
+  - **Triangle winding.** A negative determinant does invert the rasteriser's
+    front/back test — and Three.js exists to hide that, so it inverts it back
+    (`renderBufferDirect`: `frontFaceCW = object.isMesh &&
+    object.matrixWorld.determinant() < 0`). The two cancel, and stored order —
+    measured across the retail corpus to point *against* the normals ZenGin
+    stored on its corners, uniformly — was drawn from the inside: every floor
+    transparent from above, every VOB inside out. `threeIndexOrder` reverses the
+    index buffer once, here, and every material stays single-sided. Nothing
+    reaches for `DoubleSide` to make a wrong choice invisible.
+  - **Rotation.** A quaternion cannot carry a mirror at all:
+    `Matrix4.decompose` answers a negative determinant by negating `scale.x`, so
+    `ROOT_MATRIX` decomposes to a rotation of *identity* and anything building a
+    parent-inverse from it drops the flip silently. `mirrorRotation` conjugates
+    a rotation across the boundary and is its own inverse, so it cannot be
+    applied the wrong way round. Positions survive the same decomposition
+    because the negative scale is still there to divide by; rotations do not.
+
+  The general rule both cases teach: **a conversion whose two halves can cancel
+  needs a test that models both of them.** Asserting the determinant is negative
+  is true and says nothing.
 - **Merge by texture + render state + colour, not by texture.** NewWorld has
   1400 materials on 330 textures, and one draw call per material is over the
   whole `< 1500` viewport budget before a single VOB is drawn. The measured key

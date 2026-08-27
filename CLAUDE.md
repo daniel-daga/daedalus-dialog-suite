@@ -183,7 +183,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
 | `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`, `zenkit.worker.ts`) |
-| `src/renderer/world/` | Three.js projection of a world (`WorldScene`, `VobPicker`, `BvhBuilder`) — no React |
+| `src/renderer/world/` | Three.js projection of a world (`WorldScene`, `VobPicker`, `BvhBuilder`, `cameraNav`) — no React |
 | `src/renderer/components/world/` | The World surface (`WorldSurface`, `WorldViewport`), lazily loaded |
 | `tests/e2e/` | Playwright browser-harness spec files |
 
@@ -286,7 +286,11 @@ Production-hardening work that only matters at first release (code signing, stri
 
 **Proposed plan:** [`docs/plans/mcp-server.md`](docs/plans/mcp-server.md) — built-in MCP server so AI clients can verify, create, and control dialog/quest content through the editor's validated pipelines (no code landed yet).
 
-**Proposed plan:** [`docs/plans/level-editor.md`](docs/plans/level-editor.md) — ZenGin level editor as new monorepo subprojects (`zenkit-node` N-API binding + `zen-world` domain + a World surface in the editor); viability analysis and architecture answering [`docs/plans/level-editor-design-brief.md`](docs/plans/level-editor-design-brief.md), with the blocking Phase 0 (binding + round-trip fidelity gate) broken down in [`docs/plans/level-editor-phase-0.md`](docs/plans/level-editor-phase-0.md) (no code landed yet).
+**Active plan:** [`docs/plans/level-editor.md`](docs/plans/level-editor.md) — ZenGin level editor as new monorepo subprojects (`zenkit-node` N-API binding + `zen-world` domain + a World surface in the editor); architecture answering [`docs/plans/level-editor-design-brief.md`](docs/plans/level-editor-design-brief.md), with Phase 0 broken down in [`docs/plans/level-editor-phase-0.md`](docs/plans/level-editor-phase-0.md).
+
+Phase 0 (binding + round-trip fidelity gate + the in-engine acceptance pass) is **closed** — record in [`zenkit-node/docs/engine-acceptance-2026-08-25.md`](zenkit-node/docs/engine-acceptance-2026-08-25.md). Phase 1a (read-only world viewer) landed. Phase 1b (VOB editing) is in progress: `MoveVob`, `RotateVob`, `SetVobProp`, `AddVob` and `ReparentVob` all run end to end, with gizmos, multi-select, the property grid, terrain placement, drag-and-drop reparenting and dirty-world save.
+
+**What Phase 1b still owes is Gate 2** — no engine run covers a world edited through the UI. Building the candidate is automated (`daedalus-dialog-editor/scripts/build-gate2-candidate.js`); the run itself is manual and its checklist is §8 of the acceptance record. Deleting an *arbitrary* retail VOB is the remaining op, and it is blocked by invertibility rather than by enumeration — see §7 of the plan.
 
 **Active plan:** [`docs/plans/production-readiness-review-findings.md`](docs/plans/production-readiness-review-findings.md) — production-readiness / performance / UI-UX review, including the decision to deprecate the quest Flow view (Option A and Option B both landed: the litegraph Flow view has been removed; the quest surface is the read-only list/details/create panel). §3 Performance is closed down to P3 (the P0, P1, and P2 items all landed; durable outcomes in `docs/architecture/render-performance.md`), and the §5 post-release fast-follows are all landed too (F2 dead source-view cleanup, F6 Ctrl+F scoping, and a strict `default-src 'self'` CSP — which moved Monaco off the jsdelivr CDN to the app's own origin; see `docs/architecture/security-model.md`). Its §5 tracks what has landed and what remains.
 

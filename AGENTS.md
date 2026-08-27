@@ -4,7 +4,7 @@ Generic instructions for coding agents working in this repository.
 
 ## Repository Scope
 
-This is a monorepo with two workspaces:
+This is a monorepo with four workspaces:
 
 - `daedalus-dialog-editor/` - Electron + React visual editor
 - `daedalus-parser/` - Tree-sitter parser + semantic/codegen library

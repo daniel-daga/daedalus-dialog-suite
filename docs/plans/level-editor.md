@@ -1174,6 +1174,21 @@ than fixtures:
   `WorldService`, applies to the authoritative native model, and lands in the
   history stack. Undo/redo replays inverse ops through the same path —
   multi-select batch edits are just op batches.
+- **Navigation is Blender's, and the left mouse button is not part of it**
+  (2026-08-27). Middle orbits, Shift+middle pans, Ctrl/Cmd+middle zooms; `.`
+  frames the selection and `Home` frames the world. The default OrbitControls
+  mapping orbits on the left button — the same drag that picks a VOB and the
+  same one that places one — and a click that both selects and tumbles makes the
+  viewport unusable for the thing it exists to do. Framing the selection is not
+  a convenience either: the orbit pivot starts at the centre of a 600 m island,
+  so without a way to move it every orbit up close swings the camera through
+  half the world.
+- **A structural edit must not move the camera.** The scene is rebuilt from the
+  world after one, which is the same path an open takes and therefore re-framed
+  the camera from the bbox — throwing away the view a placement was aimed from,
+  which is the one view that shows whether it landed. The pose survives a
+  rebuild of the same world, keyed on the bbox so opening a different one still
+  frames it.
 - **Save** writes only dirty parts (brief §4.2), atomic temp+rename per the
   existing save pipeline, with the stale-vertex-lighting and
   savegame-invalidation warnings (brief §7) surfaced at save time.
@@ -1614,6 +1629,53 @@ all three waiting on the same answer: placing a VOB **under a parent**,
 world with a VOB added to it. *(The answer landed on 2026-08-27 — see "The
 renumbering answer" below. It is the history's LIFO discipline, not a property
 of the ops.)*
+
+#### Two defects the viewport shipped with, and the shape they share (2026-08-26/27)
+
+Both were live from the day the viewport was built, both were green in CI
+throughout, and both come from the same mistake about the same matrix.
+
+**The world was drawn inside-out.** Every floor was transparent from above,
+every roof visible from underneath, every VOB turned inside out — all 230,395
+measured triangles, uniformly. Recorded in full in the winding bullet in §7; the
+short form is that a negative determinant *does* invert the rasteriser's
+front/back test, and Three.js exists to hide exactly that, so it inverts it
+straight back. The two cancel.
+
+**The rotate gizmo turned VOBs the wrong way.** `Matrix4.decompose` answers a
+negative determinant by negating `scale.x`, so `ROOT_MATRIX` decomposes to a
+scale of (-0.01, 0.01, 0.01) and a rotation of **identity** — the mirror is
+absorbed into the scale and never reaches the quaternion.
+`TransformControls` builds its parent-inverse from that decomposition, so a
+world-space drag was applied to the proxy's local quaternion unconjugated: the
+VOB turned by `R` where it should have turned by `M⁻¹RM`. Conjugating by
+diag(-1, 1, 1) maps a rotation about (x, y, z) to one about (x, -y, -z), so **X
+was correct and Y and Z were reversed** — and yaw is the one anybody tests.
+`coords`' `mirrorRotation` is that conjugation; it is an involution, so one
+function converts both ways and cannot be applied backwards.
+
+**Positions were never affected, and the reason is worth keeping.**
+`TransformControls` divides its offset by the same `_parentScale` the
+decomposition produced, so the negative x comes back. A translation survives a
+mirror that a rotation cannot, because the scale still carries it and the
+quaternion does not. "It works for moves" was never evidence about turns.
+
+**What the two share is the failure of the tests, not of the code.** Both were
+protected by an assertion that re-states the implementation: `coords.test.ts`
+asserted the determinant was negative — true, and silent about whether that
+achieved anything — and `verify-world-edit.js` drives rotation through
+`turnGizmo`, which sets the proxy's *local* quaternion and so bypasses precisely
+the world-space maths that inverted it, checking the result against an
+expectation computed the way the app computes it. It passes identically before
+and after the fix. **When a rule has two halves that can cancel — a mirror, and
+a library's compensation for mirrors — a test of either half endorses whatever
+the code does.** Both suites now model both halves, and the rendering one states
+the requirement in terms anyone can check: turn a point in ZenGin and convert
+it, or convert it and turn it on screen, and it must land in the same place.
+
+The other lesson is cheaper: **the screenshot is a test.** The winding defect
+was visible the instant anyone looked at the viewport, and it survived a full
+green suite for the whole of Phase 1a.
 
 #### The renumbering answer, and `ReparentVob` on top of it (2026-08-27)
 

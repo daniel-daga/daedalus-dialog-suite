@@ -243,7 +243,10 @@ vertex/feature indirection. (The world-mesh outliers are hand-authored
 geometry; the compiler-produced `.MRM` corpus has none.) That is what a
 left-handed engine looks like from a right-handed reading, and it makes the
 flip a **single decision for the whole projection layer** rather than a
-per-mesh one — so the binding still does not make it. Run both halves before
+per-mesh one — so the binding still does not make it. (The projection layer's
+answer is `zen-world`'s `threeIndexOrder`. It reverses the index buffer, and it
+had to: the mirror in `ROOT_MATRIX` does *not* settle winding, because Three.js
+cancels a negative determinant's effect on the front/back test.) Run both halves before
 trusting the number: a unanimous result from one reader is as likely to be a
 sign error in the script as a fact about ZenGin.
 
@@ -344,10 +347,12 @@ change the box.
 **No engine verdict covers any of this** — like the rotation before it, it is
 Gate 2's business.
 
-### `insertVob(handle, opts)` and `deleteVob(handle, indexPath)`
+### `insertVob(handle, opts)`, `deleteVob(handle, indexPath)` and `reparentVob(handle, fromPath, parentPath | null, slot)`
 
-The structural pair. `insertVob` appends a **root** `zCVob` and returns its index
-path; `deleteVob` removes a VOB and its whole subtree.
+The structural three. `insertVob` appends a **root** `zCVob` and returns its
+index path; `deleteVob` removes a VOB and its whole subtree; `reparentVob` moves
+one, with its subtree, into another parent at a given slot, and returns the path
+it landed at.
 
 **`insertVob` takes no parent, and that is the design rather than a gap.** Every
 VOB is enumerated depth-first and its flat index is its position in that
@@ -355,8 +360,8 @@ traversal, so a VOB inserted anywhere else renumbers every VOB after it — and
 every op already in the history addresses a VOB both by that number and by an
 index path built from it. Appending a root is the one position that shifts
 nothing: it is enumerated last and takes the index one past the end. Placing a
-VOB *under a parent* is a real feature, and it waits on an answer to that
-renumbering — the same answer a reparent and a general delete need.
+VOB *under a parent* is a real feature and is still not built, but it is no
+longer blocked — see `reparentVob` below for the answer.
 
 `opts` is `{ name?, visual?, position, rotation?, bbox?, showVisual?, cdStatic?,
 cdDynamic?, vobStatic?, ambient? }`; only `position` is required and an
@@ -389,7 +394,32 @@ add op invertible: everything about such a VOB is described by the call that
 made it, so undo deletes it and redo makes it again. That is **not** true of an
 arbitrary retail VOB — an `oCMobInter` carries per-class properties, children, an
 AI and an event manager that no op describes — so deleting one is not yet
-invertible and the editor does not offer it.
+invertible and the editor does not offer it. Note that this is the *only* thing
+still blocking a general delete: renumbering, which used to be the other half of
+the objection, was answered by `reparentVob` below.
+
+**`reparentVob` renumbers, and no slot avoids that** — a move has two ends and
+every VOB between them changes its flat index. It is safe because of how the
+*history* uses it rather than anything the call does: `WorldService` clears the
+redo stack on every new edit and replays batches strictly LIFO, so a recorded op
+is only ever applied to a world in the enumeration it was recorded against.
+Renumbering never reaches the history. What it does reach is the renderer's
+columnar projection — re-read whole, as an insert already forces — and other ops
+in the same batch, whose paths were resolved before the batch ran, which is why
+`zen-world`'s `commitOps` refuses to put a reparent in a batch with anything
+else. That guard is deliberately narrower than "structural": appending a root
+renumbers nothing, so an add may share a batch.
+
+It takes a **slot** rather than appending, because that is what makes it
+invertible — putting a VOB back at the *end* of the list it came from is a
+different world from the one it left. Two consequences of a move having two ends:
+the removal vacates a slot *before* the insert happens, so a destination
+numbered after the source in the same list has already shifted down one and both
+this call and the op that predicts its landing path adjust for it; and a VOB
+moved into **its own descendant** is refused, because such a subtree is
+unreachable from the roots and would be neither enumerated, counted nor
+written — it would simply disappear at the next save rather than being
+misplaced.
 
 **Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
 was loaded from a `zCArchiverBinSafe` archive: that is the only writer path
