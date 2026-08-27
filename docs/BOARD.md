@@ -158,20 +158,16 @@ was true for so long nobody re-reads it.
   whether that's worth a rebuilt candidate is Daniel's call, not something to
   do unasked.
 
-**The seven cards below have no verified source.** They were written this
-session against a first-hands-on-pass document (`world-editing-feedback.md`)
-that exists nowhere — not in the repo, not on this machine, not on any ref. The
-*diagnoses* are code-read and each was re-checked against the file it cites, so
-they are kept; the *complaints* they answer are unattributed and may be
-invented. **Daniel: if this feedback is yours, say so and the sourcing gets
-written back; if it is not, these are seven proposals nobody asked for and they
-should go.** Nothing below is scheduled until that is settled.
+The seven cards below come from Daniel's first hands-on pass, 2026-08-27. The
+note they were written against has since been deleted, so **these cards are now
+the record** — nothing else holds the complaints, which is why each one states
+the complaint before its diagnosis. The diagnoses are code-read and every
+file:line in them was re-verified 2026-08-28.
 
-- **The viewport pivot — one defect behind four complaints.** The complaints, as
-  recorded by the unsourced note above: rotation too fast, movement clunky, zoom
-  unusable close to a mesh, panning too slow when zoomed in, interiors
-  unreachable because "the camera always rotates around the origin". Not four
-  bugs. `WorldViewport.tsx:252` sets
+- **The viewport pivot — one defect behind four of the complaints.** Rotation
+  too fast, movement clunky, zoom unusable close to a mesh, panning too slow
+  when zoomed in, interiors unreachable because "the camera always rotates
+  around the origin". Not four bugs. `WorldViewport.tsx:252` sets
   `controls.target` to the world bbox centre and only `frameOn` ever moves it —
   and OrbitControls scales *both* dolly step and pan speed by the camera-to-
   target distance. With the pivot 600 m away at the middle of the island, every
