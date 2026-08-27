@@ -30,6 +30,55 @@ interface TextureSlot {
   materials: THREE.MeshBasicMaterial[];
 }
 
+/**
+ * Decoded textures that outlive the scene holding them, for one world.
+ *
+ * A structural op rebuilds the scene — an instance cannot be appended to an
+ * allocated `InstancedMesh` (level-editor.md §7) — and a fresh `WorldScene`
+ * starts with an empty texture map, so without this every placement re-decodes
+ * all 490 of NewWorld's: the 549 ms that was deliberately moved off the cold
+ * open, paid again on an edit, for pixels that did not change.
+ *
+ * **A cached scene does not own its textures; this does.** A `THREE.Texture`
+ * holds GPU memory, and a rebuild that disposed one would hand the next scene a
+ * released texture. `WorldScene.dispose` therefore leaves them alone whenever a
+ * cache was handed in, and the cache is disposed by whoever holds it — the
+ * viewport, when the world is closed or replaced.
+ */
+export class TextureCache {
+  private textures = new Map<string, THREE.Texture>();
+
+  /** The world these pixels belong to. `textureCacheFor` is what compares it. */
+  constructor(readonly key: string) {}
+
+  get(name: string): THREE.Texture | undefined {
+    return this.textures.get(name);
+  }
+
+  set(name: string, texture: THREE.Texture): void {
+    this.textures.set(name, texture);
+  }
+
+  dispose(): void {
+    for (const texture of this.textures.values()) texture.dispose();
+    this.textures.clear();
+  }
+}
+
+/**
+ * The cache to use for `key`: `current` when it is the same world, otherwise a
+ * fresh one — and the old one is released, since nothing else holds it.
+ *
+ * Scoped exactly like the camera pose the viewport restores beside it, and for
+ * the same reason: what survives a rebuild must not survive an *open*, or a
+ * different world is drawn with another world's pixels under the same names.
+ */
+export function textureCacheFor(current: TextureCache | null, key: string): TextureCache {
+  if (current !== null && current.key === key) return current;
+  current?.dispose();
+  return new TextureCache(key);
+}
+
 export class WorldScene {
   /** The one converted node. Everything else is a descendant of it. */
   readonly root = new THREE.Group();
@@ -50,7 +99,10 @@ export class WorldScene {
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
 
-  constructor() {
+  /** @param textureCache decoded pixels kept across the rebuild a structural op
+   *   forces, and the owner of their disposal. Null decodes from scratch and
+   *   disposes what it decoded. */
+  constructor(private textureCache: TextureCache | null = null) {
     this.root.matrixAutoUpdate = false;
     this.root.matrix.fromArray([...ROOT_MATRIX]);
     this.root.matrixWorldNeedsUpdate = true;
@@ -272,6 +324,27 @@ export class WorldScene {
     return vobIds[instanceId];
   }
 
+  /**
+   * Decode every texture the scene still needs, one at a time — a world with
+   * 490 of them must not open 490 concurrent IPC calls — and apply each to
+   * every material that named it.
+   *
+   * `cancelled` is checked on both sides of the await: the world can be closed
+   * while this is in flight, and pixels applied to a torn-down scene are a
+   * texture nothing will ever dispose.
+   */
+  async loadPendingTextures(
+    load: (name: string) => Promise<DecodedTexture | null>,
+    cancelled: () => boolean,
+  ): Promise<void> {
+    for (const name of this.pendingTextureNames()) {
+      if (cancelled()) return;
+      const decoded = await load(name);
+      if (cancelled()) return;
+      if (decoded) this.applyTexture(decoded);
+    }
+  }
+
   /** Texture names the scene has materials for but no pixels yet. */
   pendingTextureNames(): string[] {
     const pending: string[] = [];
@@ -282,7 +355,8 @@ export class WorldScene {
   }
 
   applyTexture(decoded: DecodedTexture): void {
-    const slot = this.textures.get(decoded.name.toUpperCase());
+    const name = decoded.name.toUpperCase();
+    const slot = this.textures.get(name);
     if (!slot || slot.texture !== null) return;
 
     const texture = new THREE.DataTexture(
@@ -301,6 +375,7 @@ export class WorldScene {
     texture.needsUpdate = true;
 
     slot.texture = texture;
+    this.textureCache?.set(name, texture);
     for (const material of slot.materials) {
       material.map = texture;
       // An untextured material carried its colour; a textured one must not
@@ -313,7 +388,12 @@ export class WorldScene {
   dispose(): void {
     for (const geometry of this.geometries) geometry.dispose();
     for (const material of this.materials) material.dispose();
-    for (const slot of this.textures.values()) slot.texture?.dispose();
+    // Only what this scene owns. With a cache the textures outlive it by
+    // design, and disposing them here would release GPU memory the very next
+    // scene is about to draw with — see `TextureCache`.
+    if (this.textureCache === null) {
+      for (const slot of this.textures.values()) slot.texture?.dispose();
+    }
 
     this.geometries = [];
     this.materials = [];
@@ -361,7 +441,10 @@ export class WorldScene {
       const name = group.texture.toUpperCase();
       let slot = this.textures.get(name);
       if (slot === undefined) {
-        slot = { texture: null, materials: [] };
+        // Already decoded for this world, if a previous scene decoded it: the
+        // slot starts filled, `pendingTextureNames` never names it, and the
+        // material below is textured before the first frame is drawn.
+        slot = { texture: this.textureCache?.get(name) ?? null, materials: [] };
         this.textures.set(name, slot);
       }
       slot.materials.push(material);

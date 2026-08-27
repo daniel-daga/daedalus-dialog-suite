@@ -281,8 +281,11 @@ const WorldSurface: React.FC = () => {
    * patched and is re-read whole. The scene follows by rebuilding from fresh
    * visuals: an instance cannot be appended to an `InstancedMesh` that is
    * already allocated. Both are the cost of a structural edit, and only a
-   * structural edit pays them — including a camera that returns to framing the
-   * world, since the rebuild is the same path an open takes.
+   * structural edit pays them. What the rebuild no longer costs is the two
+   * things that made it read as a cold open: the camera stays put, because the
+   * pose is restored across a rebuild under an unchanged world key, and the
+   * textures are not re-decoded, because the viewport's `TextureCache` outlives
+   * the `WorldScene` that used them.
    *
    * **Undo and redo come through here too**, and that is the whole reason this
    * is a function rather than three lines inside `commitOps`. They do not go

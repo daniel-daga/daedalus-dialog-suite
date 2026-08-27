@@ -16,8 +16,8 @@
 
 import * as THREE from 'three';
 import { ROOT_MATRIX } from 'zen-world';
-import type { DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
-import { WorldScene } from '../src/renderer/world/WorldScene';
+import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
+import { WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
 
 function group(overrides: Partial<DrawGroup> = {}): DrawGroup {
   return {
@@ -255,6 +255,131 @@ describe('WorldScene', () => {
 
     expect(disposed).toHaveBeenCalled();
     expect(scene.root.children).toHaveLength(0);
+  });
+
+  // ── decoded textures across a rebuild (level-editor.md §7) ────────────────
+  //
+  // A structural op rebuilds the scene, because an instance cannot be appended
+  // to an allocated InstancedMesh. Without a cache that rebuild starts from an
+  // empty texture map and re-decodes all 490 of NewWorld's — the 549 ms that
+  // was deliberately moved off the critical path of the *cold* open, paid again
+  // on every placement. Nothing about the pixels changed.
+
+  const decoded = (name: string): DecodedTexture => (
+    { name, width: 2, height: 2, rgba: new Uint8Array(16).buffer }
+  );
+
+  test('a rebuilt scene asks only for textures the cache does not already hold', async () => {
+    const cache = textureCacheFor(null, 'a-world');
+    const load = jest.fn(async (name: string) => decoded(name));
+
+    const first = new WorldScene(cache);
+    first.setWorldMesh({ groups: [group(), group({ texture: 'NW_STONE.TGA' })], bbox: [] });
+    await first.loadPendingTextures(load, () => false);
+    expect(load.mock.calls.map(([name]) => name).sort()).toEqual(['NW_STONE.TGA', 'NW_WOOD.TGA']);
+    first.dispose();
+
+    // The rebuild a placement forces: the same world, one visual more.
+    const second = new WorldScene(cache);
+    second.setWorldMesh({
+      groups: [group(), group({ texture: 'NW_STONE.TGA' }), group({ texture: 'NW_GRASS.TGA' })],
+      bbox: [],
+    });
+    load.mockClear();
+    await second.loadPendingTextures(load, () => false);
+
+    // Only the one it has never seen.
+    expect(load.mock.calls.map(([name]) => name)).toEqual(['NW_GRASS.TGA']);
+    // And the two it did not ask for are on the rebuilt materials all the same,
+    // or the saving would be a scene drawn untextured.
+    const materials = second.root.children.map((c) => (c as THREE.Mesh).material as THREE.MeshBasicMaterial);
+    expect(materials[0].map).not.toBeNull();
+    expect(materials[1].map).not.toBeNull();
+    expect(materials[0].map).not.toBe(materials[1].map);
+    expect(second.pendingTextureNames()).toEqual([]);
+  });
+
+  test('a different world decodes its own textures', async () => {
+    // Scoped like the camera pose beside it: keyed on the world, so opening a
+    // different one is not served another world's pixels under the same names.
+    const cache = textureCacheFor(null, 'a-world');
+    const load = jest.fn(async (name: string) => decoded(name));
+    const first = new WorldScene(cache);
+    first.setWorldMesh({ groups: [group()], bbox: [] });
+    await first.loadPendingTextures(load, () => false);
+    const stale = jest.spyOn(
+      ((first.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).map!,
+      'dispose',
+    );
+    first.dispose();
+
+    const other = textureCacheFor(cache, 'another-world');
+    expect(other).not.toBe(cache);
+    // The previous world's GPU memory goes with it — nothing else holds the
+    // cache, so this is the only place it can be released.
+    expect(stale).toHaveBeenCalled();
+
+    const second = new WorldScene(other);
+    second.setWorldMesh({ groups: [group()], bbox: [] });
+    load.mockClear();
+    await second.loadPendingTextures(load, () => false);
+
+    expect(load.mock.calls.map(([name]) => name)).toEqual(['NW_WOOD.TGA']);
+  });
+
+  test('the same world keeps the cache it had', () => {
+    const cache = textureCacheFor(null, 'a-world');
+    expect(textureCacheFor(cache, 'a-world')).toBe(cache);
+  });
+
+  test('the cache owns disposal, not the scene it was handed to', () => {
+    // The trap: a THREE.Texture holds GPU memory, and the scene teardown used
+    // to free it. If it still did, the cache would hand the rebuild textures
+    // that had already been released.
+    const cache = textureCacheFor(null, 'a-world');
+    const scene = new WorldScene(cache);
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.applyTexture(decoded('NW_WOOD.TGA'));
+    const texture = (scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    const dispose = jest.spyOn(texture.map!, 'dispose');
+
+    scene.dispose();
+    expect(dispose).not.toHaveBeenCalled();
+
+    cache.dispose();
+    expect(dispose).toHaveBeenCalled();
+  });
+
+  test('a scene with no cache still disposes the textures it decoded', () => {
+    // The uncached path is what `dispose releases the geometries and textures`
+    // above has always covered; naming it here so the cached branch cannot be
+    // read as having moved ownership for everyone.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.applyTexture(decoded('NW_WOOD.TGA'));
+    const texture = ((scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).map!;
+    const dispose = jest.spyOn(texture, 'dispose');
+
+    scene.dispose();
+
+    expect(dispose).toHaveBeenCalled();
+  });
+
+  test('a cancelled load stops asking', async () => {
+    // The world can be closed while the pump is between awaits, and a decode
+    // applied to a torn-down scene is a texture nothing will ever dispose.
+    const cache = textureCacheFor(null, 'a-world');
+    const scene = new WorldScene(cache);
+    scene.setWorldMesh({
+      groups: [group(), group({ texture: 'NW_STONE.TGA' }), group({ texture: 'NW_GRASS.TGA' })],
+      bbox: [],
+    });
+
+    let cancelled = false;
+    const load = jest.fn(async (name: string) => { cancelled = true; return decoded(name); });
+    await scene.loadPendingTextures(load, () => cancelled);
+
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
   // ── an edit reaching the scene (level-editor.md §7, Phase 1b) ─────────────

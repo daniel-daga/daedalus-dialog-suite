@@ -12,7 +12,7 @@ import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
-import { WorldScene } from '../../world/WorldScene';
+import { WorldScene, textureCacheFor, type TextureCache } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
@@ -229,6 +229,19 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   const poseRef = useRef<{
     key: string; position: number[]; target: number[];
   } | null>(null);
+  // Survives it for the same reason and keyed the same way: the pixels did not
+  // change when a VOB was placed, and re-decoding all 490 of them is the 549 ms
+  // the cold open pays. Owned here rather than by the scene, which is torn down
+  // and rebuilt underneath it — see `TextureCache`.
+  const texturesRef = useRef<TextureCache | null>(null);
+
+  // The cache outlives every run of the scene effect, so it is released when
+  // the viewport itself goes — the world being closed — and when a different
+  // world arrives, which `textureCacheFor` handles below.
+  useEffect(() => () => {
+    texturesRef.current?.dispose();
+    texturesRef.current = null;
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -238,7 +251,11 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x10141c);
 
-    const world = new WorldScene();
+    // The same key the camera pose is restored on, below.
+    const worldKey = bbox.join(',');
+    texturesRef.current = textureCacheFor(texturesRef.current, worldKey);
+
+    const world = new WorldScene(texturesRef.current);
     sceneRef.current = world;
     world.setWorldMesh(mesh);
     world.setInstancedVisuals(visuals);
@@ -306,7 +323,6 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // the user needs to see whether it landed. So the pose survives a rebuild
     // of the *same* world, keyed on the bbox so that opening a different one
     // still frames it.
-    const worldKey = bbox.join(',');
     if (poseRef.current?.key === worldKey) {
       camera.position.fromArray(poseRef.current.position);
       controls.target.fromArray(poseRef.current.target);
@@ -328,17 +344,13 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // every later one does.
     picker.warm(renderer, camera);
 
-    // Textures on demand. Requested one at a time so a world with 490 of them
-    // does not open 490 concurrent IPC calls; each one applied lands on every
-    // material that named it.
-    const texturesReady = (async () => {
-      for (const name of world.pendingTextureNames()) {
-        if (disposed) return;
-        const decoded = await loadTextureRef.current(name, TEXTURE_MAX_SIZE);
-        if (disposed) return;
-        if (decoded) world.applyTexture(decoded);
-      }
-    })();
+    // Textures on demand, and only the ones the cache above does not already
+    // hold — a rebuilt scene asks for nothing at all unless the edit brought a
+    // visual whose texture is new.
+    const texturesReady = world.loadPendingTextures(
+      (name) => loadTextureRef.current(name, TEXTURE_MAX_SIZE),
+      () => disposed,
+    );
 
     // ── the gizmo (level-editor.md §7, Phase 1b) ────────────────────────────
     //
