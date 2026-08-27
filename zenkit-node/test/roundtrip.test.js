@@ -124,7 +124,16 @@ test('a .zen that is not a world is skipped with a reason, not counted as a fail
 // process outright on the ASCII path (a hard 0xC0000409 on Windows). Whatever
 // the ASCII world does here, the run must finish and the other worlds must
 // still be reported — a crash is a result, not the end of the run.
-test('a world that kills its child is recorded and does not take the run down', () => {
+//
+// The status asserted here is EXACT, and it is a defect's: the fixture is
+// written by ZenKit's own ASCII writer, and A1–A4
+// (docs/engine-acceptance-2026-08-25.md §10.2) make that output un-loadable —
+// so the harness never gets past `loadWorld`. A three-way `['crashed',
+// 'unreadable', 'ok']` here would have stayed green through a full fix of
+// A1–A4 and through a regression back to the 0xC0000409 abort alike. WHEN THE
+// ASCII WRITER IS FIXED THIS TEST MUST GO RED and be rewritten to the verdict
+// the fixed writer earns.
+test('an ASCII world is measured to an exact verdict, blocks under --strict, and takes nothing down with it', () => {
   withTmpDir((dir) => {
     zenkit._authorFixtureWorld(path.join(dir, 'a-ascii.zen'), 'ascii', 'g2');
     fs.copyFileSync(FIXTURE, path.join(dir, 'b-clean.zen'));
@@ -133,13 +142,27 @@ test('a world that kills its child is recorded and does not take the run down', 
     assert.strictEqual(proc.status, 0, proc.stderr);
     assert.strictEqual(Object.keys(worlds).length, 2);
     assert.strictEqual(worlds['b-clean.zen'].verdict, 'identical');
-    assert.ok(
-      ['crashed', 'unreadable', 'ok'].includes(worlds['a-ascii.zen'].status),
-      `unexpected status ${worlds['a-ascii.zen'].status}`
-    );
-    // Whatever happened, the ASCII archive can never be reported as a
-    // container-instrumented pass: lib/container.js has no ASCII walker.
-    assert.notStrictEqual(worlds['a-ascii.zen'].instrument, 'full');
+
+    const ascii = worlds['a-ascii.zen'];
+    assert.strictEqual(ascii.format, 'ASCII');
+    assert.strictEqual(ascii.status, 'unreadable');
+    assert.strictEqual(ascii.verdict, 'unreadable');
+    // ZenKit cannot read back what its own ASCII writer produced: the packed
+    // `zCVob` entry stream and the reader disagree about what comes next.
+    assert.match(ascii.error, /type mismatch: expected enum, got: string/);
+    // No struct dump means no instrument at all — not even the ASCII container
+    // walker, which needs a loaded handle to be attached to a dump.
+    assert.strictEqual(ascii.instrument, 'none');
+
+    // `unreadable` is in zen-roundtrip's BLOCKING set, so --strict must exit 1.
+    // Nothing asserted this before, and a passing ASCII round-trip would have
+    // been indistinguishable from a failing one.
+    const strict = run(dir, ['--strict']);
+    assert.strictEqual(strict.proc.status, 1, `expected a blocking exit, got ${strict.proc.status}\n${strict.proc.stdout}`);
+    assert.strictEqual(strict.worlds['a-ascii.zen'].verdict, 'unreadable');
+    assert.strictEqual(strict.worlds['b-clean.zen'].verdict, 'identical');
+    assert.match(strict.proc.stdout, /BLOCKING: 1 — a-ascii\.zen \(unreadable\)/);
+    assert.match(strict.proc.stdout, /VERDICTS: .*1× identical \[BIN_SAFE\].*1× unreadable \[ASCII\]/);
   });
 });
 

@@ -1,18 +1,35 @@
 ﻿'use strict';
-// Event-aligned byte diff of two BinSafe worlds: for every entry/object event,
-// compare the raw bytes of the event (name index excluded, payload included).
-// Also diffs the MeshAndBsp blob by its internal chunk table.
+// Event-aligned byte diff of two worlds: for every entry/object event, compare
+// the raw bytes of the event (name index excluded, payload included). Also diffs
+// the MeshAndBsp blob by its internal chunk table.
+//
+// BinSafe and ASCII both, dispatched on the archive header — the ASCII writer's
+// four defects (../docs/engine-acceptance-2026-08-25.md §10.2) live in an entry
+// stream `walk()` cannot parse, and a tool that could only read the format that
+// already round-trips is a tool that can only report good news.
 //
 // The COVERAGE line is the point of this tool: it accounts for every byte of the
-// file (text header + every event span + hash table) and reports the gap. Only
-// with `gap 0` does "the rest is identical" mean anything — a diff that silently
-// skips a region can call a broken file clean.
+// file (text header + every event span + the trailing region) and reports the
+// gap. Only with `gap 0` does "the rest is identical" mean anything — a diff
+// that silently skips a region can call a broken file clean.
 const fs = require('node:fs');
-const { walk } = require('../lib/container');
+const { walk, readHeader } = require('../lib/container');
+const { walkAscii } = require('../lib/container-ascii');
+
+// The BinSafe stream ends at the hash table; the ASCII stream ends at EOF and
+// has no table. `streamEnd` is the one number the two formats disagree on.
+function walkerFor(buf) {
+  const format = readHeader(buf).lines[3];
+  if (format === 'BIN_SAFE') return walk;
+  if (format === 'ASCII') return walkAscii;
+  throw new Error(`no walker for a ${format} archive`);
+}
+const streamEnd = (hdr, buf) =>
+  hdr.header.hashTableOffset !== undefined ? hdr.header.hashTableOffset : buf.length;
 
 const A = fs.readFileSync(process.argv[2]);
 const B = fs.readFileSync(process.argv[3]);
-const ga = walk(A), gb = walk(B);
+const ga = walkerFor(A)(A), gb = walkerFor(B)(B);
 const ha = ga.next().value, hb = gb.next().value;
 
 function events(gen) { const out = []; for (const ev of gen) out.push(ev); return out; }
@@ -23,8 +40,10 @@ function spans(evs, buf, hdr) {
   const s = [];
   for (let i = 0; i < evs.length; i++) {
     const e = evs[i];
-    let end = i + 1 < evs.length ? evs[i + 1].fileOffset : hdr.header.hashTableOffset;
-    if (e.kind === 'rawBlob') { end = e.fileOffset + buf.readUInt32LE(e.fileOffset - 4); }
+    let end = i + 1 < evs.length ? evs[i + 1].fileOffset : streamEnd(hdr, buf);
+    // Both walkers report the blob's declared size, so nothing here has to know
+    // where the length prefix sits in either format.
+    if (e.kind === 'rawBlob') { end = e.fileOffset + e.size; }
     if (e.kind === 'eos') break;
     s.push({ e, start: e.fileOffset, end });
   }
@@ -34,10 +53,10 @@ const sa = spans(ea, A, ha), sb = spans(eb, B, hb);
 
 // Whole-file accounting, so "everything else is identical" is a measured claim.
 const headA = A.subarray(0, ha.header.entryStart), headB = B.subarray(0, hb.header.entryStart);
-const tailA = A.subarray(ha.header.hashTableOffset), tailB = B.subarray(hb.header.hashTableOffset);
+const tailA = A.subarray(streamEnd(ha, A)), tailB = B.subarray(streamEnd(hb, B));
 const coveredA = headA.length + sa.reduce((n, s) => n + (s.end - s.start), 0) + tailA.length;
 console.log(`text header identical: ${headA.equals(headB)} (${headA.length} vs ${headB.length} B)`);
-console.log(`hash table identical:  ${tailA.equals(tailB)} (${tailA.length} vs ${tailB.length} B)`);
+console.log(`trailer identical:     ${tailA.equals(tailB)} (${tailA.length} vs ${tailB.length} B)`);
 console.log(`COVERAGE: ${coveredA} of ${A.length} bytes accounted for, gap ${A.length - coveredA}`);
 
 const byKey = new Map();
@@ -81,7 +100,7 @@ function chunks(buf, start, size) {
 }
 if (blobPair) {
   const [x, y] = blobPair;
-  const sizeA = A.readUInt32LE(x.e.fileOffset - 4), sizeB = B.readUInt32LE(y.e.fileOffset - 4);
+  const sizeA = x.e.size, sizeB = y.e.size;
   console.log('blob sizes', sizeA, sizeB, 'delta', sizeB - sizeA);
   const ca = chunks(A, x.start, sizeA), cb = chunks(B, y.start, sizeB);
   console.log('chunk walk end A', ca.p, 'declared end', ca.end, 'trail', ca.end - ca.p, '| B', cb.p, cb.end, 'trail', cb.end - cb.p);

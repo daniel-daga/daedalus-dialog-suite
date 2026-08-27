@@ -567,11 +567,20 @@ bytes the handle was loaded from, and after `setVobPosition` /
 `insertItemVob` those bytes no longer describe the handle. Save the world and
 load the result to get a container section back.
 
-The section is **BinSafe-only**, and says so in the dump: for any other
-archiver it is `{ archiver, format, covered: false, header }` and nothing more,
-and `classifyDumps` returns `containerCoverage: false` for the pair. Only 4 of
-the 28 `.zen` files in a Gothic II install use BinSafe; the other 24 are
-`zCArchiverGeneric`/ASCII. **The ASCII writer is not usable** — ZenKit cannot
-re-load its own ASCII output, and every raw entry it writes is corrupt. The
-evidence and the resulting scope decision are in the acceptance record §10;
-read it before trusting an ASCII round-trip.
+`containerFromBuffer` dispatches on the archive format. ASCII
+(`zCArchiverGeneric`) — the other 24 of the 28 `.zen` files in a Gothic II
+install — has its own walker in `lib/container-ascii.js`, emitting the same
+event vocabulary and the same section shape over a line-oriented stream, plus
+two facts only that format has: the top-level `objects` line **verbatim**
+(ZenGin pads that field to 9 characters and ZenKit to 11 — defect A4) and
+whether `write_indent()`'s leading tabs match the object depth. A RAW payload is
+hashed as the **hex text** the file holds, not the bytes it decodes to, because
+A1 is a corruption of that text. **BINARY has no walker**: for it the section is
+`{ archiver, format, covered: false, header }` and nothing more, and
+`classifyDumps` returns `containerCoverage: false` for the pair.
+
+**The ASCII writer is still not usable** — ZenKit cannot re-load its own ASCII
+output, and every raw entry it writes is corrupt. The walker exists so the
+harness can *fail* on that rather than answer `covered: false` for the format
+under test; it fixes nothing. The evidence and the resulting scope decision are
+in the acceptance record §10; read it before trusting an ASCII round-trip.

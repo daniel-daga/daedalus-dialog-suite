@@ -193,15 +193,19 @@ function headerSection(headerLines) {
   return { lines, ...stamps };
 }
 
-// Only the four BinSafe worlds in a retail G2 install have an entry stream this
-// module can walk; the other 24 .zen files are zCArchiverGeneric/ASCII, whose
-// container facts are a different (unbuilt) instrument. Saying so in the dump is
-// the point: an archive the walker cannot read must report reduced COVERAGE, not
-// a section that happens to match on both sides.
+// Dispatch on the archive format. BinSafe is walked here; ASCII — the other 24
+// .zen files in a retail G2 install — by lib/container-ascii.js. BINARY has no
+// walker, and saying so in the dump is the point: an archive nothing can read
+// must report reduced COVERAGE, not a section that happens to match on both
+// sides. The require is deliberately lazy, because container-ascii.js shares
+// this module's helpers and a top-level cycle would hand it an empty exports.
 function containerFromBuffer(buf) {
   const raw = readHeader(buf);
   const archiver = raw.lines[2];
   const format = raw.lines[3];
+  if (format === 'ASCII') {
+    return require('./container-ascii.js').containerFromAsciiBuffer(buf);
+  }
   if (format !== 'BIN_SAFE') {
     return { archiver, format, covered: false, header: headerSection(raw.lines) };
   }
@@ -284,4 +288,9 @@ function containerFromBuffer(buf) {
   };
 }
 
-module.exports = { walk, readHeader, readHashTable, containerFromBuffer, TYPE };
+module.exports = {
+  walk, readHeader, readHashTable, containerFromBuffer, TYPE,
+  // Shared with lib/container-ascii.js, which builds the same section shape
+  // from a different stream. Not part of the module's own surface.
+  sha256, headerSection, frameKey, sortKeys, digestAll, feed, meshAndBspTable,
+};

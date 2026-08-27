@@ -2,16 +2,17 @@
 
 Container-level instruments for the T6.5 engine gate. `normalizeWorld` reads
 ZenKit's *parsed structs* and is therefore blind to archive-container facts
-(entry names, entry types, object frame versions, framing). The walker that
-sees them lives in `../lib/container.js` and feeds the dump's `container`
-section; these CLIs are thin front-ends over it. See
-`../docs/engine-acceptance-2026-08-25.md`.
+(entry names, entry types, object frame versions, framing). The walkers that
+see them live in `../lib/container.js` (BinSafe) and `../lib/container-ascii.js`
+(ASCII) and feed the dump's `container` section; these CLIs are thin front-ends
+over it. See `../docs/engine-acceptance-2026-08-25.md`.
 
 - `walk.js <a.zen>` — BinSafe entry-stream walker CLI (`walk` from
   `lib/container.js`). Parses the entry stream from the end of the text header
   to `hashTableOffset`, yielding entry name/type/framing/payload offsets per
   event. `MeshAndBsp` is a raw blob (`uint32 bspVersion, uint32 size, size
-  bytes`) outside the entry stream and is special-cased.
+  bytes`) outside the entry stream and is special-cased. **BinSafe only** —
+  `bytediff.js` is the CLI that dispatches on format.
 - `audit2.js <a.zen> <b.zen>` — positional per-class divergence census plus a
   hash-table comparison. Does **not** normalize `childs<N>` (an earlier variant
   did, which hid a real defect). Reports divergence classes and confirms both
@@ -21,10 +22,19 @@ section; these CLIs are thin front-ends over it. See
   differences by class and entry. This is the instrument that found the ten
   byte-fidelity defects in `patches/0010`–`0019`; a byte difference that no
   struct dump can see shows up here immediately.
+  **BinSafe *and* ASCII**, dispatched on the archive header — the ASCII writer's
+  A1–A4 (`../docs/engine-acceptance-2026-08-25.md` §10.2) live in an entry stream
+  `walk()` cannot parse, and until this dispatched the tool could only read the
+  format that already round-trips. BINARY still has no walker and is refused
+  rather than guessed at.
   **Read the `COVERAGE` line first.** It accounts for every byte of the file
-  (text header + every event span + hash table) and reports the gap; only with
-  `gap 0` does "everything else is identical" mean anything, because a diff that
-  silently skips a region will call a broken file clean.
+  (text header + every event span + the trailing region, which is the hash table
+  on BinSafe and empty on ASCII) and reports the gap; only with `gap 0` does
+  "everything else is identical" mean anything, because a diff that silently
+  skips a region will call a broken file clean.
+  On ASCII expect an `ALIGN BREAK`: A2 writes every VOB packed, so the original's
+  unpacked entry list and the re-save's `dataRaw` diverge at the first VOB and
+  the streams cannot be aligned past it. That break *is* the finding.
 - `splice.js <orig> <variant> <out> <groups>` — builds a world from the
   original's bytes with only selected groups taken from a re-save (`header`,
   `blob`, `vobtree`, `locked`, `dataRaw`, `colorAni`, `hashtable`,
@@ -81,5 +91,5 @@ section; these CLIs are thin front-ends over it. See
   window carries the file/line/condition, the "Breakpoint" window does not.
   (`engine-batch.ps1` does this for you.)
 
-These are developer tools, not part of the addon or its test suite; the walker
-they share is covered by `test/container.test.js`.
+These are developer tools, not part of the addon or its test suite; the walkers
+they share are covered by `test/container.test.js`.
