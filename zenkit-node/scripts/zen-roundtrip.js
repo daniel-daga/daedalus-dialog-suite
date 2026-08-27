@@ -97,6 +97,22 @@ function blobOf(buf) {
   return buf.subarray(p + 8, p + 8 + size);
 }
 
+// A non-drill report keeps only the first findings of each world, so the
+// artifact stays readable when a single per-VOB defect fires tens of thousands
+// of times. The number that survives is a quota, not a total, and it has been
+// misread as one: A6's `physicsEnabled` finding fires on essentially every VOB,
+// filled all 20 slots from `vobs[0]` upward in each of the 20 ASCII worlds, and
+// an `animMode` drift affecting 128 VOBs reached the board as affecting 4 — the
+// four times a garbage VOB happened to sort inside the quota. Keep the cap and
+// report what it hid; `--drill` keeps everything.
+const FINDING_CAP = 20;
+
+function capFindings(findings, drill) {
+  const total = findings.length;
+  if (drill || total <= FINDING_CAP) return { findings, total, truncated: false };
+  return { findings: findings.slice(0, FINDING_CAP), total, truncated: true };
+}
+
 function measure(file, game, drill) {
   const zk = require('..');
   const original = fs.readFileSync(file);
@@ -166,8 +182,13 @@ function measure(file, game, drill) {
     row.status = 'ok';
     row.verdict = result.classification;
     row.containerCoverage = result.containerCoverage;
-    row.findings = result.findings.map((f) => ({ class: f.class, path: f.path, detail: String(f.detail) }));
-    if (!drill) row.findings = row.findings.slice(0, 20);
+    const capped = capFindings(
+      result.findings.map((f) => ({ class: f.class, path: f.path, detail: String(f.detail) })),
+      drill,
+    );
+    row.findings = capped.findings;
+    row.findingTotal = capped.total;
+    row.findingsTruncated = capped.truncated;
 
     // Event-aligned wherever a container walker exists — BinSafe and ASCII
     // both. Only BINARY falls back to a whole-file verdict, and that fallback
@@ -252,6 +273,8 @@ function summarize(rows, claim) {
       bits.push(`${d} differing events`);
     }
     if (row.instrument === 'struct-only') bits.push('STRUCT-ONLY');
+    // Never let the listed findings pass for all of them — see FINDING_CAP.
+    if (row.findingsTruncated) bits.push(`${row.findingTotal} findings, ${FINDING_CAP} shown (--drill for all)`);
     if (row.error) bits.push(row.error.split('\n')[0].slice(0, 80));
     lines.push(`  ${row.name.padEnd(width)}  ${row.verdict.padEnd(15)} ${bits.join(', ')}`);
   }
@@ -343,4 +366,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, measure, byteDiff, parseArgs };
+module.exports = { main, measure, byteDiff, parseArgs, capFindings };

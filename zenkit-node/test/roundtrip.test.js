@@ -301,3 +301,30 @@ test('--drill adds differing-byte samples to the report', () => {
     assert.notStrictEqual(samples[0].original, samples[0].resaved);
   });
 });
+
+// A non-drill run keeps only the first findings per world so the report stays
+// readable, and that quota has already been misread as a total once: a drift
+// affecting 128 VOBs was recorded on the board as affecting 4, because A6's
+// per-VOB finding filled the quota from vobs[0] upward in every world. The cap
+// is fine; a cap that does not say it capped is not.
+test('the finding cap reports what it hid', () => {
+  const { capFindings } = require('../scripts/zen-roundtrip.js');
+  const many = Array.from({ length: 25 }, (_, i) => ({ class: 'c', path: `p${i}`, detail: 'd' }));
+
+  const capped = capFindings(many, false);
+  assert.strictEqual(capped.findings.length, 20);
+  assert.strictEqual(capped.total, 25, 'the total must survive the cap');
+  assert.strictEqual(capped.truncated, true);
+
+  // --drill keeps every finding, and still answers the same total.
+  const drilled = capFindings(many, true);
+  assert.strictEqual(drilled.findings.length, 25);
+  assert.strictEqual(drilled.total, 25);
+  assert.strictEqual(drilled.truncated, false);
+
+  // Under the cap nothing is hidden, and nothing claims to have been.
+  const few = capFindings(many.slice(0, 3), false);
+  assert.strictEqual(few.findings.length, 3);
+  assert.strictEqual(few.total, 3);
+  assert.strictEqual(few.truncated, false);
+});
