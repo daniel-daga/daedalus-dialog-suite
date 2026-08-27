@@ -2692,17 +2692,15 @@ passes.
 
 Seven classes are editable and the catalogue has five kinds, so the kinds are no
 longer the constraint and the class list is again. Left: the trigger family,
-`oCMob*`, `zCPFXController` — each one C++ case plus one `CLASS_FIELDS` entry
-plus its tests.
+`oCMob*` — each one C++ case plus one `CLASS_FIELDS` entry plus its tests.
 
 `zCVobAnimate` landed 2026-08-28: its one field, `startOn`, needed no enum and
 no decision — `s_is_running` is save-game only, exactly as the header marks
 it, so the class had nothing else to hold out.
 
-`zCPFXController.initiallyRunning` landed 2026-08-28: the smallest slice of a
-three-field class, all non-enum. `pfxName` and `killWhenDone` are already read
-in `normalize.cc` but are not yet writable — the same shape of leftover as
-`oCZoneMusic` and `zCZoneZFog` had after their first increment.
+`zCPFXController` is fully landed 2026-08-28: `initiallyRunning` first, then
+`pfxName` and `killWhenDone` in the same session — all three plain scalars,
+none an enum, so nothing on the class was held out by decision.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries

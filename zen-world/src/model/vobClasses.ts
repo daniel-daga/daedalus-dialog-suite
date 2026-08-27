@@ -189,11 +189,12 @@ const ZC_VOB_ANIMATE_FIELDS = [
   { key: 'startOn', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** Whether the particle effect starts running when the level loads — the first
- *  of `zCPFXController`'s three fields to join the catalogue. `pfxName` and
- *  `killWhenDone` are also plain scalars and neither is an enum, so nothing
- *  holds them out by decision; this is simply the smallest slice. */
+/** All three of `zCPFXController`'s fields: which effect to play, whether it
+ *  is removed once its cycle finishes, and whether it starts running when the
+ *  level loads. None is an enum, so nothing on this class is held out. */
 const ZC_PFX_CONTROLLER_FIELDS = [
+  { key: 'pfxName', kind: 'string' },
+  { key: 'killWhenDone', kind: 'bool' },
   { key: 'initiallyRunning', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 

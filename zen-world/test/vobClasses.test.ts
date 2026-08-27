@@ -105,7 +105,11 @@ describe('the per-class field catalogue', () => {
       .toEqual({ key: 'priority', kind: 'int', min: 0 });
     expect(classPropKeys('zCVobAnimate')).toEqual(['startOn']);
     expect(fieldOf('zCVobAnimate', 'startOn')).toEqual({ key: 'startOn', kind: 'bool' });
-    expect(classPropKeys('zCPFXController')).toEqual(['initiallyRunning']);
+    expect(classPropKeys('zCPFXController'))
+      .toEqual(['pfxName', 'killWhenDone', 'initiallyRunning']);
+    expect(fieldOf('zCPFXController', 'pfxName')).toEqual({ key: 'pfxName', kind: 'string' });
+    expect(fieldOf('zCPFXController', 'killWhenDone'))
+      .toEqual({ key: 'killWhenDone', kind: 'bool' });
     expect(fieldOf('zCPFXController', 'initiallyRunning'))
       .toEqual({ key: 'initiallyRunning', kind: 'bool' });
   });

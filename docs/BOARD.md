@@ -119,8 +119,8 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **The classes that are left** — trigger family, `oCMob*`, `zCPFXController`;
-  enums are the whole of what is held out. Unowned. §16.3
+- **The classes that are left** — trigger family, `oCMob*`; enums are the
+  whole of what is held out. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -173,8 +173,8 @@ against `git log` and the docs. `git log` is the permanent record.)*
 - **`coneAngle` and the two daytime hours are swept, not just documented** —
   retail never varies `coneAngle` from 0 and keeps both hours well inside
   0–24; neither bound changed. §16.6
-- **`zCPFXController.initiallyRunning` joins the class-property catalogue** —
-  one field of three; `pfxName` and `killWhenDone` are still read-only. §16.3
+- **`zCPFXController` is now fully writable** — `pfxName` and `killWhenDone`
+  join `initiallyRunning`; the class is closed out. §16.3
 
 Verified this session: `zenkit-node` (build + full suite + lint), `zen-world`
 (test + lint + typecheck + build), `daedalus-dialog-editor` (build:main +

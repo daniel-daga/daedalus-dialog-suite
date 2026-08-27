@@ -1087,14 +1087,17 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (start_on.has_value()) animate.start_on = *start_on;
       break;
     }
-    // The first of the class's three fields to join the catalogue — `pfxName`
-    // and `killWhenDone` are read in normalize.cc already but are not writable
-    // yet. All three are plain scalars, none is an enum, so nothing here holds
-    // the rest out by decision; this is simply the smallest slice.
+    // All three fields now: two plain scalars alongside the boolean that
+    // landed first. None is an enum, so nothing on this class is held out by
+    // decision.
     case zenkit::VirtualObjectType::zCPFXController: {
-      RequireClassKeys(env, props, {"initiallyRunning"}, class_name);
+      RequireClassKeys(env, props, {"pfxName", "killWhenDone", "initiallyRunning"}, class_name);
+      auto pfx_name = OptionalCp1252String(env, props, "pfxName");
+      auto const kill_when_done = OptionalBool(env, props, "killWhenDone");
       auto const initially_running = OptionalBool(env, props, "initiallyRunning");
       auto& pfx = static_cast<zenkit::VParticleEffectController&>(*vob);
+      if (pfx_name) pfx.pfx_name = std::move(*pfx_name);
+      if (kill_when_done.has_value()) pfx.kill_when_done = *kill_when_done;
       if (initially_running.has_value()) pfx.initially_running = *initially_running;
       break;
     }
