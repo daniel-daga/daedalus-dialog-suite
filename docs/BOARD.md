@@ -46,14 +46,14 @@ was true for so long nobody re-reads it.
 
 ## State of the tree
 
-- branch `feature/level-editor`, **ahead of its remote and unpushed.**
+- branch `feature/level-editor`, **in sync with its remote.**
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
   committed: it is the applied patch series. Stage with
   `git add -A -- . ':!zenkit-node/vendor/ZenKit'`, or name paths explicitly.
   Anything else showing as modified is unfinished work.
-- 43 commits ahead of `master`, deliberately unmerged: merging before an engine
+- 51 commits ahead of `master`, deliberately unmerged: merging before an engine
   verdict would put an unverified world editor on master.
 - **The addon was rebuilt this session and `binding.gyp` changed**, so every
   other machine and CI must rebuild — a stale `.node` predates the exception fix
@@ -78,13 +78,6 @@ was true for so long nobody re-reads it.
   fullscreen. **Rows 7, 8 and 9 must actually run this time** — bed/chest/mobsi,
   a sound or zone VOB, a savegame round-trip. They were defensible as ⏸ for a
   bit-identical re-save and are not for an edited world.
-- **Deleting an arbitrary VOB — a design choice, not a coding one.** Blocked by
-  invertibility, not renumbering: an `oCMobInter` carries per-class properties,
-  children, an AI and an event manager that `NewVob` does not describe.
-  Snapshot the subtree in the binding (complete, and opens its own fidelity
-  question — does a round-tripped VOB come back identical?), or offer delete only
-  for VOBs the op model can describe completely (small, honest, invertible
-  today — and it refuses most of what a user would click).
 
 ## Now
 
@@ -92,6 +85,24 @@ was true for so long nobody re-reads it.
 
 ## Next
 
+- **Deleting an arbitrary VOB — unblocked, and no longer a design question.**
+  Daniel's call, 2026-08-27: the original Spacer has no undo at all, so an
+  unundoable delete is already parity and invertibility does not gate the op.
+  Written up as the plan's §15. `deleteVob` exists in the binding; what the op
+  owes is the *other* half — the history recording it as a barrier that clears
+  the undo stack, and the user being told so before it lands. Neither the
+  subtree snapshot nor the describe-it-completely fallback is a prerequisite any
+  more; both stay open as improvements. `assertApplyOpsRequest` needs its branch
+  in the same change, as always.
+- **Phase 1b-2, class-aware editing — the largest unscheduled thing here.**
+  Found by inventorying Spacer parity (plan §14): the two items carrying the
+  most modding value had no entry anywhere in the plan. `insertVob` authors a
+  bare `zCVob` and nothing else, and the property grid edits eight `zCVob`
+  scalars — so a modder placing a light or wiring a trigger touches nothing
+  Phase 1b built. Sized by the per-class field sets rather than by the op count,
+  which is why it is its own phase and not a card's worth of work. Scheduled
+  before Phase 1c in the plan's §11: the Daedalus overlay reads a world, and
+  this is what makes the world worth reading.
 - **Waynet editing — the waypoint gizmo, and the edge ops.** `MoveWaypoint`
   itself is done (see Done below); what is left is the UI that produces one and
   the ops that renumber. The gizmo is a bigger change than the op was:
