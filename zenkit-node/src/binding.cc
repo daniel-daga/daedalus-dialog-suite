@@ -1102,6 +1102,45 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (initially_running.has_value()) pfx.initially_running = *initially_running;
       break;
     }
+    // The eight bools and four numerics VTrigger itself declares — this
+    // class's entire non-string surface. `target` and `vobTarget` are held
+    // out with the rest of the trigger family's target strings.
+    case zenkit::VirtualObjectType::zCTrigger: {
+      RequireClassKeys(env, props,
+                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
+                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
+                        "fireDelaySec"},
+                       class_name);
+      auto const start_enabled = OptionalBool(env, props, "startEnabled");
+      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
+      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
+      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
+      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
+      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
+      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
+      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
+      auto const max_activation_count =
+          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
+      auto const retrigger_delay_sec =
+          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
+      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
+      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      auto& trigger = static_cast<zenkit::VTrigger&>(*vob);
+      if (start_enabled.has_value()) trigger.start_enabled = *start_enabled;
+      if (send_untrigger.has_value()) trigger.send_untrigger = *send_untrigger;
+      if (react_to_on_trigger.has_value()) trigger.react_to_on_trigger = *react_to_on_trigger;
+      if (react_to_on_touch.has_value()) trigger.react_to_on_touch = *react_to_on_touch;
+      if (react_to_on_damage.has_value()) trigger.react_to_on_damage = *react_to_on_damage;
+      if (respond_to_object.has_value()) trigger.respond_to_object = *respond_to_object;
+      if (respond_to_pc.has_value()) trigger.respond_to_pc = *respond_to_pc;
+      if (respond_to_npc.has_value()) trigger.respond_to_npc = *respond_to_npc;
+      if (max_activation_count.has_value()) trigger.max_activation_count = *max_activation_count;
+      if (retrigger_delay_sec.has_value()) trigger.retrigger_delay_sec = *retrigger_delay_sec;
+      if (damage_threshold.has_value()) trigger.damage_threshold = *damage_threshold;
+      if (fire_delay_sec.has_value()) trigger.fire_delay_sec = *fire_delay_sec;
+      break;
+    }
     // The one field this op writes: whether the `OnTrigger` this class fires
     // at level load fires only the first time the level loads. `target` is
     // held out with the rest of the trigger family's target strings, and

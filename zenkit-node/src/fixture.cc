@@ -641,8 +641,29 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   trigger_script->target = "TARGET_VOB";
   trigger_script->function = "SCRIPTFUNC_ON_TRIGGER";
 
+  auto trigger = std::make_shared<VTrigger>();
+  trigger->type = VirtualObjectType::zCTrigger;
+  trigger->vob_name = "VOB_INDEX_TRIGGER";
+  trigger->position = Vec3 {350.0f, 4.0f, 360.0f};
+  trigger->bbox =
+      AxisAlignedBoundingBox {Vec3 {349.0f, 3.0f, 359.0f}, Vec3 {351.0f, 5.0f, 361.0f}};
+  trigger->target = "TARGET_VOB";
+  trigger->start_enabled = true;
+  trigger->send_untrigger = false;
+  trigger->react_to_on_trigger = true;
+  trigger->react_to_on_touch = false;
+  trigger->react_to_on_damage = true;
+  trigger->respond_to_object = false;
+  trigger->respond_to_pc = true;
+  trigger->respond_to_npc = false;
+  trigger->vob_target = "VOB_TARGET_NAME";
+  trigger->max_activation_count = 3;
+  trigger->retrigger_delay_sec = 1.5f;
+  trigger->damage_threshold = 10.0f;
+  trigger->fire_delay_sec = 2.5f;
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
-                     trigger_script};
+                     trigger_script, trigger};
   return root;
 }
 

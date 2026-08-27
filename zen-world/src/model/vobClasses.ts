@@ -198,6 +198,35 @@ const ZC_PFX_CONTROLLER_FIELDS = [
   { key: 'initiallyRunning', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/**
+ * The eight bools and four numerics `VTrigger` itself declares — the base
+ * every other class in the trigger family inherits, `zCTriggerWorldStart` and
+ * `zCTriggerUntouch` excepted (neither derives from `VTrigger`). `target` and
+ * `vobTarget` stay out with the rest of the family's target strings, in the
+ * order the archive stores them so the grid draws like the file.
+ *
+ * `maxActivationCount` is left unbounded: ZenKit documents `-1` as "process an
+ * infinite number of events", so a floor at 0 would refuse the one negative
+ * value the field is documented to mean something by. The three delay/damage
+ * floats are bounded at 0 for the same reason `radius` is on the sound family
+ * — none of "seconds to wait" or "damage to react to" has a meaning below
+ * zero.
+ */
+const ZC_TRIGGER_FIELDS = [
+  { key: 'startEnabled', kind: 'bool' },
+  { key: 'sendUntrigger', kind: 'bool' },
+  { key: 'reactToOnTrigger', kind: 'bool' },
+  { key: 'reactToOnTouch', kind: 'bool' },
+  { key: 'reactToOnDamage', kind: 'bool' },
+  { key: 'respondToObject', kind: 'bool' },
+  { key: 'respondToPc', kind: 'bool' },
+  { key: 'respondToNpc', kind: 'bool' },
+  { key: 'maxActivationCount', kind: 'int' },
+  { key: 'retriggerDelaySec', kind: 'float', min: 0 },
+  { key: 'damageThreshold', kind: 'float', min: 0 },
+  { key: 'fireDelaySec', kind: 'float', min: 0 },
+] as const satisfies readonly FieldDescriptor[];
+
 /** The first field of the trigger family, and the one non-enum, non-list field
  *  `zCTriggerWorldStart` has: whether the `OnTrigger` it fires at level load
  *  fires only the first time the level loads. `target` is the class's other
@@ -234,12 +263,13 @@ export const CLASS_FIELDS = {
   oCZoneMusic: OC_ZONE_MUSIC_FIELDS,
   zCVobAnimate: ZC_VOB_ANIMATE_FIELDS,
   zCPFXController: ZC_PFX_CONTROLLER_FIELDS,
+  zCTrigger: ZC_TRIGGER_FIELDS,
   zCTriggerWorldStart: ZC_TRIGGER_WORLD_START_FIELDS,
   oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has ten, which is the point of asking through `fieldOf`. The
+ *  37 and this has eleven, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;

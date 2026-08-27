@@ -83,8 +83,8 @@ was true for so long nobody re-reads it.
   three ops with no engine verdict, and a packaged renderer nothing has watched
   draw.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0024`–`0027`, `src/fixture.cc`), the addon,
-  `zen-world/dist` and the editor's `dist/` all changed this session. The recipe
+  `vendor/ZenKit` (patch `0028`, `src/fixture.cc`), the addon, `zen-world/dist`
+  and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
   `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
@@ -119,9 +119,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **The classes that are left — `zCTrigger`, `zCMover`,
-  `oCTriggerChangeLevel`, `oCMob*`** — `zCTriggerUntouch` and `zCTriggerList`
-  turned out to have no eligible field at all. Unowned. §16.3
+- **The classes that are left — `zCMover`, `oCTriggerChangeLevel`,
+  `oCMob*`** — `zCTrigger`'s own base fields landed; `zCTriggerUntouch` and
+  `zCTriggerList` turned out to have no eligible field at all. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -169,7 +169,12 @@ against `git log` and the docs. `git log` is the permanent record.)*
 - **`oCTriggerScript` joins the class-property catalogue** — its one field,
   `function`, round-tripped through `setVobClassProp`/save/reload;
   `zCTriggerUntouch` and `zCTriggerList` found to have no eligible field. §16.3
+- **`zCTrigger`'s own base fields join the class-property catalogue** — eight
+  bools, four numerics, round-tripped. Found and fixed a genuine ZenKit
+  writer/reader asymmetry along the way (`VTrigger::save` echoed the stale
+  packed `flags`/`filterFlags` bytes, dropping any of the eight on save) —
+  patched as `0028`. §16.3
 
-Verified this session: `zenkit-node` (build + full suite + lint), `zen-world`
-(test + lint + typecheck + build), `daedalus-dialog-editor` (build:main +
-typecheck:renderer + full Jest + lint) all green — `oCTriggerScript` change.
+Verified this session: `zenkit-node` (rebuild + full suite + lint), `zen-world`
+(test/lint/typecheck/build), editor (build:main/typecheck/Jest/lint) all
+green — `zCTrigger` base-fields change plus vendor patch `0028`.

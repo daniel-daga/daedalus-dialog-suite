@@ -29,9 +29,9 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCTriggerScript', 'oCZoneMusic', 'zCPFXController', 'zCTriggerWorldStart',
-      'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane',
-      'zCZoneZFog',
+      'oCItem', 'oCTriggerScript', 'oCZoneMusic', 'zCPFXController', 'zCTrigger',
+      'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
+      'zCZoneVobFarPlane', 'zCZoneZFog',
     ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
     expect(classPropKeys('zCVobLight')).toEqual(['range', 'color']);
@@ -117,6 +117,19 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('zCTriggerWorldStart', 'fireOnce')).toEqual({ key: 'fireOnce', kind: 'bool' });
     expect(classPropKeys('oCTriggerScript')).toEqual(['function']);
     expect(fieldOf('oCTriggerScript', 'function')).toEqual({ key: 'function', kind: 'string' });
+    expect(classPropKeys('zCTrigger')).toEqual([
+      'startEnabled', 'sendUntrigger', 'reactToOnTrigger', 'reactToOnTouch', 'reactToOnDamage',
+      'respondToObject', 'respondToPc', 'respondToNpc', 'maxActivationCount',
+      'retriggerDelaySec', 'damageThreshold', 'fireDelaySec',
+    ]);
+    // Left unbounded: ZenKit documents `-1` as "process an infinite number of
+    // events", so a floor at 0 would refuse the one negative value the field
+    // is documented to mean something by.
+    expect(fieldOf('zCTrigger', 'maxActivationCount'))
+      .toEqual({ key: 'maxActivationCount', kind: 'int' });
+    expect(fieldOf('zCTrigger', 'fireDelaySec'))
+      .toEqual({ key: 'fireDelaySec', kind: 'float', min: 0 });
+    expect(fieldOf('zCTrigger', 'startEnabled')).toEqual({ key: 'startEnabled', kind: 'bool' });
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {

@@ -2716,11 +2716,27 @@ base `VTrigger` fields it inherits (`target` among them) stay out with the
 rest of the family's target strings and base fields. `zCTriggerUntouch` and
 `zCTriggerList` turn out to have **no** eligible field at all once enums,
 lists and `target` are excluded — `zCTriggerUntouch` is `target` alone, and
-`zCTriggerList` is `mode` (enum) and `targets` (list). The rest of the trigger
-family (`zCTrigger`, `zCMover`, `oCTriggerChangeLevel`) and `oCMob*` are still
-untouched on the write side; `zCTrigger`'s own base fields (eight bools plus
-four numerics, shared by `zCMover` and `oCTriggerChangeLevel`) are the next
-sized piece of work, not a one-field increment.
+`zCTriggerList` is `mode` (enum) and `targets` (list).
+
+`zCTrigger`'s own base fields landed 2026-08-28: the eight bools and four
+numerics `VTrigger` declares (`startEnabled`, `sendUntrigger`,
+`reactToOnTrigger`, `reactToOnTouch`, `reactToOnDamage`, `respondToObject`,
+`respondToPc`, `respondToNpc`, `maxActivationCount`, `retriggerDelaySec`,
+`damageThreshold`, `fireDelaySec`) — `target` and `vobTarget` stay out with the
+rest of the family's target strings. This surfaced a genuine ZenKit
+writer/reader asymmetry, patched as `0028`: `VTrigger::save` wrote the
+deprecated raw `flags`/`filterFlags` bytes `load()` unpacks into those eight
+bools, verbatim, rather than reconstructing them from the bools — so setting
+any of the eight and saving silently reverted to whatever the archive held at
+load. `zCMover` and `oCTriggerChangeLevel` both derive from `VTrigger` and
+inherit these twelve once their own case is added, which is the remaining
+work: `zCMover`'s own fields (`behavior` is an enum and stays out; the rest is
+sized but untouched) and `oCTriggerChangeLevel`'s two strings (`levelName`,
+`startVob` — plain config, not cross-references, so the "target strings stay
+out" rule does not obviously extend to them and that is a decision for
+whoever picks it up). `oCMob*` is untouched. `zCTrigger` was appended to
+`BuildVisualVobTree`'s mesh-extraction-only fixture (path `1/12`), so the
+checked-in golden fixture is unaffected.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries

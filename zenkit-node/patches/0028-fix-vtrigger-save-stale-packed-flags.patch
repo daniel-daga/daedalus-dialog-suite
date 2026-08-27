@@ -1,0 +1,64 @@
+VTrigger: save() echoes the raw flags/filterFlags bytes captured at load
+time instead of reconstructing them from the bool members it exposes.
+
+`VTrigger::load` unpacks two deprecated bytes, `flags` and `filter_flags`,
+into eight public bools — `start_enabled`, `send_untrigger`,
+`react_to_on_trigger`, `react_to_on_touch`, `react_to_on_damage`,
+`respond_to_object`, `respond_to_pc`, `respond_to_npc` — and those bools are
+what the header documents and what a consumer is expected to set. `save()`,
+though, writes `this->flags`/`this->filter_flags` verbatim:
+
+	w.write_raw("flags", reinterpret_cast<std::byte const*>(&this->flags), 1);
+	w.write_raw("filterFlags", reinterpret_cast<std::byte const*>(&this->filter_flags), 1);
+
+No setter keeps the two in sync — a `VTrigger` constructed fresh (both bytes
+zero-initialized) and given `start_enabled = true` saves `flags == 0`, and a
+loaded one that flips a bool and saves gets back whatever the archive held at
+load time, silently. This is a writer/reader asymmetry in the same family as
+0003's `original_pose` and 0006's copy-paste entry names: the struct exposes
+one representation and the writer serializes another, so every consumer of
+the public API — not just this binding — loses the write.
+
+Measured against zenkit-node's own `setVobClassProp` round-trip test: setting
+`zCTrigger.sendUntrigger` true, saving and reloading reads back `false`,
+because the packed byte the writer echoed was never touched.
+
+The fix reconstructs `flags`/`filter_flags` from the bool members immediately
+before writing, the exact inverse of `load()`'s unpacking — same bits, same
+shifts. It changes nothing about a `VTrigger` that is loaded and saved
+untouched, since the reconstructed bytes equal the loaded ones bit-for-bit.
+
+Upstreamable as-is: a plain writer/reader asymmetry, no API change.
+
+diff --git a/src/vobs/Trigger.cc b/src/vobs/Trigger.cc
+index 23f9c29..47e4206 100644
+--- a/src/vobs/Trigger.cc
++++ b/src/vobs/Trigger.cc
+@@ -46,8 +46,25 @@ namespace zenkit {
+ 	void VTrigger::save(WriteArchive& w, GameVersion version) const {
+ 		VirtualObject::save(w, version);
+ 		w.write_string("triggerTarget", this->target);
+-		w.write_raw("flags", reinterpret_cast<std::byte const*>(&this->flags), 1);
+-		w.write_raw("filterFlags", reinterpret_cast<std::byte const*>(&this->filter_flags), 1);
++		// `flags`/`filter_flags` are the deprecated raw bytes `load()` unpacks into
++		// the bool members below and are not kept in sync with them by any setter —
++		// a caller that sets e.g. `start_enabled` and saves would silently get back
++		// whatever the archive happened to hold at load time (0 for a freshly
++		// constructed object). Reconstruct the packed bytes from the bools here, the
++		// exact inverse of the unpacking in load(), instead of echoing the stale
++		// members.
++		std::uint8_t flags = 0;
++		flags |= this->start_enabled << 0;
++		flags |= this->send_untrigger << 2;
++		std::uint8_t filter_flags = 0;
++		filter_flags |= this->react_to_on_trigger << 0;
++		filter_flags |= this->react_to_on_touch << 1;
++		filter_flags |= this->react_to_on_damage << 2;
++		filter_flags |= this->respond_to_object << 3;
++		filter_flags |= this->respond_to_pc << 4;
++		filter_flags |= this->respond_to_npc << 5;
++		w.write_raw("flags", reinterpret_cast<std::byte const*>(&flags), 1);
++		w.write_raw("filterFlags", reinterpret_cast<std::byte const*>(&filter_flags), 1);
+ 		w.write_string("respondToVobName", this->vob_target);
+ 		w.write_int("numCanBeActivated", this->max_activation_count);
+ 		w.write_float("retriggerWaitSec", this->retrigger_delay_sec);

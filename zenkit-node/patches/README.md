@@ -39,7 +39,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (19)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (20)
 
 | Patch | What it fixes |
 |---|---|
@@ -62,6 +62,7 @@ regardless of what upstream does with it.
 | `0025` | The ASCII header's `objects` count padded to 11 characters where ZenGin pads to 9 (the same defect `0013` fixed for `zCArchiverBinary`, which had picked 10) |
 | `0026` | `WriteArchiveAscii::write_byte`/`write_word` emitted `byte:`/`word:` type tokens that `ReadArchiveAscii::read_byte`/`read_word` reject and ZenGin never writes (144,111 `int:` and zero of either across a retail install's 24 ASCII worlds) |
 | `0027` | `World::load`'s mesh chunk scan had no end-of-file check and seeked by an unvalidated chunk length; since `ReadMemory::seek` ignores an out-of-range seek instead of failing, one corrupted length word made `loadWorld` spin forever at 100% CPU with nothing thrown |
+| `0028` | `VTrigger::save` wrote the deprecated raw `flags`/`filterFlags` bytes `load()` unpacks into eight public bools, verbatim, instead of reconstructing them from the bools — the same writer/reader asymmetry as `0003`, on the trigger family's own base fields |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
@@ -99,7 +100,7 @@ from the `oCMOB` save sites; until someone writes that, this stays local.
 Independent, highest-value and least arguable first:
 
 1. `0020`, `0021`, `0022`, `0027` — one PR each.
-2. `0002`, `0003`, `0004`, `0005`, `0006` — small self-evident writer bugs.
+2. `0002`, `0003`, `0004`, `0005`, `0006`, `0028` — small self-evident writer bugs.
 3. `0018`, then `0013`.
 4. `0001`, then `0010`.
 5. `0014`, `0015`, `0023`.

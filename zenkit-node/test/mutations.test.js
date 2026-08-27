@@ -1061,6 +1061,11 @@ const CLASS_PROP_ROUND_TRIP = [
   }],
   ['1/10', 'zCTriggerWorldStart', { fireOnce: false }],
   ['1/11', 'oCTriggerScript', { function: 'SCRIPTFUNC_OTHER_ÄÖÜ' }],
+  ['1/12', 'zCTrigger', {
+    startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
+    reactToOnDamage: false, respondToObject: true, respondToPc: false, respondToNpc: true,
+    maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 99.5, fireDelaySec: 0.25,
+  }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {
