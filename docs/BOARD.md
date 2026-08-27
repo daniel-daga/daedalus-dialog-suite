@@ -146,12 +146,6 @@ card waits on live at its pointer — put new prose there, not here.
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
-**Needs Daniel's hands or eyes**
-
-- **The pivot and the VOB outline both shipped with judged constants** —
-  `ORBIT_ROTATE_SPEED`, `MIN_PIVOT_DISTANCE`, `OUTLINE_DARKEN`, `OUTLINE_POWER`;
-  no test can settle any of them. **Daniel.** §16.12
-
 **Elsewhere, with a home of their own**
 
 - **`3221226505` is still unexplained** — the worker-handle hypothesis is
@@ -160,6 +154,10 @@ card waits on live at its pointer — put new prose there, not here.
 - **Four viewport and World-surface warts** — the surface loses its geometry on
   navigate-away (a hard prerequisite for §16.8 W4), the imperative handle, the
   five module mocks, the 31 px reservation. `docs/refactoring-targets.md` §8–11
+
+**UI/UX improvement**
+
+- Add multi-select in the world view (shift + click on objects in the world editor to multi select)
 
 ## Done
 

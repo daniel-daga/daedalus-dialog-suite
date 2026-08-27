@@ -21,7 +21,7 @@ export type Nav = 'orbit' | 'pan' | 'dolly' | 'none';
  * of a screen width, and reads as "rotation too fast" in a world where the
  * interesting distances are metres.
  */
-export const ORBIT_ROTATE_SPEED = 0.4;
+export const ORBIT_ROTATE_SPEED = 1;
 
 /** Three units are metres here (`ZEN_TO_THREE_SCALE`), so this is one metre. A
  *  pivot any closer scales the dolly step and the pan speed to nothing, which
