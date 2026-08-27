@@ -12,6 +12,35 @@ permissions:
   contents: read
 
 jobs:
+  zen-world-tests:
+    name: zen-world (level-editor domain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test zen-world
+        run: pnpm --filter zen-world test
+
+      - name: Typecheck zen-world
+        run: pnpm --filter zen-world run typecheck
+
+      - name: Lint zen-world
+        run: pnpm --filter zen-world run lint
+
   editor-tests:
     runs-on: ubuntu-latest
     steps:

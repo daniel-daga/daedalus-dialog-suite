@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, memo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
-import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon } from '@mui/icons-material';
+import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon, Public as WorldIcon } from '@mui/icons-material';
 import ThreeColumnLayout from './ThreeColumnLayout';
 import { useEditorStore } from '../store/editorStore';
 import { useHistoryStore } from '../store/historyStore';
@@ -13,6 +13,10 @@ import type { SemanticModel } from '../types/global';
 const QuestEditor = lazy(() => import('./QuestEditor'));
 const VariableManager = lazy(() => import('./VariableManager'));
 const ProblemsPanel = lazy(() => import('./Problems/ProblemsPanel'));
+// Lazily loaded on purpose (level-editor.md §6): three.js, three-mesh-bvh and
+// the world code are a chunk a dialog-only session never has to download or
+// parse, and `zenkit-node` loads in main only when a world is opened.
+const WorldSurface = lazy(() => import('./world/WorldSurface'));
 
 interface MainLayoutProps {
   filePath: string | null;
@@ -70,6 +74,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
       const isRedo = (e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey));
 
       if (!isUndo && !isRedo) return;
+
+      // The World surface has its own history — the authoritative op log in the
+      // main process (level-editor.md §7) — and binds its own shortcut. Without
+      // this, Ctrl+Z there would undo a *dialog* edit in whichever file happens
+      // to be open behind the view, which is every time: the World surface
+      // lives inside a project like every other view.
+      if (useUISelectionStore.getState().activeView === 'world') return;
 
       // Let Monaco's built-in undo/redo handle events when the source editor is focused
       const activeElement = document.activeElement;
@@ -130,6 +141,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
                     <ProblemsIcon />
                 </ToggleButton>
             </Tooltip>
+            <Tooltip title="World Editor" placement="right">
+                <ToggleButton value="world" aria-label="World Editor" data-testid="world-toggle">
+                    <WorldIcon />
+                </ToggleButton>
+            </Tooltip>
          </ToggleButtonGroup>
       </Paper>
 
@@ -167,6 +183,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
              <Box sx={{ height: '100%' }}>
                  <Suspense fallback={<LoadingView label="Loading problems..." />}>
                    <ProblemsPanel />
+                 </Suspense>
+             </Box>
+         )}
+
+         {view === 'world' && (
+             <Box sx={{ height: '100%' }}>
+                 <Suspense fallback={<LoadingView label="Loading world editor..." />}>
+                   <WorldSurface />
                  </Suspense>
              </Box>
          )}

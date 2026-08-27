@@ -615,6 +615,54 @@ export const mockEditorAPI: EditorAPI = {
   onDownloadProgress(_callback: (percent: number) => void): () => void {
     return () => {};
   },
+
+  // World API. There is no browser-mode stand-in for a ZenGin world: it needs
+  // the native binding, a Gothic install and tens of megabytes of geometry.
+  // These report "no world" rather than fabricating one — a mock world would
+  // be a scene nobody could tell apart from a broken real one.
+  async openWorldDialog(): Promise<string | null> { return null; },
+  async selectGothicInstall(): Promise<string | null> { return null; },
+  async getGothicInstall(): Promise<string | null> { return null; },
+  async openWorld(): Promise<never> {
+    throw new Error('The world editor needs the desktop app — it is not available in browser mode.');
+  },
+  async getWorldMesh(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async getWorldVisuals(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async getWorldTexture(): Promise<null> { return null; },
+  // Null is what the real call returns for a path with nothing to list, so an
+  // asset browser in browser mode shows its empty state rather than an error.
+  async listWorldAssets(): Promise<null> { return null; },
+  async getWorldWaynet(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  // Null is what the real call returns for a visual that does not resolve, and
+  // the op treats that as "leave the stale box alone" rather than as an error.
+  async getVisualBounds(): Promise<null> { return null; },
+  // No world means no VOB to have class properties, so this refuses like its
+  // siblings rather than answering with an empty object a grid would render as
+  // a VOB whose every field is blank.
+  async getVobProps(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async refreshWorldIndex(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async applyWorldOps(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async undoWorldEdit(): Promise<null> { return null; },
+  async redoWorldEdit(): Promise<null> { return null; },
+  // Cancelled rather than "no world is open": in browser mode there is no
+  // dialog to open, and a cancelled save is a state the surface already handles.
+  async saveWorldDialog(): Promise<null> { return null; },
+  async saveWorld(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async closeWorld(): Promise<void> {},
 };
 
 // Helper for tests to reset mock file system

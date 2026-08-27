@@ -60,6 +60,29 @@ contextBridge.exposeInMainWorld('editorAPI', {
   approveClose: () => ipcRenderer.send('app:approveClose'),
   cancelClose: () => ipcRenderer.send('app:cancelClose'),
 
+  // World API (level-editor.md §7). The world stays in the main process; what
+  // crosses here is the lightweight VOB index and geometry/texture buffers.
+  openWorldDialog: () => ipcRenderer.invoke('world:openDialog'),
+  selectGothicInstall: () => ipcRenderer.invoke('world:selectGothicInstall'),
+  getGothicInstall: () => ipcRenderer.invoke('world:getGothicInstall'),
+  openWorld: (request: { worldPath: string; gameVersion: string; assetSources: string[] }) =>
+    ipcRenderer.invoke('world:open', request),
+  getWorldMesh: () => ipcRenderer.invoke('world:mesh'),
+  getWorldVisuals: () => ipcRenderer.invoke('world:visuals'),
+  listWorldAssets: (path: string) => ipcRenderer.invoke('world:assets', { path }),
+  getWorldWaynet: () => ipcRenderer.invoke('world:waynet'),
+  getVisualBounds: (name: string) => ipcRenderer.invoke('world:visualBounds', { name }),
+  getVobProps: (path: string) => ipcRenderer.invoke('world:vobProps', { path }),
+  refreshWorldIndex: () => ipcRenderer.invoke('world:refreshIndex'),
+  getWorldTexture: (name: string, maxSize: number) =>
+    ipcRenderer.invoke('world:texture', { name, maxSize }),
+  applyWorldOps: (ops: unknown[]) => ipcRenderer.invoke('world:applyOps', { ops }),
+  saveWorldDialog: (suggested: string) => ipcRenderer.invoke('world:saveDialog', { suggested }),
+  saveWorld: (targetPath: string) => ipcRenderer.invoke('world:save', { targetPath }),
+  undoWorldEdit: () => ipcRenderer.invoke('world:undo'),
+  redoWorldEdit: () => ipcRenderer.invoke('world:redo'),
+  closeWorld: () => ipcRenderer.invoke('world:close'),
+
   // Updater API
   checkForUpdate: () => ipcRenderer.invoke('updater:checkForUpdate'),
   downloadUpdate: (url: string) => ipcRenderer.invoke('updater:downloadUpdate', url),

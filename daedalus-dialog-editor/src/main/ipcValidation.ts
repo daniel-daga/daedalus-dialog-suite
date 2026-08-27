@@ -6,6 +6,9 @@
  * with a clear error rather than reaching deep service internals.
  */
 
+import { classPropKeys, fieldOf, type FieldDescriptor } from 'zen-world';
+import type { WorldOp } from '../shared/worldTypes';
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -115,5 +118,426 @@ export function assertSaveFileOptions(options: unknown): void {
     if (typeof options[key] !== 'boolean') {
       throw new Error(`Invalid options payload: option "${key}" must be a boolean`);
     }
+  }
+}
+
+/** The three explicit targets. Never inferred from the file (level-editor.md §9). */
+const GAME_VERSIONS = ['g1', 'g2'] as const;
+
+export interface OpenWorldRequestShape {
+  worldPath: string;
+  gameVersion: 'g1' | 'g2';
+  assetSources: string[];
+}
+
+/**
+ * Assert an open-world request. Beyond the usual boundary hygiene, the two
+ * path-bearing fields matter for a specific reason: the caller path-validates
+ * `worldPath` and every entry of `assetSources`, and a non-string in that array
+ * would pass straight through the validation loop and reach the VFS.
+ */
+export function assertOpenWorldRequest(request: unknown): asserts request is OpenWorldRequestShape {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid world request: expected a plain object');
+  }
+  if (typeof request.worldPath !== 'string' || request.worldPath === '') {
+    throw new Error('Invalid world request: worldPath must be a non-empty string');
+  }
+  if (!(GAME_VERSIONS as readonly unknown[]).includes(request.gameVersion)) {
+    throw new Error(`Invalid world request: gameVersion must be one of ${GAME_VERSIONS.join(', ')}`);
+  }
+  if (!Array.isArray(request.assetSources)
+    || !request.assetSources.every((source) => typeof source === 'string')) {
+    throw new Error('Invalid world request: assetSources must be an array of strings');
+  }
+}
+
+/**
+ * Assert a texture request. `maxSize` drives a mipmap-selection loop, so a
+ * zero, a negative or a NaN makes that loop's exit condition meaningless.
+ */
+export function assertTextureRequest(
+  request: unknown,
+): asserts request is { name: string; maxSize: number } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid texture request: expected a plain object');
+  }
+  if (typeof request.name !== 'string' || request.name === '') {
+    throw new Error('Invalid texture name: expected a non-empty string');
+  }
+  const { maxSize } = request;
+  if (typeof maxSize !== 'number' || !Number.isInteger(maxSize) || maxSize <= 0) {
+    throw new Error('Invalid texture request: maxSize must be a positive integer');
+  }
+}
+
+/** Slots down the children lists, as `setVobPosition` parses it: "0", "0/4". */
+const INDEX_PATH = /^\d+(\/\d+)*$/;
+
+function isFiniteNumbers(value: unknown, count: number): boolean {
+  return Array.isArray(value) && value.length === count
+    && value.every((component) => typeof component === 'number' && Number.isFinite(component));
+}
+
+function isZenPosition(value: unknown): value is [number, number, number] {
+  return isFiniteNumbers(value, 3);
+}
+
+/** A colour is four channels — r, g, b and the alpha ZenGin keeps — each a whole
+ *  number, because the archive stores each in a byte. Fixed arity, since the
+ *  binding reads them positionally: a three-element colour would leave one
+ *  channel to whatever the struct happened to hold. */
+function isColorChannels(value: unknown, min: number, max: number): boolean {
+  return Array.isArray(value) && value.length === 4
+    && value.every((channel) => typeof channel === 'number' && Number.isInteger(channel)
+      && channel >= min && channel <= max);
+}
+
+/**
+ * Check one class-property value against its catalogue descriptor.
+ *
+ * The bounds are read off the descriptor rather than written here, so the number
+ * a light's range is refused below is the same number the grid rejects a typed
+ * value with — the reason the catalogue carries them at all (`vobClasses.ts`).
+ */
+function assertClassPropValue(field: FieldDescriptor, side: string, value: unknown): void {
+  const where = `${side}.${field.key}`;
+  if (field.kind === 'string') {
+    if (typeof value !== 'string') {
+      throw new Error(`Invalid op: ${where} must be a string`);
+    }
+    return;
+  }
+  if (field.kind === 'color') {
+    if (!isColorChannels(value, field.min ?? 0, field.max ?? 255)) {
+      throw new Error(`Invalid op: ${where} must be four whole channels ${field.min ?? 0}-${field.max ?? 255}`);
+    }
+    return;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`Invalid op: ${where} must be a finite number`);
+  }
+  if (field.min !== undefined && value < field.min) {
+    throw new Error(`Invalid op: ${where} must be ${field.min} or greater`);
+  }
+  if (field.max !== undefined && value > field.max) {
+    throw new Error(`Invalid op: ${where} must be ${field.max} or less`);
+  }
+}
+
+/**
+ * Assert a class-property read (level-editor.md §7).
+ *
+ * A read, but the path is parsed in C++ and used to walk the VOB tree, so it is
+ * held to exactly the shape the ops are: the same regex, refused here rather
+ * than handed to `ParseIndexPath` to reject.
+ */
+export function assertVobPropsRequest(
+  request: unknown,
+): asserts request is { path: string } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid vob props request: expected a plain object');
+  }
+  if (typeof request.path !== 'string' || !INDEX_PATH.test(request.path)) {
+    throw new Error('Invalid vob props request: path must be slot indices separated by "/"');
+  }
+}
+
+/**
+ * Assert a save request (level-editor.md §5).
+ *
+ * The path goes to the native writer, which creates a temp file beside it and
+ * renames — so this is the last place a renderer-supplied string is a string
+ * rather than a file on disk. The main process validates it against the
+ * whitelist as well; this only settles its shape.
+ */
+export function assertSaveWorldRequest(
+  request: unknown,
+): asserts request is { targetPath: string } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid save request: expected a plain object');
+  }
+  if (typeof request.targetPath !== 'string' || request.targetPath.trim() === '') {
+    throw new Error('Invalid save request: targetPath must be a non-empty string');
+  }
+}
+
+/**
+ * Assert an edit batch (level-editor.md §7).
+ *
+ * This is the first IPC payload that *changes* the world rather than reading a
+ * projection of it, and every field of it is handed to native code: the path is
+ * parsed in C++ and used to walk the VOB tree, and the position is written into
+ * a `zenkit::Vec3`. `op` is checked against the ops that exist rather than
+ * assumed, so an op the binding cannot apply is a refusal here and not a
+ * silently skipped edit.
+ */
+/** The boolean properties a `SetVobProp` may carry — the six `vobIndex` emits.
+ *  Anything else is refused, exactly as the binding refuses it. */
+const VOB_FLAG_KEYS = [
+  'showVisual', 'vobStatic', 'ambient', 'cdStatic', 'cdDynamic', 'physicsEnabled',
+];
+
+/** The flags a VOB can be *authored* with — the same list minus
+ *  `physicsEnabled`, which `insertVob` does not take. ZenGin writes that field
+ *  only for some world formats and cannot set it in the Spacer at all, so there
+ *  is no meaningful value to author it with. Sharing the list above would let
+ *  the boundary wave through exactly what the binding then refuses. */
+const NEW_VOB_FLAG_KEYS = [
+  'showVisual', 'vobStatic', 'ambient', 'cdStatic', 'cdDynamic',
+];
+
+/**
+ * One end of a reparent — the path, the parent that holds it and the slot in
+ * that parent's children.
+ *
+ * All three reach C++: `reparentVob` walks the VOB tree by `parentPath`, indexes
+ * the children list by `slot`, and the caller checks the path it answers with
+ * against `path`. A null `parentPath` is a root and is the one legitimate
+ * absence here — everything else is a required field.
+ */
+function assertVobSlot(value: unknown, side: string): void {
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid op: ${side} must be a slot — a path, a parentPath and a slot`);
+  }
+  if (typeof value.path !== 'string' || !INDEX_PATH.test(value.path)) {
+    throw new Error(`Invalid op: ${side}.path must be slot indices separated by "/"`);
+  }
+  if (value.parentPath !== null
+    && (typeof value.parentPath !== 'string' || !INDEX_PATH.test(value.parentPath))) {
+    throw new Error(`Invalid op: ${side}.parentPath must be slot indices separated by "/", or null`);
+  }
+  if (typeof value.slot !== 'number' || !Number.isInteger(value.slot) || value.slot < 0) {
+    throw new Error(`Invalid op: ${side}.slot must be a non-negative integer`);
+  }
+}
+
+export function assertApplyOpsRequest(request: unknown): asserts request is { ops: WorldOp[] } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid ops request: expected a plain object');
+  }
+  if (!Array.isArray(request.ops)) {
+    throw new Error('Invalid ops request: ops must be an array');
+  }
+  for (const op of request.ops) {
+    if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
+    if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
+      && op.op !== 'SetVobClassProp' && op.op !== 'AddVob' && op.op !== 'ReparentVob'
+      && op.op !== 'MoveWaypoint' && op.op !== 'DeleteVob') {
+      throw new Error(`Invalid op: unknown op ${String(op.op)}`);
+    }
+
+    // Before the `vob` check, not merely before the `path` check: a waynet op
+    // is not about a VOB at all and carries neither field. The reparent branch
+    // below sits after `vob` and could afford to, because a reparent still has
+    // one; put this one there and the op is refused with a message about a
+    // field it has no business having.
+    if (op.op === 'MoveWaypoint') {
+      if (typeof op.waypoint !== 'number' || !Number.isInteger(op.waypoint) || op.waypoint < 0) {
+        throw new Error('Invalid op: waypoint must be a non-negative integer');
+      }
+      // The name is the guard the bare index needs, so an absent one is not a
+      // tolerable omission: a wrong waypoint index always resolves to a
+      // waypoint, and moves it.
+      if (typeof op.name !== 'string') {
+        throw new Error('Invalid op: name must be the waypoint\'s name');
+      }
+      for (const field of ['from', 'to'] as const) {
+        if (!isFiniteNumbers(op[field], 3)) {
+          throw new Error(`Invalid op: ${field} must be three finite numbers`);
+        }
+      }
+      continue;
+    }
+
+    if (typeof op.vob !== 'number' || !Number.isInteger(op.vob) || op.vob < 0) {
+      throw new Error('Invalid op: vob must be a non-negative integer');
+    }
+
+    // Before the `path` check, because a reparent is the one op with no
+    // top-level path: a move has two ends and carries one on each side. A
+    // validator written around `op.path` refuses it outright, which is what kept
+    // the scene tree's drag and drop from ever reaching the binding.
+    if (op.op === 'ReparentVob') {
+      assertVobSlot(op.from, 'from');
+      assertVobSlot(op.to, 'to');
+      continue;
+    }
+
+    if (typeof op.path !== 'string' || !INDEX_PATH.test(op.path)) {
+      throw new Error('Invalid op: path must be slot indices separated by "/"');
+    }
+
+    if (op.op === 'DeleteVob') {
+      // A `vob` and a `path`, both already checked above, and **nothing else**.
+      // The exhaustive key check is not tidiness here: this is the one op with
+      // no inverse (§15), so a delete arriving with a `from` is either a
+      // mislabelled `AddVob` — whose null-side rule means "the op describes the
+      // VOB completely" — or something reaching for an inverse that does not
+      // exist. Ignoring the field would let both through as an ordinary delete.
+      for (const key of Object.keys(op)) {
+        if (key !== 'op' && key !== 'vob' && key !== 'path') {
+          throw new Error(`Invalid op: a DeleteVob carries only a vob and a path, not ${key}`);
+        }
+      }
+      continue;
+    }
+
+    if (op.op === 'RotateVob') {
+      // Nine, not three. The two ops share every other field name, so a move
+      // mislabelled as a rotation is exactly the shape a check on `op` alone
+      // would wave through — into `setVobRotation`, which reads the matrix
+      // positionally in C++ and would leave uninitialized rows in a struct
+      // ZenKit does not zero.
+      for (const field of ['from', 'to'] as const) {
+        if (!isFiniteNumbers(op[field], 9)) {
+          throw new Error(`Invalid op: ${field} must be nine finite numbers, row-major`);
+        }
+      }
+      // Null is a legitimate answer, not a missing field: a VOB whose visual
+      // does not resolve has no bounds to refit and keeps the box it has.
+      for (const field of ['fromBbox', 'toBbox'] as const) {
+        if (op[field] !== null && !isFiniteNumbers(op[field], 6)) {
+          throw new Error(`Invalid op: ${field} must be six finite numbers or null`);
+        }
+      }
+      continue;
+    }
+
+    if (op.op === 'AddVob') {
+      // The list it is appended to, and the field that decides whether the op
+      // renumbers. It walks the VOB tree in C++ just as `path` does, so it is
+      // checked in the same shape — null being the roots, and the one absence
+      // that means something here.
+      if (op.parentPath !== null
+        && (typeof op.parentPath !== 'string' || !INDEX_PATH.test(op.parentPath))) {
+        throw new Error('Invalid op: parentPath must be slot indices separated by "/", or null');
+      }
+      // Exactly one side is null. Both null is an op that does nothing; neither
+      // null is an add and a delete at once, and `writeOp` would read it as an
+      // insert in one direction and an insert in the other — so the VOB would
+      // never come back off an undo.
+      const nulls = ['from', 'to'].filter((side) => op[side] === null).length;
+      if (nulls !== 1) {
+        throw new Error('Invalid op: an AddVob has exactly one null side — it adds or it removes');
+      }
+      const spec = op.from === null ? op.to : op.from;
+      if (!isPlainObject(spec)) throw new Error('Invalid op: the vob to add must be an object');
+      for (const [key, value] of Object.entries(spec)) {
+        if (key === 'name' || key === 'visual') {
+          if (typeof value !== 'string') throw new Error(`Invalid op: ${key} must be a string`);
+        } else if (NEW_VOB_FLAG_KEYS.includes(key)) {
+          if (typeof value !== 'boolean') throw new Error(`Invalid op: ${key} must be a boolean`);
+        } else if (key === 'position') {
+          if (!isZenPosition(value)) throw new Error('Invalid op: position must be three finite numbers');
+        } else if (key === 'rotation') {
+          if (!isFiniteNumbers(value, 9)) throw new Error('Invalid op: rotation must be nine finite numbers');
+        } else if (key === 'bbox') {
+          if (!isFiniteNumbers(value, 6)) throw new Error('Invalid op: bbox must be six finite numbers');
+        } else {
+          throw new Error(`Invalid op: unknown property ${key}`);
+        }
+      }
+      if (!('position' in spec)) throw new Error('Invalid op: a vob to add needs a position');
+      continue;
+    }
+
+    if (op.op === 'SetVobProp') {
+      // The props reach C++ as a whole object, where an unrecognised key is
+      // refused rather than ignored — so the same key set is settled here, and
+      // an op the binding would refuse never becomes a half-applied batch.
+      const sides = ['from', 'to'] as const;
+      for (const side of sides) {
+        if (!isPlainObject(op[side])) {
+          throw new Error(`Invalid op: ${side} must be an object of properties`);
+        }
+        for (const [key, value] of Object.entries(op[side])) {
+          if (key === 'name' || key === 'visual') {
+            if (typeof value !== 'string') {
+              throw new Error(`Invalid op: ${side}.${key} must be a string`);
+            }
+          } else if (VOB_FLAG_KEYS.includes(key)) {
+            if (typeof value !== 'boolean') {
+              throw new Error(`Invalid op: ${side}.${key} must be a boolean`);
+            }
+          } else {
+            throw new Error(`Invalid op: unknown property ${key}`);
+          }
+        }
+      }
+      // The same keys on both sides, or the inverse restores a different set of
+      // fields than the op wrote — which is invisible until someone undoes.
+      const keys = sides.map((side) => Object.keys(op[side] as object).sort());
+      if (keys[0].length === 0) throw new Error('Invalid op: sets no properties');
+      if (keys[0].join() !== keys[1].join()) {
+        throw new Error('Invalid op: from and to must carry the same properties');
+      }
+      for (const field of ['fromBbox', 'toBbox'] as const) {
+        if (op[field] !== null && !isFiniteNumbers(op[field], 6)) {
+          throw new Error(`Invalid op: ${field} must be six finite numbers or null`);
+        }
+        // Only a visual swap can move the box, and the binding refuses a box
+        // without one — so a box on any other change is refused here too rather
+        // than at the bottom of a batch that has already applied.
+        if (op[field] !== null && !('visual' in (op.to as object))) {
+          throw new Error(`Invalid op: ${field} is only meaningful with a change of visual`);
+        }
+      }
+      continue;
+    }
+
+    if (op.op === 'SetVobClassProp') {
+      // The first op whose legal key set depends on which VOB it addresses, and
+      // this validator is stateless with respect to the world: no index, no
+      // handle, nothing but the payload. `className` is therefore the only thing
+      // that can make a key legal here — a declaration of intent the binding
+      // re-checks against the VOB's real type, exactly as `writeOp` re-checks
+      // the path a reparent landed on.
+      //
+      // The catalogue in `zen-world` is what decides, rather than a fourth
+      // hand-maintained allowlist beside `VOB_FLAG_KEYS`: the op builder, this
+      // check and the property grid all read the one table, so adding a class is
+      // one entry rather than three that have to agree by hand.
+      if (typeof op.className !== 'string' || classPropKeys(op.className).length === 0) {
+        throw new Error(`Invalid op: no class properties are known for ${String(op.className)}`);
+      }
+      const className = op.className;
+      const sides = ['from', 'to'] as const;
+      for (const side of sides) {
+        if (!isPlainObject(op[side])) {
+          throw new Error(`Invalid op: ${side} must be an object of class properties`);
+        }
+        for (const [key, value] of Object.entries(op[side])) {
+          const field = fieldOf(className, key);
+          if (field === null) {
+            throw new Error(`Invalid op: a ${className} has no class property ${key}`);
+          }
+          assertClassPropValue(field, side, value);
+        }
+      }
+      // Both sides walked, not just `to`: the walk is what refuses a value, and
+      // an unchecked `from` is the side an undo writes — so skipping it would
+      // hand C++ a colour nobody looked at, at the moment the user is trying to
+      // get back to where they were.
+      const keys = sides.map((side) => Object.keys(op[side] as object).sort());
+      if (keys[0].length === 0) throw new Error('Invalid op: sets no class properties');
+      if (keys[0].join() !== keys[1].join()) {
+        throw new Error('Invalid op: from and to must carry the same class properties');
+      }
+      // Exhaustively, in the `DeleteVob` idiom: no field in this slice can move
+      // the culling box, so the op has no `fromBbox`/`toBbox` — and an op that
+      // arrived carrying one is either a `SetVobProp` mislabelled or a caller
+      // expecting a refit that will not happen.
+      for (const key of Object.keys(op)) {
+        if (key !== 'op' && key !== 'vob' && key !== 'path' && key !== 'className'
+          && key !== 'from' && key !== 'to') {
+          throw new Error(`Invalid op: a SetVobClassProp carries no ${key}`);
+        }
+      }
+      continue;
+    }
+
+    if (!isZenPosition(op.from)) throw new Error('Invalid op: from must be three finite numbers');
+    if (!isZenPosition(op.to)) throw new Error('Invalid op: to must be three finite numbers');
   }
 }

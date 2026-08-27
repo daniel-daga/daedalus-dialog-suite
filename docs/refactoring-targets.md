@@ -65,3 +65,31 @@ so a native crash kills only that child and the existing pool can respawn it, in
 serialization for parse requests/results); deferred until a real segfault is observed in
 practice. Note the NAPI `npmRebuild: false` invariant still applies to whatever process
 loads the addon.
+
+---
+
+### 5. The world payload types live on both sides of the boundary
+**Files:** `daedalus-dialog-editor/src/shared/worldTypes.ts`,
+`zen-world/src/model/`
+
+`VobIndex` is defined in `zen-world` and re-exported by the editor
+(`worldTypes.ts:6-8`); `WaynetPayload` is defined in the editor instead
+(`worldTypes.ts:62-73`), even though both are shapes the binding emits and the
+domain reasons about. The split is historical, not designed.
+
+Noticed while adding `MoveWaypoint` (2026-08-27) and deliberately not fixed
+there: the op needed no cross-package type at all once its factory took the
+payload's own columns — `(positions, names, waypoint, to)` — so moving
+`WaynetPayload` would have been adjacent refactoring the change did not need.
+
+**It was predicted to start costing something at the waypoint gizmo slice, and
+it did not** (landed 2026-08-28). The prediction assumed the store would have to
+name the type; it holds `selectedWaypoint: number | null` and names nothing, the
+overlay and the viewport are both editor-side already, and the two `zen-world`
+functions the slice uses take the payload's raw columns — `Float32Array` and
+`string[]` — for the same reason `moveWaypoint`'s factory does. So the split is
+still only a wart, with no slice yet identified that pays for it.
+
+Fix direction, unchanged: `WaynetPayload` moves to `zen-world` beside `VobIndex`
+and the editor re-exports it, matching what already happened for the VOB index.
+Small, but it touches every waynet import, so it wants its own commit.

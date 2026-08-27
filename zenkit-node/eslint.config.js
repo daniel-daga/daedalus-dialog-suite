@@ -2,7 +2,9 @@ const js = require('@eslint/js');
 
 module.exports = [
   {
-    ignores: ['node_modules/**', 'build/**', 'vendor/**', 'vendor-build/**', 'prebuilds/**'],
+    ignores: [
+      'node_modules/**', 'build/**', 'vendor/**', 'vendor-build/**', 'prebuilds/**',
+    ],
   },
   js.configs.recommended,
   {

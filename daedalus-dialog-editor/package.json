@@ -5,7 +5,8 @@
   "main": "dist/main/main.js",
   "scripts": {
     "start": "electron .",
-    "predev": "npm run build --prefix ../daedalus-parser && npm run build:ts --prefix ../daedalus-parser",
+    "predev": "npm run build --prefix ../daedalus-parser && npm run build:ts --prefix ../daedalus-parser && npm run build --prefix ../zen-world",
+    "prebuild": "npm run build --prefix ../zen-world",
     "dev": "npm run build:main && node scripts/dev.js",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
@@ -85,7 +86,11 @@
     "react-window": "^1.8.10",
     "safe-buffer": "^5.2.1",
     "safer-buffer": "^2.1.2",
+    "three": "^0.180.0",
+    "three-mesh-bvh": "^0.9.14",
     "tree-sitter": "^0.21.1",
+    "zen-world": "workspace:*",
+    "zenkit-node": "workspace:*",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
@@ -101,6 +106,7 @@
     "@types/react-dom": "^18.2.23",
     "@types/react-virtualized-auto-sizer": "^1.0.4",
     "@types/react-window": "^1.8.8",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0",

@@ -36,10 +36,51 @@ function setVobPosition(handle, ...rest) {
   return result;
 }
 
+function setVobRotation(handle, ...rest) {
+  const result = addon.setVobRotation(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
+function setVobProp(handle, ...rest) {
+  const result = addon.setVobProp(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
+function setVobClassProp(handle, ...rest) {
+  const result = addon.setVobClassProp(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
+function insertVob(handle, ...rest) {
+  const result = addon.insertVob(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
+function deleteVob(handle, ...rest) {
+  const result = addon.deleteVob(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
+function reparentVob(handle, ...rest) {
+  const result = addon.reparentVob(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
 function insertItemVob(handle, ...rest) {
   const result = addon.insertItemVob(handle, ...rest);
   markMutated(handle);
   return result;
 }
 
-module.exports = { ...addon, loadWorld, normalizeWorld, setVobPosition, insertItemVob };
+module.exports = {
+  ...addon,
+  loadWorld, normalizeWorld,
+  setVobPosition, setVobRotation, setVobProp, setVobClassProp,
+  insertVob, deleteVob, reparentVob, insertItemVob,
+};

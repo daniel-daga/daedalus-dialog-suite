@@ -108,6 +108,31 @@ function configureArgs(platform, arch) {
   return args;
 }
 
+// ZenKit attaches some build options to its target as PUBLIC compile
+// definitions, and two of them are ABI-affecting: `_ZK_WITH_MMAP` adds
+// `Vfs::_m_data_mapped`, `_ZK_WITH_ZIPPED_VDF` adds a member function. A
+// consumer that does not build through CMake never sees them, so it compiles a
+// SMALLER `Vfs` than the library it links — and `Vfs::Vfs()` then initialises
+// a member past the end of the object, corrupting the heap far from the cause.
+//
+// The options are only requests; ZenKit also probes the platform and reports
+// what it actually turned on. Record that, not the request, and let
+// binding.gyp expand it (scripts/zenkit-defines.js) so every translation unit
+// matches the library.
+const ABI_FEATURE_MESSAGES = [
+  [/Building with (?:Windows|POSIX) memory mapping support/, '_ZK_WITH_MMAP=1'],
+  [/Building with zipped VDF support/, '_ZK_WITH_ZIPPED_VDF=1'],
+];
+
+function writeAbiDefines(configureOutput) {
+  const defines = ABI_FEATURE_MESSAGES.filter(([pattern]) => pattern.test(configureOutput)).map(
+    ([, define]) => define
+  );
+
+  fs.writeFileSync(path.join(BUILD_DIR, 'zenkit-abi.json'), `${JSON.stringify(defines, null, 2)}\n`);
+  return defines;
+}
+
 function main() {
   const cmake = findCMake();
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -119,7 +144,16 @@ function main() {
     `#pragma once\n#define ZENKIT_NODE_ZENKIT_VERSION "${version}"\n`
   );
 
-  execFileSync(cmake, configureArgs(process.platform, process.arch), { stdio: 'inherit' });
+  // Capture the configure output rather than inheriting it: ZenKit reports
+  // which optional features it actually enabled, and two of them change the
+  // layout of types the addon holds by value (see writeAbiDefines).
+  const configure = execFileSync(cmake, configureArgs(process.platform, process.arch), {
+    encoding: 'utf8',
+    stdio: ['inherit', 'pipe', 'inherit'],
+  });
+  process.stdout.write(configure);
+  writeAbiDefines(configure);
+
   execFileSync(cmake, ['--build', BUILD_DIR, '--config', 'Release', '--parallel'], {
     stdio: 'inherit',
   });
@@ -145,4 +179,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { configureArgs };
+module.exports = { configureArgs, writeAbiDefines, ABI_FEATURE_MESSAGES };

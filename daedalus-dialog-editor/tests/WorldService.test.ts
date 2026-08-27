@@ -1,0 +1,583 @@
+// WorldService owns the one zenkit worker that holds the world in memory
+// (level-editor.md §7). Unlike MetadataWorkerPool this is a *stateful* worker —
+// there is exactly one, it cannot be silently restarted, and a lost worker is a
+// lost world. Everything below is about that difference: id routing, what
+// happens when the worker dies, and what happens after close.
+//
+// The worker is injected, so none of this loads the native addon or needs a
+// Gothic install.
+
+import { WorldService, type WorldWorker } from '../src/main/services/WorldService';
+import { WorkerRequestError } from '../src/main/services/WorkerRequestError';
+
+interface SentMessage { id: string; op: string; payload?: unknown }
+
+class FakeWorker implements WorldWorker {
+  sent: SentMessage[] = [];
+  terminated = false;
+  private handlers = new Map<string, Array<(arg: unknown) => void>>();
+
+  postMessage(message: SentMessage) { this.sent.push(message); }
+
+  on(event: string, handler: (arg: unknown) => void) {
+    const list = this.handlers.get(event) ?? [];
+    list.push(handler);
+    this.handlers.set(event, list);
+  }
+
+  terminate() { this.terminated = true; return Promise.resolve(0); }
+
+  /** Answer a request the service sent, by the op it used. */
+  reply(op: string, result: unknown) {
+    const message = this.sent.find((m) => m.op === op);
+    if (!message) throw new Error(`test asked to reply to ${op}, which was never sent`);
+    this.emit('message', { id: message.id, ok: true, result });
+  }
+
+  /** The most recent request with this op — undo and redo send `applyOps`
+   *  again, so answering the first one every time replies to the wrong call. */
+  replyLast(op: string, result: unknown) {
+    const message = [...this.sent].reverse().find((m) => m.op === op);
+    if (!message) throw new Error(`test asked to reply to ${op}, which was never sent`);
+    this.emit('message', { id: message.id, ok: true, result });
+  }
+
+  fail(op: string, error: string) {
+    const message = [...this.sent].reverse().find((m) => m.op === op)!;
+    this.emit('message', { id: message.id, ok: false, error });
+  }
+
+  emit(event: string, arg: unknown) {
+    for (const handler of this.handlers.get(event) ?? []) handler(arg);
+  }
+}
+
+/** Edits are serialized in the service, so the request reaches the worker a
+ *  microtask after the call. A macrotask boundary lets the queue drain. */
+const tick = () => new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+
+function makeService(timeoutMs?: number) {
+  const worker = new FakeWorker();
+  const service = new WorldService({
+    createWorker: () => worker,
+    ...(timeoutMs === undefined ? {} : { requestTimeoutMs: timeoutMs }),
+  });
+  return { worker, service };
+}
+
+/** A service with a world already open — the state every request below needs. */
+async function openedService(timeoutMs?: number) {
+  const { worker, service } = makeService(timeoutMs);
+  const opened = service.openWorld(OPEN);
+  worker.reply('open', SUMMARY);
+  await opened;
+  return { worker, service };
+}
+
+const OPEN = {
+  worldPath: 'C:/Gothic/NewWorld.zen',
+  gameVersion: 'g2' as const,
+  assetSources: ['C:/Gothic/Data/Meshes.vdf'],
+};
+
+const SUMMARY = {
+  worldPath: OPEN.worldPath,
+  bbox: [0, 0, 0, 1, 1, 1],
+  vobIndex: null,
+  stats: {},
+  timings: { load: 216, openVfs: 12 },
+};
+
+/** Any edit will do where the point is only that it is *an* edit — the op log's
+ *  own batches are built in its describe below. */
+const MOVE = {
+  op: 'MoveVob' as const,
+  vob: 1,
+  path: '0/4',
+  from: [0, 0, 0] as [number, number, number],
+  to: [10, 0, 0] as [number, number, number],
+};
+
+describe('WorldService', () => {
+  test('openWorld forwards the request and resolves with the worker summary', async () => {
+    const { worker, service } = makeService();
+    const pending = service.openWorld(OPEN);
+
+    expect(worker.sent).toHaveLength(1);
+    expect(worker.sent[0].op).toBe('open');
+    expect(worker.sent[0].payload).toEqual(OPEN);
+
+    worker.reply('open', SUMMARY);
+    await expect(pending).resolves.toEqual(SUMMARY);
+    service.close();
+  });
+
+  test('concurrent requests are routed by id, not by arrival order', async () => {
+    // The world mesh takes ~267 ms and a texture takes under one; replying in
+    // completion order rather than request order is the normal case, and an
+    // implementation that assumes FIFO hands the mesh to the texture caller.
+    const { worker, service } = await openedService();
+
+    const mesh = service.getWorldMesh();
+    const texture = service.getTexture('NW_WOOD.TGA');
+
+    worker.reply('texture', { name: 'NW_WOOD.TGA', width: 4, height: 4 });
+    worker.reply('worldMesh', { groups: [], bbox: [0, 0, 0, 1, 1, 1] });
+
+    await expect(texture).resolves.toEqual({ name: 'NW_WOOD.TGA', width: 4, height: 4 });
+    await expect(mesh).resolves.toEqual({ groups: [], bbox: [0, 0, 0, 1, 1, 1] });
+    service.close();
+  });
+
+  test('a per-request failure rejects only that request', async () => {
+    const { worker, service } = await openedService();
+
+    const mesh = service.getWorldMesh();
+    const texture = service.getTexture('MISSING.TGA');
+    worker.fail('texture', 'no such texture');
+    worker.reply('worldMesh', { groups: [], bbox: [] });
+
+    await expect(texture).rejects.toThrow('no such texture');
+    await expect(mesh).resolves.toEqual({ groups: [], bbox: [] });
+    service.close();
+  });
+
+  test('a dead worker rejects every request in flight', async () => {
+    // A stateful worker cannot be restarted behind the caller's back: the world
+    // it held is gone, and quietly re-loading it would drop any pending edit.
+    const { worker, service } = await openedService();
+
+    const mesh = service.getWorldMesh();
+    const visuals = service.getInstancedVisuals();
+    worker.emit('error', new Error('addon segfaulted'));
+
+    await expect(mesh).rejects.toThrow(WorkerRequestError);
+    await expect(visuals).rejects.toThrow(WorkerRequestError);
+    service.close();
+  });
+
+  test('a request after the worker died reports the crash, not a hang', async () => {
+    const { worker, service } = await openedService();
+    worker.emit('error', new Error('addon segfaulted'));
+
+    await expect(service.getWorldMesh()).rejects.toThrow(WorkerRequestError);
+    service.close();
+  });
+
+  test('a request that outlives its timeout rejects and does not resolve later', async () => {
+    jest.useFakeTimers();
+    try {
+      const { worker, service } = await openedService(50);
+
+      const mesh = service.getWorldMesh();
+      const settled = jest.fn();
+      mesh.then(settled, settled);
+
+      jest.advanceTimersByTime(51);
+      await expect(mesh).rejects.toThrow(WorkerRequestError);
+
+      // A late reply must not resurrect a request the caller was already told
+      // had failed.
+      expect(() => worker.reply('worldMesh', { groups: [], bbox: [] })).not.toThrow();
+      service.close();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('close terminates the worker and rejects what is still waiting', async () => {
+    const { worker, service } = await openedService();
+
+    const mesh = service.getWorldMesh();
+    service.close();
+
+    await expect(mesh).rejects.toThrow(WorkerRequestError);
+    expect(worker.terminated).toBe(true);
+    await expect(service.getWorldMesh()).rejects.toThrow(WorkerRequestError);
+  });
+
+  test('asking for geometry before a world is open is refused, not queued', async () => {
+    // Otherwise the request sits in the worker's queue until some later
+    // openWorld makes it answerable — with the wrong world.
+    const { service } = makeService();
+    await expect(service.getWorldMesh()).rejects.toThrow(/no world is open/i);
+    service.close();
+  });
+
+  test('getVobProps asks the worker for one VOB by its native path', async () => {
+    // The per-class fields are not in the columnar index — it interns the class
+    // *name* and nothing else — so this is a read of the world the worker holds,
+    // addressed the way every op addresses a VOB.
+    const { worker, service } = await openedService();
+
+    const props = service.getVobProps('0/4');
+    expect(worker.sent.at(-1)).toMatchObject({ op: 'vobProps', payload: { path: '0/4' } });
+
+    worker.reply('vobProps', { class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255] });
+    await expect(props).resolves.toEqual({
+      class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255],
+    });
+    service.close();
+  });
+
+  test('class props are read beside an edit in flight, not queued behind it', async () => {
+    // The edits are serialized (`serialized`) because two overlapping replays
+    // read the same top of the stack. A read changes nothing and unwinds
+    // nothing, and putting it in that queue would make the grid wait out an
+    // edit's 120 s timeout to show a field.
+    const { worker, service } = await openedService();
+
+    const edit = service.applyOps([MOVE]);
+    await tick();
+    expect(worker.sent.at(-1)?.op).toBe('applyOps');
+
+    const props = service.getVobProps('0/4');
+    expect(worker.sent.at(-1)).toMatchObject({ op: 'vobProps', payload: { path: '0/4' } });
+
+    worker.reply('vobProps', { class: 'oCItem', instance: 'ITMW_1H_SWORD_01' });
+    await expect(props).resolves.toEqual({ class: 'oCItem', instance: 'ITMW_1H_SWORD_01' });
+
+    worker.replyLast('applyOps', null);
+    await edit;
+    service.close();
+  });
+
+  test('asking for class props before a world is open is refused, not queued', async () => {
+    const { service } = makeService();
+    await expect(service.getVobProps('0/4')).rejects.toThrow(/no world is open/i);
+    service.close();
+  });
+
+  test('the worker is not started until a world is actually opened', () => {
+    // The World surface is lazily loaded (§6) and zenkit-node loads only when a
+    // world project opens; spawning the worker in the constructor would pull
+    // the native addon into every session, including dialog-only ones.
+    let created = 0;
+    const service = new WorldService({ createWorker: () => { created++; return new FakeWorker(); } });
+    expect(created).toBe(0);
+    // close() below rejects this, which is the point of the test — catch it so
+    // the rejection is handled rather than crashing the runner.
+    service.openWorld(OPEN).catch(() => undefined);
+    expect(created).toBe(1);
+    service.close();
+  });
+});
+
+// The op log (level-editor.md §7: "WorldService — authoritative op log"). The
+// history lives here rather than in the renderer for the same reason the world
+// does: the renderer holds a projection, and an undo stack over a projection
+// can outlive the thing it describes.
+describe('the op log', () => {
+  const move = (vob: number, path: string, from: Move['from'], to: Move['to']): Move =>
+    ({ op: 'MoveVob', vob, path, from, to });
+  type Move = {
+    op: 'MoveVob'; vob: number; path: string;
+    from: [number, number, number]; to: [number, number, number];
+  };
+
+  const A = move(1, '0/4', [0, 0, 0], [10, 0, 0]);
+  /** The one op with no inverse (§15) — it addresses a VOB and carries nothing
+   *  a replay could use. */
+  const DELETE = { op: 'DeleteVob' as const, vob: 1, path: '0/4' };
+  const B = move(2, '0/5', [0, 0, 0], [20, 0, 0]);
+
+  /** Apply a batch and let the worker confirm it. */
+  async function applied(service: WorldService, worker: FakeWorker, ops: Move[]) {
+    const pending = service.applyOps(ops);
+    await tick();
+    worker.replyLast('applyOps', null);
+    await pending;
+  }
+
+  test('a barrier op clears the history rather than being recorded in it', async () => {
+    // §15: a delete has no inverse, so the history cannot replay it backwards.
+    // What it must not do is leave the *earlier* batches undoable — they were
+    // recorded against an enumeration a delete has just renumbered, so undoing
+    // one now would move whatever VOB has since taken that index. Cleared both
+    // ways, and the user is told before the op lands, which is the surface's
+    // half of the same decision.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const removing = service.applyOps([DELETE]);
+    await tick();
+    worker.replyLast('applyOps', null);
+    await removing;
+
+    // Not the delete itself, and not the move that came before it.
+    await expect(service.undo()).resolves.toBeNull();
+    await expect(service.redo()).resolves.toBeNull();
+    // The world really was edited — the clearing is the history's, not a refusal.
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(2);
+    service.close();
+  });
+
+  test('a barrier the worker refused leaves the history alone', async () => {
+    // The stacks are cleared only once the world has actually changed. A delete
+    // that never happened renumbered nothing, so the batches before it are still
+    // undoable — and throwing them away would be a data loss caused by an error.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const failing = service.applyOps([DELETE]);
+    await tick();
+    worker.fail('applyOps', 'no vob at indexPath');
+    await expect(failing).rejects.toThrow('no vob at indexPath');
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(undone).resolves.toEqual([{ ...A, from: A.to, to: A.from }]);
+    service.close();
+  });
+
+  test('an edit goes to the worker as ops', async () => {
+    const { worker, service } = await openedService();
+
+    await applied(service, worker, [A, B]);
+
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(1);
+    expect(worker.sent.at(-1)!.payload).toEqual({ ops: [A, B] });
+    service.close();
+  });
+
+  test('undo replays the inverses, in reverse order, through the same path', async () => {
+    // Reverse order is not decoration: two ops on the *same* VOB in one batch
+    // compose, and undoing them front-to-back leaves it where the first op put
+    // it. §7 says undo/redo replay inverse ops through the same path, so what
+    // reaches the worker is an ordinary applyOps and nothing special.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A, B]);
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(undone).resolves.toEqual([
+      { ...B, from: B.to, to: B.from },
+      { ...A, from: A.to, to: A.from },
+    ]);
+
+    expect(worker.sent.at(-1)!.op).toBe('applyOps');
+    expect(worker.sent.at(-1)!.payload).toEqual({
+      ops: [
+        { ...B, from: B.to, to: B.from },
+        { ...A, from: A.to, to: A.from },
+      ],
+    });
+    service.close();
+  });
+
+  test('redo sends the batch again, as it was', async () => {
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await undone;
+
+    const redone = service.redo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(redone).resolves.toEqual([A]);
+
+    expect(worker.sent.at(-1)!.payload).toEqual({ ops: [A] });
+    service.close();
+  });
+
+  test('there is nothing to undo or redo on a freshly opened world', async () => {
+    const { worker, service } = await openedService();
+    const before = worker.sent.length;
+
+    await expect(service.undo()).resolves.toBeNull();
+    await expect(service.redo()).resolves.toBeNull();
+
+    expect(worker.sent).toHaveLength(before);
+    service.close();
+  });
+
+  test('a new edit drops the redo stack', async () => {
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await undone;
+
+    await applied(service, worker, [B]);
+
+    // Redoing A now would move a VOB the user never touched again.
+    await expect(service.redo()).resolves.toBeNull();
+    service.close();
+  });
+
+  test('opening a world starts an empty log — an op belongs to the world it was made against', async () => {
+    // The paths in an op address one world's VOB tree. Replayed against the
+    // next world they resolve to whatever happens to sit at that path.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const reopened = service.openWorld({ ...OPEN, worldPath: 'C:/Gothic/OldWorld.zen' });
+    worker.replyLast('open', SUMMARY);
+    await reopened;
+
+    await expect(service.undo()).resolves.toBeNull();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(1);
+    service.close();
+  });
+
+  test('an edit the worker refused is not in the log', async () => {
+    // Otherwise undo sends the inverse of something that never happened, which
+    // moves a VOB that was never moved.
+    const { worker, service } = await openedService();
+
+    const failing = service.applyOps([A]);
+    await tick();
+    worker.fail('applyOps', 'no vob at indexPath');
+    await expect(failing).rejects.toThrow('no vob at indexPath');
+
+    await expect(service.undo()).resolves.toBeNull();
+    service.close();
+  });
+
+  test('a refused undo leaves the batch where it was, still undoable', async () => {
+    // The stacks move only once the worker has confirmed the replay. If they
+    // moved first, a refused undo would leave the history one step ahead of
+    // the world — the batch gone from the undo stack while still applied, and
+    // sitting on the redo stack ready to be applied a second time.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const refused = service.undo();
+    await tick();
+    worker.fail('applyOps', 'no vob at indexPath');
+    await expect(refused).rejects.toThrow('no vob at indexPath');
+
+    const retried = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(retried).resolves.toEqual([{ ...A, from: A.to, to: A.from }]);
+    // ...and it did not also land on the redo stack the first time round.
+    const redone = service.redo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(redone).resolves.toEqual([A]);
+    await expect(service.redo()).resolves.toBeNull();
+    service.close();
+  });
+
+  test('two undos in flight at once do not both take the same batch', async () => {
+    // Found by holding Ctrl+Z in the real app: undo is an IPC round trip into
+    // the worker, and the stacks are moved only once it answers (the test
+    // above). Two overlapping replays therefore both read the same top of the
+    // undo stack, both send its inverses, and the VOB is moved back twice —
+    // while one entry stays on the stack forever.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+    await applied(service, worker, [B]);
+
+    const first = service.undo();
+    const second = service.undo();
+
+    // Only one request may be out at a time; the second waits its turn.
+    await tick();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(3);
+    worker.replyLast('applyOps', null);
+    await first;
+
+    await tick();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(4);
+    worker.replyLast('applyOps', null);
+    await second;
+
+    const replays = worker.sent.filter((m) => m.op === 'applyOps').slice(2);
+    expect(replays[0].payload).toEqual({ ops: [{ ...B, from: B.to, to: B.from }] });
+    expect(replays[1].payload).toEqual({ ops: [{ ...A, from: A.to, to: A.from }] });
+    await expect(service.undo()).resolves.toBeNull();
+    service.close();
+  });
+
+  test('an edit made while an undo is in flight waits for it', async () => {
+    // Same hazard from the other side: the op the user is dragging must not be
+    // recorded on top of a batch the undo has not finished taking off.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const undone = service.undo();
+    const edit = service.applyOps([B]);
+
+    await tick();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(2);
+    worker.replyLast('applyOps', null);
+    await undone;
+    await tick();
+    worker.replyLast('applyOps', null);
+    await edit;
+
+    // The edit landed after the undo, so redo has nothing left: a new edit
+    // drops the redo stack.
+    await expect(service.redo()).resolves.toBeNull();
+    service.close();
+  });
+
+  test('editing before a world is open is refused, not queued', async () => {
+    const { service } = makeService();
+    await expect(service.applyOps([A])).rejects.toThrow(/no world is open/i);
+    service.close();
+  });
+
+  test('a save is sent with the target it was given', async () => {
+    const { worker, service } = await openedService();
+
+    const saved = service.saveWorld('C:/Gothic/NewWorld.edited.zen');
+    await tick();
+
+    expect(worker.sent.filter((m) => m.op === 'save')).toEqual([
+      expect.objectContaining({ payload: { targetPath: 'C:/Gothic/NewWorld.edited.zen' } }),
+    ]);
+    worker.replyLast('save', null);
+    await expect(saved).resolves.toBeUndefined();
+    service.close();
+  });
+
+  test('a save waits for an edit in flight rather than writing mid-batch', async () => {
+    // A batch is all-or-nothing only against callers that never read it
+    // half-applied. A save that overlapped one would write a world in the
+    // middle of a batch that the history describes as a single entry.
+    const { worker, service } = await openedService();
+
+    const edit = service.applyOps([A]);
+    const saved = service.saveWorld('C:/out.zen');
+
+    await tick();
+    expect(worker.sent.map((m) => m.op)).toEqual(['open', 'applyOps']);
+
+    worker.replyLast('applyOps', null);
+    await edit;
+    await tick();
+    expect(worker.sent.map((m) => m.op)).toEqual(['open', 'applyOps', 'save']);
+
+    worker.replyLast('save', null);
+    await saved;
+    service.close();
+  });
+
+  test('a refused save rejects with the binding\'s own message', async () => {
+    // "only the binsafe writer path is verified" is the useful sentence, and
+    // replacing it with a generic one hides the one thing the user can act on.
+    const { worker, service } = await openedService();
+
+    const saved = service.saveWorld('C:/out.zen');
+    await tick();
+    worker.fail('save', "refusing to save a world loaded from a 'ascii' archive");
+
+    await expect(saved).rejects.toThrow(/binsafe|ascii/i);
+    service.close();
+  });
+
+  test('saving before a world is open is refused, not queued', async () => {
+    const { service } = makeService();
+    await expect(service.saveWorld('C:/out.zen')).rejects.toThrow(/no world is open/i);
+    service.close();
+  });
+});

@@ -4,6 +4,17 @@
  * Re-exports shared types and defines renderer-specific types like EditorAPI
  */
 
+export type {
+  OpenWorldRequest,
+  WorldSummary,
+  WorldMeshPayload,
+  InstancedPayload,
+  DecodedTexture,
+  VfsEntry,
+  WaynetPayload,
+  WorldOp,
+} from '../../shared/worldTypes';
+
 // Re-export all shared types
 export type {
   UpdateMetadata,
@@ -145,6 +156,46 @@ export interface EditorAPI {
   ackCloseRequest: () => void;
   approveClose: () => void;
   cancelClose: () => void;
+
+  // World API (level-editor.md §7). The world stays in the main process; what
+  // crosses is the lightweight VOB index plus geometry and texture buffers.
+  openWorldDialog: () => Promise<string | null>;
+  selectGothicInstall: () => Promise<string | null>;
+  getGothicInstall: () => Promise<string | null>;
+  openWorld: (request: OpenWorldRequest) => Promise<WorldSummary>;
+  getWorldMesh: () => Promise<WorldMeshPayload>;
+  getWorldVisuals: () => Promise<InstancedPayload>;
+  getWorldTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
+  /** One level of the mounted VFS; null for a missing path and for a file. */
+  listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;
+  getWorldWaynet: () => Promise<WaynetPayload>;
+  /** The bounds of a visual a VOB is being *given*, for the box a swap refits —
+   *  the one bounds not already in the renderer, because a visual the world does
+   *  not use has no instance. Null for a name that does not resolve. */
+  getVisualBounds: (name: string) => Promise<number[] | null>;
+  /** The per-class fields of one VOB, by its native index path — the `from` side
+   *  of a class-property edit and what the grid shows. Asked for every time: the
+   *  columnar index interns a class name and carries no per-class data. */
+  getVobProps: (path: string) => Promise<Record<string, unknown>>;
+  /** The VOB enumeration again, after a structural edit changed it. A flat index
+   *  is a position in a depth-first traversal, so an added VOB changes how many
+   *  there are and the columnar projection cannot be patched. */
+  refreshWorldIndex: () => Promise<WorldSummary>;
+  /** Apply an edit. One call is one undo entry, so a multi-select drag is one
+   *  batch and not one call per VOB. */
+  applyWorldOps: (ops: WorldOp[]) => Promise<void>;
+  /** The ops that were applied, so the renderer's projection can follow them —
+   *  null when there was nothing left to undo/redo. */
+  undoWorldEdit: () => Promise<WorldOp[] | null>;
+  redoWorldEdit: () => Promise<WorldOp[] | null>;
+  /** Ask for a save target. Null when the dialog was cancelled. The renderer
+   *  never names its own: the target is chosen in a main-process dialog, which
+   *  is also what puts it on the path whitelist. */
+  saveWorldDialog: (suggested: string) => Promise<string | null>;
+  /** Write the world. Rejects with the binding's own message for a world that
+   *  was not loaded from a `zCArchiverBinSafe` archive. */
+  saveWorld: (targetPath: string) => Promise<void>;
+  closeWorld: () => Promise<void>;
 
   // Updater API
   checkForUpdate: () => Promise<UpdateCheckResult>;

@@ -2,6 +2,7 @@ packages:
   - daedalus-dialog-editor
   - daedalus-parser
   - zenkit-node
+  - zen-world
 
 onlyBuiltDependencies:
   - electron

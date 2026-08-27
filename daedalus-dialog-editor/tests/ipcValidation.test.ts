@@ -10,6 +10,11 @@ import {
   assertDialogName,
   assertSaveFileSettings,
   assertSaveFileOptions,
+  assertOpenWorldRequest,
+  assertTextureRequest,
+  assertVobPropsRequest,
+  assertApplyOpsRequest,
+  assertSaveWorldRequest,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
@@ -169,5 +174,671 @@ describe('sanitizeRendererErrorPayload', () => {
   it('drops a payload whose stack exceeds the cap', () => {
     const oversized = 'y'.repeat(RENDERER_ERROR_STACK_MAX + 1);
     expect(sanitizeRendererErrorPayload({ message: 'boom', stack: oversized })).toBeNull();
+  });
+});
+
+describe('assertOpenWorldRequest', () => {
+  const valid = {
+    worldPath: 'C:/Gothic II/_work/Data/Worlds/NewWorld/NewWorld.zen',
+    gameVersion: 'g2',
+    assetSources: ['C:/Gothic II/Data/Meshes.vdf'],
+  };
+
+  it('accepts a well-formed request', () => {
+    expect(() => assertOpenWorldRequest(valid)).not.toThrow();
+  });
+
+  it('rejects a game version that is not one of the three targets', () => {
+    // The target version is explicit and never guessed (level-editor.md §9) —
+    // `World::save` takes it as a mandatory parameter, so a wrong one here is
+    // a wrong file later.
+    expect(() => assertOpenWorldRequest({ ...valid, gameVersion: 'g3' })).toThrow(/gameVersion/);
+    expect(() => assertOpenWorldRequest({ ...valid, gameVersion: undefined })).toThrow(/gameVersion/);
+  });
+
+  it('rejects a non-string world path', () => {
+    expect(() => assertOpenWorldRequest({ ...valid, worldPath: 42 })).toThrow(/worldPath/);
+  });
+
+  it('rejects asset sources that are not a string array', () => {
+    // Every entry is path-validated by the caller; one non-string would slip
+    // through the loop untouched and be handed to the VFS.
+    expect(() => assertOpenWorldRequest({ ...valid, assetSources: 'Meshes.vdf' })).toThrow(/assetSources/);
+    expect(() => assertOpenWorldRequest({ ...valid, assetSources: ['ok', 7] })).toThrow(/assetSources/);
+  });
+
+  it('accepts an empty asset source list', () => {
+    // An install with neither archives nor loose trees is a real state, and
+    // it is the renderer's job to report it, not this validator's.
+    expect(() => assertOpenWorldRequest({ ...valid, assetSources: [] })).not.toThrow();
+  });
+
+  it('rejects a non-object payload', () => {
+    expect(() => assertOpenWorldRequest(null)).toThrow();
+    expect(() => assertOpenWorldRequest([valid])).toThrow();
+  });
+});
+
+describe('assertTextureRequest', () => {
+  it('accepts a name and a positive size', () => {
+    expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: 256 })).not.toThrow();
+  });
+
+  it('rejects a non-string name', () => {
+    expect(() => assertTextureRequest({ name: 42, maxSize: 256 })).toThrow(/texture name/i);
+  });
+
+  it('rejects a size that is not a positive integer', () => {
+    // maxSize picks a mipmap level in a loop; a zero, a negative or a NaN
+    // makes that loop's exit condition meaningless.
+    for (const bad of [0, -1, 1.5, NaN, Infinity, '256']) {
+      expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: bad })).toThrow(/maxSize/);
+    }
+  });
+});
+
+describe('assertVobPropsRequest', () => {
+  it('accepts a slot path', () => {
+    expect(() => assertVobPropsRequest({ path: '0' })).not.toThrow();
+    expect(() => assertVobPropsRequest({ path: '0/4/12' })).not.toThrow();
+  });
+
+  it('rejects anything that is not slot indices', () => {
+    // A read, but the path is parsed in C++ and walks the VOB tree, so it is
+    // held to the same shape the ops are rather than left to ParseIndexPath.
+    for (const bad of ['', '/0', '0/', 'a', '0//1', '-1', 0, null, undefined, ['0']]) {
+      expect(() => assertVobPropsRequest({ path: bad })).toThrow(/path/i);
+    }
+    expect(() => assertVobPropsRequest('0/4')).toThrow(/plain object/i);
+  });
+});
+
+describe('assertSaveWorldRequest', () => {
+  it('accepts a target path', () => {
+    expect(() => assertSaveWorldRequest({ targetPath: 'C:/Gothic/NewWorld.edited.zen' })).not.toThrow();
+  });
+
+  it('rejects anything that is not a non-empty string', () => {
+    // It reaches the native writer, which creates a temp file beside it and
+    // renames. The whitelist check in main is the other half; this is the shape.
+    for (const bad of ['', '   ', null, 42, ['a'], undefined]) {
+      expect(() => assertSaveWorldRequest({ targetPath: bad })).toThrow(/targetPath/);
+    }
+    expect(() => assertSaveWorldRequest(null)).toThrow();
+    expect(() => assertSaveWorldRequest('C:/a.zen')).toThrow();
+  });
+});
+
+describe('assertApplyOpsRequest', () => {
+  const move = {
+    op: 'MoveVob',
+    vob: 3,
+    path: '0/4',
+    from: [10, 20, 30],
+    to: [11, 20, 30],
+  };
+
+  it('accepts a well-formed batch', () => {
+    expect(() => assertApplyOpsRequest({ ops: [move] })).not.toThrow();
+  });
+
+  it('accepts an empty batch', () => {
+    // A drag that ended where it began sends nothing to move, and refusing it
+    // here would make the caller special-case a no-op.
+    expect(() => assertApplyOpsRequest({ ops: [] })).not.toThrow();
+  });
+
+  it('rejects an op it has never heard of', () => {
+    // §7 lists reparent, set-prop, add and delete as ops to come. Until the
+    // binding can apply one, naming it here is the difference between 'not
+    // implemented' and a silently ignored edit.
+    expect(() => assertApplyOpsRequest({ ops: [{ ...move, op: 'DeleteVob' }] })).toThrow(/DeleteVob/);
+  });
+
+  it('rejects an index path that is not slots separated by slashes', () => {
+    // It goes straight to setVobPosition, which parses it in C++ and addresses
+    // the VOB tree with it.
+    for (const bad of ['', '/', '0//2', 'a/b', '0/2/', -1, null]) {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, path: bad }] })).toThrow(/path/);
+    }
+  });
+
+  it('rejects positions that are not three finite numbers', () => {
+    for (const bad of [[1, 2], [1, 2, 3, 4], [1, 2, 'x'], [1, 2, NaN], [1, 2, Infinity], null, '1,2,3']) {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, to: bad }] })).toThrow(/to/);
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, from: bad }] })).toThrow(/from/);
+    }
+  });
+
+  it('rejects a vob that is not a non-negative integer', () => {
+    for (const bad of [-1, 1.5, '3', NaN]) {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...move, vob: bad }] })).toThrow(/vob/);
+    }
+  });
+
+  it('rejects a payload that is not a batch at all', () => {
+    expect(() => assertApplyOpsRequest(null)).toThrow();
+    expect(() => assertApplyOpsRequest({ ops: move })).toThrow(/ops/);
+    expect(() => assertApplyOpsRequest([move])).toThrow();
+  });
+
+  describe('a rotation', () => {
+    const rotate = {
+      op: 'RotateVob',
+      vob: 3,
+      path: '0/4',
+      from: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      to: [0, 0, 1, 0, 1, 0, -1, 0, 0],
+      fromBbox: [-1, -1, -1, 1, 1, 1],
+      toBbox: [-2, -1, -1, 2, 1, 1],
+    };
+
+    it('is accepted, matrices and boxes and all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [rotate] })).not.toThrow();
+    });
+
+    it('is accepted with no boxes — an unresolved visual has none', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...rotate, fromBbox: null, toBbox: null }],
+      })).not.toThrow();
+    });
+
+    it('mixes with moves in one batch', () => {
+      expect(() => assertApplyOpsRequest({ ops: [move, rotate] })).not.toThrow();
+    });
+
+    it('rejects a matrix that is not nine finite numbers', () => {
+      // It is handed to native code and read positionally: a short matrix would
+      // leave uninitialized rows in a struct ZenKit does not zero.
+      for (const bad of [[1, 2, 3], new Array(8).fill(0), new Array(10).fill(0),
+        [...new Array(8).fill(0), NaN], null, '1,0,0']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, from: bad }] })).toThrow(/from/);
+      }
+    });
+
+    it('rejects a box that is not six finite numbers, but takes null', () => {
+      for (const bad of [[1, 2, 3], new Array(7).fill(0), [1, 2, 3, 4, 5, Infinity], '0']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, toBbox: bad }] })).toThrow(/Bbox/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, fromBbox: bad }] })).toThrow(/Bbox/);
+      }
+    });
+
+    it('rejects a rotation carrying a position where a matrix belongs', () => {
+      // The two ops share every other field name, so a `MoveVob` mislabelled as
+      // a rotation is exactly the shape that would slip through a check that
+      // only looked at `op`.
+      expect(() => assertApplyOpsRequest({ ops: [{ ...rotate, to: [1, 2, 3] }] })).toThrow(/to/);
+    });
+  });
+
+  describe('a property change', () => {
+    const props = {
+      op: 'SetVobProp',
+      vob: 3,
+      path: '0/4',
+      from: { name: 'BARREL_01', showVisual: true },
+      to: { name: 'BARREL_02', showVisual: false },
+      fromBbox: null,
+      toBbox: null,
+    };
+
+    it('is accepted, and mixes with a move in one batch', () => {
+      expect(() => assertApplyOpsRequest({ ops: [props] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [move, props] })).not.toThrow();
+    });
+
+    it('rejects a property the binding has never heard of', () => {
+      // The props object is handed to C++ whole, where an unrecognised key is
+      // refused rather than ignored — so refusing it here is what keeps a
+      // mistyped key from being discovered at the bottom of a batch that has
+      // already applied half of itself.
+      for (const bad of [{ showvisual: true }, { position: [1, 2, 3] }, { scale: 2 }]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...props, from: bad, to: bad }],
+        })).toThrow(/unknown property/);
+      }
+    });
+
+    it('rejects a property whose value is the wrong type', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { name: 1 }, to: { name: 2 } }],
+      })).toThrow(/name/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { showVisual: 'yes' }, to: { showVisual: 'no' } }],
+      })).toThrow(/showVisual/);
+    });
+
+    it('rejects sides that do not carry the same properties', () => {
+      // The inverse is `from` and `to` swapped. Sides that disagree give an
+      // undo that restores a different set of fields than the op wrote, and
+      // nothing shows it until somebody presses Ctrl+Z.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { name: 'A' }, to: { name: 'B', showVisual: true } }],
+      })).toThrow(/same properties/);
+    });
+
+    it('rejects an op that sets nothing', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: {}, to: {} }],
+      })).toThrow(/sets no properties/);
+    });
+
+    it('takes a box only for a change of visual', () => {
+      const box = [-1, -1, -1, 1, 1, 1];
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          ...props,
+          from: { visual: 'A.3DS' }, to: { visual: 'B.3DS' },
+          fromBbox: box, toBbox: box,
+        }],
+      })).not.toThrow();
+      // Nothing but a visual swap can move the box, and the binding refuses one
+      // that no swap justifies — so a batch carrying it never starts.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, toBbox: box }],
+      })).toThrow(/visual/);
+    });
+
+    it('rejects a box that is not six finite numbers', () => {
+      const visual = { ...props, from: { visual: 'A.3DS' }, to: { visual: 'B.3DS' } };
+      for (const bad of [[1, 2, 3], new Array(7).fill(0), [1, 2, 3, 4, 5, NaN], '0']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...visual, toBbox: bad }] })).toThrow(/Bbox/);
+      }
+    });
+
+    it('rejects sides that are not objects at all', () => {
+      for (const bad of [null, 'name', 42, ['name']]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...props, from: bad, to: bad }],
+        })).toThrow(/from|to/);
+      }
+    });
+
+    it('still takes all eight base keys at once', () => {
+      // The regression the class-property branch next door could break: the two
+      // ops share `from`/`to` names and differ only by `op`, so a branch that
+      // caught the wrong one would refuse every base edit in the app.
+      const all = {
+        name: 'BARREL', visual: 'BARREL.3DS', showVisual: true, vobStatic: true,
+        ambient: false, cdStatic: true, cdDynamic: false, physicsEnabled: true,
+      };
+      expect(() => assertApplyOpsRequest({ ops: [{ ...props, from: all, to: all }] }))
+        .not.toThrow();
+    });
+  });
+
+  describe('a class property change', () => {
+    // The first op whose legal key set depends on *which VOB it addresses*. The
+    // validator has no world and no index, so `className` is the only thing that
+    // makes a key legal here — a declaration of intent the binding re-checks
+    // against the VOB's real type.
+    const instance = {
+      op: 'SetVobClassProp',
+      vob: 3,
+      path: '0/4',
+      className: 'oCItem',
+      from: { instance: 'ITMW_1H_SWORD_01' },
+      to: { instance: 'ITMW_2H_AXE_01' },
+    };
+    const light = {
+      op: 'SetVobClassProp',
+      vob: 7,
+      path: '0/9',
+      className: 'zCVobLight',
+      from: { range: 1500, color: [255, 240, 200, 255] },
+      to: { range: 2000, color: [200, 200, 255, 255] },
+    };
+
+    it('accepts an item instance and a light', () => {
+      expect(() => assertApplyOpsRequest({ ops: [instance] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [light] })).not.toThrow();
+    });
+
+    it('accepts one key of a class that has two', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...light, from: { range: 1500 }, to: { range: 2000 } }],
+      })).not.toThrow();
+    });
+
+    it('mixes with a move and an old-style property change in one batch', () => {
+      // Neither structural nor renumbering, so a class edit batches with the
+      // base edit the same grid emits — and the validator must not be the layer
+      // that decides otherwise.
+      const base = {
+        op: 'SetVobProp', vob: 7, path: '0/9',
+        from: { showVisual: true }, to: { showVisual: false },
+        fromBbox: null, toBbox: null,
+      };
+      expect(() => assertApplyOpsRequest({ ops: [move, base, light] })).not.toThrow();
+    });
+
+    it('rejects a key that belongs to another class', () => {
+      // The whole reason the op carries a class: without it `{ range: 500 }` on
+      // an item would be discovered in C++ at the bottom of a batch that has
+      // already applied half of itself.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...instance, from: { range: 500 }, to: { range: 900 } }],
+      })).toThrow(/oCItem has no class property range/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...light, from: { instance: 'A' }, to: { instance: 'B' } }],
+      })).toThrow(/zCVobLight has no class property instance/);
+    });
+
+    it('rejects a class the catalogue does not know', () => {
+      // A world has 37 classes and the catalogue has two. With no entry there is
+      // no key the op could legally carry, so the refusal is the class itself
+      // rather than every key of it in turn.
+      for (const bad of ['oCMobContainer', 'zCVob', '', 'toString', 42, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...instance, className: bad }] }))
+          .toThrow(/no class properties are known/);
+      }
+    });
+
+    it('rejects className smuggled in as a property key', () => {
+      // It is a top-level field of the op, and a key of that name in `from`/`to`
+      // would be a props object shaped to look like one the binding writes.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...instance, from: { className: 'oCItem' }, to: { className: 'zCVobLight' } }],
+      })).toThrow(/no class property className/);
+    });
+
+    it('rejects an instance that is not a string', () => {
+      for (const bad of [42, null, ['A'], { name: 'A' }, true]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...instance, from: { instance: 'A' }, to: { instance: bad } }],
+        })).toThrow(/to\.instance must be a string/);
+      }
+    });
+
+    it('rejects a range that is not a finite number', () => {
+      for (const bad of [NaN, Infinity, '1500', null, [1500]]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...light, from: { range: 1 }, to: { range: bad } }],
+        })).toThrow(/to\.range must be a finite number/);
+      }
+    });
+
+    it('rejects a negative range', () => {
+      // The bound is the catalogue's, not this file's: a light with a negative
+      // range is a light ZenGin renders as nothing at all.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...light, from: { range: 1 }, to: { range: -1 } }],
+      })).toThrow(/to\.range must be 0 or greater/);
+    });
+
+    it('rejects a colour that is not four whole channels in range', () => {
+      // Fixed arity, because the binding reads it positionally as r, g, b and
+      // the alpha ZenGin keeps — a three-element colour would leave one channel
+      // to whatever the struct happened to hold.
+      for (const bad of [[255, 240, 200], [255, 240, 200, 255, 0], [255, 240, 200, 256],
+        [-1, 0, 0, 255], [255, 240, 200.5, 255], [255, 240, '200', 255], null, 255]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...light, from: { color: [0, 0, 0, 255] }, to: { color: bad } }],
+        })).toThrow(/to\.color must be four whole channels/);
+      }
+    });
+
+    it('rejects sides that do not carry the same class properties', () => {
+      // The inverse is `from` and `to` swapped, so sides that disagree give an
+      // undo that restores a different set of fields than the op wrote.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...light, from: { range: 1500 }, to: { range: 2000, color: [0, 0, 0, 255] } }],
+      })).toThrow(/same class properties/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...light, from: { color: [0, 0, 0, 255] }, to: { range: 2000 } }],
+      })).toThrow(/same class properties/);
+    });
+
+    it('rejects an op that sets nothing', () => {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...instance, from: {}, to: {} }] }))
+        .toThrow(/sets no class properties/);
+    });
+
+    it('rejects sides that are not objects at all', () => {
+      for (const bad of [null, 'instance', 42, ['instance']]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...instance, from: bad, to: bad }] }))
+          .toThrow(/from|to/);
+      }
+    });
+
+    it('rejects a vob or a path that is not an address', () => {
+      for (const bad of [-1, 1.5, '3', NaN]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...instance, vob: bad }] })).toThrow(/vob/);
+      }
+      for (const bad of ['', '/', '0//2', 'a/b', '0/4/', 3, null]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...instance, path: bad }] })).toThrow(/path/);
+      }
+    });
+
+    it('rejects anything beyond the six fields it carries', () => {
+      // No field in this slice can move the culling box, so a `fromBbox` on one
+      // is either a `SetVobProp` mislabelled or a caller assuming a box gets
+      // refitted — and both are quieter as a refusal than as a field the writer
+      // drops on the floor.
+      for (const extra of ['fromBbox', 'toBbox', 'parentPath', 'name']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...instance, [extra]: null }] }))
+          .toThrow(new RegExp(extra));
+      }
+    });
+  });
+
+  describe('an add', () => {
+    const add = {
+      op: 'AddVob',
+      vob: 12,
+      path: '3',
+      parentPath: null,
+      from: null,
+      to: { name: 'PLACED', visual: 'CRATE.3DS', position: [1, 2, 3] },
+    };
+
+    it('is accepted under a parent as well as at the roots', () => {
+      // `parentPath` reaches C++ and walks the VOB tree, exactly as an op's
+      // `path` does — so it is checked in the same shape and not merely for
+      // being a string.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, path: '2/1', parentPath: '2' }],
+      })).not.toThrow();
+      for (const bad of ['', '/', '0//2', 'a/b', '0/2/', 3, undefined]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, parentPath: bad }],
+        })).toThrow(/parentPath/);
+      }
+    });
+
+    it('is accepted in either direction', () => {
+      expect(() => assertApplyOpsRequest({ ops: [add] })).not.toThrow();
+      // Its inverse: the same op with the sides swapped, which is a delete.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, from: add.to, to: null }],
+      })).not.toThrow();
+    });
+
+    it('rejects an op that is neither an add nor a delete', () => {
+      // Both null does nothing; neither null is an add and a delete at once,
+      // and `writeOp` would then read it as an insert in *both* directions — so
+      // the VOB would never come back off an undo.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, from: null, to: null }],
+      })).toThrow(/one null side/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, from: add.to, to: add.to }],
+      })).toThrow(/one null side/);
+    });
+
+    it('requires a position, in three finite numbers', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { name: 'NO_WHERE' } }],
+      })).toThrow(/position/);
+      for (const bad of [[1, 2], [1, 2, NaN], '1,2,3', null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, to: { position: bad } }],
+        })).toThrow(/position/);
+      }
+    });
+
+    it('rejects a property the binding cannot author', () => {
+      // `physicsEnabled` is in the flag word the property op writes, and
+      // `insertVob` does not take it — ZenGin writes that field only for some
+      // world formats and cannot set it in the Spacer at all. Sharing one list
+      // between the two would wave through exactly what the binding refuses.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], physicsEnabled: true } }],
+      })).toThrow(/physicsEnabled/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], scale: 2 } }],
+      })).toThrow(/scale/);
+    });
+
+    it('checks the matrix and the box it is given', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], rotation: [1, 2, 3] } }],
+      })).toThrow(/rotation/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], bbox: [1, 2, 3] } }],
+      })).toThrow(/bbox/);
+    });
+  });
+
+  describe('a reparent', () => {
+    // The op the scene tree's drag and drop sends. It is the first op with no
+    // top-level `path` — a move has two ends and carries one on each side — and
+    // that is exactly what a validator written around `op.path` refuses.
+    const reparent = {
+      op: 'ReparentVob',
+      vob: 5,
+      from: { path: '2/1', parentPath: '2', slot: 1 },
+      to: { path: '7/0', parentPath: '7', slot: 0 },
+    };
+
+    it('is accepted, and so is its inverse', () => {
+      expect(() => assertApplyOpsRequest({ ops: [reparent] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...reparent, from: reparent.to, to: reparent.from }],
+      })).not.toThrow();
+    });
+
+    it('is accepted with a null parent — a VOB promoted to a root', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...reparent, to: { path: '9', parentPath: null, slot: 9 } }],
+      })).not.toThrow();
+    });
+
+    it('rejects a side that is not a slot', () => {
+      for (const bad of [null, '2/1', { path: '2/1', slot: 1 }, { parentPath: '2', slot: 1 }]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...reparent, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...reparent, from: bad }] })).toThrow(/from/);
+      }
+    });
+
+    it('rejects paths that are not slot indices, on either side', () => {
+      // Both reach C++ and address the VOB tree with it — `to.parentPath` is
+      // where the subtree lands, and a bad one moves the wrong VOB.
+      for (const bad of ['', '/', '0//2', 'a/b', '0/2/', 3, null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...reparent, to: { ...reparent.to, path: bad } }],
+        })).toThrow(/path/);
+      }
+      for (const bad of ['', '/', '0//2', 'a/b', 3]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...reparent, to: { ...reparent.to, parentPath: bad } }],
+        })).toThrow(/parentPath/);
+      }
+    });
+
+    it('rejects a slot that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...reparent, to: { ...reparent.to, slot: bad } }],
+        })).toThrow(/slot/);
+      }
+    });
+  });
+
+  describe('a delete', () => {
+    // The op with no inverse (§15). It carries a `vob` and a `path` and nothing
+    // else, which makes it the one op where an extra field is the interesting
+    // case: a `from` on it would be somebody constructing an `AddVob`-shaped
+    // delete, and that shape means "this op describes the VOB completely".
+    const remove = { op: 'DeleteVob', vob: 5, path: '2/1' };
+
+    it('is accepted with just a vob and a path', () => {
+      expect(() => assertApplyOpsRequest({ ops: [remove] })).not.toThrow();
+    });
+
+    it('is accepted for a root', () => {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...remove, vob: 0, path: '0' }] }))
+        .not.toThrow();
+    });
+
+    it('rejects a path that is not slot indices', () => {
+      for (const bad of ['', '/', '0//2', 'a/b', '2/1/', 3, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, path: bad }] })).toThrow(/path/);
+      }
+    });
+
+    it('rejects a vob that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, vob: bad }] })).toThrow(/vob/);
+      }
+    });
+
+    it('rejects anything beyond the address it is allowed to carry', () => {
+      // The op is uninvertible on purpose, and a delete that arrived carrying a
+      // `from` is either a mislabelled `AddVob` or something reaching for an
+      // inverse this op does not have. Either way the honest answer is a
+      // refusal at the boundary rather than a field the writer silently ignores.
+      for (const extra of ['from', 'to', 'parentPath', 'fromBbox']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, [extra]: null }] }))
+          .toThrow(new RegExp(extra));
+      }
+    });
+  });
+
+  describe('a waypoint move', () => {
+    // The first op that is not about a VOB at all. A reparent got as far as
+    // needing to sit before the `path` check; this one carries neither `path`
+    // nor `vob`, so it has to sit before the `vob` check as well — and the
+    // failure of getting that wrong is not a refusal the caller can read, it is
+    // a message about a field the op has no business having.
+    const move = {
+      op: 'MoveWaypoint', waypoint: 12, name: 'WP_CITY_01',
+      from: [1, 2, 3], to: [4, 5, 6],
+    };
+
+    it('is accepted carrying no vob and no path at all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [move] })).not.toThrow();
+    });
+
+    it('is accepted alongside a VOB op in one batch', () => {
+      // Neither structural nor renumbering, so it may share a batch — and the
+      // validator must not be the layer that decides otherwise.
+      expect(() => assertApplyOpsRequest({
+        ops: [move, { op: 'MoveVob', vob: 3, path: '0/1', from: [0, 0, 0], to: [1, 1, 1] }],
+      })).not.toThrow();
+    });
+
+    it('rejects a waypoint index that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, waypoint: bad }] }))
+          .toThrow(/waypoint/);
+      }
+    });
+
+    it('rejects a missing name — the guard is not an optional extra', () => {
+      // Without it the op addresses a waypoint by a bare index, and a stale
+      // index always resolves to a waypoint rather than to nothing.
+      for (const bad of [undefined, null, 12, {}]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, name: bad }] })).toThrow(/name/);
+      }
+    });
+
+    it('rejects a side that is not three finite numbers', () => {
+      for (const bad of [[1, 2], [1, 2, 3, 4], [1, 2, NaN], [1, 2, Infinity], '1,2,3', null]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...move, from: bad }] })).toThrow(/from/);
+      }
+    });
   });
 });

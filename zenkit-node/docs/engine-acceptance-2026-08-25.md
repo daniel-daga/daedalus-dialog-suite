@@ -751,18 +751,19 @@ force.
 
 | # | Check | Status |
 |---|---|---|
-| 1 | Loads in Spacer | ✅ §3.5 |
-| 2 | Loads in the game, hero spawns | ✅ **all three candidates** |
+| 1 | Loads in Spacer | ✅ §3.5, and again in §8's 2026-08-27 run against a fourth, **UI-edited** candidate |
+| 2 | Loads in the game, hero spawns | ✅ **all four candidates** (§8, 2026-08-27) |
 | 3 | Walk terrain/interiors, jump, fall — **collision** | ✅ |
 | 4 | NPCs spawn and walk routines | ✅ |
 | 5 | Screenshots at ~5 fixed positions vs. the original — vertex lighting | ⏸ **and degraded** — GD3D11 changes lighting by design, so this can now only be candidate-vs-control, never against the retail look (Environment) |
 | 6 | Enter/exit a building, sector boundary — portals | ✅ |
-| 7 | Use a bed, chest, one other mobsi | ⏸ |
-| 8 | Trigger one sound/zone VOB | ⏸ |
-| 9 | Save, reload the savegame | ⏸ |
-| 10 | **Minimal edit:** move one VOB, insert one item | ✅ **full pass — both mutations, apple taken** |
+| 7 | Use a bed, chest, one other mobsi | ✅ (2026-08-27, Daniel) |
+| 8 | Trigger one sound/zone VOB | ✅ (2026-08-27, Daniel) |
+| 9 | Save, reload the savegame | ✅ (2026-08-27, Daniel) |
+| 10 | **Minimal edit:** move one VOB, insert one item | ✅ **full pass — both mutations, apple taken** (2026-08-25); ✅ crate/turned table/renamed VOB/raised-and-turned retail VOB (2026-08-27, `03-ui-edited.zen`) |
 
-Rows 2–9 run on the untouched re-save, row 10 on the edited world.
+Rows 2–9 run on the untouched re-save (and, as of 2026-08-27, on the UI-edited
+world too), row 10 on the edited worlds.
 
 ### The run — 2026-08-25 23:46, all three candidates, PASS
 
@@ -796,6 +797,61 @@ is defensible on the argument above (bit-identical mesh, BSP and VOB tree, gap
 fidelity probe — and rows 2, 3, 4 and 6 supplied that smoke test. It is **not**
 defensible for Phase 1b's UI-edited worlds, where the checklist regains its
 full force and rows 7–9 must actually run.
+
+### Gate 2 — the run — 2026-08-27, Spacer2 and Gothic2, four candidates, PASS
+
+The Phase 1b milestone: a fourth candidate, `03-ui-edited.zen`, built through
+the real editor UI (`daedalus-dialog-editor/scripts/build-gate2-candidate.js`)
+rather than through the binding directly — a placed crate, a turned table, a
+renamed-and-refitted VOB (visual swapped, `cdDynamic` toggled), and one
+**retail** VOB raised 300 units and turned 90° about Y. Staged alongside `00`–
+`02` in `%TEMP%\gate2-candidate` with `tools/mutate.js`. VDF layout and the
+backup hash were verified beforehand; the control ran first in both passes.
+
+Spacer2, `results.log`:
+
+```
+13:14:21  00-control-original.zen  sha b4dac867…  → ok
+13:15:49  01-resave.zen            sha 20621bd3…  → ok
+13:16:43  02-minimal-edit.zen      sha 01446231…  → ok
+13:17:26  03-ui-edited.zen         sha 8ad55a22…  → ok
+13:18:07  restored pristine NewWorld.zen (hash verified)
+```
+
+Gothic2, `results.log`:
+
+```
+13:19:36  00-control-original.zen  sha b4dac867…  → ok   (54 s)
+13:20:30  01-resave.zen            sha 20621bd3…  → ok   (103 s)
+13:22:13  02-minimal-edit.zen      sha 01446231…  → ok   (40 s)
+13:22:53  03-ui-edited.zen         sha 8ad55a22…  → ok   (58 s)
+13:23:51  restored pristine NewWorld.zen (hash verified)
+```
+
+All eight loads (four candidates × two engines) came back clean — no assertion
+dialog captured by `engine-batch.ps1` on any of them, `ok` at every verdict
+prompt. `03-ui-edited.zen` is the first engine run of a world that went through
+the app's UI at all, and its passing load in both Spacer and Gothic2 is Gate
+2's headline result: **the ops the plan's Phase 1b shipped — `MoveVob`,
+`RotateVob`, `SetVobProp`, `AddVob`, `ReparentVob` — produce a file the engine
+accepts**, on top of the retail VOB whose bounding box the app itself
+re-fitted on a rotation.
+
+Rows 7, 8 and 9 (bed/chest/mobsi, a sound/zone trigger, a savegame round-trip)
+are recorded **passed on all four candidates**, per Daniel at the keyboard.
+Stated plainly: the per-candidate wall-clock (54 s / 103 s / 40 s / 58 s) is in
+the same range the 2026-08-25 run measured and called too short for a
+savegame round-trip on top of rows 2–6 — this record does not independently
+corroborate that rows 7–9 got the depth of exercise their description implies,
+and takes the verdict on Daniel's word rather than on a measurement. If either
+op set is later found to disagree with the engine on a bed/chest/mobsi
+interaction, a sound/zone VOB, or a save/reload round trip, this is the entry
+to revisit.
+
+**Not run and not claimed here either:** row 5 (screenshots, candidate-vs-
+control only per Environment) was not exercised, and the deleted-VOB and
+moved-waypoint edits the board flagged as absent from every staged candidate
+are still absent from `03-ui-edited.zen` — that gap is unchanged by this run.
 
 ### Building the candidates
 

@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-At the start of every session, read `AGENTS.md` in the repository root and follow all instructions there. Also read the relevant workspace-level `AGENTS.md` when working inside `daedalus-dialog-editor/` or `daedalus-parser/`.
+At the start of every session, read [`docs/BOARD.md`](docs/BOARD.md) — what is in flight, who owns it, and the state of the tree — and then `AGENTS.md` in the repository root, following all instructions there. Also read the relevant workspace-level `AGENTS.md` when working inside `daedalus-dialog-editor/` or `daedalus-parser/`.
+
+**Update the board at the end of a session.** It replaces the long handover prompts: a card is one line and an owner, and nothing goes on it that `git log`, the plan, this file or [`docs/reference/environment-hazards.md`](docs/reference/environment-hazards.md) already holds.
 
 ---
 
@@ -21,6 +23,8 @@ At the start of every session, read `AGENTS.md` in the repository root and follo
 daedalus-dialog-suite/
 ├── daedalus-parser/          Parser and semantic tooling
 ├── daedalus-dialog-editor/   Electron desktop editor
+├── zenkit-node/              N-API binding around ZenKit (ZenGin worlds) + fidelity harness
+├── zen-world/                Pure TS level-editor domain — no React/MUI/Electron/native imports
 ├── docs/                     Canonical documentation
 │   ├── architecture/         Durable design decisions
 │   ├── reference/            Behavior references
@@ -180,7 +184,9 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/quest/domain/` | Pure quest logic (analysis, graph inference, condition codec) |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
-| `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`) |
+| `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`, `zenkit.worker.ts`) |
+| `src/renderer/world/` | Three.js projection of a world (`WorldScene`, `VobPicker`, `BvhBuilder`, `cameraNav`) — no React |
+| `src/renderer/components/world/` | The World surface (`WorldSurface`, `WorldViewport`), lazily loaded |
 | `tests/e2e/` | Playwright browser-harness spec files |
 
 ### State Management Stores
@@ -194,6 +200,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `projectStore.ts` | Project-level index and metadata |
 | `searchStore.ts` | Search state |
 | `uiSelectionStore.ts` | UI selection state |
+| `worldStore.ts` | World summary + selection. No `immer`: the summary carries `ArrayBuffer` columns |
 | `storeSync.ts` | Cross-store synchronization |
 
 ### Main-Process Services
@@ -206,6 +213,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `CodeGeneratorService.ts` | Code generation from semantic model |
 | `FileWatcherService.ts` | File-change watching (chokidar) |
 | `MetadataWorkerPool.ts` | Parallel metadata extraction |
+| `WorldService.ts` | Owns the one stateful `zenkit.worker` holding a ZenGin world |
 | `ValidationService.ts` | Dialog/script validation |
 | `PathValidationService.ts` | File path validation |
 | `SettingsService.ts` | App settings persistence |
@@ -261,9 +269,10 @@ Import direction is one-way: UI → domain.
 
 | Workflow | Jobs |
 |---|---|
-| `all-tests.yml` | `editor-tests` (typecheck main + renderer, renderer build warning-guard, Jest, lint), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
-| `build-windows.yml` | Windows Electron build + installer; `build` job needs both the full `all-tests.yml` matrix (via `workflow_call`, job `tests`) and `e2e-electron-windows`; guarded to `refs/heads/master`; publishes serialized via `concurrency` group; stale re-runs rejected by comparing `github.sha` to live master head |
-| `deploy-pages.yml` | GitHub Pages deployment |
+| `all-tests.yml` | `zen-world-tests` (jest + typecheck + lint), `editor-tests` (typecheck main + renderer, renderer build warning-guard, Jest, lint), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
+| `build-windows.yml` | **`workflow_dispatch` only — a push to master publishes nothing.** Windows Electron build + installer; `build` job needs both the full `all-tests.yml` matrix (via `workflow_call`, job `tests`) and `e2e-electron-windows`; guarded to `refs/heads/master`, so a non-master dispatch skips the build rather than releasing; publishes serialized via `concurrency` group; stale re-runs rejected by comparing `github.sha` to live master head |
+| `zenkit-node.yml` | The native addon: builds ZenKit + the binding and runs its suite, windows-2022 only. **Not part of `all-tests.yml`, so it does not gate a release**, and path-filtered to `zenkit-node/**` on push/PR to master — a change in `zen-world/` or the editor's `zenkit.worker.ts` that breaks the binding contract never runs it. Has `workflow_dispatch` |
+| `deploy-pages.yml` | GitHub Pages deployment; path-filtered to `gh-pages/index.html` |
 
 Notes:
 - `all-tests.yml` triggers include `workflow_call` so it can gate releases
@@ -280,7 +289,11 @@ Production-hardening work that only matters at first release (code signing, stri
 
 **Proposed plan:** [`docs/plans/mcp-server.md`](docs/plans/mcp-server.md) — built-in MCP server so AI clients can verify, create, and control dialog/quest content through the editor's validated pipelines (no code landed yet).
 
-**Proposed plan:** [`docs/plans/level-editor.md`](docs/plans/level-editor.md) — ZenGin level editor as new monorepo subprojects (`zenkit-node` N-API binding + `zen-world` domain + a World surface in the editor); viability analysis and architecture answering [`docs/plans/level-editor-design-brief.md`](docs/plans/level-editor-design-brief.md), with the blocking Phase 0 (binding + round-trip fidelity gate) broken down in [`docs/plans/level-editor-phase-0.md`](docs/plans/level-editor-phase-0.md) (no code landed yet).
+**Active plan:** [`docs/plans/level-editor.md`](docs/plans/level-editor.md) — ZenGin level editor as new monorepo subprojects (`zenkit-node` N-API binding + `zen-world` domain + a World surface in the editor); architecture answering [`docs/plans/level-editor-design-brief.md`](docs/plans/level-editor-design-brief.md), with Phase 0 broken down in [`docs/plans/level-editor-phase-0.md`](docs/plans/level-editor-phase-0.md).
+
+Phase 0 (binding + round-trip fidelity gate + the in-engine acceptance pass) is **closed** — record in [`zenkit-node/docs/engine-acceptance-2026-08-25.md`](zenkit-node/docs/engine-acceptance-2026-08-25.md). Phase 1a (read-only world viewer) landed; Phase 1b (VOB editing) is in progress. **Which ops exist and what is in flight is not repeated here** — the board holds what is in flight, the plan holds the op-by-op state and the decisions behind it, including the Spacer parity inventory (§14) and the undo bar (§15). Phase 1b's outstanding gate is Gate 2: no engine run covers a world edited through the UI, and its checklist is §8 of the acceptance record.
+
+Note for anyone extending the op set: **`assertApplyOpsRequest` is where a new op reaches the world, and it is the one layer every test mocks past** — the renderer suite stubs the IPC, the op suite injects a fake binding, the binding suite calls C++. `ReparentVob` shipped refused there, green everywhere. Add the validator branch and its cases in the same change as the op.
 
 **Active plan:** [`docs/plans/production-readiness-review-findings.md`](docs/plans/production-readiness-review-findings.md) — production-readiness / performance / UI-UX review, including the decision to deprecate the quest Flow view (Option A and Option B both landed: the litegraph Flow view has been removed; the quest surface is the read-only list/details/create panel). §3 Performance is closed down to P3 (the P0, P1, and P2 items all landed; durable outcomes in `docs/architecture/render-performance.md`), and the §5 post-release fast-follows are all landed too (F2 dead source-view cleanup, F6 Ctrl+F scoping, and a strict `default-src 'self'` CSP — which moved Monaco off the jsdelivr CDN to the app's own origin; see `docs/architecture/security-model.md`). Its §5 tracks what has landed and what remains.
 

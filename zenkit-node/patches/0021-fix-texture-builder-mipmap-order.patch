@@ -1,0 +1,33 @@
+Texture: build mipmaps smallest-first, matching load(), data() and save().
+
+`Texture::_m_textures` holds the smallest mipmap first — `Texture::load` fills
+it counting down from the last level, and `Texture::data(level)` indexes it as
+`_m_mipmap_count - 1 - level`. `TextureBuilder::build` pushed its mipmaps in
+the order they were added, which `add_mipmap` requires to be largest-first, so
+every texture built with more than one mipmap came out reversed: `data(0)`
+returned the smallest level, and a `save()` of it wrote the levels in the
+wrong order for `load()` to read back. Single-mipmap textures were unaffected,
+which is why it went unnoticed.
+
+diff --git a/src/Texture.cc b/src/Texture.cc
+index bc5106c..7e28198 100644
+--- a/src/Texture.cc
++++ b/src/Texture.cc
+@@ -388,9 +388,14 @@ namespace zenkit {
+ 		tex._m_mipmap_count = _m_mipmaps.size();
+ 		tex._m_average_color = {}; // FIXME(lmichaelis): Calculate the average color
+ 
+-		for (auto i = 0u; i < _m_mipmaps.size(); ++i) {
+-			auto& [data, fmt] = _m_mipmaps[i];
+-			tex._m_textures.push_back(_ztex_convert_format(data.data(), _m_width >> i, _m_height >> i, fmt, format));
++		// Smallest mipmap first: that is the order Texture::load fills
++		// `_m_textures` in and the order Texture::data() and Texture::save()
++		// expect, so building largest-first here left every multi-mipmap
++		// texture reversed — level 0 read back as the smallest level.
++		for (auto i = _m_mipmaps.size(); i > 0; --i) {
++			auto& [data, fmt] = _m_mipmaps[i - 1];
++			tex._m_textures.push_back(
++			    _ztex_convert_format(data.data(), _m_width >> (i - 1), _m_height >> (i - 1), fmt, format));
+ 		}
+ 
+ 		return tex;

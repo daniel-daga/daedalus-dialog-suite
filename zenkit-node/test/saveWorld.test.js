@@ -308,6 +308,23 @@ test('saveWorld writes oCMobContainer.locked=true as the BOOL raw value 0xFFFFFF
   });
 });
 
+// `colorAniList` is ONE string of ASCII colour tokens, and ZenGin writes an
+// element whose channels are equal as a bare greyscale scalar (`255 `) rather
+// than a triple. Measured over the three retail G2 worlds: of the 5,240 tokens
+// in their 1,111 `colorAniList` strings, 26 are written short (8 NewWorld,
+// 2 OldWorld, 16 AddonWorld) and not one of the 5,214 triples has r == g == b —
+// so "short iff r == g == b" re-emits all 1,111 strings byte-for-byte, and those
+// 26 tokens are exactly the residual the retail byte-diff still reported.
+test('saveWorld writes a colorAniList colour with r == g == b as a greyscale scalar', () => {
+  withTmpDir((dir) => {
+    const out = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(FIXTURE, 'g2'), out);
+    const values = binSafeEntries(fs.readFileSync(out), 'colorAniList', 0x01)
+      .map((payload) => payload.toString('latin1'));
+    assert.deepStrictEqual(values, ['255 (10 20 30) 64 ']);
+  });
+});
+
 test('saveWorld writes the nested material-list archive header like ZenGin', () => {
   withTmpDir((dir) => {
     const out = path.join(dir, 'resaved.zen');
@@ -400,10 +417,13 @@ test('saveWorld round-trips bit 15 of the packed zCVob flag word', () => {
 // path has had no fidelity work either. A save that silently produces a file
 // nothing can re-open is worse than no save, so saveWorld refuses.
 //
-// The guard is exercised on a BINARY world because an ASCII one can never
-// reach it: loading ZenKit's own ASCII output aborts the process, so an ASCII
-// handle cannot be produced in-process at all. Both go through the same
-// `format != BINSAFE` check.
+// The guard is exercised on a BINARY world because an ASCII one still cannot
+// reach it: loading ZenKit's own ASCII output fails, so an ASCII handle cannot
+// be produced in-process. It now fails by *throwing* — it used to abort the
+// whole process, which is a defect in this addon's build rather than in the
+// ASCII writer (see the `_HAS_EXCEPTIONS` note in binding.gyp), and the abort
+// was load-bearing for this comment but never for the guard. Both formats go
+// through the same `format != BINSAFE` check.
 function withBinaryWorld(fn) {
   withTmpDir((dir) => {
     const authored = path.join(dir, 'authored.zen');

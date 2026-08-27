@@ -162,10 +162,10 @@ test('containerFromBuffer describes the fixture archive', () => {
   // The stamp is written at authoring time, so only its ZenGin shape is fixed.
   assert.match(container.header.date, /^\d{1,2}\.\d{1,2}\.\d{4} \d{2}:\d{2}:\d{2}$/);
   assert.strictEqual(container.header.user, 'Daniel');
-  assert.strictEqual(container.hashTable.count, 38);
+  assert.strictEqual(container.hashTable.count, 55);
   assert.deepStrictEqual(container.hashTable.keys[0], { key: 'childs0', index: 0, hash: 86 });
   assert.match(container.hashTable.physicalOrder, /^sha256:[0-9a-f]{64}$/);
-  assert.strictEqual(container.frames.total, 17);
+  assert.strictEqual(container.frames.total, 18);
   assert.deepStrictEqual(container.frames.classes['zCVob'], { count: 1, versions: { 52224: 1 } });
   assert.match(container.frames.sequenceHash, /^sha256:[0-9a-f]{64}$/);
   assert.deepStrictEqual(container.schemas['oCItem:zCVob'], {
@@ -174,7 +174,7 @@ test('containerFromBuffer describes the fixture archive', () => {
     deviating: 0,
   });
   assert.deepStrictEqual(container.stream, {
-    binSafeVersion: 2, declaredObjectCount: 10, events: 97, objects: 17, maxDepth: 4, endsAtHashTable: true,
+    binSafeVersion: 2, declaredObjectCount: 11, events: 119, objects: 18, maxDepth: 4, endsAtHashTable: true,
   });
   assert.match(container.payloads.raw['zCVob/dataRaw'], /^sha256:/);
   assert.match(container.payloads.bool['zCWaypoint/underWater'], /^sha256:/);

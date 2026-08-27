@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "encoding.hh"
+#include "napi_helpers.hh"
 #include "sha256.hh"
 
 namespace zenkit_node {
@@ -30,11 +31,8 @@ namespace {
 using namespace zenkit;
 
 // ---------------------------------------------------------------------------
-// JS value helpers. Every string crossing to JS goes through the cp1252 layer.
-
-Napi::String Str(Napi::Env env, std::string const& raw) {
-  return Napi::String::New(env, Windows1252ToUtf16(raw));
-}
+// JS value helpers. Every string crossing to JS goes through the cp1252 layer
+// — `Str` is the shared one in napi_helpers.hh.
 
 // Floats become JS numbers as-is (the classifier owns epsilon logic). -0.0 is
 // normalized to +0.0 because JSON round-trips lose the sign of zero and
@@ -298,9 +296,16 @@ std::uint32_t BspTreeDepth(BspTree const& bsp) {
 }
 
 // ---------------------------------------------------------------------------
-// VOB class names, exactly the ZenGin class identifiers.
+// VOB class names, exactly the ZenGin class identifiers. Declared in the header
+// and therefore lifted out of the anonymous namespace — the mutation path names
+// the class in every refusal it makes, and a second switch would answer with a
+// different vocabulary the moment either side gained a class.
 
-char const* VobClassName(VirtualObjectType type) {
+}  // namespace
+
+char const* VobClassName(zenkit::VirtualObjectType type) {
+  using namespace zenkit;
+
   switch (type) {
     case VirtualObjectType::zCVob: return "zCVob";
     case VirtualObjectType::zCVobLevelCompo: return "zCVobLevelCompo";
@@ -349,6 +354,10 @@ char const* VobClassName(VirtualObjectType type) {
     default: return "unknown";
   }
 }
+
+namespace {
+
+using namespace zenkit;
 
 char const* VisualTypeName(VisualType type) {
   switch (type) {
@@ -779,7 +788,17 @@ void PutCutsceneCameraProps(Napi::Env env, Napi::Object props, VCutsceneCamera c
 // Dispatch on VirtualObjectType with static_cast instead of dynamic_cast:
 // node-gyp compiles with RTTI disabled on Windows (/GR-), and the load path
 // guarantees `type` matches the concrete class it constructed.
-Napi::Object BuildProps(Napi::Env env, VirtualObject const& vob) {
+//
+// Declared in the header, so it too leaves the anonymous namespace: the
+// per-VOB read the editor asks for is this function and nothing else. The
+// `Put*Props` helpers below it stay private — they are the arms of this switch,
+// not an API. It still calls them by unqualified name because they are members
+// of the same translation unit's anonymous namespace.
+
+}  // namespace
+
+Napi::Object VobProps(Napi::Env env, zenkit::VirtualObject const& vob) {
+  using namespace zenkit;
   auto props = Napi::Object::New(env);
   PutBaseProps(env, props, vob);
 
@@ -997,6 +1016,10 @@ Napi::Object BuildProps(Napi::Env env, VirtualObject const& vob) {
   return props;
 }
 
+namespace {
+
+using namespace zenkit;
+
 // ---------------------------------------------------------------------------
 // Section builders.
 
@@ -1038,11 +1061,97 @@ void CollectVobs(Napi::Env env,
     flags.Set("animMode", EnumI(env, vob->anim_mode));
     entry.Set("flags", flags);
 
-    entry.Set("props", BuildProps(env, *vob));
+    entry.Set("props", VobProps(env, *vob));
     entry.Set("childCount", NumI(env, vob->children.size()));
 
     out.Set(out_index++, entry);
     CollectVobs(env, vob->children, path, out, out_index);
+  }
+}
+
+// The columnar counterpart to CollectVobs: same traversal, same order, but it
+// writes into flat arrays and interns every string instead of building one JS
+// object per VOB. A dictionary is what makes this affordable — 23,288 retail
+// VOBs name only 444 distinct visuals and a handful of classes.
+struct VobColumns {
+  std::vector<std::int32_t> parent;
+  std::vector<std::uint32_t> child_index;
+  std::vector<float> positions;
+  std::vector<float> rotations;
+  std::vector<std::uint32_t> flags;
+  std::vector<std::uint32_t> class_index;
+  std::vector<std::uint32_t> name_index;
+  std::vector<std::uint32_t> visual_index;
+  std::vector<std::uint32_t> visual_type_index;
+
+  std::vector<std::string> classes;
+  std::vector<std::string> names;
+  std::vector<std::string> visuals;
+  std::vector<std::string> visual_types;
+  std::unordered_map<std::string, std::uint32_t> class_lookup;
+  std::unordered_map<std::string, std::uint32_t> name_lookup;
+  std::unordered_map<std::string, std::uint32_t> visual_lookup;
+  std::unordered_map<std::string, std::uint32_t> visual_type_lookup;
+
+  static std::uint32_t Intern(std::vector<std::string>& table,
+                              std::unordered_map<std::string, std::uint32_t>& lookup,
+                              std::string const& value) {
+    auto const found = lookup.find(value);
+    if (found != lookup.end()) return found->second;
+    auto const index = static_cast<std::uint32_t>(table.size());
+    table.push_back(value);
+    lookup.emplace(value, index);
+    return index;
+  }
+};
+
+void CollectVobColumns(std::vector<std::shared_ptr<VirtualObject>> const& vobs,
+                       std::int32_t parent,
+                       VobColumns& out) {
+  for (std::size_t i = 0; i < vobs.size(); ++i) {
+    auto const& vob = vobs[i];
+    if (vob == nullptr) continue;
+
+    auto const self = static_cast<std::int32_t>(out.parent.size());
+    out.parent.push_back(parent);
+    // The VOB's position among its siblings — the last element of the index
+    // path setVobPosition and friends address it by. Rebuilding the whole path
+    // is the consumer's job, and it only ever does it for a VOB it is editing.
+    out.child_index.push_back(static_cast<std::uint32_t>(i));
+
+    out.positions.insert(out.positions.end(),
+                         {vob->position.x, vob->position.y, vob->position.z});
+    for (unsigned row = 0; row < 3; ++row) {
+      for (unsigned col = 0; col < 3; ++col) {
+        out.rotations.push_back(vob->rotation.columns[col][row]);
+      }
+    }
+
+    std::uint32_t bits = 0;
+    if (vob->show_visual) bits |= 1u << 0;
+    if (vob->vob_static) bits |= 1u << 1;
+    if (vob->ambient) bits |= 1u << 2;
+    if (vob->cd_static) bits |= 1u << 3;
+    if (vob->cd_dynamic) bits |= 1u << 4;
+    if (vob->physics_enabled) bits |= 1u << 5;
+    out.flags.push_back(bits);
+
+    out.class_index.push_back(
+        VobColumns::Intern(out.classes, out.class_lookup, VobClassName(vob->type)));
+    out.name_index.push_back(
+        VobColumns::Intern(out.names, out.name_lookup, vob->vob_name));
+    // A VOB with no visual at all interns as the empty string. NormalizeWorld
+    // reports null there; a dictionary column has no null, and "no visual" and
+    // "a visual with an empty name" mean the same thing to a renderer.
+    out.visual_index.push_back(VobColumns::Intern(
+        out.visuals, out.visual_lookup,
+        vob->visual != nullptr ? vob->visual->name : std::string {}));
+    out.visual_type_index.push_back(VobColumns::Intern(
+        out.visual_types, out.visual_type_lookup,
+        vob->visual != nullptr ? std::string {VisualTypeName(vob->visual->type)}
+                               : std::string {"UNKNOWN"}));
+
+    CollectVobColumns(vob->children, self, out);
   }
 }
 
@@ -1147,6 +1256,23 @@ char const* ArchiveFormatName(ArchiveFormat format) {
 
 }  // namespace
 
+std::uint32_t PackPolygonFlags(PolygonFlagSet const& flags, bool is_g2) {
+  if (is_g2) {
+    return static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
+                                      ((flags.is_sector & 1) << 3) |
+                                      ((flags.should_relight & 1) << 4) |
+                                      ((flags.is_outdoor & 1) << 5) |
+                                      ((flags.is_ghost_occluder & 1) << 6) |
+                                      ((flags.is_dynamically_lit & 1) << 7));
+  }
+  return static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
+                                    ((flags.is_sector & 1) << 3) | ((flags.is_lod & 1) << 4) |
+                                    ((flags.is_outdoor & 1) << 5) |
+                                    ((flags.is_ghost_occluder & 1) << 6) |
+                                    ((flags.normal_axis & 1) << 7) |
+                                    ((flags.normal_axis & 2) << 8));
+}
+
 Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle) {
   auto dump = Napi::Object::New(env);
 
@@ -1172,6 +1298,129 @@ Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle) {
   return dump;
 }
 
+Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle) {
+  VobColumns columns;
+  CollectVobColumns(handle.world->world_vobs, -1, columns);
+
+  auto dictionary = [&env](std::vector<std::string> const& values) {
+    auto arr = Napi::Array::New(env, values.size());
+    for (std::uint32_t i = 0; i < values.size(); ++i) arr.Set(i, Str(env, values[i]));
+    return arr;
+  };
+
+  auto out = Napi::Object::New(env);
+  out.Set("count", NumI(env, columns.parent.size()));
+  out.Set("parent", Buffer(env, columns.parent));
+  out.Set("childIndex", Buffer(env, columns.child_index));
+  out.Set("positions", Buffer(env, columns.positions));
+  out.Set("rotations", Buffer(env, columns.rotations));
+  out.Set("flags", Buffer(env, columns.flags));
+  out.Set("classes", dictionary(columns.classes));
+  out.Set("classIndex", Buffer(env, columns.class_index));
+  out.Set("names", dictionary(columns.names));
+  out.Set("nameIndex", Buffer(env, columns.name_index));
+  out.Set("visuals", dictionary(columns.visuals));
+  out.Set("visualIndex", Buffer(env, columns.visual_index));
+  out.Set("visualTypes", dictionary(columns.visual_types));
+  out.Set("visualTypeIndex", Buffer(env, columns.visual_type_index));
+  return out;
+}
+
+// The waynet the render path uses, as against `normalizeWorld`'s waynet
+// section. The dump sorts waypoints by name and sorts each edge pair, because
+// it is a diff instrument and order is noise there. This is the opposite: it
+// keeps the stored order and emits edges as **index pairs into that order**,
+// because an overlay draws a line buffer and a name lookup per edge would be
+// 8,000 string comparisons for a picture.
+//
+// Names are not interned, unlike `vobIndex`'s. Waypoint names are effectively
+// unique — that is what they are for — so a dictionary would be 1:1 and cost a
+// second array to say so.
+std::vector<std::shared_ptr<WayPoint>> CollectWaypoints(WorldHandle const& handle) {
+  auto const* way_net = handle.world->way_net.get();
+
+  std::vector<std::shared_ptr<WayPoint>> points;
+  if (way_net != nullptr) {
+    for (auto const& point : way_net->points) {
+      if (point != nullptr) points.push_back(point);
+    }
+  }
+  return points;
+}
+
+Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle) {
+  auto const* way_net = handle.world->way_net.get();
+
+  // The one definition of what a waypoint's index *means*. A mutation that
+  // filtered the null entries a second time would agree with this list only for
+  // as long as both authors remembered to — and an index that means something
+  // slightly different moves the wrong waypoint rather than failing.
+  std::vector<std::shared_ptr<WayPoint>> points = CollectWaypoints(handle);
+
+  std::vector<float> positions;
+  std::vector<float> directions;
+  std::vector<std::int32_t> water_depths;
+  std::vector<std::uint32_t> flags;
+  positions.reserve(points.size() * 3);
+  directions.reserve(points.size() * 3);
+  water_depths.reserve(points.size());
+  flags.reserve(points.size());
+
+  // Pointer identity, not name: the edge list holds the same shared_ptrs the
+  // point list does, and two waypoints may not share a name but nothing in the
+  // format enforces it either.
+  std::unordered_map<WayPoint const*, std::uint32_t> index_of;
+  index_of.reserve(points.size());
+
+  auto names = Napi::Array::New(env, points.size());
+  for (std::uint32_t i = 0; i < points.size(); ++i) {
+    auto const& point = points[i];
+    index_of.emplace(point.get(), i);
+
+    names.Set(i, Str(env, point->name));
+    positions.push_back(point->position.x);
+    positions.push_back(point->position.y);
+    positions.push_back(point->position.z);
+    directions.push_back(point->direction.x);
+    directions.push_back(point->direction.y);
+    directions.push_back(point->direction.z);
+    water_depths.push_back(point->water_depth);
+    flags.push_back(static_cast<std::uint32_t>(point->free_point ? 1u : 0u)
+                    | static_cast<std::uint32_t>(point->under_water ? 2u : 0u));
+  }
+
+  std::vector<std::uint32_t> edges;
+  if (way_net != nullptr) {
+    edges.reserve(way_net->edges.size() * 2);
+    for (auto const& edge : way_net->edges) {
+      if (edge.first == nullptr || edge.second == nullptr) continue;
+      auto const from = index_of.find(edge.first.get());
+      auto const to = index_of.find(edge.second.get());
+      // An endpoint that is not in the point list cannot be drawn and cannot be
+      // named; dropping it is the only honest option, and it is counted below.
+      if (from == index_of.end() || to == index_of.end()) continue;
+      edges.push_back(from->second);
+      edges.push_back(to->second);
+    }
+  }
+
+  auto out = Napi::Object::New(env);
+  out.Set("count", NumI(env, points.size()));
+  out.Set("names", names);
+  out.Set("positions", Buffer(env, positions));
+  out.Set("directions", Buffer(env, directions));
+  out.Set("waterDepths", Buffer(env, water_depths));
+  // bit 0 freePoint, bit 1 underWater.
+  out.Set("flags", Buffer(env, flags));
+  out.Set("edgeCount", NumI(env, edges.size() / 2));
+  out.Set("edges", Buffer(env, edges));
+  // Edges whose endpoints were not in the point list, so the caller can tell an
+  // empty overlay from a dropped one.
+  out.Set("danglingEdges",
+          NumI(env, way_net == nullptr ? 0 : way_net->edges.size() - edges.size() / 2));
+  return out;
+}
+
 Napi::Object DrillMesh(Napi::Env env,
                        WorldHandle const& handle,
                        std::size_t offset,
@@ -1193,26 +1442,8 @@ Napi::Object DrillMesh(Napi::Env env,
     entry.Set("material", NumI(env, poly.material));
     entry.Set("lightmap", NumI(env, poly.lightmap));
 
-    // The packed on-disk flag byte(s), version-appropriate (see Mesh.cc load).
-    // G1 packs normal_axis across two bytes; emitted here as one integer.
     auto const& flags = poly.flags;
-    std::uint32_t bits;
-    if (is_g2) {
-      bits = static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
-                                        ((flags.is_sector & 1) << 3) |
-                                        ((flags.should_relight & 1) << 4) |
-                                        ((flags.is_outdoor & 1) << 5) |
-                                        ((flags.is_ghost_occluder & 1) << 6) |
-                                        ((flags.is_dynamically_lit & 1) << 7));
-    } else {
-      bits = static_cast<std::uint32_t>((flags.is_portal & 3) | ((flags.is_occluder & 1) << 2) |
-                                        ((flags.is_sector & 1) << 3) | ((flags.is_lod & 1) << 4) |
-                                        ((flags.is_outdoor & 1) << 5) |
-                                        ((flags.is_ghost_occluder & 1) << 6) |
-                                        ((flags.normal_axis & 1) << 7) |
-                                        ((flags.normal_axis & 2) << 8));
-    }
-    entry.Set("flagsBits", NumI(env, bits));
+    entry.Set("flagsBits", NumI(env, PackPolygonFlags(flags, is_g2)));
     entry.Set("sectorIndex", NumI(env, flags.sector_index));
 
     auto vertex_indices = Napi::Array::New(env, poly.index_count);
