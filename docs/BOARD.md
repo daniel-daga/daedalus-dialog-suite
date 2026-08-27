@@ -46,8 +46,8 @@ was true for so long nobody re-reads it.
 
 ## State of the tree
 
-- branch `master`, **in sync with its remote.** `feature/level-editor` was
-  merged and is no longer where work happens.
+- branch `master`, **ahead of its remote and not pushed.** `feature/level-editor`
+  was merged and is no longer where work happens.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
@@ -63,12 +63,18 @@ was true for so long nobody re-reads it.
   and nothing else, so a push to master builds no installer, cuts no release and
   touches no update feed. Anything about shipping is the dispatch's decision,
   not this one — and the two gaps below have to close before that dispatch.
-- **The addon was rebuilt for the class-properties work**, so every other machine and CI must
-  rebuild: `binding.cc` and `normalize.cc`/`.hh` gained `getVobProps` and
-  `setVobClassProp`. A stale `.node` is worse than useless here — the editor's
-  Jest suites fake the worker, so they stay green against a binary that has
-  neither export while the running app has no class properties at all. It also
-  predates the exception fix below and still aborts the process on a bad world.
+- **The addon and the vendored ZenKit were both rebuilt this session**, so every
+  other machine and CI must rebuild — and here it is `vendor-build/` too, not
+  just `build/`: patches `0024`–`0026` change `ArchiveAscii.cc`, and
+  `src/fixture.cc` gained a decal. Run **`node scripts/build-zenkit.js` before
+  `npx node-gyp rebuild`**; the gyp step alone links a stale `zenkit.lib` and
+  silently keeps the old writer. A stale `.node` is worse than useless — the
+  editor's Jest suites fake the worker, so they stay green against a binary
+  that has neither `getVobProps` nor `setVobClassProp` while the running app
+  has no class properties at all.
+  One trap: `npx node-gyp build` (without `rebuild`) fails with
+  `LNK1103: Debuginformationen beschädigt` after the static lib is replaced.
+  `rebuild` is the working incantation.
 - **`zen-world` and the editor's whole `dist/` were rebuilt for it too** —
   `SetVobClassProp` and the `CLASS_FIELDS` catalogue are in both, and the editor
   typechecks and tests against `zen-world/dist`, not its source, so `build:main`
@@ -84,15 +90,10 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty — the waypoint gizmo landed; see Done)*
+*(empty — the ASCII writer's A1, A4 and A5 landed; see Done)*
 
 ## Next
 
-- **`world-timeout` and `world-crashed` now mean the same thing, and the
-  renderer still distinguishes them.** Fallout from the terminate fix (Done):
-  a timeout is no longer survivable — the worker is gone and the world with it
-  — so any renderer copy that implies a retry will work is now wrong. Check the
-  World surface's message for `world-timeout` says reopen.
 - **Two gaps that block the next `build-windows` dispatch, not the merge.**
   Recorded 2026-08-28 so the dispatch is not the place they are discovered:
   - **A dispatched build would ship a World button with no addon behind it.**
@@ -154,58 +155,61 @@ was true for so long nobody re-reads it.
   edge op. Waypoint delete has a bounded version of the arbitrary-VOB-delete
   trap — a `WayPoint` is five scalar fields, so what an op cannot describe for
   free is its edge memberships, and those are an enumerable list.
-- **The ASCII writer's four named defects** (A1–A4, `zenkit-node/docs/engine-acceptance-2026-08-25.md`
-  §10.2). Unblocked this session — the abort that made them unobservable is
-  fixed (Done) — but still a debugging job before it is a patch job.
-  They chain: A3's path is unreachable until A2 is fixed, and A3 writes corrupt
-  hex until A1 is. Verified in code this session:
-  - **A2 is dead code with no reachable switch.** `VirtualObject.cc:12` has
-    `static bool pack = true;`, `:336` `enable_packed_save` is the only writer of
-    it, and grep over `src/`, `include/` and `zenkit-node/src/` finds **no caller
-    at all** — so `:269`'s unpacked branch, which contains A3's only call site
-    (`:272 write_mat3x3("trafoOSToWSRot")`), can never execute.
-  - **A2's re-enabled path has a second, undocumented duplicate-entry bug**:
+- **What is left of the ASCII writer — A2, A3, A6 and one undiagnosed drift.**
+  A1, A4 and A5 landed (Done), and the corpus now measures all 20 retail ASCII
+  worlds instead of crashing on them. They classify **`semantic-drift`**, and
+  the instrument names the whole of it in two findings across all 20:
+  - **A6 — `physicsEnabled` is dropped on every save, 396 of the 400 findings,
+    and it is not an ASCII defect at all.** `VirtualObject.cc:251` writes packed
+    bit 6 as `physics_enabled && rigid_body` on G2, but `rigid_body` is only
+    ever filled inside `if (r.is_save_game())` (`:210`) — so in a *world* it is
+    always empty and the flag is always lost. The `&& rigid_body` guard belongs
+    at `:325`, where the rigid body is actually written, and it is already
+    there; the fix is deleting it from `:251`. **This is the packed `zCVob`
+    writer, so the BinSafe path the editor saves through has it too.** It
+    changes no retail byte today — measured 0 `physicsEnabled` VOBs across
+    NewWorld, OldWorld and AddonWorld, 41,393 VOBs — which is exactly why the
+    BinSafe worlds still classify `identical` and why nobody has seen it. A
+    user-edited or modded world is another matter, and that is the editor's own
+    save path. Not landed here because it needs a fixture VOB with the flag set
+    and, being a save-path byte change, the project's own engine-A/B rule.
+  - **`animMode` on 4 VOBs in the whole corpus.** Undiagnosed. Small enough to
+    be a single odd value and large enough to be a second enum defect.
+  - **A2 and A3 are unchanged and still chained.** A2 is dead code with no
+    reachable switch: `VirtualObject.cc:12` has `static bool pack = true;`,
+    `:336` `enable_packed_save` is its only writer, and grep over `src/`,
+    `include/` and `zenkit-node/src/` finds **no caller at all** — so `:269`'s
+    unpacked branch, which holds A3's only call site
+    (`:272 write_mat3x3("trafoOSToWSRot")`), can never execute. A2's re-enabled
+    path also has a second, undocumented **duplicate-entry bug**:
     `VirtualObject.cc:270-275` and `:297-307` both write
-    `presetName`/`vobName`/`visual`, and the two `visual` writes are not even the
-    same value (`visual_name` vs `visual->name`). ASCII entries are read
+    `presetName`/`vobName`/`visual`, and the two `visual` writes are not even
+    the same value (`visual_name` vs `visual->name`). ASCII entries are read
     positionally, so the extras are pure stream desync.
-  - **A1 is `ArchiveAscii.cc:376-387`**: `std::to_chars` never null-terminates
-    and `buf[1]` is only `'\0'` before the first write, so every byte < 0x10 gets
-    the previous byte's low nibble. Any A3 fix routing through the `raw:` encoder
-    lands in that function.
-  - **A4 is `ArchiveAscii.cc:453-455`**: an 11-wide `objects` field where
-    ZenGin's is 9-wide. Independent of the other three.
-  **The harness can fail on ASCII now** (Done), so these are patch jobs at last.
-  A1, A2 and A4 are instrument-visible; A3 stays unobservable until A2 lands,
-  and the instrument is already waiting for it. Fix order is unchanged: A1
-  first (its assertion is a pure string check on the emitted file and needs no
-  reload), then A2, then A2b, then A3; A4 is independent and can ride along any
-  time. **A1 also appears to be why ZenKit cannot re-load its own ASCII
-  output** — the stale nibble corrupts the packed `zCVob` flag word (on the
-  fixture's root VOB `bit1` goes `0x0002` → `0x0828`, turning on
-  `has_visual_object`), and `VirtualObject::load` then demands an object frame
-  where the archive holds an entry, surfacing as
-  `ParserError: type mismatch: expected enum, got: string`. Not a fifth defect:
-  fixing A1 should fix the reload, which is the cheap way to test the fix.
-  Three things the harness still owes, none of them blocking A1:
-  - **`zen-roundtrip` never reaches the ASCII container instrument.**
-    `measure()` returns early with `instrument: 'none'` whenever the load or the
-    reload throws, and no ASCII world's re-save re-loads. So ASCII coverage is
-    live through `normalizeWorld`, `classifyDumps` and `tools/bytediff.js`, but
-    end-to-end only once a re-save re-loads. Computing both container sections
-    from the *bytes* even when a load fails needs no handle and would cash it in.
-  - **The byte diff is two implementations that now disagree about which
-    formats exist.** `tools/bytediff.js` got ASCII; `scripts/zen-roundtrip.js`'s
+  **The lesson A5 taught, and it will repeat.** A5 was invisible to CI for one
+  reason: `decalAlphaWeight` is the only `write_byte` field reachable outside a
+  savegame and the authored fixture had no decal — so the fixture round-tripped
+  clean while all 20 retail worlds failed at the first decal in the file. The
+  fixture now hangs a `VisualDecal` on the chest. **Any writer path with no
+  fixture field on it is a defect CI cannot see**, and the cheap audit is to
+  walk `WriteArchive`'s methods and ask which have no fixture data behind them.
+  Two things the harness still owes, neither blocking:
+  - **The byte diff is two implementations that disagree about which formats
+    exist.** `tools/bytediff.js` got ASCII; `scripts/zen-roundtrip.js`'s
     library-form copy (`byteDiff`, `:106-179`, gated at `:251` on
-    `kind.format === 'BIN_SAFE'`) did not. Its file header (`:20-23`) and
-    `summarize()`'s note (`:353-356`) also both still say the container walks
-    BinSafe only, which is now false.
-  - **There is no ZenGin-written ASCII fixture, so CI cannot regression-test an
-    ASCII round-trip at all.** `_authorFixtureWorld(..., 'ascii')` is ZenKit's
-    own defective writer, so the checked-in corpus can only ever exercise the
-    defect and never the fix. A real ASCII round-trip stays a C1,
-    developer-local `--root` result unless a small ZenGin-authored ASCII world
-    is checked in.
+    `kind.format === 'BIN_SAFE'`) did not — which is why every ASCII row above
+    reports a `whole-file` diff and no event alignment. Its file header
+    (`:20-23`) and `summarize()`'s note (`:353-356`) also both still say the
+    container walks BinSafe only, which is false.
+  - **There is still no ZenGin-written ASCII fixture, so CI cannot regression-test
+    an ASCII round-trip against anything but ZenKit itself.**
+    `_authorFixtureWorld(..., 'ascii')` is ZenKit's own writer, so `--fixtures`
+    proves self-consistency and nothing about the engine. A real ASCII fidelity
+    result stays a C1, developer-local `--root` run unless a small
+    ZenGin-authored ASCII world is checked in. `zen-roundtrip`'s early
+    `instrument: 'none'` return on a failed load is no longer reached by any
+    ASCII world, so that half of the old card is closed.
+
 - **A malformed BinSafe world hangs the reader** — found in passing, and separate
   from both the ASCII defects and the exception fix.
   `loadWorld` on a BinSafe file with ~500 corrupted bytes neither crashes
@@ -220,10 +224,6 @@ was true for so long nobody re-reads it.
   whether that's worth a rebuilt candidate is Daniel's call, not something to
   do unasked.
 
-- **`world:selectGothicInstall` has the open dialog's gap, mirror-image.** Its
-  directory picker passes no `defaultPath` either, so re-selecting an install
-  does not start at the stored one. One line, and the smallest card on this list
-  now that `world:openDialog` is fixed (Done).
 - **`main.ts` does real work at import time.** Constructing `ParserService` at
   module load spins up an 8-worker pool before anything asks for a parse —
   `WorldService` is deliberately lazy by comparison (`main.ts:52` says why).
@@ -290,6 +290,59 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   unblocked.**
 
 ## Done — Phase 1b
+
+- **The ASCII writer works — A1, A4 and a fifth defect nobody had named.**
+  Patches `0024`–`0026`. The corpus is the result: a retail G2 install went from
+  **4 of 28 worlds measured, 20 crashed** to **24 measured, 24
+  container-instrumented, 0 crashed, 0 unreadable**. Record in
+  `zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.4.
+  - **A1** (`0024`) — `write_raw` decided how many hex digits `std::to_chars`
+    wrote by testing a null terminator `to_chars` never writes, so every byte
+    below `0x10` carried the previous byte's low nibble. It was also the reload
+    blocker the old card guessed it was: the corruption landed in the packed
+    `zCVob` flag word and `VirtualObject::load` then demanded an object frame
+    where the archive held an entry. The pin in `container.test.js` is now the
+    opposite assertion — the hex must decode **exactly** to the bytes the
+    BinSafe fixture's packer produced, with a guard that the entry still
+    contains sub-0x10 bytes so the equality can never hold vacuously.
+  - **A4** (`0025`) — the header's `objects` field padded to 11 where ZenGin
+    pads to 9. Retail `OldCamp.zen` re-saves with `objects 1835     `, byte for
+    byte the original line. Same defect `0013` fixed for `zCArchiverBinary`,
+    which had picked 10.
+  - **A5** (`0026`), **found by running the corpus after A1** —
+    `write_byte`/`write_word` emitted `byte:`/`word:` type tokens that
+    `ReadArchiveAscii::read_byte`/`read_word` reject, both calling
+    `read_entry("int")`. ZenGin settles which side is wrong: 144,111 `int:`
+    entries across the install's 24 ASCII worlds and **zero** of either. 19 of
+    the 20 worlds still failed after A1, every one at the first
+    `decalAlphaWeight` in the file.
+  **The fixture had to change to see A5, and that is the durable finding.**
+  `decalAlphaWeight` is the only `write_byte` field reachable outside a
+  savegame, and the authored fixture had no decal — so it round-tripped clean
+  through a defect that broke every real world. `BuildVobTree` now hangs a
+  `VisualDecal` on the chest: no VOB added, no index path moved, object count
+  11→12 and frame count 18→19. The three ASCII tests that pinned those numbers
+  were updated with the reason written next to them.
+  The old `roundtrip.test.js` pin said in capitals that a fixed writer must turn
+  it red. It did, twice, and is now the verdict the working writer earns —
+  `ok`/`identical`/`instrument: 'full'`, with the inverse spelled out: if it
+  goes red with `unreadable`, the writer has regressed. What is **not** claimed
+  is fidelity: the fixture is ZenKit's own output, the 20 retail worlds classify
+  `semantic-drift` not `identical`, and no ASCII world has been through the
+  engine. `saveWorld` stays BinSafe-only. `README.md`, `tools/README.md` and
+  `patches/README.md` were all corrected in the same change.
+- **The Gothic install picker starts where the install is.**
+  `world:selectGothicInstall` now passes the stored install as `defaultPath`,
+  the mirror of `world:openDialog`'s fix. Two tests in the existing
+  `worldOpenDialogDefaultPath.test.ts`, which now covers both pickers.
+- **`world-timeout` copy — checked, nothing to change.** The card feared the
+  renderer distinguished a timeout from a crash and implied a retry. It does
+  neither: `WorldSurface.tsx:685` renders `worldStore.error` as the main
+  process's raw message, `openFailed(failure.message)` is the only writer, and
+  both `WorldService.ts:349` and `:362` already say *reopen the world*. Nothing
+  in the renderer branches on the kind at all — `WORLD_TIMEOUT`/`WORLD_CRASHED`
+  appear only in `WorkerRequestError.ts`. Recorded rather than left open so the
+  next session does not re-derive it.
 
 - **A timed-out world request takes the worker with it.** The one code defect
   that argued against merging, and it is fixed: `handleTimeout` now mirrors
