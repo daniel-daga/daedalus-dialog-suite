@@ -25,6 +25,69 @@ for (let i = 0; i < 256; i++) {
 /** AlphaFunction: 1 NONE (cut-out), 2 BLEND, 3 ADD; anything else is opaque. */
 const ALPHA_TEST = 0.5;
 
+/**
+ * A VOB is hard to tell from the world mesh (2026-08-27), and the answer asked
+ * for is a faint outline on VOB visuals.
+ *
+ * It is drawn *inside* the VOB's own shader rather than as an outline pass,
+ * because the alternative is a second `InstancedMesh` per visual — 724 more
+ * draw calls every frame, in the viewport that exists to keep per-frame work
+ * off the CPU (render-performance.md). This costs no draw call, no geometry, no
+ * uniform to update and no CPU work at all: it is a handful of ALU per VOB
+ * fragment, and only VOB materials compile it.
+ *
+ * What it does is darken the surface as it turns away from the eye, so the
+ * silhouette of every VOB reads as a soft dark contour against whatever it
+ * stands in front of. `MeshBasicMaterial` and baked vertex colours are no
+ * obstacle: this multiplies the outgoing light after the texture and the baked
+ * colour, and adds no light source.
+ *
+ * Deliberately faint and never a selection state — selection is the gizmo, and
+ * a legibility aid that competed with it would make the selected VOB harder to
+ * find, not easier.
+ */
+const OUTLINE_DARKEN = 0.7;
+
+/** Keeps the darkening near the silhouette: at 4, a surface has to be within
+ *  ~25° of edge-on before it loses a quarter of the effect's strength. */
+const OUTLINE_POWER = 4.0;
+
+/**
+ * The `onBeforeCompile` every VOB material shares.
+ *
+ * One module-level function on purpose: `customProgramCacheKey` defaults to
+ * `onBeforeCompile.toString()`, so all VOB materials land on one program and
+ * the untouched world-mesh materials — which keep `Material`'s no-op hook —
+ * land on another. A hook created per material would compare the same way, but
+ * this makes the sharing the reason rather than the coincidence.
+ */
+function outlineVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.vertexShader = `varying vec3 vVobNormal;\nvarying vec3 vVobView;\n${
+    shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+  // After project_vertex, so mvPosition already carries the instance.
+  vec3 vobNormal = normal;
+  #ifdef USE_INSTANCING
+    vobNormal = mat3( instanceMatrix ) * vobNormal;
+  #endif
+  vVobNormal = normalMatrix * vobNormal;
+  vVobView = -mvPosition.xyz;`,
+    )
+  }`;
+
+  shader.fragmentShader = `varying vec3 vVobNormal;\nvarying vec3 vVobView;\n${
+    shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      // abs(), because the mirrored root flips the sign of the normal and a
+      // signed facing term would outline the front faces instead of the edges.
+      `float vobFacing = abs( dot( normalize( vVobNormal ), normalize( vVobView ) ) );
+  outgoingLight *= mix( 1.0, ${OUTLINE_DARKEN.toFixed(2)}, pow( 1.0 - vobFacing, ${OUTLINE_POWER.toFixed(1)} ) );
+  #include <opaque_fragment>`,
+    )
+  }`;
+}
+
 interface TextureSlot {
   texture: THREE.Texture | null;
   materials: THREE.MeshBasicMaterial[];
@@ -126,7 +189,7 @@ export class WorldScene {
 
       for (const group of visual.groups) {
         const mesh = new THREE.InstancedMesh(
-          this.geometry(group), this.material(group), visual.count,
+          this.geometry(group), this.material(group, true), visual.count,
         );
         for (let i = 0; i < visual.count; i++) {
           const m = i * 12;
@@ -424,7 +487,9 @@ export class WorldScene {
     return geometry;
   }
 
-  private material(group: DrawGroup): THREE.MeshBasicMaterial {
+  /** @param vob whether this draws a VOB rather than the world mesh — the one
+   *   difference is the silhouette outline, see `outlineVobs`. */
+  private material(group: DrawGroup, vob = false): THREE.MeshBasicMaterial {
     // MeshBasicMaterial, not a lit one: ZenGin's lighting is baked into the
     // vertex colours and there is nothing dynamic in an editor viewport to
     // relight it with.
@@ -432,6 +497,7 @@ export class WorldScene {
       vertexColors: group.lights !== null,
       side: THREE.FrontSide,
     });
+    if (vob) material.onBeforeCompile = outlineVobs;
 
     if (group.texture === '') {
       material.color.setRGB(

@@ -601,4 +601,63 @@ describe('WorldScene', () => {
     expect(scene.anchorOf([4242])).toBeNull();
     expect(scene.anchorOf([])).toBeNull();
   });
+
+  test('VOB materials darken towards the silhouette and the world mesh does not', () => {
+    // "A VOB is hard to tell from the world mesh" (2026-08-27): the legibility
+    // aid is a faint outline, and it hangs on the one thing that separates a
+    // VOB from the ground it stands on — its material. The world mesh must not
+    // get it, or the outline marks nothing.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    const world = (scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+
+    // The two programs must not share a cache key, or one compiled shader is
+    // handed to both and whichever material compiled first decides.
+    expect(vob.customProgramCacheKey()).not.toBe(world.customProgramCacheKey());
+
+    // Nothing extra is drawn: one world mesh, one InstancedMesh, no outline
+    // pass. A second draw per VOB visual is 724 extra draw calls a frame.
+    expect(scene.root.children).toHaveLength(2);
+
+    const compile = (material: THREE.MeshBasicMaterial) => {
+      const shader = {
+        vertexShader: THREE.ShaderLib.basic.vertexShader,
+        fragmentShader: THREE.ShaderLib.basic.fragmentShader,
+        uniforms: {},
+      };
+      material.onBeforeCompile(
+        shader as unknown as THREE.WebGLProgramParametersWithUniforms,
+        null as unknown as THREE.WebGLRenderer,
+      );
+      return shader;
+    };
+
+    const vobShader = compile(vob);
+    // The silhouette term itself: a view-space normal carried across, the
+    // instance's own rotation folded into it (every VOB is an instance, so a
+    // normal left in visual space would light the outline from the wrong side),
+    // and an exponent that keeps the darkening off the faces pointing at the
+    // camera.
+    expect(vobShader.vertexShader).toContain('mat3( instanceMatrix )');
+    expect(vobShader.vertexShader).toContain('vVobNormal = normalMatrix *');
+    expect(vobShader.fragmentShader).toContain('vVobNormal');
+    expect(vobShader.fragmentShader).toMatch(/outgoingLight \*= mix\(/);
+    expect(vobShader.fragmentShader).toContain('#include <opaque_fragment>');
+
+    // Faint, and unmistakably weaker than a selection state: at most a third of
+    // the light taken away, and only where the surface turns away from the eye.
+    const darken = Number(/mix\(\s*1\.0,\s*([0-9.]+),/.exec(vobShader.fragmentShader)?.[1]);
+    expect(darken).toBeGreaterThan(0.6);
+    expect(darken).toBeLessThan(1);
+    const power = Number(/pow\(\s*1\.0 - vobFacing,\s*([0-9.]+)\s*\)/.exec(vobShader.fragmentShader)?.[1]);
+    expect(power).toBeGreaterThanOrEqual(2);
+
+    // And the world mesh compiles the stock shader, untouched.
+    const worldShader = compile(world);
+    expect(worldShader.vertexShader).toBe(THREE.ShaderLib.basic.vertexShader);
+    expect(worldShader.fragmentShader).toBe(THREE.ShaderLib.basic.fragmentShader);
+  });
 });
