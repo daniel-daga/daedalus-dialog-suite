@@ -829,6 +829,42 @@ std::optional<float> OptionalFloatIn(Napi::Env env,
   return value;
 }
 
+// OptionalFloat's sibling for a member the struct stores as an `int32_t`.
+//
+// It exists rather than reusing OptionalFloat with a rounding step because the
+// truncation is the whole hazard: `priority: 2.5` through a float lands as 2 and
+// reports success, and the caller never learns which of the two numbers the
+// world now holds. `Napi::Number` is a double, so the check is integrality plus
+// the int32 range — a value past 2^31 is not a large priority, it is a wrap.
+std::optional<std::int32_t> OptionalInt32(Napi::Env env,
+                                          Napi::Object props,
+                                          char const* key,
+                                          std::optional<std::int32_t> min,
+                                          std::optional<std::int32_t> max) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsNumber()) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be a number");
+  }
+  double const number = value.As<Napi::Number>().DoubleValue();
+  if (!std::isfinite(number) || number != std::floor(number)) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be a whole number");
+  }
+  if (number < -2147483648.0 || number > 2147483647.0) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " is outside the 32-bit range");
+  }
+  auto const result = static_cast<std::int32_t>(number);
+  if (min && result < *min) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be "
+                                    + std::to_string(*min) + " or greater");
+  }
+  if (max && result > *max) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be "
+                                    + std::to_string(*max) + " or less");
+  }
+  return result;
+}
+
 // RequiredCp1252String for a key that may simply be absent. Every string field
 // past `oCItem.instance` is one of several on its class, so "set the sound name
 // and leave the radius alone" has to be expressible.
@@ -906,20 +942,22 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // hierarchy wrongly.
     //
     // What is deliberately not here, by the catalogue's own rules: `mode` and
-    // `volumeType` are enums; `initiallyPlaying`, `ambient3d` and `obstruction`
-    // are booleans and the catalogue has no boolean kind; and `randomDelay` /
-    // `randomDelayVar` are read by the engine only when `mode` is RANDOM, which
-    // is a mode this op cannot set.
+    // `volumeType` are enums; and `randomDelay` / `randomDelayVar` are read by
+    // the engine only when `mode` is RANDOM, which is a mode this op cannot set,
+    // so both would be legal writes with no effect.
     case zenkit::VirtualObjectType::zCVobSound:
     case zenkit::VirtualObjectType::zCVobSoundDaytime: {
       bool const daytime = vob->type == zenkit::VirtualObjectType::zCVobSoundDaytime;
       if (daytime) {
         RequireClassKeys(env, props,
-                         {"soundName", "volume", "radius", "coneAngle", "startTime", "endTime",
-                          "soundName2"},
+                         {"soundName", "volume", "radius", "coneAngle", "initiallyPlaying",
+                          "ambient3d", "obstruction", "startTime", "endTime", "soundName2"},
                          class_name);
       } else {
-        RequireClassKeys(env, props, {"soundName", "volume", "radius", "coneAngle"}, class_name);
+        RequireClassKeys(env, props,
+                         {"soundName", "volume", "radius", "coneAngle", "initiallyPlaying",
+                          "ambient3d", "obstruction"},
+                         class_name);
       }
       // Everything read and bounded before anything is assigned, so a refused
       // `endTime` cannot leave a written `soundName` behind it.
@@ -927,6 +965,9 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const volume = OptionalFloatIn(env, props, "volume", 0, 100);
       auto const radius = OptionalFloatIn(env, props, "radius", 0, std::nullopt);
       auto const cone_angle = OptionalFloatIn(env, props, "coneAngle", 0, 360);
+      auto const initially_playing = OptionalBool(env, props, "initiallyPlaying");
+      auto const ambient3d = OptionalBool(env, props, "ambient3d");
+      auto const obstruction = OptionalBool(env, props, "obstruction");
       std::optional<float> start_time;
       std::optional<float> end_time;
       std::optional<std::string> sound_name2;
@@ -943,6 +984,13 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (volume) sound.volume = *volume;
       if (radius) sound.radius = *radius;
       if (cone_angle) sound.cone_angle = *cone_angle;
+      // `.has_value()` and not `if (initially_playing)`: on a
+      // `std::optional<bool>` the two read alike and mean the same thing, but
+      // only one of them says so — the condition is "was this key present", not
+      // "was it true".
+      if (initially_playing.has_value()) sound.initially_playing = *initially_playing;
+      if (ambient3d.has_value()) sound.ambient3d = *ambient3d;
+      if (obstruction.has_value()) sound.obstruction = *obstruction;
       if (daytime) {
         auto& at_time = static_cast<zenkit::VSoundDaytime&>(*vob);
         if (start_time) at_time.start_time = *start_time;
@@ -969,35 +1017,58 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       break;
     }
     case zenkit::VirtualObjectType::zCZoneZFog: {
-      RequireClassKeys(env, props, {"rangeCenter", "innerRangePercentage", "color"}, class_name);
+      RequireClassKeys(
+          env, props,
+          {"rangeCenter", "innerRangePercentage", "fadeOutSky", "overrideColor", "color"},
+          class_name);
       auto const range_center = OptionalFloatIn(env, props, "rangeCenter", 0, std::nullopt);
       auto const inner = OptionalFloatIn(env, props, "innerRangePercentage", 0, std::nullopt);
+      auto const fade_out_sky = OptionalBool(env, props, "fadeOutSky");
+      auto const override_color = OptionalBool(env, props, "overrideColor");
       auto const color = OptionalColor(env, props, "color");
 
       // `overrideColor` decides whether the engine reads that colour at all, and
-      // it is a boolean this op cannot set — so writing a fog colour on a zone
-      // that does not override is a legal write with no visible effect, not a
-      // refusal.
+      // it is now settable beside it — which is what turns a fog colour from a
+      // legal write with no visible effect into an edit that can be made to
+      // mean something. The two are still independent keys: writing one does not
+      // imply the other, because an op that set a flag nobody asked for would
+      // build an inverse restoring a value nobody edited.
       auto& fog = static_cast<zenkit::VZoneFog&>(*vob);
       if (range_center) fog.range_center = *range_center;
       if (inner) fog.inner_range_percentage = *inner;
+      if (fade_out_sky.has_value()) fog.fade_out_sky = *fade_out_sky;
+      if (override_color.has_value()) fog.override_color = *override_color;
       if (color) fog.color = *color;
       break;
     }
     case zenkit::VirtualObjectType::oCZoneMusic: {
-      // Two floats out of six fields. `enabled`, `ellipsoid` and `loop` are
-      // booleans and `priority` is an `int32_t`; the catalogue has neither kind,
-      // and writing an integer field through a float would truncate silently.
-      RequireClassKeys(env, props, {"reverb", "volume"}, class_name);
-      // Unbounded, both of them: ZenKit documents each as "unclear", ZenGin's
+      // All six fields now: three booleans, the `int32_t` priority, and the two
+      // floats. `priority` goes through OptionalInt32 and not OptionalFloat
+      // precisely because the cast is the hazard — `2.5` through a float lands
+      // as 2 and reports success.
+      RequireClassKeys(env, props,
+                       {"enabled", "priority", "ellipsoid", "reverb", "volume", "loop"},
+                       class_name);
+      auto const enabled = OptionalBool(env, props, "enabled");
+      // ZenKit documents `0` as the lowest possible priority, so that is the
+      // floor — a documented one rather than a measured one, which is the thing
+      // to re-check if a retail world is ever found holding a negative.
+      auto const priority = OptionalInt32(env, props, "priority", 0, std::nullopt);
+      auto const ellipsoid = OptionalBool(env, props, "ellipsoid");
+      // Unbounded, both floats: ZenKit documents each as "unclear", ZenGin's
       // reverb level is negative decibels, and a bound invented here is a
       // refusal of data the world already holds.
       auto const reverb = OptionalFloat(env, props, "reverb");
       auto const volume = OptionalFloat(env, props, "volume");
+      auto const loop = OptionalBool(env, props, "loop");
 
       auto& music = static_cast<zenkit::VZoneMusic&>(*vob);
+      if (enabled.has_value()) music.enabled = *enabled;
+      if (priority) music.priority = *priority;
+      if (ellipsoid.has_value()) music.ellipsoid = *ellipsoid;
       if (reverb) music.reverb = *reverb;
       if (volume) music.volume = *volume;
+      if (loop.has_value()) music.loop = *loop;
       break;
     }
     default:

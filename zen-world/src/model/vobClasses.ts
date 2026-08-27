@@ -28,12 +28,16 @@
 /**
  * What a class field's value can be.
  *
- * Three kinds, chosen to force every structural decision at once: a plain
- * string, a finite scalar, and a small fixed-arity array of integers. Nothing
- * here is a nested record, which is what keeps the op's IPC assertion a flat
- * walk over keys.
+ * Five kinds: a plain string, a finite scalar, a whole number, a flag, and a
+ * small fixed-arity array of integers. Nothing here is a nested record, which is
+ * what keeps the op's IPC assertion a flat walk over keys.
+ *
+ * `int` is not a `float` with a rule attached. A `float` field whose archive
+ * member is an `int32_t` truncates on write and reports success, so the two are
+ * separated at the *type* rather than at the one validator that happens to
+ * remember — the grid, the IPC check and the binding each read `kind`.
  */
-export type ClassPropValue = string | number | readonly number[];
+export type ClassPropValue = string | number | boolean | readonly number[];
 
 /** A VOB's class fields as an op carries them — only the keys being written. */
 export interface ClassProps {
@@ -47,11 +51,12 @@ export interface ClassProps {
  * The bounds live in the catalogue rather than in the validator because the grid
  * needs the same numbers to reject a typed value before it commits one, and two
  * hand-written copies of "0 to 255" is one copy too many. For a colour they are
- * per channel.
+ * per channel. A `bool` has none: there is nothing between false and true to
+ * refuse.
  */
 export interface FieldDescriptor {
   key: string;
-  kind: 'string' | 'float' | 'color';
+  kind: 'string' | 'float' | 'int' | 'bool' | 'color';
   min?: number;
   max?: number;
 }
@@ -72,17 +77,20 @@ const ZC_VOB_LIGHT_FIELDS = [
  * What a sound is: which script instance it plays, how loud, how far, and the
  * cone it is audible in.
  *
- * `mode` and `volumeType` are enums and `initiallyPlaying`/`ambient3d`/
- * `obstruction` are booleans, so both groups are out by the rules at the top of
- * this file. `randomDelay` and `randomDelayVar` are left out for a third reason
- * that is neither: the engine reads them only when `mode` is RANDOM, and `mode`
- * is precisely what this catalogue cannot set.
+ * `mode` and `volumeType` are enums and stay out by the rules at the top of this
+ * file. `randomDelay` and `randomDelayVar` are left out for a different reason:
+ * the engine reads them only when `mode` is RANDOM, and `mode` is precisely what
+ * this catalogue cannot set — so both would be legal writes the engine ignores,
+ * which reads to a user as the editor having done nothing.
  */
 const ZC_VOB_SOUND_FIELDS = [
   { key: 'soundName', kind: 'string' },
   { key: 'volume', kind: 'float', min: 0, max: 100 },
   { key: 'radius', kind: 'float', min: 0 },
   { key: 'coneAngle', kind: 'float', min: 0, max: 360 },
+  { key: 'initiallyPlaying', kind: 'bool' },
+  { key: 'ambient3d', kind: 'bool' },
+  { key: 'obstruction', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
@@ -109,27 +117,42 @@ const ZC_ZONE_VOB_FAR_PLANE_FIELDS = [
   { key: 'innerRangePercentage', kind: 'float', min: 0 },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** `fadeOutSky` and `overrideColor` are booleans and out with the rest of them.
- *  The colour is still offered on a zone that does not override — the engine
- *  then ignores it, which is a write with no effect rather than a wrong one. */
+/**
+ * `overrideColor` is deliberately the field *immediately before* the colour,
+ * because catalogue order is the order the grid draws in and the two are one
+ * setting: ZenGin reads `color` only while `overrideColor` is true, so a colour
+ * shipped without its switch was a legal write the engine ignored, and that
+ * reads to a user as the editor having done nothing.
+ */
 const ZC_ZONE_Z_FOG_FIELDS = [
   { key: 'rangeCenter', kind: 'float', min: 0 },
   { key: 'innerRangePercentage', kind: 'float', min: 0 },
+  { key: 'fadeOutSky', kind: 'bool' },
+  { key: 'overrideColor', kind: 'bool' },
   { key: 'color', kind: 'color', min: 0, max: 255 },
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
- * Two floats out of six fields, and the four that are missing are the ones a
- * level designer reaches for: `enabled`, `ellipsoid` and `loop` are booleans and
- * `priority` is an `int32`. The catalogue has neither kind, and an integer field
- * written through a float truncates silently.
+ * All six fields, in the order `VZoneMusic` declares them — which is also the
+ * order the archive stores them in, so the grid reads like the file.
+ *
+ * `priority` is the catalogue's first `int`, and it is the field the `int` kind
+ * exists for: it is an `int32_t` in the struct, and offered as a `float` it
+ * would take `2.5`, truncate on the cast and report success. Its `min: 0` is
+ * ZenKit's own documented floor ("`0` is the lowest possible priority") rather
+ * than a measurement, which is the one thing to re-check if a retail world is
+ * ever found holding a negative one.
  *
  * Neither float is bounded. ZenKit documents both as "unclear", ZenGin's reverb
  * level is negative decibels, and an invented bound refuses data a world holds.
  */
 const OC_ZONE_MUSIC_FIELDS = [
+  { key: 'enabled', kind: 'bool' },
+  { key: 'priority', kind: 'int', min: 0 },
+  { key: 'ellipsoid', kind: 'bool' },
   { key: 'reverb', kind: 'float' },
   { key: 'volume', kind: 'float' },
+  { key: 'loop', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
 /**

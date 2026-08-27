@@ -111,10 +111,14 @@ const EditableField: React.FC<{
 /**
  * A class field's value as text, and text back to a value of its kind.
  *
- * Text for all three kinds, a colour included, because the alternative is three
- * input widgets where the catalogue has one table — and because the four
- * channels of a `zCVobLight.color` are one value the op carries whole, not four
- * fields whose inverse would restore three of them.
+ * Text for every kind but `bool`, a colour included, because the alternative is
+ * an input widget per kind where the catalogue has one table — and because the
+ * four channels of a `zCVobLight.color` are one value the op carries whole, not
+ * four fields whose inverse would restore three of them. A boolean is the one
+ * exception and it goes the other way, to a checkbox: a text field would have to
+ * decide what "true", "1" and "yes" mean, which is a parsing problem this panel
+ * would be inventing for itself when the six base flags above already have a
+ * control that has none.
  *
  * `parse` answers null for anything the field cannot hold, and null is the whole
  * of the refusal: nothing is sent, and the catalogue's own bounds are what it
@@ -126,6 +130,10 @@ const formatted = (value: ClassPropValue): string => {
   // range that came out of the archive prints as 299.99998474121094 otherwise,
   // and a user who edits the colour beside it has not asked to see that.
   if (typeof value === 'string') return value;
+  // A `bool` never reaches here — it is drawn as a checkbox — but the value type
+  // is the catalogue's whole union, and `String(true)` is what the type demands
+  // rather than a case anything hits.
+  if (typeof value === 'boolean') return String(value);
   if (typeof value === 'number') return coordinate(value);
   return value.map(coordinate).join(', ');
 };
@@ -137,10 +145,14 @@ const parse = (field: FieldDescriptor, text: string): ClassPropValue | null => {
     && (field.min === undefined || value >= field.min)
     && (field.max === undefined || value <= field.max);
 
-  if (field.kind === 'float') {
+  if (field.kind === 'float' || field.kind === 'int') {
     // `Number('')` is 0, and an emptied field is not a request to set zero.
     const value = text.trim() === '' ? NaN : Number(text);
-    return within(value) ? value : null;
+    if (!within(value)) return null;
+    // An `int` field is an `int32_t` in the archive: a fraction accepted here
+    // truncates on the cast in C++ and reports success, so 2.5 is refused rather
+    // than rounded — the user asked for a number this field cannot hold.
+    return field.kind === 'int' && !Number.isInteger(value) ? null : value;
   }
 
   const parts = text.split(',');
@@ -178,6 +190,23 @@ const ClassField: React.FC<{
   onCommit: (value: ClassPropValue) => void;
 }> = ({ vob, field, value, onCommit }) => {
   const [refusals, setRefusals] = useState(0);
+
+  // A boolean is a checkbox, controlled, exactly like the six base flags above:
+  // there is no text to type, so there is nothing to refuse, nothing to remount
+  // and no blur to wait for. `value === true` rather than a cast, because the
+  // props object is what a world answered and this is the boundary it crosses.
+  if (field.kind === 'bool') {
+    return (
+      <Checkbox
+        size="small"
+        sx={{ p: 0, ml: 0.25 }}
+        checked={value === true}
+        inputProps={{ 'data-testid': `world-prop-class-${field.key}-input` } as React.InputHTMLAttributes<HTMLInputElement>}
+        onChange={(event) => onCommit(event.target.checked)}
+      />
+    );
+  }
+
   const text = formatted(value);
 
   return (

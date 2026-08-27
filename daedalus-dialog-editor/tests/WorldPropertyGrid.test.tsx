@@ -102,6 +102,11 @@ const WORLD = summaryOf(vobIndex([
   { parent: 0, cls: 'zCVobLevelCompo', visual: 'NW_PART_01.3DS', visualType: 'MESH' },
   { name: 'SMOKE', cls: 'zCPFXController', visual: 'PFX_SMOKE', visualType: 'PARTICLE_EFFECT' },
   { name: 'SWORD', cls: 'oCItem', visual: 'ITMW_1H_SWORD_01.3DS' },
+  // The two classes that carry the `bool` and `int` kinds. Neither has a visual
+  // — a zone is invisible in the viewport, which is why every field of it is
+  // only ever seen here.
+  { name: 'NW_MUSIC', cls: 'oCZoneMusic', visualType: 'UNKNOWN' },
+  { name: 'NW_FOG', cls: 'zCZoneZFog', visualType: 'UNKNOWN' },
 ]));
 
 /**
@@ -115,6 +120,15 @@ const LIGHT: ClassProps = {
   class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255], lightType: 0,
 };
 const ITEM: ClassProps = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01' };
+const MUSIC: ClassProps = {
+  class: 'oCZoneMusic',
+  enabled: true, priority: 2, ellipsoid: false, reverb: -30, volume: 0.5, loop: true,
+};
+const FOG: ClassProps = {
+  class: 'zCZoneZFog',
+  rangeCenter: 12000, innerRangePercentage: 0.5,
+  fadeOutSky: true, overrideColor: false, color: [120, 130, 140, 255],
+};
 
 const field = (label: string) => screen.getByTestId(`world-prop-${label}`);
 /** The editable fields are inputs, so their value is not their text content. */
@@ -454,6 +468,72 @@ describe('WorldPropertyGrid, class fields', () => {
   it('says nothing about scope when one VOB is selected', () => {
     render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
     expect(screen.queryByTestId('world-prop-class-scope')).not.toBeInTheDocument();
+  });
+
+  // The `bool` and `int` kinds (level-editor.md §14.1 item 1.4). A boolean is a
+  // checkbox and not a field reading "true", because "true"/"1"/"yes" is a
+  // parsing problem this panel would be inventing for itself; an integer is a
+  // typed field with an integer refusal, because there is nothing to click.
+  it('draws a boolean as a checkbox showing the value the world has', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[5]} {...wiring} classProps={MUSIC} />);
+
+    expect(input('class-enabled').checked).toBe(true);
+    expect(input('class-ellipsoid').checked).toBe(false);
+    expect(input('class-loop').checked).toBe(true);
+    // A checkbox is not a text field, so nothing here should have parsed the
+    // value into one.
+    expect(input('class-enabled').type).toBe('checkbox');
+  });
+
+  it('commits the flipped boolean, and only that key', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[5]} {...wiring} classProps={MUSIC} />);
+
+    fireEvent.click(input('class-ellipsoid'));
+    fireEvent.click(input('class-enabled'));
+
+    // The same rule every other field in this panel follows: the op reads `from`
+    // for exactly the keys `to` names, so a grid that posted the other five
+    // booleans would build an inverse restoring values nobody edited.
+    expect(classEdits).toEqual([{ ellipsoid: true }, { enabled: false }]);
+  });
+
+  it('takes a whole number for an int field and refuses a fraction', () => {
+    // `priority` is an `int32_t` in the archive. Sent as 2.5 it would truncate
+    // on the cast in C++ and report success, so the refusal is here — before an
+    // op exists — exactly as the float bounds are.
+    render(<WorldPropertyGrid summary={WORLD} selection={[5]} {...wiring} classProps={MUSIC} />);
+
+    fireEvent.change(input('class-priority'), { target: { value: '7' } });
+    fireEvent.blur(input('class-priority'));
+    expect(classEdits).toEqual([{ priority: 7 }]);
+
+    for (const bad of ['2.5', '-1', 'high', '']) {
+      fireEvent.change(input('class-priority'), { target: { value: bad } });
+      fireEvent.blur(input('class-priority'));
+    }
+    expect(classEdits).toEqual([{ priority: 7 }]);
+    // And the refused field is showing the world's own value again.
+    expect(input('class-priority').value).toBe('2');
+  });
+
+  it('draws a fog zone\'s overrideColor immediately above the colour it governs', () => {
+    // ZenGin reads `zCZoneZFog.color` only while `overrideColor` is true. The
+    // colour shipped a release before its switch did, and a colour edit on a
+    // zone that does not override reads to a user as the editor having done
+    // nothing — so the adjacency is the whole of what makes the pair legible.
+    render(<WorldPropertyGrid summary={WORLD} selection={[6]} {...wiring} classProps={FOG} />);
+
+    const section = screen.getByTestId('world-prop-class-section');
+    const drawn = Array.from(section.querySelectorAll('[data-testid^="world-prop-class-"]'))
+      .map((node) => node.getAttribute('data-testid'))
+      // The control inside each row carries the same prefix plus `-input`; the
+      // rows are what this is about.
+      .filter((id) => id !== null && !id.endsWith('-input'));
+    expect(drawn).toEqual([
+      'world-prop-class-rangeCenter', 'world-prop-class-innerRangePercentage',
+      'world-prop-class-fadeOutSky', 'world-prop-class-overrideColor', 'world-prop-class-color',
+    ]);
+    expect(input('class-overrideColor').checked).toBe(false);
   });
 });
 

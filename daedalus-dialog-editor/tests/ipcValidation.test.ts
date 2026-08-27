@@ -591,6 +591,48 @@ describe('assertApplyOpsRequest', () => {
       })).toThrow(/to\.coneAngle must be 360 or less/);
     });
 
+    it('accepts the booleans and the one integer, and refuses each as the other kind', () => {
+      // The two kinds increment 3 exists for, at the layer every other test
+      // mocks past. A `bool` that arrives as `0` and an `int` that arrives as
+      // `1.5` are the exact mistakes they are here to stop: a truthy number
+      // coerced into a byte nobody chose, and a fraction truncated on the cast
+      // to `int32_t` at the bottom of a batch that has already applied.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...sound, from: { obstruction: true }, to: { obstruction: false } }],
+      })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...fog, from: { overrideColor: false }, to: { overrideColor: true } }],
+      })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...music, from: { priority: 2 }, to: { priority: 7 } }],
+      })).not.toThrow();
+      // Zero is a priority and `false` is a value, so neither may be refused for
+      // being falsy — the mistake a `!value` check makes.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...music, from: { enabled: true, priority: 3 }, to: { enabled: false, priority: 0 } }],
+      })).not.toThrow();
+
+      for (const bad of [0, 1, 'true', null, [], 1.5]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...sound, from: { ambient3d: false }, to: { ambient3d: bad } }],
+        })).toThrow(/to\.ambient3d must be true or false/);
+      }
+      for (const bad of [1.5, -0.5, true, '3', NaN, Infinity]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...music, from: { priority: 1 }, to: { priority: bad } }],
+        })).toThrow(/to\.priority must be a whole number/);
+      }
+      // The bound is the catalogue's, and it is separate from the whole-number
+      // check: -1 is an integer and still refused.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...music, from: { priority: 1 }, to: { priority: -1 } }],
+      })).toThrow(/to\.priority must be 0 or greater/);
+      // Both sides are walked, so an inverse an undo would write is refused too.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...music, from: { priority: 1.5 }, to: { priority: 2 } }],
+      })).toThrow(/from\.priority must be a whole number/);
+    });
+
     it('accepts a negative music reverb, which is the whole reason it has no bound', () => {
       // ZenGin's reverb level is negative decibels. A `min: 0` copied from the
       // light's range would refuse every music zone in a retail world.

@@ -214,8 +214,25 @@ function assertClassPropValue(field: FieldDescriptor, side: string, value: unkno
     }
     return;
   }
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new Error(`Invalid op: ${where} must be a finite number`);
+  // A boolean is checked by type and by nothing else: there is no value between
+  // false and true for a bound to exclude, and `0` is refused rather than
+  // coerced — a truthy number reaching a `bool` member is a byte the caller
+  // never chose, and every field in this op is invisible in the viewport.
+  if (field.kind === 'bool') {
+    if (typeof value !== 'boolean') {
+      throw new Error(`Invalid op: ${where} must be true or false`);
+    }
+    return;
+  }
+  // The integer check stands in for the finite one rather than following it:
+  // `Number.isInteger` already refuses NaN and Infinity, and the two remaining
+  // refusals are different facts a caller needs told apart — -1 is a whole
+  // number out of range, 1.5 is in range and not one. An `int` field is an
+  // `int32_t` in the archive, so a fraction truncates on the cast and reports
+  // success, which is why `int` is its own kind and not a float with a rule.
+  const whole = field.kind === 'int';
+  if (typeof value !== 'number' || !(whole ? Number.isInteger(value) : Number.isFinite(value))) {
+    throw new Error(`Invalid op: ${where} must be a ${whole ? 'whole' : 'finite'} number`);
   }
   if (field.min !== undefined && value < field.min) {
     throw new Error(`Invalid op: ${where} must be ${field.min} or greater`);

@@ -193,7 +193,9 @@ export function getVobProps(
  * failure mode of accepting either.
  */
 export function setVobClassProp(
-  handle: WorldHandle, indexPath: string, props: Record<string, string | number | readonly number[]>,
+  handle: WorldHandle,
+  indexPath: string,
+  props: Record<string, string | number | boolean | readonly number[]>,
 ): void;
 /** A VOB to author. Only `position` is required; an unrecognised key is refused. */
 export interface NewVob {

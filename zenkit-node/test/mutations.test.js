@@ -1029,22 +1029,32 @@ test('setVobClassProp survives a save and reload', () => {
 // binding does not write, or writes into the wrong member, fails here and
 // nowhere else — every layer above this one mocks the binding out.
 
+// Every boolean below is the *opposite* of what `BuildVisualVobTree` gave the
+// fixture VOB, and `priority` is not its 2. A round trip that wrote nothing at
+// all would otherwise read back the value it was asked for, and a `bool` case
+// assigning the wrong member would be caught only by the sibling test.
 const CLASS_PROP_ROUND_TRIP = [
   ['1/3', 'zCVobSound', {
     soundName: 'OW_WOLF_ÄÖÜ', volume: 77.5, radius: 3125.25, coneAngle: 135.5,
+    initiallyPlaying: false, ambient3d: true, obstruction: false,
   }],
   ['1/4', 'zCVobSoundDaytime', {
     // The base sound fields *and* the derived three: the case is one
     // fallthrough onto the same VSound members, and a derived class writing
     // only its own three would pass every test that did not name a base field.
+    // The booleans are base members too, so they carry the same proof.
     soundName: 'OW_DAY', volume: 12.5, radius: 4096, coneAngle: 45,
+    initiallyPlaying: true, ambient3d: false, obstruction: true,
     startTime: 5.25, endTime: 21.75, soundName2: 'OW_NIGHT_ÄÖÜ',
   }],
   ['1/5', 'zCZoneVobFarPlane', { vobFarPlaneZ: 14000.5, innerRangePercentage: 0.125 }],
   ['1/6', 'zCZoneZFog', {
-    rangeCenter: 9000.5, innerRangePercentage: 0.375, color: [10, 20, 30, 240],
+    rangeCenter: 9000.5, innerRangePercentage: 0.375,
+    fadeOutSky: false, overrideColor: true, color: [10, 20, 30, 240],
   }],
-  ['1/7', 'oCZoneMusic', { reverb: -42.5, volume: 0.75 }],
+  ['1/7', 'oCZoneMusic', {
+    enabled: false, priority: 7, ellipsoid: true, reverb: -42.5, volume: 0.75, loop: false,
+  }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {
@@ -1127,12 +1137,59 @@ test('setVobClassProp refuses a zone field on the wrong zone, naming the class',
     () => zenkit.setVobClassProp(handle, '1/7', { color: [0, 0, 0, 255] }),
     /oCZoneMusic/,
   );
-  // And the fields these classes have that the catalogue deliberately excludes:
-  // the enums, the booleans, and oCZoneMusic's int32 priority.
-  for (const [at, bad] of [['1/3', { mode: 1 }], ['1/3', { obstruction: true }],
-    ['1/6', { fadeOutSky: true }], ['1/7', { priority: 3 }], ['1/7', { enabled: true }]]) {
+  // And the fields these classes have that the catalogue still deliberately
+  // excludes: the enums, and the two random delays the engine reads only under
+  // a `mode` this op cannot set.
+  for (const [at, bad] of [['1/3', { mode: 1 }], ['1/3', { volumeType: 1 }],
+    ['1/3', { randomDelay: 5 }], ['1/3', { randomDelayVar: 1 }]]) {
     assert.throws(() => zenkit.setVobClassProp(handle, at, bad), Error, at);
   }
+});
+
+test('setVobClassProp refuses a boolean that is not one, and an integer that is not whole', () => {
+  // The two refusals the new kinds exist for. A `bool` taking `0` or `'true'`
+  // would be a coercion the archive stores as a byte nobody chose; an `int`
+  // taking `1.5` would truncate on the cast to `int32_t` and report success,
+  // which is precisely why `priority` is not a float.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  const soundBefore = zenkit.getVobProps(handle, '1/3');
+  const musicBefore = zenkit.getVobProps(handle, '1/7');
+
+  for (const bad of [0, 1, 'true', null, [], {}]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '1/3', { obstruction: bad }), /obstruction/);
+    assert.throws(() => zenkit.setVobClassProp(handle, '1/6', { overrideColor: bad }),
+      /overrideColor/);
+  }
+  for (const bad of [1.5, -1, NaN, Infinity, true, '3', 2147483648]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '1/7', { priority: bad }), /priority/);
+  }
+
+  // Nothing was written by any of them, and the valid half of a mixed props
+  // object is refused with the invalid one.
+  assert.throws(
+    () => zenkit.setVobClassProp(handle, '1/7', { volume: 0.25, priority: 1.5 }),
+    /priority/,
+  );
+  assert.deepStrictEqual(zenkit.getVobProps(handle, '1/3'), soundBefore);
+  assert.deepStrictEqual(zenkit.getVobProps(handle, '1/7'), musicBefore);
+});
+
+test('setVobClassProp writes one boolean of a class without touching its siblings', () => {
+  // `false` is the value a written-vs-unwritten mistake hides behind: a case
+  // that assigned every boolean it knew about would set the other two to their
+  // defaults and nothing above C++ would see it.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  const before = zenkit.getVobProps(handle, '1/3');
+  assert.strictEqual(before.initiallyPlaying, true);
+  assert.strictEqual(before.obstruction, true);
+
+  zenkit.setVobClassProp(handle, '1/3', { obstruction: false });
+
+  const after = zenkit.getVobProps(handle, '1/3');
+  assert.strictEqual(after.obstruction, false);
+  assert.strictEqual(after.initiallyPlaying, before.initiallyPlaying);
+  assert.strictEqual(after.ambient3d, before.ambient3d);
+  assert.strictEqual(after.soundName, before.soundName);
 });
 
 test('setVobClassProp refuses an out-of-bounds sound or zone value, and writes nothing', () => {
