@@ -1733,7 +1733,9 @@ renumbering at all but by invertibility: an `oCMobInter` carries per-class
 properties, children, an AI and an event manager that no op describes, so undo
 cannot rebuild one. That needs a way to snapshot a subtree, and it is a
 different feature. *(Placing a VOB under a parent and the between-rows drop both
-landed on 2026-08-28 — below.)*
+landed on 2026-08-28 — below. **The invertibility objection was withdrawn on
+2026-08-27 — §15.** The op is unblocked; what it owes now is a history barrier,
+not an inverse.)*
 
 #### The reparent that never reached the binding, and the parent an insert can now take (2026-08-28)
 
@@ -1994,6 +1996,15 @@ list in TDD order.
   warnings. Closes with the **remainder of Gate 2**: worlds edited through the
   real UI re-run the Phase 0 engine checklist, and the same worlds are
   verified under OpenGothic for the cross-platform claim.
+- **Phase 1b-2 — class-aware editing (§14).** Authoring and editing VOBs *as
+  their class*: insertion of the classes a modder actually places, the per-class
+  property sets behind them, and visual assignment. Phase 1b edits a VOB
+  generically — transform, tree, the eight `zCVob` scalars — and a modder placing
+  a light or wiring a trigger touches none of it. Sized by the field sets, not
+  by the op count; scheduled before 1c because the overlay reads a world and
+  this is what makes the world worth reading. Carries the rest of §14 with it:
+  copy/paste, numeric transform entry, snapping, tree search and per-class
+  visibility.
 - **Phase 1c — Daedalus overlay.** NPC/item rendering from static spawns,
   time slider, occupancy/gap/overlap checks, cross-validation in the problems
   panel, go-to-definition both directions.
@@ -2040,3 +2051,101 @@ validates portal metadata; it never recompiles worlds.
 | 4 | Tree-sitter in-process or LSP? | In-process (already is); analysis layer in `zen-world` (§8) |
 | 5 | Project file format? | `*.gothicproject.json` + machine-local settings split (§9) |
 | 6 | Multi-user model? | Part-split as collaboration unit, git-based; no locking (§10) |
+
+---
+
+## 14. Spacer parity inventory
+
+What the original Spacer does for a modder that the World surface does not,
+assessed 2026-08-27 against the state of Phase 1b. Modding parity only — it says
+nothing about where the editor goes *past* Spacer (portal validation with live
+feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
+
+**Status** reads: *planned* — already accounted for elsewhere in this file;
+*unscheduled* — no entry anywhere before this section.
+
+### 14.1 VOB editing
+
+| # | Missing | Status | Note |
+|---|---|---|---|
+| 1.1 | **Delete an arbitrary retail VOB** | planned (§7) | `deleteVob` exists in the binding; only its undo was unsolved, and §15 withdrew that objection. |
+| 1.2 | **Copy / paste / duplicate**, incl. subtree | unscheduled → 1b-2 | The most-used Spacer verb after move. Same undo question as delete, same answer. A cross-world clipboard only if part-to-part copying is wanted. |
+| 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
+| 1.4 | **Class-specific property editing** | unscheduled → 1b-2 | The property grid shows eight `zCVob` scalars. Every class above carries its own field set — trigger targets, mover keyframes, item instance, light colour/range/dynamic, zone falloffs, sound radius/volume/mode. The largest single volume of work in this section, and what decides whether the editor is usable for quest scripting at all. The only prior trace of it is §4's sketch line `getVobProperties(h, vobId): VobProps`, which the shipped binding does not implement — and which is a *read* anyway. |
+| 1.5 | **Numeric transform entry** | unscheduled → 1b-2 | Position and rotation render as read-only monospace text. Spacer takes typed coordinates and angles. |
+| 1.6 | **Snapping** | unscheduled → 1b-2 | Drop-to-ground, align to surface normal, grid step, angle step. The gizmo is free-form only. |
+| 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
+| 1.8 | **The rest of `zCVob`** | unscheduled → 1b-2 | Preset name, `visualCamAlign`, bias, `dynamicShadows`, `sleepMode`, decal parameters. |
+
+**Not a gap: scale.** `zCVob` has no scale field, so the two-mode gizmo is
+correct and a third mode would author a representation ZenGin does not have.
+
+### 14.2 Waynet
+
+Only `MoveWaypoint` exists. Parity wants add, delete, rename, connect and
+disconnect edges, freepoint authoring (the `FP_` convention), and waypoint
+direction — which the binding deliberately leaves alone.
+
+§7's op list already ends "… waynet edge ops", so this is *planned*. What it
+does not carry is the actual work: **addressing**. `MoveWaypoint` addresses a
+waypoint by its index into the list `getWaynet` emits, safe only because a move
+inserts, deletes and reorders nothing. Every op above breaks that, so the waynet
+needs a stable identity scheme first — and names cannot be it, since nothing in
+the format promises they are unique.
+
+### 14.3 World-level
+
+| # | Missing | Status | Note |
+|---|---|---|---|
+| 3.1 | **ASCII / BINARY ZEN save** | measured, deferred (§5) | Not an oversight. T8 found all 20 ASCII worlds abort the process when their own re-save is loaded back, and every raw entry ZenKit's ASCII writer emits is corrupt. Closing it is an upstream patch series plus a second engine pass. Only 4 of 28 retail `.zen` files are BinSafe, and Blender/KrxImpExp exports are not among them. |
+| 3.2 | **Static light recompute** | warning planned (§11) | Spacer re-bakes vertex lighting; we do not, so moving geometry or a light leaves stale lightmaps. Phase 1b promises the warning. The bake stays out. |
+| 3.3 | **Merge/import another ZEN, export a selection** | planned (Phase 3) | Spacer's part workflow depends on it. |
+| 3.4 | **Portal / sector work** | planned (Phase 2) | Face selection, material assignment, leak detection. |
+| 3.5 | **World properties** | unscheduled | `oCWorld` settings, start position, sky and time control. Nothing exposed. |
+| 3.6 | **BSP / world-mesh compile** | out of scope (§11) | The Blender pipeline covers it. Restate it whenever "parity" comes up — the one thing Spacer does that we never will. |
+
+### 14.4 Editor UX
+
+- VOB search and find by name or class — the scene tree has no filter at all.
+  *Unscheduled.*
+- Per-class visibility filters, hide/show — Spacer's VOB-type toggles.
+  *Unscheduled.*
+- Batch operations. Spacer has zSlang; our answer is
+  [`mcp-server.md`](mcp-server.md) plus scripted ops. *Planned elsewhere.*
+- Engine preview ("play from here") — parked as later/kept-open (§11).
+
+Already landed and therefore absent above: focus-on-selection and frame-world
+(`.` and `Home`, the 2026-08-27 navigation entry), and batch property edit
+across a multi-selection (Phase 1b).
+
+---
+
+## 15. The undo bar (2026-08-27)
+
+**The original Spacer has no undo.** Not for delete, not for anything — the
+community workflow is to save often and reload after a mistake.
+
+**Decision: undo for delete and paste is a nice-to-have, and gates neither op.**
+If Spacer cannot do it, matching Spacer does not require it. An op that cannot
+describe its own inverse may ship anyway, with the history recording it as a
+**barrier that clears the undo stack** rather than as something invertible.
+
+This withdraws the objection §7 raised against deleting an arbitrary retail VOB.
+The op was never blocked by renumbering, and it is no longer blocked by
+invertibility either.
+
+What does *not* change: the invertible-op model stays the rule for every op that
+can hold one. It is what makes history, multi-select batches and dirty-world
+save coherent, and it is nearly free for `MoveVob`, `RotateVob`, `SetVobProp`,
+`AddVob` and `ReparentVob`. What changes is that `invertOp` is no longer the
+gate a *new* op has to pass.
+
+The requirement that replaces it is narrower and non-negotiable: **the user has
+to know the undo stack was cleared before the op lands.** Not to match Spacer —
+Spacer simply has no stack — but because ours works everywhere else, so a delete
+that quietly made the previous twenty edits unundoable is the surprise. A
+confirm is enough; the fallback is the user's own save file either way.
+
+Serializing the subtree into the op, or snapshotting the world around it, stay
+open as later improvements. Neither is a prerequisite.
+
