@@ -1316,6 +1316,46 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       break;
     }
+    case zenkit::VirtualObjectType::oCMobInter:
+    case zenkit::VirtualObjectType::oCMobLadder:
+    case zenkit::VirtualObjectType::oCMobSwitch:
+    case zenkit::VirtualObjectType::oCMobWheel: {
+      RequireClassKeys(env, props,
+                       {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
+                        "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
+                        "conditionFunction", "onStateChangeFunction", "rewind"},
+                       class_name);
+      auto focus_name = OptionalCp1252String(env, props, "focusName");
+      auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
+      auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
+      auto const movable = OptionalBool(env, props, "movable");
+      auto const takable = OptionalBool(env, props, "takable");
+      auto const focus_override = OptionalBool(env, props, "focusOverride");
+      auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
+      auto owner = OptionalCp1252String(env, props, "owner");
+      auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
+      auto const destroyed = OptionalBool(env, props, "destroyed");
+      auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
+      auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
+      auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
+      auto const rewind = OptionalBool(env, props, "rewind");
+      auto& mob = static_cast<zenkit::VInteractiveObject&>(*vob);
+      if (focus_name) mob.name = std::move(*focus_name);
+      if (hp.has_value()) mob.hp = *hp;
+      if (damage.has_value()) mob.damage = *damage;
+      if (movable.has_value()) mob.movable = *movable;
+      if (takable.has_value()) mob.takable = *takable;
+      if (focus_override.has_value()) mob.focus_override = *focus_override;
+      if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
+      if (owner) mob.owner = std::move(*owner);
+      if (owner_guild) mob.owner_guild = std::move(*owner_guild);
+      if (destroyed.has_value()) mob.destroyed = *destroyed;
+      if (state_count.has_value()) mob.state_count = *state_count;
+      if (condition_function) mob.condition_function = std::move(*condition_function);
+      if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
+      if (rewind.has_value()) mob.rewind = *rewind;
+      break;
+    }
     default:
       throw Napi::Error::New(env,
                              "no class properties are known for a " + std::string {class_name});

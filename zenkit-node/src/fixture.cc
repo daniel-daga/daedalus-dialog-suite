@@ -738,8 +738,28 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   mob->owner_guild = "GIL_BAU";
   mob->destroyed = false;
 
+  auto mob_inter = std::make_shared<VInteractiveObject>();
+  mob_inter->type = VirtualObjectType::oCMobInter;
+  mob_inter->vob_name = "VOB_INDEX_MOB_INTER";
+  mob_inter->position = Vec3 {430.0f, 4.0f, 440.0f};
+  mob_inter->bbox = AxisAlignedBoundingBox {Vec3 {429.0f, 3.0f, 439.0f}, Vec3 {431.0f, 5.0f, 441.0f}};
+  mob_inter->name = "FOCUS_LEVER";
+  mob_inter->hp = 10;
+  mob_inter->damage = 0;
+  mob_inter->movable = false;
+  mob_inter->takable = false;
+  mob_inter->focus_override = false;
+  mob_inter->visual_destroyed = "LEVER_DESTROYED.MMS";
+  mob_inter->owner = "PC_HERO";
+  mob_inter->owner_guild = "GIL_BAU";
+  mob_inter->destroyed = false;
+  mob_inter->state_count = 2;
+  mob_inter->condition_function = "LEVER_CONDITION";
+  mob_inter->on_state_change_function = "LEVER_ON_STATE_CHANGE";
+  mob_inter->rewind = true;
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
-                     trigger_script, trigger, change_level, mover, mob};
+                     trigger_script, trigger, change_level, mover, mob, mob_inter};
   return root;
 }
 

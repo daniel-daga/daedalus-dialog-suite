@@ -1088,6 +1088,12 @@ const CLASS_PROP_ROUND_TRIP = [
     focusOverride: true, visualDestroyed: 'OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true,
   }],
+  ['1/16', 'oCMobInter', {
+    focusName: 'FOCUS_OTHER_LEVER_ÄÖÜ', hp: 50, damage: 1, movable: true, takable: false,
+    focusOverride: true, visualDestroyed: 'LEVER_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 4, conditionFunction: 'OTHER_CONDITION',
+    onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: false,
+  }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {

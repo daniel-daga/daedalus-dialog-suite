@@ -2758,13 +2758,23 @@ every `oCMob*` class inherits, and a class in its own right for a plain,
 non-interactive movable object. `soundMaterial` is the one enum on the class and
 stays out with the rest of the catalogue's enums; nothing else on it is a list
 or save-game-only, so nothing else was held out. Appended to
-`BuildVisualVobTree` at path `1/15`. `oCMobInter` and its subclasses
-(`oCMobFire`, `oCMobContainer`, `oCMobDoor`, and the three that add nothing of
-their own — `oCMobLadder`, `oCMobSwitch`, `oCMobWheel`) inherit these nine once
-their own case is added; `oCMobInter`'s own `target` stays out with the rest of
-the family's cross-reference strings, and its `item` (a script item-instance
-name) is a decision point for whoever lands it — the editor's `oCItem.instance`
-index check does not currently extend to it.
+`BuildVisualVobTree` at path `1/15`.
+
+`oCMobInter` landed 2026-08-28, and with it the three subclasses that add
+nothing of their own — `oCMobLadder`, `oCMobSwitch`, `oCMobWheel` (each an
+empty `struct : VInteractiveObject` in `MovableObject.hh`, so they share
+`oCMobInter`'s exact field set and its C++ case, one `case` label falling
+through to the next). The base nine plus `oCMobInter`'s own four eligible
+fields — `stateCount`, `conditionFunction`, `onStateChangeFunction`, `rewind`.
+`target` stays out with the rest of the family's cross-reference strings; the
+`item` decision flagged above was resolved the same way — held out, for the
+same reason: the editor's `oCItem.instance` index check does not extend to it,
+and a class-property write is not the layer to grow that check in. Appended to
+`BuildVisualVobTree` at path `1/16` (one fixture VOB of type `oCMobInter`
+stands in for all four — the C++ case and the field set are identical for the
+other three, so a second fixture would round-trip the same code path).
+`oCMobFire`, `oCMobContainer` and `oCMobDoor` — each with fields of its own
+(`VFire`/`VContainer`/`VDoor`) — are what is left of `oCMob*`.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode`/`speedMode` and their kin, where

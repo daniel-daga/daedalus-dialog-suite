@@ -308,6 +308,20 @@ const OC_MOB_FIELDS = [
   { key: 'destroyed', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The base nine plus the four `VInteractiveObject` adds. `target` stays out
+ *  with the rest of the family's cross-reference strings; `item` (a script
+ *  item-instance name) is a decision point of its own — the editor's
+ *  `oCItem.instance` index check does not currently extend to it. Nothing else
+ *  is a list or save-game-only. `oCMobLadder`, `oCMobSwitch` and `oCMobWheel`
+ *  add nothing of their own beyond `oCMobInter`, so they share this array. */
+const OC_MOB_INTER_FIELDS = [
+  ...OC_MOB_FIELDS,
+  { key: 'stateCount', kind: 'int' },
+  { key: 'conditionFunction', kind: 'string' },
+  { key: 'onStateChangeFunction', kind: 'string' },
+  { key: 'rewind', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -331,10 +345,14 @@ export const CLASS_FIELDS = {
   oCTriggerChangeLevel: OC_TRIGGER_CHANGE_LEVEL_FIELDS,
   zCMover: ZC_MOVER_FIELDS,
   oCMOB: OC_MOB_FIELDS,
+  oCMobInter: OC_MOB_INTER_FIELDS,
+  oCMobLadder: OC_MOB_INTER_FIELDS,
+  oCMobSwitch: OC_MOB_INTER_FIELDS,
+  oCMobWheel: OC_MOB_INTER_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has fourteen, which is the point of asking through `fieldOf`. The
+ *  37 and this has eighteen, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;

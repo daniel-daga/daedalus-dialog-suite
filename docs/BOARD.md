@@ -119,10 +119,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **`oCMob*` — the base landed, the subclasses are what is left** — `oCMOB`'s
-  own nine fields landed; `oCMobInter` and its subclasses
-  (`oCMobFire`/`Container`/`Door`/`Ladder`/`Switch`/`Wheel`) still need their
-  own case. Unowned. §16.3
+- **`oCMob*` — three classes left, each with fields of its own** —
+  `oCMobFire`/`Container`/`Door` still need their own case (`VFire`/
+  `VContainer`/`VDoor`); the plain base and the four `target`/`item`-only
+  subclasses landed 2026-08-28. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -161,9 +161,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-*(emptied 2026-08-28, twice — most recently after `oCMOB` landed. The forward
-fact — `oCMobInter` and the leaf subclasses are what is left — is on the Next
-card above; `git log` is the permanent record of what landed.)*
+- **`oCMobInter`/`Ladder`/`Switch`/`Wheel` join the class-property catalogue**
+  — the base nine plus `stateCount`/`conditionFunction`/`onStateChangeFunction`/
+  `rewind`; `target` and `item` stay out. `oCMobFire`/`Container`/`Door` are
+  what is left, moved to Next. §16.3
 
 Verified this session: `zenkit-node` (rebuild + full suite + lint), `zen-world`
 (test/lint/typecheck/build), editor (build:main/typecheck:renderer/Jest/lint)

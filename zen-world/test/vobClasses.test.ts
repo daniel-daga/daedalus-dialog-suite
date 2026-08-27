@@ -29,7 +29,8 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCMOB', 'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCMover',
+      'oCItem', 'oCMOB', 'oCMobInter', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
+      'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCMover',
       'zCPFXController', 'zCTrigger', 'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight',
       'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
     ]);
@@ -174,6 +175,23 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('oCMOB', 'movable')).toEqual({ key: 'movable', kind: 'bool' });
     expect(fieldOf('oCMOB', 'owner')).toEqual({ key: 'owner', kind: 'string' });
     expect(fieldOf('oCMOB', 'soundMaterial')).toBeNull();
+    // `oCMobInter` — the base nine plus its own four; `target` (a cross-
+    // reference, held out with the rest of the family's target strings) and
+    // `item` (a script item-instance name, a decision point of its own) stay
+    // out. `oCMobLadder`/`Switch`/`Wheel` add nothing beyond `oCMobInter`, so
+    // they share the same key set.
+    const OC_MOB_INTER_KEYS = [
+      'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
+      'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
+      'stateCount', 'conditionFunction', 'onStateChangeFunction', 'rewind',
+    ];
+    for (const className of ['oCMobInter', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel']) {
+      expect(classPropKeys(className)).toEqual(OC_MOB_INTER_KEYS);
+    }
+    expect(fieldOf('oCMobInter', 'stateCount')).toEqual({ key: 'stateCount', kind: 'int' });
+    expect(fieldOf('oCMobInter', 'rewind')).toEqual({ key: 'rewind', kind: 'bool' });
+    expect(fieldOf('oCMobInter', 'target')).toBeNull();
+    expect(fieldOf('oCMobInter', 'item')).toBeNull();
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {
