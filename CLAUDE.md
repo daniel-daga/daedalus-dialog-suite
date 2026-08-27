@@ -270,8 +270,9 @@ Import direction is one-way: UI → domain.
 | Workflow | Jobs |
 |---|---|
 | `all-tests.yml` | `zen-world-tests` (jest + typecheck + lint), `editor-tests` (typecheck main + renderer, renderer build warning-guard, Jest, lint), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
-| `build-windows.yml` | Windows Electron build + installer; `build` job needs both the full `all-tests.yml` matrix (via `workflow_call`, job `tests`) and `e2e-electron-windows`; guarded to `refs/heads/master`; publishes serialized via `concurrency` group; stale re-runs rejected by comparing `github.sha` to live master head |
-| `deploy-pages.yml` | GitHub Pages deployment |
+| `build-windows.yml` | **`workflow_dispatch` only — a push to master publishes nothing.** Windows Electron build + installer; `build` job needs both the full `all-tests.yml` matrix (via `workflow_call`, job `tests`) and `e2e-electron-windows`; guarded to `refs/heads/master`, so a non-master dispatch skips the build rather than releasing; publishes serialized via `concurrency` group; stale re-runs rejected by comparing `github.sha` to live master head |
+| `zenkit-node.yml` | The native addon: builds ZenKit + the binding and runs its suite, windows-2022 only. **Not part of `all-tests.yml`, so it does not gate a release**, and path-filtered to `zenkit-node/**` on push/PR to master — a change in `zen-world/` or the editor's `zenkit.worker.ts` that breaks the binding contract never runs it. Has `workflow_dispatch` |
+| `deploy-pages.yml` | GitHub Pages deployment; path-filtered to `gh-pages/index.html` |
 
 Notes:
 - `all-tests.yml` triggers include `workflow_call` so it can gate releases

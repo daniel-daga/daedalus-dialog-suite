@@ -53,8 +53,13 @@ was true for so long nobody re-reads it.
   committed: it is the applied patch series. Stage with
   `git add -A -- . ':!zenkit-node/vendor/ZenKit'`, or name paths explicitly.
   Anything else showing as modified is unfinished work.
-- 52 commits ahead of `master`, deliberately unmerged: merging before an engine
-  verdict would put an unverified world editor on master.
+- **Merged to `master` 2026-08-28.** The "deliberately unmerged until an engine
+  verdict" rule is retired — Gate 2 passed (Done) and the merge was a clean
+  fast-forward, so backing it out is a `git reset --hard` to the merge's first
+  parent. Merging is not releasing: `build-windows.yml` is `workflow_dispatch:`
+  and nothing else, so a push to master builds no installer, cuts no release and
+  touches no update feed. Anything about shipping is the dispatch's decision,
+  not this one — and the two gaps below have to close before that dispatch.
 - **The addon was rebuilt this session**, so every other machine and CI must
   rebuild: `binding.cc` and `normalize.cc`/`.hh` gained `getVobProps` and
   `setVobClassProp`. A stale `.node` is worse than useless here — the editor's
@@ -80,6 +85,44 @@ was true for so long nobody re-reads it.
 
 ## Next
 
+- **A world request that times out leaks the worker, and every retry feeds it.**
+  Found in the merge-readiness pass, 2026-08-28, and the one code defect that
+  argued against merging. `WorldService.request` (`:314-318`) rejects at 120 s
+  and never calls `terminate()`; `openWorld`'s `if (this.worker === null)` guard
+  (`:83`) then posts the retry to the still-spinning thread, so the surface never
+  recovers. It pairs with the malformed-BinSafe hang below — that is the bug that
+  produces the timeout in the first place — and the two together mean one bad
+  `.zen` can take the process down with unsaved *dialog* work in it. Terminate
+  and null the worker on `world-timeout`.
+- **Two gaps that block the next `build-windows` dispatch, not the merge.**
+  Recorded 2026-08-28 so the dispatch is not the place they are discovered:
+  - **A dispatched build would ship a World button with no addon behind it.**
+    `zenkit-node/scripts/install.js:22-25` skips the source build whenever `CI`
+    is set unless `ZENKIT_NODE_FORCE_BUILD=1`, which only `zenkit-node.yml:72`
+    sets; `package.json` has `npmRebuild: false` and no `asarUnpack` for
+    `*.node`. Needs the addon built or prebuilt in the release job, the
+    `asarUnpack` entry, and an asar assertion for `zenkit_node.node` — the
+    existing verifier only checks `safe-buffer`, and the startup smoke never
+    opens a world.
+  - **The addon is not in the release gate.** `build-windows.yml` gates on
+    `all-tests.yml`, which has no zenkit-node job. `zenkit-node.yml` is its own
+    workflow, path-filtered to `zenkit-node/**` and triggered on push/PR to
+    master — so it had never run on any of the 57 branch commits, including
+    `binding.gyp`'s `_HAS_EXCEPTIONS` fix, which is exactly the MSVC-define
+    class whose behaviour is toolchain-dependent. It has `workflow_dispatch`.
+    Also: `zen-world/dist` is built by an undeclared `postinstall` hook
+    (`zen-world/package.json:24`) and `zen-world` is not in
+    `pnpm-workspace.yaml`'s `onlyBuiltDependencies`, so a single
+    `--ignore-scripts` takes out four jobs at once.
+- **Three shipped ops have no engine verdict.** `DeleteVob`, `MoveWaypoint` and
+  `SetVobClassProp` all landed after candidate `03` was built, so Gate 2 covers
+  the ops that existed on 2026-08-27 and not these — the acceptance record says
+  so itself at `engine-acceptance-2026-08-25.md:851-854`. Say "Gate 2 passed for
+  the ops it tested", not "Gate 2 passed". A removed subtree is still the edit
+  ZenGin has the most room to disagree about, and `SetVobClassProp` writes
+  `oCItem.instance` as free text against a documented engine-crash path
+  (`level-editor.md` §14.1) — validating it against the parser's item index is
+  the obvious follow-up and is not scheduled.
 - **Phase 1b-2, class-aware editing — the rest of it.** Increment 1 landed (see
   Done), so the path exists and each further class is one C++ case plus one
   `CLASS_FIELDS` entry plus its tests. What is left, in the order the plan §7
