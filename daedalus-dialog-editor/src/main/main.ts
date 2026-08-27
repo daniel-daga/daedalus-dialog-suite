@@ -180,7 +180,9 @@ app.on('window-all-closed', () => {
   }
 });
 
-function setupIpcHandlers() {
+// Exported for the main-process IPC tests, which register the handlers against
+// a stubbed `electron` rather than a running app.
+export function setupIpcHandlers() {
   // Parser handler (main process has access to native modules)
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: string) => {
     try {
@@ -580,10 +582,23 @@ function setupIpcHandlers() {
   // cannot reach outside what the user has actually opened.
   ipcMain.handle('world:openDialog', async () => {
     try {
+      // Start where the worlds are. `.zen` files only exist loose in an
+      // extracted install's `_work/Data/Worlds` (the same `_work/Data` tree
+      // gothicAssetSources falls back to); a retail install keeps them inside
+      // Worlds.vdf, so the install root is the best a picker can offer there.
+      // With no install configured we pass nothing and Electron decides.
+      const installPath = await settingsService.getGothicInstallPath();
+      let defaultPath: string | undefined;
+      if (installPath) {
+        const worldsDir = path.join(installPath, '_work', 'Data', 'Worlds');
+        defaultPath = fs.existsSync(worldsDir) ? worldsDir : installPath;
+      }
+
       const result = await dialog.showOpenDialog({
         properties: ['openFile'],
         title: 'Open a ZenGin world',
         filters: [{ name: 'ZenGin world', extensions: ['zen'] }],
+        ...(defaultPath ? { defaultPath } : {}),
       });
       if (result.canceled || result.filePaths.length === 0) return null;
 
