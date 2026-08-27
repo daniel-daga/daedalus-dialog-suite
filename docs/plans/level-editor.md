@@ -2753,6 +2753,19 @@ keyframes (most of them), a `speed` write is silently dropped on save, the same
 "legal write the engine ignores" shape as `randomDelay` below. Appended to
 `BuildVisualVobTree` at path `1/14`.
 
+`oCMOB` landed 2026-08-28: `VMovableObject`'s own nine plain scalars — the base
+every `oCMob*` class inherits, and a class in its own right for a plain,
+non-interactive movable object. `soundMaterial` is the one enum on the class and
+stays out with the rest of the catalogue's enums; nothing else on it is a list
+or save-game-only, so nothing else was held out. Appended to
+`BuildVisualVobTree` at path `1/15`. `oCMobInter` and its subclasses
+(`oCMobFire`, `oCMobContainer`, `oCMobDoor`, and the three that add nothing of
+their own — `oCMobLadder`, `oCMobSwitch`, `oCMobWheel`) inherit these nine once
+their own case is added; `oCMobInter`'s own `target` stays out with the rest of
+the family's cross-reference strings, and its `item` (a script item-instance
+name) is a decision point for whoever lands it — the editor's `oCItem.instance`
+index check does not currently extend to it.
+
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode`/`speedMode` and their kin, where
 retail carries out-of-range values a dropdown destroys. Enums are also most of

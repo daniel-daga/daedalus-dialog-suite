@@ -119,9 +119,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **The class that is left — `oCMob*`** — `zCMover`'s own fields landed;
-  `zCTriggerUntouch` and `zCTriggerList` turned out to have no eligible
-  field at all. Unowned. §16.3
+- **`oCMob*` — the base landed, the subclasses are what is left** — `oCMOB`'s
+  own nine fields landed; `oCMobInter` and its subclasses
+  (`oCMobFire`/`Container`/`Door`/`Ladder`/`Switch`/`Wheel`) still need their
+  own case. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -160,20 +161,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-*(emptied 2026-08-28 — the prior 6 cards were flushed after checking each one
-against `git log` and the docs. `git log` is the permanent record.)*
-
-- **`zCTriggerWorldStart`, `oCTriggerScript`, `zCTrigger`'s own base fields and
-  `oCTriggerChangeLevel` all join the class-property catalogue** — round-tripped
-  through `setVobClassProp`/save/reload. Found and fixed a genuine ZenKit
-  writer/reader asymmetry along the way (`VTrigger::save` echoed the stale
-  packed `flags`/`filterFlags` bytes, dropping any of the eight `zCTrigger`
-  bools on save) — patched as `0028`. §16.3
-- **`zCMover`'s own fields join the class-property catalogue** — thirteen of
-  its fourteen non-enum, non-list, non-save-game fields beyond the inherited
-  `VTrigger` twelve, round-tripped at `1/14`. `speed` stays out: ZenKit only
-  writes it when `keyframes` is non-empty, which this catalogue cannot
-  author. §16.3
+*(emptied 2026-08-28, twice — most recently after `oCMOB` landed. The forward
+fact — `oCMobInter` and the leaf subclasses are what is left — is on the Next
+card above; `git log` is the permanent record of what landed.)*
 
 Verified this session: `zenkit-node` (rebuild + full suite + lint), `zen-world`
 (test/lint/typecheck/build), editor (build:main/typecheck:renderer/Jest/lint)

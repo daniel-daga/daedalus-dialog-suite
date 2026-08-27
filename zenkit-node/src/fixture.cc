@@ -722,8 +722,24 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   mover->sfx_unlock = "SFX_UNLOCK";
   mover->sfx_use_locked = "SFX_USE_LOCKED";
 
+  auto mob = std::make_shared<VMovableObject>();
+  mob->type = VirtualObjectType::oCMOB;
+  mob->vob_name = "VOB_INDEX_MOB";
+  mob->position = Vec3 {410.0f, 4.0f, 420.0f};
+  mob->bbox = AxisAlignedBoundingBox {Vec3 {409.0f, 3.0f, 419.0f}, Vec3 {411.0f, 5.0f, 421.0f}};
+  mob->name = "FOCUS_CRATE";
+  mob->hp = 25;
+  mob->damage = 3;
+  mob->movable = true;
+  mob->takable = false;
+  mob->focus_override = false;
+  mob->visual_destroyed = "CRATE_DESTROYED.MMS";
+  mob->owner = "PC_HERO";
+  mob->owner_guild = "GIL_BAU";
+  mob->destroyed = false;
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
-                     trigger_script, trigger, change_level, mover};
+                     trigger_script, trigger, change_level, mover, mob};
   return root;
 }
 

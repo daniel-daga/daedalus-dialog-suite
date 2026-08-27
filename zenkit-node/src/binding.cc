@@ -7,6 +7,7 @@
 #include <zenkit/World.hh>
 #include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/Misc.hh>
+#include <zenkit/vobs/MovableObject.hh>
 #include <zenkit/vobs/Sound.hh>
 #include <zenkit/vobs/Trigger.hh>
 #include <zenkit/vobs/VirtualObject.hh>
@@ -1285,6 +1286,34 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (sfx_lock) mover.sfx_lock = std::move(*sfx_lock);
       if (sfx_unlock) mover.sfx_unlock = std::move(*sfx_unlock);
       if (sfx_use_locked) mover.sfx_use_locked = std::move(*sfx_use_locked);
+      break;
+    }
+    case zenkit::VirtualObjectType::oCMOB: {
+      RequireClassKeys(env, props,
+                       {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
+                        "visualDestroyed", "owner", "ownerGuild", "destroyed"},
+                       class_name);
+      auto focus_name = OptionalCp1252String(env, props, "focusName");
+      auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
+      auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
+      auto const movable = OptionalBool(env, props, "movable");
+      auto const takable = OptionalBool(env, props, "takable");
+      auto const focus_override = OptionalBool(env, props, "focusOverride");
+      auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
+      auto owner = OptionalCp1252String(env, props, "owner");
+      auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
+      auto const destroyed = OptionalBool(env, props, "destroyed");
+      auto& mob = static_cast<zenkit::VMovableObject&>(*vob);
+      if (focus_name) mob.name = std::move(*focus_name);
+      if (hp.has_value()) mob.hp = *hp;
+      if (damage.has_value()) mob.damage = *damage;
+      if (movable.has_value()) mob.movable = *movable;
+      if (takable.has_value()) mob.takable = *takable;
+      if (focus_override.has_value()) mob.focus_override = *focus_override;
+      if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
+      if (owner) mob.owner = std::move(*owner);
+      if (owner_guild) mob.owner_guild = std::move(*owner_guild);
+      if (destroyed.has_value()) mob.destroyed = *destroyed;
       break;
     }
     default:

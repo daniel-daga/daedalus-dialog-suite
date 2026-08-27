@@ -1083,6 +1083,11 @@ const CLASS_PROP_ROUND_TRIP = [
     sfxLock: 'SFX_OTHER_LOCK', sfxUnlock: 'SFX_OTHER_UNLOCK',
     sfxUseLocked: 'SFX_OTHER_USE_LOCKED',
   }],
+  ['1/15', 'oCMOB', {
+    focusName: 'FOCUS_OTHER_ÄÖÜ', hp: 99, damage: 12, movable: false, takable: true,
+    focusOverride: true, visualDestroyed: 'OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    ownerGuild: 'GIL_NOV', destroyed: true,
+  }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {

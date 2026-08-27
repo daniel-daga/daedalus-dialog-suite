@@ -29,7 +29,7 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCMover',
+      'oCItem', 'oCMOB', 'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCMover',
       'zCPFXController', 'zCTrigger', 'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight',
       'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
     ]);
@@ -164,6 +164,16 @@ describe('the per-class field catalogue', () => {
     // many movers that animate from their visual instead.
     expect(fieldOf('zCMover', 'speed')).toBeNull();
     expect(fieldOf('zCMover', 'sfxLock')).toEqual({ key: 'sfxLock', kind: 'string' });
+    // `oCMOB` — the base every `oCMob*` class inherits, and its own nine
+    // plain scalars (`soundMaterial` is an enum and stays out).
+    expect(classPropKeys('oCMOB')).toEqual([
+      'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
+      'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
+    ]);
+    expect(fieldOf('oCMOB', 'hp')).toEqual({ key: 'hp', kind: 'int' });
+    expect(fieldOf('oCMOB', 'movable')).toEqual({ key: 'movable', kind: 'bool' });
+    expect(fieldOf('oCMOB', 'owner')).toEqual({ key: 'owner', kind: 'string' });
+    expect(fieldOf('oCMOB', 'soundMaterial')).toBeNull();
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {

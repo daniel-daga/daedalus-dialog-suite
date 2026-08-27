@@ -290,6 +290,24 @@ const ZC_MOVER_FIELDS = [
   { key: 'sfxUseLocked', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The nine plain scalars `VMovableObject` declares — the base every
+ *  `oCMob*` class inherits, `oCMOB` itself included (a plain, non-interactive
+ *  movable object has no subclass of its own). `soundMaterial` is an enum and
+ *  stays out with the rest of the catalogue's enums; nothing here is a list or
+ *  save-game-only, so that is the whole of what is held out. */
+const OC_MOB_FIELDS = [
+  { key: 'focusName', kind: 'string' },
+  { key: 'hp', kind: 'int' },
+  { key: 'damage', kind: 'int' },
+  { key: 'movable', kind: 'bool' },
+  { key: 'takable', kind: 'bool' },
+  { key: 'focusOverride', kind: 'bool' },
+  { key: 'visualDestroyed', kind: 'string' },
+  { key: 'owner', kind: 'string' },
+  { key: 'ownerGuild', kind: 'string' },
+  { key: 'destroyed', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -312,10 +330,11 @@ export const CLASS_FIELDS = {
   oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
   oCTriggerChangeLevel: OC_TRIGGER_CHANGE_LEVEL_FIELDS,
   zCMover: ZC_MOVER_FIELDS,
+  oCMOB: OC_MOB_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has thirteen, which is the point of asking through `fieldOf`. The
+ *  37 and this has fourteen, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;
