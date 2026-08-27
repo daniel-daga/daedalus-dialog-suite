@@ -107,9 +107,11 @@ was true for so long nobody re-reads it.
   - **The addon is not in the release gate.** `build-windows.yml` gates on
     `all-tests.yml`, which has no zenkit-node job. `zenkit-node.yml` is its own
     workflow, path-filtered to `zenkit-node/**` and triggered on push/PR to
-    master — so it had never run on any of the 57 branch commits, including
-    `binding.gyp`'s `_HAS_EXCEPTIONS` fix, which is exactly the MSVC-define
-    class whose behaviour is toolchain-dependent. It has `workflow_dispatch`.
+    master — so it ran on the phase-1a PR and then on nothing until the merge
+    push, which is the first CI this branch's later commits ever saw, including
+    `binding.gyp`'s `_HAS_EXCEPTIONS` fix — exactly the MSVC-define class whose
+    behaviour is toolchain-dependent. It has `workflow_dispatch`, which is the
+    cheap way to get that evidence before a push rather than from one.
     Also: `zen-world/dist` is built by an undeclared `postinstall` hook
     (`zen-world/package.json:24`) and `zen-world` is not in
     `pnpm-workspace.yaml`'s `onlyBuiltDependencies`, so a single
