@@ -172,6 +172,13 @@ const OC_ZONE_MUSIC_FIELDS = [
   { key: 'loop', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** Whether to start the animation when the level loads — the one field
+ *  `zCVobAnimate` has. Started/stopped at runtime via `OnTrigger`/`OnUntrigger`,
+ *  which are events, not state this catalogue holds. */
+const ZC_VOB_ANIMATE_FIELDS = [
+  { key: 'startOn', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -187,6 +194,7 @@ export const CLASS_FIELDS = {
   zCZoneVobFarPlane: ZC_ZONE_VOB_FAR_PLANE_FIELDS,
   zCZoneZFog: ZC_ZONE_Z_FOG_FIELDS,
   oCZoneMusic: OC_ZONE_MUSIC_FIELDS,
+  zCVobAnimate: ZC_VOB_ANIMATE_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has

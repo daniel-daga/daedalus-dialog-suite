@@ -2692,8 +2692,12 @@ passes.
 
 Seven classes are editable and the catalogue has five kinds, so the kinds are no
 longer the constraint and the class list is again. Left: the trigger family,
-`oCMob*`, `zCPFXController`, `zCVobAnimate` — each one C++ case plus one
-`CLASS_FIELDS` entry plus its tests.
+`oCMob*`, `zCPFXController` — each one C++ case plus one `CLASS_FIELDS` entry
+plus its tests.
+
+`zCVobAnimate` landed 2026-08-28: its one field, `startOn`, needed no enum and
+no decision — `s_is_running` is save-game only, exactly as the header marks
+it, so the class had nothing else to hold out.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries

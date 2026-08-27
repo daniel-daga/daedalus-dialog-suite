@@ -1077,6 +1077,16 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (loop.has_value()) music.loop = *loop;
       break;
     }
+    // The one field this class has: whether the animation starts running when
+    // the level loads. `s_is_running` is save-game only, exactly as the header
+    // marks it, so this op has nothing else on the class to write.
+    case zenkit::VirtualObjectType::zCVobAnimate: {
+      RequireClassKeys(env, props, {"startOn"}, class_name);
+      auto const start_on = OptionalBool(env, props, "startOn");
+      auto& animate = static_cast<zenkit::VAnimate&>(*vob);
+      if (start_on.has_value()) animate.start_on = *start_on;
+      break;
+    }
     default:
       throw Napi::Error::New(env,
                              "no class properties are known for a " + std::string {class_name});

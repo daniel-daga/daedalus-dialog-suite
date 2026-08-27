@@ -119,8 +119,8 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **The classes that are left** — trigger family, `oCMob*`, `zCPFXController`,
-  `zCVobAnimate`; enums are the whole of what is held out. Unowned. §16.3
+- **The classes that are left** — trigger family, `oCMob*`, `zCPFXController`;
+  enums are the whole of what is held out. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -170,12 +170,9 @@ against `git log` and the docs. `git log` is the permanent record.)*
 - **The orbit speed's test stopped asserting a number nobody kept** — master was
   red since `d6118fa` changed `ORBIT_ROTATE_SPEED` 0.4 → 1 by hand. The test now
   pins the wiring, not the value.
+- **`zCVobAnimate` joined the class-property catalogue** — `startOn` only,
+  round-tripped through `setVobClassProp`/save/reload. §16.3
 
-**Not verified this session, and the reason to re-run before trusting the
-tree:** only the affected suites were run (`cameraNav`, `WorldSceneTree`,
-`WorldSurface.editing`, both `WorldViewport` suites, the two new ones), plus
-`typecheck:renderer` and `lint` — both clean. `test:stable:windows` was **not**
-run to completion. Nothing has watched either change in the running app.
-
-**Also on the tree and not mine:** an untracked `scripts/board-loop.sh`,
-uncommitted.
+Verified this session: `zenkit-node` (build + full suite + lint), `zen-world`
+(test + lint + typecheck + build), `daedalus-dialog-editor` (build:main +
+typecheck:renderer + full Jest + lint) all green.

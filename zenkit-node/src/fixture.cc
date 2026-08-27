@@ -605,7 +605,15 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   music->volume = 0.5f;
   music->loop = true;
 
-  root->children = {a, b, c, sound, daytime, far_plane, fog, music};
+  auto animate = std::make_shared<VAnimate>();
+  animate->type = VirtualObjectType::zCVobAnimate;
+  animate->vob_name = "VOB_INDEX_ANIMATE";
+  animate->position = Vec3 {270.0f, 4.0f, 280.0f};
+  animate->bbox =
+      AxisAlignedBoundingBox {Vec3 {269.0f, 3.0f, 279.0f}, Vec3 {271.0f, 5.0f, 281.0f}};
+  animate->start_on = true;
+
+  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate};
   return root;
 }
 

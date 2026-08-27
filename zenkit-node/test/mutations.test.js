@@ -1055,6 +1055,7 @@ const CLASS_PROP_ROUND_TRIP = [
   ['1/7', 'oCZoneMusic', {
     enabled: false, priority: 7, ellipsoid: true, reverb: -42.5, volume: 0.75, loop: false,
   }],
+  ['1/8', 'zCVobAnimate', { startOn: false }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {
