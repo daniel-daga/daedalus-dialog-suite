@@ -76,9 +76,14 @@ export class FileWatcherService {
   notifySelfWrite(filePath: string): void {
     const key = selfWriteKey(filePath);
     this.selfWrittenPaths.add(key);
+    // Unref'd: expiring a suppression mark is never a reason to hold the
+    // process open. Referenced, each call pins its process for two seconds —
+    // the Electron main process in production, and a Jest worker under test,
+    // which is force-killed after 500 ms ("A worker process has failed to exit
+    // gracefully").
     setTimeout(() => {
       this.selfWrittenPaths.delete(key);
-    }, 2000);
+    }, 2000).unref();
   }
 
   /**

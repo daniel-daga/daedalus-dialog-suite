@@ -78,6 +78,6 @@ describe('main.ts startup cost', () => {
     void service.parseSource('func void x() {};');
     expect(workerThreads.__constructed).toEqual(['/fake/parser.worker.js', '/fake/parser.worker.js']);
 
-    service.dispose();
+    await service.dispose();
   });
 });

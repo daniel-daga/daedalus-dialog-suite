@@ -32,11 +32,34 @@ describe('ParserService worker lifecycle', () => {
     return svc;
   }
 
-  afterEach(() => {
+  afterEach(async () => {
     while (services.length) {
-      const svc = services.pop();
-      (svc as unknown as { dispose?: () => void }).dispose?.();
+      await services.pop()!.dispose();
     }
+  });
+
+  // A worker thread that is still alive keeps a MessagePort open in the parent,
+  // and that handle keeps the whole Jest worker *process* from exiting. Jest
+  // force-kills it after 500 ms and prints "A worker process has failed to exit
+  // gracefully". `dispose()` therefore has to be awaitable: firing
+  // `worker.terminate()` and returning leaves the port open past the end of the
+  // test file.
+  const activeMessagePorts = () =>
+    (process as unknown as { _getActiveHandles(): unknown[] })
+      ._getActiveHandles()
+      .filter((h) => (h as { constructor?: { name?: string } })?.constructor?.name === 'MessagePort')
+      .length;
+
+  it('dispose() resolves only once every worker thread has exited', async () => {
+    const svc = makeService('echo.worker.js');
+    await svc.parseSource('warm-the-pool');
+
+    // Guard against a vacuous pass: the pool must really be running threads.
+    expect(activeMessagePorts()).toBeGreaterThan(0);
+
+    await svc.dispose();
+
+    expect(activeMessagePorts()).toBe(0);
   });
 
   it('rejects with a timeout error when the worker never responds', async () => {

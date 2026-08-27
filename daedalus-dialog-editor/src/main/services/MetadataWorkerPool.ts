@@ -72,6 +72,15 @@ export class MetadataWorkerPool {
   private isTerminated = false;
   private isDegraded = false;
   private useInlineProcessing = false;
+  /**
+   * `terminate()` is asynchronous: the thread is still alive — and its
+   * MessagePort still an open handle in this process — until the returned
+   * promise settles. A worker replaced mid-run is therefore remembered here so
+   * `terminate()` can wait for it too; otherwise teardown returns while a
+   * thread is still running and nothing can tell when the process is free to
+   * exit.
+   */
+  private pendingTerminations: Array<Promise<number>> = [];
   private workerPath = '';
   private readonly taskTimeoutMs: number;
   private readonly maxRestarts: number;
@@ -275,7 +284,7 @@ export class MetadataWorkerPool {
     if (wi !== -1) this.workers.splice(wi, 1);
     const ii = this.idleWorkers.indexOf(worker);
     if (ii !== -1) this.idleWorkers.splice(ii, 1);
-    void worker.terminate();
+    this.pendingTerminations.push(worker.terminate());
 
     this.restartCount++;
     if (this.restartCount > this.maxRestarts) {
@@ -356,8 +365,11 @@ export class MetadataWorkerPool {
     }
   }
 
-  public terminate() {
-    if (this.isTerminated) return;
+  public async terminate(): Promise<void> {
+    if (this.isTerminated) {
+      await Promise.all(this.pendingTerminations);
+      return;
+    }
     this.isTerminated = true;
 
     for (const [, inFlight] of this.inFlightByWorker) {
@@ -372,8 +384,10 @@ export class MetadataWorkerPool {
     this.pendingRequests.clear();
     this.taskQueue = [];
 
-    this.workers.forEach((w) => void w.terminate());
+    const terminations = this.pendingTerminations.concat(this.workers.map((w) => w.terminate()));
+    this.pendingTerminations = [];
     this.workers = [];
     this.idleWorkers = [];
+    await Promise.all(terminations);
   }
 }

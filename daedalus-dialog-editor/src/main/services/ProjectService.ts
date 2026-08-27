@@ -226,7 +226,7 @@ class ProjectService {
         }
       }
     } finally {
-      pool.terminate();
+      await pool.terminate();
     }
 
     // Extract and sort NPC list

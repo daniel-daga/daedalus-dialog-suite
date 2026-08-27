@@ -34,10 +34,34 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     return pool;
   }
 
-  afterEach(() => {
+  afterEach(async () => {
     while (pools.length) {
-      pools.pop()!.terminate();
+      await pools.pop()!.terminate();
     }
+  });
+
+  // A worker thread that is still alive keeps a MessagePort open in the parent,
+  // and that handle keeps the whole Jest worker *process* from exiting. Jest
+  // force-kills it after 500 ms and prints "A worker process has failed to exit
+  // gracefully". `terminate()` therefore has to be awaitable: firing
+  // `worker.terminate()` and returning leaves the port open past the end of the
+  // test file.
+  const activeMessagePorts = () =>
+    (process as unknown as { _getActiveHandles(): unknown[] })
+      ._getActiveHandles()
+      .filter((h) => (h as { constructor?: { name?: string } })?.constructor?.name === 'MessagePort')
+      .length;
+
+  it('terminate() resolves only once every worker thread has exited', async () => {
+    const pool = makePool('echo.worker.js');
+    await pool.processFile('warm-the-pool');
+
+    // Guard against a vacuous pass: the pool must really be running threads.
+    expect(activeMessagePorts()).toBeGreaterThan(0);
+
+    await pool.terminate();
+
+    expect(activeMessagePorts()).toBe(0);
   });
 
   it('settles a file as failure when its worker exits mid-task', async () => {
@@ -99,7 +123,7 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     // Give the pool a tick to assign the first batch.
     await new Promise((r) => setImmediate(r));
 
-    pool.terminate();
+    await pool.terminate();
 
     const settled = await Promise.all(captured);
     for (const err of settled) {
@@ -108,7 +132,7 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     }
 
     // Idempotent.
-    expect(() => pool.terminate()).not.toThrow();
+    await expect(pool.terminate()).resolves.toBeUndefined();
   });
 
   it('rejects remaining tasks once the restart cap is exceeded', async () => {

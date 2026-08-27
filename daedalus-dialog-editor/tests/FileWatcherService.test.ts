@@ -319,6 +319,22 @@ describe('FileWatcherService', () => {
       expect(win.webContents.send).not.toHaveBeenCalled();
     });
 
+    it('does not keep the event loop alive for the two-second expiry', async () => {
+      // The expiry timer outlives the call by two seconds. Left referenced it
+      // keeps its whole process alive — in production the Electron main
+      // process, and under Jest the worker process, which is force-killed
+      // after 500 ms with "A worker process has failed to exit gracefully".
+      // `getActiveResourcesInfo()` lists only resources that keep the loop
+      // alive, so an unref'd timer does not appear here.
+      const loopKeepingTimers = () =>
+        process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+
+      const before = loopKeepingTimers();
+      service.notifySelfWrite('/project/DIA_Test.d');
+
+      expect(loopKeepingTimers()).toBe(before);
+    });
+
     it('stopWatching clears the self-written paths set', async () => {
       const win = makeMockWindow();
       service.setWindow(win as any);

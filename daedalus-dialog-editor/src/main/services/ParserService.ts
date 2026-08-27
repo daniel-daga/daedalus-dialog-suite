@@ -41,6 +41,14 @@ export class ParserService {
   private started = false;
   private restartTimestamps: number[] = [];
   private degraded = false;
+  /**
+   * `terminate()` is asynchronous: the thread is still alive — and its
+   * MessagePort still an open handle in this process — until the returned
+   * promise settles. A worker retired mid-run is therefore remembered here so
+   * `dispose()` can wait for it too; otherwise teardown returns while a thread
+   * is still running and nothing can tell when the process is free to exit.
+   */
+  private pendingTerminations: Array<Promise<number>> = [];
 
   constructor(options: ParserServiceOptions = {}) {
     // Worker is located at ../workers/parser.worker.js relative to this file.
@@ -184,7 +192,7 @@ export class ParserService {
       }
     }
 
-    void worker.terminate();
+    this.pendingTerminations.push(worker.terminate());
 
     const now = Date.now();
     this.restartTimestamps = this.restartTimestamps.filter((t) => now - t < RESTART_WINDOW_MS);
@@ -239,16 +247,23 @@ export class ParserService {
     });
   }
 
-  /** Terminate all workers and clear pending state (test/teardown helper). */
-  dispose() {
+  /**
+   * Terminate all workers and clear pending state (test/teardown helper).
+   *
+   * Resolves only once every thread has actually exited, so a caller can know
+   * the process holds no worker handles any more.
+   */
+  async dispose(): Promise<void> {
     for (const [, inFlight] of this.inFlightByWorker) {
       clearTimeout(inFlight.timer);
     }
     this.inFlightByWorker.clear();
     this.pendingRequests.clear();
     this.requestQueue = [];
-    this.workers.forEach((w) => void w.terminate());
+    const terminations = this.pendingTerminations.concat(this.workers.map((w) => w.terminate()));
+    this.pendingTerminations = [];
     this.workers = [];
     this.idleWorkers = [];
+    await Promise.all(terminations);
   }
 }
