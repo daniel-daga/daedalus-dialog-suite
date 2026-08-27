@@ -2699,6 +2699,11 @@ plus its tests.
 no decision — `s_is_running` is save-game only, exactly as the header marks
 it, so the class had nothing else to hold out.
 
+`zCPFXController.initiallyRunning` landed 2026-08-28: the smallest slice of a
+three-field class, all non-enum. `pfxName` and `killWhenDone` are already read
+in `normalize.cc` but are not yet writable — the same shape of leftover as
+`oCZoneMusic` and `zCZoneZFog` had after their first increment.
+
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries
 out-of-range values a dropdown destroys. Enums are also what is left of the

@@ -613,7 +613,16 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
       AxisAlignedBoundingBox {Vec3 {269.0f, 3.0f, 279.0f}, Vec3 {271.0f, 5.0f, 281.0f}};
   animate->start_on = true;
 
-  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate};
+  auto pfx = std::make_shared<VParticleEffectController>();
+  pfx->type = VirtualObjectType::zCPFXController;
+  pfx->vob_name = "VOB_INDEX_PFX";
+  pfx->position = Vec3 {290.0f, 4.0f, 300.0f};
+  pfx->bbox = AxisAlignedBoundingBox {Vec3 {289.0f, 3.0f, 299.0f}, Vec3 {291.0f, 5.0f, 301.0f}};
+  pfx->pfx_name = "PFX_TORCHFIRE";
+  pfx->kill_when_done = true;
+  pfx->initially_running = true;
+
+  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx};
   return root;
 }
 

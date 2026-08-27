@@ -173,7 +173,9 @@ against `git log` and the docs. `git log` is the permanent record.)*
 - **`coneAngle` and the two daytime hours are swept, not just documented** —
   retail never varies `coneAngle` from 0 and keeps both hours well inside
   0–24; neither bound changed. §16.6
+- **`zCPFXController.initiallyRunning` joins the class-property catalogue** —
+  one field of three; `pfxName` and `killWhenDone` are still read-only. §16.3
 
 Verified this session: `zenkit-node` (build + full suite + lint), `zen-world`
 (test + lint + typecheck + build), `daedalus-dialog-editor` (build:main +
-typecheck:renderer + full Jest + lint) all green.
+typecheck:renderer + full Jest + lint) all green — `zCPFXController` change.

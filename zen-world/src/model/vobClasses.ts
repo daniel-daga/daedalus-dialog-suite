@@ -189,6 +189,14 @@ const ZC_VOB_ANIMATE_FIELDS = [
   { key: 'startOn', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** Whether the particle effect starts running when the level loads — the first
+ *  of `zCPFXController`'s three fields to join the catalogue. `pfxName` and
+ *  `killWhenDone` are also plain scalars and neither is an enum, so nothing
+ *  holds them out by decision; this is simply the smallest slice. */
+const ZC_PFX_CONTROLLER_FIELDS = [
+  { key: 'initiallyRunning', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -205,10 +213,11 @@ export const CLASS_FIELDS = {
   zCZoneZFog: ZC_ZONE_Z_FOG_FIELDS,
   oCZoneMusic: OC_ZONE_MUSIC_FIELDS,
   zCVobAnimate: ZC_VOB_ANIMATE_FIELDS,
+  zCPFXController: ZC_PFX_CONTROLLER_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has seven, which is the point of asking through `fieldOf`. The
+ *  37 and this has eight, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;
