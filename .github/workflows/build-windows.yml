@@ -197,6 +197,45 @@ jobs:
 
         Stop-Process -Id $process.Id -Force
 
+    # The startup smoke above proves the exe launches; this proves the packaged
+    # native addon actually loads and reads a real ZEN. DDE_SMOKE_OPEN_WORLD
+    # routes main.ts into runOpenWorldSmoke (no window): WorldService spawns the
+    # zenkit worker, which dlopens zenkit_node.node out of app.asar.unpacked and
+    # opens the committed fixture world. Exit code is the verdict; the result
+    # file carries the counts so a red run says why. Without this, npmRebuild:
+    # false rests on a reading of binding.gyp, not a runtime verdict.
+    - name: Smoke-test packaged app opens a world
+      shell: pwsh
+      run: |
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Daedalus Dialog Editor.exe"
+        $fixture = (Resolve-Path "zenkit-node/test/fixtures/minimal.g2.zen").Path
+        $resultPath = Join-Path $env:RUNNER_TEMP "smoke-open-world.json"
+        Remove-Item $resultPath -Force -ErrorAction SilentlyContinue
+
+        $env:DDE_SMOKE_OPEN_WORLD = $fixture
+        $env:DDE_SMOKE_RESULT = $resultPath
+        $process = Start-Process -FilePath $exe -PassThru
+        $null = $process.Handle  # cache so ExitCode is readable after exit
+        if (-not $process.WaitForExit(120000)) {
+          Stop-Process -Id $process.Id -Force
+          throw "Open-world smoke timed out after 120 s"
+        }
+        if ($process.ExitCode -ne 0) {
+          $detail = if (Test-Path $resultPath) { Get-Content $resultPath -Raw } else { "(no result file written)" }
+          throw "Open-world smoke failed with exit code $($process.ExitCode): $detail"
+        }
+        if (-not (Test-Path $resultPath)) {
+          throw "Open-world smoke exited 0 but wrote no result file - the smoke mode did not run"
+        }
+        $result = Get-Content $resultPath -Raw | ConvertFrom-Json
+        if (-not $result.ok) {
+          throw "Open-world smoke result is not ok: $(Get-Content $resultPath -Raw)"
+        }
+        if ([int]$result.vobCount -lt 1) {
+          throw "Open-world smoke opened a world with no VOBs: $(Get-Content $resultPath -Raw)"
+        }
+        Write-Host "Open-world smoke passed: $(Get-Content $resultPath -Raw)"
+
     - name: Normalize installer filename
       shell: pwsh
       run: |

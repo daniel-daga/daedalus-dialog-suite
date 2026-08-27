@@ -13,6 +13,7 @@ import { SettingsService } from './services/SettingsService';
 import { FileWatcherService } from './services/FileWatcherService';
 import { UpdaterService } from './services/UpdaterService';
 import { WorldService } from './services/WorldService';
+import { runOpenWorldSmoke } from './openWorldSmoke';
 import { applyWindowSecurity } from './windowSecurity';
 import {
   assertModelShape,
@@ -154,6 +155,21 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // Packaged-app open-world smoke (build-windows.yml). CI launches the packaged
+  // exe with these env vars set; no window is created, the world is opened
+  // through the same WorldService call the world:open handler makes — which is
+  // what loads the native addon in the packaged Electron — and the exit code is
+  // the verdict. Inert in production: the env var is never set outside CI.
+  if (process.env.DDE_SMOKE_OPEN_WORLD) {
+    const result = await runOpenWorldSmoke(
+      worldService,
+      process.env.DDE_SMOKE_OPEN_WORLD,
+      process.env.DDE_SMOKE_RESULT,
+    );
+    app.exit(result.ok ? 0 : 1);
+    return;
+  }
+
   // Initialize path validator with recent projects to allow opening them
   try {
     const recentProjects = await settingsService.getRecentProjects();
