@@ -16,10 +16,13 @@ import { zenToThree, ZEN_TO_THREE_SCALE } from 'zen-world';
 export type Nav = 'orbit' | 'pan' | 'dolly' | 'none';
 
 /**
- * How far the camera swings per pixel of drag, against OrbitControls' own
- * default of 1.0 — which turns the view through a full screen width for a drag
- * of a screen width, and reads as "rotation too fast" in a world where the
- * interesting distances are metres.
+ * How far the camera swings per pixel of drag: a full screen width of view for
+ * a drag of a screen width, which is OrbitControls' own default.
+ *
+ * Named and set here anyway, rather than left to the library, so there is one
+ * place the decision lives — it was 0.4 for a while, and 1.0 is what it was set
+ * back to (2026-08-27). This is the *camera*; the gizmo's rotate ring is a
+ * separate rate and a much slower one (`DampedTransformControls`).
  */
 export const ORBIT_ROTATE_SPEED = 1;
 

@@ -101,14 +101,16 @@ describe('cameraNav', () => {
     expect(camera.position.distanceTo(target)).toBeGreaterThan(0);
   });
 
-  test('the orbit is slowed off OrbitControls\' default, in one place', () => {
-    // OrbitControls' default of 1.0 turns the camera a full screen-width per
-    // screen-width of drag, which at this scene's scale reads as "too fast".
+  test('the orbit speed reaches the controls from the one place it is named', () => {
+    // What this pins is the wiring, not the number: the rate has been changed
+    // by hand before (0.4, then back to 1.0) and an assertion on the value is
+    // one that goes stale the next time somebody drags the viewport and
+    // disagrees. That it is applied at all is the part that must not rot.
     const controls = fakeControls();
+    controls.rotateSpeed = Number.NaN;
     attachBlenderNav(controls, document.createElement('div'));
 
     expect(controls.rotateSpeed).toBe(ORBIT_ROTATE_SPEED);
-    expect(ORBIT_ROTATE_SPEED).toBeLessThan(1.0);
     expect(ORBIT_ROTATE_SPEED).toBeGreaterThan(0);
   });
 
