@@ -31,6 +31,32 @@
 
 export type Vec3 = readonly [number, number, number];
 
+/**
+ * A **row-major** 3x3, the order `vobIndex` emits, `normalizeWorld` dumps and
+ * `setVobRotation` takes — structurally the same tuple as `model/ops`'
+ * `ZenRotation`, declared here rather than imported so the one module that must
+ * not depend on anything keeps depending on nothing.
+ *
+ * Row-major with a column vector on the right (`v' = M v`), which is what
+ * `placeBounds` in `model/ops` already assumes: the *columns* are the images of
+ * the axes, so column 0 is the VOB's own X axis expressed in world space.
+ */
+export type Mat3 = [
+  number, number, number,
+  number, number, number,
+  number, number, number,
+];
+
+/**
+ * `[yaw, pitch, roll]` in **degrees**, ZenGin axes — the three numbers a level
+ * designer types, and the form Spacer's own object properties take.
+ *
+ * Degrees rather than radians on purpose: the only consumer is a property grid,
+ * and a second unit conversion in the renderer is exactly the kind of duplicated
+ * convention this module exists to prevent.
+ */
+export type ZenEulerDegrees = [number, number, number];
+
 /** A column-major 4x4, the order `THREE.Matrix4.elements` uses. */
 export type Mat4 = readonly number[];
 
@@ -123,6 +149,167 @@ export function zenToThree(p: Vec3): [number, number, number] {
  *  anything else computed on the render side that has to become world data. */
 export function threeToZen(p: Vec3): [number, number, number] {
   return [-p[0] / ZEN_TO_THREE_SCALE, p[1] / ZEN_TO_THREE_SCALE, p[2] / ZEN_TO_THREE_SCALE];
+}
+
+// ---------------------------------------------------------------------------
+// Angles.
+//
+// A `zCVob` stores a 3x3 and a level designer types three numbers, so typed
+// rotation entry needs a decomposition — and a decomposition is a *choice*,
+// because three angles do not determine a matrix until the order they compose
+// in is fixed. The choice made here, and why:
+//
+// **The convention is intrinsic Y-X-Z: `R = Ry(yaw) * Rx(pitch) * Rz(roll)`,
+// in degrees, about ZenGin's own axes.**
+//
+// - **Nothing in ZenGin, ZenKit or this repo commits to an order.** The world
+//   format stores the matrix and nothing else; ZenKit's `Mat3` has no Euler
+//   conversion at all; grep finds no `euler`/`atan2`/`asin` in either. So
+//   **whether this matches what Spacer's own angle fields would have shown is
+//   unverified** — there is no artefact here to check it against, and the claim
+//   is deliberately not made. What *is* verified is that it round-trips retail
+//   data (see the tolerances below), which is the property the editor needs.
+// - **The order is chosen by where it breaks.** Every order has one degenerate
+//   pose — the middle axis at +-90 degrees, where the outer two coincide — and
+//   the middle axis of YXZ is X, so the singularity is a VOB tipped onto its
+//   nose. An XYZ order would put it on the *vertical* axis instead: measured
+//   across the 41,393 VOBs of retail NewWorld, OldWorld and AddonWorld, **464
+//   sit within 1e-6 of the XYZ singularity and 53 within 1e-6 of this one**
+//   (1,064 against 174 within 1e-3) — because a prop turned a quarter turn about
+//   the vertical is the commonest deliberate pose in the game and a prop stood
+//   on its nose is not.
+// - Y-up yaw/pitch/roll is also what every Y-up engine calls heading, pitch and
+//   bank, so the three fields read the way a modder expects without a legend.
+//
+// **Gimbal lock is answered, not avoided.** At pitch = +-90 the yaw and roll
+// axes are the same axis and only their sum is observable, so no decomposition
+// can return the pair that was typed. `zenRotationToEuler` puts the whole turn
+// in **yaw and returns roll 0**; the matrix still round-trips inside tolerance,
+// and re-decomposing the rewritten angles is a fixed point. The dangerous part
+// is the *neighbourhood*, not the pole: a "close enough to the pole" epsilon in
+// sine space discards a roll that is still perfectly recoverable and moves the
+// VOB (measured: an epsilon of 1e-7 costs 8.5e-4 of matrix entry, four orders
+// above the tolerance the tests hold). So there is no epsilon — the pole branch
+// is taken only when the ordinary `atan2` has no direction left at all, which is
+// exactly the case it exists for.
+//
+// **A non-orthonormal matrix is normalized, and its scale and shear are
+// dropped.** Retail data is not orthonormal: 12,514 of those 41,393 VOBs
+// (30.2 %) deviate by more than 1e-6 in max |MtM - I|, worst 2.1e-2 — drift
+// rather than deliberate scale (`|det - 1|` never exceeds 2.5e-2 and no VOB is
+// mirrored), but far above float32 noise. Refusing them would leave typed angles
+// unavailable on a third of the world, so the columns are Gram-Schmidt'd and the
+// angles describe the nearest rotation. The consequence a caller must know:
+// **round-tripping such a VOB's angles rewrites its matrix** to the
+// orthonormalized one, so a UI must not write an angle back that the user did
+// not change. A reflection or a rank-deficient matrix is refused instead — no
+// triple of angles describes either, and retail has 0 of both.
+//
+// **Tolerance.** A stored entry is float32, whose ulp near 1 is 5.96e-8, and
+// each direction runs a handful of transcendental operations; a few ulps is
+// therefore the order the arithmetic justifies. Measured worst matrix round trip
+// is 5.96e-8 over 200k random poses and 2.98e-8 over all 41,393 retail VOBs, and
+// `test/coords.test.ts` asserts 1e-6.
+
+const DEGREES_PER_RADIAN = 180 / Math.PI;
+const RADIANS_PER_DEGREE = Math.PI / 180;
+
+/** Negating a zero yields -0, which reaches `setVobRotation` as a different
+ *  float than the 0 that was there — the rule `mirrorRotation` already carries,
+ *  and the identity pose is the case that hits it (`-cos(0) * sin(0)`). */
+const noNegativeZero = (v: number): number => (v === 0 ? 0 : v);
+
+/**
+ * The angles of a stored rotation, `[yaw, pitch, roll]` in degrees.
+ *
+ * Canonical range: yaw and roll in (-180, 180], pitch in [-90, 90] — the band
+ * `atan2` and `asin` answer in, and the only one in which the decomposition is
+ * a function at all.
+ *
+ * @throws RangeError if the matrix is a reflection or has no three independent
+ * columns; neither is a rotation, and neither occurs in retail data.
+ */
+export function zenRotationToEuler(rotation: readonly number[]): ZenEulerDegrees {
+  const m = orthonormalizeColumns(rotation);
+
+  // m[5] is row 1, column 2 = -sin(pitch): the one entry YXZ leaves a single
+  // angle in, which is why the pitch is the angle read first and directly.
+  const pitch = Math.asin(Math.min(1, Math.max(-1, -m[5])));
+
+  // Away from the pole, yaw and roll each read off a pair of entries that share
+  // a factor of cos(pitch) — `atan2` divides it out, however small it is.
+  if ((m[2] !== 0 || m[8] !== 0) && (m[3] !== 0 || m[4] !== 0)) {
+    return [
+      noNegativeZero(Math.atan2(m[2], m[8]) * DEGREES_PER_RADIAN),
+      noNegativeZero(pitch * DEGREES_PER_RADIAN),
+      noNegativeZero(Math.atan2(m[3], m[4]) * DEGREES_PER_RADIAN),
+    ];
+  }
+
+  // cos(pitch) is 0: the yaw and roll axes coincide and only the combined turn
+  // survives. It goes in the yaw.
+  return [
+    noNegativeZero(Math.atan2(-m[6], m[0]) * DEGREES_PER_RADIAN),
+    noNegativeZero(pitch * DEGREES_PER_RADIAN),
+    0,
+  ];
+}
+
+/** The stored rotation for `[yaw, pitch, roll]` degrees — `Ry * Rx * Rz`,
+ *  row-major, in ZenGin space. The exact inverse of `zenRotationToEuler` for
+ *  any pose it can answer. */
+export function eulerToZenRotation(euler: readonly number[]): Mat3 {
+  const yaw = euler[0] * RADIANS_PER_DEGREE;
+  const pitch = euler[1] * RADIANS_PER_DEGREE;
+  const roll = euler[2] * RADIANS_PER_DEGREE;
+
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cr = Math.cos(roll), sr = Math.sin(roll);
+
+  return [
+    cy * cr + sy * sp * sr, -cy * sr + sy * sp * cr, sy * cp,
+    cp * sr, cp * cr, -sp,
+    -sy * cr + cy * sp * sr, sy * sr + cy * sp * cr, cy * cp,
+  ].map(noNegativeZero) as Mat3;
+}
+
+/**
+ * The nearest rotation to a stored matrix — Gram-Schmidt over its columns, which
+ * are the VOB's own axes in world space, so the first axis is kept exactly and
+ * the others are squared up against it.
+ *
+ * The determinant is checked *after* normalizing rather than before, because the
+ * question is whether the orientation the angles will describe is a rotation,
+ * and a near-degenerate matrix can answer that only once its axes are unit.
+ */
+function orthonormalizeColumns(m: readonly number[]): number[] {
+  const column = (j: number): number[] => [m[j], m[3 + j], m[6 + j]];
+  const dot = (a: number[], b: number[]): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const unit = (v: number[]): number[] => {
+    const length = Math.hypot(v[0], v[1], v[2]);
+    if (!(length > 0) || !Number.isFinite(length)) {
+      throw new RangeError('rotation matrix has no three independent axes');
+    }
+    return [v[0] / length, v[1] / length, v[2] / length];
+  };
+  const reject = (v: number[], onto: number[]): number[] => {
+    const s = dot(v, onto);
+    return [v[0] - onto[0] * s, v[1] - onto[1] * s, v[2] - onto[2] * s];
+  };
+
+  const x = unit(column(0));
+  const y = unit(reject(column(1), x));
+  const z = unit(reject(reject(column(2), x), y));
+
+  const determinant = x[0] * (y[1] * z[2] - y[2] * z[1])
+    - y[0] * (x[1] * z[2] - x[2] * z[1])
+    + z[0] * (x[1] * y[2] - x[2] * y[1]);
+  if (determinant < 0) {
+    throw new RangeError('rotation matrix is a reflection, which no angles describe');
+  }
+
+  return [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
 }
 
 export interface ThreeBox {

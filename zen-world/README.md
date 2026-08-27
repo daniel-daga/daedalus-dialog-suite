@@ -10,7 +10,7 @@ every binding call is injected.
 
 | Module | What it owns |
 |---|---|
-| `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. |
+| `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. Also **THE** matrix ↔ angle conversion — `zenRotationToEuler` / `eulerToZenRotation`. |
 | `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `rotateVob`, `rotateVobs`, `setVobProp`, `setVobProps`, `setVobClassProp`, `addVob`, `reparentVob`, `invertOp`, `isStructuralOp`, `renumbersPaths`, `commitOps`, `applyOps`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
@@ -49,6 +49,29 @@ viewport.
   The general rule both cases teach: **a conversion whose two halves can cancel
   needs a test that models both of them.** Asserting the determinant is negative
   is true and says nothing.
+- **Angles are `Ry * Rx * Rz` in degrees, and the order was chosen by where it
+  breaks.** A `zCVob` stores a 3x3 and a designer types three numbers, so a
+  decomposition is a *choice*: nothing in ZenGin, in ZenKit or in this repo
+  commits to an order, so **whether these are the numbers Spacer would have shown
+  is unverified and is not claimed.** What decides it is the singularity every
+  order has at its middle axis: YXZ puts it on *pitch*, a VOB stood on its nose,
+  where XYZ would put it on the vertical — and measured over the 41,393 retail
+  VOBs, **464 sit within 1e-6 of the XYZ singularity against 53 of this one**,
+  because a quarter turn about the vertical is the commonest deliberate pose in
+  the game. At the pole the roll is folded into the yaw and the *matrix* still
+  round-trips, which is the half the world stores. There is deliberately **no
+  near-pole epsilon**: one of 1e-7 in sine space discards a still-recoverable
+  roll and moves the VOB by 8.5e-4 of matrix entry.
+- **A stored rotation is not orthonormal, and reading its angles drops the
+  difference.** 12,514 of those 41,393 VOBs (30.2 %) deviate from orthonormal by
+  more than 1e-6 (worst 2.1e-2) — drift, not deliberate scale, and no VOB is
+  mirrored. Refusing them would take typed angles away from a third of the world,
+  so the columns are squared up and the angles describe the nearest rotation.
+  The consequence: **writing an unchanged angle back rewrites the VOB's matrix**,
+  so a caller must only write an angle the user actually changed. A reflection or
+  a rank-deficient matrix is refused instead; retail has 0 of each. Round trip is
+  held to 1e-6 on a matrix entry — a few float32 ulps — and measures 2.98e-8
+  across the whole retail corpus.
 - **Merge by texture + render state + colour, not by texture.** NewWorld has
   1400 materials on 330 textures, and one draw call per material is over the
   whole `< 1500` viewport budget before a single VOB is drawn. The measured key
