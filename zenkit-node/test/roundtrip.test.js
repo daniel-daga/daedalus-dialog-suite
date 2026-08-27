@@ -172,6 +172,39 @@ test('an ASCII world round-trips to an exact verdict and is fully instrumented',
   });
 });
 
+// The harness's byte diff dispatches on the archive format the way
+// `containerFromBuffer` does. It used to be gated on BIN_SAFE, so every ASCII
+// row reported `whole-file` — a verdict that has no event alignment, no
+// coverage number and therefore nothing to say about *where* two files differ.
+// The accounting is asserted rather than the kind alone: a diff that claimed to
+// be event-aligned without walking the stream would leave bytes unaccounted for.
+test('an ASCII world gets an event-aligned byte diff, not a whole-file fallback', () => {
+  withTmpDir((dir) => {
+    const at = path.join(dir, 'ascii.zen');
+    zenkit._authorFixtureWorld(at, 'ascii', 'g2');
+    const size = fs.statSync(at).size;
+
+    const { proc, worlds } = run(dir, ['--strict']);
+    assert.strictEqual(proc.status, 0, proc.stderr);
+
+    const row = worlds['ascii.zen'];
+    assert.strictEqual(row.format, 'ASCII');
+    const diff = row.byteDiff;
+    assert.strictEqual(diff.kind, 'event-aligned', JSON.stringify(diff));
+    assert.strictEqual(diff.aligned, true, JSON.stringify(diff.alignBreak));
+    // Every byte of the file reached the diff, and every event span matched:
+    // header + stream + trailer add back up to the file it was pointed at.
+    assert.strictEqual(diff.coverage.total, size);
+    assert.strictEqual(diff.coverage.gap, 0);
+    assert.deepStrictEqual(diff.differing, []);
+    assert.strictEqual(diff.events[0], diff.events[1]);
+    assert.ok(diff.events[0] > 20, `too few events to have walked a world: ${diff.events[0]}`);
+    assert.strictEqual(diff.coverage.accounted, size);
+    assert.ok(diff.identicalEventBytes > 0, 'no event bytes were compared at all');
+    assert.match(proc.stdout, /ascii\.zen\s+identical\s+.*gap 0, 0 differing events/);
+  });
+});
+
 test('--drill adds differing-byte samples to the report', () => {
   withTmpDir((dir) => {
     seedContainerCorruption(dir, 'corrupt.zen');

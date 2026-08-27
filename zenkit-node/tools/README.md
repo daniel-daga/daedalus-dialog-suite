@@ -22,6 +22,9 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   differences by class and entry. This is the instrument that found the ten
   byte-fidelity defects in `patches/0010`–`0019`; a byte difference that no
   struct dump can see shows up here immediately.
+  The diff itself is `../lib/container-diff.js`, shared with
+  `../scripts/zen-roundtrip.js`'s report; this file is the printer, so the two
+  cannot again disagree about which formats exist.
   **BinSafe *and* ASCII**, dispatched on the archive header — the ASCII writer's
   A1–A4 (`../docs/engine-acceptance-2026-08-25.md` §10.2) live in an entry stream
   `walk()` cannot parse, and until this dispatched the tool could only read the

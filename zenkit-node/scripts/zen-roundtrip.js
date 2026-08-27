@@ -15,12 +15,13 @@
 // A green run in --fixtures mode is NEVER a fidelity result. The report says
 // which claim it carries, and the summary prints it.
 //
-// COVERAGE IS PART OF THE RESULT. `lib/container.js` walks the BinSafe entry
-// stream; the 24 zCArchiverGeneric/ASCII .zen files in a retail G2 install have
-// no such stream, so on those the only instrument is the struct dump — which is
-// blind to container facts by construction. Those worlds are reported as
-// `struct-only`, never as a clean fidelity pass, because a diff that cannot see
-// a region must not be allowed to call it identical.
+// COVERAGE IS PART OF THE RESULT. The container instrument walks BinSafe
+// (`lib/container.js`) and ASCII (`lib/container-ascii.js`) — between them the
+// 28 .zen files of a retail G2 install — but BINARY has no walker at all, and
+// on such a world the only instrument is the struct dump, which is blind to
+// container facts by construction. Those worlds are reported as `struct-only`,
+// never as a clean fidelity pass, because a diff that cannot see a region must
+// not be allowed to call it identical.
 //
 // Each world is measured in a CHILD PROCESS. ZenKit can abort the process on
 // malformed input (a hard 0xC0000409 has been observed on the ASCII path), and
@@ -33,7 +34,7 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const { classifyDumps } = require('../lib/classify.js');
-const { walk } = require('../lib/container.js');
+const { byteDiff } = require('../lib/container-diff.js');
 
 const BLOCKING = new Set(['semantic-drift', 'unreadable', 'crashed']);
 
@@ -98,84 +99,6 @@ function blobOf(buf) {
   while (p < buf.length && (buf[p] === 0x0a || buf[p] === 0x0d || buf[p] === 0x09)) p += 1;
   const size = buf.readUInt32LE(p + 4);
   return buf.subarray(p + 8, p + 8 + size);
-}
-
-// Event-aligned byte diff, BinSafe only (tools/bytediff.js in library form).
-// Reports the coverage gap first: only with gap 0 does "the rest is identical"
-// mean anything.
-function byteDiff(a, b, drill) {
-  const ga = walk(a);
-  const gb = walk(b);
-  const ha = ga.next().value;
-  const hb = gb.next().value;
-  const ea = [];
-  const eb = [];
-  for (const ev of ga) ea.push(ev);
-  for (const ev of gb) eb.push(ev);
-
-  const spans = (evs, buf, hdr) => {
-    const out = [];
-    for (let i = 0; i < evs.length; i += 1) {
-      const e = evs[i];
-      if (e.kind === 'eos') break;
-      let end = i + 1 < evs.length ? evs[i + 1].fileOffset : hdr.header.hashTableOffset;
-      if (e.kind === 'rawBlob') end = e.fileOffset + buf.readUInt32LE(e.fileOffset - 4);
-      out.push({ e, start: e.fileOffset, end });
-    }
-    return out;
-  };
-  const sa = spans(ea, a, ha);
-  const sb = spans(eb, b, hb);
-
-  const headA = a.subarray(0, ha.header.entryStart);
-  const headB = b.subarray(0, hb.header.entryStart);
-  const tailA = a.subarray(ha.header.hashTableOffset);
-  const tailB = b.subarray(hb.header.hashTableOffset);
-  const accounted = headA.length + sa.reduce((n, s) => n + (s.end - s.start), 0) + tailA.length;
-
-  const result = {
-    kind: 'event-aligned',
-    events: [sa.length, sb.length],
-    aligned: true,
-    coverage: { accounted, total: a.length, gap: a.length - accounted },
-    textHeaderIdentical: headA.equals(headB),
-    hashTableIdentical: tailA.equals(tailB),
-    identicalEventBytes: 0,
-    differing: [],
-    samples: [],
-  };
-
-  const classes = new Map();
-  const n = Math.min(sa.length, sb.length);
-  for (let i = 0; i < n; i += 1) {
-    const x = sa[i];
-    const y = sb[i];
-    if (x.e.kind !== y.e.kind || x.e.entryName !== y.e.entryName) {
-      result.aligned = false;
-      result.alignBreakAt = i;
-      break;
-    }
-    const ba = a.subarray(x.start, x.end);
-    const bb = b.subarray(y.start, y.end);
-    if (ba.equals(bb)) {
-      result.identicalEventBytes += ba.length;
-      continue;
-    }
-    const p = x.e.path;
-    const cls = p.length ? p[p.length - 1].split(':')[1] : '<root>';
-    const key = `${x.e.kind} ${cls} ${x.e.entryName || ''} ${x.e.entryType || ''}`.trim();
-    classes.set(key, (classes.get(key) || 0) + 1);
-    if (drill && result.samples.length < 8) {
-      result.samples.push({
-        key,
-        offsetOriginal: x.start,
-        original: ba.toString('hex').slice(0, 160),
-        resaved: bb.toString('hex').slice(0, 160),
-      });
-    }
-  }
-  result.differing = [...classes].map(([key, count]) => ({ key, count }));
-  return result;
 }
 
 function measure(file, game, drill) {
@@ -248,9 +171,10 @@ function measure(file, game, drill) {
     row.findings = result.findings.map((f) => ({ class: f.class, path: f.path, detail: String(f.detail) }));
     if (!drill) row.findings = row.findings.slice(0, 20);
 
-    row.byteDiff = kind.format === 'BIN_SAFE'
-      ? byteDiff(original, resaved, drill)
-      : { kind: 'whole-file', identical: row.wholeFileIdentical, sizeDelta: resaved.length - original.length };
+    // Event-aligned wherever a container walker exists — BinSafe and ASCII
+    // both. Only BINARY falls back to a whole-file verdict, and that fallback
+    // lives in lib/container-diff.js so the format decision is made once.
+    row.byteDiff = byteDiff(original, resaved, drill);
 
     // What the measurement is actually worth. `struct-only` means the container
     // instrument never looked at these bytes — the struct dump alone cannot
@@ -351,8 +275,8 @@ function summarize(rows, claim) {
     `${partial.length ? ` — ${[...new Set(partial.map((r) => r.archiver))].join(', ')}` : ''}),` +
     ` ${crashed.length} crashed, ${unreadable.length} unreadable, ${skipped.length} skipped (not worlds)`);
   if (partial.length) {
-    lines.push('  A struct-only row is NOT a fidelity pass: lib/container.js walks the BinSafe');
-    lines.push('  entry stream only, so on those worlds nothing checked the archive container.');
+    lines.push('  A struct-only row is NOT a fidelity pass: the container instrument walks BinSafe');
+    lines.push('  and ASCII, so on those worlds nothing checked the archive container.');
   }
   const byVerdict = new Map();
   for (const row of rows) {
