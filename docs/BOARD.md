@@ -53,9 +53,8 @@ was true for so long nobody re-reads it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
   committed: it is the applied patch series. Stage with
   `git add -A -- . ':!zenkit-node/vendor/ZenKit'`, or name paths explicitly.
-  Anything else showing as *modified* is unfinished work. The one untracked
-  path that is not is `reports/` — generated corpus output that the root
-  `.gitignore` does not actually catch. Ignore it, or fix the rule.
+  Anything else showing is unfinished work — `reports/` used to be the one
+  exception and the root `.gitignore` now catches it.
 - **Merged to `master` 2026-08-28.** The "deliberately unmerged until an engine
   verdict" rule is retired — Gate 2 passed (Done) and the merge was a clean
   fast-forward, so backing it out is a `git reset --hard` to the merge's first
@@ -65,8 +64,8 @@ was true for so long nobody re-reads it.
   not this one — and the two gaps below have to close before that dispatch.
 - **The addon and the vendored ZenKit were both rebuilt this session**, so every
   other machine and CI must rebuild — and here it is `vendor-build/` too, not
-  just `build/`: patches `0024`–`0026` change `ArchiveAscii.cc`, and
-  `src/fixture.cc` gained a decal. Run **`node scripts/build-zenkit.js` before
+  just `build/`: patches `0024`–`0026` change `ArchiveAscii.cc`, `0027` changes
+  `World.cc`, and `src/fixture.cc` gained a decal. Run **`node scripts/build-zenkit.js` before
   `npx node-gyp rebuild`**; the gyp step alone links a stale `zenkit.lib` and
   silently keeps the old writer. A stale `.node` is worse than useless — the
   editor's Jest suites fake the worker, so they stay green against a binary
@@ -90,7 +89,7 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty — the ASCII writer's A1, A4 and A5 landed; see Done)*
+*(empty — five cards landed this session; see Done)*
 
 ## Next
 
@@ -193,14 +192,8 @@ was true for so long nobody re-reads it.
   fixture now hangs a `VisualDecal` on the chest. **Any writer path with no
   fixture field on it is a defect CI cannot see**, and the cheap audit is to
   walk `WriteArchive`'s methods and ask which have no fixture data behind them.
-  Two things the harness still owes, neither blocking:
-  - **The byte diff is two implementations that disagree about which formats
-    exist.** `tools/bytediff.js` got ASCII; `scripts/zen-roundtrip.js`'s
-    library-form copy (`byteDiff`, `:106-179`, gated at `:251` on
-    `kind.format === 'BIN_SAFE'`) did not — which is why every ASCII row above
-    reports a `whole-file` diff and no event alignment. Its file header
-    (`:20-23`) and `summarize()`'s note (`:353-356`) also both still say the
-    container walks BinSafe only, which is false.
+  One thing the harness still owes, not blocking (the byte-diff half closed —
+  see Done):
   - **There is still no ZenGin-written ASCII fixture, so CI cannot regression-test
     an ASCII round-trip against anything but ZenKit itself.**
     `_authorFixtureWorld(..., 'ascii')` is ZenKit's own writer, so `--fixtures`
@@ -210,12 +203,22 @@ was true for so long nobody re-reads it.
     `instrument: 'none'` return on a failed load is no longer reached by any
     ASCII world, so that half of the old card is closed.
 
-- **A malformed BinSafe world hangs the reader** — found in passing, and separate
-  from both the ASCII defects and the exception fix.
-  `loadWorld` on a BinSafe file with ~500 corrupted bytes neither crashes
-  nor throws; it spun to 202 s CPU with growing RSS before being killed. An
-  unbounded length read. It will hang the editor's `zenkit.worker` the same way
-  the abort used to kill it. Not yet reproduced into a test.
+- **A malformed world still crashes the reader — the hang was the small half.**
+  The spin is fixed (patch `0027`, Done), but closing it turned up the size of
+  what is left. Seeded fuzzing, 30 seeds of 100 corrupted bytes each over one
+  BinSafe fixture: **19 crashed the child with `0xC0000005`**, one with
+  `0xC0000374` (heap corruption), two hung, and only eight threw cleanly. So a
+  malformed world still takes the editor's `zenkit.worker` down — by segfault
+  now instead of by spinning — and **the worker isolation stays load-bearing:
+  `loadWorld` is not crash-safe and must never be called on the main thread.**
+  The shape of the job is unvalidated counts feeding `resize`/indexing
+  throughout `Mesh.cc`, `BspTree.cc` and the VOB readers, and the underlying
+  hazard beneath all of them is `ReadMemory::seek`
+  (`vendor/ZenKit/src/Stream.cc:277-283`) **silently ignoring an out-of-range
+  seek** rather than failing. Making it clamp or throw would fix the class in
+  one place and change behaviour for every reader in ZenKit, which is why `0027`
+  bounded its own loop instead. Until someone takes that decision, every
+  chunk-walking loop has to carry its own bound.
 - `.MMB` authoring has no ZenKit writer at all.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 - **Gate 2 covered no deleted VOB and no moved waypoint** — both landed after
@@ -234,10 +237,42 @@ was true for so long nobody re-reads it.
   intermittent `3221226505` exits `test:matrix:windows` already exists for —
   they may be the same handle.
 
-Five cards below are what is left of Daniel's first hands-on pass, 2026-08-27 —
-two of the seven have landed, the viewport pivot and the world open dialog. The
-note they were written against has since been deleted, so **these cards are now
-the record** — nothing else holds the complaints, which is why each one states
+- **The waynet overlay goes missing after a structural edit.** Found while
+  landing the terrain marker, by symmetry, and not fixed because it wants its
+  own test. The overlay effect (`WorldViewport.tsx`, the one keyed
+  `[waynet, mesh]`) hangs its group off the scene root, but the scene effect it
+  hangs off is keyed `[mesh, visuals, bbox]` — and a structural op rebuilds from
+  `visuals` alone. So the rebuild hands out a new root while the overlay stays
+  attached to the disposed one: the waynet silently vanishes until it is
+  toggled off and on. The terrain marker's effect takes `visuals` for exactly
+  this reason and is the shape to copy.
+
+- **Four small things noticed while landing this session's cards.** None
+  blocking, all cheap, each one recorded because the finding is worth more than
+  the fix is expensive:
+  - **`tools/` is outside lint's globs** (`zenkit-node/package.json:14` covers
+    `lib`, `scripts`, `test`). `tools/README.md:95` says so deliberately, but
+    `tools/bytediff.js` is now the one consumer of shared `lib/` code that is
+    neither linted nor tested.
+  - **The ASCII round-trip tests assume one clock second.** Both the new
+    `differing: []` assertion and the existing `ascii.blob.identical` one
+    compare files carrying `date`/`user` stamps — in the top-level header *and*
+    in the nested `MeshAndBsp` archive header. Green today, flaky on a slow
+    machine at a second boundary.
+  - **The terrain bar reserves a hard-coded 31 px** for the button its picked
+    state adds, derived from MUI's small-button metrics. If the theme ever sets
+    a button height it drifts, and jsdom has no layout, so no test can catch it.
+  - **The viewport wants an imperative handle.** `frameSelection` and the new
+    jump both live inside the big scene effect, so reaching them needs a ref
+    hop plus a request prop. A third viewport command should promote that to a
+    handle rather than adding a second prop — a `docs/refactoring-targets.md`
+    entry if it grows.
+
+Two cards below are what is left of Daniel's first hands-on pass, 2026-08-27 —
+five of the seven have landed: the viewport pivot, the world open dialog, and
+this session's three (the texture re-decode, the terrain bar and its marker, and
+the jump to a VOB from the scene tree). The note they were written against has
+since been deleted, so **these cards are now the record** — nothing else holds the complaints, which is why each one states
 the complaint before its diagnosis. The diagnoses are code-read and every
 file:line in them was re-verified 2026-08-28. The card heading the list is not
 one of Daniel's complaints but the follow-up question the pivot fix asks him.
@@ -252,18 +287,6 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   (it is not: ID-picking answers an id, not a point, and a CPU raycast over 724
   `InstancedMesh`es is the 14.2 ms the viewport exists to avoid — a *clicked*
   VOB is the fallback pivot, and interiors pivot on walls, which are world mesh).
-- **A structural edit re-decodes every texture in the world.** Placing a VOB or
-  reparenting one is visibly a cold open. Cause is known and single:
-  `applied` in `WorldSurface.tsx:294` calls `setVisuals(...)` after any
-  structural op, the new payload identity retriggers the scene-build effect at
-  `WorldViewport.tsx:817`, and that effect walks `world.pendingTextureNames()`
-  from empty — 490 textures for NewWorld, the 549 ms the file header at :37 says
-  was deliberately moved off the critical path. The rebuild itself is not the
-  defect and the comment at `WorldSurface.tsx:250-256` argues correctly for it:
-  an instance cannot be appended to an allocated `InstancedMesh`. The textures
-  are the defect — they did not change, and nothing caches a decoded one across
-  a rebuild. The camera reframe rides on the same effect and is felt as part of
-  the same jolt.
 - **A VOB is hard to tell from the world mesh.** Asked for as a faint outline on
   VOB visuals. Nothing about the current pipeline resists it — the VOBs are
   their own `InstancedMesh` set, so the selection highlight already has a place
@@ -277,20 +300,78 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   screen and nothing about the world. Worth saying before it is asked again:
   the `zCVobLight`s in the file are data Phase 1b-2 makes *editable*, not a rig
   the viewport can switch on.
-- **The bottom bar appears and shoves the layout, and the point it names is
-  invisible.** `WorldSurface.tsx:843` mounts the terrain-point `Paper`
-  conditionally, so the viewport resizes the moment a terrain pick lands. Two
-  fixes in one card: keep the bar mounted and let it carry something when there
-  is no point, and draw a marker in the viewport at the picked point — right now
-  "Place VOB here…" names coordinates the user cannot see.
-- **No way to navigate to a VOB from the scene tree.** Double-click a row and/or
-  a locator icon in the sidebar, jumping the camera to it and leaving the pivot
-  on it. `frameOn` is the whole mechanism and it exists; this is the affordance
-  and the pivot card's payoff — **and the pivot has landed, so it is
-  unblocked.**
 
 ## Done — Phase 1b
 
+- **A malformed world no longer spins the reader forever.** Patch `0027`.
+  `World::load`'s MeshAndBsp chunk scan trusted a length out of the file, and
+  `ReadMemory::seek` refuses an out-of-range seek *silently* — so a length
+  corrupted large is a no-op, not a jump: the cursor stays, the scan walks
+  garbage six bytes at a time, and at the end of the archive reads stop
+  advancing it and `chunk_type` is 0 forever. The card called it an unbounded
+  length read; it is a pure spin with no allocation on the path, which matches
+  the 202 s of CPU and not the growing RSS, so that was a second corruption.
+  The fix is an `eof()` check and nothing else — unreachable for a valid world,
+  and it makes the loop provably terminating. Repro is **one byte** of the
+  checked-in fixture (offset 945, the 0xB030 length word, 52 → 196660), found by
+  seeded fuzzing and minimised from 100 mutations; the test seeds it by walking
+  the chunk table rather than by magic offset, and drives `loadWorld` through a
+  child process with a 30 s kill so a regression reports a timeout instead of
+  wedging the suite. 30088 ms → 128 ms. What the same fuzzing found and did not
+  close is now its own card in Next.
+- **One byte diff, and it knows ASCII exists.** The harness and the CLI held two
+  copies; only the CLI ever learned ASCII, so `zen-roundtrip.js` gated on
+  `kind.format === 'BIN_SAFE'` and every ASCII row reported a bare `whole-file`
+  verdict — no alignment, no coverage number, nothing about *where* two files
+  differ. Both are now `lib/container-diff.js`, dispatching on format the way
+  `containerFromBuffer` does and returning the `whole-file` fallback itself for
+  BINARY, so the decision is made once instead of at each call site.
+  `hashTableIdentical` became `trailerIdentical` — ASCII has no hash table. The
+  two stale "walks BinSafe only" claims (the file header and `summarize()`'s
+  note) went in the same change. The test asserts the accounting, not the label:
+  total == accounted == the file's size on disk, gap 0, both event counts equal.
+- **A structural edit no longer re-decodes every texture.** Placing or
+  reparenting a VOB read as a cold open for two reasons, both real:
+  `WorldScene.dispose()` released every `THREE.Texture` on teardown, and the
+  rebuilt scene's slot map started empty anyway, so `pendingTextureNames()`
+  named all 490 for NewWorld and the pump re-issued an IPC round and a decode
+  for each. A `TextureCache` now lives in the viewport beside `poseRef`, keyed
+  on the same world key, and outlives the `WorldScene` that borrows it.
+  **Disposal moved and the report says where**: the cache owns it — a rebuild
+  disposes nothing, a different world is disposed inside `textureCacheFor`
+  before the new cache exists, an unmount by a mount-only effect; a `WorldScene`
+  built *without* a cache still disposes its own. The camera reframe the card
+  named as part of the same jolt turned out already fixed by the pose restore —
+  `refreshIndex` returns the bbox captured at open, so the world key is
+  byte-identical across a structural op — and the comment claiming otherwise was
+  corrected. 490 IPC calls → 0, test-enforced; not measured in milliseconds,
+  because `runViewportBenchmark` needs a live renderer and the harness refuses
+  `openWorld`.
+- **Jump to a VOB from the scene tree.** Double-click a row, or the locator that
+  appears on hover. The framing maths came out of `WorldViewport`'s
+  `frameSelection` closure and became `frameVobs` in `cameraNav.ts`, so the jump
+  and the framing key are one mechanism rather than two that agree by accident —
+  and pure, therefore testable against a real camera instead of through a scene
+  that does not exist in the harness. **The pivot is set twice because there are
+  two of them**: `frameOn` leaves `controls.target` on the VOB, and
+  `rememberPick` leaves `lastPick` there — the fallback a middle-drag begun over
+  the sky uses. Without the second, the first orbit after a jump swings back to
+  the last click, which is the complaint the pivot work exists to answer. This
+  also changed the `.` key, deliberately. The request is an object and not an
+  index, because jumping to the same VOB twice is two requests and that is
+  exactly when the second is asked for.
+- **The terrain bar stops shoving, and its point is visible.** The bar is gated
+  on a world being open rather than on the point, so it mounts once; empty it
+  carries the hint saying what it is for, and the row reserves the height of the
+  button the picked state adds — a bar that changes height still shoves.
+  `TerrainMarker` is modelled on `WaynetOverlay` and inherits its two answers:
+  it hangs under the mirrored root, so the root stays the only place that knows
+  the conversion, and it is `sizeAttenuation: false`, `depthTest: false`.
+  **It cannot steal a pick, twice over** — all three pick paths enumerate
+  explicit object lists it is in none of, and its `raycast` is a no-op, which is
+  what the test pins with a ray fired at a 1000-unit threshold. Its effect is a
+  sibling of the overlay's, outside the scene-build effect, and takes `visuals`
+  in its deps — which is what exposed the overlay's own missing dep (Next).
 - **The ASCII writer works — A1, A4 and a fifth defect nobody had named.**
   Patches `0024`–`0026`. The corpus is the result: a retail G2 install went from
   **4 of 28 worlds measured, 20 crashed** to **24 measured, 24
