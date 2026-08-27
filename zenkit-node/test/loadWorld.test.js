@@ -5,10 +5,41 @@ const assert = require('node:assert');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { spawnSync } = require('node:child_process');
 
 const zenkit = require('..');
+const { walk } = require('../lib/container.js');
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'minimal.g2.zen');
+
+// `loadWorld` on a malformed mesh section used to never return (see the test at
+// the bottom of this file), so it is driven through a child process under a
+// wall-clock kill: a regression has to come back as a timeout we report, not as
+// a test run that never ends.
+function loadInChild(file, timeoutMs) {
+  const source = `
+    const zenkit = require(${JSON.stringify(path.join(__dirname, '..'))});
+    try {
+      zenkit.loadWorld(process.argv[1], 'g2');
+      console.log('LOADED');
+    } catch (err) {
+      console.log('THREW ' + err.message.replace(/\\r?\\n/g, ' '));
+    }
+  `;
+  const started = Date.now();
+  const proc = spawnSync(process.execPath, ['-e', source, file], {
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  });
+  return {
+    timedOut: !!(proc.error && proc.error.code === 'ETIMEDOUT'),
+    elapsed: Date.now() - started,
+    status: proc.status,
+    stdout: (proc.stdout || '').trim(),
+    stderr: (proc.stderr || '').trim(),
+  };
+}
 
 test('loadWorld loads the golden fixture and reports exact stats', () => {
   const handle = zenkit.loadWorld(FIXTURE, 'g2');
@@ -67,5 +98,57 @@ test('loadWorld turns a ZenKit parse failure into a JS error rather than killing
     );
   } finally {
     fs.rmSync(garbage, { force: true });
+  }
+});
+
+// The mesh chunk length of the `MeshAndBsp` blob, located by structure rather
+// than by a magic offset: the blob is a flat `uint16 id, uint32 length,
+// payload` table, and this rewrites one chunk's length word to a value larger
+// than the whole file.
+function seedOversizedMeshChunk(dir, name) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const blob = [...walk(buf)].find((ev) => ev.kind === 'rawBlob' && ev.entryName === 'MeshAndBsp');
+  assert.ok(blob, 'the fixture must have a MeshAndBsp blob to corrupt');
+
+  // Walk to the VERTICES (0xB030) chunk header — the first one whose length the
+  // scan trusts after the material list, so the corruption is reached.
+  const end = blob.fileOffset + blob.size;
+  let p = blob.fileOffset;
+  while (p + 6 <= end && buf.readUInt16LE(p) !== 0xb030) p += 6 + buf.readUInt32LE(p + 2);
+  assert.strictEqual(buf.readUInt16LE(p), 0xb030, 'expected a VERTICES chunk in the fixture mesh');
+  assert.strictEqual(buf.readUInt32LE(p + 2), 52, 'expected the fixture VERTICES chunk to be 4 vertices');
+
+  buf.writeUInt32LE(0x000f0000, p + 2); // ~1 MB, against a 4 KB file
+  const at = path.join(dir, name);
+  fs.writeFileSync(at, buf);
+  return at;
+}
+
+test('a mesh chunk length larger than the file throws instead of scanning forever', () => {
+  // `World::load` scans the mesh chunk table for the 0xB060 end chunk, seeking
+  // by each chunk's own declared length. `ReadMemory::seek` silently refuses to
+  // move past the end of the buffer, so an oversized length does not fail — it
+  // leaves the cursor where it was, the scan walks garbage to the end of the
+  // archive and then spins there forever: reads return nothing, `chunk_type`
+  // stays 0, and the only exit condition never comes. Measured at 202 s of CPU
+  // on a real world before the process was killed, with nothing thrown and
+  // nothing logged. Patch 0027 adds the end-of-file check.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-mesh-scan-'));
+  try {
+    const corrupt = seedOversizedMeshChunk(dir, 'oversized-chunk.zen');
+
+    // The same harness on the untouched fixture: if the child could not load a
+    // world at all — a missing addon, an unreadable path — this test could pass
+    // on the corrupt file for a reason that has nothing to do with the scan.
+    const clean = loadInChild(FIXTURE, 30_000);
+    assert.strictEqual(clean.stdout, 'LOADED', `${clean.stdout}\n${clean.stderr}`);
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false,
+      `loadWorld did not return within 30 s — the mesh chunk scan is unbounded again`);
+    assert.match(result.stdout, /^THREW failed to load world: .*MeshAndBsp/);
+    assert.match(result.stdout, /0xB060/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

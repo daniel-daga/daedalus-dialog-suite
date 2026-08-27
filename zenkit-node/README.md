@@ -536,8 +536,10 @@ nothing else. `not-a-world` is a skip, not a failure: four of the install's
 
 Every world is measured **in a child process**. ZenKit aborted the process
 outright (`0xC0000409`) on the ASCII path until the `_HAS_EXCEPTIONS` fix, and
-a malformed BinSafe world can still hang the reader indefinitely — a crash or
-a hang has to be recorded as a result rather than end the run.
+a malformed BinSafe world could hang the reader indefinitely until patch `0027`
+bounded `World::load`'s mesh chunk scan — a crash or a hang has to be recorded
+as a result rather than end the run. Fuzzing the fixture still finds access
+violations on other corruptions, so the child process stays the contract.
 
 The summary always prints a `COVERAGE:` line counted against **every file
 found**, not every file that survived, plus the claim the run carries. A

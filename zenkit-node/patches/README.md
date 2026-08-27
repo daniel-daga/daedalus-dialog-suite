@@ -39,7 +39,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (18)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (19)
 
 | Patch | What it fixes |
 |---|---|
@@ -61,9 +61,12 @@ regardless of what upstream does with it.
 | `0024` | `WriteArchiveAscii::write_raw` decided how many hex digits `std::to_chars` wrote by testing a null terminator `to_chars` never writes — every byte below `0x10` got the previous byte's low nibble, and ZenKit could not re-load its own ASCII output |
 | `0025` | The ASCII header's `objects` count padded to 11 characters where ZenGin pads to 9 (the same defect `0013` fixed for `zCArchiverBinary`, which had picked 10) |
 | `0026` | `WriteArchiveAscii::write_byte`/`write_word` emitted `byte:`/`word:` type tokens that `ReadArchiveAscii::read_byte`/`read_word` reject and ZenGin never writes (144,111 `int:` and zero of either across a retail install's 24 ASCII worlds) |
+| `0027` | `World::load`'s mesh chunk scan had no end-of-file check and seeked by an unvalidated chunk length; since `ReadMemory::seek` ignores an out-of-range seek instead of failing, one corrupted length word made `loadWorld` spin forever at 100% CPU with nothing thrown |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
+`0027` is the same class of standalone fix — a one-guard hang fix on the read
+path, reachable by any consumer that opens a file it did not write.
 `0024` and `0026` are now just as strong and arguably stronger: each is a
 self-evident writer/reader disagreement that made ZenKit unable to read its own
 ASCII output, with no API change and a one-line diff. Together with `0025` they
@@ -95,7 +98,7 @@ from the `oCMOB` save sites; until someone writes that, this stays local.
 
 Independent, highest-value and least arguable first:
 
-1. `0020`, `0021`, `0022` — one PR each.
+1. `0020`, `0021`, `0022`, `0027` — one PR each.
 2. `0002`, `0003`, `0004`, `0005`, `0006` — small self-evident writer bugs.
 3. `0018`, then `0013`.
 4. `0001`, then `0010`.
