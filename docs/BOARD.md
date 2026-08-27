@@ -46,13 +46,16 @@ was true for so long nobody re-reads it.
 
 ## State of the tree
 
-- branch `feature/level-editor`, **in sync with its remote.**
+- branch `master`, **in sync with its remote.** `feature/level-editor` was
+  merged and is no longer where work happens.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
   committed: it is the applied patch series. Stage with
   `git add -A -- . ':!zenkit-node/vendor/ZenKit'`, or name paths explicitly.
-  Anything else showing as modified is unfinished work.
+  Anything else showing as *modified* is unfinished work. The one untracked
+  path that is not is `reports/` — generated corpus output that the root
+  `.gitignore` does not actually catch. Ignore it, or fix the rule.
 - **Merged to `master` 2026-08-28.** The "deliberately unmerged until an engine
   verdict" rule is retired — Gate 2 passed (Done) and the merge was a clean
   fast-forward, so backing it out is a `git reset --hard` to the merge's first
@@ -60,13 +63,13 @@ was true for so long nobody re-reads it.
   and nothing else, so a push to master builds no installer, cuts no release and
   touches no update feed. Anything about shipping is the dispatch's decision,
   not this one — and the two gaps below have to close before that dispatch.
-- **The addon was rebuilt this session**, so every other machine and CI must
+- **The addon was rebuilt for the class-properties work**, so every other machine and CI must
   rebuild: `binding.cc` and `normalize.cc`/`.hh` gained `getVobProps` and
   `setVobClassProp`. A stale `.node` is worse than useless here — the editor's
   Jest suites fake the worker, so they stay green against a binary that has
   neither export while the running app has no class properties at all. It also
   predates the exception fix below and still aborts the process on a bad world.
-- **`zen-world` and the editor's whole `dist/` were rebuilt this session** —
+- **`zen-world` and the editor's whole `dist/` were rebuilt for it too** —
   `SetVobClassProp` and the `CLASS_FIELDS` catalogue are in both, and the editor
   typechecks and tests against `zen-world/dist`, not its source, so `build:main`
   fails outright until `pnpm --filter zen-world build` has run.
@@ -85,15 +88,11 @@ was true for so long nobody re-reads it.
 
 ## Next
 
-- **A world request that times out leaks the worker, and every retry feeds it.**
-  Found in the merge-readiness pass, 2026-08-28, and the one code defect that
-  argued against merging. `WorldService.request` (`:314-318`) rejects at 120 s
-  and never calls `terminate()`; `openWorld`'s `if (this.worker === null)` guard
-  (`:83`) then posts the retry to the still-spinning thread, so the surface never
-  recovers. It pairs with the malformed-BinSafe hang below — that is the bug that
-  produces the timeout in the first place — and the two together mean one bad
-  `.zen` can take the process down with unsaved *dialog* work in it. Terminate
-  and null the worker on `world-timeout`.
+- **`world-timeout` and `world-crashed` now mean the same thing, and the
+  renderer still distinguishes them.** Fallout from the terminate fix (Done):
+  a timeout is no longer survivable — the worker is gone and the world with it
+  — so any renderer copy that implies a retry will work is now wrong. Check the
+  World surface's message for `world-timeout` says reopen.
 - **Two gaps that block the next `build-windows` dispatch, not the merge.**
   Recorded 2026-08-28 so the dispatch is not the place they are discovered:
   - **A dispatched build would ship a World button with no addon behind it.**
@@ -108,10 +107,13 @@ was true for so long nobody re-reads it.
     `all-tests.yml`, which has no zenkit-node job. `zenkit-node.yml` is its own
     workflow, path-filtered to `zenkit-node/**` and triggered on push/PR to
     master — so it ran on the phase-1a PR and then on nothing until the merge
-    push, which is the first CI this branch's later commits ever saw, including
-    `binding.gyp`'s `_HAS_EXCEPTIONS` fix — exactly the MSVC-define class whose
-    behaviour is toolchain-dependent. It has `workflow_dispatch`, which is the
-    cheap way to get that evidence before a push rather than from one.
+    push. **That push has since gone green** (`zenkit-node` and `All Tests` both
+    success on `fbb969c`), so `binding.gyp`'s `_HAS_EXCEPTIONS` fix now has a
+    windows-2022 verdict and the evidence half of this card is closed. What is
+    not closed is the structure: the addon is still not in the release gate,
+    because `all-tests.yml` still has no zenkit-node job and the path filter
+    still means a change in `zen-world/` or `zenkit.worker.ts` that breaks the
+    binding contract never runs it.
     Also: `zen-world/dist` is built by an undeclared `postinstall` hook
     (`zen-world/package.json:24`) and `zen-world` is not in
     `pnpm-workspace.yaml`'s `onlyBuiltDependencies`, so a single
@@ -173,22 +175,37 @@ was true for so long nobody re-reads it.
     lands in that function.
   - **A4 is `ArchiveAscii.cc:453-455`**: an 11-wide `objects` field where
     ZenGin's is 9-wide. Independent of the other three.
-  **The harness still cannot fail on ASCII, and that is the first thing to fix.**
-  `lib/container.js:206` (not 205) returns `covered:false` for anything not
-  BinSafe before `walk()` is ever entered; `tools/bytediff.js:11` is BinSafe by
-  construction and there is no ASCII walker (`lib/container-ascii.js` does not
-  exist); and `test/roundtrip.test.js:132-142` is the only ASCII test, asserts
-  `['crashed','unreadable','ok']` — the whole outcome space — and does not pass
-  `--strict`, even though `crashed` is already in `zen-roundtrip.js:38`'s
-  `BLOCKING` set. A full fix of A1–A4 would leave the suite green and unchanged.
-  So the harness owes three things before any defect fix is provable: a
-  `lib/container-ascii.js` walker so `containerFromBuffer` stops answering
-  `covered:false` for the very format under test; a `tools/bytediff.js` that is
-  not wired to `walk()`'s BinSafe assumptions; and `roundtrip.test.js`'s
-  three-way `assert.ok` replaced by an exact expected status plus a `--strict`
-  run. Fix order after that is A1 (its assertion is a pure string check on the
-  emitted file and needs no reload), then A2, then A2b, then A3; A4 is
-  independent and can ride along any time.
+  **The harness can fail on ASCII now** (Done), so these are patch jobs at last.
+  A1, A2 and A4 are instrument-visible; A3 stays unobservable until A2 lands,
+  and the instrument is already waiting for it. Fix order is unchanged: A1
+  first (its assertion is a pure string check on the emitted file and needs no
+  reload), then A2, then A2b, then A3; A4 is independent and can ride along any
+  time. **A1 also appears to be why ZenKit cannot re-load its own ASCII
+  output** — the stale nibble corrupts the packed `zCVob` flag word (on the
+  fixture's root VOB `bit1` goes `0x0002` → `0x0828`, turning on
+  `has_visual_object`), and `VirtualObject::load` then demands an object frame
+  where the archive holds an entry, surfacing as
+  `ParserError: type mismatch: expected enum, got: string`. Not a fifth defect:
+  fixing A1 should fix the reload, which is the cheap way to test the fix.
+  Three things the harness still owes, none of them blocking A1:
+  - **`zen-roundtrip` never reaches the ASCII container instrument.**
+    `measure()` returns early with `instrument: 'none'` whenever the load or the
+    reload throws, and no ASCII world's re-save re-loads. So ASCII coverage is
+    live through `normalizeWorld`, `classifyDumps` and `tools/bytediff.js`, but
+    end-to-end only once a re-save re-loads. Computing both container sections
+    from the *bytes* even when a load fails needs no handle and would cash it in.
+  - **The byte diff is two implementations that now disagree about which
+    formats exist.** `tools/bytediff.js` got ASCII; `scripts/zen-roundtrip.js`'s
+    library-form copy (`byteDiff`, `:106-179`, gated at `:251` on
+    `kind.format === 'BIN_SAFE'`) did not. Its file header (`:20-23`) and
+    `summarize()`'s note (`:353-356`) also both still say the container walks
+    BinSafe only, which is now false.
+  - **There is no ZenGin-written ASCII fixture, so CI cannot regression-test an
+    ASCII round-trip at all.** `_authorFixtureWorld(..., 'ascii')` is ZenKit's
+    own defective writer, so the checked-in corpus can only ever exercise the
+    defect and never the fix. A real ASCII round-trip stays a C1,
+    developer-local `--root` result unless a small ZenGin-authored ASCII world
+    is checked in.
 - **A malformed BinSafe world hangs the reader** — found in passing, and separate
   from both the ASCII defects and the exception fix.
   `loadWorld` on a BinSafe file with ~500 corrupted bytes neither crashes
@@ -203,27 +220,38 @@ was true for so long nobody re-reads it.
   whether that's worth a rebuilt candidate is Daniel's call, not something to
   do unasked.
 
-The seven cards below come from Daniel's first hands-on pass, 2026-08-27. The
+- **`world:selectGothicInstall` has the open dialog's gap, mirror-image.** Its
+  directory picker passes no `defaultPath` either, so re-selecting an install
+  does not start at the stored one. One line, and the smallest card on this list
+  now that `world:openDialog` is fixed (Done).
+- **`main.ts` does real work at import time.** Constructing `ParserService` at
+  module load spins up an 8-worker pool before anything asks for a parse —
+  `WorldService` is deliberately lazy by comparison (`main.ts:52` says why).
+  Found because the new `world:openDialog` test has to import `main.ts`: the
+  full Jest run then emits *"A worker process has failed to exit gracefully"* in
+  roughly half of runs, tests passing either way. Mocking `ParserService` in
+  that test reduced it and did not remove it. Worth checking against the
+  intermittent `3221226505` exits `test:matrix:windows` already exists for —
+  they may be the same handle.
+
+Five cards below are what is left of Daniel's first hands-on pass, 2026-08-27 —
+two of the seven have landed, the viewport pivot and the world open dialog. The
 note they were written against has since been deleted, so **these cards are now
 the record** — nothing else holds the complaints, which is why each one states
 the complaint before its diagnosis. The diagnoses are code-read and every
-file:line in them was re-verified 2026-08-28.
+file:line in them was re-verified 2026-08-28. The card heading the list is not
+one of Daniel's complaints but the follow-up question the pivot fix asks him.
 
-- **The viewport pivot — one defect behind four of the complaints.** Rotation
-  too fast, movement clunky, zoom unusable close to a mesh, panning too slow
-  when zoomed in, interiors unreachable because "the camera always rotates
-  around the origin". Not four bugs. `WorldViewport.tsx:252` sets
-  `controls.target` to the world bbox centre and only `frameOn` ever moves it —
-  and OrbitControls scales *both* dolly step and pan speed by the camera-to-
-  target distance. With the pivot 600 m away at the middle of the island, every
-  one of those three feels wrong at once, and orbiting swings the camera through
-  the terrain instead of around what is being looked at. `frameOn` already does
-  the right thing and is already bound (`.` frames the selection, `Home` frames
-  the world, `WorldViewport.tsx:619-620`) — so the work is a pivot the user can
-  *set*, Blender's way: a middle-drag orbits about the last picked point, not
-  about the island. Rotation speed is the one genuinely separate knob —
-  `rotateSpeed` is left at OrbitControls' default 1.0 and nothing here has ever
-  tuned it.
+- **The pivot needs Daniel's hands on it before the next one is tuned.** It
+  landed (Done) and the numbers in it are guesses that only use can settle:
+  `ORBIT_ROTATE_SPEED = 0.4` against OrbitControls' 1.0, and
+  `MIN_PIVOT_DISTANCE = 1` m. Two shapes to judge at the same time — whether the
+  projection-onto-the-view-axis pivot reads right near a screen edge (the
+  alternative is the literal picked point, which costs a view snap on every
+  middle-press), and whether a VOB under the cursor ought to be a pivot target
+  (it is not: ID-picking answers an id, not a point, and a CPU raycast over 724
+  `InstancedMesh`es is the 14.2 ms the viewport exists to avoid — a *clicked*
+  VOB is the fallback pivot, and interiors pivot on walls, which are world mesh).
 - **A structural edit re-decodes every texture in the world.** Placing a VOB or
   reparenting one is visibly a cold open. Cause is known and single:
   `applied` in `WorldSurface.tsx:294` calls `setVisuals(...)` after any
@@ -236,11 +264,6 @@ file:line in them was re-verified 2026-08-28.
   are the defect — they did not change, and nothing caches a decoded one across
   a rebuild. The camera reframe rides on the same effect and is felt as part of
   the same jolt.
-- **The world open dialog ignores the Gothic install we already found.**
-  `main.ts:583` passes no `defaultPath`, so the picker opens wherever Electron
-  last was, while `settingsService.getGothicInstallPath()` is right there and
-  `world:selectGothicInstall` at :599 is what wrote it. Smallest card on this
-  list.
 - **A VOB is hard to tell from the world mesh.** Asked for as a faint outline on
   VOB visuals. Nothing about the current pipeline resists it — the VOBs are
   their own `InstancedMesh` set, so the selection highlight already has a place
@@ -263,10 +286,60 @@ file:line in them was re-verified 2026-08-28.
 - **No way to navigate to a VOB from the scene tree.** Double-click a row and/or
   a locator icon in the sidebar, jumping the camera to it and leaving the pivot
   on it. `frameOn` is the whole mechanism and it exists; this is the affordance
-  and the pivot card's payoff, so it lands after that one.
+  and the pivot card's payoff — **and the pivot has landed, so it is
+  unblocked.**
 
 ## Done — Phase 1b
 
+- **A timed-out world request takes the worker with it.** The one code defect
+  that argued against merging, and it is fixed: `handleTimeout` now mirrors
+  `handleWorkerDeath` — reject every pending request, null the world path,
+  terminate, null the worker — so `openWorld`'s `worker === null` guard spawns a
+  fresh thread instead of posting the retry back into the stuck one. `failure`
+  is set *before* `terminate()`, because terminate fires a non-zero `exit` that
+  `handleWorkerDeath` would otherwise relabel a crash. Two tests: one proves the
+  next open gets a *second* worker, the other that a timeout rejects the
+  requests in flight beside it rather than leaving them to hang out their own
+  timers. The malformed-BinSafe hang that produces the timeout is still open.
+- **A pivot the user sets, and a rotation speed somebody chose.** Four of
+  Daniel's complaints were one defect: `controls.target` sat at the centre of a
+  600 m island, and OrbitControls scales dolly step, pan speed *and* orbit
+  radius by the camera-to-target distance. A navigating press now pivots on what
+  is under the cursor, falling back to the last click over sky.
+  Two decisions the code settled: the pivot is the **projection of the pick onto
+  the view axis**, not the pick — OrbitControls re-aims at the target every
+  `update()`, so an off-axis pivot cannot be adopted without snapping the view;
+  this is Blender's auto-depth, changes zero pixels, and keeps the distance all
+  three complaints depend on. And `MIN_PIVOT_DISTANCE` clamps at 1 m, because a
+  closer pivot scales dolly and pan to nothing — navigation locked up, not
+  navigation made precise. `rotateSpeed` was the untouched default 1.0, now a
+  named `ORBIT_ROTATE_SPEED = 0.4`.
+  **No Playwright coverage, deliberately**: the browser harness's mock API
+  refuses `openWorld` and two specs assert `world-viewport` has count 0, so
+  there is no WebGL scene to raycast and a spec there would pass without
+  touching camera navigation. Jest covers the pure `pivotAt`, including that
+  `camera.matrixWorld` is unchanged after the pivot moves — the assertion that
+  catches an off-axis regression.
+- **The world picker starts where the worlds are.** `world:openDialog` now
+  passes the extracted `_work/Data/Worlds` when it exists, the install root
+  otherwise, nothing when no install is stored. Retail keeps worlds inside
+  `Worlds.vdf`, which a picker cannot browse, so the install root is the best a
+  retail install can be offered. `setupIpcHandlers` is exported as the test seam.
+- **The harness can fail on ASCII.** `lib/container-ascii.js` walks the
+  `zCArchiverGeneric` stream and `containerFromBuffer` dispatches on format, so
+  it no longer answers `covered:false` for the very format under test; the
+  MeshAndBsp blob is consumed by declared length, because it contains `0x0a`
+  bytes and a line walker desyncs inside the mesh. 28 of 28 `.zen` in a retail
+  install parse, gap 0, 0 threw. `tools/bytediff.js` picks its walker from the
+  header. `roundtrip.test.js`'s three-way `assert.ok` — the whole outcome space,
+  which would have stayed green through both a full fix of A1–A4 and a
+  regression back to the 0xC0000409 abort — is now an exact status plus a
+  `--strict` run asserting exit 1, and says in capitals that a fixed writer must
+  turn it red. A1 is pinned byte-exactly (the raw section hashes the hex *text*,
+  so the corruption cannot hash into agreement) and A4 by the verbatim `objects`
+  line, 9 wide against ZenKit's 11. `README.md` and `tools/README.md` both
+  asserted the container section was BinSafe-only and were corrected in the same
+  change.
 - **Class properties, increment 1 — the item instance and the light.**
   `oCItem.instance` and `zCVobLight`'s `range`/`color`, 23.4 % of the 41,393
   retail VOBs, all the way down: `getVobProps` exporting the reader
