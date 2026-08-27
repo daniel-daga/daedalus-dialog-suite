@@ -439,6 +439,73 @@ async function main() {
   await expect_(async () => (await treeCount()) === vobsBefore,
     'undo did not remove the placed VOB from the index');
 
+  // ── and placing one *under* a parent, which renumbers ─────────────────────
+  //
+  // The same call with a parent, and the case the enumeration constrains: a VOB
+  // appended to the roots is enumerated last and shifts nothing, while one
+  // appended under a parent is enumerated as soon as that parent's subtree ends
+  // and every VOB after it moves up one. The parent is the selected VOB, and a
+  // terrain point survives a click in the tree — only a viewport pick replaces
+  // it — which is what makes "click the ground, then click the parent" a
+  // gesture rather than a mode.
+  let parented = null;
+  const firstRoot = await page.evaluate(() => {
+    const element = globalThis.document.querySelector('[data-testid^="world-vob-row-"]');
+    return element === null ? null : Number(element.getAttribute('data-testid').replace('world-vob-row-', ''));
+  });
+
+  if (firstRoot !== null) {
+    await page.evaluate(() => globalThis.__worldViewport.pickTerrain([29628, 5300, -15176]));
+    await clickRow(firstRoot);
+    await page.getByTestId('world-place-vob').click();
+    await page.getByTestId('world-place-parent').check();
+    await page.getByTestId('world-place-name').fill(`${PLACED}_CHILD`);
+    await page.getByTestId('world-place-visual').fill('NW_CRATE.3DS');
+    await page.getByTestId('world-place-confirm').click();
+
+    await expect_(async () => (await treeCount()) === vobsBefore + 1,
+      'the scene tree never grew after placing a VOB under a parent');
+    check(await page.getByTestId('world-edit-error').count() === 0,
+      'the parented placement was refused');
+    // **The count alone would say exactly the same for a VOB appended to the
+    // roots** — which is what this call did until it took a parent, so it is
+    // precisely the wrong answer this step has to rule out. Three things that
+    // look like they would, and do not: the number of rendered rows (the tree is
+    // virtualized, so it is the viewport's worth either way), the number of
+    // top-level rows (same reason), and *finding a row with this VOB's name*,
+    // which passes for a root too because the tree is still scrolled to where
+    // the previous step's placement was and the last root is on screen. Measured
+    // — the sabotage went green on that one.
+    //
+    // What separates them is the flat index, which is the whole difference
+    // between the two cases: a root is enumerated last and takes the index one
+    // past the end, and this VOB is enumerated in the middle, as soon as its
+    // parent's subtree ends.
+    await page.getByTestId(`world-vob-toggle-${firstRoot}`).click();
+    let placedAt = null;
+    // `expect_`'s message is built before it polls, so it cannot name the index
+    // it ended up seeing — the row below reports that, and it is written only if
+    // this held.
+    const landedInside = await expect_(async () => {
+      placedAt = await page.evaluate((name) => {
+        const found = [...globalThis.document.querySelectorAll('[data-testid^="world-vob-row-"]')]
+          .find((element) => element.textContent.includes(name));
+        return found === null || found === undefined
+          ? null
+          : Number(found.getAttribute('data-testid').replace('world-vob-row-', ''));
+      }, `${PLACED}_CHILD`);
+      return placedAt !== null && placedAt < vobsBefore;
+    }, `the placed VOB is not enumerated inside the first ${vobsBefore} — it was appended to the roots, not to a parent`);
+    await page.getByTestId(`world-vob-toggle-${firstRoot}`).click();
+
+    await page.keyboard.press('Control+z');
+    await expect_(async () => (await treeCount()) === vobsBefore,
+      'undo did not remove the VOB placed under a parent');
+    parented = landedInside
+      ? `under ${firstRoot}, enumerated at index ${placedAt} rather than ${vobsBefore}, then undone`
+      : `FAILED — landed at index ${placedAt}, which is where a root goes`;
+  }
+
   // ── save, and the question only a save can answer ─────────────────────────
   //
   // Every check above reads the *projection*: the property grid reads the
@@ -524,6 +591,26 @@ async function main() {
   // Playwright's own drag helpers move a mouse, and an HTML5 drag is not a mouse
   // move — so what stands in for the pointer here is precisely the part the
   // browser owns, and everything below it is the real thing.
+  //
+  // **One event per task, and that is not a stylistic choice.** React 18 batches
+  // the `setDragging` a `dragstart` handler does, and a `drop` dispatched in the
+  // *same* JS task runs before that flush — so its handler still reads "nothing
+  // is being dragged" and refuses, silently and with no edit error, which is
+  // exactly what a passing count looked like. A real drag is three separate
+  // user gestures in three separate tasks; three `page.evaluate` calls are too.
+  // `fireEvent` in jsdom wraps each call in `act()` and so never had the problem,
+  // which is why the component tests could not have found this.
+  const drag = async (fromSelector, toSelector) => {
+    const fire = (selector, type) => page.evaluate(({ at, kind }) => {
+      globalThis.document.querySelector(at).dispatchEvent(
+        new globalThis.Event(kind, { bubbles: true, cancelable: true }),
+      );
+    }, { at: selector, kind: type });
+
+    await fire(fromSelector, 'dragstart');
+    await fire(toSelector, 'dragover');
+    await fire(toSelector, 'drop');
+  };
   let reparented = null;
   const treeCountAfter = await treeCount();
   const twoRows = await page.evaluate(() => [...globalThis.document
@@ -533,27 +620,71 @@ async function main() {
 
   if (twoRows.length === 2) {
     const [target, moved] = twoRows;
-    await page.evaluate(({ from, onto }) => {
-      const row = (vob) => globalThis.document.querySelector(`[data-testid="world-vob-row-${vob}"]`);
-      const fire = (element, type) => element.dispatchEvent(
-        new globalThis.Event(type, { bubbles: true, cancelable: true }),
-      );
-      fire(row(from), 'dragstart');
-      fire(row(onto), 'dragover');
-      fire(row(onto), 'drop');
-    }, { from: moved, onto: target });
+    await drag(`[data-testid="world-vob-row-${moved}"]`, `[data-testid="world-vob-row-${target}"]`);
 
-    // The index is re-read whole after a structural op, so the count is what
-    // says the world is still whole — a reparent moves a VOB, it never loses
-    // one, and a subtree dropped into itself would vanish from the count.
+    // **The count is not evidence that anything happened.** A reparent moves a
+    // VOB and never loses one, so a refused op holds the count exactly as a
+    // successful one does — and this step reported a pass for as long as the op
+    // existed while the IPC validator was refusing every one of them by name.
+    // What tells the two apart is the tree: both of these rows are roots, so a
+    // VOB that really became a child of another is no longer a top-level row and
+    // its own row is inside a collapsed parent.
+    const isRow = async (vob) => await page.getByTestId(`world-vob-row-${vob}`).count() > 0;
+    await expect_(async () => !(await isRow(moved)),
+      `VOB ${moved} is still a row of its own — the reparent did not happen`);
     await expect_(async () => (await treeCount()) === treeCountAfter,
       'the VOB count changed across a reparent — a subtree was lost');
     check(await page.getByTestId('world-edit-error').count() === 0, 'the reparent was refused');
 
     await page.keyboard.press('Control+z');
+    await expect_(async () => isRow(moved),
+      `VOB ${moved} did not come back to the roots when the reparent was undone`);
     await expect_(async () => (await treeCount()) === treeCountAfter,
       'undoing the reparent changed the VOB count');
-    reparented = `${moved} into ${target}, count held at ${treeCountAfter.toLocaleString()}, undone`;
+    reparented = `${moved} into ${target} and back, count held at ${treeCountAfter.toLocaleString()}`;
+  }
+
+  // ── reparenting to a position, by dropping between two rows ───────────────
+  //
+  // The other half of the gesture, and the only one that can name a *slot*: a
+  // drop onto a row can only ever mean the end of its children. Every gap is
+  // read as "immediately before the row under the line", so dropping the second
+  // root on the line above the first makes it the first root.
+  // **What it cannot be checked by is the row's index**, which is the trap this
+  // op is about: after a reparent the enumeration changes, so `world-vob-row-5`
+  // names a different VOB than it did a moment ago. The rows' *labels* survive
+  // it, and a successful "second before first" is a swap of the top two.
+  let slotted = null;
+  const topTwo = () => page.evaluate(() => [...globalThis.document
+    .querySelectorAll('[data-testid^="world-vob-row-"]')]
+    .slice(0, 2)
+    .map((element) => ({
+      vob: Number(element.getAttribute('data-testid').replace('world-vob-row-', '')),
+      label: element.textContent,
+    })));
+
+  const rootsBefore = await topTwo();
+  if (rootsBefore.length === 2 && rootsBefore[0].label !== rootsBefore[1].label) {
+    const [first, second] = rootsBefore;
+    await drag(
+      `[data-testid="world-vob-row-${second.vob}"]`,
+      `[data-testid="world-vob-drop-before-${first.vob}"]`,
+    );
+
+    await expect_(async () => {
+      const [a, b] = await topTwo();
+      return a?.label === second.label && b?.label === first.label;
+    }, 'the top two rows did not swap — the between-rows drop did not land');
+    check(await page.getByTestId('world-edit-error').count() === 0, 'the between-rows drop was refused');
+
+    await page.keyboard.press('Control+z');
+    await expect_(async () => {
+      const [a] = await topTwo();
+      return a?.label === first.label;
+    }, 'undoing the between-rows drop did not put the roots back in order');
+    await expect_(async () => (await treeCount()) === treeCountAfter,
+      'undoing the between-rows drop changed the VOB count');
+    slotted = `"${second.label}" moved before "${first.label}" among the roots, and back`;
   }
 
   const row = (label, value) => console.log(`  ${String(label).padEnd(28)}${value}`);
@@ -564,7 +695,9 @@ async function main() {
   row('Turned', 'a quarter turn about Y, checked in both projections, undone');
   row('Renamed', `${nameBefore || '(unnamed)'} -> ${RENAMED}, and one flag, each its own undo`);
   row('Placed', `${PLACED} appended as a root, index re-read, undone`);
+  row('Placed under a parent', parented ?? 'not exercised — no rows in the tree');
   row('Reparented', reparented ?? 'not exercised — fewer than two rows in the tree');
+  row('Dropped between rows', slotted ?? 'not exercised — the top two rows are indistinguishable');
   row('Saved and re-loaded', saved
     ? `VOB ${selected} is at ${saved.position.map(Math.round).join(', ')} in the file`
     : 'FAILED');
