@@ -13,8 +13,9 @@
 
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { zenToThree } from 'zen-world';
 import {
-  navFor, frameOn, pivotAt, attachBlenderNav, ORBIT_ROTATE_SPEED,
+  navFor, frameOn, frameVobs, pivotAt, attachBlenderNav, ORBIT_ROTATE_SPEED,
 } from '../src/renderer/world/cameraNav';
 
 const press = (button: number, modifiers: Partial<MouseEvent> = {}) => ({
@@ -127,6 +128,77 @@ describe('cameraNav', () => {
     // Orbit, pan and dolly all scale by the camera-to-target distance, so all
     // three want the pivot moved; the left button never moves the camera.
     expect(asked).toEqual(['1', '1', '1']);
+  });
+});
+
+describe('frameVobs', () => {
+  /** A camera looking down -Z from the origin, as far from the fixtures below
+   *  as the framing has to move it. */
+  const looking = () => {
+    const camera = new THREE.PerspectiveCamera(70, 1, 0.5, 4000);
+    camera.position.set(0, 0, 0);
+    return { camera, target: new THREE.Vector3(0, 0, -100) };
+  };
+
+  test('leaves the orbit pivot exactly on the VOB, in the viewport’s own space', () => {
+    // The payoff of the pivot work, and what a jump from the scene tree is for:
+    // the pivot starts at the centre of a 600 m island, so arriving at a VOB
+    // without taking the pivot along leaves the first orbit swinging the camera
+    // through half the world.
+    const { camera, target } = looking();
+    // Deliberately not round, and with a non-zero X: the conversion out of
+    // ZenGin space mirrors that axis, so a VOB at x = 0 could not tell a real
+    // conversion from a copy.
+    const at: [number, number, number] = [1500.5, -220, 3300.25];
+
+    const center = frameVobs(camera, target, [{ at, bounds: null }]);
+
+    expect(center?.toArray()).toEqual(zenToThree(at));
+    expect(target.toArray()).toEqual(zenToThree(at));
+    // And the camera actually went there — near enough to see it, and not
+    // inside it.
+    expect(camera.position.distanceTo(target)).toBeGreaterThan(camera.near);
+    expect(camera.position.distanceTo(target)).toBeLessThan(20);
+  });
+
+  test('backs off for the visual’s own size, not just for its origin', () => {
+    // A 20 m long house and a sound VOB are the same point without this, and
+    // the house is framed from inside itself.
+    const bare = looking();
+    frameVobs(bare.camera, bare.target, [{ at: [0, 0, 0], bounds: null }]);
+
+    const big = looking();
+    // ZenGin centimetres, 20 m across the long axis.
+    frameVobs(big.camera, big.target, [{ at: [0, 0, 0], bounds: [-100, 0, -1000, 100, 200, 1000] }]);
+
+    expect(big.camera.position.distanceTo(big.target))
+      .toBeGreaterThan(bare.camera.position.distanceTo(bare.target) + 5);
+  });
+
+  test('frames a multi-select on the middle of it, far enough back for all of it', () => {
+    const { camera, target } = looking();
+    const left: [number, number, number] = [-1000, 0, 0];
+    const right: [number, number, number] = [1000, 0, 0];
+
+    frameVobs(camera, target, [{ at: left, bounds: null }, { at: right, bounds: null }]);
+
+    expect(target.toArray()).toEqual([0, 0, 0]);
+    // Both of them are inside the framed sphere: 10 m apart, so the radius the
+    // camera backs off for is at least the 5 m to either one.
+    expect(camera.position.distanceTo(new THREE.Vector3(...zenToThree(left))))
+      .toBeGreaterThan(5);
+  });
+
+  test('a selection with nothing drawn in it moves neither the camera nor the pivot', () => {
+    // A decal, a sound VOB, an unresolved visual: the tree can reach VOBs the
+    // viewport cannot draw, and there is nowhere to jump to.
+    const { camera, target } = looking();
+    const was = camera.position.clone();
+
+    expect(frameVobs(camera, target, [])).toBeNull();
+
+    expect(camera.position.toArray()).toEqual(was.toArray());
+    expect(target.toArray()).toEqual([0, 0, -100]);
   });
 });
 

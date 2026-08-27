@@ -6,7 +6,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
   multiplyRotation, mirrorRotation, threeToZen, zenToThree, zenBoxToThree,
-  isWaynetOp, ZEN_TO_THREE_SCALE, type ZenRotation,
+  isWaynetOp, type ZenRotation,
 } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
@@ -17,7 +17,7 @@ import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
 import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
-import { attachBlenderNav, frameOn, pivotAt } from '../../world/cameraNav';
+import { attachBlenderNav, frameOn, frameVobs, pivotAt } from '../../world/cameraNav';
 import {
   runViewportBenchmark,
   type BenchmarkOptions,
@@ -143,6 +143,16 @@ export interface WorldViewportProps {
    * store keeps the two exclusive; this is where that shows up on screen.
    */
   selectedWaypoint: number | null;
+  /**
+   * A VOB to jump the camera to, leaving the orbit pivot on it — the scene
+   * tree's double-click.
+   *
+   * An object rather than a bare index, because it is a *request* and not a
+   * state: jumping to the same VOB twice is two of them, and that is precisely
+   * when the second one is asked for — after the camera has been flown
+   * somewhere else. Null before any has been made.
+   */
+  frameRequest: { vob: number } | null;
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
   /**
@@ -184,7 +194,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 const WorldViewport: React.FC<WorldViewportProps> = ({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
-  selectedWaypoint, onSelectWaypoint, onMoveWaypoint,
+  selectedWaypoint, frameRequest, onSelectWaypoint, onMoveWaypoint,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -212,6 +222,9 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   loadTextureRef.current = loadTexture;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
+  // Set by the scene effect, because the camera and the controls live inside
+  // it. The frame effect below is the only caller.
+  const frameVobRef = useRef<((vob: number) => void) | null>(null);
   // Survives the scene rebuild a structural op forces — see the restore below.
   const poseRef = useRef<{
     key: string; position: number[]; target: number[];
@@ -617,28 +630,23 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
     // pivot starts at the centre of a 600 m island, so without a way to move it
     // onto what you are looking at, every orbit up close swings the camera
     // through half the world.
-    const frameSelection = () => {
+    const frameThese = (vobs: readonly number[]) => {
       // A VOB that is not drawn has no position to frame — a decal, a sound
       // VOB — and a selection can be nothing but those.
-      const framable = selectionRef.current
+      const framable = vobs
         .map((vob) => ({ at: world.positionOf(vob), bounds: world.boundsOf(vob) }))
         .filter((vob): vob is { at: [number, number, number]; bounds: readonly number[] | null } => vob.at !== null);
-      if (framable.length === 0) return;
 
-      const center = new THREE.Vector3();
-      for (const { at } of framable) center.add(new THREE.Vector3(...zenToThree(at)));
-      center.divideScalar(framable.length);
-
-      let radius = 0;
-      for (const { at, bounds } of framable) {
-        const own = bounds
-          ? Math.max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2]) / 2
-          : 0;
-        radius = Math.max(radius, center.distanceTo(new THREE.Vector3(...zenToThree(at))) + own * ZEN_TO_THREE_SCALE);
-      }
-
-      frameOn(camera, controls.target, center, radius);
+      const center = frameVobs(camera, controls.target, framable);
+      // The pivot `frameVobs` left on them is `controls.target`; this is the
+      // other one — the fallback a drag begun over the sky uses. Without it the
+      // first orbit after a jump swings back to wherever the last click landed,
+      // which is the whole complaint the pivot work exists to answer.
+      if (center !== null) rememberPick(center);
     };
+
+    const frameSelection = () => frameThese(selectionRef.current);
+    frameVobRef.current = (vob: number) => frameThese([vob]);
 
     const frameAll = () => {
       frameOn(
@@ -836,6 +844,7 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
       };
       sceneRef.current = null;
       gizmoRef.current = null;
+      frameVobRef.current = null;
       delete window.__worldViewport;
       cancelAnimationFrame(frame);
       resize.disconnect();
@@ -896,6 +905,13 @@ const WorldViewport: React.FC<WorldViewportProps> = ({
   useEffect(() => {
     gizmoRef.current?.setMode(gizmoMode);
   }, [gizmoMode, mesh, visuals]);
+
+  // A jump asked for from the scene tree. It fires on the request's identity,
+  // not on the VOB — see `frameRequest`.
+  useEffect(() => {
+    if (frameRequest === null) return;
+    frameVobRef.current?.(frameRequest.vob);
+  }, [frameRequest]);
 
   // An edit the main process has taken — a commit, an undo, a redo, or the
   // reversal of a refused one. The scene is a projection and has to follow it;

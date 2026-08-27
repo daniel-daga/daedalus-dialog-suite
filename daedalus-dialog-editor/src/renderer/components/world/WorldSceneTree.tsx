@@ -2,6 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import { Box, Typography } from '@mui/material';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { flattenVisible, type VobReader, type VobRow } from 'zen-world';
@@ -41,6 +42,9 @@ interface RowData {
   selected: ReadonlySet<number>;
   onSelect: (vob: number, additive: boolean) => void;
   onToggle: (vob: number) => void;
+  /** Absent on a tree with no viewport beside it, and then no row carries a
+   *  locator and a double-click does nothing. */
+  onFocus?: (vob: number) => void;
   /** Absent on a read-only tree, and then no row is draggable at all — a row
    *  that looks draggable and drops nowhere is worse than one that does not. */
   onDragVob?: (vob: number) => void;
@@ -116,7 +120,7 @@ const DropStrip: React.FC<{
 };
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
-  const { rows, reader, expanded, selected, onSelect, onToggle } = data;
+  const { rows, reader, expanded, selected, onSelect, onToggle, onFocus } = data;
   const { onDragVob, onDropOn, canDropOn } = data;
   const { vob, depth, hasChildren } = rows[index];
   // Every gap is "before the row under the line", which is what makes a gap mean
@@ -140,6 +144,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       aria-expanded={hasChildren ? expanded.has(vob) : undefined}
       data-testid={`world-vob-row-${vob}`}
       onClick={(event) => onSelect(vob, event.ctrlKey || event.metaKey)}
+      onDoubleClick={onFocus === undefined ? undefined : () => onFocus(vob)}
       draggable={onDragVob !== undefined}
       onDragStart={onDragVob === undefined ? undefined : () => onDragVob(vob)}
       onDragEnd={onDragVob === undefined ? undefined : data.onDragEnd}
@@ -151,6 +156,9 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         pl: `${4 + depth * INDENT}px`, pr: 1, whiteSpace: 'nowrap',
         bgcolor: isSelected ? 'action.selected' : undefined,
         '&:hover': { bgcolor: isSelected ? 'action.selected' : 'action.hover' },
+        // Hidden rather than faded out: an invisible target that still takes
+        // clicks is a row that sometimes jumps instead of selecting.
+        '&:hover .world-vob-locate': { visibility: 'visible' },
       }}
     >
       {onDropOn !== undefined && <DropStrip vob={vob} edge="before" data={data} />}
@@ -171,6 +179,26 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       <Typography variant="caption" color="text.secondary" noWrap sx={{ opacity: 0.75 }}>
         {className}
       </Typography>
+      {/* The discoverable half of the jump — a double-click is not something
+          anyone finds by looking. It stops the click rather than letting it
+          reach the row: the row's handler is what adds and removes in a
+          Ctrl-click batch, and a locator that also toggled membership would
+          take a VOB out of the selection it was asked to fly to. */}
+      {onFocus !== undefined && (
+        <Box
+          component="span"
+          className="world-vob-locate"
+          title="Jump the camera to this VOB"
+          data-testid={`world-vob-locate-${vob}`}
+          onClick={(event) => { event.stopPropagation(); onFocus(vob); }}
+          sx={{
+            display: 'flex', ml: 'auto', flexShrink: 0, pl: 0.5,
+            visibility: 'hidden', color: 'text.secondary',
+          }}
+        >
+          <MyLocationIcon sx={{ fontSize: 14 }} />
+        </Box>
+      )}
     </Box>
   );
 }, areEqual);
@@ -184,6 +212,16 @@ export interface WorldSceneTreeProps {
   /** `additive` is a Ctrl/Cmd click: add this VOB to the selection rather than
    *  replacing it, which is how a multi-select batch is built. */
   onSelect: (vob: number, additive: boolean) => void;
+  /**
+   * Jump the viewport's camera to this VOB and leave the orbit pivot on it — a
+   * double-click on a row, or its locator.
+   *
+   * The other direction of the loop the effects above make: a pick in the
+   * viewport scrolls the row into view, and this is how a row reaches the
+   * viewport. Absent when there is no viewport beside the tree, and then no row
+   * carries a locator.
+   */
+  onFocus?: (vob: number) => void;
   /**
    * Move `vob` into `toParent` at `slot` — `null` for a root. Absent on a
    * read-only tree, and then nothing in it is draggable.
@@ -205,7 +243,7 @@ export interface WorldSceneTreeProps {
 }
 
 const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
-  summary, selection, onSelect, onReparent,
+  summary, selection, onSelect, onFocus, onReparent,
 }) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selected = useMemo(() => new Set(selection), [selection]);
@@ -341,6 +379,7 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       selected,
       onSelect,
       onToggle,
+      onFocus,
       canDropOn,
       canDropBetween,
       hovering,
@@ -350,8 +389,8 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       onDropOn: onReparent === undefined ? undefined : onDropOn,
       onDropBetween: onReparent === undefined ? undefined : onDropBetween,
     }),
-    [rows, reader, expanded, selected, onSelect, onToggle, canDropOn, onReparent, onDropOn,
-      canDropBetween, onDropBetween, hovering, onDragEnd],
+    [rows, reader, expanded, selected, onSelect, onToggle, onFocus, canDropOn, onReparent,
+      onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd],
   );
 
   return (

@@ -179,6 +179,54 @@ describe('WorldSceneTree', () => {
     expect(onSelect).toHaveBeenLastCalledWith(4, false);
   });
 
+  it('asks the viewport to jump to a VOB when its row is double-clicked', async () => {
+    // The other half of the loop the tree exists for: a pick in the viewport
+    // scrolls the row into view, and this is how a row reaches the viewport.
+    const user = userEvent.setup();
+    const onFocus = jest.fn();
+    render(<WorldSceneTree
+      summary={NESTED}
+      selection={[]}
+      onSelect={jest.fn()}
+      onFocus={onFocus}
+    />);
+
+    await user.click(screen.getByTestId('world-vob-toggle-0'));
+    // VOB 4 again: with 0 expanded the visible rows are 0, 1, 2, 4, so it sits
+    // at *position 3*. A row reporting its position would say 3 here.
+    await user.dblClick(row(4)!);
+
+    expect(onFocus).toHaveBeenCalledWith(4);
+  });
+
+  it('carries a locator on every row, which jumps without also being a click', async () => {
+    // Double-click is not discoverable, and a row is where someone looks for
+    // the affordance. Its click must not fall through to the row underneath:
+    // a locator that also re-selects is harmless here and is not harmless in a
+    // Ctrl-click batch, where the row's own handler is what adds and removes.
+    const user = userEvent.setup();
+    const onFocus = jest.fn();
+    const onSelect = jest.fn();
+    render(<WorldSceneTree
+      summary={NESTED}
+      selection={[]}
+      onSelect={onSelect}
+      onFocus={onFocus}
+    />);
+
+    await user.click(screen.getByTestId('world-vob-locate-4'));
+
+    expect(onFocus).toHaveBeenCalledWith(4);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('has no locator at all when there is no viewport to jump', () => {
+    // The same rule the drag strips follow: an affordance that leads nowhere is
+    // worse than no affordance.
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+    expect(screen.queryByTestId('world-vob-locate-0')).not.toBeInTheDocument();
+  });
+
   it('marks every VOB in the selection, not just the one the panels describe', async () => {
     const user = userEvent.setup();
     render(<WorldSceneTree summary={NESTED} selection={[0, 4]} onSelect={jest.fn()} />);

@@ -27,6 +27,7 @@ let mockSelection: readonly number[] | undefined;
 const DRAG: [number, number, number] = [1, 2, 3];
 let mockGizmoMode: string | undefined;
 let mockSelectedWaypoint: number | null | undefined;
+let mockFrameRequest: { vob: number } | null | undefined;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 // The house pattern for react-window under jsdom, which has no layout — without
@@ -50,6 +51,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     selection: readonly number[];
     appliedOps: WorldOp[] | null;
     selectedWaypoint: number | null;
+    frameRequest: { vob: number } | null;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -61,6 +63,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => ({
     mockSelection = props.selection;
     mockGizmoMode = props.gizmoMode;
     mockSelectedWaypoint = props.selectedWaypoint;
+    mockFrameRequest = props.frameRequest;
     return (
       <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
@@ -252,6 +255,7 @@ async function openWorld(cls?: string | readonly string[]) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockAppliedOps = undefined;
+  mockFrameRequest = undefined;
   mockVobProps = { class: 'zCVob' };
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
@@ -1220,5 +1224,39 @@ describe('a class property edited in the grid', () => {
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
 
     await waitFor(() => expect(rangeInput().value).toBe('2000'));
+  });
+});
+
+describe('jumping to a VOB from the scene tree', () => {
+  // Not an edit, but the same seam every edit uses: the shell is what the tree
+  // and the viewport reach each other through. The framing itself is
+  // `frameVobs` in `cameraNav`, tested against a real camera in
+  // `tests/cameraNav.test.ts`; what is left to pin here is that the request
+  // names the VOB that was double-clicked and that the selection follows it.
+  it('asks the viewport for the double-clicked VOB, and selects it', async () => {
+    // VOB 1 is selected by `openWorld`, so a request that merely repeated the
+    // selection — or a tree that reported its row — would not say 0 here.
+    await openWorld();
+    expect(useWorldStore.getState().selection).toEqual([1]);
+
+    fireEvent.doubleClick(screen.getByTestId('world-vob-row-0'));
+
+    await waitFor(() => expect(mockFrameRequest).toEqual({ vob: 0 }));
+    expect(useWorldStore.getState().selection).toEqual([0]);
+  });
+
+  it('is a fresh request every time, so the same VOB can be jumped to twice', async () => {
+    // The viewport fires on the request's identity: a bare number would make
+    // the second double-click on an already-framed VOB do nothing, which is
+    // exactly when it is asked for — after the camera has wandered off.
+    await openWorld();
+
+    fireEvent.doubleClick(screen.getByTestId('world-vob-row-0'));
+    await waitFor(() => expect(mockFrameRequest).toEqual({ vob: 0 }));
+    const first = mockFrameRequest;
+
+    fireEvent.doubleClick(screen.getByTestId('world-vob-row-0'));
+    await waitFor(() => expect(mockFrameRequest).not.toBe(first));
+    expect(mockFrameRequest).toEqual({ vob: 0 });
   });
 });

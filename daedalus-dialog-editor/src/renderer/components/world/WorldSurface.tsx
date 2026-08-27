@@ -141,6 +141,23 @@ const WorldSurface: React.FC = () => {
     if (additive) toggleVob(vob); else selectVob(vob);
   }, [selectVob, toggleVob]);
 
+  /**
+   * A double-click on a scene-tree row, or its locator: select the VOB and jump
+   * the camera to it, leaving the orbit pivot on it.
+   *
+   * The request is a fresh object every time and carries the VOB rather than
+   * relying on the selection, because both of those are what make it a request
+   * and not a state — the same VOB is jumped to twice precisely after the
+   * camera has been flown away from it, and the selection reaches the viewport
+   * a render later.
+   */
+  const [frameRequest, setFrameRequest] = useState<{ vob: number } | null>(null);
+
+  const focusVob = useCallback((vob: number) => {
+    handleSelect(vob, false);
+    setFrameRequest({ vob });
+  }, [handleSelect]);
+
   const handlePick = useCallback((
     vob: number | null, point: [number, number, number] | null, additive: boolean,
   ) => {
@@ -803,6 +820,7 @@ const WorldSurface: React.FC = () => {
                 summary={summary}
                 selection={selection}
                 onSelect={handleSelect}
+                onFocus={focusVob}
                 onReparent={reparent}
               />
             </Box>
@@ -832,6 +850,7 @@ const WorldSurface: React.FC = () => {
               onRotateSelection={handleRotateSelection}
               appliedOps={appliedOps}
               selectedWaypoint={selectedWaypoint}
+              frameRequest={frameRequest}
               onSelectWaypoint={selectWaypoint}
               onMoveWaypoint={moveWaypointTo}
             />

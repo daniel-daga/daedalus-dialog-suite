@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { zenToThree, ZEN_TO_THREE_SCALE } from 'zen-world';
 
 // Blender's viewport navigation, because that is what the people who build
 // Gothic levels already have in their hands. Two rules do most of the work:
@@ -141,4 +142,57 @@ export function frameOn(
 
   target.copy(center);
   camera.position.copy(center).addScaledVector(direction, fits * 1.4);
+}
+
+/** A VOB as framing sees it: where it is drawn in **ZenGin centimetres**, and
+ *  its visual's own box in the same units — null for a VOB with no visual,
+ *  which is a point to frame rather than a thing with a size. */
+export interface FramableVob {
+  at: [number, number, number];
+  bounds: readonly number[] | null;
+}
+
+/**
+ * Frame the camera on some VOBs and **leave the orbit pivot on them** — what
+ * the framing keys do, and what a jump from the scene tree does.
+ *
+ * Answers the centre it framed, in three space, so the caller can remember it
+ * as the last pick: a drag begun over the sky pivots on that, and without it
+ * the very next orbit after a jump would swing back to wherever the last click
+ * happened to land. Null when there is nothing to frame — a selection can be
+ * nothing but VOBs the viewport cannot draw, and then neither the camera nor
+ * the pivot moves at all.
+ *
+ * The conversion out of ZenGin space happens here rather than in the caller
+ * because the radius is in it too: a bbox is centimetres and the sphere the
+ * camera backs off for is metres.
+ */
+export function frameVobs(
+  camera: THREE.PerspectiveCamera,
+  target: THREE.Vector3,
+  vobs: readonly FramableVob[],
+): THREE.Vector3 | null {
+  if (vobs.length === 0) return null;
+
+  const center = new THREE.Vector3();
+  const point = new THREE.Vector3();
+  for (const { at } of vobs) center.add(point.set(...zenToThree(at)));
+  center.divideScalar(vobs.length);
+
+  // Far enough for the furthest VOB *and* for its own extent: a 20 m house
+  // framed as a point is framed from inside itself.
+  let radius = 0;
+  for (const { at, bounds } of vobs) {
+    const own = bounds
+      ? Math.max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2]) / 2
+      : 0;
+    radius = Math.max(
+      radius,
+      center.distanceTo(point.set(...zenToThree(at)))
+        + own * ZEN_TO_THREE_SCALE,
+    );
+  }
+
+  frameOn(camera, target, center, radius);
+  return center;
 }
