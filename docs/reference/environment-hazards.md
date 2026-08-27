@@ -161,3 +161,20 @@ both met on 2026-08-28 with three agents in flight.
   and not that agent's change. Rerun once before believing a failure that points
   at a file you did not touch, and run the suite again after the other agents
   report.
+- **A failure in a file you did not touch still has to be bisected, not
+  attributed.** Two agents blamed each other for the same failing test, each
+  reran it as this section says to, and **both were wrong** — it was a real
+  defect in one of their own changes, reproducing in isolation under `-t`. The
+  rerun rule tells you a failure is stable; it does not tell you whose it is.
+  Bisect by copying the working file aside, `git show HEAD:<path> > <path>`,
+  running the one test, and restoring the copy — four such probes named the file
+  in minutes. "The neighbour's tree is dirty" is a *plausible* explanation, which
+  is exactly why it needs evidence.
+- **Do not run `npx pnpm` in this checkout.** It fetches its own pnpm, decides
+  `node_modules` was installed by something else, and aborts trying to remove it
+  — `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`. With agents working in
+  parallel, the abort is the good outcome. Use `pnpm --filter <pkg> <script>` if
+  pnpm is on PATH, and otherwise call the tools directly from the workspace
+  directory: `node node_modules/jest/bin/jest.js`,
+  `node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit`,
+  `node node_modules/eslint/bin/eslint.js .`.

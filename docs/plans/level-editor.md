@@ -2156,17 +2156,59 @@ the first test of.
   and refuse an op that set one; a C++ case that wrote only the derived three
   would pass every test that did not name a base field, which is why the
   round-trip fixture sets all seven.
-- **The kinds decided the field sets more than the classes did.** The catalogue
-  has `string`, `float` and `color` and nothing else, so every boolean on these
-  five classes is out by construction — `initiallyPlaying`, `ambient3d`,
-  `obstruction`, `fadeOutSky`, `overrideColor`, and `oCZoneMusic`'s `enabled`,
-  `ellipsoid` and `loop`. So is `oCZoneMusic.priority`, an `int32_t` that a
-  float field would truncate in silence. **`oCZoneMusic` is therefore the thin
-  entry**: two floats ZenKit itself documents as "unclear", while the four
-  fields a designer actually reaches for wait on a boolean and an integer kind.
-  A `bool` kind is the obvious next increment and it is cheap — it is one
-  `assertClassPropValue` branch, one grid control and `OptionalBool`, which the
-  binding already has.
+- **The kinds decided the field sets more than the classes did.** With
+  `string`, `float` and `color` and nothing else, every boolean on these five
+  classes was out by construction and so was `oCZoneMusic.priority`, an
+  `int32_t` a float field truncates in silence. That is what increment 3 closed;
+  the table above is superseded by the one below it.
+
+#### Increment 3 — the `bool` and `int` kinds (2026-08-28)
+
+Not a class at all. Two kinds, and the nine fields the five classes of increment
+2 were holding back for want of them.
+
+| class | keys added |
+|---|---|
+| `zCVobSound` (and so `zCVobSoundDaytime`) | `initiallyPlaying`, `ambient3d`, `obstruction` |
+| `zCZoneZFog` | `fadeOutSky`, `overrideColor` |
+| `oCZoneMusic` | `enabled`, `ellipsoid`, `loop`, `priority` |
+
+- **`int` is not `float` with a rule attached, and that is the whole reason it
+  is a kind.** `oCZoneMusic.priority` is an `int32_t`; offered as a float it
+  takes `2.5`, truncates on the cast and reports success, and the caller never
+  learns which of the two numbers the world now holds. Separating it at the
+  *type* means the grid, `assertClassPropValue` and `OptionalInt32` each refuse
+  it, rather than one validator that happens to remember. `OptionalInt32` also
+  refuses anything outside the 32-bit range: a value past 2^31 is not a large
+  priority, it is a wrap.
+- **`priority`'s `min: 0` is documented, not measured.** ZenKit says "`0` is the
+  lowest possible priority", which is a stronger warrant than the guess
+  `innerRangePercentage` refused to make — but it is still not a
+  `normalizeWorld` sweep, so a retail world found holding a negative priority is
+  the thing that falsifies it. Every other new field is a boolean and carries no
+  bounds at all: there is nothing between false and true to refuse.
+- **A boolean is a checkbox, and it is the one kind that is not text.** Every
+  other kind round-trips through `formatted`/`parse`, because one text control
+  over a catalogue table beats a widget per kind. A boolean goes the other way
+  precisely to avoid deciding what "true", "1" and "yes" mean — a parsing
+  problem the panel would be inventing for itself, when the six base `zCVob`
+  flags beside it already have a control that has none.
+- **`overrideColor` is drawn immediately above the colour it governs**, and the
+  catalogue's field order is what puts it there. ZenGin reads `zCZoneZFog.color`
+  only while `overrideColor` is true, so increment 2 shipped a colour that was a
+  legal write the engine ignored — which reads to a user as the editor having
+  done nothing. The adjacency is the whole of the fix and it is deliberately not
+  more than that: the two stay **independent keys**, because an op that set the
+  flag because the colour changed would build an inverse restoring a value
+  nobody edited. Nothing disables or annotates the colour when the flag is
+  false; the grid has no cross-field logic anywhere and this was not the place
+  to introduce it (see the open question in §14.1 row 1.4).
+- **`randomDelay`/`randomDelayVar` are still out, and now for their own reason
+  alone.** They were held back next to the booleans; the kinds are no longer the
+  obstacle, but the engine still reads them only when `mode` is RANDOM, and
+  `mode` is an enum this catalogue cannot set. They are the same shape of defect
+  `overrideColor` just fixed for fog, and closing them means a `mode` control,
+  which means enums.
 - **Two enums stayed out for the reason the catalogue already gives** (sound
   `mode`, `volumeType`), and `randomDelay`/`randomDelayVar` stayed out for a
   third reason that is neither: the engine reads them only when `mode` is
@@ -2411,9 +2453,9 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
 | 1.2 | **Copy / paste / duplicate**, incl. subtree | unscheduled → 1b-2 | The most-used Spacer verb after move. Same undo question as delete, same answer. A cross-world clipboard only if part-to-part copying is wanted. |
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
-| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the three value kinds are now the limit rather than the classes: every boolean on those five classes and `oCZoneMusic.priority` (an `int32`) are out for want of a kind, which makes a `bool` kind the cheapest next increment. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), enums (retail carries out-of-range values a dropdown would destroy), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
-| 1.5 | **Numeric transform entry** | **partial** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **Rotation stays read-only, by decision**: a `zCVob` stores a 3x3 matrix, `zen-world` has no matrix↔Euler conversion anywhere (`coords/` has none), and hand-rolling one in the renderer would author angles nothing in the system round-trips. Typed angles need that conversion in the domain first, with a round-trip tolerance test beside it. |
-| 1.6 | **Snapping** | unscheduled → 1b-2 | Drop-to-ground, align to surface normal, grid step, angle step. The gizmo is free-form only. |
+| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), enums (retail carries out-of-range values a dropdown would destroy), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
+| 1.5 | **Numeric transform entry** | **partial** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half now has its domain conversion, and the grid is still read-only.** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` (2026-08-28) with the round-trip tolerance test the old wording asked for; what is left is three more fields in `WorldPropertyGrid`. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
+| 1.6 | **Snapping** | **partial** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal are still out**, and not for want of a raycast — the world mesh has a BVH and the terrain pick already uses it. They are out because both are *per-VOB* answers (each VOB finds its own ground, its own normal) and the commit path takes one delta for the whole selection: `translateVobs`/`rotateVobs` would need a per-VOB variant, which is a second op-building path and the thing the gizmo work has avoided since Phase 1b began. Align-to-normal additionally has to decide which axis of a visual is up — the same question that keeps a placed VOB unrotated (`IDENTITY` in `WorldSurface`). |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
 | 1.8 | **The rest of `zCVob`** | unscheduled → 1b-2 | Preset name, `visualCamAlign`, bias, `dynamicShadows`, `sleepMode`, decal parameters. |
 

@@ -67,7 +67,9 @@ was true for so long nobody re-reads it.
   other machine and CI must rebuild — and here it is `vendor-build/` too, not
   just `build/`: patches `0024`–`0026` change `ArchiveAscii.cc`, `0027` changes
   `World.cc`, and `src/fixture.cc` gained a decal and then, this
-  session, five sound and zone VOBs. Run **`node scripts/build-zenkit.js` before
+  session, five sound and zone VOBs. `binding.cc` changed again after that for
+  the `bool`/`int` kinds — `vendor/` did not, so that rebuild was `npx node-gyp
+  rebuild` alone. Run **`node scripts/build-zenkit.js` before
   `npx node-gyp rebuild`**; the gyp step alone links a stale `zenkit.lib` and
   silently keeps the old writer. A stale `.node` is worse than useless — the
   editor's Jest suites fake the worker, so they stay green against a binary
@@ -91,7 +93,8 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty — three cards landed this session, in parallel; see Done)*
+*(empty — six cards landed this session in two parallel batches of three;
+see Done)*
 
 ## Next
 
@@ -119,68 +122,81 @@ was true for so long nobody re-reads it.
   the viewport* — the first edits whose only witness is the engine.
   `verify-world-edit.js` sets no class property at all, so a rebuilt candidate
   would have to grow one before it is worth building.
-- **Phase 1b-2, class-aware editing — the rest of it, and the kinds are now the
-  wall.** Increments 1 and 2 landed (see Done): seven classes are editable —
-  `oCItem`, `zCVobLight`, the two sounds and the three zones. Classes still
-  untouched: the trigger family, `oCMob*`, `zCPFXController`, `zCVobAnimate`.
-  **But the classes stopped being the limiting factor and the catalogue's three
-  value kinds started.** `oCZoneMusic` landed as two floats ZenKit itself
-  documents as "unclear", while the four fields a designer actually reaches for
-  on it are three booleans and an `int32`. So the cheapest next increment is not
-  a class at all: **a `bool` kind** — one `assertClassPropValue` branch, one grid
-  control, and `OptionalBool`, which the binding already has. An `int` kind is
-  second, and it is what `oCZoneMusic.priority` needs, a `float` truncating it
-  silently. Every boolean on the five classes just landed was held back for
-  exactly this reason.
-  Still out by decision rather than by time: `isStatic` and anything else that
-  changes *which* fields the archive contains, enums (retail carries
-  out-of-range values a dropdown destroys), list fields, and base-`zCVob`
-  widening (§14.1 item 1.8). Alongside and independent: class-specific
-  *insertion* (item 1.3 — `insertItemVob` is in the binding and wired to
-  nothing), copy/paste (1.2), snapping (1.6). Numeric transform entry (1.5) is
-  now **half landed** — its own card is below. Still before Phase 1c in §11.
+- **Phase 1b-2, class-aware editing — the classes that are left.** Seven classes
+  are editable and the catalogue now has five kinds (Done), so the kinds card is
+  closed and the class list is the constraint again. Left: the trigger family,
+  `oCMob*`, `zCPFXController`, `zCVobAnimate` — each still one C++ case plus one
+  `CLASS_FIELDS` entry plus its tests.
+  Held out by decision rather than by time, and **enums are now the whole of
+  it**: `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail
+  carries out-of-range values a dropdown destroys. Enums are also what is left
+  of the "legal writes the engine ignores" card — `randomDelay` /
+  `randomDelayVar` are read only when `mode` is RANDOM, and `mode` is precisely
+  what cannot be set. Also out: `isStatic` and anything else changing *which*
+  fields the archive contains, list fields, and base-`zCVob` widening (§14.1
+  item 1.8). Alongside and independent: class-specific *insertion* (item 1.3 —
+  `insertItemVob` is in the binding and wired to nothing), copy/paste (1.2).
+  Numeric transform entry (1.5) and snapping (1.6) are both **half landed** —
+  their own cards below. Still before Phase 1c in §11.
 
-- **Typed rotation needs a matrix↔Euler conversion `zen-world` does not have.**
-  Position landed as typed entry (Done); rotation is still read-only monospace,
-  and that is a decision rather than an omission. A `zCVob` stores a 3x3 matrix,
-  Spacer takes angles, and `zen-world/coords` has no conversion either way — a
-  grep for `euler|atan2|asin` across `zen-world/src` finds nothing. Hand-rolling
-  one in the renderer would author angles nothing else in the system
-  round-trips, so this is a **domain** card and not a UI one: the conversion in
-  `zen-world` with a round-trip tolerance test beside it, and only then three
-  more fields in the grid. Plan §14.1 row 1.5 now reads *partial* and carries
-  the reasoning.
+- **Typed rotation: the conversion exists now, the UI does not.** The domain
+  half landed (Done) — `zenRotationToEuler` / `eulerToZenRotation` in
+  `zen-world/coords`, measured rather than assumed. What is left is three fields
+  in `WorldPropertyGrid` and the two decisions the conversion deliberately did
+  not take.
+  **The trap first, because it is the one that corrupts a world quietly.** The
+  read *normalizes*: 12,514 of 41,393 retail VOBs (30.2 %) are non-orthonormal
+  by more than 1e-6, so `eulerToZenRotation(zenRotationToEuler(M))` differs from
+  `M` for a third of the world. A no-op commit would therefore re-orthonormalize
+  a matrix and change bytes nobody asked to change. The position field's
+  refuse-a-value-equal-to-the-one-already-there idiom covers it **if it is
+  applied per angle**.
+  Then: absolute or delta for a multi-selection (single selection is
+  `rotateVob(..., eulerToZenRotation(typed), bounds)`; N VOBs is
+  `multiplyRotation(target, invert(current))` and a UI decision). And displayed
+  angles are canonical — yaw/roll in (−180, 180], pitch in [−90, 90] — so a
+  field showing 190° remounts as −170° and a pole pose remounts with roll 0.
+  Both correct, both look to a user like the editor changing their number.
+  `zenRotationToEuler` **throws** on a reflection or a collapsed matrix; retail
+  has none, but an uncaught throw in a render path is a blank grid.
+  **And Spacer parity is unmeasured**: nothing in the format, in ZenKit or here
+  commits to an Euler order, so Y-X-Z was chosen on retail singularity counts
+  (464 VOBs on XYZ's against 53 on YXZ's), not on a match to Spacer. Settling it
+  needs Spacer itself — type an angle, save, read the matrix back. If it ever
+  turns out different, only those two functions and their tests change.
 
-- **Two class fields are legal writes the engine ignores, and a `bool` kind
-  closes both.** `zCZoneZFog.color` is offered on a zone whose `overrideColor`
-  is false, where ZenGin never reads it; `zCVobSound`'s `randomDelay` /
-  `randomDelayVar` have the same shape under a non-RANDOM `mode`, and were held
-  back for it. Neither is a *wrong* write — the byte lands where it belongs —
-  but both read to a user as "the editor did nothing", which is worse than a
-  refusal would be. The fog one is shipped and the sound ones are not, so the
-  fog one is the card.
+- **The refusal idiom is fragile, and one instance is a live bug.**
+  `refactoring-targets.md` §7 holds it. A refused edit is corrected by the field
+  remounting, and the remount depended on React committing an intermediate state
+  **React never promised to commit** — a toolbar `Select` added this session was
+  enough to collapse it. The class-property half is fixed (Done, and the fix is
+  a rule now rather than a coincidence), but **position, name and visual are
+  not**: they read from the columnar index, which is never `null`, so there is
+  no unmount to save them and a refused edit keeps the typed value on screen
+  today, with no timing coincidence involved. Verified by probe, not inferred.
+  The remedy is a refusal generation folded into the field keys, or making the
+  fields controlled; it lands in `WorldPropertyGrid.tsx`.
 
-- **`innerRangePercentage`'s convention is unmeasured, so its entries carry no
-  upper bound.** Nothing here says whether ZenGin stores it as 0..1 or 0..100,
-  and a wrong maximum refuses retail data outright, so both zone entries shipped
-  `min: 0` and no `max`. One `normalizeWorld` sweep over a retail install
-  settles it and tightens both. The same reasoning left `oCZoneMusic.reverb`
-  unbounded deliberately: a reverb level is *negative* decibels, and a `min: 0`
-  copied from the light's `range` would refuse every music zone in the game.
+- **Snapping — drop-to-ground and align-to-normal.** Grid step and angle step
+  landed (Done). The two that are left are **not** blocked on a raycast, which
+  is the thing worth knowing: the world mesh has a BVH. They are blocked because
+  both are *per-VOB* answers — each VOB finds its own ground, its own normal —
+  while `translateVobs`/`rotateVobs` take **one** delta for the whole selection.
+  Doing them means a per-VOB op-building path, the second one this area has
+  refused to grow since Phase 1b began. Align-to-normal additionally has to
+  decide which axis of a visual is up, the same question that keeps a placed VOB
+  at `IDENTITY`. Open and unacted: whether a *typed* coordinate should snap too
+  (it does not — a typed number is an explicit destination).
 
-- **The brightness has no verdict on how it looks, and a clipping question
-  behind it.** It landed (Done) and two things are open. The renderer uses
-  `NoToneMapping`, so above 1.0 exposure clips per channel — a bright surface
-  goes white before a dark one becomes readable. If lifting an interior far
-  enough blows out the exterior in the same frame, the answer is a tone-mapping
-  curve (`ACESFilmicToneMapping` plus `toneMappingExposure`) rather than a wider
-  range, and that is a different look and Daniel's call, not something to do
-  unasked. And **no test covers the picture at any exposure**: jsdom has no
-  WebGL, so the injected GLSL is string-matched and never compiled — a syntax
-  error would pass every test in the suite. `scripts/verify-world-render.js`
-  already renders a real frame through the real materials and could compare mean
-  luminance at two exposures; that is the cheap close, and it would cover the VOB
-  outline's injected term at the same time.
+- **Two unmeasured catalogue bounds, one sweep closes both.**
+  `innerRangePercentage` ships with no upper bound because nothing says whether
+  ZenGin stores 0..1 or 0..100, and a wrong maximum refuses retail data.
+  `oCZoneMusic.priority` ships `min: 0` on ZenKit's documentation alone — a
+  retail world holding a negative priority would be refused by the grid, the
+  validator and the binding alike. One `normalizeWorld` sweep over a retail
+  install settles both. `oCZoneMusic.reverb` is unbounded on purpose and needs
+  no sweep: a reverb level is *negative* decibels, and a `min: 0` copied from
+  the light's `range` would refuse every music zone in the game.
 
 - **Waynet editing — the edge ops, and add/delete/rename.** The gizmo landed
   (see Done), so the one op that exists is now reachable; nothing below is.
@@ -360,6 +376,53 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   dims slightly).
 
 ## Done — Phase 1b
+
+- **A `bool` kind and an `int` kind, and the nine fields they unblock.** The
+  catalogue's three kinds were the constraint; now there are five, and the class
+  list is the constraint again. `int` is deliberately not a `float` with a rule
+  attached — a `float` whose archive member is `int32_t` truncates on the cast in
+  C++ and *reports success* — so the two are separated at the type, and the grid,
+  the IPC assertion and the binding each read `kind`. Booleans assign on
+  `.has_value()`, never on truthiness.
+  **The fog pairing was closed by ordering alone**: catalogue order is draw
+  order, so `overrideColor` is now immediately above `color`, pinned by a test in
+  both packages. Deliberately *not* done — greying the colour out when the flag
+  is false, or making a colour write imply the flag: the grid has no cross-field
+  logic anywhere, and an op setting a key nobody edited builds an inverse
+  restoring a value nobody edited.
+
+- **Typed angles get a conversion, and every decision in it is measured.**
+  `zenRotationToEuler` / `eulerToZenRotation` in `zen-world/coords`, domain only.
+  Four decisions, none asserted: **the order** is intrinsic Y-X-Z because 464 of
+  41,393 retail VOBs sit on XYZ's singularity against 53 on YXZ's — and the
+  report says plainly that this is *not* a claim of Spacer parity, which nothing
+  available here can check. **The pole** takes roll to 0 with no near-pole
+  epsilon, because a naive one discards a recoverable roll at 8.5e-4 of matrix
+  entry, four orders above tolerance. **Tolerance** is 1e-6 from float32 ulp
+  arithmetic, with a measured worst case of exactly one ulp over 200k poses.
+  **Non-orthonormal matrices** are normalized rather than refused because 30.2 %
+  of retail VOBs are non-orthonormal — drift, not scale, and refusing would take
+  typed angles from a third of the world.
+  The consequence is a trap and it is in Next: because the read normalizes, a
+  no-op commit rewrites bytes for that same 30 %.
+
+- **The gizmo snaps, and an uncontrolled input stops keeping a refused value.**
+  Grid step and angle step, quantising the *delta* — consistent with the typed
+  coordinate, and for rotation there was no alternative until this same batch
+  landed the conversion. One `snapProxy()` on the proxy everything downstream
+  already reads, so the step is applied once and not in four places.
+  **The bug it exposed is the durable half, and it was measured rather than
+  guessed.** Adding a toolbar `Select` broke a class-property test; instrumented
+  renders showed the re-read's `setClassProps(null)` and the fetch's
+  `setClassProps(props)` collapsing into one render, so the section never
+  unmounted and the key never changed. Bisected to a bare `<TextField select>`
+  at HEAD — the two `useState` calls are innocent; MUI's `SelectInput` schedules
+  its own update from a ref callback during commit and changes when React
+  flushes. So the correction of a refused edit **depended on React committing an
+  intermediate state React never promised to commit**. `setClassProps(null)` now
+  happens in `commitOps`'s catch, before the re-read is issued. The worse
+  instance — position, name and visual, where there is no unmount at all — is a
+  live bug and is in Next.
 
 - **Five more classes became editable — the two sounds and the three zones.**
   Increment 2 of Phase 1b-2, and the increment that showed the catalogue's three
