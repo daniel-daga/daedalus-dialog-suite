@@ -1060,6 +1060,7 @@ const CLASS_PROP_ROUND_TRIP = [
     pfxName: 'PFX_CAMPFIRE_ÄÖÜ', killWhenDone: false, initiallyRunning: false,
   }],
   ['1/10', 'zCTriggerWorldStart', { fireOnce: false }],
+  ['1/11', 'oCTriggerScript', { function: 'SCRIPTFUNC_OTHER_ÄÖÜ' }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {

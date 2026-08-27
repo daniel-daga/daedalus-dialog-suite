@@ -208,6 +208,15 @@ const ZC_TRIGGER_WORLD_START_FIELDS = [
   { key: 'fireOnce', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The one non-enum, non-list field `oCTriggerScript` has beyond the base
+ *  `VTrigger` fields it holds out with the rest of the family: the script
+ *  function it calls when it is about to fire an `OnTrigger`. `target` stays
+ *  out with the rest of the family's target strings — the same "one field,
+ *  nothing else to hold out yet" shape as `zCTriggerWorldStart`'s. */
+const OC_TRIGGER_SCRIPT_FIELDS = [
+  { key: 'function', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -226,10 +235,11 @@ export const CLASS_FIELDS = {
   zCVobAnimate: ZC_VOB_ANIMATE_FIELDS,
   zCPFXController: ZC_PFX_CONTROLLER_FIELDS,
   zCTriggerWorldStart: ZC_TRIGGER_WORLD_START_FIELDS,
+  oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has nine, which is the point of asking through `fieldOf`. The
+ *  37 and this has ten, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;

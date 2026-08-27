@@ -2707,9 +2707,20 @@ none an enum, so nothing on the class was held out by decision.
 `fireOnce` (`fire_once`), read as `fireOnce` on the get side already. `target`
 stays out with the rest of the trigger family's target strings, and
 `s_has_fired` is save-game only — the same "nothing else to hold out" shape as
-`zCVobAnimate`. The rest of the trigger family (`zCTrigger`, `zCMover`,
-`zCTriggerList`, `oCTriggerScript`, `oCTriggerChangeLevel`, `zCTriggerUntouch`)
-and `oCMob*` are still untouched on the write side.
+`zCVobAnimate`.
+
+`oCTriggerScript` landed its one non-enum, non-list field 2026-08-28:
+`function` (the script function it calls before firing an `OnTrigger`),
+already read on the get side (`normalize.cc`'s `PutTriggerProps`/case). The
+base `VTrigger` fields it inherits (`target` among them) stay out with the
+rest of the family's target strings and base fields. `zCTriggerUntouch` and
+`zCTriggerList` turn out to have **no** eligible field at all once enums,
+lists and `target` are excluded — `zCTriggerUntouch` is `target` alone, and
+`zCTriggerList` is `mode` (enum) and `targets` (list). The rest of the trigger
+family (`zCTrigger`, `zCMover`, `oCTriggerChangeLevel`) and `oCMob*` are still
+untouched on the write side; `zCTrigger`'s own base fields (eight bools plus
+four numerics, shared by `zCMover` and `oCTriggerChangeLevel`) are the next
+sized piece of work, not a one-field increment.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode` and their kin, where retail carries

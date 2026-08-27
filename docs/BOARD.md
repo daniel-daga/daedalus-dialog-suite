@@ -119,8 +119,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **The classes that are left** — rest of the trigger family, `oCMob*`; enums
-  are the whole of what is held out. Unowned. §16.3
+- **The classes that are left — `zCTrigger`, `zCMover`,
+  `oCTriggerChangeLevel`, `oCMob*`** — `zCTriggerUntouch` and `zCTriggerList`
+  turned out to have no eligible field at all. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -165,7 +166,10 @@ against `git log` and the docs. `git log` is the permanent record.)*
 - **`zCTriggerWorldStart` joins the class-property catalogue** — its one
   non-enum field, `fireOnce`, round-tripped through
   `setVobClassProp`/save/reload. §16.3
+- **`oCTriggerScript` joins the class-property catalogue** — its one field,
+  `function`, round-tripped through `setVobClassProp`/save/reload;
+  `zCTriggerUntouch` and `zCTriggerList` found to have no eligible field. §16.3
 
 Verified this session: `zenkit-node` (build + full suite + lint), `zen-world`
 (test + lint + typecheck + build), `daedalus-dialog-editor` (build:main +
-typecheck:renderer + full Jest + lint) all green — `zCTriggerWorldStart` change.
+typecheck:renderer + full Jest + lint) all green — `oCTriggerScript` change.

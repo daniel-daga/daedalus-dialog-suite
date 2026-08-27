@@ -1114,6 +1114,18 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (fire_once.has_value()) world_start.fire_once = *fire_once;
       break;
     }
+    // The one field this op writes: the script function it calls when it is
+    // about to fire an `OnTrigger`. `target` and the rest of the base
+    // `VTrigger` fields are held out with the rest of the trigger family —
+    // the same "one field, nothing else to hold out yet" shape as
+    // `zCTriggerWorldStart`'s.
+    case zenkit::VirtualObjectType::oCTriggerScript: {
+      RequireClassKeys(env, props, {"function"}, class_name);
+      auto function = OptionalCp1252String(env, props, "function");
+      auto& trigger_script = static_cast<zenkit::VTriggerScript&>(*vob);
+      if (function) trigger_script.function = std::move(*function);
+      break;
+    }
     default:
       throw Napi::Error::New(env,
                              "no class properties are known for a " + std::string {class_name});

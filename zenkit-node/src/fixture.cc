@@ -632,7 +632,17 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   world_start->target = "TARGET_VOB";
   world_start->fire_once = true;
 
-  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start};
+  auto trigger_script = std::make_shared<VTriggerScript>();
+  trigger_script->type = VirtualObjectType::oCTriggerScript;
+  trigger_script->vob_name = "VOB_INDEX_TRIGGERSCRIPT";
+  trigger_script->position = Vec3 {330.0f, 4.0f, 340.0f};
+  trigger_script->bbox =
+      AxisAlignedBoundingBox {Vec3 {329.0f, 3.0f, 339.0f}, Vec3 {331.0f, 5.0f, 341.0f}};
+  trigger_script->target = "TARGET_VOB";
+  trigger_script->function = "SCRIPTFUNC_ON_TRIGGER";
+
+  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
+                     trigger_script};
   return root;
 }
 
