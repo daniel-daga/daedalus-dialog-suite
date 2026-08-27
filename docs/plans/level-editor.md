@@ -2773,8 +2773,18 @@ and a class-property write is not the layer to grow that check in. Appended to
 `BuildVisualVobTree` at path `1/16` (one fixture VOB of type `oCMobInter`
 stands in for all four — the C++ case and the field set are identical for the
 other three, so a second fixture would round-trip the same code path).
-`oCMobFire`, `oCMobContainer` and `oCMobDoor` — each with fields of its own
-(`VFire`/`VContainer`/`VDoor`) — are what is left of `oCMob*`.
+`oCMobFire`, `oCMobContainer` and `oCMobDoor` landed 2026-08-28, closing
+`oCMob*`: each is the base thirteen (`oCMobInter`'s own four included) plus
+its own fields. `VFire` adds `slot` and `vobTree`, both plain config that
+names no script symbol, so nothing on the class is held out. `VContainer`
+adds `locked` and `pickString`; `key` (the item instance that unlocks it)
+stays out with `item`, the same cross-reference decision, and so does
+`contents` — a single archive string, but one that encodes a comma-separated
+list of item instances and counts, the same "names script symbols this
+catalogue cannot validate" shape as `key` rather than the unbounded-list
+reason `keyframes` is held out by. `VDoor` adds the same `locked` and
+`pickString`, `key` held out the same way. One fixture VOB per class, appended
+to `BuildVisualVobTree` at paths `1/17`-`1/19`.
 
 Held out by decision rather than by time, and **enums are now the whole of it**:
 `mode`, `volumeType`, `zCMover.lerpMode`/`speedMode` and their kin, where

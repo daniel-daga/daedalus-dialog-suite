@@ -1094,6 +1094,27 @@ const CLASS_PROP_ROUND_TRIP = [
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 4, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: false,
   }],
+  ['1/17', 'oCMobFire', {
+    focusName: 'FOCUS_OTHER_CAMPFIRE_ÄÖÜ', hp: 1, damage: 0, movable: false, takable: false,
+    focusOverride: true, visualDestroyed: 'CAMPFIRE_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
+    onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
+    slot: 'BIP01 OTHER FIRE ÄÖÜ', vobTree: 'FIRETREE_OTHER.ZEN',
+  }],
+  ['1/18', 'oCMobContainer', {
+    focusName: 'FOCUS_OTHER_CHEST_ÄÖÜ', hp: 40, damage: 0, movable: false, takable: false,
+    focusOverride: true, visualDestroyed: 'CHEST_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
+    onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
+    locked: false, pickString: 'RLLR ÄÖÜ',
+  }],
+  ['1/19', 'oCMobDoor', {
+    focusName: 'FOCUS_OTHER_DOOR_ÄÖÜ', hp: 60, damage: 0, movable: false, takable: false,
+    focusOverride: true, visualDestroyed: 'DOOR_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
+    onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
+    locked: false, pickString: 'LLRR ÄÖÜ',
+  }],
 ];
 
 test('setVobClassProp round-trips every catalogued key of the sound family and the zones', () => {

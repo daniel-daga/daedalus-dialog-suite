@@ -119,10 +119,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **`oCMob*` — three classes left, each with fields of its own** —
-  `oCMobFire`/`Container`/`Door` still need their own case (`VFire`/
-  `VContainer`/`VDoor`); the plain base and the four `target`/`item`-only
-  subclasses landed 2026-08-28. Unowned. §16.3
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
 - **Snapping — drop-to-ground and align-to-normal** — blocked on a per-VOB
@@ -161,10 +157,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-- **`oCMobInter`/`Ladder`/`Switch`/`Wheel` join the class-property catalogue**
-  — the base nine plus `stateCount`/`conditionFunction`/`onStateChangeFunction`/
-  `rewind`; `target` and `item` stay out. `oCMobFire`/`Container`/`Door` are
-  what is left, moved to Next. §16.3
+- **`oCMobFire`/`Container`/`Door` join the class-property catalogue, closing
+  `oCMob*`** — `slot`/`vobTree` on Fire; `locked`/`pickString` on Container and
+  Door, `key` and Container's `contents` held out as unvalidated cross-
+  references. §16.3
 
 Verified this session: `zenkit-node` (rebuild + full suite + lint), `zen-world`
 (test/lint/typecheck/build), editor (build:main/typecheck:renderer/Jest/lint)

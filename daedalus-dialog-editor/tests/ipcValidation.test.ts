@@ -741,10 +741,10 @@ describe('assertApplyOpsRequest', () => {
     });
 
     it('rejects a class the catalogue does not know', () => {
-      // A world has 37 classes and the catalogue has seven. With no entry there is
+      // A world has 37 classes and the catalogue has fewer. With no entry there is
       // no key the op could legally carry, so the refusal is the class itself
       // rather than every key of it in turn.
-      for (const bad of ['oCMobContainer', 'zCVob', '', 'toString', 42, null, undefined]) {
+      for (const bad of ['oCMobBed', 'zCVob', '', 'toString', 42, null, undefined]) {
         expect(() => assertApplyOpsRequest({ ops: [{ ...instance, className: bad }] }))
           .toThrow(/no class properties are known/);
       }

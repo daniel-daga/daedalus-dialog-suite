@@ -322,6 +322,36 @@ const OC_MOB_INTER_FIELDS = [
   { key: 'rewind', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The base thirteen plus `VFire`'s own two: the bone of the rigged model the
+ *  fire effect sits at, and the name of the template file that configures it.
+ *  Both are plain config — neither names a script symbol — so nothing on this
+ *  class is held out. */
+const OC_MOB_FIRE_FIELDS = [
+  ...OC_MOB_INTER_FIELDS,
+  { key: 'slot', kind: 'string' },
+  { key: 'vobTree', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** The base thirteen plus `VContainer`'s `locked` and `pickString`. `key` (the
+ *  item instance that unlocks it) stays out with `item`, the same cross-
+ *  reference decision. `contents` stays out too: it is a single string in the
+ *  archive, but it encodes a comma-separated list of item instances and
+ *  counts, the same "names script symbols this catalogue cannot validate"
+ *  shape as `key` — not the unbounded-list reason `keyframes` is held out by. */
+const OC_MOB_CONTAINER_FIELDS = [
+  ...OC_MOB_INTER_FIELDS,
+  { key: 'locked', kind: 'bool' },
+  { key: 'pickString', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** The base thirteen plus `VDoor`'s `locked` and `pickString`; `key` stays out
+ *  for the same cross-reference reason as the container's. */
+const OC_MOB_DOOR_FIELDS = [
+  ...OC_MOB_INTER_FIELDS,
+  { key: 'locked', kind: 'bool' },
+  { key: 'pickString', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
 /**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
@@ -349,6 +379,9 @@ export const CLASS_FIELDS = {
   oCMobLadder: OC_MOB_INTER_FIELDS,
   oCMobSwitch: OC_MOB_INTER_FIELDS,
   oCMobWheel: OC_MOB_INTER_FIELDS,
+  oCMobFire: OC_MOB_FIRE_FIELDS,
+  oCMobContainer: OC_MOB_CONTAINER_FIELDS,
+  oCMobDoor: OC_MOB_DOOR_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /** A class the catalogue knows. Not every class in a world is one — a world has

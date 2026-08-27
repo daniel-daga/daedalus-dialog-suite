@@ -758,8 +758,79 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   mob_inter->on_state_change_function = "LEVER_ON_STATE_CHANGE";
   mob_inter->rewind = true;
 
+  auto mob_fire = std::make_shared<VFire>();
+  mob_fire->type = VirtualObjectType::oCMobFire;
+  mob_fire->vob_name = "VOB_INDEX_MOB_FIRE";
+  mob_fire->position = Vec3 {432.0f, 4.0f, 442.0f};
+  mob_fire->bbox = AxisAlignedBoundingBox {Vec3 {431.0f, 3.0f, 441.0f}, Vec3 {433.0f, 5.0f, 443.0f}};
+  mob_fire->name = "FOCUS_CAMPFIRE";
+  mob_fire->hp = 0;
+  mob_fire->damage = 0;
+  mob_fire->movable = false;
+  mob_fire->takable = false;
+  mob_fire->focus_override = false;
+  mob_fire->visual_destroyed = "";
+  mob_fire->owner = "";
+  mob_fire->owner_guild = "";
+  mob_fire->destroyed = false;
+  mob_fire->state_count = 1;
+  mob_fire->condition_function = "";
+  mob_fire->on_state_change_function = "";
+  mob_fire->rewind = false;
+  mob_fire->slot = "BIP01 FIRE";
+  mob_fire->vob_tree = "FIRETREE_MEDIUM.ZEN";
+
+  auto mob_container = std::make_shared<VContainer>();
+  mob_container->type = VirtualObjectType::oCMobContainer;
+  mob_container->vob_name = "VOB_INDEX_MOB_CONTAINER";
+  mob_container->position = Vec3 {434.0f, 4.0f, 444.0f};
+  mob_container->bbox =
+      AxisAlignedBoundingBox {Vec3 {433.0f, 3.0f, 443.0f}, Vec3 {435.0f, 5.0f, 445.0f}};
+  mob_container->name = "FOCUS_CHEST";
+  mob_container->hp = 20;
+  mob_container->damage = 0;
+  mob_container->movable = false;
+  mob_container->takable = false;
+  mob_container->focus_override = false;
+  mob_container->visual_destroyed = "CHEST_DESTROYED.MMS";
+  mob_container->owner = "PC_HERO";
+  mob_container->owner_guild = "GIL_BAU";
+  mob_container->destroyed = false;
+  mob_container->state_count = 1;
+  mob_container->condition_function = "";
+  mob_container->on_state_change_function = "";
+  mob_container->rewind = false;
+  mob_container->locked = true;
+  mob_container->key = "ItKeyChest";
+  mob_container->pick_string = "LRRLLRL";
+  mob_container->contents = "ItMi_Gold:75, ItFo_Fish:2";
+
+  auto mob_door = std::make_shared<VDoor>();
+  mob_door->type = VirtualObjectType::oCMobDoor;
+  mob_door->vob_name = "VOB_INDEX_MOB_DOOR";
+  mob_door->position = Vec3 {436.0f, 4.0f, 446.0f};
+  mob_door->bbox = AxisAlignedBoundingBox {Vec3 {435.0f, 3.0f, 445.0f}, Vec3 {437.0f, 5.0f, 447.0f}};
+  mob_door->name = "FOCUS_DOOR";
+  mob_door->hp = 30;
+  mob_door->damage = 0;
+  mob_door->movable = false;
+  mob_door->takable = false;
+  mob_door->focus_override = false;
+  mob_door->visual_destroyed = "DOOR_DESTROYED.MMS";
+  mob_door->owner = "PC_HERO";
+  mob_door->owner_guild = "GIL_BAU";
+  mob_door->destroyed = false;
+  mob_door->state_count = 1;
+  mob_door->condition_function = "";
+  mob_door->on_state_change_function = "";
+  mob_door->rewind = false;
+  mob_door->locked = true;
+  mob_door->key = "ItKeyDoor";
+  mob_door->pick_string = "RLRL";
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
-                     trigger_script, trigger, change_level, mover, mob, mob_inter};
+                     trigger_script, trigger, change_level, mover, mob, mob_inter, mob_fire,
+                     mob_container, mob_door};
   return root;
 }
 

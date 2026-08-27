@@ -29,10 +29,11 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCMOB', 'oCMobInter', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
-      'oCTriggerChangeLevel', 'oCTriggerScript', 'oCZoneMusic', 'zCMover',
-      'zCPFXController', 'zCTrigger', 'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLight',
-      'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
+      'oCItem', 'oCMOB', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
+      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTriggerChangeLevel', 'oCTriggerScript',
+      'oCZoneMusic', 'zCMover', 'zCPFXController', 'zCTrigger', 'zCTriggerWorldStart',
+      'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane',
+      'zCZoneZFog',
     ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
     expect(classPropKeys('zCVobLight')).toEqual(['range', 'color']);
@@ -192,6 +193,29 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('oCMobInter', 'rewind')).toEqual({ key: 'rewind', kind: 'bool' });
     expect(fieldOf('oCMobInter', 'target')).toBeNull();
     expect(fieldOf('oCMobInter', 'item')).toBeNull();
+    // `oCMobFire` — the base nine plus its own two plain strings (a rigged
+    // model's bone, and the fire-effect template file). Neither names a script
+    // symbol, so nothing on it is held out.
+    expect(classPropKeys('oCMobFire')).toEqual([...OC_MOB_INTER_KEYS, 'slot', 'vobTree']);
+    expect(fieldOf('oCMobFire', 'slot')).toEqual({ key: 'slot', kind: 'string' });
+    expect(fieldOf('oCMobFire', 'vobTree')).toEqual({ key: 'vobTree', kind: 'string' });
+    // `oCMobContainer` — the base nine plus `locked` and `pickString`. `key`
+    // (the item instance that unlocks it) stays out with `item`, the same
+    // cross-reference decision; `contents` stays out too — it is a single
+    // string in the archive but encodes a list of item instances and counts,
+    // the same "names script symbols this catalogue cannot validate" shape.
+    expect(classPropKeys('oCMobContainer'))
+      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'pickString']);
+    expect(fieldOf('oCMobContainer', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
+    expect(fieldOf('oCMobContainer', 'pickString')).toEqual({ key: 'pickString', kind: 'string' });
+    expect(fieldOf('oCMobContainer', 'key')).toBeNull();
+    expect(fieldOf('oCMobContainer', 'contents')).toBeNull();
+    // `oCMobDoor` — the base nine plus `locked` and `pickString`; `key` stays
+    // out for the same cross-reference reason as the container's.
+    expect(classPropKeys('oCMobDoor')).toEqual([...OC_MOB_INTER_KEYS, 'locked', 'pickString']);
+    expect(fieldOf('oCMobDoor', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
+    expect(fieldOf('oCMobDoor', 'pickString')).toEqual({ key: 'pickString', kind: 'string' });
+    expect(fieldOf('oCMobDoor', 'key')).toBeNull();
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {
