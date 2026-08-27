@@ -312,10 +312,7 @@ export class WorldService {
 
     return new Promise<T>((resolve, reject) => {
       const id = randomUUID();
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new WorkerRequestError(`${op} did not answer in ${this.requestTimeoutMs} ms`, 'world-timeout'));
-      }, this.requestTimeoutMs);
+      const timer = setTimeout(() => this.handleTimeout(op), this.requestTimeoutMs);
 
       this.pending.set(id, { resolve: resolve as (value: never) => void, reject, timer });
       this.worker!.postMessage({ id, op, payload });
@@ -332,6 +329,31 @@ export class WorldService {
     clearTimeout(pending.timer);
     if (message.ok) pending.resolve(message.result as never);
     else pending.reject(new Error(message.error));
+  }
+
+  /**
+   * A request that never answered takes the worker down with it.
+   *
+   * The thread is not idle — it is still inside the call that went quiet, and
+   * the world it holds is in whatever state that call left it. Rejecting only
+   * the caller would leave that thread spinning while `openWorld`'s
+   * `worker === null` guard posts the retry straight back into it, so the
+   * surface never recovers and every retry feeds the same stuck worker. Same
+   * policy as a crash, for the same reason: the world is gone, and the user is
+   * told to reopen it rather than being handed a silent reload.
+   */
+  private handleTimeout(op: WorldWorkerOp): void {
+    if (this.failure !== null) return;
+    this.failure = new WorkerRequestError(
+      `${op} did not answer in ${this.requestTimeoutMs} ms — the world worker was stopped, reopen the world`,
+      'world-timeout',
+    );
+    // Set before terminating: `terminate()` fires a non-zero `exit`, and
+    // `handleWorkerDeath` would otherwise relabel this as a crash.
+    this.rejectAll(this.failure);
+    this.worldPath = null;
+    void this.worker?.terminate();
+    this.worker = null;
   }
 
   private handleWorkerDeath(error: Error): void {

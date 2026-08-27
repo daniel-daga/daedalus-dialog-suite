@@ -185,6 +185,67 @@ describe('WorldService', () => {
     }
   });
 
+  test('a timed-out request stops the worker, and the next open gets a fresh one', async () => {
+    // A timeout used to reject the caller and nothing else: the thread stayed
+    // alive, still working on whatever never answered, and `openWorld`'s
+    // `worker === null` guard then posted the retry to it. The surface could
+    // never recover, and every retry fed the same stuck thread.
+    jest.useFakeTimers();
+    try {
+      const workers: FakeWorker[] = [];
+      const service = new WorldService({
+        createWorker: () => { const worker = new FakeWorker(); workers.push(worker); return worker; },
+        requestTimeoutMs: 50,
+      });
+
+      const opened = service.openWorld(OPEN);
+      workers[0].reply('open', SUMMARY);
+      await opened;
+
+      const mesh = service.getWorldMesh();
+      jest.advanceTimersByTime(51);
+      await expect(mesh).rejects.toThrow(WorkerRequestError);
+
+      expect(workers[0].terminated).toBe(true);
+
+      // ...so the retry reaches a new worker, not the one that went quiet.
+      const reopened = service.openWorld(OPEN);
+      expect(workers).toHaveLength(2);
+      expect(workers[1].sent.map((m) => m.op)).toEqual(['open']);
+      expect(workers[0].sent.filter((m) => m.op === 'open')).toHaveLength(1);
+
+      workers[1].reply('open', SUMMARY);
+      await expect(reopened).resolves.toEqual(SUMMARY);
+      service.close();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a timeout rejects the requests that were in flight beside it', async () => {
+    // The worker is gone, so a request that had time left on its own timer is
+    // never going to be answered — leaving it pending would hang the caller for
+    // the rest of its 120 s and then blame the wrong op.
+    jest.useFakeTimers();
+    try {
+      const { worker, service } = await openedService(50);
+
+      const mesh = service.getWorldMesh();
+      jest.advanceTimersByTime(30);
+      const visuals = service.getInstancedVisuals();
+
+      // Only the mesh's timer expires here; the visuals request is 21 ms old.
+      jest.advanceTimersByTime(21);
+
+      await expect(mesh).rejects.toThrow(WorkerRequestError);
+      await expect(visuals).rejects.toThrow(WorkerRequestError);
+      expect(worker.terminated).toBe(true);
+      service.close();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('close terminates the worker and rejects what is still waiting', async () => {
     const { worker, service } = await openedService();
 
