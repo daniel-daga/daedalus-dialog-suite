@@ -66,7 +66,8 @@ was true for so long nobody re-reads it.
 - **The addon and the vendored ZenKit were both rebuilt this session**, so every
   other machine and CI must rebuild — and here it is `vendor-build/` too, not
   just `build/`: patches `0024`–`0026` change `ArchiveAscii.cc`, `0027` changes
-  `World.cc`, and `src/fixture.cc` gained a decal. Run **`node scripts/build-zenkit.js` before
+  `World.cc`, and `src/fixture.cc` gained a decal and then, this
+  session, five sound and zone VOBs. Run **`node scripts/build-zenkit.js` before
   `npx node-gyp rebuild`**; the gyp step alone links a stale `zenkit.lib` and
   silently keeps the old writer. A stale `.node` is worse than useless — the
   editor's Jest suites fake the worker, so they stay green against a binary
@@ -113,18 +114,74 @@ was true for so long nobody re-reads it.
   `oCItem.instance` as free text against a documented engine-crash path
   (`level-editor.md` §14.1) — validating it against the parser's item index is
   the obvious follow-up and is not scheduled.
-- **Phase 1b-2, class-aware editing — the rest of it.** Increment 1 landed (see
-  Done), so the path exists and each further class is one C++ case plus one
-  `CLASS_FIELDS` entry plus its tests. What is left, in the order the plan §7
-  entry argues for: the remaining classes (sound, the trigger family, `oCMob*`,
-  the zones, `zCPFXController`, `zCVobAnimate`), and then the four things held
-  out by decision rather than by time — `isStatic` and anything else that
+  **Increment 2 widened this rather than closing it**: five more classes are
+  editable (Done), and a sound or a fog zone written wrongly is *invisible in
+  the viewport* — the first edits whose only witness is the engine.
+  `verify-world-edit.js` sets no class property at all, so a rebuilt candidate
+  would have to grow one before it is worth building.
+- **Phase 1b-2, class-aware editing — the rest of it, and the kinds are now the
+  wall.** Increments 1 and 2 landed (see Done): seven classes are editable —
+  `oCItem`, `zCVobLight`, the two sounds and the three zones. Classes still
+  untouched: the trigger family, `oCMob*`, `zCPFXController`, `zCVobAnimate`.
+  **But the classes stopped being the limiting factor and the catalogue's three
+  value kinds started.** `oCZoneMusic` landed as two floats ZenKit itself
+  documents as "unclear", while the four fields a designer actually reaches for
+  on it are three booleans and an `int32`. So the cheapest next increment is not
+  a class at all: **a `bool` kind** — one `assertClassPropValue` branch, one grid
+  control, and `OptionalBool`, which the binding already has. An `int` kind is
+  second, and it is what `oCZoneMusic.priority` needs, a `float` truncating it
+  silently. Every boolean on the five classes just landed was held back for
+  exactly this reason.
+  Still out by decision rather than by time: `isStatic` and anything else that
   changes *which* fields the archive contains, enums (retail carries
-  out-of-range values a dropdown destroys), list fields (first unbounded
-  payloads in the op set), and base-`zCVob` widening (§14.1 item 1.8). Alongside
-  them and independent: class-specific *insertion* (item 1.3 — `insertItemVob`
-  is in the binding and wired to nothing), numeric transform entry (1.5),
-  copy/paste (1.2), snapping (1.6). Still scheduled before Phase 1c in §11.
+  out-of-range values a dropdown destroys), list fields, and base-`zCVob`
+  widening (§14.1 item 1.8). Alongside and independent: class-specific
+  *insertion* (item 1.3 — `insertItemVob` is in the binding and wired to
+  nothing), copy/paste (1.2), snapping (1.6). Numeric transform entry (1.5) is
+  now **half landed** — its own card is below. Still before Phase 1c in §11.
+
+- **Typed rotation needs a matrix↔Euler conversion `zen-world` does not have.**
+  Position landed as typed entry (Done); rotation is still read-only monospace,
+  and that is a decision rather than an omission. A `zCVob` stores a 3x3 matrix,
+  Spacer takes angles, and `zen-world/coords` has no conversion either way — a
+  grep for `euler|atan2|asin` across `zen-world/src` finds nothing. Hand-rolling
+  one in the renderer would author angles nothing else in the system
+  round-trips, so this is a **domain** card and not a UI one: the conversion in
+  `zen-world` with a round-trip tolerance test beside it, and only then three
+  more fields in the grid. Plan §14.1 row 1.5 now reads *partial* and carries
+  the reasoning.
+
+- **Two class fields are legal writes the engine ignores, and a `bool` kind
+  closes both.** `zCZoneZFog.color` is offered on a zone whose `overrideColor`
+  is false, where ZenGin never reads it; `zCVobSound`'s `randomDelay` /
+  `randomDelayVar` have the same shape under a non-RANDOM `mode`, and were held
+  back for it. Neither is a *wrong* write — the byte lands where it belongs —
+  but both read to a user as "the editor did nothing", which is worse than a
+  refusal would be. The fog one is shipped and the sound ones are not, so the
+  fog one is the card.
+
+- **`innerRangePercentage`'s convention is unmeasured, so its entries carry no
+  upper bound.** Nothing here says whether ZenGin stores it as 0..1 or 0..100,
+  and a wrong maximum refuses retail data outright, so both zone entries shipped
+  `min: 0` and no `max`. One `normalizeWorld` sweep over a retail install
+  settles it and tightens both. The same reasoning left `oCZoneMusic.reverb`
+  unbounded deliberately: a reverb level is *negative* decibels, and a `min: 0`
+  copied from the light's `range` would refuse every music zone in the game.
+
+- **The brightness has no verdict on how it looks, and a clipping question
+  behind it.** It landed (Done) and two things are open. The renderer uses
+  `NoToneMapping`, so above 1.0 exposure clips per channel — a bright surface
+  goes white before a dark one becomes readable. If lifting an interior far
+  enough blows out the exterior in the same frame, the answer is a tone-mapping
+  curve (`ACESFilmicToneMapping` plus `toneMappingExposure`) rather than a wider
+  range, and that is a different look and Daniel's call, not something to do
+  unasked. And **no test covers the picture at any exposure**: jsdom has no
+  WebGL, so the injected GLSL is string-matched and never compiled — a syntax
+  error would pass every test in the suite. `scripts/verify-world-render.js`
+  already renders a real frame through the real materials and could compare mean
+  luminance at two exposures; that is the cheap close, and it would cover the VOB
+  outline's injected term at the same time.
+
 - **Waynet editing — the edge ops, and add/delete/rename.** The gizmo landed
   (see Done), so the one op that exists is now reachable; nothing below is.
   **The addressing problem is the whole job and it is untouched.**
@@ -140,6 +197,30 @@ was true for so long nobody re-reads it.
   edge op. Waypoint delete has a bounded version of the arbitrary-VOB-delete
   trap — a `WayPoint` is five scalar fields, so what an op cannot describe for
   free is its edge memberships, and those are an enumerable list.
+- **Jumping between a script reference and the place it names — Daniel's idea,
+  unscheduled.** A dialog, and an NPC instance, name waypoints (`AI_GotoWP`,
+  `Npc_GetDistToWP`, an instance's `start_aiwp`) and characters, and today there
+  is no way from either name to the world, or from a picked waypoint back to the
+  scripts that reach for it. **Both ends of the mechanism already exist and
+  nothing joins them**: the World surface has a jump — `WorldSurface.tsx:158`
+  turns a scene-tree double-click into a camera jump keyed on request identity,
+  not on state — and the waynet arrives named, in `getWaynet`'s point list.
+  What is missing is the index in between. **Nothing in the parser records a
+  waypoint-name string literal as a reference**, so there is no symbol to click
+  and no back-direction to answer; that, and not the camera, is the size of the
+  job, and it is the same shape as the cross-reference work `cross-references.ts`
+  already does for symbols the grammar knows are references.
+  Two decisions it would inherit rather than invent, both already met once here:
+  a waypoint is addressed by its **index** into `getWaynet`'s list and nothing in
+  the format promises its name is unique (the waynet-editing card above is the
+  long version), so a name-keyed jump needs an answer for a duplicate before it
+  has a destination; and it would be the **third** viewport command, which is
+  precisely the case the refactoring note below says should promote the two jump
+  props to an imperative handle instead of adding a third prop.
+  The character half is Phase 1c's ground — static NPC/item spawns are what §11
+  already schedules there — so the **waypoint half is the part that stands
+  alone**, and is the one worth sizing first.
+
 - **What is left of the ASCII writer — A2, A3, A6 and one undiagnosed drift.**
   A1, A4 and A5 landed (Done), and the corpus now measures all 20 retail ASCII
   worlds instead of crashing on them. They classify **`semantic-drift`**, and
@@ -278,17 +359,63 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   the term uniformly by design (a face-on billboard is untouched; an edge-on one
   dims slightly).
 
-- **Interiors are too dark, and shadows are not coming.** Both answered by
-  `WorldScene.ts:347-353`: the material is `MeshBasicMaterial`, ZenGin's
-  lighting is baked into the vertex colours, and there is nothing dynamic to
-  relight or to cast with. So "add lights" is the wrong fix and dynamic shadows
-  are a no. What is right, and what this card is, is a viewport-only exposure
-  lift on those baked colours — a brightness control that changes what is on
-  screen and nothing about the world. Worth saying before it is asked again:
-  the `zCVobLight`s in the file are data Phase 1b-2 makes *editable*, not a rig
-  the viewport can switch on.
-
 ## Done — Phase 1b
+
+- **Five more classes became editable — the two sounds and the three zones.**
+  Increment 2 of Phase 1b-2, and the increment that showed the catalogue's three
+  value kinds are now the constraint rather than the class list (its card is in
+  Next). `zCVobSound` and `zCVobSoundDaytime` share **one** C++ case, because the
+  daytime sound derives from `VSound` and inherits its four members; the
+  catalogue entry spreads the base list for the same reason.
+  **Two claims of increment 1 got their first real test and both held.** Reading
+  needed no change at all — `GetVobProps` is `normalize.cc`'s `BuildProps`, which
+  already emitted every one of these keys — and `assertApplyOpsRequest` needed no
+  change either, because its `SetVobClassProp` branch is catalogue-driven; its
+  six new cases were added anyway, since the board's own warning is that the
+  validator is the layer every test mocks past. The property grid needed nothing.
+  **The fixture VOBs went into `BuildVisualVobTree` only**, the mesh-extraction
+  variant, so `minimal.g2.zen` and its golden dump are untouched and no
+  `fixtures:regen` was needed. `VZoneFarPlane`'s two floats have **no default
+  initializer in ZenKit at all**, so a fixture that left them alone would have
+  round-tripped stack garbage.
+
+- **A brightness for the viewport, and nothing for the world.** The interiors
+  card, answered the way it predicted: ZenGin's light is baked into the vertex
+  colours and the material is `MeshBasicMaterial`, so the fix is a multiply, not
+  a lamp. One shared uniform object per `WorldScene`, injected as
+  `outgoingLight *= uExposure` before `#include <opaque_fragment>` — after the
+  texture, the baked colour and the VOB outline — and `setExposure` writes that
+  one object: no recompile, no `needsUpdate`, no per-frame work. The **world
+  mesh** got the hook too, which is the point: interiors are walls and walls are
+  world mesh, so a control that skipped it would light nothing that is dark.
+  The outline card's `customProgramCacheKey` trap is preserved and re-documented
+  — the two hooks must stay *textually* different, the default key being
+  `onBeforeCompile.toString()`.
+  **It falsified a neighbouring assertion, which is the durable part**: the
+  outline test asserted the world-mesh material compiles the stock fragment
+  shader untouched, and that is exactly what this change makes false. It now
+  asserts the narrower thing the test was always about — no `vVobNormal`, no
+  outline mix. And the viewport effect carries `mesh`/`visuals` in its deps for
+  the third time in this file's history: a structural op builds a fresh
+  `WorldScene` that starts at 1, so without them a placement snaps the
+  brightness back.
+
+- **Typed coordinates in the property grid.** §14.1 item 1.5, the position half.
+  Three fields on the existing `EditableField`, so blur/Enter/Escape and the
+  value-in-the-key remount are the rules the name, visual and class fields
+  already proved.
+  **A typed coordinate leaves as a *delta*, not a destination**, through
+  `handleTranslateSelection` → `translateVobs` → `commitOps` — the gizmo's own
+  path, so undo, the atomic batch, the history barrier and the refusal-unwind
+  are the proven ones and there is no second op-building path to keep in step.
+  The consequence is deliberate and is the decision worth remembering: a typed
+  coordinate moves a *multi*-selection by that delta and keeps its spacing,
+  exactly as a drag does, where an absolute would stack the selection on one
+  point. Refusal happens **before** an op exists — anything that is not a finite
+  float32, and any value numerically equal to the one already there, remounts the
+  field showing the world's own number and never reaches the undo stack. Not
+  disabled during a gizmo drag, because a pointer-captured drag and a focused
+  text field are mutually exclusive input states and there is no keyboard drag.
 
 - **The addon is in the release gate, and in the installer.** Two gaps, one
   dispatch away from being discovered by shipping a World button with nothing

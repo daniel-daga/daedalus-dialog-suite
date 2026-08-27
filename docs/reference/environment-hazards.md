@@ -141,3 +141,23 @@ anything does.
 - **The ZEN header carries a date stamp**, so two saves of the same world differ
   in bytes at identical size. A re-save that no longer matches a recorded hash is
   not evidence of a defect.
+
+## Parallel agents in one working tree
+
+Cards split by *file domain* run concurrently in the same checkout — no worktree,
+so nobody pays for a ZenKit rebuild or a fresh pnpm install. Two things follow,
+both met on 2026-08-28 with three agents in flight.
+
+- **Never `git stash` to prove a test red.** `git stash push` takes the whole
+  working tree, not your files: proving one suite red stashed and restored
+  another agent's mid-edit `WorldSurface.tsx` along the way. It popped cleanly,
+  but a concurrent write inside that window is simply lost. To see a test fail
+  without the implementation, edit the source back by hand, or hardcode the
+  value the wiring supplies, and undo it — a change you can name and reverse
+  yourself.
+- **A full-suite "green" is only as good as its last run.** One intermediate run
+  showed 7 failures in `WorldSurface.editing` and `WorldScene` that a rerun did
+  not reproduce; they were a neighbouring agent's half-written tree, not a flake
+  and not that agent's change. Rerun once before believing a failure that points
+  at a file you did not touch, and run the suite again after the other agents
+  report.
