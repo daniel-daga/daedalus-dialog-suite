@@ -46,8 +46,9 @@ was true for so long nobody re-reads it.
 
 ## State of the tree
 
-- branch `master`, **ahead of its remote and not pushed.** `feature/level-editor`
-  was merged and is no longer where work happens.
+- branch `master`, **pushed to `origin/master`.** `feature/level-editor`
+  was merged and is no longer where work happens. A push is not a release —
+  see the merge note below.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
@@ -89,35 +90,20 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty — three cards landed this session; see Done)*
+*(empty — three cards landed this session, in parallel; see Done)*
 
 ## Next
 
-- **Two gaps that block the next `build-windows` dispatch, not the merge.**
-  Recorded 2026-08-28 so the dispatch is not the place they are discovered:
-  - **A dispatched build would ship a World button with no addon behind it.**
-    `zenkit-node/scripts/install.js:22-25` skips the source build whenever `CI`
-    is set unless `ZENKIT_NODE_FORCE_BUILD=1`, which only `zenkit-node.yml:72`
-    sets; `package.json` has `npmRebuild: false` and no `asarUnpack` for
-    `*.node`. Needs the addon built or prebuilt in the release job, the
-    `asarUnpack` entry, and an asar assertion for `zenkit_node.node` — the
-    existing verifier only checks `safe-buffer`, and the startup smoke never
-    opens a world.
-  - **The addon is not in the release gate.** `build-windows.yml` gates on
-    `all-tests.yml`, which has no zenkit-node job. `zenkit-node.yml` is its own
-    workflow, path-filtered to `zenkit-node/**` and triggered on push/PR to
-    master — so it ran on the phase-1a PR and then on nothing until the merge
-    push. **That push has since gone green** (`zenkit-node` and `All Tests` both
-    success on `fbb969c`), so `binding.gyp`'s `_HAS_EXCEPTIONS` fix now has a
-    windows-2022 verdict and the evidence half of this card is closed. What is
-    not closed is the structure: the addon is still not in the release gate,
-    because `all-tests.yml` still has no zenkit-node job and the path filter
-    still means a change in `zen-world/` or `zenkit.worker.ts` that breaks the
-    binding contract never runs it.
-    Also: `zen-world/dist` is built by an undeclared `postinstall` hook
-    (`zen-world/package.json:24`) and `zen-world` is not in
-    `pnpm-workspace.yaml`'s `onlyBuiltDependencies`, so a single
-    `--ignore-scripts` takes out four jobs at once.
+- **The release gate no longer has the addon-shaped hole, and one claim in it
+  is still unmade.** Both gaps landed (Done). What is *not* proven is that the
+  packaged addon actually loads: packaging asserts `zenkit_node.node` is present
+  and unpacked, and nothing in CI opens a world in the packaged app — the
+  startup smoke test still does not. `npmRebuild: false` is fine in theory
+  (Node-API with `NAPI_CPP_EXCEPTIONS` is ABI-portable to Electron) but that is
+  a reading of `binding.gyp`, not a runtime verdict. The cheap close is
+  extending the startup smoke to open a world; until then a dispatch ships an
+  addon nobody has watched load.
+
 - **Three shipped ops have no engine verdict.** `DeleteVob`, `MoveWaypoint` and
   `SetVobClassProp` all landed after candidate `03` was built, so Gate 2 covers
   the ops that existed on 2026-08-27 and not these — the acceptance record says
@@ -239,20 +225,16 @@ was true for so long nobody re-reads it.
   whether that's worth a rebuilt candidate is Daniel's call, not something to
   do unasked.
 
-- **The leaked Jest worker handle is still unidentified, and `ParserService` was
-  not it.** The pool is lazy now (Done) and the warning *did* leave the two
-  suites that import `main.ts` — but the full editor run still prints *"A worker
-  process has failed to exit gracefully"*, measured 6 of 7 runs after the fix
-  against the "roughly half" the old card recorded before it. So the card's
-  hypothesis is disproved and the handle is somewhere else; the next step is a
-  `--detectOpenHandles` run, not another guess. The audit that came with the fix
-  narrows where it cannot be: every other service `main.ts` constructs at module
-  load is string/number arithmetic in its constructor — `LogService` opens its
-  file in `log()`, `SettingsService` only joins `userData`, and
-  `ProjectService` creates its `MetadataWorkerPool` inside `buildProjectIndex`
-  (`ProjectService.ts:129`). Still worth checking against the intermittent
-  `3221226505` exits `test:matrix:windows` exists for — they may be the same
-  handle.
+- **`3221226505` is still unexplained, and the worker-handle warning was not
+  it.** The warning is closed (Done) — it was a referenced timer in
+  `FileWatcherService`, and the hypothesis chain that ran through
+  `ParserService` is finished. But 25 full editor runs while closing it all
+  exited 0, so the intermittent `3221226505` that `test:matrix:windows` exists
+  for **did not reproduce at all today** and has no shared cause with the
+  warning: `0xC0000409` is a native `__fastfail`, and a jest-worker force-kill
+  is `SIGTERM`/`SIGKILL`. The board's own guess that they were the same handle
+  is disproved. What is left is a native abort with no reproduction, and the
+  first suspect is the addon, not Jest.
 
 - **Two small things noticed while landing an earlier session's cards.** Neither
   blocking, both cheap, each recorded because the finding is worth more than
@@ -286,10 +268,16 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   (it is not: ID-picking answers an id, not a point, and a CPU raycast over 724
   `InstancedMesh`es is the 14.2 ms the viewport exists to avoid — a *clicked*
   VOB is the fallback pivot, and interiors pivot on walls, which are world mesh).
-- **A VOB is hard to tell from the world mesh.** Asked for as a faint outline on
-  VOB visuals. Nothing about the current pipeline resists it — the VOBs are
-  their own `InstancedMesh` set, so the selection highlight already has a place
-  to hang.
+- **The VOB outline needs Daniel's eyes, the same way the pivot does.** It
+  landed (Done) and two things in it are unverifiable without a GPU: that the
+  injected GLSL compiles at all — jsdom has no WebGL, so a shader-link error
+  would surface as black or missing props at runtime, not as a red test — and
+  whether `OUTLINE_DARKEN = 0.7` / `OUTLINE_POWER = 4` is the right faintness on
+  retail NewWorld. Both constants are named in `WorldScene.ts`. Also unjudged:
+  how it reads on alpha-tested foliage and on blended VOB materials, which get
+  the term uniformly by design (a face-on billboard is untouched; an edge-on one
+  dims slightly).
+
 - **Interiors are too dark, and shadows are not coming.** Both answered by
   `WorldScene.ts:347-353`: the material is `MeshBasicMaterial`, ZenGin's
   lighting is baked into the vertex colours, and there is nothing dynamic to
@@ -301,6 +289,61 @@ one of Daniel's complaints but the follow-up question the pivot fix asks him.
   the viewport can switch on.
 
 ## Done — Phase 1b
+
+- **The addon is in the release gate, and in the installer.** Two gaps, one
+  dispatch away from being discovered by shipping a World button with nothing
+  behind it. The gate: `all-tests.yml` gained a `zenkit-node-tests` job running
+  `zenkit-node.yml`'s recipe unchanged, and `zenkit-node.yml` is now
+  `workflow_dispatch:` only — its path filter to `zenkit-node/**` *was* the
+  hole, because a change in `zen-world/` or `zenkit.worker.ts` that breaks the
+  binding contract lives outside it. The installer: `ZENKIT_NODE_FORCE_BUILD=1`
+  in the release install (that install is the only chance — `install.js` skips
+  the source build under `CI` and `npmRebuild` is `false`), `asarUnpack` for the
+  addon, and the packaged-app verifier — which knew only about `safe-buffer` —
+  now asserts both silent failures: never built, and built but left inside the
+  asar where `node-gyp-build` cannot `dlopen` it. Both branches were exercised
+  against a real `electron-builder` run, not just written.
+  **Two things nobody had written down.** The `build` job's checkout had no
+  `submodules: recursive`, so forcing the build alone would have failed on
+  absent ZenKit sources. And once the addon actually ships, electron-builder
+  packs **90 MB** of vendored sources and CMake scratch with it — including two
+  `CompilerIdCXX.exe` it then code-signs; the new file exclusions bring that to
+  1.6 MB. `zen-world` joined `onlyBuiltDependencies` and got an explicit build
+  step in the two jobs consuming its `dist`, so `--ignore-scripts` fails on that
+  line rather than as an unresolvable import three steps later.
+
+- **The worker that would not exit was holding a suppression mark.**
+  `FileWatcherService.notifySelfWrite` armed a *referenced* two-second timer per
+  call and cleared none, so its Jest worker ended the file with six live timers
+  and jest-worker force-killed it 500 ms later. `.unref()` is the whole fix, and
+  **it matters in production too**: each call pinned the Electron main process
+  for two seconds, so a quit within two seconds of a save was waiting on a
+  suppression mark.
+  **The durable finding is that the card's own next step could not have
+  worked.** `--detectOpenHandles` implies `--runInBand` — no workers, so the
+  warning cannot occur; it is a dead end by construction for this class of bug.
+  What found it was a preload in every worker watching jest-worker's message
+  listener count hit zero (its `exitProcess()` removes the listener and never
+  calls `process.exit`) and dumping `async_hooks` resources with creation
+  stacks. **And the bisect misleads**: the trigger is *files per worker*, not
+  which files — each half of a 2-way shard ran clean at 23 workers and
+  reproduced at 4. Ratios: default 4/5 → 0/6, `--maxWorkers=8` 4/4 → 0/4.
+  A second real leak was fixed alongside it and was *not* the cause (4/5 → 5/6
+  measured alone): `ParserService.dispose` and `MetadataWorkerPool.terminate`
+  fired `worker.terminate()` without awaiting, so a test file could end with a
+  live thread — one `MessagePort` held 5.3 s. Both return promises now.
+
+- **A VOB stops disappearing into the world mesh.** The faint outline Daniel
+  asked for, drawn by *not* drawing one: an inverted-hull or edge-line shell is
+  a second `InstancedMesh` per visual, 724 more draw calls a frame in the
+  viewport that exists to keep per-frame work off the CPU. Instead the VOB
+  materials, and only they, share an `onBeforeCompile` darkening outgoing light
+  as the surface turns edge-on. `MeshBasicMaterial` and baked vertex colours are
+  no obstacle — the term multiplies *after* texture and baked colour, adds no
+  light source, updates no uniform. One module-level hook, so
+  `customProgramCacheKey` folds every VOB material onto one program while the
+  world mesh keeps its own. `abs()` on the facing term because the mirrored root
+  flips the normal's sign; a signed one outlines the front faces instead.
 
 - **The waynet overlay survives a structural edit.** The overlay effect was
   keyed `[waynet, mesh]` while the scene effect it hangs off is keyed
