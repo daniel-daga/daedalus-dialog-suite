@@ -101,7 +101,13 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty)*
+- **Jump between a script reference and the place it names** — **board-loop**,
+  in progress. Landed this session: the parser-side prerequisite for both W1
+  and W2, `DialogFunction.callSites` (args + 1-based line/column, generic
+  across every call), plus a §16.8 correction (parameters were already
+  exposed). Still open: W2's consumer-side pieces — the `buildProjectIndex`
+  worker-pool wiring, the waypoint-selection panel (none exists today), and
+  the dangling-waypoint Problems rule. §16.8
 
 ## Next
 
@@ -124,8 +130,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 - **Waynet edge ops, add/delete/rename** — the index-addressing problem is the
   whole job and is untouched. Unowned. §16.7
-- **Jump between a script reference and the place it names** — Daniel's idea,
-  sized; **W2 (world → scripts) is the half to land first.** Unowned. §16.8
 
 **zenkit-node / fidelity**
 
@@ -171,5 +175,7 @@ card waits on live at its pointer — put new prose there, not here.
   `.waynetRebuild` each keep only their `jest.mock()` calls, delegating the
   factory bodies. Closed `docs/refactoring-targets.md`'s former §10.
 
-Verified this session: editor (build:main/typecheck:renderer/Jest/lint) all
-green.
+Verified this session: `daedalus-parser` (build/typecheck/246 tests/lint) all
+green — including a pre-existing, unrelated 4-test failure traced to a stale
+compiled native binding and fixed by rebuilding it (`environment-hazards.md`,
+*"Building the native addon"*).

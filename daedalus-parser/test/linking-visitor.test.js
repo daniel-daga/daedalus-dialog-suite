@@ -73,6 +73,35 @@ test('captures the choice target function from Info_AddChoice', () => {
   assert.strictEqual(choice.targetFunction, 'DIA_Test_Next');
 });
 
+test('records every call site with its arguments and source position, not just a hardcoded action whitelist', () => {
+  const source = `
+    func void TA_Smith_Day() {
+      Npc_ExchangeRoutine(self, "SMITH");
+      AI_GotoWP(self, "FP_SMITH_STAND");
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.TA_Smith_Day;
+  assert.ok(func);
+  assert.ok(Array.isArray(func.callSites), 'a function should carry its call sites, not only calls');
+  assert.strictEqual(func.callSites.length, 2);
+
+  const [exchangeRoutine, gotoWp] = func.callSites;
+  assert.strictEqual(exchangeRoutine.functionName, 'Npc_ExchangeRoutine');
+  assert.deepStrictEqual(
+    exchangeRoutine.args.map((a) => a.value),
+    ['self', 'SMITH']
+  );
+  assert.strictEqual(exchangeRoutine.args[1].isString, true);
+
+  assert.strictEqual(gotoWp.functionName, 'AI_GotoWP');
+  assert.strictEqual(gotoWp.args[1].value, 'FP_SMITH_STAND');
+  // Line 4 (1-indexed) is where AI_GotoWP is called.
+  assert.strictEqual(gotoWp.position.startLine, 4);
+  assert.ok(gotoWp.position.startColumn > 0);
+});
+
 test('leaves dangling property references as plain strings without raising syntax errors', () => {
   const source = `
     instance DIA_Bad(C_INFO) {

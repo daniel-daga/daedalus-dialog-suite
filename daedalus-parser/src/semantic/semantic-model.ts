@@ -85,6 +85,7 @@ export {
 } from './conditionTypes';
 export type { DialogCondition } from './conditionTypes';
 import type { DialogCondition } from './conditionTypes';
+import type { ParsedArg } from './parsers/argument-parsing';
 
 // ===================================================================
 // TYPE DEFINITIONS FOR TREE-SITTER NODES
@@ -793,6 +794,22 @@ export interface FunctionParameter {
   name: string;
 }
 
+/**
+ * A single call expression found in a function body, captured generically
+ * (every call, not only the ones a specific action parser recognizes) with
+ * enough position information to jump back to the source.
+ */
+export interface FunctionCallSite {
+  functionName: string;
+  args: ParsedArg[];
+  position: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+}
+
 export class DialogFunction {
   public name: string;
   public returnType: string;
@@ -802,6 +819,7 @@ export class DialogFunction {
   public hasExplicitBodyContent?: boolean;
   public parameters?: FunctionParameter[];
   public calls: string[];
+  public callSites: FunctionCallSite[];
 
   @Type(() => Object, {
     discriminator: ACTION_DISCRIMINATOR,
@@ -820,6 +838,7 @@ export class DialogFunction {
     this.returnType = returnType;
     this.leadingComments = [];
     this.calls = [];
+    this.callSites = [];
     this.actions = [];
     this.conditions = [];
     this.conditionOperator = 'AND';
@@ -994,6 +1013,7 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     model.functions[funcName] = plainToInstance(DialogFunction as ClassConstructor<any>, funcJson);
     model.functions[funcName].actions = (model.functions[funcName].actions || []).map((action: any) => deserializeAction(action));
     model.functions[funcName].calls = funcJson.calls || [];
+    model.functions[funcName].callSites = funcJson.callSites || [];
   }
 
   // 2. Reconstruct dialogs and link to functions

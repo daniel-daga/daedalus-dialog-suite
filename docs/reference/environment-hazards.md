@@ -43,6 +43,16 @@ doc, not here. This file is only for the ground the code stands on.
 - **The renderer bundle is what `verify-world-edit.js` drives.** `build:main`
   alone leaves it stale, and the symptom is an edit refused by a validator that
   the renderer is a version behind. Run the full `build`.
+- **`daedalus-parser`'s own native binding goes stale the same way, silently.**
+  `npm test`'s `npm run build` step is `tree-sitter generate` — it regenerates
+  `src/parser.c` but never recompiles `bindings/node`'s `.node` file, so a
+  grammar change compiles into source nobody links. Found 2026-08-28: the
+  compiled binding was 6 months older than `grammar.js` and four tests failed
+  against a grammar that had already grown a `variable_declaration` node the
+  binary had never heard of. `npx node-gyp rebuild` (run from `daedalus-parser/`)
+  fixed all four with no source change. Check `grammar.js` against
+  `build/Release/tree_sitter_daedalus_binding.node`'s mtime whenever a parser
+  test fails in a way the diff doesn't explain.
 
 ## Jest on Node 24
 

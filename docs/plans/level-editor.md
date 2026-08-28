@@ -2936,8 +2936,21 @@ a level editor answers is where an NPC stands at 08:00.
 parameter literally named `var string waypoint`, so the rule is derived from the
 project being edited — map a function to the index of such a parameter, then read
 the literal at that position. Only the engine externals (`AI_GotoWP`,
-`Npc_GetDistToWP` and ~4 more) need a seed table, and that set is closed. The one
-genuinely new parser capability is exposing function **parameters**.
+`Npc_GetDistToWP` and ~4 more) need a seed table, and that set is closed.
+
+**Correction, 2026-08-28: function parameters were already exposed** —
+`DialogFunction.parameters` (`daedalus-parser/src/semantic/semantic-model.ts`)
+has existed since commit `a5270a3`, generic across every `function_declaration`,
+not a stale claim worth re-checking again. What was actually missing, and has
+now landed, is the call-site half: `DialogFunction.callSites` captures every
+`call_expression` in a function body (not gated behind the hardcoded
+action-name switch `action-parsers.ts` uses) with its arguments
+(`ParsedArg[]`, reusing `parseArgumentsDetailed`) and a 1-based
+`{startLine, startColumn, endLine, endColumn}` — the "line/column must survive
+a path that today keeps only `node.text`" trap W1 names below. Joining a call
+site's args against the callee's `parameters` to find the `waypoint` index is
+now pure application logic over the model; no more parser work is needed for
+either W1 or W2.
 
 **The duplicate-name decision is answered by measurement: don't design for it.**
 24 worlds, 12,341 waypoints, **0 duplicate names**, not one even

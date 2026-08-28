@@ -14,6 +14,7 @@ import {
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
+import { parseArgumentsDetailed } from '../parsers/argument-parsing';
 import {
   getBinaryOperator,
   getAssignmentOperator,
@@ -534,6 +535,18 @@ export class LinkingVisitor {
 
     const functionName = funcToCallNode.text;
     this.currentFunction.calls.push(functionName);
+
+    const argsNode = node.childForFieldName('arguments');
+    this.currentFunction.callSites.push({
+      functionName,
+      args: argsNode ? parseArgumentsDetailed(argsNode) : [],
+      position: {
+        startLine: node.startPosition.row + 1,
+        startColumn: node.startPosition.column + 1,
+        endLine: node.endPosition.row + 1,
+        endColumn: node.endPosition.column + 1
+      }
+    });
 
     if (this.isCurrentConditionFunction()) {
       if (this.conditionRawMode.has(this.currentFunction.name)) {
