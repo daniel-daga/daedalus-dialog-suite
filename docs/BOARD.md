@@ -78,10 +78,10 @@ was true for so long nobody re-reads it.
   `workflow_dispatch:` and nothing else, so a push to master builds no
   installer, cuts no release and touches no update feed. Anything about shipping is the dispatch's decision,
   not this one. The release-gate gaps that used to be named here are **all
-  closed** — the addon is asserted present and unpacked, and the packaged app
-  now opens a world in CI. What a dispatch would still ship unproven is in Next:
-  three ops with no engine verdict, and a packaged renderer nothing has watched
-  draw.
+  closed** — the addon is asserted present and unpacked, the packaged app now
+  opens a world in CI, and a real-Electron spec now watches the World surface
+  draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
+  three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patch `0028`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
@@ -111,8 +111,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
 
-- **Nothing has watched the packaged renderer draw** — the CI smoke opens a
-  world and exits, never creating a window. Unowned. §16.1
 - **Three shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
   `SetVobClassProp` all post-date candidate `03`. Say "Gate 2 passed for the ops
   it tested". Rebuilding a candidate is **Daniel's call**. §16.2
@@ -163,6 +161,11 @@ card waits on live at its pointer — put new prose there, not here.
   in `zen-world` (`dropVobsToGround`, `alignVobsToNormal`, aligning local +Y),
   a `WorldViewport` imperative raycast handle, and two World-surface toolbar
   buttons wired through the existing `commitOps` path. §16.5
+- **A real-Electron spec now watches the packaged renderer draw** —
+  `world-render.spec.ts` opens a world through the real UI and reads the
+  GPU's own framebuffer back via `__worldViewport.renderFrom`; the Windows
+  E2E job sets `ZENKIT_NODE_FORCE_BUILD=1` so the addon it needs exists.
+  Ubuntu's `editor-e2e-electron` self-skips it (no force-build there). §16.1
 
 Verified this session: `zen-world` (test/lint/typecheck/build), editor
 (build:main/typecheck:renderer/Jest/lint) all green.

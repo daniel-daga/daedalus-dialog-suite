@@ -42,8 +42,17 @@ jobs:
           node-version: '20'
           cache: pnpm
 
+      # ZENKIT_NODE_FORCE_BUILD: without it, zenkit-node/scripts/install.js
+      # skips the source build in CI, and world-render.spec.ts (the only spec
+      # here that opens a world) would just skip itself for want of the addon
+      # — the same "watched the renderer draw" gap board §16.1 names. This job
+      # runs the dev build, not the packaged app, so it proves the World
+      # surface renders; the packaged native addon's own load path is a
+      # different check (`DDE_SMOKE_OPEN_WORLD`, in the `build` job below).
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          ZENKIT_NODE_FORCE_BUILD: '1'
 
       # Builds dist/main + dist/renderer, which the harness launches with
       # NODE_ENV=production. Electron comes from the pnpm install postinstall —

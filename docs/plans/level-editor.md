@@ -2658,15 +2658,30 @@ carries one line and an owner per card and points here; this section carries the
 diagnosis, the measurement and the decision each one is waiting on. A card that
 closes takes its subsection with it — the commit is then the record.
 
-### 16.1 Nothing has watched the packaged renderer draw
+### 16.1 Nothing has watched the packaged renderer draw — closed 2026-08-28
 
-The addon half is closed: the packaged app opens a world in CI, so
+The addon half was already closed: the packaged app opens a world in CI, so
 `npmRebuild: false` rests on a runtime verdict rather than on a reading of
-`binding.gyp`. But that smoke never creates a window — it opens the world
-through `WorldService` and exits. A packaged build in which the World surface
-renders nothing, or throws on first paint, passes every gate there is. Closing
-it needs a driver rather than an env var, which is why it is a different job
-from the one just done.
+`binding.gyp`. But that smoke never created a window — it opened the world
+through `WorldService` and exited. A packaged build in which the World surface
+rendered nothing, or threw on first paint, would still have passed every gate
+there was.
+
+Closed with `daedalus-dialog-editor/tests/e2e-electron/world-render.spec.ts`:
+a real-Electron spec that drives the actual UI (Open Project → World toggle →
+choose install → open a world) and then reads the GPU's own framebuffer back
+through `window.__worldViewport.renderFrom` — the same mechanism
+`scripts/verify-world-render.js` already used against a real Gothic install —
+to prove the fixture's mesh was drawn, not just fetched. It compares every
+pixel against the known clear colour and asserts at least one differs.
+
+The spec needs the native addon for the *dev* build, which `zenkit-node`'s
+install script skips by default in CI. `build-windows.yml`'s
+`e2e-electron-windows` job now sets `ZENKIT_NODE_FORCE_BUILD=1` before
+`pnpm install` so the spec actually runs there rather than self-skipping; the
+ubuntu `editor-e2e-electron` job (`all-tests.yml`) does not set it, so the
+spec skips itself there for want of the addon — that job's platform doesn't
+ship, so it was never the gate this closes.
 
 ### 16.2 Three shipped ops have no engine verdict
 
