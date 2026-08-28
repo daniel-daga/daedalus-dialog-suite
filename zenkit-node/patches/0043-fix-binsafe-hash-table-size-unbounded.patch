@@ -1,0 +1,90 @@
+ReadArchiveBinsafe: bound the hash table's entry count.
+
+`ReadArchiveBinsafe::read_header` reads the table's entry count straight off the
+file and sizes the entry vector with it:
+
+	auto hash_table_size = read->read_uint();
+	_m_hash_table_entries.resize(hash_table_size);
+
+	for (std::uint32_t i = 0; i < hash_table_size; ++i) { ... }
+
+The same shape patches 0034, 0036, 0037, 0040 and 0042 bound elsewhere, and the
+loop cannot stop on its own for the same reason: every read past the end of the
+file returns zero, so a zero `keyLength` and a zero `insertionIndex` satisfy
+patch 0029's bound and the loop runs to the file's own count, once per unit.
+
+Measured on the unpatched reader against `zenkit-node`'s 1.4 KB fixture with the
+count rewritten in place to 0x0FFFFFFF: a **20.5 GB peak working set**, and the
+world still reports LOADED after 35 s. An absurd count is the harmless one here
+too, exactly as in 0037 and 0042 -- 0xFFFFFFFF is 4 billion entries, `resize`
+throws `bad_alloc` and the loop is never entered, in 69 ms -- so the dangerous
+value is the merely large one and a test seeded with 0xFFFFFFFF would pass
+against the unpatched reader.
+
+Bounded by the bytes actually left in the file, with the same `_bytes_remaining`
+helper as `Mesh.cc`, `world/BspTree.cc`, `world/WayNet.cc` and `vobs/Camera.cc`.
+Eight bytes is the smallest an entry can be on the wire -- two `uint16`s and a
+`uint32` before a key that may legitimately be empty -- so the bound never
+refuses a world the engine wrote.
+
+This is patch 0029's function and patch 0029's chunk, and 0029 bounded the other
+count in it: the `insertionIndex` that *indexes* this vector. It did not bound
+the count that *sizes* it.
+
+Not found by `zenkit-node/tools/fuzz-world.js --counts`, and it could not have
+been: the sweep rewrites the INTEGER *entries* of the entry stream, and this is a
+raw `uint32` in the container's own hash-table header, which no entry walk
+reaches. Read that as the sweep's second documented limit, beside the one patches
+0040 and 0042 named -- a field the fixture does not carry as an entry is a field
+the sweep cannot reach, whether it is missing or merely not an entry.
+
+diff --git a/src/archive/ArchiveBinsafe.cc b/src/archive/ArchiveBinsafe.cc
+--- a/src/archive/ArchiveBinsafe.cc
++++ b/src/archive/ArchiveBinsafe.cc
+@@ -11,6 +11,23 @@
+ #include <cstring>
+ 
+ namespace zenkit {
++	// The number of bytes left in the reader. `Read` has no size, but every
++	// implementation can seek to the end and back. Same helper, and the same
++	// reason for it, as the ones in `Mesh.cc`, `world/BspTree.cc`, `world/WayNet.cc`
++	// and `vobs/Camera.cc`.
++	static std::size_t _bytes_remaining(Read* r) {
++		auto here = r->tell();
++		r->seek(0, Whence::END);
++		auto end = r->tell();
++		r->seek(static_cast<ssize_t>(here), Whence::BEG);
++		return end > here ? end - here : 0;
++	}
++
++	// A hash table entry is at least this many bytes on the wire: `keyLength` and
++	// `insertionIndex` as `uint16`s and `hashValue` as a `uint32`, before the key
++	// itself, which may legitimately be empty.
++	static constexpr std::size_t HASH_TABLE_ENTRY_MIN_BYTES = 8;
++
+ 	void ReadArchiveBinsafe::read_header() {
+ 		_m_bs_version = read->read_uint();
+ 		_m_object_count = read->read_uint();
+@@ -21,6 +38,22 @@
+ 			read->seek(hash_table_offset, Whence::BEG);
+ 
+ 			auto hash_table_size = read->read_uint();
++
++			// `hash_table_size` comes straight off the file and sizes the vector below
++			// with no check, and the loop after it cannot stop on its own: every read
++			// past the end of the file returns zero, so a zero key length and a zero
++			// insertion index pass the bound below and the loop runs to the file's own
++			// count. Measured against `zenkit-node`'s 1.4 KB fixture with the count
++			// rewritten in place to 0x0FFFFFFF: a 20.5 GB peak working set, and the
++			// world still reports LOADED after 35 s. An absurd count is the harmless
++			// one, as everywhere else in this series -- 0xFFFFFFFF throws `bad_alloc`
++			// out of `resize` in 69 ms -- so the dangerous value is the merely large
++			// one, and it is bounded by the bytes actually left in the file.
++			if (hash_table_size > _bytes_remaining(read) / HASH_TABLE_ENTRY_MIN_BYTES) {
++				throw ParserError {"ReadArchive.Binsafe",
++				                   "hash table entry count exceeds the bytes left in the file"};
++			}
++
+ 			_m_hash_table_entries.resize(hash_table_size);
+ 
+ 			for (std::uint32_t i = 0; i < hash_table_size; ++i) {

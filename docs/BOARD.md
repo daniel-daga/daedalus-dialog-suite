@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0042`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0043`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,9 +136,10 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — fourteen instances closed
-  (`0029`–`0042`); every world-reachable VOB count is now bounded, so what is
-  left is the `ReadMemory::seek` decision. Unowned. §16.11
+- **`zCTrigger`'s `flags` byte loses bits 1 and 3–7 on every save** — patch
+  `0028` rebuilds it from the two bools `load` unpacks; the four retail BinSafe
+  worlds classify `semantic-drift` instead of `identical` because of it. The fix
+  is `0016`'s shape. Unowned. §16.13
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -157,20 +158,14 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-- **`zCCSCamera`'s two keyframe counts are bounded** — patch `0042` and a fourth
-  fixture variant (`camera`); the last world-reachable VOB count, and the one
-  with no `reserve` for `bad_alloc` to throw out of. §16.11
-- **The `oCNpc` reader is bounded, and the fixture was the hard part** —
-  patches `0040`/`0041`; a third fixture variant (`npc`) exists because the
-  `--counts` sweep can only reach fields its fixture carries. §16.11
-- **The binding's four vob walks are iterative, and no patch was involved** —
-  `CountVobs`/`CollectVobNames` (`src/binding.cc`) and
-  `CollectVobs`/`CollectVobColumns` (`src/normalize.cc`) are `zenkit-node`'s own
-  source, so the crash that `0038`/`0039` pushed above the reader is closed in
-  the repo. `normalizeWorld` stays quadratic in the *depth* — its per-VOB path
-  string, not the recursion — which is why its test stops at 10,000 levels
-  where the others go to 300,000. §16.11
+- **The world reader's fifteenth instance is bounded, and the `ReadMemory::seek`
+  decision is taken: leave it** — patch `0043` bounds the BinSafe container's own
+  hash-table entry count (20.5 GB and still `LOADED`, unpatched), which is
+  `0029`'s chunk and the second documented limit of the `--counts` sweep: a field
+  that is not an entry. Seek stays as it is — `Read::seek` is `noexcept`, and
+  none of the fifteen was a desynced cursor. §16.11
 
-Flushed 2026-08-28 (`0035`–`0039`: their substance is in §16.11 and in
-`git log`, including the `--counts` sweep `0037` added and why to prefer it to
-another random seed).
+Flushed 2026-08-28 (`0035`–`0042` and the binding's four iterative vob walks:
+their substance is in §16.11 and in `git log`, including the `--counts` sweep
+`0037` added, why to prefer it to another random seed, and the two fixture
+variants `0040` and `0042` needed).

@@ -913,7 +913,8 @@ byte-for-byte over every archive event:
   42,540,421 bytes, matching SHA-256)
 - the hash table is byte-identical; the stream ends exactly at `hashTableOffset`
 - saving twice is byte-identical (the writer was nondeterministic before)
-- `classifyDumps`: **`identical`, 0 findings** on all three
+- `classifyDumps`: **`identical`, 0 findings** on all three (measured 2026-08-25;
+  patch `0028` has since cost all four BinSafe worlds that verdict — §16.13)
 - the only byte residual is `zCVobLight.colorAniList` (4/2/16 entries): the
   original writes ZenGin's greyscale shorthand `255 `, ZenKit expands it to
   `(255 255 255)`. Semantically identical, ZenGin's parser wrote and accepts both
@@ -3085,8 +3086,9 @@ The shape of the job is unvalidated counts feeding `resize`/indexing throughout
 all of them is `ReadMemory::seek` (`vendor/ZenKit/src/Stream.cc:277-283`)
 **silently ignoring an out-of-range seek** rather than failing. Making it clamp
 or throw would fix the class in one place and change behaviour for every reader
-in ZenKit, which is why `0027` bounded its own loop instead. Until someone takes
-that decision, every chunk-walking loop has to carry its own bound.
+in ZenKit, which is why `0027` bounded its own loop instead. **That decision has
+since been taken — leave it alone — and the four reasons are at the end of this
+section.** Every chunk-walking loop carries its own bound, deliberately.
 
 **One more instance is bounded (2026-08-28, patch `0029`).**
 `ReadArchiveBinsafe::read_header` sized `_m_hash_table_entries` to the file's
@@ -3253,7 +3255,7 @@ chunk by structure (the blob's declared size and the header's hash-table offset
 move with it; nothing else in the container is an absolute offset).
 
 The class is still open either way: the chunk-walking loops in the VOB readers,
-and the `ReadMemory::seek` decision that would close it in one place.
+and the `ReadMemory::seek` decision (taken at the end of this section: leave it).
 
 **The waynet's own two counts are bounded (2026-08-28, patch `0037`), and the
 way it was found matters more than the patch.** `WayNet::load` sized
@@ -3334,7 +3336,7 @@ test covers the other three walks at 300,000 and `normalizeWorld` only at
 10,000. It is the fidelity harness's path, not the editor's; the editor reads
 `vobIndex`, whose columns carry a sibling index rather than a path.
 
-The `ReadMemory::seek` decision is still the other open one.
+The `ReadMemory::seek` decision is taken at the end of this section.
 
 **`Mesh.cc`'s element counts are bounded (2026-08-28, patch `0036`), and the
 failure they allowed is not a crash.** Every chunk in `Mesh::load` sized a
@@ -3407,6 +3409,58 @@ ever reach the two fields.
 The 24 loadable retail `.zen` under `Gothic II/_work/Data/Worlds` all still load
 with identical VOB and waypoint counts.
 
+**The BinSafe container's own hash-table count is bounded (2026-08-28, patch
+`0043`), and it is the first instance that is not in a *reader* at all.**
+`ReadArchiveBinsafe::read_header` does `_m_hash_table_entries.resize(hash_table_size)`
+straight off the file, and the loop after it cannot stop for `0037`'s reason
+turned inside out: every read past the end of the *file* returns zero, so a zero
+`keyLength` and a zero `insertionIndex` satisfy `0029`'s bound and the loop runs
+to the file's own count once per unit. Measured against the 1.4 KB fixture with
+the count rewritten in place to 0x0FFFFFFF: a **20.5 GB peak working set**, and
+the world still reports `LOADED` after 35 s; 0xFFFFFFFF throws `bad allocation`
+out of `resize` in 69 ms, which is the same "an absurd count is the harmless one"
+shape as `0034`, `0036`, `0037`, `0040` and `0042`. Bounded by the bytes left in
+the file at eight per entry — two `uint16`s and a `uint32` before a key that may
+legitimately be empty. **This is `0029`'s own function and `0029`'s own chunk**:
+that patch bounded the count that *indexes* the vector and left the one that
+*sizes* it. Covered by a child-process test in `zenkit-node/test/loadWorld.test.js`
+that locates the field through `readHeader`, so nothing in it is a byte offset.
+
+**The `--counts` sweep has a second limit, and this is it.** `0040` and `0042`
+named the first — a field no VOB in the fixture carries. This one the fixture
+carries and the sweep still cannot reach, because the sweep rewrites INTEGER
+*entries* of the entry stream and this is a raw `uint32` in the container's own
+header. Read the limit as *"a field the sweep cannot reach is a field with no
+coverage"*, whether it is missing from the fixture or simply not an entry. The
+container header has three such words — `bsVersion`, `objectCount` and
+`hashTableOffset` — and of those only `objectCount` is stored unused; an
+out-of-range `hashTableOffset` is refused by `zenkit-node`'s own container
+pre-check before ZenKit sees it (measured: `no MeshAndBsp section found`).
+
+**The `ReadMemory::seek` decision is taken: leave it alone (2026-08-28).** It is
+recorded here as a decision, not as a deferral, so nobody re-opens it without new
+evidence.
+
+- **Throwing is not available.** `Read::seek` is `noexcept` on the interface
+  (`include/zenkit/Stream.hh`), and so is every override — `ReadFile`,
+  `ReadStream`, `ReadMemory`, `ReadMmap`. A throw from one is `std::terminate`,
+  so "make it fail" means changing a public vendor API and every caller's
+  contract with it, in a fork we have to rebase.
+- **Clamping would have fixed none of the fifteen.** Every instance closed in
+  this section (`0027`, `0029`–`0043`) is an unvalidated *count*, an unvalidated
+  *index* or an unbounded *recursion*. Not one is a desynced cursor, and a clamp
+  changes nothing about any of them: `0027` is the only one seek was ever part
+  of, and it was closed by bounding its own loop.
+- **The layer above already stops at eof.** `ReadArchiveBinsafe::read_object_begin`
+  opens with `if (read->eof()) return false;` and `read_object_end` with
+  `if (read->eof()) return true;`, which is what makes `ReadArchive::skip_object`'s
+  `do { … } while (level > 0)` terminate on a truncated or unbalanced archive
+  rather than spin. Measured, not read: a world with a skipped object's end marker
+  rewritten to `{}` and every byte after it zeroed still fails in 63 ms.
+- **What would re-open it** is a reproducer in which the *cursor*, not a count, is
+  the cause. There is none in the record, and the frontier the last three patches
+  actually found is the opposite direction: fields no sweep and no seed can reach.
+
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
 Both landed with numbers chosen by reasoning, and neither has a test that could
@@ -3429,3 +3483,46 @@ NewWorld. Both constants are named in `WorldScene.ts`. Also unjudged: how it
 reads on alpha-tested foliage and on blended VOB materials, which get the term
 uniformly by design (a face-on billboard is untouched; an edge-on one dims
 slightly).
+
+### 16.13 The four retail BinSafe worlds no longer re-save `identical`, and patch `0028` is why
+
+**Found 2026-08-28 while re-running the corpus for `0043`, not looked for.** The
+acceptance record's headline BinSafe result — `4× identical [BIN_SAFE]`, measured
+2026-08-27 — no longer reproduces. The same command over the same install now
+reports `4× semantic-drift [BIN_SAFE]`: NewWorld 108 differing events, OldWorld
+13, and every finding on all four worlds is the same field.
+
+```
+container.payloads.raw.zCTrigger:zCVob/flags
+container.payloads.raw.zCMover:zCTrigger:zCVob/flags
+container.payloads.raw.oCTriggerScript:zCTrigger:zCVob/flags
+container.payloads.raw.oCTriggerChangeLevel:zCTrigger:zCVob/flags
+container.payloads.raw.zCTriggerList:zCTrigger:zCVob/flags
+```
+
+NewWorld's 108 differing events are all of them and nothing else — 56 `zCMover`,
+19 `oCTriggerScript`, 19 `zCTriggerList`, 10 `zCTrigger`, 4 `oCTriggerChangeLevel`
+— so the drift is one field in one save method, not a spread.
+
+**It is patch `0028`, and the arithmetic settles it.** `VTrigger::load` unpacks
+exactly two bits of the deprecated `flags` byte — `startEnabled` (bit 0) and
+`sendUntrigger` (bit 2) — and `0028` makes `VTrigger::save` rebuild the byte from
+those two bools instead of echoing the byte it read. Bits 1 and 3–7 have no bool
+to be rebuilt from, so they are dropped. Retail carries them: the four differing
+bytes sampled in OldWorld are all `0b00010010`, i.e. bits 1 *and* 4 set, and both
+are lost. `filterFlags` is safe by luck — `load` unpacks all six bits it uses.
+
+**It is not a reason to revert `0028`.** The defect that patch fixes is real and
+is on the editor's own path: before it, a caller that set `start_enabled` and
+saved got back whatever byte the archive held at load time. The fix is `0016`'s,
+applied here — keep the bits nothing maps to, `flags = rebuilt | (original & ~0b101)`
+— which needs the original byte kept on the object, i.e. a public field, i.e. the
+"upstreamable with work" bucket in `zenkit-node/patches/README.md`.
+
+**The forward fact that matters more than the patch:** a save-path patch landed
+without the retail corpus being re-run, and the claim it invalidated is the
+loudest one this project makes. `zenkit-node.yml` cannot catch it — the corpus
+needs a retail install and CI has none — so the check is a person running
+`node scripts/zen-roundtrip.js --root "<install>/_work/Data/Worlds"` after any
+patch that touches a `save`. The 2026-08-27 numbers in
+`zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.4 are now dated, and say so.

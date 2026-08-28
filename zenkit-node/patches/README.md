@@ -44,7 +44,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (33)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (35)
 
 | Patch | What it fixes |
 |---|---|
@@ -81,10 +81,12 @@ regardless of what upstream does with it.
 | `0039` | The other half of `0038`: `VirtualObject`'s defaulted destructor tears a tree down by recursing once per level, so a world 60,000 VObs deep loads and *then* dies with `0xC00000FD`. The destructor moves each child's children out onto an explicit stack, leaving a child shared with another owner whole |
 | `0040` | `VNpc::load` sized `talents`, `items` and `slots` with `resize` from three unvalidated file counts. `numTalents` of 0x0FFFFFFF builds 268 million null talents, 4.3 GB, and the world still reports as loaded after 6.8 s; the other two commit 2.1 GB each before failing. Bounded by the bytes left in the reader, like `0034`, `0036` and `0037`. `numOverlays` and the news `NumOfEntries` are left alone on purpose — both already throw in 66 ms |
 | `0041` | `VNpc::load` dereferences each item it has just read (`items[i]->s_flags` decides whether a `shortKey<n>` int follows), and `read_object` returns null for the three file-supplied reasons `0033` named. An `itemCount` of 2 over a world holding one item — inside any byte-based bound — kills the process with `0xC0000005` |
+| `0042` | `VCutsceneCamera::load` reads `numPos` and `numTargets` off the file and `push_back`s one keyframe object per iteration into a vector it never reserves — so there is not even a `bad_alloc` to stop an absurd count, and every value is a merely large one. 0x0FFFFFFF builds 268 million null keyframes, 4.33 GB, and the world still reports as loaded after 15.8 s; a negative count loads a camera with no keyframes at all |
+| `0043` | `ReadArchiveBinsafe::read_header` sizes the hash table entry vector from the file's own `hash_table_size` with no check, and the loop after it cannot stop: every read past the end of the file returns zero, so a zero key length and a zero insertion index pass `0029`'s bound. 0x0FFFFFFF is a 20.5 GB peak working set and a world that still reports as loaded, after 35 s. `0029`'s own chunk — it bounded the count that *indexes* this vector, not the one that *sizes* it |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
-`0027`, `0029`–`0041` are the same class of standalone
+`0027`, `0029`–`0043` are the same class of standalone
 fix — a hardening of the read path, reachable by any consumer that opens a
 file it did not write. `0029` is the strongest of the eight: the bug it stops is an
 out-of-bounds write, not a hang, a null deref or an out-of-bounds read.
@@ -120,7 +122,8 @@ from the `oCMOB` save sites; until someone writes that, this stays local.
 Independent, highest-value and least arguable first:
 
 1. `0020`, `0021`, `0022`, `0027`, `0029`, `0030`, `0031`, `0032`, `0033`, `0034`,
-   `0035`, `0036`, `0037`, `0038` (with `0039`), `0040`, `0041` — one PR
+   `0035`, `0036`, `0037`, `0038` (with `0039`), `0040`, `0041`, `0042`,
+   `0043` — one PR
    each.
 2. `0002`, `0003`, `0004`, `0005`, `0006`, `0028` — small self-evident writer bugs.
 3. `0018`, then `0013`.

@@ -196,6 +196,50 @@ test('a hash table insertion index outside the table throws instead of writing p
   }
 });
 
+// The BinSafe hash table's *first* count, the one that sizes the vector the
+// index above addresses. It is a plain `uint32` at the file's own
+// `hashTableOffset`, so it is located by structure through `readHeader`.
+function seedAbsurdHashTableSize(dir, name, count) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const header = readHeader(buf);
+  const table = readHashTable(buf, header.hashTableOffset);
+  assert.strictEqual(buf.readUInt32LE(header.hashTableOffset), table.count,
+    'expected the hash table entry count at the header offset');
+  buf.writeUInt32LE(count, header.hashTableOffset);
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a hash table declaring more entries than the file holds bytes throws instead of committing gigabytes', () => {
+  // `read_header` does `_m_hash_table_entries.resize(hash_table_size)` straight
+  // off the file, and the loop after it does not stop when the file runs out:
+  // every read past the end returns zero, so a zero key length and a zero
+  // insertion index pass patch 0029's bound and the loop runs to the file's own
+  // count. Neither the `--counts` sweep nor any seed could reach this field —
+  // the sweep rewrites INTEGER *entries* in the entry stream and this is a raw
+  // header word. Measured unpatched, with 0x0FFFFFFF: a 20.5 GB peak working
+  // set, and the world still reports LOADED after 35 s. An *absurd* count is
+  // the harmless one here too — 0xFFFFFFFF throws `bad allocation` out of
+  // `resize` in 69 ms — so the value below is a merely large one and the
+  // assertion names the guard's own wording.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-binsafe-size-'));
+  try {
+    const corrupt = seedAbsurdHashTableSize(dir, 'bad-hash-table-size.zen', 0x0fffffff);
+
+    const result = loadInChild(corrupt, 90_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 90 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of throwing: ${result.stdout}
+${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /hash table entry count/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // A leaf BSP node's `polygonIndex` — a file-supplied offset into the BSP's
 // polygon index list, located by structure: the `MeshAndBsp` blob's chunk table
 // carries the BSP TREE chunk (0xC040), whose payload is `nodeCount` u32,
