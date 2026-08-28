@@ -546,6 +546,81 @@ FUNC VOID DIA_Bengar_Hallo_Info()
         { filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info' }
       ]);
     });
+
+    it('aggregates waypoint sites from engine externals and project-declared waypoint parameters', async () => {
+      const dialogDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      const fileA = path.join(dialogDir, 'TA_Baker.d');
+      const fileB = path.join(dialogDir, 'TA_Guard.d');
+      fs.writeFileSync(fileA, `
+FUNC VOID TA_Baker_Day()
+{
+	AI_GotoWP(self, "FP_BAKER_OVEN");
+};
+      `);
+      fs.writeFileSync(fileB, `
+FUNC VOID B_UseWaypoint(var string waypoint)
+{
+	AI_GotoWP(self, waypoint);
+};
+
+FUNC VOID TA_Guard_Day()
+{
+	B_UseWaypoint("WP_GUARD_POST");
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.waypointSites['FP_BAKER_OVEN']).toEqual([
+        { filePath: fileA, functionName: 'TA_Baker_Day' }
+      ]);
+      expect(index.waypointSites['WP_GUARD_POST']).toEqual([
+        { filePath: fileB, functionName: 'TA_Guard_Day' }
+      ]);
+    });
+  });
+
+  describe('waypoint site extraction (semanticMetadataUtils)', () => {
+    it('resolves engine-external and project-declared waypoint arguments across files', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const fileA = extractFileMetadataFromSource(
+        `
+FUNC VOID TA_Baker_Day()
+{
+	AI_GotoWP(self, "FP_BAKER_OVEN");
+};
+        `,
+        '/test/TA_Baker.d'
+      );
+      const fileB = extractFileMetadataFromSource(
+        `
+FUNC VOID B_UseWaypoint(var string waypoint)
+{
+	AI_GotoWP(self, waypoint);
+};
+
+FUNC VOID TA_Guard_Day()
+{
+	B_UseWaypoint("WP_GUARD_POST");
+};
+        `,
+        '/test/TA_Guard.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/TA_Baker.d', semanticModel: fileA.semanticModel! },
+        { filePath: '/test/TA_Guard.d', semanticModel: fileB.semanticModel! }
+      ]);
+
+      expect(sites['FP_BAKER_OVEN']).toEqual([{ filePath: '/test/TA_Baker.d', functionName: 'TA_Baker_Day' }]);
+      expect(sites['WP_GUARD_POST']).toEqual([{ filePath: '/test/TA_Guard.d', functionName: 'TA_Guard_Day' }]);
+    });
   });
 
   describe('voice id extraction (semanticMetadataUtils)', () => {

@@ -1379,6 +1379,31 @@ describe('a waypoint dragged in the viewport', () => {
     await waitFor(() => expect(mockSelectedWaypoint).toBe(1));
     expect(mockSelection).toEqual([]);
   });
+
+  it('shows the routines that name the selected waypoint, from the project-wide index', async () => {
+    // §16.8 W2: the panel is the only UI a selected waypoint has, and the
+    // index it reads is keyed uppercase — the routine's own case is kept.
+    useProjectStore.setState({
+      waypointSiteIndex: {
+        WP_MIDDLE: [{ filePath: 'C:/Story/TA_Baker.d', functionName: 'TA_Baker_Day' }],
+      },
+    } as never);
+    await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+
+    expect(await screen.findByTestId('world-waypoint-panel')).toHaveTextContent('WP_MIDDLE');
+    expect(screen.getByTestId('world-waypoint-panel')).toHaveTextContent('TA_Baker_Day');
+    expect(screen.getByTestId('world-waypoint-panel')).toHaveTextContent('TA_Baker.d');
+  });
+
+  it('says no routine names the waypoint when the index has none', async () => {
+    await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+
+    expect(await screen.findByTestId('world-waypoint-panel')).toHaveTextContent(/no routine/i);
+  });
 });
 
 describe('a class property edited in the grid', () => {

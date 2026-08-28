@@ -27,6 +27,13 @@ export interface ProjectIndex {
    * be stale until the next reindex.
    */
   voiceIds: Record<string, Array<{ filePath: string; functionName: string }>>;
+  /**
+   * Waypoint name literals passed to AI_GotoWP/Npc_GetDistToWP or to a
+   * project-declared function taking a `var string waypoint` parameter,
+   * keyed by UPPERCASED waypoint name; entries keep the original file/routine
+   * locations. Built at project load/reindex time, same as voiceIds.
+   */
+  waypointSites: Record<string, Array<{ filePath: string; functionName: string }>>;
   /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
   metadataFailures: Array<{ filePath: string; error: string }>;
 }
@@ -360,6 +367,18 @@ export interface FunctionParameter {
   name: string;
 }
 
+export interface ParsedArg {
+  raw: string;
+  value: string;
+  isString: boolean;
+}
+
+export interface FunctionCallSite {
+  functionName: string;
+  args: ParsedArg[];
+  position: { startLine: number; startColumn: number; endLine: number; endColumn: number };
+}
+
 export interface DialogFunction {
   name: string;
   returnType: 'VOID' | 'INT' | 'STRING';
@@ -369,6 +388,8 @@ export interface DialogFunction {
   conditions: DialogCondition[];
   conditionOperator?: 'AND' | 'OR';
   calls: string[];
+  /** Every call_expression in this function's body, args and 1-based position. */
+  callSites?: FunctionCallSite[];
 }
 
 /**

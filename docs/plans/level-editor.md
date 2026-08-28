@@ -2982,6 +2982,30 @@ worker-pool pass, exactly as `voiceIds` does. Also: free points (`WP_STAND`,
 `WP_PICK`, …) are prefix-matched by the engine, so a strict exact-match Problems
 rule invents ~60 false findings.
 
+**W2 landed, 2026-08-28, minus the Problems rule.** `ProjectIndex.waypointSites`
+(`ProjectService.buildProjectIndex`) rides the worker-pool pass exactly as
+`voiceIds` does — `extractWaypointSites`/`buildWaypointParamIndex`
+(`semanticMetadataUtils.ts`) join every call site's `callSites` against a
+global map of "which argument index holds the waypoint": a small seed table
+for engine externals (`AI_GotoWP`, `Npc_GetDistToWP` — only the two the plan
+confirmed; the "~4 more" are still unverified and not guessed at) plus every
+project-declared function whose own parameter is literally named `waypoint`
+typed `string`, derived per-project rather than hardcoded. `WaypointPanel`
+(new) is mounted in `WorldSurface`'s right panel when `selectedWaypoint` is
+set — the panel a waypoint never had — listing the routines the index found,
+read-only (no jump-to-source; that is W4's mount-lifetime-gated territory,
+not this).
+
+**The Problems rule turned out not to be free.** `ProjectView`
+(`problems/domain/types.ts`) is built purely from parsed per-file
+`SemanticModel`s — it carries no world/waypoint data at all, so a
+"dangling waypoint" rule has no way to know which waypoint names exist in the
+currently open world. Closing this needs either a new input the Problems
+pipeline threads through (from `worldStore`, only meaningful with a world
+open) or folding the free-point prefix-match exception in above into whatever
+shape that takes — a small design decision, not a measurement, so it stays
+open rather than being guessed at here.
+
 ### 16.9 What is left of the ASCII writer — A2, A3 and A6
 
 A1, A4 and A5 landed, and the corpus now measures all 20 retail ASCII worlds

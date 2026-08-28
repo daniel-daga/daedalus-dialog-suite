@@ -101,13 +101,7 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-- **Jump between a script reference and the place it names** — **board-loop**,
-  in progress. Landed this session: the parser-side prerequisite for both W1
-  and W2, `DialogFunction.callSites` (args + 1-based line/column, generic
-  across every call), plus a §16.8 correction (parameters were already
-  exposed). Still open: W2's consumer-side pieces — the `buildProjectIndex`
-  worker-pool wiring, the waypoint-selection panel (none exists today), and
-  the dangling-waypoint Problems rule. §16.8
+*(empty)*
 
 ## Next
 
@@ -130,6 +124,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 - **Waynet edge ops, add/delete/rename** — the index-addressing problem is the
   whole job and is untouched. Unowned. §16.7
+- **Dangling-waypoint Problems rule** — blocked: `ProjectView` carries no
+  world/waypoint data at all, so the rule has no known-waypoints set to check
+  a literal against; needs a small design decision on how that data reaches
+  the Problems pipeline. Unowned. §16.8
 
 **zenkit-node / fidelity**
 
@@ -157,25 +155,11 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-- **`oCMobFire`/`Container`/`Door` join the class-property catalogue, closing
-  `oCMob*`** — `slot`/`vobTree` on Fire; `locked`/`pickString` on Container and
-  Door, `key` and Container's `contents` held out as unvalidated cross-
-  references. §16.3
-- **Snapping — drop-to-ground and align-to-normal landed** — a per-VOB batch
-  in `zen-world` (`dropVobsToGround`, `alignVobsToNormal`, aligning local +Y),
-  a `WorldViewport` imperative raycast handle, and two World-surface toolbar
-  buttons wired through the existing `commitOps` path. §16.5
-- **A real-Electron spec now watches the packaged renderer draw** —
-  `world-render.spec.ts` opens a world through the real UI and reads the
-  GPU's own framebuffer back via `__worldViewport.renderFrom`; the Windows
-  E2E job sets `ZENKIT_NODE_FORCE_BUILD=1` so the addon it needs exists.
-  Ubuntu's `editor-e2e-electron` self-skips it (no force-build there). §16.1
-- **The third `WorldViewport` test's five module mocks are now a shared
-  helper** — `tests/worldViewportMocks.ts`; `.multiSelect`, `.snapping` and
-  `.waynetRebuild` each keep only their `jest.mock()` calls, delegating the
-  factory bodies. Closed `docs/refactoring-targets.md`'s former §10.
+- **§16.8 W2 landed — world → scripts** — `ProjectIndex.waypointSites` rides
+  the worker-pool pass like `voiceIds` does, resolving `AI_GotoWP`/
+  `Npc_GetDistToWP` plus any project-declared `var string waypoint` parameter;
+  a new `WaypointPanel` shows the routines that name the selected waypoint.
+  The dangling-waypoint Problems rule that was meant to come "for free" did
+  not — moved to Next with why. §16.8
 
-Verified this session: `daedalus-parser` (build/typecheck/246 tests/lint) all
-green — including a pre-existing, unrelated 4-test failure traced to a stale
-compiled native binding and fixed by rebuilding it (`environment-hazards.md`,
-*"Building the native addon"*).
+Flushed 2026-08-28 (see git log for what landed before this).

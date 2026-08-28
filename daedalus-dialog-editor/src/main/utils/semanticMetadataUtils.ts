@@ -112,6 +112,71 @@ const extractVoiceIds = (semanticModel: SemanticModel): Array<{ id: string; func
   return voiceIds;
 };
 
+// Engine externals known to take a waypoint name literal, and the 0-based
+// argument index it sits at. Not exhaustive — AI_GotoWP and Npc_GetDistToWP
+// are the two the corpus measurement (level-editor.md §16.8) confirmed; the
+// plan names "~4 more" left to add once verified.
+const ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX: Record<string, number> = {
+  ai_gotowp: 1,
+  npc_getdisttowp: 1
+};
+
+/**
+ * Maps a called function's lowercased name to the argument index that holds
+ * its waypoint literal — the engine externals above, plus every
+ * project-declared function whose own signature has a parameter literally
+ * named `waypoint` typed `string` (the derivation rule from §16.8: don't
+ * hardcode the project's helper functions, read their own declaration).
+ */
+export function buildWaypointParamIndex(fileModels: Array<{ semanticModel: SemanticModel }>): Record<string, number> {
+  const index: Record<string, number> = { ...ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX };
+  for (const { semanticModel } of fileModels) {
+    for (const func of Object.values(semanticModel.functions || {})) {
+      const paramIndex = (func.parameters || []).findIndex(
+        (param) => param.name === 'waypoint' && param.type?.toLowerCase() === 'string'
+      );
+      if (paramIndex !== -1) {
+        index[func.name.toLowerCase()] = paramIndex;
+      }
+    }
+  }
+  return index;
+}
+
+/**
+ * Waypoint name literals passed to a call site resolved through
+ * buildWaypointParamIndex, keyed by UPPERCASED waypoint name (Daedalus is
+ * case-insensitive) with the calling routine's own file/function location.
+ * Needs every file's semantic model at once — a project helper's waypoint
+ * parameter can be declared in one file and called from another.
+ */
+export function extractWaypointSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+): Record<string, Array<{ filePath: string; functionName: string }>> {
+  const paramIndex = buildWaypointParamIndex(fileModels);
+  const sites: Record<string, Array<{ filePath: string; functionName: string }>> = {};
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        const argIndex = paramIndex[call.functionName.toLowerCase()];
+        if (argIndex === undefined) continue;
+
+        const arg = call.args?.[argIndex];
+        if (!arg || !arg.isString || !arg.value) continue;
+
+        const key = arg.value.toUpperCase();
+        if (!sites[key]) {
+          sites[key] = [];
+        }
+        sites[key].push({ filePath, functionName });
+      }
+    }
+  }
+
+  return sites;
+}
+
 export function extractFileMetadataFromSource(sourceCode: string, filePath: string): ParsedFileMetadata {
   const parseResult = daedalusWrapper.parse(sourceCode);
   const tree = parseResult.tree;

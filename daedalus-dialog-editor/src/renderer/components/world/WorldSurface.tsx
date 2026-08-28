@@ -23,6 +23,7 @@ import WorldSceneTree from './WorldSceneTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
 import WorldAssetPreview from './WorldAssetPreview';
+import WaypointPanel from './WaypointPanel';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
 // app, lazily loaded, so `zenkit-node` is pulled in only when a world is
@@ -65,6 +66,7 @@ const WorldSurface: React.FC = () => {
   const editError = useWorldStore((s) => s.editError);
   const selection = useWorldStore((s) => s.selection);
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
+  const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
   const {
     beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
@@ -1118,19 +1120,26 @@ const WorldSurface: React.FC = () => {
           <Box sx={{ width: 300, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
             {panel === 'assets' && selectedAsset !== null
               ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} />
-              : (
-                <WorldPropertyGrid
-                  summary={summary}
-                  selection={selection}
-                  refusalGeneration={editRefusals}
-                  onEditProps={handleEditProps}
-                  onTranslate={handleTranslateSelection}
-                  onRotate={handleRotateVob}
-                  classProps={classProps?.vob === primary ? classProps.props : null}
-                  onEditClassProps={handleEditClassProps}
-                  itemInstances={itemInstances}
-                />
-              )}
+              : selectedWaypoint !== null && waynet
+                ? (
+                  <WaypointPanel
+                    name={waynet.names[selectedWaypoint]}
+                    routines={waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || []}
+                  />
+                )
+                : (
+                  <WorldPropertyGrid
+                    summary={summary}
+                    selection={selection}
+                    refusalGeneration={editRefusals}
+                    onEditProps={handleEditProps}
+                    onTranslate={handleTranslateSelection}
+                    onRotate={handleRotateVob}
+                    classProps={classProps?.vob === primary ? classProps.props : null}
+                    onEditClassProps={handleEditClassProps}
+                    itemInstances={itemInstances}
+                  />
+                )}
           </Box>
         )}
       </Box>
