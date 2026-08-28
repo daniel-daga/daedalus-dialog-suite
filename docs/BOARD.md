@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0033`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0034`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,9 +136,10 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — five instances bounded
-  (`0029`–`0033`); the next patch is named and small: the `0xC050` OUTDOORS
-  `sector_count` hang (`--seed 124`, one byte). Unowned. §16.11
+- **The world reader is still not crash-safe** — six instances bounded
+  (`0029`–`0034`) and the 200-seed run is clean, which is a milestone and not a
+  claim: no named reproducer is left, so the next step is a wider corpus or the
+  `ReadMemory::seek` decision. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -157,6 +158,12 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
+- **Patch `0034` — the last four hangs in the 200-seed run were one chunk.**
+  All four delta-debug into `BspTree::load`'s `0xC050` OUTDOORS branch, whose
+  three counts are unvalidated; one sector is enough, because `read_chunked`
+  hands the callback the whole reader and the first sector reads its node count
+  across the next chunk header. The run is now 200 of 200 clean. Two claims
+  §16.11 made about this hang were wrong and are corrected there. §16.11
 - **Patches `0029`–`0033` — five reader defects bounded**, each bisected to one
   byte of `minimal.g2.zen` with `zenkit-node/tools/fuzz-world.js`. `0033` is a
   null deref, not a count: `WayNet::load` dereferenced `read_object`'s result.

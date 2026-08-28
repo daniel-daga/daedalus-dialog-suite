@@ -3129,9 +3129,10 @@ cleanly. Bounding it would be dead-code hardening; the crash class is
 elsewhere.
 
 Still not the class. `_parse_bsp_nodes` recurses once per file-supplied flag
-bit with no depth bound, `BspTree::load`'s OUTDOORS branch resizes from
-unchecked counts, and every chunk-walking loop in `Mesh.cc` and the VOB readers
-is untouched — which is why the worker isolation stays load-bearing.
+bit with no depth bound, and every chunk-walking loop in `Mesh.cc` and the VOB
+readers is untouched — which is why the worker isolation stays load-bearing.
+(`BspTree::load`'s OUTDOORS branch was named here too, and is bounded by `0034`
+below.)
 
 **Re-measured 2026-08-28**, with `zenkit-node/tools/fuzz-world.js`, which is now
 checked in so the number is reproducible: 40 seeds of 20 random byte writes
@@ -3189,17 +3190,38 @@ reference into a waynet ZenGin itself wrote can go unresolved, so refusing that
 world would be a new refusal rather than a crash fix. Measured: such a world
 still loads and its endpoint is dropped from the waynet.
 
-**Four hangs are left, and the first one is already named.** Seeds 124, 129, 178
-and 181 of the 200-seed run still hang (`0033` fixed both crashes and no hang).
-Seed 124 delta-debugs to **one byte** — file offset 1317, the first byte of the
-`0xC050` OUTDOORS chunk's `sector_count`, turning 0 into 0x79000000. That is the
-`BspTree::load` OUTDOORS branch this section already names as unvalidated: the
-loop runs once per sector doing a `read_line` and two `resize`s, and reads past
-the end of an exhausted reader return nothing rather than failing, so two
-billion iterations neither throw nor return. **The chunk reader is bounded, so
-the guard is available**: a sector needs bytes, and `c->eof()` inside the loop is
-already the fact the loop is ignoring. The other three hangs are unminimized and
-may or may not be the same byte. This is the next patch, and it is small.
+**All four remaining hangs were one chunk, and they are bounded (2026-08-28,
+patch `0034`).** Seeds 124, 129, 178 and 181 of the 200-seed run every one
+delta-debug into the `0xC050` OUTDOORS chunk of `BspTree::load` — seed 124 to
+**one byte**, file offset 1317, the low byte of `sector_count`, turning 0 into
+121.
+
+Two things this section asserted about it were wrong. **The chunk reader is not
+bounded**: `proto::read_chunked` (`include/zenkit/Stream.hh`) hands the callback
+the whole reader, so `c->eof()` is the end of the *archive*, not of the chunk,
+and a guard built on it would not have fired here. And the hang is not the loop
+count — **one sector is already enough**, measured. The first sector reads its
+name off the four zero bytes of `portal_count`, so `node_count` is read across
+the following `0xC0FF` chunk header as `0xFF000000` and `resize` commits 17 GB.
+An *absurd* count is harmless by comparison: `reserve` throws `bad_alloc` and
+the loop is never entered, which is why a test seeded with two billion sectors
+passes against the unpatched reader and the committed one uses the fuzzer's own
+121.
+
+The patch bounds all three counts in the chunk — sector, per-sector node and
+polygon, and portal — by the bytes actually left in the reader, which needs a
+`_bytes_remaining` helper because `Read` exposes no size but every
+implementation can seek to the end and back. Covered by a child-process test in
+`zenkit-node/test/loadWorld.test.js` that seeds the count by structure.
+
+**The 200-seed run is now 200 of 200 clean throws.** Same caveat as the 40-seed
+milestone above, only louder: it is 200 seeds of 20 bytes over one small
+synthetic fixture, and it is **not** a crash-safety claim. `_parse_bsp_nodes`
+still recurses once per file-supplied flag bit with no depth bound, the
+chunk-walking loops in `Mesh.cc` and the VOB readers are untouched, and **the
+worker isolation stays load-bearing.** The next step is not another seed — it is
+either widening the corpus (more seeds, more bytes, a real world) or taking the
+`ReadMemory::seek` decision, and neither is named as a card yet.
 
 The class is still open either way: `_parse_bsp_nodes` recursion, the chunk-
 walking loops in `Mesh.cc` and the VOB readers, and the `ReadMemory::seek`

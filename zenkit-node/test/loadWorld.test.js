@@ -427,3 +427,54 @@ ${result.stderr}`);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The BSP OUTDOORS chunk's `sectorCount`, located by structure: the
+// `MeshAndBsp` blob's chunk table carries OUTDOORS (0xC050), whose payload is
+// `sectorCount` u32 followed by that many sectors and then `portalCount` u32 —
+// so on a world with no sectors the count is the chunk's first four bytes. The
+// value written is the fuzzer's own, not a rounder large one: an absurd count
+// is caught by `reserve` throwing `bad_alloc` and never reaches the loop, so a
+// test seeded with two billion sectors would pass against the unpatched
+// reader.
+function seedAbsurdBspSectorCount(dir, name) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const blob = [...walk(buf)].find((ev) => ev.kind === 'rawBlob' && ev.entryName === 'MeshAndBsp');
+  assert.ok(blob, 'the fixture must have a MeshAndBsp blob to corrupt');
+
+  const end = blob.fileOffset + blob.size;
+  let p = blob.fileOffset;
+  while (p + 6 <= end && buf.readUInt16LE(p) !== 0xc050) p += 6 + buf.readUInt32LE(p + 2);
+  assert.strictEqual(buf.readUInt16LE(p), 0xc050, 'expected an OUTDOORS chunk in the fixture BSP');
+
+  const at = p + 6;
+  assert.strictEqual(buf.readUInt32LE(at), 0, 'expected the fixture BSP to declare no sectors');
+  buf.writeUInt32LE(0x79, at); // the fuzzer's byte: 121 sectors in a chunk that holds none
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a BSP declaring more sectors than the chunk holds bytes throws instead of hanging', () => {
+  // `BspTree::load`'s OUTDOORS branch trusts the file's `sector_count` and runs
+  // one `read_line` plus two `resize`s per sector — and `read_chunked` hands the
+  // callback the whole reader, not one bounded to the chunk, so the first sector
+  // reads its own `node_count` across the *next* chunk's header. Here that is
+  // 0xFF000000 and the `resize` commits 17 GB: one sector is already enough to
+  // hang, and 121 of them is what the fuzzer found. Seed 124 of the 200-seed run
+  // delta-debugged to one byte, file offset 1317, the low byte of this count.
+  // This test seeds the same defect by structure.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-bsp-sectors-'));
+  try {
+    const corrupt = seedAbsurdBspSectorCount(dir, 'bad-bsp-sector-count.zen');
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 30 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of throwing: ${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /sector/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
