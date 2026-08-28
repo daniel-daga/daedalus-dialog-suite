@@ -1185,4 +1185,58 @@ describe('assertApplyOpsRequest', () => {
       expect(() => assertApplyOpsRequest({ ops: [{ ...add, to: null }] })).toThrow(/exactly one/);
     });
   });
+
+  describe('a waypoint edge', () => {
+    // The fourth waynet op (§16.7, W3), and the first with *two* endpoints: an
+    // edge is a pair of waypoints, so each end carries the index+name pair the
+    // other three carry once. Its sides are booleans — whether the edge is
+    // there — which is what lets one shape be both the join and its undo.
+    const edge = {
+      op: 'SetWaypointEdge',
+      a: 3, aName: 'WP_A', b: 12, bName: 'WP_B', from: false, to: true,
+    };
+
+    it('is accepted carrying no vob and no path at all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [edge] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [{ ...edge, from: true, to: false }] }))
+        .not.toThrow();
+    });
+
+    it('rejects an endpoint index that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...edge, a: bad }] })).toThrow(/a must be/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...edge, b: bad }] })).toThrow(/b must be/);
+      }
+    });
+
+    it('rejects an endpoint name that is not a string', () => {
+      // The guard each bare index needs, on both ends: a stale index always
+      // resolves to *a* waypoint, so an edge made without one is an edge
+      // between whichever two the indices now name.
+      for (const bad of [undefined, null, 12, {}]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...edge, aName: bad }] }))
+          .toThrow(/aName/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...edge, bName: bad }] }))
+          .toThrow(/bName/);
+      }
+    });
+
+    it('rejects a waypoint joined to itself', () => {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...edge, b: 3, bName: 'WP_A' }] }))
+        .toThrow(/itself/);
+    });
+
+    it('rejects sides that are not one boolean each, or that agree', () => {
+      // Both sides the same describes no edit — and would reach the binding as
+      // a join or an unjoin nobody asked for.
+      for (const bad of [undefined, null, 0, 'true']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...edge, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...edge, from: bad }] })).toThrow(/from/);
+      }
+      expect(() => assertApplyOpsRequest({ ops: [{ ...edge, from: true }] }))
+        .toThrow(/exactly one/);
+      expect(() => assertApplyOpsRequest({ ops: [{ ...edge, to: false }] }))
+        .toThrow(/exactly one/);
+    });
+  });
 });

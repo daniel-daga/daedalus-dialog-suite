@@ -389,6 +389,42 @@ export interface AddWaypoint {
 }
 
 /**
+ * An edge between two waypoints, added or taken away (§16.7, W3).
+ *
+ * One shape for both directions, because an edge is a pair of waypoints and
+ * nothing else: the sides say whether the edge is *there*, and the inverse is
+ * the plain swap. There is no separate delete op for the same reason `AddVob`
+ * has none — a second shape would be a second thing to keep in step, and this
+ * one has no payload to carry on either side.
+ *
+ * Both endpoints carry the index+name pair every waynet op is addressed by, and
+ * this op earns that address the way a move and a rename do: it inserts,
+ * deletes and reorders no waypoint, so the enumeration it was made against is
+ * the one it is applied against. The endpoints are not sides and do not swap.
+ *
+ * **What the binding does that this op cannot see:** an endpoint left in no
+ * edge at all and not already a free point is promoted to one, because
+ * `WayNet::save` writes free points plus edge endpoints and nothing else — so
+ * without it, taking a waypoint's last edge would delete the waypoint at the
+ * next save. The promotion is not undone by the add direction, which makes undo
+ * exact for the *graph* and not for that one flag (§16.7). No world ZenGin
+ * itself wrote can reach it: `WayNet::load` marks every point in the points
+ * section free.
+ */
+export interface SetWaypointEdge {
+  op: 'SetWaypointEdge';
+  /** One endpoint's index into `getWaynet`'s point list, and its name — the
+   *  guard, checked and never resolved. */
+  a: number;
+  aName: string;
+  b: number;
+  bName: string;
+  /** Whether the edge is there. Exactly one of the two is true. */
+  from: boolean;
+  to: boolean;
+}
+
+/**
  * The removal of a VOB and its whole subtree — **the one op with no inverse.**
  *
  * Deliberately not an `AddVob` with a null `to`. That shape carries a `NewVob`
@@ -415,11 +451,11 @@ export interface DeleteVob {
 
 export type WorldOp =
   MoveVob | RotateVob | SetVobProp | SetVobClassProp | AddVob | ReparentVob
-  | MoveWaypoint | RenameWaypoint | AddWaypoint | DeleteVob;
+  | MoveWaypoint | RenameWaypoint | AddWaypoint | SetWaypointEdge | DeleteVob;
 
 /** The ops that write the waynet rather than a VOB — what `isWaynetOp` narrows
  *  to, and the only ops `applyOps` has no column for. */
-export type WaynetOp = MoveWaypoint | RenameWaypoint | AddWaypoint;
+export type WaynetOp = MoveWaypoint | RenameWaypoint | AddWaypoint | SetWaypointEdge;
 
 /**
  * The tail of every dispatch over `WorldOp`.
@@ -473,7 +509,7 @@ export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob | Delete
  */
 export function isWaynetOp(op: WorldOp): op is WaynetOp {
   return op.op === 'MoveWaypoint' || op.op === 'RenameWaypoint'
-    || op.op === 'AddWaypoint';
+    || op.op === 'AddWaypoint' || op.op === 'SetWaypointEdge';
 }
 
 export function renumbersPaths(op: WorldOp): boolean {
@@ -716,6 +752,51 @@ export function addWaypoint(
   if (names.includes(name)) throw new RangeError(`a waypoint is already named ${name}`);
 
   return { op: 'AddWaypoint', waypoint: names.length, name, from: null, to };
+}
+
+/**
+ * The edge between two waypoints, in the direction the caller asks for.
+ *
+ * Takes the payload's own names for the same reason every other waynet factory
+ * does: there is no waynet reader, and each endpoint's name is the guard its
+ * bare index needs, read where the op is made rather than at apply time.
+ *
+ * Whether the edge is *already* there is not checked here and cannot be: this
+ * side holds a flat edge buffer the overlay happens to be drawing, and the
+ * binding holds the list that decides. It refuses a duplicate and a missing
+ * edge, in the layer that can see them.
+ */
+function waypointEdge(
+  names: readonly string[], a: number, b: number, to: boolean,
+): SetWaypointEdge {
+  for (const endpoint of [a, b]) {
+    if (endpoint < 0 || endpoint >= names.length) {
+      throw new RangeError(`no waypoint ${endpoint} in the waynet`);
+    }
+  }
+  // By index, not by name: two waypoints may legally share a name, and the one
+  // thing this can rule out is a waypoint joined to the very same waypoint.
+  if (a === b) throw new RangeError(`${names[a]} cannot be joined to itself`);
+
+  return {
+    op: 'SetWaypointEdge',
+    a, aName: names[a], b, bName: names[b],
+    from: !to, to,
+  };
+}
+
+/** Join two waypoints — the add direction of `SetWaypointEdge`. */
+export function connectWaypoints(
+  names: readonly string[], a: number, b: number,
+): SetWaypointEdge {
+  return waypointEdge(names, a, b, true);
+}
+
+/** Take that edge away — the same op the other way round. */
+export function disconnectWaypoints(
+  names: readonly string[], a: number, b: number,
+): SetWaypointEdge {
+  return waypointEdge(names, a, b, false);
 }
 
 /**
@@ -1312,6 +1393,11 @@ export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
     // op is about, whichever direction it is going.
     return { ...op, from: op.to, to: op.from };
   }
+  if (op.op === 'SetWaypointEdge') {
+    // The endpoints are not sides — the pair is the same pair whichever way the
+    // op is going — so only the two booleans swap.
+    return { ...op, from: op.to, to: op.from };
+  }
   if (op.op === 'MoveVob') {
     return { ...op, from: op.to, to: op.from };
   }
@@ -1358,6 +1444,14 @@ export interface OpBinding {
    *  removal in the middle renumbers, which is W4's job and comes with an undo
    *  barrier. */
   removeWaypoint(waypoint: number, name: string): void;
+  /** Joins two waypoints, each addressed by the same index+name pair. Refuses a
+   *  waypoint joined to itself and an edge already there in either orientation
+   *  — the two things only the edge list can see. */
+  addWaypointEdge(a: number, aName: string, b: number, bName: string): void;
+  /** Takes that edge away again, in either orientation, and promotes an endpoint
+   *  it leaves in no edge to a free point so the removal does not delete the
+   *  waypoint at the next save. */
+  removeWaypointEdge(a: number, aName: string, b: number, bName: string): void;
 }
 
 /** One op against the world, and its own inverse — the two directions
@@ -1443,6 +1537,14 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
         `the new waypoint landed at ${landed}, not ${op.waypoint} — the waynet has grown`,
       );
     }
+    return;
+  }
+  if (op.op === 'SetWaypointEdge') {
+    // Off the side `direction` names rather than off `op.to`: `commitOps`
+    // unwinds a refused batch by replaying the applied ops through `'from'`, and
+    // a branch that always joined would join a second time instead of undoing.
+    const call = op[direction] ? binding.addWaypointEdge : binding.removeWaypointEdge;
+    call.call(binding, op.a, op.aName, op.b, op.bName);
     return;
   }
   if (op.op === 'DeleteVob') {

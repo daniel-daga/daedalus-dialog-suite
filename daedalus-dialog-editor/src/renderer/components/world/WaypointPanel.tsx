@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Box, List, ListItem, ListItemText, TextField, Typography } from '@mui/material';
+import {
+  Box, Button, List, ListItem, ListItemText, Stack, TextField, Typography,
+} from '@mui/material';
 
 /**
  * The right-panel counterpart of a selected waypoint (level-editor.md §16.8
@@ -12,12 +14,25 @@ import { Box, List, ListItem, ListItemText, TextField, Typography } from '@mui/m
  * `routines` is looked up by the caller from `projectStore`'s
  * `waypointSiteIndex`, keyed uppercase because Daedalus is case-insensitive;
  * the name shown is the waypoint's own casing from the waynet payload.
+ *
+ * The edges are §16.7's W3 and live here for W1's reason — this is the only UI
+ * a waypoint has. A neighbour is named rather than picked in the viewport
+ * because an edge needs a *second* selection and the surface has one; the name
+ * is resolved by the caller, which is the side holding the point list.
  */
 const WaypointPanel: React.FC<{
   name: string;
   routines: Array<{ filePath: string; functionName: string }>;
   onRename: (to: string) => void;
-}> = ({ name, routines, onRename }) => {
+  /** The other end of every edge this waypoint is in. */
+  neighbours: Array<{ waypoint: number; name: string }>;
+  /** The waypoint a typed name would join to, or null when there is none to
+   *  join — the selection itself and one it is already joined to both answer
+   *  null, so the button is dead rather than the edit refused. */
+  resolveWaypoint: (typed: string) => number | null;
+  onConnect: (waypoint: number) => void;
+  onDisconnect: (waypoint: number) => void;
+}> = ({ name, routines, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect }) => {
   const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
   // The field shows what the waynet payload says, and goes back to it the moment
@@ -27,12 +42,27 @@ const WaypointPanel: React.FC<{
   const [draft, setDraft] = useState(name);
   useEffect(() => { setDraft(name); }, [name]);
 
+  // The name being typed into the connect field, and what it resolves to.
+  // Cleared when the selection changes: a name typed against one waypoint's
+  // neighbour list means nothing against another's.
+  const [joinDraft, setJoinDraft] = useState('');
+  useEffect(() => { setJoinDraft(''); }, [name]);
+  const joinTarget = resolveWaypoint(joinDraft);
+
   const commit = (): void => {
     const renamed = draft.trim();
     setDraft(name);
     // An unchanged name is not an edit, and an empty one is not a name: the
     // index+name pair every waynet op is guarded by would have nothing to check.
     if (renamed !== '' && renamed !== name) onRename(renamed);
+  };
+
+  // The field empties on a join the surface accepted, and the neighbour list it
+  // hands back is what says the edge is there — the same shape the name field
+  // has, where the payload is the answer and this component never assumes one.
+  const join = (waypoint: number): void => {
+    setJoinDraft('');
+    onConnect(waypoint);
   };
 
   return (
@@ -71,6 +101,60 @@ const WaypointPanel: React.FC<{
           ))}
         </List>
       )}
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+        Edges
+      </Typography>
+      {neighbours.length === 0 ? (
+        <Typography variant="caption" color="text.secondary">
+          In no edge.
+        </Typography>
+      ) : (
+        <List dense disablePadding data-testid="world-waypoint-edges">
+          {neighbours.map((neighbour) => (
+            <ListItem
+              key={neighbour.waypoint}
+              disablePadding
+              sx={{ py: 0.25 }}
+              secondaryAction={(
+                <Button
+                  size="small"
+                  onClick={() => onDisconnect(neighbour.waypoint)}
+                  data-testid={`world-waypoint-disconnect-${neighbour.waypoint}`}
+                >
+                  Disconnect
+                </Button>
+              )}
+            >
+              <ListItemText
+                primary={neighbour.name}
+                primaryTypographyProps={{ variant: 'body2' }}
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
+      <Stack direction="row" spacing={1} sx={{ mt: 1 }} alignItems="flex-end">
+        <TextField
+          value={joinDraft}
+          onChange={(event) => setJoinDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && joinTarget !== null) join(joinTarget);
+          }}
+          placeholder="Connect to…"
+          size="small"
+          fullWidth
+          variant="standard"
+          inputProps={{ 'data-testid': 'world-waypoint-join-name', spellCheck: false }}
+        />
+        <Button
+          size="small"
+          disabled={joinTarget === null}
+          onClick={() => joinTarget !== null && join(joinTarget)}
+          data-testid="world-waypoint-connect"
+        >
+          Connect
+        </Button>
+      </Stack>
     </Box>
   );
 };

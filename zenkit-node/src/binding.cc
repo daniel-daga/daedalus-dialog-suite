@@ -26,6 +26,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "assets.hh"
@@ -746,6 +747,138 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
       stored.erase(it);
       break;
     }
+  }
+  return env.Undefined();
+}
+
+// The two endpoints of an edge op, each resolved by the index+name pair every
+// waynet op is addressed by (see SetWaypointPosition). Shared by the add and
+// the remove so the two cannot drift into checking different things — a pair
+// one accepted and the other refused would be an edge nothing could undo.
+//
+// `argument` is the index of the first of the four arguments (a, aName, b,
+// bName), which both callers pass as 1.
+static std::pair<std::shared_ptr<zenkit::WayPoint>, std::shared_ptr<zenkit::WayPoint>>
+ResolveWaypointPair(Napi::Env env, WorldHandle& handle, Napi::CallbackInfo const& info) {
+  auto points = CollectWaypoints(handle);
+  std::shared_ptr<zenkit::WayPoint> resolved[2];
+
+  for (std::size_t end = 0; end < 2; ++end) {
+    auto const index_argument = 1 + end * 2;
+    if (!info[index_argument].IsNumber()) {
+      throw Napi::TypeError::New(env, "waypoint must be a number");
+    }
+    if (!info[index_argument + 1].IsString()) {
+      throw Napi::TypeError::New(env, "name must be a string");
+    }
+    auto const requested = info[index_argument].As<Napi::Number>().Int64Value();
+    auto const name = info[index_argument + 1].As<Napi::String>().Utf8Value();
+
+    if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
+      throw Napi::Error::New(env, "no waypoint at " + std::to_string(requested));
+    }
+    auto const at = static_cast<std::size_t>(requested);
+    if (points[at]->name != name) {
+      throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
+                                    + points[at]->name + ", not " + name
+                                    + " — the waynet has changed under this op");
+    }
+    resolved[end] = points[at];
+  }
+
+  // Pointer identity, not the index: two indices are the same waypoint exactly
+  // when they resolve to the same object, and an edge from a waypoint to itself
+  // is a line of zero length the overlay cannot draw and the engine cannot walk.
+  if (resolved[0].get() == resolved[1].get()) {
+    throw Napi::Error::New(env, resolved[0]->name + " cannot be joined to itself");
+  }
+  return {resolved[0], resolved[1]};
+}
+
+// Is `edge` the edge between these two, in either orientation? An edge is
+// undirected — `WayNet` stores an ordered pair only because a file has to store
+// something — so the caller may name it from whichever end the user selected.
+static bool IsEdgeBetween(std::pair<std::shared_ptr<zenkit::WayPoint>,
+                                    std::shared_ptr<zenkit::WayPoint>> const& edge,
+                          zenkit::WayPoint const* a,
+                          zenkit::WayPoint const* b) {
+  return (edge.first.get() == a && edge.second.get() == b)
+      || (edge.first.get() == b && edge.second.get() == a);
+}
+
+// addWaypointEdge(handle, a, aName, b, bName) — joins two waypoints (§16.7, W3).
+//
+// Both endpoints carry the same index+name pair every other waynet op does, and
+// this op earns that address the way a move and a rename do: it inserts,
+// deletes and reorders no *waypoint*, so the enumeration the caller read is the
+// one this writes into.
+//
+// The two refusals are the ones the edge list is the only layer that can see: a
+// waypoint joined to itself, and an edge that is already there in either
+// orientation — a second copy would be written twice by `WayNet::save` and
+// drawn twice by the overlay, and the removal of one would leave the other.
+Napi::Value AddWaypointEdge(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto const [a, b] = ResolveWaypointPair(env, *handle, info);
+
+  // Non-null wherever the pair resolved: a waypoint came out of the point list,
+  // and there is no point list without a waynet.
+  auto& way_net = *handle->world->way_net;
+  for (auto const& edge : way_net.edges) {
+    if (IsEdgeBetween(edge, a.get(), b.get())) {
+      throw Napi::Error::New(env, a->name + " and " + b->name + " are already joined");
+    }
+  }
+
+  way_net.edges.emplace_back(a, b);
+  return env.Undefined();
+}
+
+// removeWaypointEdge(handle, a, aName, b, bName) — the exact inverse, with one
+// thing it has to do that the add does not.
+//
+// **An edge removal must not become a waypoint removal.** `WayNet::save` writes
+// free points plus edge endpoints and nothing else, so a waypoint that is not a
+// free point and is in no edge is not written at all — taking its last edge
+// would delete it at the next save, silently, and renumber every waypoint after
+// it on the reload. So an endpoint left in no edge is promoted to a free point,
+// which is the shape a waypoint has in every world ZenGin itself wrote:
+// `WayNet::load` marks every point in the points section free, so all 12,341
+// retail waypoints already are one and none of them can reach this path.
+//
+// The promotion is not undone by `AddWaypointEdge`, and deliberately: an add
+// cannot know which of its endpoints a removal had to rescue, and a waypoint
+// wrongly left free is written where it was written before, while one wrongly
+// demoted is gone (§16.7).
+Napi::Value RemoveWaypointEdge(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto const [a, b] = ResolveWaypointPair(env, *handle, info);
+
+  auto& edges = handle->world->way_net->edges;
+  auto found = edges.end();
+  for (auto it = edges.begin(); it != edges.end(); ++it) {
+    if (IsEdgeBetween(*it, a.get(), b.get())) {
+      found = it;
+      break;
+    }
+  }
+  if (found == edges.end()) {
+    throw Napi::Error::New(env, "no edge between " + a->name + " and " + b->name);
+  }
+  edges.erase(found);
+
+  for (auto const& endpoint : {a, b}) {
+    if (endpoint->free_point) continue;
+    bool still_named = false;
+    for (auto const& edge : edges) {
+      if (edge.first.get() == endpoint.get() || edge.second.get() == endpoint.get()) {
+        still_named = true;
+        break;
+      }
+    }
+    if (!still_named) endpoint->free_point = true;
   }
   return env.Undefined();
 }
@@ -2261,6 +2394,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setWaypointName", Napi::Function::New(env, SetWaypointName));
   exports.Set("addWaypoint", Napi::Function::New(env, AddWaypoint));
   exports.Set("removeWaypoint", Napi::Function::New(env, RemoveWaypoint));
+  exports.Set("addWaypointEdge", Napi::Function::New(env, AddWaypointEdge));
+  exports.Set("removeWaypointEdge", Napi::Function::New(env, RemoveWaypointEdge));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));
   return exports;

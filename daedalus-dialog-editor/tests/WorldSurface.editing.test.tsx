@@ -1964,6 +1964,120 @@ describe('a waypoint dragged in the viewport', () => {
       expect(mockSelectedWaypoint).toBeNull();
     });
   });
+
+  describe('joined and unjoined in that panel', () => {
+    // W3 (§16.7). An edge needs a *second* waypoint and the surface has one
+    // selection, so the second end is named in the panel rather than picked in
+    // the viewport. The fixture waynet is a chain: WP_START–WP_MIDDLE–WP_END.
+    async function pickMiddle(): Promise<WaynetPayload> {
+      const payload = await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await screen.findByTestId('world-waypoint-panel');
+      return payload;
+    }
+
+    /** The panel with `WP_START` selected — the end of the chain, so `WP_END`
+     *  is a waypoint it is *not* already joined to. */
+    async function pickStart(): Promise<void> {
+      await openWithWaynet();
+      act(() => useWorldStore.getState().selectWaypoint(0));
+      await screen.findByTestId('world-waypoint-panel');
+    }
+
+    const typeJoin = (value: string) => {
+      fireEvent.change(screen.getByTestId('world-waypoint-join-name'), {
+        target: { value },
+      });
+    };
+
+    it('lists the far end of every edge the selected waypoint is in', async () => {
+      // Read out of the same flat pair buffer the overlay draws its lines
+      // through, in both orientations: the fixture stores 0–1 and 1–2, and the
+      // middle waypoint is the far end of one and the near end of the other.
+      await pickMiddle();
+
+      const edges = await screen.findByTestId('world-waypoint-edges');
+      expect(edges).toHaveTextContent('WP_START');
+      expect(edges).toHaveTextContent('WP_END');
+      expect(edges).not.toHaveTextContent('WP_MIDDLE');
+    });
+
+    it('becomes a SetWaypointEdge with both ends guarded, taking the edge away', async () => {
+      await pickMiddle();
+
+      fireEvent.click(screen.getByTestId('world-waypoint-disconnect-0'));
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+        op: 'SetWaypointEdge',
+        a: 1, aName: 'WP_MIDDLE', b: 0, bName: 'WP_START',
+        from: true, to: false,
+      }]));
+    });
+
+    it('becomes the same op the other way round for a named waypoint', async () => {
+      // Case-insensitively, like every other by-name lookup a waypoint has —
+      // the routine index is keyed uppercase for the same reason.
+      await pickStart();
+
+      typeJoin('wp_end');
+      fireEvent.click(screen.getByTestId('world-waypoint-connect'));
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+        op: 'SetWaypointEdge',
+        a: 0, aName: 'WP_START', b: 2, bName: 'WP_END',
+        from: false, to: true,
+      }]));
+    });
+
+    it('offers no join for a name the waynet has not got, the waypoint itself, or a neighbour', async () => {
+      // All three are refusals the binding makes too. Dead button rather than a
+      // round trip: this side is holding the very list that decides.
+      await pickStart();
+
+      typeJoin('WP_NOWHERE');
+      expect(screen.getByTestId('world-waypoint-connect')).toBeDisabled();
+      typeJoin('WP_START');
+      expect(screen.getByTestId('world-waypoint-connect')).toBeDisabled();
+      typeJoin('WP_MIDDLE');
+      expect(screen.getByTestId('world-waypoint-connect')).toBeDisabled();
+
+      typeJoin('WP_END');
+      expect(screen.getByTestId('world-waypoint-connect')).toBeEnabled();
+      expect(api.applyWorldOps).not.toHaveBeenCalled();
+    });
+
+    it('re-reads the overlay payload, which is the only thing that draws the line', async () => {
+      // The edge buffer is a typed array the lines are built from and it cannot
+      // gain a pair in place — and a removal can promote an endpoint to a free
+      // point, which is a flags column nothing else rewrites.
+      await pickMiddle();
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+
+      fireEvent.click(screen.getByTestId('world-waypoint-disconnect-2'));
+
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(2));
+    });
+
+    it('re-reads it on undo too, which arrives as the same op swapped', async () => {
+      await pickMiddle();
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+      fireEvent.click(screen.getByTestId('world-waypoint-disconnect-2'));
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(2));
+
+      api.undoWorldEdit.mockResolvedValueOnce([{
+        op: 'SetWaypointEdge',
+        a: 1, aName: 'WP_MIDDLE', b: 2, bName: 'WP_END',
+        from: false, to: true,
+      }] as never);
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(3));
+      // The waypoint keeps its gizmo: an edge renumbers nothing, so the index
+      // the selection stands on still names what it named before.
+      expect(mockSelectedWaypoint).toBe(1);
+    });
+  });
 });
 
 describe('a class property edited in the grid', () => {

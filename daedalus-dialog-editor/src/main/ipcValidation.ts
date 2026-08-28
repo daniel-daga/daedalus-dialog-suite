@@ -360,7 +360,7 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
       && op.op !== 'SetVobClassProp' && op.op !== 'AddVob' && op.op !== 'ReparentVob'
       && op.op !== 'MoveWaypoint' && op.op !== 'RenameWaypoint' && op.op !== 'AddWaypoint'
-      && op.op !== 'DeleteVob') {
+      && op.op !== 'SetWaypointEdge' && op.op !== 'DeleteVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
 
@@ -434,6 +434,36 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       // would describe nothing, and both would reach the binding as an append.
       if ((op.from === null) === (op.to === null)) {
         throw new Error('Invalid op: exactly one of from and to must be null');
+      }
+      continue;
+    }
+
+    // The fourth waynet op, beside its three siblings and for the same reason.
+    // Its own shape is the difference again: an edge is a *pair*, so each end
+    // carries the index+name pair the others carry once, and the sides are
+    // booleans — whether the edge is there — rather than a payload.
+    if (op.op === 'SetWaypointEdge') {
+      for (const end of ['a', 'b'] as const) {
+        if (typeof op[end] !== 'number' || !Number.isInteger(op[end]) || (op[end] as number) < 0) {
+          throw new Error(`Invalid op: ${end} must be a non-negative integer`);
+        }
+        if (typeof op[`${end}Name`] !== 'string') {
+          throw new Error(`Invalid op: ${end}Name must be that waypoint's name`);
+        }
+      }
+      // By index, because that is the address. Two waypoints may legally share a
+      // name, and an edge from a waypoint to itself is the one thing this layer
+      // can rule out without the point list.
+      if (op.a === op.b) throw new Error('Invalid op: a waypoint cannot be joined to itself');
+      for (const field of ['from', 'to'] as const) {
+        if (typeof op[field] !== 'boolean') {
+          throw new Error(`Invalid op: ${field} must be a boolean`);
+        }
+      }
+      // Exactly one side has the edge. Sides that agree describe no edit and
+      // would still reach the binding as a join or an unjoin nobody asked for.
+      if (op.from === op.to) {
+        throw new Error('Invalid op: exactly one of from and to must have the edge');
       }
       continue;
     }

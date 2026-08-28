@@ -9,7 +9,7 @@ import {
 import {
   AUTHORABLE_VOB_CLASSES,
   addVob, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
-  classPropKeys,
+  classPropKeys, connectWaypoints, disconnectWaypoints,
   deleteVob, dropVobsToGround,
   duplicateVobSpec, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
@@ -413,7 +413,11 @@ const WorldSurface: React.FC = () => {
     //
     // Undo comes through here too, and arrives as the same op with its sides
     // swapped — so this covers the removal without knowing it is one.
-    if (ops.some((op) => op.op === 'AddWaypoint')) {
+    // An edge op is re-read the same way and for the same reason: the edge
+    // buffer the overlay draws its lines through is a typed array, so it cannot
+    // gain or lose a pair in place — and a removal can promote an endpoint to a
+    // free point, which is a flags column nothing else would rewrite.
+    if (ops.some((op) => op.op === 'AddWaypoint' || op.op === 'SetWaypointEdge')) {
       // The removing direction takes the tail away, and a gizmo standing on it
       // would be standing on an index the waynet no longer has. Cleared rather
       // than followed, exactly as a renumbering VOB op clears the selection.
@@ -914,6 +918,67 @@ const WorldSurface: React.FC = () => {
     void commitOps([addWaypoint(waynet.names, name, terrainPoint)]);
   }, [commitOps, terrainPoint, waynet]);
 
+  /**
+   * The selected waypoint's edges, as the other end of each (§16.7, W3).
+   *
+   * Derived from the payload the overlay is already drawing rather than asked
+   * for: `edges` is the same flat pair buffer the lines are built from, and a
+   * waynet is thousands of points — walking it once per selection is cheaper
+   * than a round trip and cannot disagree with what is on screen.
+   */
+  const waypointEdges = useMemo(() => {
+    if (waynet === null || selectedWaypoint === null) return [];
+    const pairs = new Uint32Array(waynet.edges);
+    const neighbours: Array<{ waypoint: number; name: string }> = [];
+    for (let pair = 0; pair < pairs.length; pair += 2) {
+      const [left, right] = [pairs[pair], pairs[pair + 1]];
+      if (left !== selectedWaypoint && right !== selectedWaypoint) continue;
+      const other = left === selectedWaypoint ? right : left;
+      neighbours.push({ waypoint: other, name: waynet.names[other] });
+    }
+    return neighbours;
+  }, [waynet, selectedWaypoint]);
+
+  /**
+   * The waypoint a typed name would join the selection to, or null when there
+   * is none to join.
+   *
+   * Case-insensitively, because every other by-name lookup a waypoint has is —
+   * the routine index above all, which is keyed uppercase since Daedalus is.
+   * The first match wins: nothing in the format promises a waypoint name is
+   * unique, which is why the *op* carries the index and checks the name rather
+   * than the other way round.
+   *
+   * Null for the selection itself and for a waypoint it is already joined to,
+   * so the button is dead rather than the round trip refused — both are
+   * refusals the binding makes as well, and this side is holding the list.
+   */
+  const resolveWaypointToJoin = useCallback((typed: string): number | null => {
+    if (waynet === null || selectedWaypoint === null) return null;
+    const wanted = typed.trim().toUpperCase();
+    if (wanted === '') return null;
+    const at = waynet.names.findIndex((name) => name.toUpperCase() === wanted);
+    if (at === -1 || at === selectedWaypoint) return null;
+    return waypointEdges.some((edge) => edge.waypoint === at) ? null : at;
+  }, [selectedWaypoint, waynet, waypointEdges]);
+
+  /**
+   * The two directions of an edge, from the panel (§16.7, W3).
+   *
+   * Both endpoints are index+name pairs the factory reads out of the payload,
+   * the same address a move and a rename stand on — an edge inserts, deletes
+   * and reorders no waypoint, so no index moves under it.
+   */
+  const joinWaypointTo = useCallback((to: number) => {
+    if (waynet === null || selectedWaypoint === null) return;
+    void commitOps([connectWaypoints(waynet.names, selectedWaypoint, to)]);
+  }, [commitOps, selectedWaypoint, waynet]);
+
+  const unjoinWaypointFrom = useCallback((to: number) => {
+    if (waynet === null || selectedWaypoint === null) return;
+    void commitOps([disconnectWaypoints(waynet.names, selectedWaypoint, to)]);
+  }, [commitOps, selectedWaypoint, waynet]);
+
   /** The name the dialog opens with: `FP_` because a waypoint this authors is a
    *  free point, and the first index nothing is called yet, so the suggestion is
    *  never one the payload already refuses. */
@@ -1357,6 +1422,10 @@ const WorldSurface: React.FC = () => {
                     name={waynet.names[selectedWaypoint]}
                     routines={waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || []}
                     onRename={(to) => renameWaypointTo(selectedWaypoint, to)}
+                    neighbours={waypointEdges}
+                    resolveWaypoint={resolveWaypointToJoin}
+                    onConnect={joinWaypointTo}
+                    onDisconnect={unjoinWaypointFrom}
                   />
                 )
                 : (

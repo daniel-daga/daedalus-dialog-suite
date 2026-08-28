@@ -261,6 +261,10 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
         zenkit.setWaypointName(handle!, waypoint, name, to),
       addWaypoint: (name, to) => zenkit.addWaypoint(handle!, name, to),
       removeWaypoint: (waypoint, name) => zenkit.removeWaypoint(handle!, waypoint, name),
+      addWaypointEdge: (a, aName, b, bName) =>
+        zenkit.addWaypointEdge(handle!, a, aName, b, bName),
+      removeWaypointEdge: (a, aName, b, bName) =>
+        zenkit.removeWaypointEdge(handle!, a, aName, b, bName),
     },
     payload.ops,
   );

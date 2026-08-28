@@ -124,8 +124,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Waynet W3 — edge add and delete** — the op carries the edge memberships it
-  destroys; §15's barrier is the fallback. Unowned. §16.7
 - **Waynet W4 — delete an arbitrary waypoint** — decided 2026-08-28: §15's
   barrier, closer Spacer parity than an id scheme (Spacer has no undo at all).
   No new addressing needed. Unowned. §16.7
@@ -215,6 +213,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   `physicsEnabled`) all wants the batch-guard call. §16.14
 - **Waynet W2 — add a free waypoint, appended** (board-loop) — `AddWaypoint`,
   nullable sides; the overlay payload is re-read, not patched. §16.7
+- **Waynet W3 — edge add and delete** (board-loop) — `SetWaypointEdge`, boolean
+  sides; the last-edge hazard is fixed in the binding, not carried. §16.7
 
 Last flushed 2026-08-28 at the merge to master: D1, D3, D4 and W1: forward facts
 in §16.14 and §16.7, the rest in `git log`.

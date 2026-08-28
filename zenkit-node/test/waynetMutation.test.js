@@ -358,3 +358,186 @@ test('removeWaypoint refuses a waypoint an edge still names', () => {
     () => zenkit.removeWaypoint(handle, last, zenkit.getWaynet(handle).names[last]), /edge/
   );
 });
+
+// addWaypointEdge / removeWaypointEdge — the edge ops (level-editor.md §16.7,
+// W3).
+//
+// An edge is a pair of waypoints and nothing else, so both endpoints carry the
+// same index+name pair every other waynet op does: the index is `getWaynet`'s
+// and the name is checked, never resolved. Neither direction inserts, deletes
+// or reorders a *waypoint*, so no new addressing scheme is needed — which is
+// what makes this pair invertible where an arbitrary waypoint delete (W4) is
+// not.
+//
+// The one thing that is not obvious is what a removal can destroy.
+// `WayNet::save` writes free points plus edge endpoints, so a waypoint that is
+// not a free point and is in no edge is not written at all: removing its last
+// edge would delete it, silently, at the next save. `removeWaypointEdge`
+// promotes such an endpoint to a free point instead, which is the shape every
+// waypoint in a ZenGin-written world already has — `WayNet::load` marks every
+// point in the points section free, so all 12,341 retail waypoints are free and
+// none of them can reach this path at all.
+
+function edgesOf(handle) {
+  return zenkit.normalizeWorld(handle).waynet.edges;
+}
+
+function freePointOf(handle, name) {
+  return waypointsOf(handle).find((point) => point.name === name).freePoint;
+}
+
+test('addWaypointEdge connects two waypoints addressed by index and name', () => {
+  const handle = load();
+  const free = indexOf(handle, 'FP_FIXTURE_FREE');
+  const a = indexOf(handle, 'WP_FIXTURE_A');
+
+  zenkit.addWaypointEdge(handle, free, 'FP_FIXTURE_FREE', a, 'WP_FIXTURE_A');
+
+  assert.deepStrictEqual(
+    edgesOf(handle).filter((edge) => edge.includes('FP_FIXTURE_FREE')),
+    [['FP_FIXTURE_FREE', 'WP_FIXTURE_A']]
+  );
+  // The point list is untouched: an edge is a pair of the waypoints that are
+  // already there, so nothing is appended and no index moves.
+  assert.strictEqual(zenkit.getWaynet(handle).count, 4);
+});
+
+test('addWaypointEdge refuses a stale index, a stale name, a self-loop and a duplicate', () => {
+  const handle = load();
+  const a = indexOf(handle, 'WP_FIXTURE_A');
+  const b = indexOf(handle, 'WP_FIXTURE_B');
+  const count = zenkit.getWaynet(handle).count;
+
+  assert.throws(
+    () => zenkit.addWaypointEdge(handle, count, 'WP_FIXTURE_A', b, 'WP_FIXTURE_B'), /no waypoint/
+  );
+  assert.throws(
+    () => zenkit.addWaypointEdge(handle, a, 'WP_FIXTURE_C', b, 'WP_FIXTURE_B'),
+    /changed under this op/
+  );
+  assert.throws(
+    () => zenkit.addWaypointEdge(handle, a, 'WP_FIXTURE_A', a, 'WP_FIXTURE_A'), /itself/
+  );
+  assert.throws(
+    () => zenkit.addWaypointEdge(handle, a, 'WP_FIXTURE_A', b, 'WP_FIXTURE_B'), /already/
+  );
+  // And the duplicate is refused in the other orientation too: an edge is not
+  // directed, so A–B and B–A are the same edge and drawing both would double
+  // every line the overlay puts on screen.
+  assert.throws(
+    () => zenkit.addWaypointEdge(handle, b, 'WP_FIXTURE_B', a, 'WP_FIXTURE_A'), /already/
+  );
+  assert.strictEqual(edgesOf(handle).length, 3);
+});
+
+test('removeWaypointEdge deletes the edge in either orientation, and nothing else', () => {
+  const handle = load();
+  const before = zenkit.normalizeWorld(load());
+  const a = indexOf(handle, 'WP_FIXTURE_A');
+  const b = indexOf(handle, 'WP_FIXTURE_B');
+
+  // Named in the orientation the file does *not* store it in — the fixture's
+  // edge is A–B — because an edge is undirected and the caller holds whichever
+  // endpoint the user happened to select first.
+  zenkit.removeWaypointEdge(handle, b, 'WP_FIXTURE_B', a, 'WP_FIXTURE_A');
+
+  const after = zenkit.normalizeWorld(handle);
+  assert.deepStrictEqual(
+    after.waynet.edges,
+    before.waynet.edges.filter(
+      (edge) => !(edge.includes('WP_FIXTURE_A') && edge.includes('WP_FIXTURE_B'))
+    )
+  );
+  assert.deepStrictEqual(after.waynet.waypoints, before.waynet.waypoints);
+});
+
+test('removeWaypointEdge refuses an edge that is not there', () => {
+  const handle = load();
+  const free = indexOf(handle, 'FP_FIXTURE_FREE');
+  const a = indexOf(handle, 'WP_FIXTURE_A');
+
+  assert.throws(
+    () => zenkit.removeWaypointEdge(handle, free, 'FP_FIXTURE_FREE', a, 'WP_FIXTURE_A'), /no edge/
+  );
+  assert.strictEqual(edgesOf(handle).length, 3);
+});
+
+test('removeWaypointEdge keeps a waypoint whose last edge it takes, as a free point', () => {
+  // The hazard the section names. `WP_FIXTURE_A` is not a free point — it exists
+  // in the file only as an edge endpoint — so with both of its edges gone
+  // `WayNet::save` would not write it, and an edge delete would silently be a
+  // waypoint delete. The promotion is what keeps a removal a removal.
+  const handle = load();
+  const a = indexOf(handle, 'WP_FIXTURE_A');
+  assert.strictEqual(freePointOf(handle, 'WP_FIXTURE_A'), false);
+
+  zenkit.removeWaypointEdge(
+    handle, a, 'WP_FIXTURE_A', indexOf(handle, 'WP_FIXTURE_B'), 'WP_FIXTURE_B'
+  );
+  // One edge left, so nothing is promoted yet — the promotion is about being in
+  // *no* edge, not about losing one.
+  assert.strictEqual(freePointOf(handle, 'WP_FIXTURE_A'), false);
+
+  zenkit.removeWaypointEdge(
+    handle, a, 'WP_FIXTURE_A', indexOf(handle, 'WP_FIXTURE_C'), 'WP_FIXTURE_C'
+  );
+  assert.strictEqual(freePointOf(handle, 'WP_FIXTURE_A'), true);
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-edge-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+
+    assert.strictEqual(dump.waynet.waypoints.length, 4);
+    assert.notStrictEqual(
+      dump.waynet.waypoints.findIndex((point) => point.name === 'WP_FIXTURE_A'), -1
+    );
+    assert.deepStrictEqual(dump.waynet.edges, [['WP_FIXTURE_B', 'WP_FIXTURE_C']]);
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});
+
+test('an added edge and its removal restore the graph exactly', () => {
+  // The pair is each other's inverse, which is what lets one op shape carry both
+  // directions. Only the *graph*, though: an endpoint promoted to a free point
+  // on the way stays one, because nothing tells the add which of its endpoints
+  // the removal had to rescue — see §16.7. Neither endpoint here is rescued, so
+  // this one is exact.
+  const handle = load();
+  const before = zenkit.normalizeWorld(load());
+  const free = indexOf(handle, 'FP_FIXTURE_FREE');
+  const a = indexOf(handle, 'WP_FIXTURE_A');
+
+  zenkit.addWaypointEdge(handle, free, 'FP_FIXTURE_FREE', a, 'WP_FIXTURE_A');
+  zenkit.removeWaypointEdge(handle, free, 'FP_FIXTURE_FREE', a, 'WP_FIXTURE_A');
+
+  assert.deepStrictEqual(zenkit.normalizeWorld(handle).waynet, before.waynet);
+});
+
+test('an added edge survives a save and a reload', () => {
+  const handle = load();
+  zenkit.addWaypointEdge(
+    handle, indexOf(handle, 'FP_FIXTURE_FREE'), 'FP_FIXTURE_FREE',
+    indexOf(handle, 'WP_FIXTURE_A'), 'WP_FIXTURE_A'
+  );
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-edge-add-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+
+    assert.strictEqual(dump.waynet.waypoints.length, 4);
+    assert.strictEqual(dump.waynet.edges.length, 4);
+    assert.deepStrictEqual(
+      dump.waynet.edges.filter((edge) => edge.includes('FP_FIXTURE_FREE')),
+      [['FP_FIXTURE_FREE', 'WP_FIXTURE_A']]
+    );
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});

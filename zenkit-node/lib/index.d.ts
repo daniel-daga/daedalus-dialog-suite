@@ -358,6 +358,31 @@ export function addWaypoint(
  */
 export function removeWaypoint(handle: WorldHandle, waypoint: number, name: string): void;
 /**
+ * Join two waypoints with an edge (§16.7, W3).
+ *
+ * Both endpoints carry the index+name pair every waynet op is addressed by, and
+ * this op earns that address the way a move does: it inserts, deletes and
+ * reorders no waypoint. Refuses a waypoint joined to itself and an edge that is
+ * already there in either orientation — an edge is undirected, so A–B and B–A
+ * are the same edge.
+ */
+export function addWaypointEdge(
+  handle: WorldHandle, a: number, aName: string, b: number, bName: string,
+): void;
+/**
+ * Remove the edge between two waypoints — the exact inverse of
+ * `addWaypointEdge`, in either orientation.
+ *
+ * An endpoint left in **no** edge and not already a free point is promoted to
+ * one, because `WayNet::save` writes free points plus edge endpoints and
+ * nothing else: without the promotion the removal of a last edge would delete
+ * the waypoint at the next save. The promotion is not undone by
+ * `addWaypointEdge` — see §16.7.
+ */
+export function removeWaypointEdge(
+  handle: WorldHandle, a: number, aName: string, b: number, bName: string,
+): void;
+/**
  * Write the world to `path`, through a temp file and a rename.
  *
  * **Throws for a world that was not loaded from a `zCArchiverBinSafe`
