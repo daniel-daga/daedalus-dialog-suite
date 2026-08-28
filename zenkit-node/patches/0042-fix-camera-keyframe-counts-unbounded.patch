@@ -1,0 +1,103 @@
+VCutsceneCamera: bound the trajectory and target keyframe counts.
+
+`VCutsceneCamera::load` reads `numPos` and `numTargets` off the file and
+validates neither:
+
+	this->position_count = r.read_int();  // numPos
+	this->target_count = r.read_int();    // numTargets
+
+	for (auto i = 0; i < this->position_count; ++i) {
+		auto obj = r.read_object<VCameraTrajectoryFrame>(version);
+		this->trajectory_frames.push_back(obj);
+	}
+
+The same shape as the waynet counts patch 0037 bounds, with one difference that
+makes it worse rather than better: there is no `reserve` here at all, so the
+"an absurd count is the harmless one" escape hatch every other patch in this
+series relies on -- `reserve` throwing `bad_alloc` before the loop is entered --
+does not exist. Every value is a merely large one. And the loop cannot stop on
+its own for patch 0033's reason: `ReadArchive::read_object` past the end of the
+entry stream logs "Expected object, got entry" and returns null rather than
+throwing, and nothing in this reader dereferences a frame.
+
+Measured on the unpatched reader against `zenkit-node`'s 6 KB camera fixture
+with `numPos` rewritten in place to 0x0FFFFFFF: 268 million null keyframes,
+4.33 GB resident, and the world still reports LOADED after 15.8 s. `numTargets`
+is the same, 15.5 s.
+
+A negative count is refused too, and it is the one value that "works" unpatched:
+both loops are `i < count` over a signed `int`, so an on-disk 0xFFFFFFFF loads a
+cutscene camera with no keyframes at all instead of failing -- a world ZenGin
+would not have written, read as if it were fine.
+
+Both counts are bounded by the bytes actually left in the reader, with the same
+`_bytes_remaining` helper and the same four-byte per-object floor as `Mesh.cc`,
+`BspTree.cc` and `WayNet.cc`. The floor is under the smallest header any of the
+three archive formats can write, because a bound must never refuse a world the
+engine loads.
+
+Not found by `zenkit-node/tools/fuzz-world.js --counts`, and it could not have
+been: the sweep only reaches the INTEGER entries its fixture carries, and the
+golden `minimal.g2.zen` has no cutscene camera. The `camera` fixture variant
+(`zenkit-node/src/fixture.cc`) was authored for it, which is the same shape as
+the `npc` variant patches 0040 and 0041 needed.
+
+diff --git a/src/vobs/Camera.cc b/src/vobs/Camera.cc
+--- a/src/vobs/Camera.cc
++++ b/src/vobs/Camera.cc
+@@ -2,8 +2,28 @@
+ // SPDX-License-Identifier: MIT
+ #include "zenkit/vobs/Camera.hh"
+ #include "zenkit/Archive.hh"
++#include "zenkit/Error.hh"
++#include "zenkit/Stream.hh"
+ 
+ namespace zenkit {
++	// The number of bytes left in the reader, as in `Mesh.cc`, `BspTree.cc` and
++	// `WayNet.cc`: `Read` exposes no size, but every implementation can seek to
++	// the end and back. It is a ceiling, not the exact room left, which is all a
++	// sanity bound needs.
++	static std::size_t _bytes_remaining(Read* r) {
++		auto here = r->tell();
++		r->seek(0, Whence::END);
++		auto end = r->tell();
++		r->seek(static_cast<ssize_t>(here), Whence::BEG);
++		return end > here ? end - here : 0;
++	}
++
++	// The smallest an archived object can be in any of the three formats: a type
++	// byte and a two-byte length in BinSafe, a `[% % 0 0]` line in ASCII. Four is
++	// under all of them, which is what a bound wants -- it must never refuse a
++	// world the engine loads.
++	static constexpr std::size_t OBJECT_MIN_BYTES = 4;
++
+ 	std::unique_ptr<VCameraTrajectoryFrame> VCameraTrajectoryFrame::parse(ReadArchive& r, GameVersion version) {
+ 		auto obj = std::make_unique<VCameraTrajectoryFrame>();
+ 		obj->load(r, version);
+@@ -77,6 +97,26 @@
+ 		this->position_count = r.read_int();              // numPos
+ 		this->target_count = r.read_int();                // numTargets
+ 
++		// Both counts come straight off the file and drive a `push_back` loop of
++		// objects with no `reserve` at all -- so unlike the mesh and waynet counts
++		// there is not even a `bad_alloc` to stop an absurd value. The loop cannot
++		// stop on its own either: `read_object` past the end of the entry stream
++		// logs and returns null rather than throwing, and nothing here dereferences
++		// a frame. Measured against `zenkit-node`'s 6 KB camera fixture with
++		// `numPos` rewritten in place to 0x0FFFFFFF: 268 million null keyframes,
++		// 4.33 GB resident, and the world still reports LOADED after 15.8 s.
++		//
++		// A negative count is refused too, and it is the one value that "works"
++		// unpatched: the loops below are `i < count` over a signed `int`, so
++		// 0xFFFFFFFF loads a camera with no keyframes at all rather than failing.
++		auto max_frames = _bytes_remaining(r.get_stream()) / OBJECT_MIN_BYTES;
++		if (this->position_count < 0 || static_cast<std::size_t>(this->position_count) > max_frames) {
++			throw ParserError {"VCutsceneCamera", "trajectory frame count exceeds the bytes left in the archive"};
++		}
++		if (this->target_count < 0 || static_cast<std::size_t>(this->target_count) > max_frames) {
++			throw ParserError {"VCutsceneCamera", "target frame count exceeds the bytes left in the archive"};
++		}
++
+ 		for (auto i = 0; i < this->position_count; ++i) {
+ 			auto obj = r.read_object<VCameraTrajectoryFrame>(version);
+ 			this->trajectory_frames.push_back(obj);

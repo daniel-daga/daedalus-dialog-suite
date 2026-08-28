@@ -3381,10 +3381,28 @@ third fixture variant (`npc`, `src/fixture.cc`) authors a world with one NPC
 carrying one of each list, into a temp directory at test time; the golden
 fixture is untouched. **Read that as the general shape**: for a reader the
 sweep cannot reach, the work is authoring the data, and the patch is the small
-half. The remaining unbounded VOB counts are `zCCSCamera`'s `numPos`/`numTargets`
-(world-reachable, `push_back` of objects, unmeasured) and `oCMobContainer`'s
-`NumOfEntries` and `zCTrigger`'s `numTriggerEvents`, both savegame-only and so
-unreachable from a world.
+half. The remaining unbounded VOB counts are `oCMobContainer`'s `NumOfEntries`
+and `zCTrigger`'s `numTriggerEvents`, both savegame-only and so unreachable from
+a world.
+
+**The last world-reachable VOB count is bounded (2026-08-28, patch `0042`), and
+it is the one with no `reserve` to save it.** `VCutsceneCamera::load` reads
+`numPos` and `numTargets` off the file and `push_back`s one keyframe object per
+iteration into a vector it never reserves — so the "an *absurd* count is the
+harmless one" escape hatch every other patch in this series leans on does not
+exist here, because there is no `reserve` for `bad_alloc` to throw out of.
+Every value is a merely large one. Measured against a 6 KB fixture with `numPos`
+rewritten in place to 0x0FFFFFFF: **268 million null keyframes, 4.33 GB
+resident, and the world still reports `LOADED`** after 15.8 s; `numTargets` is
+the same at 15.5 s. A *negative* count is the one value that "works" unpatched —
+both loops are `i < count` over a signed `int`, so an on-disk 0xFFFFFFFF loads a
+cutscene camera with no keyframes at all instead of failing — and it is refused
+too. Bounded by the bytes left in the reader with the same `_bytes_remaining`
+helper as `Mesh.cc`, `BspTree.cc` and `WayNet.cc`; the 24 loadable retail `.zen`
+all still load with identical VOB and waypoint counts. Needed a fourth fixture
+variant (`camera`, `src/fixture.cc`) for `0040`'s reason exactly: the golden
+world has no cutscene camera, so neither the `--counts` sweep nor any seed could
+ever reach the two fields.
 
 The 24 loadable retail `.zen` under `Gothic II/_work/Data/Worlds` all still load
 with identical VOB and waypoint counts.

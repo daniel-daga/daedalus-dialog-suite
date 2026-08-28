@@ -9,6 +9,7 @@
 #include <zenkit/Stream.hh>
 #include <zenkit/Texture.hh>
 #include <zenkit/World.hh>
+#include <zenkit/vobs/Camera.hh>
 #include <zenkit/vobs/Light.hh>
 #include <zenkit/vobs/Misc.hh>
 #include <zenkit/vobs/MovableObject.hh>
@@ -575,6 +576,69 @@ std::shared_ptr<VirtualObject> BuildNpcVobTree() {
   return root;
 }
 
+// A root tree carrying one `zCCSCamera`, authored only into the kCamera
+// variant so the golden fixture's VOBs stay exactly as they were. Its point is
+// the two element counts `VCutsceneCamera::load` reads off the file — `numPos`
+// and `numTargets` — neither of which exists anywhere in the golden world, so
+// nothing could seed them. Each list is given one keyframe, because a count of
+// zero is written and read without the loop after it ever running.
+std::shared_ptr<VirtualObject> BuildCameraVobTree() {
+  auto root = std::make_shared<VirtualObject>();
+  root->type = VirtualObjectType::zCVob;
+  root->vob_name = "FIXTURE_CAMERA_ROOT";
+  root->position = Vec3 {0.0f, 0.0f, 0.0f};
+  root->bbox = AxisAlignedBoundingBox {Vec3 {-10.0f, -10.0f, -10.0f}, Vec3 {10.0f, 10.0f, 10.0f}};
+
+  auto keyframe = [](float time) {
+    auto frame = std::make_shared<VCameraTrajectoryFrame>();
+    frame->type = VirtualObjectType::zCCamTrj_KeyFrame;
+    frame->vob_name = "";
+    frame->position = Vec3 {0.0f, 0.0f, 0.0f};
+    frame->bbox = AxisAlignedBoundingBox {Vec3 {0.0f, 0.0f, 0.0f}, Vec3 {0.0f, 0.0f, 0.0f}};
+    frame->time = time;
+    frame->roll_angle = 0.0f;
+    frame->fov_scale = 1.0f;
+    frame->motion_type = CameraMotion::SMOOTH;
+    frame->motion_type_fov = CameraMotion::SMOOTH;
+    frame->motion_type_roll = CameraMotion::SMOOTH;
+    frame->motion_type_time_scale = CameraMotion::SMOOTH;
+    frame->tension = 0.0f;
+    frame->cam_bias = 0.0f;
+    frame->continuity = 0.0f;
+    frame->time_scale = 1.0f;
+    frame->time_fixed = false;
+    frame->original_pose = Mat4::identity();
+    return frame;
+  };
+
+  auto camera = std::make_shared<VCutsceneCamera>();
+  camera->type = VirtualObjectType::zCCSCamera;
+  camera->vob_name = "FIXTURE_CAMERA";
+  camera->position = Vec3 {200.0f, 0.0f, 200.0f};
+  camera->bbox = AxisAlignedBoundingBox {Vec3 {199.0f, 0.0f, 199.0f}, Vec3 {201.0f, 2.0f, 201.0f}};
+  camera->trajectory_for = CameraCoordinateReference::WORLD;
+  camera->target_trajectory_for = CameraCoordinateReference::WORLD;
+  camera->loop_mode = CameraLoop::NONE;
+  camera->lerp_mode = CameraLerpType::PATH;
+  camera->ignore_for_vob_rotation = false;
+  camera->ignore_for_vob_rotation_target = false;
+  camera->adapt = false;
+  camera->ease_first = false;
+  camera->ease_last = false;
+  camera->total_duration = 1.0f;
+  camera->auto_focus_vob = "";
+  camera->auto_player_movable = false;
+  camera->auto_untrigger_last = false;
+  camera->auto_untrigger_last_delay = 0.0f;
+  camera->position_count = 1;
+  camera->target_count = 1;
+  camera->trajectory_frames = {keyframe(0.0f)};
+  camera->target_frames = {keyframe(1.0f)};
+
+  root->children = {camera};
+  return root;
+}
+
 // A second root tree, authored only into the mesh-extraction variant so the
 // golden fixture's VOBs stay exactly as they were. BuildVobTree's VOBs carry no
 // visual and no flags at all, which is fine for a round-trip fixture and
@@ -1008,6 +1072,9 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
   }
   if (variant == FixtureVariant::kNpc) {
     world->world_vobs.push_back(BuildNpcVobTree());
+  }
+  if (variant == FixtureVariant::kCamera) {
+    world->world_vobs.push_back(BuildCameraVobTree());
   }
   world->way_net = BuildWayNet(variant);
 

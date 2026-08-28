@@ -25,6 +25,12 @@ enum class FixtureVariant {
   // Authored into a temp directory at test time and never checked in; it backs
   // no fidelity claim.
   kNpc,
+  // A world carrying one `zCCSCamera` with one trajectory keyframe and one
+  // target keyframe. The golden fixture has no cutscene camera either, so
+  // `tools/fuzz-world.js --counts` cannot reach the camera reader's two
+  // element counts (`numPos`, `numTargets`). Authored into a temp directory at
+  // test time and never checked in; it backs no fidelity claim.
+  kCamera,
 };
 
 // Builds a tiny deterministic world with ZenKit's own writer and saves it to

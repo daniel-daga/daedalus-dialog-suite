@@ -770,6 +770,86 @@ test('an NPC item that does not resolve throws instead of dereferencing null', (
   assert.match(result.stdout, /item object failed to load/i);
 });
 
+// The `zCCSCamera` reader's two element counts. Like the NPC counts above,
+// `minimal.g2.zen` carries no cutscene camera, so `tools/fuzz-world.js
+// --counts` could never reach `numPos` or `numTargets` — a sweep only reaches
+// the fields its fixture happens to carry. The `camera` fixture variant exists
+// only for this file: a world with one `zCCSCamera` carrying one trajectory
+// keyframe and one target keyframe, so both loops are entered at least once.
+const CAMERA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-camera-'));
+const CAMERA_FIXTURE = path.join(CAMERA_DIR, 'camera.g2.zen');
+zenkit._authorFixtureWorld(CAMERA_FIXTURE, 'binsafe', 'g2', 'camera');
+test.after(() => fs.rmSync(CAMERA_DIR, { recursive: true, force: true }));
+
+// Rewrites one of the camera's own INTEGER entries in place, located by
+// structure — the innermost object on the entry's path is the `zCCSCamera` —
+// so nothing here depends on a byte offset and the file's length is unchanged.
+function seedCameraCount(name, entryName, value) {
+  const buf = Buffer.from(fs.readFileSync(CAMERA_FIXTURE));
+
+  const entry = [...walk(buf)].find((ev) =>
+    ev.kind === 'entry' &&
+    ev.entryName === entryName &&
+    ev.entryType === 'INTEGER' &&
+    ev.path.length > 0 &&
+    ev.path[ev.path.length - 1].includes('zCCSCamera'));
+  assert.ok(entry, `the camera fixture must carry a zCCSCamera ${entryName} entry`);
+
+  buf.writeUInt32LE(value, entry.payloadOffset);
+
+  const file = path.join(CAMERA_DIR, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+// Both counts drive a `push_back` loop of objects with no `reserve` at all, so
+// there is not even a `bad_alloc` to stop them: `read_object` past the end of
+// the entry stream logs and returns null, nothing dereferences a frame, and the
+// loop runs to the file's own count. Measured before the patch, each count
+// rewritten in place to 0x0FFFFFFF: 268 million null keyframes, 4.33 GB
+// resident, and the world still reports LOADED after 15.8 s.
+const CAMERA_COUNT_CASES = [
+  { entry: 'numPos', id: 'trajectory frames', guard: /trajectory frame count/i },
+  { entry: 'numTargets', id: 'target frames', guard: /target frame count/i },
+];
+
+for (const testCase of CAMERA_COUNT_CASES) {
+  test(`a cutscene camera declaring more ${testCase.id} than the archive holds bytes throws instead of committing gigabytes`,
+    () => {
+      // A merely large count, not an absurd one, for the reason the whole file
+      // repeats — and here it is the only kind there is, since without a
+      // `reserve` an absurd count only means a longer loop. 0xFFFFFFFF is the
+      // one value that is harmless unpatched: it reads back as a negative
+      // `int32` and the loop is never entered.
+      const corrupt = seedCameraCount(`bad-camera-${testCase.entry}.zen`, testCase.entry, 0x0fffffff);
+
+      const result = loadInChild(corrupt, 60_000);
+      assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+      assert.strictEqual(result.status, 0,
+        `the child died (status ${result.status}): ${result.stdout}
+${result.stderr}`);
+      assert.match(result.stdout, /^THREW failed to load world: /);
+      assert.match(result.stdout, testCase.guard);
+    });
+}
+
+test('a cutscene camera whose keyframe count is negative throws instead of silently loading none', () => {
+  // 0xFFFFFFFF is `-1` as the `int32` the reader declares, and the loop after
+  // it is `i < count` over a signed `int` — so it never runs and the world
+  // loads with no keyframes at all, which is a world ZenGin would not have
+  // written. Bounded with the same guard rather than left as the one count
+  // value that passes.
+  const corrupt = seedCameraCount('bad-camera-negative.zen', 'numPos', 0xffffffff);
+
+  const result = loadInChild(corrupt, 60_000);
+  assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+  assert.strictEqual(result.status, 0,
+    `the child died (status ${result.status}): ${result.stdout}
+${result.stderr}`);
+  assert.match(result.stdout, /^THREW failed to load world: /);
+  assert.match(result.stdout, /trajectory frame count/i);
+});
+
 // A VOb tree that nests one child per level, located by structure: the
 // `VobTree` object opens with the root count (`childs0`), then each root VOb
 // followed by its own child count. The first root VOb and its count are found

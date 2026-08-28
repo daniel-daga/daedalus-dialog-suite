@@ -1871,19 +1871,22 @@ zenkit::ArchiveFormat ParseArchiveFormat(Napi::Env env, Napi::Value value) {
 zenkit_node::FixtureVariant ParseFixtureVariant(Napi::Env env, Napi::Value value) {
   if (value.IsUndefined() || value.IsNull()) return zenkit_node::FixtureVariant::kMinimal;
   if (!value.IsString()) {
-    throw Napi::TypeError::New(env, "variant must be 'minimal', 'mesh-extraction' or 'npc'");
+    throw Napi::TypeError::New(
+        env, "variant must be 'minimal', 'mesh-extraction', 'npc' or 'camera'");
   }
   std::string const str = value.As<Napi::String>().Utf8Value();
   if (str == "minimal") return zenkit_node::FixtureVariant::kMinimal;
   if (str == "mesh-extraction") return zenkit_node::FixtureVariant::kMeshExtraction;
   if (str == "npc") return zenkit_node::FixtureVariant::kNpc;
+  if (str == "camera") return zenkit_node::FixtureVariant::kCamera;
   throw Napi::TypeError::New(
-      env, "variant must be 'minimal', 'mesh-extraction' or 'npc', got '" + str + "'");
+      env, "variant must be 'minimal', 'mesh-extraction', 'npc' or 'camera', got '" + str + "'");
 }
 
 // Internal: authors a fixture world. The 'minimal' variant is the checked-in
 // golden and is only invoked through the explicit `fixtures:regen` script;
-// 'mesh-extraction' and 'npc' are authored into a temp directory by the tests.
+// 'mesh-extraction', 'npc' and 'camera' are authored into a temp directory by
+// the tests.
 Napi::Value AuthorFixtureWorld(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto path = PathFromValue(env, info[0]);
