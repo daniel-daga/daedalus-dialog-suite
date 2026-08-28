@@ -194,6 +194,7 @@ void BuildMeshExtractionMesh(Mesh& mesh) {
   auto add_polygon = [&mesh](std::uint32_t material,
                              std::uint8_t portal,
                              bool sector,
+                             std::int16_t sector_index,
                              std::vector<std::uint32_t> const& vertex_indices,
                              std::vector<std::uint32_t> const& feature_indices) {
     Polygon poly {};
@@ -202,7 +203,7 @@ void BuildMeshExtractionMesh(Mesh& mesh) {
     poly.flags = PolygonFlagSet {};
     poly.flags.is_portal = portal;
     poly.flags.is_sector = sector ? 1 : 0;
-    poly.flags.sector_index = -1;
+    poly.flags.sector_index = sector_index;
     poly.plane_normal = Vec3 {0.0f, 1.0f, 0.0f};
     poly.plane_distance = 0.0f;
     poly.index_count = vertex_indices.size();
@@ -215,11 +216,16 @@ void BuildMeshExtractionMesh(Mesh& mesh) {
     }
   };
 
-  // A quad — fans into two triangles sharing corners 0 and 2.
-  add_polygon(0, 0, false, {0, 1, 2, 3}, {0, 1, 2, 3});
-  // Same material, and vertex 1 again but with feature 6.
-  add_polygon(0, 1, false, {1, 2, 4}, {6, 2, 4});
-  add_polygon(1, 0, true, {4, 5, 2}, {4, 5, 2});
+  // A quad — fans into two triangles sharing corners 0 and 2. Carries no
+  // portal metadata at all, so a readout that emitted a row per polygon
+  // rather than per portal would be visible.
+  add_polygon(0, 0, false, -1, {0, 1, 2, 3}, {0, 1, 2, 3});
+  // The portal polygon: same material, and vertex 1 again but with feature 6.
+  // Its `sector_index` is deliberately not the sector polygon's — the two
+  // columns are read from different fields and a swap has to be visible.
+  add_polygon(0, 1, false, 1, {1, 2, 4}, {6, 2, 4});
+  // The sector polygon.
+  add_polygon(1, 0, true, 0, {4, 5, 2}, {4, 5, 2});
 
   // Mesh::triangulate fills the derived PolygonList on load and Mesh::save
   // never writes it, so the fixture leaves it empty.
@@ -1067,6 +1073,24 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
   BuildBspTree(world->world_bsp_tree,
                world->world_mesh.bbox,
                static_cast<std::uint32_t>(world->world_mesh.geometry.size()));
+  // Portal metadata, authored only into the mesh-extraction variant so the
+  // checked-in golden dump is untouched: two sectors for the two
+  // `sector_index` values the mesh carries, and the BSP's portal polygon list
+  // naming polygon 1. Without them nothing distinguishes a `getPortals`
+  // payload that reads the fields from one that reads zeroes.
+  if (variant == FixtureVariant::kMeshExtraction) {
+    auto& bsp = world->world_bsp_tree;
+    BspSector outside {};
+    outside.name = "EX_OUTSIDE";
+    outside.node_indices = {0};
+    outside.portal_polygon_indices = {1};
+    BspSector cave {};
+    cave.name = "EX_CAVE";
+    cave.node_indices = {0};
+    cave.portal_polygon_indices = {1};
+    bsp.sectors = {outside, cave};
+    bsp.portal_polygon_indices = {1};
+  }
   world->world_vobs.push_back(BuildVobTree());
   if (variant == FixtureVariant::kMeshExtraction) {
     world->world_vobs.push_back(BuildVisualVobTree());

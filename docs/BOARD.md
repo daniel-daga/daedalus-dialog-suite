@@ -98,7 +98,7 @@ was true for so long nobody re-reads it.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed on 2026-08-28, and the addon again with
-  I5's seven constructions and the bed's `setVobClassProp` case. The recipe
+  I5's seven constructions, the bed's `setVobClassProp` case and `getPortals`. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
   `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
@@ -154,13 +154,6 @@ card waits on live at its pointer — put new prose there, not here.
   world/waypoint data, so the rule has no known-waypoints set; needs a design
   decision on how that reaches the Problems pipeline. Unowned. §16.8
 
-**Phase 2 — portals and sectors, the first two slices only**
-
-- **The portal polygon payload is a hash, not data** — `is_portal`, `is_sector`,
-  `sector_index` and `portal_polygon_indices` exist only inside the fidelity
-  hash; every portal check past the material names needs them read out. Take it
-  after the checks above prove worth having. Unowned. §16.18
-
 **zenkit-node / fidelity**
 
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
@@ -203,6 +196,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The portal polygon payload is data** — `getPortals` reads out `is_portal`,
+  `is_sector`, `sector_index` and the BSP portal list; columnar, one row per
+  portal/sector polygon, and unplumbed like slice 1. board-loop. §16.18
 - **Portal material checks** — `checkPortalMaterials` in `zen-world/src/validate/`;
   clean on all three retail worlds, and it has no consumer yet. board-loop. §16.18
 - **I5 — the zones, the markers and the two effect classes are authorable** —

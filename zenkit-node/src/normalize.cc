@@ -1460,6 +1460,45 @@ Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle) {
   return out;
 }
 
+Napi::Object GetPortals(Napi::Env env, WorldHandle const& handle) {
+  auto const& mesh = handle.world->world_mesh;
+  auto const& bsp = handle.world->world_bsp_tree;
+
+  // One row per polygon carrying portal metadata, not per polygon: a retail
+  // world mesh is ~200k polygons and a few hundred of them are portals or
+  // sector faces, so a dense column would be a megabyte of zeroes.
+  std::vector<std::uint32_t> polygon_indices;
+  std::vector<std::uint32_t> material_indices;
+  std::vector<std::int32_t> sector_indices;
+  std::vector<std::uint8_t> portal_kinds;
+  std::vector<std::uint8_t> sector_flags;
+
+  for (std::size_t i = 0; i < mesh.geometry.size(); ++i) {
+    auto const& flags = mesh.geometry[i].flags;
+    if (flags.is_portal == 0 && flags.is_sector == 0) continue;
+    polygon_indices.push_back(static_cast<std::uint32_t>(i));
+    material_indices.push_back(static_cast<std::uint32_t>(mesh.geometry[i].material));
+    // Widened from the on-disk i16 and kept signed: -1 is "no sector", and an
+    // unsigned column would report it as a valid-looking index.
+    sector_indices.push_back(static_cast<std::int32_t>(flags.sector_index));
+    portal_kinds.push_back(static_cast<std::uint8_t>(flags.is_portal));
+    sector_flags.push_back(static_cast<std::uint8_t>(flags.is_sector));
+  }
+
+  auto out = Napi::Object::New(env);
+  out.Set("polyCount", NumI(env, mesh.geometry.size()));
+  out.Set("count", NumI(env, polygon_indices.size()));
+  out.Set("polygonIndices", Buffer(env, polygon_indices));
+  out.Set("materialIndices", Buffer(env, material_indices));
+  out.Set("sectorIndices", Buffer(env, sector_indices));
+  out.Set("portalKinds", Buffer(env, portal_kinds));
+  out.Set("sectorFlags", Buffer(env, sector_flags));
+  // The BSP's own portal list, in stored order. It indexes mesh geometry, so
+  // it joins to `polygonIndices` above.
+  out.Set("bspPortalPolygons", Buffer(env, bsp.portal_polygon_indices));
+  return out;
+}
+
 Napi::Object DrillMesh(Napi::Env env,
                        WorldHandle const& handle,
                        std::size_t offset,

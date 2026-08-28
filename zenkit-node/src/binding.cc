@@ -254,6 +254,20 @@ Napi::Value GetWaynet(Napi::CallbackInfo const& info) {
   }
 }
 
+// The portal/sector polygon metadata as data rather than as a hash; see
+// src/normalize.cc.
+Napi::Value GetPortals(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  try {
+    return zenkit_node::GetPortals(env, *handle);
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"failed to read portals: "} + e.what());
+  }
+}
+
 // The VOB enumeration the render path uses instead of the dump; see
 // src/normalize.cc.
 Napi::Value VobIndex(Napi::CallbackInfo const& info) {
@@ -3072,6 +3086,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
   exports.Set("vobIndex", Napi::Function::New(env, VobIndex));
   exports.Set("getWaynet", Napi::Function::New(env, GetWaynet));
+  exports.Set("getPortals", Napi::Function::New(env, GetPortals));
   exports.Set("extractWorldMesh", Napi::Function::New(env, ExtractWorldMesh));
   exports.Set("openVfs", Napi::Function::New(env, zenkit_node::OpenVfs));
   exports.Set("vfsResolve", Napi::Function::New(env, zenkit_node::VfsResolve));

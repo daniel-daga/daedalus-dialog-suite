@@ -77,6 +77,23 @@ export interface WaynetGraph {
   danglingEdges: number;
 }
 
+export interface PortalPolygons {
+  /** Total polygons in the world mesh — the range `polygonIndices` indexes into. */
+  polyCount: number;
+  /** Rows below: polygons with `is_portal` or `is_sector` set, in mesh order. */
+  count: number;
+  polygonIndices: ArrayBuffer;  // Uint32 x1 — index into the world mesh geometry
+  materialIndices: ArrayBuffer; // Uint32 x1 — index into `mesh.materials`
+  /** Int32 x1 — the on-disk i16 `sector_index`, widened; -1 is "no sector". */
+  sectorIndices: ArrayBuffer;
+  /** Uint8 x1 — `is_portal`, a two-bit ZenGin value, not a boolean. */
+  portalKinds: ArrayBuffer;
+  /** Uint8 x1 — `is_sector`. */
+  sectorFlags: ArrayBuffer;
+  /** Uint32 x1 — the BSP's `portal_polygon_indices`, stored order. */
+  bspPortalPolygons: ArrayBuffer;
+}
+
 export interface VfsEntry {
   name: string;
   type: 'file' | 'directory';
@@ -100,6 +117,7 @@ export function extractWorldMesh(handle: WorldHandle): WorldMesh;
 export function vobIndex(handle: WorldHandle): VobIndex;
 /** The waynet as a drawable graph: stored order, edges as index pairs. */
 export function getWaynet(handle: WorldHandle): WaynetGraph;
+export function getPortals(handle: WorldHandle): PortalPolygons;
 export function openVfs(paths: string[], options?: { overwrite?: 'all' | 'newer' | 'older' | 'none' }): VfsHandle;
 export function vfsResolve(vfs: VfsHandle, name: string): string | null;
 /** The children of one directory, or null when the path is absent or is a file. */

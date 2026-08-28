@@ -153,6 +153,32 @@ dropped — it cannot be drawn and cannot be named — and counted in
 `danglingEdges`, so an empty overlay is distinguishable from a silently emptied
 one.
 
+### `getPortals(handle)`
+
+The portal metadata as data. `is_portal`, `is_sector` and `sector_index` reach
+`normalizeWorld` only through `polyHash`, and the BSP's
+`portal_polygon_indices` only through `portalPolyHash` — a hash answers "did it
+change", and no portal check past the material names can be written on that.
+
+```js
+{
+  polyCount,          // polygons in the world mesh — what polygonIndices indexes
+  count,              // rows below
+  polygonIndices,     // ArrayBuffer, Uint32 x1 — into the world mesh geometry
+  materialIndices,    // ArrayBuffer, Uint32 x1 — into mesh.materials
+  sectorIndices,      // ArrayBuffer, Int32 x1 — the on-disk i16, widened; -1 = none
+  portalKinds,        // ArrayBuffer, Uint8 x1 — is_portal, a two-bit value
+  sectorFlags,        // ArrayBuffer, Uint8 x1 — is_sector
+  bspPortalPolygons,  // ArrayBuffer, Uint32 x1 — BSP portal list, stored order
+}
+```
+
+One row per polygon **carrying portal metadata**, not per polygon: a retail
+world mesh is ~200k polygons and a few hundred of them are portal or sector
+faces. `sectorIndices` stays signed because -1 means "no sector" and an
+unsigned column would report a valid-looking 65535. No vertices and no plane:
+`polygonIndices` is the join key into `_drillMesh`, which already emits both.
+
 ### The asset layer — `openVfs`, `vfsResolve`, `extractVisual`, `decodeTexture`
 
 ```js

@@ -4790,13 +4790,34 @@ Still unwritten because it is the *pairing* check and not a name check: a
 `P:A_B` with no `P:B_A` beside it. Retail has both directions for every portal,
 but whether a missing reverse is an error or a convention was not measured.
 
-**Slice 2 — the polygon payload, and why it is second.** `is_portal`,
-`is_sector` and `sector_index` are read per-polygon in `normalize.cc` and go
-straight into the fidelity hash; `portal_polygon_indices` is exposed as
-`portalPolyHash` and nothing else. So no portal check that needs geometry —
-orientation first among them — can be written at all until those are read out as
-data. It is second deliberately: slice 1 costs nothing and proves the checks are
-worth having before the payload is paid for.
+**Slice 2 — the polygon payload — landed 2026-08-28** as `getPortals(handle)`
+in `normalize.cc`. `is_portal`, `is_sector` and `sector_index` used to reach the
+payload only through `polyHash`, and `portal_polygon_indices` only through
+`portalPolyHash`; a hash answers "did it change" and no portal check that needs
+geometry — orientation first among them — can be written on that.
+
+The readout is **columnar and one row per polygon carrying portal metadata**,
+not one per polygon: a retail world mesh is ~200k polygons and a few hundred of
+them are portal or sector faces, so a dense column would be a megabyte of zeroes
+to say the same thing. It emits `polyCount`, `count`, and the buffers
+`polygonIndices`, `materialIndices` (into `mesh.materials`, which is what joins
+a portal face to its `P:A_B` name), `sectorIndices` (the on-disk i16 widened to
+i32 and kept **signed** — -1 is "no sector" and unsigned would report a
+valid-looking 65535), `portalKinds` (`is_portal` is a two-bit ZenGin value, not
+a boolean), `sectorFlags`, and `bspPortalPolygons`.
+
+Two things it deliberately does not do. **It is not plumbed** — no worker
+message, no `zen-world` consumer — for the same reason slice 1 was not: how
+world data reaches the Problems pipeline is still the undecided question at
+§16.8. And **it carries no vertices and no plane**: a row's `polygonIndices`
+entry is the join key into `_drillMesh`, which already emits the plane and the
+corner indices per polygon, so planarity and orientation can be written without
+touching C++ again.
+
+The mesh-extraction fixture grew the portal metadata this is tested against —
+two BSP sectors, a BSP portal list, and distinct `sector_index` values on the
+portal and sector polygons. The checked-in golden world (`kMinimal`) is
+untouched, so no fidelity claim moved.
 
 **Do not widen either card.** Face-material *authoring* is explicitly gated on
 validation proving out (§11), and the BSP compiler is out of scope for good —

@@ -56,6 +56,14 @@ std::vector<std::shared_ptr<zenkit::WayPoint>> CollectWaypoints(WorldHandle cons
 // diff-oriented waynet section of normalizeWorld is a different thing.
 Napi::Object WayNetGraph(Napi::Env env, WorldHandle const& handle);
 
+// getPortals(handle) — the portal metadata as data (level-editor.md §16.18,
+// slice 2). `is_portal`, `is_sector` and `sector_index` reached the payload
+// only through `polyHash`, and `portal_polygon_indices` only through
+// `portalPolyHash`; a hash answers "did it change" and no portal check past
+// the material names can be written on that. Columnar, one row per polygon
+// carrying portal metadata.
+Napi::Object GetPortals(Napi::Env env, WorldHandle const& handle);
+
 // _drillMesh(handle, {offset, limit}?) — per-polygon world-mesh geometry for
 // locating the first differing polygon between two worlds (T7 harness). Reads
 // the same load-path structs as NormalizeWorld; the optional window keeps the
