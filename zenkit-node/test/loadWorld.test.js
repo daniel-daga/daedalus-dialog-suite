@@ -608,3 +608,76 @@ for (const testCase of MESH_COUNT_CASES) {
       }
     });
 }
+
+// The waynet's own counts, rewritten in place. `WayNet::load` reads
+// `waynetVersion`, `numWaypoints` and `numWays` in that order as the first three
+// INTEGER entries of the `zCWayNet` object, so the edge count is the third --
+// located by structure, and rewritten in place, so nothing in the container
+// moves.
+function seedAbsurdWaynetCount(dir, name, which, count) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const ints = [];
+  let netDepth = -1;
+  for (const ev of walk(buf)) {
+    if (ev.kind === 'objectBegin' && ev.frame && ev.frame.cls === 'zCWayNet') netDepth = ev.objectDepth;
+    else if (ev.kind === 'entry' && ev.entryType === 'INTEGER' && ev.objectDepth === netDepth + 1) {
+      // The waynet's own fields, not the `waterDepth` of a waypoint nested inside it.
+      ints.push(ev);
+    }
+  }
+  assert.ok(ints.length >= 3, 'the fixture waynet must carry its three int fields');
+  buf.writeUInt32LE(count, ints[which].payloadOffset);
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a waynet declaring more edges than the archive holds bytes throws instead of loading 268 million of them', () => {
+  // `edges.reserve` alone commits 8.6 GB, and the loop after it does not stop
+  // when the archive runs out -- `read_object` at the end of
+  // the entry stream logs and returns null rather than throwing, so both
+  // endpoints are pushed onto `points` and an edge onto `edges`, once per unit
+  // of the file's own count. Found by construction with
+  // `tools/fuzz-world.js --counts`, which sweeps every INTEGER entry in turn:
+  // 600 random seeds over this fixture and 160 over retail NewWorld never hit
+  // the four bytes of a count. An *absurd* count is the harmless one, as
+  // everywhere else in this file, so the value below is one a guard has to
+  // refuse and the assertion names the guard's own wording. Measured unpatched:
+  // the world reports LOADED after 41 s, so this is not even a hang.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-waynet-count-'));
+  try {
+    const corrupt = seedAbsurdWaynetCount(dir, 'bad-waynet-edges.zen', 2, 0x0fffffff);
+
+    const result = loadInChild(corrupt, 60_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}): ${result.stdout}
+${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /edge count/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a waynet declaring more waypoints than the archive holds bytes throws instead of committing gigabytes', () => {
+  // The same unbounded `reserve` one field earlier. This one already fails
+  // loudly -- patch 0033's null guard throws on the first waypoint that is not
+  // there -- but only after `points.reserve` has committed 4.3 GB, so it is
+  // bounded by the same argument and asserted on the guard's wording.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-waynet-count-'));
+  try {
+    const corrupt = seedAbsurdWaynetCount(dir, 'bad-waynet-points.zen', 1, 0x0fffffff);
+
+    const result = loadInChild(corrupt, 60_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}): ${result.stdout}
+${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /waypoint count/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

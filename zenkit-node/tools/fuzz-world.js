@@ -17,16 +17,26 @@
 // seed and then delta-debugs it down to the smallest subset of mutations that
 // still fails, which is what turns a crash into a named field.
 //
+// **`--counts` is the mode that finds this defect class on purpose.** Random
+// bytes find a count only by luck -- 20 of them over a 50 MB retail world
+// essentially never land on the four bytes of one -- so `--counts` sweeps every
+// INTEGER entry in the stream in turn, rewriting each to one large-but-not-absurd
+// value. An absurd count is the harmless case (`resize` throws `bad_alloc`); the
+// dangerous one is merely large, so it commits gigabytes and still returns. A
+// load that succeeds is therefore reported with its wall clock, and a slow
+// `LOADED` is a finding, not a pass.
+//
 // Usage:
 //   node tools/fuzz-world.js [--seeds 40] [--bytes 20] [--whole] [--file <zen>]
 //   node tools/fuzz-world.js --seed 2 [--bytes 20] [--file <zen>]
+//   node tools/fuzz-world.js --counts [--value 268435455] [--file <zen>]
 
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { readHeader } = require('../lib/container.js');
+const { readHeader, walk } = require('../lib/container.js');
 
 const ROOT = path.join(__dirname, '..');
 const args = process.argv.slice(2);
@@ -79,22 +89,31 @@ function mutations(seed) {
 }
 
 let run = 0;
-function attempt(muts) {
-  const buf = Buffer.from(base);
-  for (const m of muts) buf[m.off] = m.to;
+function attemptBuffer(buf) {
   const target = path.join(dir, `run${run++}.zen`);
   fs.writeFileSync(target, buf);
 
+  const started = Date.now();
   const proc = spawnSync(process.execPath, [child, target], {
     encoding: 'utf8', timeout: 20_000, killSignal: 'SIGKILL',
   });
   const timedOut = !!(proc.error && proc.error.code === 'ETIMEDOUT');
+  // Deleted right away: a retail world is 75 MB, and keeping one copy per seed
+  // fills the disk long before a 200-seed run is over.
+  fs.rmSync(target, { force: true });
   return {
     bad: timedOut || proc.status !== 0,
+    elapsed: Date.now() - started,
     label: timedOut ? 'HANG' : proc.status !== 0
       ? `CRASH 0x${(proc.status >>> 0).toString(16)}`
       : (proc.stdout || '').trim().split('\n')[0],
   };
+}
+
+function attempt(muts) {
+  const buf = Buffer.from(base);
+  for (const m of muts) buf[m.off] = m.to;
+  return attemptBuffer(buf);
 }
 
 function describe(muts) {
@@ -123,6 +142,31 @@ if (only !== null) {
     }
   }
   console.log(`minimal (${cur.length} of ${nBytes}):\n  ${describe(cur)}`);
+  process.exit(0);
+}
+
+if (args.includes('--counts')) {
+  // Every INTEGER entry, one at a time. The counts that size a container are a
+  // subset of these; the rest are ordinary fields and are expected to load.
+  const value = Number(flag('value', 0x0fffffff));
+  const targets = [...walk(base)].filter((ev) => ev.kind === 'entry' && ev.entryType === 'INTEGER');
+  const clean = attemptBuffer(Buffer.from(base));
+  // A load of the untouched file is the baseline every `LOADED` below is judged
+  // against: "slow" only means anything next to it.
+  console.log(`baseline: ${clean.label} in ${clean.elapsed} ms, ${targets.length} INTEGER entries to sweep`);
+
+  let flagged = 0;
+  for (const ev of targets) {
+    const buf = Buffer.from(base);
+    buf.writeUInt32LE(value, ev.payloadOffset);
+    const result = attemptBuffer(buf);
+    const slow = result.label === 'LOADED' && result.elapsed > clean.elapsed * 4 + 1000;
+    if (result.bad || slow) flagged++;
+    if (result.bad || slow || process.env.FUZZ_VERBOSE) {
+      console.log(`${ev.entryName} @${ev.payloadOffset} (${ev.path.join('/')}): ${result.label} in ${result.elapsed} ms`);
+    }
+  }
+  console.log(`${flagged} of ${targets.length} INTEGER entries crashed, hung or loaded slowly`);
   process.exit(0);
 }
 

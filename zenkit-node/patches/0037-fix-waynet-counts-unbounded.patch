@@ -1,0 +1,112 @@
+WayNet: bound the waypoint and edge counts, which size a reserve before anything is read.
+
+`WayNet::load` takes both of its counts straight off the file and validates
+neither:
+
+	auto count_points = r.read_int();  // numWaypoints
+	this->points.reserve(count_points);
+	...
+	auto count_edges = r.read_int();   // numWays
+	this->edges.reserve(count_edges);
+
+Same shape as the mesh element counts patch 0036 bounds, and the edge loop has
+the same reason it cannot fail on its own: `ReadArchive::read_object` past the
+end of the entry stream logs "Expected object, got entry" and returns **null**
+rather than throwing, and the loop tolerates a null endpoint by design (patch
+0033 -- a reference into a waynet ZenGin itself wrote can go unresolved). So it
+runs to the file's own count over reads that give nothing back, pushing two null
+points and one edge per iteration on top of the memory `reserve` has already
+committed.
+
+Measured on the unpatched reader against `zenkit-node`'s 1.4 KB fixture world
+with `numWays` rewritten in place to 0x0FFFFFFF: 268 million edges and 536
+million null waypoints, and the world still reports **LOADED**, after 41 s. That
+is the dangerous case -- an *absurd* count is the harmless one, because
+`reserve` throws `bad_alloc` and the loop is never entered.
+
+The waypoint count is bounded by the same argument even though its loop already
+fails loudly: patch 0033's null guard throws on the first waypoint that is not
+there, but only after `reserve` has committed 4.3 GB.
+
+Both counts are bounded by the bytes actually left in the reader, with the same
+`_bytes_remaining` helper as `Mesh.cc` and `BspTree.cc`. The per-object floor is
+four bytes, under the smallest header any of the three archive formats can
+write, because a bound must never refuse a world the engine loads.
+
+Found by construction rather than by luck: `zenkit-node/tools/fuzz-world.js
+--counts` sweeps every INTEGER entry in the stream in turn. 600 random seeds
+over the fixture and 160 over retail NewWorld never found it -- 20 to 500 random
+byte writes have no reason to land on the four bytes of a count.
+
+diff --git a/src/world/WayNet.cc b/src/world/WayNet.cc
+index 1711aaa..3852764 100644
+--- a/src/world/WayNet.cc
++++ b/src/world/WayNet.cc
+@@ -3,10 +3,30 @@
+ #include "zenkit/world/WayNet.hh"
+ #include "zenkit/Archive.hh"
+ #include "zenkit/Error.hh"
++#include "zenkit/Stream.hh"
+ 
+ #include "../Internal.hh"
+ 
+ namespace zenkit {
++	// The number of bytes left in the reader, as in `Mesh.cc` and `BspTree.cc`:
++	// `Read` exposes no size, but every implementation can seek to the end and
++	// back. It is a ceiling, not the exact room left -- in a BinSafe archive the
++	// hash table still follows the entry stream -- which is all a sanity bound
++	// needs.
++	static std::size_t _bytes_remaining(Read* r) {
++		auto here = r->tell();
++		r->seek(0, Whence::END);
++		auto end = r->tell();
++		r->seek(static_cast<ssize_t>(here), Whence::BEG);
++		return end > here ? end - here : 0;
++	}
++
++	// The smallest an archived object can be in any of the three formats: a type
++	// byte and a two-byte length in BinSafe, a `[% % 0 0]` line in ASCII. Four is
++	// under all of them, which is what a bound wants -- it must never refuse a
++	// world the engine loads.
++	static constexpr std::size_t OBJECT_MIN_BYTES = 4;
++
+ 	void WayPoint::load(ReadArchive& r, GameVersion) {
+ 		this->name = r.read_string();      // wpName
+ 		this->water_depth = r.read_int();  // waterDepth
+@@ -26,6 +46,22 @@
+ 	void WayNet::load(ReadArchive& r, GameVersion version) {
+ 		[[maybe_unused]] auto ver = r.read_int(); // waynetVersion
+ 		auto count_points = r.read_int();         // numWaypoints
++
++		// Both counts below come straight off the file and used to size a
++		// `reserve` before a single object was read. The edge loop cannot stop on
++		// its own either: `read_object` past the end of the entry stream logs and
++		// returns null rather than throwing, and a null endpoint is tolerated by
++		// design, so the loop runs to the file's own count over reads that give
++		// nothing back. Measured against `zenkit-node`'s 1.4 KB fixture with
++		// `numWays` rewritten to 0x0FFFFFFF: 268 million edges and twice as many
++		// null points, and the world still reports LOADED after 41 s. An *absurd*
++		// count is the harmless case -- `reserve` throws `bad_alloc` -- so the
++		// dangerous value is the merely large one.
++		if (count_points < 0 ||
++		    static_cast<std::size_t>(count_points) > _bytes_remaining(r.get_stream()) / OBJECT_MIN_BYTES) {
++			throw ParserError {"WayNet", "waypoint count exceeds the bytes left in the archive"};
++		}
++
+ 		this->points.reserve(count_points);
+ 
+ 		for (auto i = 0; i < count_points; ++i) {
+@@ -45,6 +81,13 @@
+ 		}
+ 
+ 		auto count_edges = r.read_int(); // numWays
++
++		// An edge is two objects, so it cannot be cheaper than two headers.
++		if (count_edges < 0 ||
++		    static_cast<std::size_t>(count_edges) > _bytes_remaining(r.get_stream()) / (2 * OBJECT_MIN_BYTES)) {
++			throw ParserError {"WayNet", "edge count exceeds the bytes left in the archive"};
++		}
++
+ 		this->edges.reserve(count_edges);
+ 
+ 		for (auto i = 0; i < count_edges; ++i) {

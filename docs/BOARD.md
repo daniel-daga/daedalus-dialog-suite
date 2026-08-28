@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0036`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0037`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,9 +136,9 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — eight instances closed
-  (`0029`–`0036`); what is left is the VOB readers and the `ReadMemory::seek`
-  decision. Unowned. §16.11
+- **The world reader is still not crash-safe** — nine instances closed
+  (`0029`–`0037`); next is `parse_vob_tree`'s recursion, then the
+  `ReadMemory::seek` decision. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -157,18 +157,13 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-- **Patch `0036` — every `Mesh.cc` element count is bounded, and the bug was
-  never a crash.** A `uint32` count off the file sized each `resize` and the
-  loop after it read zero bytes to that same count, so a vertex count of
-  0x0FFFFFFF committed 3.2 GB and still reported `LOADED`. Memory exhaustion has
-  no non-zero exit, which is why 200 fuzzer seeds never saw it. §16.11
-- **Patch `0035` — the BSP node recursion is gone, and the fuzzer could never
-  have found it.** `_parse_bsp_nodes` recursed once per set flag bit of the node
-  it had just read; a node is 49 bytes, so a chain deep enough to exhaust the
-  stack needs megabytes and 20 byte writes over a 4 KB fixture cannot make one.
-  Grown by structure instead: 100,000 nodes kill the child with `0xC00000FD`,
-  uncatchable, and the editor loads worlds on a 4 MB worker stack. Parsed
-  iteratively rather than bounded — a valid world's depth has no documented
-  ceiling — which also removes a use-after-realloc on `back_index`. §16.11
+- **Patch `0037` — the waynet's two counts are bounded, and the way it was found
+  is the point.** `numWays` sized `edges.reserve` and its loop cannot stop —
+  a null endpoint is legal by design — so 268 million junk edges still reported
+  `LOADED`, after 41 s. Random seeds were saturated without saying so (600 over
+  the fixture, 160 over retail NewWorld, all clean); `tools/fuzz-world.js
+  --counts` sweeps every INTEGER entry instead and named it in five seconds.
+  §16.11
 
-Flushed 2026-08-28 (see git log for what landed before this).
+Flushed 2026-08-28 (`0035` and `0036` too — their substance is in §16.11 and
+in `git log`).

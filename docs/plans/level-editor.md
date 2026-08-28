@@ -3222,7 +3222,9 @@ synthetic fixture, and it is **not** a crash-safety claim. The chunk-walking
 loops in the VOB readers are untouched, and **the worker isolation stays
 load-bearing.** The next step is not another seed — it is either widening the
 corpus (more seeds, more bytes, a real world) or taking the `ReadMemory::seek`
-decision, and neither is named as a card yet.
+decision, and neither is named as a card yet. (The widening happened, and is
+written up under patch `0037` below: what was exhausted is the random seeds, not
+the defect class.)
 
 **The BSP node recursion is gone (2026-08-28, patch `0035`), and it is the one
 site here the fuzzer could never have found.** `_parse_bsp_nodes` recursed once
@@ -3252,6 +3254,48 @@ move with it; nothing else in the container is an absolute offset).
 
 The class is still open either way: the chunk-walking loops in the VOB readers,
 and the `ReadMemory::seek` decision that would close it in one place.
+
+**The waynet's own two counts are bounded (2026-08-28, patch `0037`), and the
+way it was found matters more than the patch.** `WayNet::load` sized
+`points.reserve` and `edges.reserve` from `numWaypoints` and `numWays` with no
+check, and the edge loop cannot stop on its own for a reason `0033` had already
+established: `ReadArchive::read_object` past the end of the entry stream logs
+"Expected object, got entry" and returns **null** rather than throwing, and a
+null endpoint is tolerated *by design*. Measured against the 1.4 KB fixture with
+`numWays` rewritten in place to 0x0FFFFFFF: 268 million edges and 536 million
+null waypoints, and the world still reports **`LOADED`**, after 41 s. The same
+shape as `0036` — the dangerous count is the merely large one, because an absurd
+one throws out of `reserve` before the loop is entered.
+
+**Random fuzzing had been saturated for a while and did not say so.** Before the
+patch: 600 seeds × 60 bytes over the fixture, **0 of 600**; and the corpus
+widened to a real world at last — retail `NewWorld.zen`, 75 MB — 100 seeds × 20
+bytes and 60 seeds × 500 bytes, **0 of 160**, with 44 of the first 100 loading
+*cleanly corrupted*. Twenty to five hundred random byte writes have no reason to
+land on the four bytes of a count, and over a 50 MB entry stream they never will.
+So `tools/fuzz-world.js` grew a **`--counts` mode**: it rewrites every INTEGER
+entry in the stream, one at a time, to one large-but-not-absurd value and reports
+anything that crashes, hangs, or loads slowly against the clean file's own wall
+clock. Twenty-one entries in the fixture, five seconds, and it named `numWays` on
+the first run. **Prefer it to another seed.** Its limit is the fixture's field
+set: a count that no VOB in `minimal.g2.zen` carries — `oCNpc`'s `numTalents`,
+for one — is not swept by it, and running the sweep against a retail world is not
+practical at one process spawn per entry.
+
+**Two things the sweep cleared, and they are worth not re-deriving.**
+`parse_vob_tree`'s `childs<N>` count is equally unbounded and `reserve`s just as
+much, but the first missing child makes `read_object_begin` fail and the load
+throws `invalid format` in 70 ms — loud, so not patched. And
+`VirtualObject.cc:184` dereferences an iterator `:176` has just compared against
+`visual_type_map.end()`, which looks like a defect and is not reachable: the
+`dynamic_pointer_cast<Visual>` above it can only produce the seven visual classes,
+and all seven are in the map. Bounding either would be `get_entry_key()` again.
+
+`parse_vob_tree` **is** still recursive, once per nesting level, and unlike
+`_parse_bsp_nodes` a deep tree is cheap to write: a nested object costs an object
+header and a child count, so a file far smaller than a retail world can nest
+deeper than a 4 MB worker stack. Not measured, not patched — the next thing to do
+under this heading, ahead of another seed.
 
 **`Mesh.cc`'s element counts are bounded (2026-08-28, patch `0036`), and the
 failure they allowed is not a crash.** Every chunk in `Mesh::load` sized a
