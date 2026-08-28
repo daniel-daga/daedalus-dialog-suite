@@ -13,6 +13,7 @@ import {
   deleteVob, deleteWaypoint, dropVobsToGround,
   duplicateVobSubtree, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
+  matchVobs,
   moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, topLevelVobs,
   translateVobs, vobIndexPath,
@@ -127,6 +128,15 @@ const WorldSurface: React.FC = () => {
    * not persisted for the same reason nothing else on this bar is.
    */
   const [exposure, setExposure] = useState(DEFAULT_EXPOSURE);
+  /**
+   * VOB classes switched off in the viewport — Spacer's per-class show/hide.
+   *
+   * The same kind of setting as `exposure`: it decides what is drawn, never
+   * what the world holds. A hidden VOB is still in the index, still in the
+   * scene tree and still selectable there; it is only not drawn and, because
+   * the pick pass reads the same flag, not clickable.
+   */
+  const [hiddenClasses, setHiddenClasses] = useState<readonly string[]>([]);
   /**
    * How many edits the main process has refused — folded into every editable
    * field key in `WorldPropertyGrid`, so a refusal remounts the fields showing
@@ -303,6 +313,27 @@ const WorldSurface: React.FC = () => {
    */
   const [classProps, setClassProps] = useState<{ vob: number; props: ClassProps } | null>(null);
   const primary = primaryVob(selection);
+
+  /** Every class in the world, for the show/hide list — the interned class
+   *  dictionary the summary already carries, and 37 entries on a retail world. */
+  const classOptions = useMemo(
+    () => (summary === null ? [] : [...summary.vobIndex.classes].sort((a, b) => a.localeCompare(b))),
+    [summary],
+  );
+  /**
+   * Which VOBs the viewport must not draw, one byte each — the scene tree's own
+   * predicate, asked the complementary question.
+   *
+   * Null while nothing is switched off: the ordinary case must not pay for a
+   * sweep over 41,393 VOBs, and the scene must not walk every instance writing
+   * zeroes it already holds.
+   */
+  const hiddenVobs = useMemo(
+    () => (summary === null || hiddenClasses.length === 0
+      ? null
+      : matchVobs(summary.vobIndex, { classes: hiddenClasses })),
+    [summary, hiddenClasses],
+  );
 
   useEffect(() => {
     setClassProps(null);
@@ -1165,6 +1196,44 @@ const WorldSurface: React.FC = () => {
               />
             </Stack>
           )}
+          {/* Spacer's per-class show/hide, beside the other view controls
+              because that is what it is: the world still holds every VOB, the
+              scene tree still lists them, and one of them switched off here is
+              only not drawn — and, since the pick pass reads the same flag, not
+              clickable either. Named for what it does rather than for what is
+              on: the empty list is the ordinary state and "nothing hidden"
+              should read as the empty one. */}
+          {summary && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" color="text.secondary" noWrap>
+                Hide
+              </Typography>
+              <TextField
+                select
+                size="small"
+                value={hiddenClasses as string[]}
+                onChange={(event) => setHiddenClasses(
+                  typeof event.target.value === 'string'
+                    ? [event.target.value]
+                    : (event.target.value as unknown as string[]),
+                )}
+                aria-label="Hidden VOB classes"
+                data-testid="world-hidden-classes"
+                SelectProps={{
+                  multiple: true,
+                  displayEmpty: true,
+                  renderValue: (picked) => ((picked as string[]).length === 0
+                    ? 'Nothing'
+                    : `${(picked as string[]).length} classes`),
+                }}
+                sx={{ width: 110, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+              >
+                {classOptions.map((cls) => (
+                  <MenuItem key={cls} value={cls} sx={{ fontSize: 12 }}>{cls}</MenuItem>
+                ))}
+              </TextField>
+            </Stack>
+          )}
           {summary && (
             <Button
               size="small"
@@ -1495,6 +1564,7 @@ const WorldSurface: React.FC = () => {
               frameRequest={frameRequest}
               terrainPoint={terrainPoint}
               exposure={exposure}
+              hiddenVobs={hiddenVobs}
               snapGrid={snapGrid}
               snapAngle={(snapAngleDegrees * Math.PI) / 180}
               onSelectWaypoint={selectWaypoint}

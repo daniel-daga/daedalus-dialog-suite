@@ -2616,10 +2616,10 @@ would survive it (§16.7).
 
 ### 14.4 Editor UX
 
-- VOB search and find by name or class — the scene tree has no filter at all.
-  *Unscheduled.*
-- Per-class visibility filters, hide/show — Spacer's VOB-type toggles.
-  *Unscheduled.*
+- VOB search and find by name or class — the scene tree's header, answered
+  against the interned dictionaries. *Landed 2026-08-28 (§16.16).*
+- Per-class visibility filters, hide/show — Spacer's VOB-type toggles, on the
+  filter's own predicate. *Landed 2026-08-28 (§16.16).*
 - Batch operations. Spacer has zSlang; our answer is
   [`mcp-server.md`](mcp-server.md) plus scripted ops. *Planned elsewhere.*
 - Engine preview ("play from here") — parked as later/kept-open (§11).
@@ -4271,6 +4271,34 @@ visibility card builds on them:
   byte per VOB and is the natural input to a render-side "draw this VOB?" —
   but the filter state lives in `WorldSceneTree` and would have to be lifted to
   `WorldSurface` for the viewport to see it.
+
+**Per-class visibility landed 2026-08-28**, and it did *not* lift the tree's
+filter. Spacer's VOB-type show/hide is its own control, in the toolbar beside
+Brightness where the other view settings are, because the two questions are
+different ones: the tree's filter says which VOBs a search selects, and hiding a
+class says which the scene draws. Sharing the *predicate* was the point of the
+note above and that is what happened — `WorldSurface` holds `hiddenClasses`,
+asks `matchVobs` the complementary question, and hands the viewport a
+`hiddenVobs` byte array. No second matcher, no state lifted, and the tree keeps
+listing what is hidden so a switched-off VOB is still findable and selectable.
+
+How it hides is the part worth knowing before anything else touches the scene:
+
+- **Not `mesh.visible`, and deliberately not a zero-scale matrix.** A VOB is one
+  instance inside an `InstancedMesh` shared with every other VOB of its visual,
+  so the first cannot express it — and the second would be a trap, because the
+  instance matrix is exactly what `positionOf`/`rotationOf` read a VOB's pose
+  back out of. Collapsing it would put a hidden VOB's gizmo at the origin and
+  let an op carry it there. So the flag is `instanceHidden`, one float per
+  instance beside the matrix, and the VOB vertex shader pushes a flagged
+  instance outside the clip volume. Hiding a class costs no draw call, no
+  recompile and no geometry.
+- **The pick pass reads the same attribute object.** `VobPicker` clones the
+  geometry, and a clone *copies* attributes — so the hidden flag is re-`setAttribute`d
+  onto the proxy as the same object. Without it a hidden VOB stays clickable,
+  and clicking something invisible selects it in the tree.
+- **`WorldViewport` re-applies it on `mesh`/`visuals`**, like exposure: a
+  structural op rebuilds the scene, and a fresh `WorldScene` draws everything.
 
 ### 16.17 The rest of `zCVob` (§14.1 1.8)
 

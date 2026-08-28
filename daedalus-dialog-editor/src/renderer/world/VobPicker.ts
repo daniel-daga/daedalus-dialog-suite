@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { NO_PICK, decodePickId, encodePickId } from './pickIds';
+import { HIDDEN_ATTRIBUTE } from './WorldScene';
 
 // GPU ID-picking for instanced VOBs (level-editor.md §3, result 1).
 //
@@ -30,10 +31,16 @@ import { NO_PICK, decodePickId, encodePickId } from './pickIds';
 
 const PICK_VERTEX = /* glsl */`
   attribute vec3 pickColor;
+  attribute float ${HIDDEN_ATTRIBUTE};
   varying vec3 vPickColor;
   void main() {
     vPickColor = pickColor;
     gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    // The pick pass is a second draw of the same instances, so it has to honour
+    // the same hiding: a VOB switched off by class that stayed clickable would
+    // select something nobody can see. A proxy whose mesh carries no such
+    // attribute reads 0 here, which is "drawn".
+    if (${HIDDEN_ATTRIBUTE} > 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 `;
 
@@ -64,6 +71,13 @@ export class VobPicker {
 
   private proxies: THREE.InstancedMesh[] = [];
 
+  /** The proxies the pick pass draws, in the order their meshes were given.
+   *  The pick scene is otherwise unreachable, and what they were built out of
+   *  is the only thing about a pick that is checkable without a GPU. */
+  get pickProxies(): readonly THREE.InstancedMesh[] {
+    return this.proxies;
+  }
+
   /** Build the pick scene: the same instanced geometry, with an id per instance. */
   setInstancedMeshes(
     meshes: readonly THREE.InstancedMesh[],
@@ -86,6 +100,11 @@ export class VobPicker {
       // new, so the pick pass costs no extra vertex memory.
       const geometry = mesh.geometry.clone();
       geometry.setAttribute('pickColor', new THREE.InstancedBufferAttribute(colors, 3));
+      // Shared, not the clone's copy: `setHiddenVobs` writes into the drawn
+      // mesh's attribute, and a copy would answer with whatever was hidden when
+      // the scene was built.
+      const hidden = mesh.geometry.getAttribute(HIDDEN_ATTRIBUTE);
+      if (hidden) geometry.setAttribute(HIDDEN_ATTRIBUTE, hidden);
 
       const proxy = new THREE.InstancedMesh(geometry, this.material, mesh.count);
       proxy.instanceMatrix = mesh.instanceMatrix;

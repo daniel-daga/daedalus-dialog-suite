@@ -709,4 +709,64 @@ describe('WorldScene', () => {
     // own data, and this changes what is drawn from them, not them.
     expect(worldMesh.geometry.getAttribute('color').array).toEqual(baked);
   });
+  test('a hidden VOB is dropped in the vertex shader, and keeps its transform', () => {
+    // Spacer's per-class show/hide (§16.16). A VOB is an instance inside a mesh
+    // shared with every other VOB of the same visual, so hiding one cannot be
+    // `mesh.visible` — and it must not be a zero-scale matrix either: the
+    // instance matrix is where the VOB's position and rotation are *read back*
+    // from, so collapsing it would make a hidden VOB's gizmo report the origin.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    const mesh = scene.instancedMeshes[0];
+    const before = scene.positionOf(9);
+
+    scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 1]));
+
+    const hidden = mesh.geometry.getAttribute('instanceHidden');
+    // vobIds are [7, 9]: the second instance, and only it.
+    expect([...(hidden.array as Float32Array)]).toEqual([0, 1]);
+    // `needsUpdate` is write-only in three; the version it bumps is what the
+    // renderer actually re-uploads on, and a flag written without it is inert.
+    expect(hidden.version).toBe(1);
+    expect(scene.positionOf(9)).toEqual(before);
+    expect(scene.rotationOf(9)).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+
+    // And the shader actually reads it — the flag is inert without the branch.
+    const vobShader = compile(mesh.material as THREE.MeshBasicMaterial);
+    expect(vobShader.vertexShader).toContain('attribute float instanceHidden;');
+    expect(vobShader.vertexShader).toMatch(/instanceHidden > 0\.5/);
+    // The world mesh has no instances to hide, and must not declare one.
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    const world = compile(scene.worldMeshes[0].material as THREE.MeshBasicMaterial);
+    expect(world.vertexShader).not.toContain('instanceHidden');
+  });
+
+  test('every mesh a visual was split into takes the same hidden flag', () => {
+    // A visual with two draw groups puts one VOB in two meshes — the hazard
+    // `moveVob` already carries. Hiding it in one of them draws half a prop.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      stats: {} as never,
+    });
+
+    scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 1, 0, 0]));
+
+    expect(scene.instancedMeshes).toHaveLength(2);
+    for (const mesh of scene.instancedMeshes) {
+      expect([...(mesh.geometry.getAttribute('instanceHidden').array as Float32Array)]).toEqual([1, 0]);
+    }
+  });
+
+  test('showing everything again clears the flag, rather than leaving the last set', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 1, 0, 1]));
+    scene.setHiddenVobs(null);
+
+    const hidden = scene.instancedMeshes[0].geometry.getAttribute('instanceHidden');
+    expect([...(hidden.array as Float32Array)]).toEqual([0, 0]);
+    expect(hidden.version).toBe(2);
+  });
 });

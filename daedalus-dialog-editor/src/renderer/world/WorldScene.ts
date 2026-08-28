@@ -131,6 +131,41 @@ function exposeBakedLight(
 }
 
 /**
+ * The name of the per-instance "do not draw this one" attribute, shared by the
+ * drawn mesh and by the pick pass's proxy for it.
+ *
+ * Per-class visibility (level-editor.md §16.16) cannot be `mesh.visible`: a VOB
+ * is one instance inside an `InstancedMesh` shared with every other VOB of the
+ * same visual. Nor can it be a zero-scale instance matrix, tempting as that is
+ * — the instance matrix is what `positionOf` and `rotationOf` read a VOB's pose
+ * back out of, so collapsing it would put the gizmo of a hidden VOB at the
+ * origin and make an op carry it there. So the flag is an attribute beside the
+ * matrix, and hiding is one float per instance rather than anything structural.
+ */
+export const HIDDEN_ATTRIBUTE = 'instanceHidden';
+
+/**
+ * The hide half of the VOB vertex shader: a hidden instance is pushed outside
+ * the clip volume, so it costs no fragment and nothing downstream has to know
+ * about it.
+ *
+ * Only VOB materials compile it — the world mesh has no instances to hide, and
+ * an attribute it never carries has no business being declared in its shader.
+ */
+function hideInstances(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.vertexShader = `attribute float ${HIDDEN_ATTRIBUTE};
+${
+    shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+  // Outside the clip volume in every direction, at w = 1: clipped whole,
+  // whatever the camera is doing.
+  if ( ${HIDDEN_ATTRIBUTE} > 0.5 ) gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 );`,
+    )
+  }`;
+}
+
+/**
  * The two `onBeforeCompile` hooks, one per material kind.
  *
  * They must stay **textually different**, not merely different objects:
@@ -150,6 +185,7 @@ function worldShading(exposure: Exposure) {
 function vobShading(exposure: Exposure) {
   return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
     outlineVobs(shader);
+    hideInstances(shader);
     exposeBakedLight(shader, exposure);
   };
 }
@@ -287,6 +323,13 @@ export class WorldScene {
         mesh.instanceMatrix.needsUpdate = true;
         mesh.matrixAutoUpdate = false;
         mesh.computeBoundingSphere();
+        // Every VOB shown, until a class is switched off. The attribute is made
+        // here rather than on the first hide so that the pick pass — which
+        // clones this geometry once, when the scene is built — can share it.
+        mesh.geometry.setAttribute(
+          HIDDEN_ATTRIBUTE,
+          new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
+        );
 
         this.instanceVobIds.set(mesh, vobIds);
         this.meshBounds.set(mesh, visual.bounds);
@@ -402,6 +445,32 @@ export class WorldScene {
       return this.meshBounds.get(mesh) ?? null;
     }
     return null;
+  }
+
+  /**
+   * Which VOBs are not drawn: one byte per VOB, 1 for hidden — the shape
+   * `matchVobs` returns, which is what makes the scene tree's filter and
+   * Spacer's per-class show/hide one predicate rather than two. Null shows
+   * everything.
+   *
+   * Writes a float per instance and nothing else: no geometry is rebuilt, no
+   * material recompiled, and the instance matrices — where the poses live — are
+   * not touched. A VOB with no instance is simply not found here, exactly as it
+   * is not drawn.
+   */
+  setHiddenVobs(hidden: Uint8Array | null): void {
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      const attribute = mesh.geometry.getAttribute(HIDDEN_ATTRIBUTE);
+      if (!vobIds || !attribute) continue;
+
+      const flags = attribute.array as Float32Array;
+      for (let i = 0; i < flags.length; i++) {
+        const vob = vobIds[i];
+        flags[i] = hidden !== null && vob < hidden.length && hidden[vob] !== 0 ? 1 : 0;
+      }
+      attribute.needsUpdate = true;
+    }
   }
 
   /** A VOB's 3x3 as drawn, row-major — what a turn composes onto. */

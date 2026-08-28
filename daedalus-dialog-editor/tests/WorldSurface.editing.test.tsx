@@ -36,6 +36,8 @@ let mockFrameRequest: { vob: number } | null | undefined;
 let mockTerrainPoint: [number, number, number] | null | undefined;
 /** How bright the viewport is told to draw. */
 let mockExposure: number | undefined;
+/** Which VOBs the viewport is told not to draw — one byte per VOB, or null. */
+let mockHiddenVobs: Uint8Array | null | undefined;
 /** The steps the viewport is told to quantise a drag to. */
 let mockSnapGrid: number | undefined;
 let mockSnapAngle: number | undefined;
@@ -76,6 +78,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     frameRequest: { vob: number } | null;
     terrainPoint: [number, number, number] | null;
     exposure: number;
+    hiddenVobs: Uint8Array | null;
     snapGrid: number;
     snapAngle: number;
     onSelectWaypoint: (waypoint: number | null) => void;
@@ -92,6 +95,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockFrameRequest = props.frameRequest;
     mockTerrainPoint = props.terrainPoint;
     mockExposure = props.exposure;
+    mockHiddenVobs = props.hiddenVobs;
     mockSnapGrid = props.snapGrid;
     mockSnapAngle = props.snapAngle;
     // The imperative surface drop-to-ground and align-to-normal call directly
@@ -313,6 +317,7 @@ beforeEach(() => {
   mockFrameRequest = undefined;
   mockTerrainPoint = undefined;
   mockExposure = undefined;
+  mockHiddenVobs = undefined;
   mockSnapGrid = undefined;
   mockSnapAngle = undefined;
   mockVobProps = { class: 'zCVob' };
@@ -723,6 +728,43 @@ describe('the viewport brightness', () => {
     expect(mockAppliedOps ?? null).toBeNull();
   });
 
+});
+
+describe('per-class visibility', () => {
+  /** Toggle one class in the show/hide list, the way Spacer's VOB-type
+   *  checkboxes are toggled. */
+  const toggleClass = async (name: string) => {
+    fireEvent.mouseDown(within(screen.getByTestId('world-hidden-classes')).getByRole('combobox'));
+    fireEvent.click(await screen.findByRole('option', { name }));
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
+  };
+
+  it('hides a whole VOB class in the viewport, and nothing else', async () => {
+    // Spacer's VOB-type show/hide (§16.16), answered by the *filter's*
+    // predicate: `matchVobs` over the interned class dictionary, one byte per
+    // VOB. VOB 0 is the light; VOB 1, the selected one, is a plain zCVob.
+    await openWorld(['zCVobLight', 'zCVob']);
+    // Nothing hidden is null, not an array of zeros: the unfiltered world must
+    // not pay for a predicate nobody asked for.
+    expect(mockHiddenVobs ?? null).toBeNull();
+
+    await toggleClass('zCVobLight');
+
+    await waitFor(() => expect([...(mockHiddenVobs ?? [])]).toEqual([1, 0]));
+    // A view setting: no op, nothing dirtied, nothing saved.
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    expect(mockAppliedOps ?? null).toBeNull();
+  });
+
+  it('shows the class again when it is toggled off', async () => {
+    await openWorld(['zCVobLight', 'zCVob']);
+
+    await toggleClass('zCVobLight');
+    await waitFor(() => expect([...(mockHiddenVobs ?? [])]).toEqual([1, 0]));
+    await toggleClass('zCVobLight');
+
+    await waitFor(() => expect(mockHiddenVobs ?? null).toBeNull());
+  });
 });
 
 describe('the snap step', () => {

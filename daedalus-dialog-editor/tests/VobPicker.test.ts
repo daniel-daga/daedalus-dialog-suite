@@ -162,4 +162,25 @@ describe('the prop pick', () => {
     expect(currentTarget()).toBeNull();
     expect(camera.view?.enabled).toBe(false);
   });
+
+  it('shares the hidden flag with the drawn mesh, so a hidden VOB is not pickable', () => {
+    // Per-class visibility (§16.16) hides an instance by dropping it in the
+    // vertex shader. The pick pass is a *second* draw of the same instances
+    // with its own material, so a flag it did not read would leave a hidden
+    // prop clickable — and clicking something invisible selects it in the tree.
+    // The attribute is shared rather than copied: `geometry.clone()` copies it,
+    // and a copy stops tracking the next toggle.
+    const picker = new VobPicker();
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), 2);
+    const hidden = new THREE.InstancedBufferAttribute(new Float32Array([0, 1]), 1);
+    mesh.geometry.setAttribute('instanceHidden', hidden);
+
+    picker.setInstancedMeshes([mesh], (_mesh, instance) => instance, new THREE.Matrix4());
+
+    const proxy = picker.pickProxies[0];
+    expect(proxy.geometry.getAttribute('instanceHidden')).toBe(hidden);
+    const material = proxy.material as THREE.ShaderMaterial;
+    expect(material.vertexShader).toContain('attribute float instanceHidden;');
+    expect(material.vertexShader).toMatch(/instanceHidden > 0\.5/);
+  });
 });

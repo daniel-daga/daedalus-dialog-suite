@@ -104,6 +104,7 @@ function props(overrides: Record<string, unknown> = {}) {
     frameRequest: null,
     terrainPoint: null,
     exposure: 1,
+    hiddenVobs: null,
     snapGrid: 0,
     snapAngle: 0,
     onSelectWaypoint: () => {},

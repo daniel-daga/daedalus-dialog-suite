@@ -124,6 +124,7 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
     frameRequest: null,
     terrainPoint: null,
     exposure: 1,
+    hiddenVobs: null,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
   };

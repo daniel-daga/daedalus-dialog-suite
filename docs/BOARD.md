@@ -126,8 +126,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Per-class visibility toggles** — Spacer's VOB-type show/hide, on the
-  filter's predicate. Unowned. §16.16
 - **`zCVob` V1 — preset name, `visualCamAlign`, bias** — catalogue idiom, no
   known hazards. Unowned. §16.17
 - **`zCVob` V2 — `dynamicShadows`, `sleepMode`, decals** — a decal field needs
@@ -201,6 +199,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Per-class visibility toggles** — landed: a `hiddenClasses` list in the
+  toolbar, `matchVobs` asked the complementary question, and an `instanceHidden`
+  attribute the VOB shader and the pick pass both read — so a hidden VOB is
+  neither drawn nor clickable, and its instance matrix is untouched. §16.16
 - **VOB search and filter in the scene tree** — landed: `matchVobs` /
   `flattenMatching` in `zen-world` answer the query against the interned
   dictionaries and keep each match's path; the tree's header filters by name
@@ -208,15 +210,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Copy/paste D5 — the subtree** — landed: `duplicateVobSubtree` and
   `subtreeOps` in `zen-world`, paths computed forward; the clipboard holds
   subtrees, and both verbs prune the selection to its top-level VOBs. §16.14
-- **Typed rotation for a multi-selection** — landed: the angle fields describe
-  the anchor for N VOBs and commit a delta through `rotateVobs`, the gizmo's own
-  path; the conversion is `eulerDeltaRotation`, from the two angle triples and
-  not the anchor's matrix. §16.4
-- **Waynet W4 — delete an arbitrary waypoint** — landed: `DeleteWaypoint` is a
-  barrier op, `removeWaypoint` grew a `barrier` flag rather than a twin, and the
-  edges go with the point. §16.7
 
-Flushed 2026-08-28 at the end of the third loop run: I1, I2, D2, W2 and W3 all
-landed that day. Their forward facts are routed — what a copy still drops and
-the batch-guard relaxation it wants are §16.14, the authorable class set is
-§16.15, the last-edge promotion is §16.7 — and the rest is in `git log`.
+Flushed 2026-08-28: I1, I2, D2, W2, W3, and then the typed multi-selection
+rotation (§16.4) and waynet W4 (§16.7) as the budget needed the room. Their
+forward facts are routed — what a copy still drops and the batch-guard
+relaxation it wants are §16.14, the authorable class set is §16.15, the
+last-edge promotion is §16.7 — and the rest is in `git log`.

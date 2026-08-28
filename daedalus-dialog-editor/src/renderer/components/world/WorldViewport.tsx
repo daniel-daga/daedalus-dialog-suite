@@ -173,6 +173,16 @@ export interface WorldViewportProps {
    */
   exposure: number;
   /**
+   * Which VOBs not to draw: one byte per VOB, 1 for hidden — Spacer's per-class
+   * show/hide, answered by the scene tree's own predicate (`matchVobs`). Null
+   * draws everything.
+   *
+   * A view setting like `exposure`, and hidden the same way a filtered row is
+   * filtered: nothing is removed from the scene, no op is produced, and a
+   * hidden VOB is still in the index, still selectable from the tree.
+   */
+  hiddenVobs: Uint8Array | null;
+  /**
    * The grid step a drag is quantised to, in **ZenGin centimetres**, or 0 for a
    * free-form drag.
    *
@@ -250,7 +260,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
-  selectedWaypoint, frameRequest, terrainPoint, exposure, snapGrid, snapAngle,
+  selectedWaypoint, frameRequest, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
   onSelectWaypoint, onMoveWaypoint,
 }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -1090,6 +1100,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     sceneRef.current?.setExposure(exposure);
   }, [exposure, mesh, visuals]);
+
+  // Per-class visibility, on `mesh`/`visuals` for the same reason: a rebuilt
+  // scene draws every instance until it is told again which ones are switched
+  // off, and a placement would otherwise bring a hidden class back.
+  useEffect(() => {
+    sceneRef.current?.setHiddenVobs(hiddenVobs);
+  }, [hiddenVobs, mesh, visuals]);
 
   // A jump asked for from the scene tree. It fires on the request's identity,
   // not on the VOB — see `frameRequest`.
