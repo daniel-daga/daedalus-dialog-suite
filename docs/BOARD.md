@@ -21,8 +21,17 @@ handovers cost an hour a session:
 lives — §16 for a level-editor card, otherwise the file the routing table names.
 A card moves to Done only when its tests and its linter pass.
 
+**Next is ordered by priority and cards are picked top-down.** An unattended run
+takes the first card it is allowed to take, so the order is the priority, not a
+filing convention — and a run may not reorder it, add to it, or file its own
+splits into it. **Deferred** and **Triage** sit outside the pick path: Deferred
+is work a human deprioritised, Triage is where a run reports a card too big for
+one entry. Both are read and emptied by a person, never by a run.
+
 **The card sections — Now, Next and Done together — stay under 80 lines, and
-going over is the signal to flush.** The budget is on the cards because the
+going over is the signal to flush.** Deferred and Triage are counted separately
+and deliberately: deprioritised work has to stay visible to stay a decision
+rather than a silent drop, and flushing it would be the drop. The budget is on the cards because the
 rules above them do not grow and the cards do. Not a style preference: this file
 is read at the start of every session, and a board nobody re-reads is a handover
 again. The fix is never to compress a card's prose — it is to move that prose to
@@ -110,6 +119,16 @@ Each card is one line, an owner and a pointer. A bare `§` is a section of
 `docs/plans/level-editor.md`. The diagnosis, the measurement and the decision a
 card waits on live at its pointer — put new prose there, not here.
 
+**Spacer parity — Phase 1b-2 (the priority)**
+
+- **Copy / paste / duplicate a VOB** — the most-used Spacer verb after move;
+  §15 already answers the undo question. Start at the single-VOB duplicate.
+  Unowned. §16.14
+- **Waynet edge ops, add/delete/rename** — the index-addressing problem is the
+  whole job and is untouched. Unowned. §16.7
+- **Class-specific insertion** — `insertVob` authors `zCVob` and nothing else;
+  the class-property catalogue is the field list to author from. Unowned. §16.15
+
 **Release gates**
 
 - **Three shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
@@ -123,8 +142,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Waynet, and the scripts that name it**
 
-- **Waynet edge ops, add/delete/rename** — the index-addressing problem is the
-  whole job and is untouched. Unowned. §16.7
 - **Dangling-waypoint Problems rule** — blocked: `ProjectView` carries no
   world/waypoint data at all, so the rule has no known-waypoints set to check
   a literal against; needs a small design decision on how that data reaches
@@ -132,18 +149,8 @@ card waits on live at its pointer — put new prose there, not here.
 
 **zenkit-node / fidelity**
 
-- **ASCII writer A6** — the packed `zCVob` writer drops `physicsEnabled`, so the
-  editor's own BinSafe save path has it. Needs a fixture VOB with the flag set
-  and an engine A/B, like §16.2. Unowned. §16.9
-- **ASCII `bool:` writes `1` where ZenGin writes `-1`** for `locked` and
-  `moveable` — `0017` already does this for BinSafe and is the template. 3 of
-  OldCamp's 8 remaining findings. Unowned. §16.9
-- **ASCII half-way float rounding** — the UCRT rounds a tie to even, ZenGin's
-  MSVC 6 CRT rounded away from zero. The other 5 findings, and a fix has to
-  detect the tie itself. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
 **Elsewhere, with a home of their own**
@@ -159,22 +166,41 @@ card waits on live at its pointer — put new prose there, not here.
 
 *(empty — both cards landed; see `git log`)*
 
+## Deferred
+
+**Outside the pick path — an unattended run skips this section.** Deprioritised,
+not blocked: moving a card back to Next is a human decision.
+
+**ASCII writer — deferred 2026-08-28**, all three at §16.9. Real defects, but
+the editor does not save through the ASCII path, BinSafe stays `identical`, and
+the series absorbed most of a night's run by the time `0048` landed.
+
+- **A6** — the packed `zCVob` writer drops `physicsEnabled`, so the editor's own
+  BinSafe path has it too. Wants a fixture VOB and an engine A/B, like §16.2.
+- **`bool:` writes `1` where ZenGin writes `-1`** (`locked`, `moveable`) —
+  `0017` is the BinSafe template. 3 of OldCamp's 8 findings.
+- **Half-way float rounding** — UCRT ties-to-even against MSVC 6's away-from-
+  zero. The other 5 findings.
+
+- **`.MMB` authoring has no ZenKit writer at all** — `MorphMesh` has `load` and
+  no `save`: new upstream code, not a patch. Deferred 2026-08-28.
+
+## Triage
+
+**Too big for one board entry.** An unattended run may not create work for
+itself — no new cards, no filing its own splits. Too big means: one line here,
+the card stays in Next, report BLOCKED, a human decides. Empty is normal.
+
+*(empty)*
+
 ## Done
 
-- **ASCII float text precision is closed** — patch `0048` writes ZenGin's `%.9g`
-  with its three-digit exponent instead of `std::to_string`'s six fixed
-  decimals, in all three text-float writers. OldCamp: 440 struct findings → 8,
-  re-save 4,012,132 B → 3,979,084 B against a 3,979,132 B original. What is left
-  is the two cards now in Next. §16.9
+*(empty)*
 
-- **A2 and A3 are closed, and closing them showed A6's headline number was never
-  A6's** — patches `0045`–`0047` make the unpacked `zCVob` layout readable,
-  correct, and preserved across a re-save. OldCamp: container diff `whole-file`
-  → `event-aligned` gap 0, struct findings 440 with **no `physicsEnabled` left**.
-  Retail BinSafe is packed throughout and still `identical`. §16.9
-
-Flushed 2026-08-28 (`0035`–`0044` and the binding's four iterative vob walks:
-their substance is in §16.11, §16.13 and in `git log`, including the `--counts`
-sweep `0037` added, why to prefer it to another random seed, the two fixture
-variants `0040` and `0042` needed, and the `ReadMemory::seek` decision to leave
-seek as it is).
+Flushed 2026-08-28, a second time, down to empty. The overnight run landed
+patches `0035`–`0048` and the binding's four iterative vob walks; their
+substance is in §16.9, §16.11, §16.13 and in `git log` — the `--counts` sweep
+`0037` added and why to prefer it to another random seed, the two fixture
+variants `0040` and `0042` needed, the `ReadMemory::seek` decision to leave seek
+as it is, and A2/A3's finding that A6's headline number was never A6's. The
+forward facts went to Deferred (what is left of the ASCII writer) and to §16.9.

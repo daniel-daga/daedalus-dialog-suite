@@ -3566,3 +3566,62 @@ loudest one this project makes. `zenkit-node.yml` cannot catch it — the corpus
 needs a retail install and CI has none — so the check is a person running
 `node scripts/zen-roundtrip.js --root "<install>/_work/Data/Worlds"` after any
 patch that touches a `save`.
+
+### 16.14 Copy / paste / duplicate a VOB (§14.1 1.2)
+
+**The most-used Spacer verb after move**, and the one parity gap with no new
+format questions attached. §15 already settled the undo question this card used
+to wait on: an op that cannot describe its own inverse may ship anyway, so long
+as the user knows the stack was cleared. A duplicate does not even need that —
+it is `AddVob`-shaped and therefore invertible for free.
+
+**Start at the single-VOB duplicate, in place.** That is one op, one validator
+branch, one undo entry, and it is finishable in a session. Spacer pastes in
+place, so pasting in place is parity; a cursor-relative or offset paste is a
+preference nobody has asked for and should not be invented here.
+
+**The subtree is the second increment, and it is where the real decision is.**
+Copying a VOB with children can emit one op carrying a serialized subtree or N
+ops, and only the first survives a multi-select paste as a single undo step.
+That argues for the serialized subtree, but it puts a tree format in the op
+payload, which nothing else in the op set has. Do not settle it as a side
+effect of the first increment.
+
+**A cross-world clipboard is a third increment and probably not wanted.** It is
+only worth it if part-to-part copying is a workflow someone actually has;
+otherwise an in-process clipboard avoids inventing a serialization format for
+one verb.
+
+**The validator branch lands in the same change as the op.** `assertApplyOpsRequest`
+is the one layer every test mocks past — the renderer suite stubs the IPC, the
+op suite injects a fake binding, the binding suite calls C++ — so an op can be
+green everywhere and refused in the running app, which is exactly how
+`ReparentVob` shipped.
+
+### 16.15 Class-specific insertion (§14.1 1.3)
+
+`insertVob` authors a bare `zCVob`, so every class the property grid can now
+*edit* is a class the editor cannot *create*. In practice that means class
+editing only reaches VOBs retail already placed — you can change a
+`zCTriggerScript` that exists and you cannot add one.
+
+**The catalogue work makes this tractable, and that is new.** The increments
+closed on 2026-08-27/28 — `zCVobAnimate`, `zCPFXController`, the trigger family,
+`zCMover`, `oCMOB` and the `oCMob*` subclasses — already carry each class's
+field definitions, defaults and bounds, with tests. The work here is an
+authoring path that *consumes* that catalogue, not a second hand-written list of
+fields per class. If it turns into the latter, the catalogue's shape is wrong
+and that is the finding worth reporting.
+
+**Order, from §14.1's own inventory:** `oCItem`, `zCVobLight`,
+`zCVobSound`/`Daytime`, then the trigger family, then `oCMobInter` and friends.
+
+**`oCItem` is first and is also the awkward one.** Its `instance` is the
+validation that cannot live in the main process at all: there is no semantic
+model there — `ProjectIndex` carries npcs, dialogs, routines and voice ids but
+no instances, `primedModels` is a take-once cache that deletes as it reads, and
+`ParserService` is stateless. So it is a *shape* check in
+`assertApplyOpsRequest` and an *existence* check in the renderer, which is the
+only side holding the index. It cannot be a hard refusal either: a world may
+legitimately be edited with no script project open, so an empty index means
+"nothing is known", never "nothing is legal".

@@ -58,13 +58,18 @@ first, then the workspace AGENTS.md for whatever you touch).
 Do exactly ONE card this session:
 
 1. If the "Now" section holds a card, that is your card (a previous iteration
-   left it unfinished). Otherwise pick the first card in "Next" that is
-   actionable by you: skip cards owned by Daniel, marked "Daniel's call",
-   "no code", "dropped from scope", or "not a gap to close", and skip cards
-   whose long form (docs/plans/level-editor.md §16, or the file the card
-   points at) says they wait on a decision or a measurement only a human can
-   make. Prefer small, well-specified cards (e.g. the "UI/UX improvement"
-   cards) over open-ended ones.
+   left it unfinished). Otherwise take the FIRST card in "Next" that is
+   actionable by you, reading top-down: skip cards owned by Daniel, marked
+   "Daniel's call", "no code", "dropped from scope", or "not a gap to close",
+   and skip cards whose long form (docs/plans/level-editor.md §16, or the file
+   the card points at) says they wait on a decision or a measurement only a
+   human can make. Never take a card from "Deferred" or "Triage" — those
+   sections are outside the pick path.
+
+   Next is ordered by priority and the order is deliberate. Take the first
+   actionable card even if a later one looks smaller or better specified;
+   preferring an easier card further down is how the loop ends up setting its
+   own priorities.
 2. Move the card to "Now" with owner "board-loop".
 3. Implement it TDD-style: failing test first, minimal implementation, then
    run the affected workspace's full test suite, lint and typecheck. The card
@@ -75,10 +80,22 @@ Do exactly ONE card this session:
    `git add -A -- . ':!zenkit-node/vendor/ZenKit'`. Never commit the submodule.
    Do not push.
 
-If the card turns out to be blocked, write down why (route it by the board's
-table — plan section, environment-hazards, or the card itself), move the card
-back to "Next" with a one-line "blocked:" note so the next iteration does not
-pick it again, commit that, and report BLOCKED.
+You may NOT create work for yourself. Do not add a card to "Next", do not split
+your card into parts and file them, and do not open a new card for a defect you
+noticed on the way. Landing your card and recording what you found is the whole
+job; deciding what gets done next is not yours.
+
+If the card is too big for one session — it decomposes into parts that each want
+their own test run, or finishing it would mean opening a defect nobody has
+assessed — stop. Put the diagnosis in the card's long form as usual, add ONE
+line to the board's "Triage" section naming the card and what you found, leave
+the card where it was in "Next", commit that, and report BLOCKED. A human
+decides whether the parts are worth doing and in what order.
+
+If the card turns out to be blocked for any other reason, write down why (route
+it by the board's table — plan section, environment-hazards, or the card
+itself), move the card back to "Next" with a one-line "blocked:" note so the
+next iteration does not pick it again, commit that, and report BLOCKED.
 
 The very last line of your reply must be exactly one of:
   BOARD_LOOP: CARD <card title>
