@@ -1,0 +1,100 @@
+# Gate 2b run sheet — the ops candidate `03` never saw
+
+Built 2026-08-28 by `node tools/mutate.js <outDir>`, against retail NewWorld
+(`b4dac867…`). Candidate `03` of the 2026-08-25 pass was built on 2026-08-27,
+and **seven ops plus twenty-six authorable classes have landed since**
+(`docs/plans/level-editor.md` §16.2). This sheet is what turns them into a
+verdict.
+
+The record of what *has* passed is
+[`engine-acceptance-2026-08-25.md`](engine-acceptance-2026-08-25.md). Nothing
+here is claimed until it is run.
+
+## Running it
+
+```
+node tools/mutate.js C:\path\to\cand
+powershell -ExecutionPolicy Bypass -File tools/engine-batch.ps1 -Exe Gothic2 -Dir C:\path\to\cand
+```
+
+Fullscreen — windowed crashes on this machine (Environment). The script installs
+each `*.zen` in name order as `NewWorld.zen`, waits for the engine, and restores
+the pristine backup afterwards.
+
+**`00` runs first and must pass, in the same session.** A control that was not
+run is not a control, and every row below is an A/B against it. `-Only 00,03`
+narrows the batch without losing that rule — run `00` in any subset.
+
+Candidates `03`–`05` are each built **from the pristine source**, not from the
+one before, so a failure localizes to one domain instead of implicating the
+whole op set.
+
+---
+
+## 03 — class properties, the edits only the engine can witness
+
+The gap §16.2 calls the sharpest: `SetVobClassProp` has never run in an engine at
+all, and a sound or a fog zone written wrongly is **invisible in the viewport**.
+
+| What changed | Where | Look for |
+|---|---|---|
+| `zCZoneZFog` → `rangeCenter` 16000→4000, `overrideColor` on, colour red | `2/597`, ~2000 units from START | **Red fog closing in.** The most decisive row on the sheet |
+| `zCVobSound` → `radius` 600→5000 | `2/1266`, a TORCH_BURN | Torch crackle audible right across the clearing, not only at the torch |
+| `oCZoneMusic` → `volume` 1→0.15, all three | `2/37`, `2/38`, `2/39` (XARDAS_XAR) | Tower music much quieter. All three changed, or the others would mask it |
+| `SetVobProp` → `dynamicShadows`, `presetName`, `bias` | `2/70`, a big flat rock | Nothing specific. These keys' claim is that a world carrying them still loads and behaves |
+
+**If the fog does not change:** first check you are inside the zone before
+calling it a failure — that row is inconclusive from outside it, not negative.
+
+## 04 — the classes I1–I5 taught `AddVob` to build
+
+`AddVob` is on Gate 2's list, but the engine has seen it author a bare `zCVob`
+and an `oCItem`. It now authors 27 classes. Everything below is placed within
+~300 units of START, so one look covers the lot.
+
+| VOB | Look for |
+|---|---|
+| `GATE2B_CHEST` (`oCMobContainer`, unlocked) | **Opens.** Empty — the contents list is not catalogued — but it must open. This is row 7 for a VOB the editor made |
+| `GATE2B_LIGHT` (`zCVobLight`, magenta, range 1500) | A magenta cast no retail light in the tower would explain |
+| `GATE2B_SOUND` (`zCVobSound` + `soundName` after) | Torch crackle where no torch is. Tests place-then-configure, which is what a user actually does |
+| `GATE2B_PFX` (`zCPFXController`, `LIGHTCONE.PFX`) | A light cone. The effect is already in this world, so nothing visible means our writer, not a missing asset |
+| `GATE2B_TRIGGER`, `GATE2B_MOVER`, `GATE2B_DOOR`, a music zone | Nothing. **`target` is not authorable** (§16.15), so a trigger fires at nothing — their claim is only that the world still loads and behaves with them in it |
+
+A locked chest was deliberately not authored: it needs a key or pick string the
+catalogue cannot write, so it would be unopenable rather than a test.
+
+## 05 — the subtree delete, and all five waynet ops
+
+| What changed | Look for |
+|---|---|
+| `DeleteVob` on `2/1248` — a wall torch **and its five children** (lens flare, two lights, two particle effects), 318 units from START | **The whole torch is gone**: no post, no flame, no glow, no crackle. A partial removal is the interesting failure |
+| `AddWaypoint` `GATE2B_WP`, two edges, renamed to `GATE2B_WP_RENAMED`, then moved, then one edge removed | Nothing directly visible. Covered by the row below |
+| `RemoveWaypoint` on `NW_XARDAS_TOWER_IN1_32` — a leaf **no script names**, renumbering the 2,895 waypoints after it | **NPC routines still work.** Xardas still walks to his bookstand and reads (`TA_Read_Bookstand`, `NW_XARDAS_TOWER_IN1_28`); Lester still sleeps at `..._31` |
+
+The deleted waypoint is named by no script on purpose: a broken route then
+implicates the writer, not a routine that lost its waypoint.
+
+**Why NPC pathing is the waynet assertion.** Renumbering is the risk the whole
+waynet op set carries — §16.7 answered `DeleteWaypoint` with a history barrier
+rather than a stable-identity scheme — and routines are the only in-engine
+witness to a net that renumbered wrongly.
+
+---
+
+## What was verified before the engine ever ran
+
+Every candidate was reloaded and asserted, not merely written
+(2026-08-28): all four `03` writes read back; all seven `04` VOBs carry the
+class and the properties asked for; and in `05` the torch subtree is **exactly
+six VOBs** lighter, the renamed waypoint survives at its moved position with
+**exactly one** surviving edge, the deleted waypoint is absent, and
+`danglingEdges` is 0.
+
+So a failure in the engine is a fidelity or semantics failure, not a write that
+never happened.
+
+**One trap this build found, recorded so the next one does not repeat it:**
+waynet indices are `getWaynet`'s, and `normalizeWorld` orders its waypoints
+differently. Measuring against the wrong list addresses a waypoint on the far
+side of the map. The ops' index+name guard is what caught it — it refused the
+edge rather than joining the wrong pair, and it should never be weakened.
