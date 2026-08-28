@@ -143,6 +143,14 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
+- **I5 — the last of §14.1 1.3 becomes authorable** — `oCZoneMusic`,
+  `zCZoneZFog`, `zCZoneVobFarPlane`, `zCVobStartpoint`, `zCVobSpot`,
+  `zCVobAnimate`, `zCPFXController`. I2's shape, fifth time; it closes the row.
+  Unowned. §16.15
+- **`oCMobBed` is placeable with nothing editable** — a `CLASS_FIELDS` entry (its
+  fields are exactly `oCMobInter`'s) *and* a `case oCMobBed:` in
+  `SetVobClassProp`'s switch, which names Inter, Ladder, Switch and Wheel and
+  skips the bed. Both halves or neither. Unowned. §16.15
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
   singularity counts, not a Spacer match. Needs Spacer itself, and only two
   functions change if it differs. **Daniel.** §16.4
@@ -152,6 +160,16 @@ card waits on live at its pointer — put new prose there, not here.
 - **Dangling-waypoint Problems rule** — blocked: `ProjectView` holds no
   world/waypoint data, so the rule has no known-waypoints set; needs a design
   decision on how that reaches the Problems pipeline. Unowned. §16.8
+
+**Phase 2 — portals and sectors, the first two slices only**
+
+- **Portal material checks** — `P:` material names against `sectorNames`, both
+  already on the payload: report a malformed name and one naming a sector the
+  world does not have. No binding change. Unowned. §16.18
+- **The portal polygon payload is a hash, not data** — `is_portal`, `is_sector`,
+  `sector_index` and `portal_polygon_indices` exist only inside the fidelity
+  hash; every portal check past the material names needs them read out. Take it
+  after the checks above prove worth having. Unowned. §16.18
 
 **zenkit-node / fidelity**
 
@@ -163,8 +181,8 @@ card waits on live at its pointer — put new prose there, not here.
   clean runs), so there is nothing to bisect; needs a captured crash dump. The
   addon is cleared — the run's native code is tree-sitter.
   `docs/reference/environment-hazards.md`
-- **The viewport wants an imperative handle** — the other viewport wart, the
-  31 px one being closed. Do it immediately before W4, its caller. `docs/refactoring-targets.md` §9
+- **The viewport wants an imperative handle** — the last of the three warts.
+  Do it immediately before W4, its caller. `docs/refactoring-targets.md` §9
 
 ## Deferred
 
@@ -195,30 +213,13 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The terrain bar's 31 px reservation is gone** — a hidden real small button
-  reserves the row, so no copied constant can drift. `refactoring-targets.md` §10
+*(empty — flushed for the budget as the cards above were written)*
 
-- **I4 — the movable objects are authorable** — eight constructions on a family
-  that agrees with itself (1,424 retail VOBs); a container is authored *unlocked*
-  against retail's majority, and `oCMOB`/`oCMobFire` stay editable-only. §16.15
-
-- **I3 — the whole trigger family is authorable** — seven constructions on
-  defaults measured over retail's own 294 VOBs; a placed trigger still has no
-  reachable `target`, and three of the seven no catalogued field at all. §16.15
-
-- **W5 — the waypoint seed table is measured and closed** — six more externals
-  read off the MDK's own `Externals.d`, each at its own argument index; the
-  biggest cluster in the corpus turned out to be `Wld_InsertNpc`'s `spawnPoint`,
-  so the panel no longer calls every site a routine. §16.8
-
-Flushed 2026-08-28, all landed the same day and all routed: the World surface's
-mount-once-and-pause (`refactoring-targets.md` §8 is now a landed record),
-`zCVob` V1 and V2
-(§16.17, which also closes §14.1 1.8 and says why `sleepMode` and `farClipScale`
-stay out), `resavedSize` (§16.10, closed), the scene tree's VOB search/filter and
-its per-class visibility toggles (§16.16), and earlier I1, I2, D2, W2, W3, the
-typed multi-selection rotation (§16.4), waynet W4 (§16.7) and copy/paste D5
-(§16.14) — what a copy still drops and the batch-guard relaxation it wants are
-§16.14, the authorable class set is §16.15, the last-edge promotion is §16.7.
-W1's case-insensitivity fix is in §16.8 and the card stayed in Next, blocked.
-The rest is in `git log`.
+**Everything landed on 2026-08-28 was flushed that day**, and each card's
+substance is at its pointer rather than restated here: class insertion I1–I4 and
+the caveats they left at §16.15, the waypoint index W1/W2/W5 at §16.8, `zCVob`
+V1/V2 at §16.17 (which closes §14.1 1.8), copy/paste at §16.14, waynet at §16.7,
+`resavedSize` at §16.10, the scene tree at §16.16, and the three viewport warts
+in `refactoring-targets.md` §8–10. `git log` is the record of what landed and
+why; this section only exists so the next session sees the last one's work, and
+on 2026-08-28 that was two full runs.

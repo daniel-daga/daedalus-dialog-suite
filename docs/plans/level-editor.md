@@ -4658,3 +4658,37 @@ regen script reserves; only the golden JSON was regenerated here, with
 **Still not in the engine's verdict.** `dynamicShadows` and the decal fields join
 the six ops of §16.2 that no Gate 2 candidate covers — the candidate was built
 2026-08-27 and this is a new key set on `setVobProp`.
+
+### 16.18 Portals and sectors — the first two slices (§14.3 3.4, §11 Phase 2)
+
+Portal/sector work is a **phase**, not a card: §11 puts it in Phase 2 behind its
+own Gate 3 (each seeded error class detected pre-compile), and it decomposes
+into static checks (pairing, orientation, accidental `P:` materials), then
+geometric ones (planarity, intersections, leak flood-fill, triangle limits),
+then spatial display, and only then face-material authoring. Two slices are
+carded here; the rest stays a phase and is deliberately not on the board.
+
+**What the payload already holds, checked 2026-08-28 rather than assumed.**
+`normalizeWorld` sets `materials` (the mesh's material names, in the order
+polygons index them) and `sectorNames` (from `bsp.sectors`, sorted — sector
+order is referenced by index nowhere). Both are ordinary data on the world
+summary.
+
+**Slice 1 — the material-name checks, and they need no binding change.**
+ZenGin's portal convention is a material named `P:<sector>_<sector>`, so two
+checks fall straight out of the two lists above: is every `P:` material
+well-formed, and does each one name two sectors the world actually has. A
+dangling sector name is the interesting finding — it is the shape of a portal
+that will not pair at compile time.
+
+**Slice 2 — the polygon payload, and why it is second.** `is_portal`,
+`is_sector` and `sector_index` are read per-polygon in `normalize.cc` and go
+straight into the fidelity hash; `portal_polygon_indices` is exposed as
+`portalPolyHash` and nothing else. So no portal check that needs geometry —
+orientation first among them — can be written at all until those are read out as
+data. It is second deliberately: slice 1 costs nothing and proves the checks are
+worth having before the payload is paid for.
+
+**Do not widen either card.** Face-material *authoring* is explicitly gated on
+validation proving out (§11), and the BSP compiler is out of scope for good —
+the editor validates portal metadata and never recompiles a world.
