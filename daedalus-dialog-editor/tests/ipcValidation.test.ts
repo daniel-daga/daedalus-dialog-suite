@@ -409,6 +409,34 @@ describe('assertApplyOpsRequest', () => {
       })).toThrow(/showVisual/);
     });
 
+    it('takes the three base fields, bounded by the packed vob layout', () => {
+      // `visualCamAlign` is two bits and `bias` five in the packed `zCVob`
+      // layout, so a wider number is written truncated and reported as written.
+      // 3 is one past `SpriteAlignment`'s three named values and is taken:
+      // 7 retail VOBs hold it, and the inverse of an edit on one writes it back.
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          ...props,
+          from: { presetName: 'FIRE_STAT', visualCamAlign: 3, bias: 0 },
+          to: { presetName: '', visualCamAlign: 1, bias: 31 },
+        }],
+      })).not.toThrow();
+
+      for (const bad of [32, -1, 1.5, '2', null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...props, from: { bias: 0 }, to: { bias: bad } }],
+        })).toThrow(/bias/);
+      }
+      for (const bad of [4, -1, 0.5, 'full']) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...props, from: { visualCamAlign: 0 }, to: { visualCamAlign: bad } }],
+        })).toThrow(/visualCamAlign/);
+      }
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { presetName: 1 }, to: { presetName: 'X' } }],
+      })).toThrow(/presetName/);
+    });
+
     it('rejects sides that do not carry the same properties', () => {
       // The inverse is `from` and `to` swapped. Sides that disagree give an
       // undo that restores a different set of fields than the op wrote, and

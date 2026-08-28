@@ -630,6 +630,11 @@ void PutNpcProps(Napi::Env env, Napi::Object props, VNpc const& npc) {
 void PutBaseProps(Napi::Env env, Napi::Object props, VirtualObject const& vob) {
   props.Set("presetName", Str(env, vob.preset_name));
   props.Set("bias", NumI(env, vob.bias));
+  // The same field the dump's `flags` carries as `spriteAlignment`, under the
+  // name the archive and the Spacer use — it is here because `getVobProps` is
+  // the whole of what the property grid can read a writable base field's
+  // current value from, and the flags object is the classifier's shape.
+  props.Set("visualCamAlign", EnumI(env, vob.sprite_camera_facing_mode));
   props.Set("animStrength", NumF(env, vob.anim_strength));
   props.Set("farClipScale", NumF(env, vob.far_clip_scale));
   props.Set("sleepMode", NumI(env, vob.sleep_mode));

@@ -2576,7 +2576,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.5 | **Numeric transform entry** | **landed** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half landed too (2026-08-28).** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` with the round-trip tolerance test the old wording asked for, and `WorldPropertyGrid` now has three angle fields on top of it. Unlike position, a committed angle leaves as an **absolute** pose (`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute angle is the thing the grid can now read off a VOB; the equality refusal below is therefore applied **per angle**, and it compares the typed number against the *displayed* rounded value as well as the exact decomposed one — `coordinate()` rounds to 2 dp, so a field reading "30" can be 30.000000000000004 underneath and retyping what is on screen would otherwise re-orthonormalize the matrix. `zenRotationToEuler`'s throw is caught and the row renders as unavailable rather than blanking the grid. **A multi-selection landed 2026-08-28** and is the one asymmetry: the fields describe the anchor VOB as always, but with N selected a committed angle leaves as a **delta** through the gizmo's own `onRotateSelection` → `rotateVobs`, so the selection turns together and keeps the relative orientation it had — the rule the position fields already have, and the one that keeps typing and dragging on one op-building path. The delta is `eulerDeltaRotation(displayed, typed)` (`zen-world/coords`), built from the two angle triples rather than from the anchor's stored matrix: a `R(to) * M^-1` would carry the anchor's own non-orthonormality into every other VOB of the selection. See §16.4. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
 | 1.6 | **Snapping** | **partial** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal are still out**, and not for want of a raycast — the world mesh has a BVH and the terrain pick already uses it. They are out because both are *per-VOB* answers (each VOB finds its own ground, its own normal) and the commit path takes one delta for the whole selection: `translateVobs`/`rotateVobs` would need a per-VOB variant, which is a second op-building path and the thing the gizmo work has avoided since Phase 1b began. Align-to-normal additionally has to decide which axis of a visual is up — the same question that keeps a placed VOB unrotated (`IDENTITY` in `WorldSurface`). |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
-| 1.8 | **The rest of `zCVob`** | unscheduled → 1b-2 | Preset name, `visualCamAlign`, bias, `dynamicShadows`, `sleepMode`, decal parameters. |
+| 1.8 | **The rest of `zCVob`** | **partial** (§16.17) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 is `dynamicShadows`, `sleepMode` and the decal parameters. `farClipScale` stays out: retail ships uninitialised junk in it (§7). |
 
 **Not a gap: scale.** `zCVob` has no scale field, so the two-mode gizmo is
 correct and a third mode would author a representation ZenGin does not have.
@@ -4357,3 +4357,43 @@ proves nothing.
 VOBs carry a non-default value for each field. The class increments took that
 over NewWorld/OldWorld/AddonWorld's 41,393 VOBs and it repeatedly changed what
 the bound should be.
+
+**V1 landed 2026-08-28.** `SetVobProp` takes `presetName`, `visualCamAlign` and
+`bias` end to end: the binding's `kKnownKeys`, `assertApplyOpsRequest`, the op
+builder and the grid. Four things it settled that V2 inherits.
+
+**The bounds are the packed layout's, and the measurement is why.** Swept over
+the three retail worlds on 2026-08-28: 5,660 of 41,393 VOBs carry a preset name
+(122 distinct), `bias` is only ever 0, 1 or 2, and `visualCamAlign` is 0-3. The
+enum has three named values and retail holds the fourth on 7 VOBs — so the bound
+is `VirtualObject.cc`'s two bits and not `SpriteAlignment`, because both sides of
+a `SetVobProp` are validated and a tighter bound would make an edit on one of
+those 7 un-undoable. `bias` is 0-31 for the same reason from the other side: the
+packed writer masks it to five bits, so 32 is written as 0 and reported as
+written, in a field that is invisible in the viewport. The bound is not the C++
+member's, and "signed depth bias" (above) was the wrong prior — the layout has
+no sign bit for it at all.
+
+**They are not class fields and not columns, so they are a third thing.**
+`BASE_FIELDS` in `zen-world/src/model/vobClasses.ts`, deliberately outside
+`CLASS_FIELDS`: folding them in would make `classPropKeys` answer non-empty for
+every string, which is the check `SetVobClassProp` refuses an unknown class by.
+They are descriptors rather than a key list so the grid parses against the same
+bounds the validator refuses by.
+
+**The `from` side comes from `getVobProps`, which is `setVobClassProp`'s
+constraint reached from the other side.** The columnar index carries the name,
+the visual and the six flags and nothing else of `zCVob`, so `setVobProp` takes a
+`current` and refuses outright without it — a defaulted origin is an inverse that
+writes a value the VOB never had. That makes a base edit **the described VOB's
+alone**, like a class field and unlike a flag, and it is a separate handler
+(`onEditBaseProps`) for exactly that reason.
+
+**The per-VOB read is now unconditional.** It used to be skipped for a class the
+catalogue has no fields for — 35 of a retail world's 37 — and cannot be: every
+VOB has these three. One `getVobProps` round trip per selection change, which is
+the cheap half of the dump (the whole dump is 933 ms on NewWorld; this is one
+VOB).
+
+**Still V2's:** `dynamicShadows`, `sleepMode` and the decals. The decal warning
+above stands unchanged.

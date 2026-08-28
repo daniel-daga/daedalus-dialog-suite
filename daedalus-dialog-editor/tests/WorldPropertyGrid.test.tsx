@@ -119,18 +119,23 @@ const WORLD = summaryOf(vobIndex([
  * rather than being handed a pre-filtered record — a filter on the way in would
  * be a fourth allowlist beside the three the catalogue exists to replace.
  */
+/** Every read carries these three, whatever the class: they are `zCVob`'s own
+ *  and the props object is the whole of what the VOB holds. */
+const BASE_READ = { presetName: '', visualCamAlign: 0, bias: 0 };
 const LIGHT: ClassProps = {
-  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255], lightType: 0,
+  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255], lightType: 0, ...BASE_READ,
 };
-const ITEM: ClassProps = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01' };
+const ITEM: ClassProps = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_READ };
 const MUSIC: ClassProps = {
   class: 'oCZoneMusic',
   enabled: true, priority: 2, ellipsoid: false, reverb: -30, volume: 0.5, loop: true,
+  ...BASE_READ,
 };
 const FOG: ClassProps = {
   class: 'zCZoneZFog',
   rangeCenter: 12000, innerRangePercentage: 0.5,
   fadeOutSky: true, overrideColor: false, color: [120, 130, 140, 255],
+  ...BASE_READ,
 };
 
 const field = (label: string) => screen.getByTestId(`world-prop-${label}`);
@@ -141,6 +146,12 @@ let edits: Array<VobProps> = [];
 const onEdit = (props: VobProps) => { edits.push(props); };
 let classEdits: Array<ClassProps> = [];
 const onEditClass = (props: ClassProps) => { classEdits.push(props); };
+/** The base fields that have no column — `presetName`, `visualCamAlign`,
+ *  `bias`. A separate spy because they leave by a separate handler: like a class
+ *  field they need the fetched props as their `from`, so they are the described
+ *  VOB's alone where a flag is the whole selection's. */
+let baseEdits: Array<VobProps> = [];
+const onEditBase = (props: VobProps) => { baseEdits.push(props); };
 /** A typed coordinate arrives as a *delta*, which is the gizmo's own shape. */
 let moves: Array<[number, number, number]> = [];
 const onTranslate = (delta: [number, number, number]) => { moves.push(delta); };
@@ -154,7 +165,9 @@ const onRotate = (to: ZenRotation) => { rotates.push(to); };
  *  would stack N VOBs into one pose. */
 let turns: Array<ZenRotation> = [];
 const onRotateSelection = (delta: ZenRotation) => { turns.push(delta); };
-beforeEach(() => { edits = []; classEdits = []; moves = []; rotates = []; turns = []; });
+beforeEach(() => {
+  edits = []; classEdits = []; baseEdits = []; moves = []; rotates = []; turns = [];
+});
 
 /** The wiring every render needs. `classProps` is null by default because that
  *  is what a VOB of an uncatalogued class gets — nothing is fetched for one —
@@ -162,6 +175,7 @@ beforeEach(() => { edits = []; classEdits = []; moves = []; rotates = []; turns 
 const wiring = {
   onEditProps: onEdit,
   onEditClassProps: onEditClass,
+  onEditBaseProps: onEditBase,
   classProps: null,
   onTranslate,
   onRotate,
@@ -410,7 +424,7 @@ describe('WorldPropertyGrid, class fields', () => {
   it('draws no class section at all for a class the catalogue does not have', () => {
     // 37 classes in a retail world, two of them here. The rest are not an error
     // and not an empty section — there is nothing this panel can write on them.
-    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={{ class: 'zCVob' }} />);
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={{ class: 'zCVob', ...BASE_READ }} />);
     expect(screen.queryByTestId('world-prop-class-section')).not.toBeInTheDocument();
   });
 
@@ -655,6 +669,84 @@ describe('WorldPropertyGrid, class fields', () => {
 //
 // Rotation is typed entry too now — its own describe below, because it leaves
 // as an *absolute* matrix through `zen-world/coords` rather than as a delta.
+describe('WorldPropertyGrid, the base fields with no column', () => {
+  // `presetName`, `visualCamAlign` and `bias` are on every `zCVob` and in none
+  // of the index's columns, so they arrive with the class read and are drawn for
+  // every class — including the 35 of 37 that have no class section at all.
+  const BASE: ClassProps = {
+    class: 'zCVob', presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2,
+  };
+
+  it('draws all three for a class the catalogue has no fields for', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    expect(input('base-presetName').value).toBe('FIRE_STAT');
+    expect(input('base-visualCamAlign').value).toBe('1');
+    expect(input('base-bias').value).toBe('2');
+    // The class section is a different question and this VOB still has none.
+    expect(screen.queryByTestId('world-prop-class-section')).not.toBeInTheDocument();
+  });
+
+  it('waits rather than showing empty fields before the read arrives', () => {
+    // An empty preset name here reads as "this VOB has none", and blurring it
+    // would write that.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-base-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-base-bias-input')).not.toBeInTheDocument();
+  });
+
+  it('asks for exactly the one key that changed', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    fireEvent.change(input('base-bias'), { target: { value: '7' } });
+    fireEvent.blur(input('base-bias'));
+
+    expect(baseEdits).toEqual([{ bias: 7 }]);
+    // Not down the flag path: that one takes the whole selection and reads its
+    // `from` out of the index, which has no column for this.
+    expect(edits).toEqual([]);
+  });
+
+  it('clears a preset name, which is a value and not an absence', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    fireEvent.change(input('base-presetName'), { target: { value: '' } });
+    fireEvent.blur(input('base-presetName'));
+
+    expect(baseEdits).toEqual([{ presetName: '' }]);
+  });
+
+  it('refuses a number the packed vob layout cannot hold', () => {
+    // Two bits and five bits: 32 is written as 0 by the packed writer and
+    // reported as written, which is why the refusal is here and not only in C++.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    for (const bad of ['32', '-1', '1.5', 'near']) {
+      fireEvent.change(input('base-bias'), { target: { value: bad } });
+      fireEvent.blur(input('base-bias'));
+    }
+    for (const bad of ['4', '-1', '0.5']) {
+      fireEvent.change(input('base-visualCamAlign'), { target: { value: bad } });
+      fireEvent.blur(input('base-visualCamAlign'));
+    }
+
+    expect(baseEdits).toEqual([]);
+    // 3 is one past the enum's three named values and is what 7 retail VOBs
+    // hold, so it is taken: the inverse of an edit on one of them writes it.
+    fireEvent.change(input('base-visualCamAlign'), { target: { value: '3' } });
+    fireEvent.blur(input('base-visualCamAlign'));
+    expect(baseEdits).toEqual([{ visualCamAlign: 3 }]);
+  });
+
+  it('says a base edit is the described VOB alone, not the selection', () => {
+    // The described VOB is the last of the selection — the one the gizmo
+    // anchors on — so the props handed in are that one's.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1, 0]} {...wiring} classProps={BASE} />);
+    expect(screen.getByTestId('world-prop-base-scope')).toBeInTheDocument();
+  });
+});
+
 describe('WorldPropertyGrid, typed position', () => {
   const commitCoordinate = (axis: string, value: string) => {
     fireEvent.change(input(`position-${axis}`), { target: { value } });

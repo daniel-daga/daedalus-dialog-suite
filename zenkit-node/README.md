@@ -304,7 +304,19 @@ is no scaled representation to author against.
 
 The third mutation, and the first that writes nothing derived: the name, the six
 boolean flags `vobIndex` emits (`showVisual`, `cdStatic`, `cdDynamic`,
-`vobStatic`, `ambient`, `physicsEnabled`), and the visual's name.
+`vobStatic`, `ambient`, `physicsEnabled`), the visual's name, and three more
+`zCVob` base fields — `presetName`, `visualCamAlign` and `bias`.
+
+**The two numbers are bounded by the packed layout, not by their C++ types.**
+ZenGin writes a VObject either packed — every scalar in one `dataRaw` blob — or
+unpacked, and the packed layout gives `visualCamAlign` two bits and `bias` five.
+An `int32_t` bias of 32 is therefore written as 0 and reported as written, so
+0-31 and 0-3 are refusals here rather than truncations. The alignment's bound is
+those two bits and not `SpriteAlignment`'s three named values: retail carries 3
+on 7 of the 41,393 VOBs, and a bound that refused it would make an edit on one of
+them un-undoable, since the inverse writes back what was there. Measured over
+NewWorld, OldWorld and AddonWorld on 2026-08-28: 5,660 VOBs carry a preset name
+(122 distinct), `bias` is 0, 1 or 2, and `visualCamAlign` is 0-3.
 
 Every key is optional and only the keys present are written, so setting one flag
 does not require knowing the other five. **An unrecognised key is refused**

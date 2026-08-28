@@ -3,7 +3,8 @@ import {
   Box, Checkbox, Chip, FormControlLabel, Stack, TextField, Typography,
 } from '@mui/material';
 import {
-  classPropKeys, eulerDeltaRotation, eulerToZenRotation, fieldOf, zenRotationToEuler,
+  BASE_FIELDS, classPropKeys, eulerDeltaRotation, eulerToZenRotation, fieldOf,
+  zenRotationToEuler,
   type ClassPropValue, type ClassProps, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
 } from 'zen-world';
@@ -185,6 +186,12 @@ const parse = (field: FieldDescriptor, text: string): ClassPropValue | null => {
  */
 const ClassField: React.FC<{
   vob: number;
+  /** `class` for a catalogued class field, `base` for one of the three `zCVob`
+   *  fields that have no column. It is only the test id and the remount key: the
+   *  two groups reach the world by different ops but are typed identically, and
+   *  a second copy of the blur/Escape/refusal rules is exactly what this
+   *  component exists not to have. */
+  group?: 'class' | 'base';
   field: FieldDescriptor;
   value: ClassPropValue;
   /**
@@ -200,7 +207,7 @@ const ClassField: React.FC<{
   helper?: string;
   onCommit: (value: ClassPropValue) => void;
 }> = ({
-  vob, field, value, knownValues, helper, onCommit,
+  vob, group = 'class', field, value, knownValues, helper, onCommit,
 }) => {
   const [refusals, setRefusals] = useState(0);
 
@@ -214,7 +221,7 @@ const ClassField: React.FC<{
         size="small"
         sx={{ p: 0, ml: 0.25 }}
         checked={value === true}
-        inputProps={{ 'data-testid': `world-prop-class-${field.key}-input` } as React.InputHTMLAttributes<HTMLInputElement>}
+        inputProps={{ 'data-testid': `world-prop-${group}-${field.key}-input` } as React.InputHTMLAttributes<HTMLInputElement>}
         onChange={(event) => onCommit(event.target.checked)}
       />
     );
@@ -224,8 +231,8 @@ const ClassField: React.FC<{
 
   return (
     <EditableField
-      key={`class-${vob}-${field.key}-${text}-${refusals}`}
-      name={`class-${field.key}`}
+      key={`${group}-${vob}-${field.key}-${text}-${refusals}`}
+      name={`${group}-${field.key}`}
       value={text}
       helper={helper}
       onCommit={(typed) => {
@@ -403,6 +410,18 @@ export interface WorldPropertyGridProps {
    */
   onEditClassProps: (props: ClassProps) => void;
   /**
+   * One base-field change — `presetName`, `visualCamAlign` or `bias` — as the
+   * single key that changed, and on the described VOB alone.
+   *
+   * Separate from `onEditProps` although both build a `SetVobProp`: these three
+   * have no column in the index, so their `from` side is the fetched props
+   * rather than something the op builder can read back per VOB. That is the
+   * class fields' constraint reached by a different route, and it has the class
+   * fields' consequence — the described VOB only, where a flag takes the whole
+   * selection.
+   */
+  onEditBaseProps: (props: VobProps) => void;
+  /**
    * Every item instance the loaded script project declares, **uppercased** —
    * the parser's `items` map, which is `C_ITEM` instances and nothing else.
    *
@@ -464,7 +483,7 @@ export interface WorldPropertyGridProps {
 const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   {
     summary, selection, refusalGeneration,
-    onEditProps, classProps, onEditClassProps, itemInstances,
+    onEditProps, classProps, onEditClassProps, onEditBaseProps, itemInstances,
     onTranslate, onRotate, onRotateSelection,
   },
 ) => {
@@ -697,6 +716,51 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
           ))}
         </Stack>
       </Field>
+      {/* The three base fields that are not in the columnar index — the Spacer
+          preset a VOB was made from, how its visual faces the camera, and the
+          depth bias. They are drawn for every class, unlike the section below,
+          because every VOB has them; they sit here because they arrive with the
+          same read, one round trip behind the selection. */}
+      <Box
+        data-testid="world-prop-base-section"
+        sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}
+      >
+        {selection.length > 1 && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="world-prop-base-scope"
+            sx={{ display: 'block', mb: 0.5 }}
+          >
+            {`These fields are edited on this VOB only, not on the other ${selection.length - 1} selected.`}
+          </Typography>
+        )}
+        {classProps === null
+          ? (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              data-testid="world-prop-base-loading"
+            >
+              Reading this VOB&apos;s base fields…
+            </Typography>
+          )
+          : BASE_FIELDS.map((baseField) => (
+            <Field
+              key={`${baseField.key}-${refusalGeneration}`}
+              label={baseField.key}
+              name={`base-${baseField.key}`}
+            >
+              <ClassField
+                vob={selectedVob}
+                group="base"
+                field={baseField}
+                value={classProps[baseField.key]}
+                onCommit={(value) => onEditBaseProps({ [baseField.key]: value })}
+              />
+            </Field>
+          ))}
+      </Box>
       {/* The fields that make a VOB the thing it *is* — an item's Daedalus
           instance, a light's range and colour. They sit after the base ones
           rather than among them because they are read over IPC and the base ones

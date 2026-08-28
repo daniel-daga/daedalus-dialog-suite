@@ -33,7 +33,7 @@
 
 import type { VobReader } from './vobTree';
 import {
-  classPropKeys, fieldOf, isAuthorableVobClass,
+  baseFieldOf, classPropKeys, fieldOf, isAuthorableVobClass,
   type AuthorableVobClass, type ClassProps,
 } from './vobClasses';
 
@@ -106,6 +106,13 @@ export interface VobProps {
   cdStatic?: boolean;
   cdDynamic?: boolean;
   physicsEnabled?: boolean;
+  /** The last three are the base fields `BASE_FIELDS` describes, and they are
+   *  **not in the columnar index**: it carries the name, the visual and the six
+   *  flags and nothing else of `zCVob`. So an op that names one of them needs
+   *  its `from` side handed in — see `setVobProp`'s `current`. */
+  presetName?: string;
+  visualCamAlign?: number;
+  bias?: number;
 }
 
 /** The keys of `VobProps`, in the order an op reads them back out of the index.
@@ -113,6 +120,7 @@ export interface VobProps {
 const PROP_KEYS = [
   'name', 'visual', 'showVisual', 'vobStatic', 'ambient',
   'cdStatic', 'cdDynamic', 'physicsEnabled',
+  'presetName', 'visualCamAlign', 'bias',
 ] as const satisfies ReadonlyArray<keyof VobProps>;
 
 export interface SetVobProp {
@@ -962,6 +970,29 @@ export interface VisualSwap {
 }
 
 /**
+ * The `from` side of a base field, out of the props the caller fetched.
+ *
+ * The three base fields have no column, so there is nothing in the index to read
+ * their origin from — `setVobClassProp`'s problem, and it gets
+ * `setVobClassProp`'s answer: the whole props object `getVobProps` answered,
+ * passed in. A missing key is refused rather than defaulted, because a default
+ * would be an inverse that writes a value the VOB never had into a field nobody
+ * can see. The kind is checked for the same reason the catalogue separates `int`
+ * from `float`: this value goes back to C++ on an undo.
+ */
+function baseFrom(key: string, current: ClassProps | null): string | number {
+  const value = current === null ? undefined : current[key];
+  if (value === undefined) {
+    throw new RangeError(`no current value for ${key}: its inverse would restore nothing`);
+  }
+  const wanted = baseFieldOf(key)!.kind === 'string' ? 'string' : 'number';
+  if (typeof value !== wanted) {
+    throw new RangeError(`the current ${key} is not a ${wanted}`);
+  }
+  return value as string | number;
+}
+
+/**
  * Set scalar properties on one VOB.
  *
  * `bounds` is the visual's own bounds before and after, and is accepted **only**
@@ -971,6 +1002,7 @@ export interface VisualSwap {
  */
 export function setVobProp(
   reader: VobReader, vob: number, to: VobProps, bounds: VisualSwap | null = null,
+  current: ClassProps | null = null,
 ): SetVobProp {
   const keys = PROP_KEYS.filter((key) => to[key] !== undefined);
   if (keys.length === 0) throw new RangeError('a property op must set at least one property');
@@ -992,7 +1024,13 @@ export function setVobProp(
   for (const key of keys) {
     if (key === 'name') from.name = reader.name(vob) ?? '';
     else if (key === 'visual') from.visual = reader.visual(vob) ?? '';
-    else from[key] = flags[key];
+    // The three base fields, listed rather than asked of `baseFieldOf`: the
+    // literal union is what tells the compiler `flags` is not being indexed by
+    // one of them below.
+    else if (key === 'presetName') from.presetName = baseFrom(key, current) as string;
+    else if (key === 'visualCamAlign' || key === 'bias') {
+      from[key] = baseFrom(key, current) as number;
+    } else from[key] = flags[key];
   }
 
   const swapped = bounds !== null && bounds.from !== null && bounds.to !== null;
@@ -1026,6 +1064,11 @@ export interface VisualSwapBatch {
  * It refuses the whole batch if any one VOB is not in the index rather than
  * skipping it: a quietly dropped op is the half-applied state `commitOps` exists
  * to prevent, reached before the binding was ever asked.
+ *
+ * It passes no `current`, so a **base field** — `presetName`, `visualCamAlign`,
+ * `bias` — refuses the whole batch here rather than being written with a wrong
+ * `from`. Each VOB in a selection would need its own fetched props, which is the
+ * read `setVobClassProp` restricts to the described VOB for the same reason.
  */
 export function setVobProps(
   reader: VobReader,
@@ -1904,6 +1947,10 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
         if (op.to[flag]) flags[op.vob] |= bit;
         else flags[op.vob] &= ~bit;
       }
+      // The three base fields have no column and nothing is written for them —
+      // `SetVobClassProp`'s case below, reached by the same op. The VOB is still
+      // touched, which is what re-renders the panel that shows them, and the
+      // values themselves are re-read through `getVobProps`.
     } else if (op.op === 'SetVobClassProp') {
       // Nothing to write, and said so out loud. The index has the class name and
       // not one field of the class, so this op has no column — but it is still

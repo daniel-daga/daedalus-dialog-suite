@@ -662,6 +662,56 @@ describe('a property op', () => {
     expect(() => setVobProp(reader(), 9, { name: 'X' })).toThrow(/9/);
   });
 
+  describe('and the base fields that have no column', () => {
+    // `presetName`, `visualCamAlign` and `bias` are on every `zCVob` and in
+    // none of the index's columns — it carries the name, the visual and the six
+    // flags. So the `from` side comes in from the caller's own `getVobProps`
+    // read, exactly as a class field's does, and the op is refused outright
+    // without it: a defaulted origin is an inverse that writes a value the VOB
+    // never had into a field nobody can see.
+    const current = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 };
+
+    it('reads `from` out of the props it was handed, and inverts on them', () => {
+      const op = setVobProp(reader(), 1, { bias: 7 }, null, current);
+
+      expect(op.from).toEqual({ bias: 2 });
+      expect(op.to).toEqual({ bias: 7 });
+      expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+    });
+
+    it('carries them beside the fields the index does have', () => {
+      const op = setVobProp(
+        reader(), 1, { name: 'BARREL_02', presetName: '', visualCamAlign: 3 }, null, current,
+      );
+
+      expect(op.from).toEqual({ name: 'BARREL_01', presetName: 'FIRE_STAT', visualCamAlign: 1 });
+      expect(op.to).toEqual({ name: 'BARREL_02', presetName: '', visualCamAlign: 3 });
+    });
+
+    it('is refused when the current value is missing or of the wrong kind', () => {
+      expect(() => setVobProp(reader(), 1, { bias: 7 })).toThrow(/no current value for bias/);
+      expect(() => setVobProp(reader(), 1, { bias: 7 }, null, { presetName: 'X' }))
+        .toThrow(/no current value for bias/);
+      expect(() => setVobProp(reader(), 1, { presetName: 'X' }, null, { presetName: 2 }))
+        .toThrow(/presetName/);
+    });
+
+    it('is refused for a whole selection, which has no per-VOB `from`', () => {
+      expect(() => setVobProps(reader(), [1], { bias: 7 })).toThrow(/no current value/);
+    });
+
+    it('projects nothing onto the columns, and still touches the VOB', () => {
+      // There is no column to write — the panel re-reads the fields through
+      // `getVobProps` — but the VOB has to come back as touched or nothing
+      // re-renders.
+      const live = reader();
+      const op = setVobProp(live, 1, { bias: 7 }, null, current);
+
+      expect(applyOps(live, [op])).toEqual([1]);
+      expect(live.name(1)).toBe('BARREL_01');
+    });
+  });
+
   describe('and the box, which only a visual swap can change', () => {
     const OLD: ZenBounds = [-1, -1, -1, 1, 1, 1];
     const NEW: ZenBounds = [-10, 0, -2, 10, 4, 2];

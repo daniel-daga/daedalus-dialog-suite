@@ -456,3 +456,36 @@ export function classPropKeys(className: string): readonly string[] {
 export function fieldOf(className: string, key: string): FieldDescriptor | null {
   return fieldsOf(className).find((field) => field.key === key) ?? null;
 }
+
+/**
+ * The `zCVob` base fields the property grid writes that are **not** in the
+ * columnar index (level-editor.md §16.17, V1).
+ *
+ * They are descriptors rather than a bare key list for the reason the class
+ * fields are: the grid parses a typed value against the same bounds the IPC
+ * validator refuses one by, and two hand-written copies of "0 to 31" is one copy
+ * too many. They are kept out of `CLASS_FIELDS` because they belong to no class
+ * — every VOB has them — and folding them in would make `classPropKeys` answer
+ * non-empty for a class the catalogue does not know, which is the check
+ * `SetVobClassProp` refuses an unknown class by.
+ *
+ * **Both numbers are bounded by the packed vob layout, not by their archive
+ * types.** ZenGin writes a VObject either packed — every scalar in one `dataRaw`
+ * blob — or unpacked, and the packed layout gives `visualCamAlign` two bits and
+ * `bias` five: an `int32_t` bias of 32 is written as 0 and reported as written.
+ * The alignment's bound is those two bits rather than `SpriteAlignment`'s three
+ * named values, because retail carries the fourth — 7 VOBs of the three worlds'
+ * 41,393 hold 3 — and a bound that refused it would make an edit on one of them
+ * un-undoable, since the inverse writes back the value that was there.
+ */
+export const BASE_FIELDS = [
+  { key: 'presetName', kind: 'string' },
+  { key: 'visualCamAlign', kind: 'int', min: 0, max: 3 },
+  { key: 'bias', kind: 'int', min: 0, max: 31 },
+] as const satisfies readonly FieldDescriptor[];
+
+/** The descriptor for a base field, or null for a key that is not one — the
+ *  `fieldOf` of the fields no class owns. */
+export function baseFieldOf(key: string): FieldDescriptor | null {
+  return BASE_FIELDS.find((field) => field.key === key) ?? null;
+}

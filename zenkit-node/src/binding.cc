@@ -1040,6 +1040,30 @@ std::optional<bool> OptionalBool(Napi::Env env, Napi::Object props, char const* 
   return value.As<Napi::Boolean>().Value();
 }
 
+// The OptionalBool idiom for one of the two base fields that live in a *bit
+// field* rather than in a word of their own. ZenGin writes a VObject either
+// packed — every scalar in one `dataRaw` blob — or unpacked, and the packed
+// layout gives `visualCamAlign` 2 bits and `bias` 5 (`VirtualObject.cc`). So the
+// bound here is the layout's, not the C++ member's: a `bias` of 32 is an
+// `int32_t` ZenKit accepts and `& 0b11111` writes as 0, silently, in a field
+// that is invisible in the viewport. Whole numbers only, for setVobClassProp's
+// `int` reason — a fraction truncates on the cast and reports success.
+std::optional<std::int32_t> OptionalPackedInt(
+    Napi::Env env, Napi::Object props, char const* key, std::int32_t max) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsNumber()) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be a number");
+  }
+  double const number = value.As<Napi::Number>().DoubleValue();
+  if (!std::isfinite(number) || number != std::floor(number) || number < 0 || number > max) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be a whole number 0-" +
+                                    std::to_string(max) +
+                                    " — the packed vob layout has no room for more");
+  }
+  return static_cast<std::int32_t>(number);
+}
+
 Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapHandle(env, info[0]);
@@ -1050,9 +1074,10 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   }
   auto props = info[2].As<Napi::Object>();
 
-  static constexpr std::array<char const*, 9> kKnownKeys {
-      "name",     "visual",   "bbox",    "showVisual",     "cdStatic",
-      "cdDynamic", "vobStatic", "ambient", "physicsEnabled"};
+  static constexpr std::array<char const*, 12> kKnownKeys {
+      "name",       "visual",    "bbox",           "showVisual",     "cdStatic",
+      "cdDynamic",  "vobStatic", "ambient",        "physicsEnabled", "presetName",
+      "visualCamAlign", "bias"};
   auto names = props.GetPropertyNames();
   if (names.Length() == 0) {
     throw Napi::Error::New(env, "props must set at least one property");
@@ -1080,6 +1105,13 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   if (has_visual) visual = RequiredCp1252String(env, props, "visual");
   std::vector<float> bbox;
   if (has_bbox) bbox = FloatsFromValue(env, props.Get("bbox"), 6, "props.bbox");
+  // The Spacer template a VOB was made from. An empty string is a value rather
+  // than an absence — it is how the packed layout says "no preset" — so this is
+  // read like `name` and not like an optional.
+  bool const has_preset =
+      props.Has("presetName") && !props.Get("presetName").IsUndefined();
+  std::string preset_name;
+  if (has_preset) preset_name = RequiredCp1252String(env, props, "presetName");
 
   auto const show_visual = OptionalBool(env, props, "showVisual");
   auto const cd_static = OptionalBool(env, props, "cdStatic");
@@ -1087,6 +1119,13 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   auto const vob_static = OptionalBool(env, props, "vobStatic");
   auto const ambient = OptionalBool(env, props, "ambient");
   auto const physics_enabled = OptionalBool(env, props, "physicsEnabled");
+  // 0-3 and 0-31: the two bit fields. The alignment's bound is the layout's two
+  // bits rather than `SpriteAlignment`'s three named values, because retail
+  // carries the fourth — 7 VOBs over the three worlds' 41,393 hold 3 — and a
+  // bound that refused it would make an edit on one of them un-undoable: the
+  // inverse writes the value that was there.
+  auto const cam_align = OptionalPackedInt(env, props, "visualCamAlign", 3);
+  auto const bias = OptionalPackedInt(env, props, "bias", 31);
 
   auto vob = ResolveVob(env, *handle, indices, "indexPath");
 
@@ -1097,6 +1136,7 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   }
 
   if (has_name) vob->vob_name = std::move(name);
+  if (has_preset) vob->preset_name = std::move(preset_name);
   if (has_visual) vob->visual->name = std::move(visual);
   if (has_bbox) {
     vob->bbox.min = zenkit::Vec3 {bbox[0], bbox[1], bbox[2]};
@@ -1108,6 +1148,10 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   if (vob_static) vob->vob_static = *vob_static;
   if (ambient) vob->ambient = *ambient;
   if (physics_enabled) vob->physics_enabled = *physics_enabled;
+  if (cam_align) {
+    vob->sprite_camera_facing_mode = static_cast<zenkit::SpriteAlignment>(*cam_align);
+  }
+  if (bias) vob->bias = *bias;
 
   return env.Undefined();
 }

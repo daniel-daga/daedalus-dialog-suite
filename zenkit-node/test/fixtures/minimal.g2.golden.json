@@ -49,6 +49,7 @@
       "props": {
         "presetName": "",
         "bias": 0,
+        "visualCamAlign": 0,
         "animStrength": 0,
         "farClipScale": 2,
         "sleepMode": 0,
@@ -104,6 +105,7 @@
       "props": {
         "presetName": "",
         "bias": 0,
+        "visualCamAlign": 0,
         "animStrength": 0,
         "farClipScale": 2,
         "sleepMode": 0,
@@ -159,6 +161,7 @@
       "props": {
         "presetName": "",
         "bias": 0,
+        "visualCamAlign": 0,
         "animStrength": 0,
         "farClipScale": 2,
         "sleepMode": 0,
@@ -257,6 +260,7 @@
       "props": {
         "presetName": "",
         "bias": 0,
+        "visualCamAlign": 0,
         "animStrength": 0,
         "farClipScale": 2,
         "sleepMode": 0,
@@ -313,6 +317,7 @@
       "props": {
         "presetName": "",
         "bias": 0,
+        "visualCamAlign": 0,
         "animStrength": 0,
         "farClipScale": 2,
         "sleepMode": 0,

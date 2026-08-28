@@ -317,6 +317,86 @@ test('setVobProp refuses a wrongly typed value', () => {
   }
 });
 
+// The three remaining `zCVob` base fields the property grid can write
+// (level-editor.md §16.17, V1). They are not flags and not the visual: a preset
+// name is the Spacer template a VOB was made from, `visualCamAlign` is the
+// sprite's behaviour towards the camera, and `bias` is the depth bias handed to
+// Direct3D.
+//
+// **Both numbers are bounded by the packed layout, not by their C++ types.**
+// ZenGin writes a VObject either packed — every scalar in one `dataRaw` blob —
+// or unpacked, and every world this editor opens is packed. In that layout
+// `visualCamAlign` is 2 bits and `bias` is 5 (`VirtualObject.cc`, `bit0`/`bit1`),
+// so an `int32_t` bias of 32 is written as 0 and reported as written. Measured
+// over the three retail worlds' 41,393 VOBs on 2026-08-28: bias is 0, 1 or 2 and
+// alignment is 0-3 — 3 being one past the `SpriteAlignment` enum's three named
+// values, which is why the bound is the layout's and not the enum's.
+
+test('setVobProp writes the preset name, the camera alignment and the depth bias', () => {
+  const handle = load();
+
+  zenkit.setVobProp(handle, '0/1', {
+    presetName: 'NW_STANDART_FIRE_DYNAMIC', visualCamAlign: 2, bias: 3,
+  });
+
+  const props = zenkit.getVobProps(handle, '0/1');
+  assert.strictEqual(props.presetName, 'NW_STANDART_FIRE_DYNAMIC');
+  assert.strictEqual(props.visualCamAlign, 2);
+  assert.strictEqual(props.bias, 3);
+  // The same field the dump has always carried under the enum's own name.
+  assert.strictEqual(vobAt(dumpOf(handle), '0/1').flags.spriteAlignment, 2);
+});
+
+test('setVobProp writes the preset name through cp1252, and can clear it', () => {
+  // A preset name is a string in the archive and an empty one is how the packed
+  // layout says "no preset": clearing it is an edit, not a missing field.
+  const handle = load();
+  zenkit.setVobProp(handle, '0/1', { presetName: 'FACKEL_FEUER_ÄÖÜ' });
+  assert.strictEqual(zenkit.getVobProps(handle, '0/1').presetName, 'FACKEL_FEUER_ÄÖÜ');
+
+  zenkit.setVobProp(handle, '0/1', { presetName: '' });
+  assert.strictEqual(zenkit.getVobProps(handle, '0/1').presetName, '');
+});
+
+test('setVobProp survives a save and reload for the three base fields', () => {
+  // The point of the op: the packed writer has to carry them, and both numbers
+  // go into bit fields rather than into words of their own.
+  const handle = load();
+  zenkit.setVobProp(handle, '0/1', {
+    presetName: 'DEFAULTLIGHT_DARKBLUE', visualCamAlign: 1, bias: 31,
+  });
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-base-')), 'base.zen');
+  zenkit.saveWorld(handle, out);
+  const props = zenkit.getVobProps(zenkit.loadWorld(out, 'g2'), '0/1');
+
+  assert.strictEqual(props.presetName, 'DEFAULTLIGHT_DARKBLUE');
+  assert.strictEqual(props.visualCamAlign, 1);
+  assert.strictEqual(props.bias, 31);
+});
+
+test('setVobProp refuses a base field the packed layout cannot hold', () => {
+  // Silent truncation is the failure this refusal exists for: `bias & 0b11111`
+  // turns 32 into 0 and reports success, and every field here is invisible in
+  // the viewport.
+  const handle = load();
+  for (const bad of [32, -1, 1.5, '2', null, [2]]) {
+    assert.throws(() => zenkit.setVobProp(handle, '0/1', { bias: bad }), /bias/, String(bad));
+  }
+  for (const bad of [4, -1, 0.5, 'full', null]) {
+    assert.throws(
+      () => zenkit.setVobProp(handle, '0/1', { visualCamAlign: bad }), /visualCamAlign/, String(bad),
+    );
+  }
+  assert.throws(() => zenkit.setVobProp(handle, '0/1', { presetName: 7 }), /presetName/);
+  // And a refused base field writes nothing beside it.
+  const before = zenkit.getVobProps(handle, '0/1');
+  assert.throws(
+    () => zenkit.setVobProp(handle, '0/1', { presetName: 'KEPT', bias: 99 }), /bias/,
+  );
+  assert.strictEqual(zenkit.getVobProps(handle, '0/1').presetName, before.presetName);
+});
+
 test('setVobProp refuses a bad index path', () => {
   const handle = load();
   for (const bad of ['9', '0/9', '0/1/0', 'abc', '', '0//1', '-1']) {

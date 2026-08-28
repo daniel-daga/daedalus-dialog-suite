@@ -236,9 +236,14 @@ const SUMMARY: WorldSummary = {
  * an implementation set in one test would outlive it — `clearAllMocks` clears
  * calls, not implementations.
  */
-let mockVobProps: Record<string, unknown> = { class: 'zCVob' };
-const LIGHT_PROPS = { class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255] };
-const ITEM_PROPS = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01' };
+/** The three `zCVob` fields every read carries, whatever the class — they are
+ *  base fields and no VOB is without them. */
+const BASE_PROPS = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 };
+let mockVobProps: Record<string, unknown> = { class: 'zCVob', ...BASE_PROPS };
+const LIGHT_PROPS = {
+  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255], ...BASE_PROPS,
+};
+const ITEM_PROPS = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_PROPS };
 
 const MOVE: WorldOp = {
   op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [11, 22, 33],
@@ -320,7 +325,7 @@ beforeEach(() => {
   mockHiddenVobs = undefined;
   mockSnapGrid = undefined;
   mockSnapAngle = undefined;
-  mockVobProps = { class: 'zCVob' };
+  mockVobProps = { class: 'zCVob', ...BASE_PROPS };
   mockRaycastDown.mockReset();
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
@@ -891,7 +896,7 @@ describe('deleting a VOB', () => {
 
   /** Select one VOB and ask to delete it, without confirming. */
   async function askToDelete(vob: number) {
-    act(() => useWorldStore.getState().selectVob(vob));
+    await act(async () => { useWorldStore.getState().selectVob(vob); });
     fireEvent.click(await screen.findByTestId('world-delete-vob'));
   }
 
@@ -947,10 +952,12 @@ describe('deleting a VOB', () => {
     act(() => useWorldStore.getState().selectVob(null));
     expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
 
-    act(() => useWorldStore.getState().selectVob(0));
+    // Awaited: every selection issues the per-VOB props read, and its answer
+    // lands a microtask later — outside an `act` that has already returned.
+    await act(async () => { useWorldStore.getState().selectVob(0); });
     expect(screen.getByTestId('world-delete-vob')).toBeEnabled();
 
-    act(() => useWorldStore.getState().toggleVob(1));
+    await act(async () => { useWorldStore.getState().toggleVob(1); });
     expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
   });
 
@@ -997,7 +1004,7 @@ describe('duplicating a VOB', () => {
     api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
     api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
 
-    act(() => useWorldStore.getState().selectVob(1));
+    await act(async () => { useWorldStore.getState().selectVob(1); });
     fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
@@ -1087,9 +1094,9 @@ describe('duplicating a VOB', () => {
 
     act(() => useWorldStore.getState().selectVob(null));
     expect(await screen.findByTestId('world-duplicate-vob')).toBeDisabled();
-    act(() => useWorldStore.getState().selectVob(1));
+    await act(async () => { useWorldStore.getState().selectVob(1); });
     expect(screen.getByTestId('world-duplicate-vob')).toBeEnabled();
-    act(() => useWorldStore.getState().toggleVob(0));
+    await act(async () => { useWorldStore.getState().toggleVob(0); });
     expect(screen.getByTestId('world-duplicate-vob')).toBeEnabled();
     // And it says how many, because the singular label on a five-VOB selection
     // would be describing an edit the button no longer makes.
@@ -2328,14 +2335,15 @@ describe('a class property edited in the grid', () => {
     expect(rangeInput().value).toBe('2000');
   });
 
-  it('asks for nothing at all for a class the catalogue does not have', async () => {
-    // 35 of the 37 classes in a retail world, and a selection moves with every
-    // click. An IPC round trip per click that can only answer "nothing to edit"
-    // is a round trip for nothing.
+  it('asks even for a class the catalogue does not have', async () => {
+    // It used to ask for nothing here — 35 of the 37 classes in a retail world
+    // have no catalogued fields, and a selection moves with every click. The
+    // three base fields (§16.17) are on *every* VOB and in none of the index's
+    // columns, so the read is what the grid draws them from and skipping it
+    // would leave a plain `zCVob` with nothing editable below its flags.
     await openWorld();
 
-    await waitFor(() => expect(api.getWorldVisuals).toHaveBeenCalled());
-    expect(api.getVobProps).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.getVobProps).toHaveBeenCalledWith('1'));
   });
 
   it('becomes a SetVobClassProp whose `from` is what the read answered', async () => {
@@ -2394,6 +2402,45 @@ describe('a class property edited in the grid', () => {
     mockVobProps = LIGHT_PROPS;
     await act(async () => { useWorldStore.getState().selectVob(1); });
     expect(rangeInput().value).toBe('2000');
+  });
+
+  // The base fields that have no column (§16.17, V1). They arrive with the same
+  // read the class fields do and are drawn for every class, but they leave as a
+  // `SetVobProp` — the op that already writes the name and the six flags.
+  const biasInput = () => screen.getByTestId('world-prop-base-bias-input') as HTMLInputElement;
+
+  it('becomes a SetVobProp whose `from` is the base field the read answered', async () => {
+    // The index has no column for `bias`, so this `from` cannot come from it the
+    // way a flag's does — it is the fetched value, exactly as a class field's is.
+    await openWorld();
+    await screen.findByTestId('world-prop-base-bias-input');
+
+    fireEvent.change(biasInput(), { target: { value: '7' } });
+    fireEvent.blur(biasInput());
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'SetVobProp',
+      vob: 1,
+      path: '1',
+      from: { bias: 2 },
+      to: { bias: 7 },
+      fromBbox: null,
+      toBbox: null,
+    }]));
+  });
+
+  it('reads the base fields again when the edit is refused', async () => {
+    // Nothing to invert: the world holds the value it always held, and the grid
+    // is showing a number that only ever existed in an input.
+    await openWorld();
+    await screen.findByTestId('world-prop-base-bias-input');
+    api.applyWorldOps.mockRejectedValueOnce(new Error('props.bias must be a whole number 0-31'));
+
+    fireEvent.change(biasInput(), { target: { value: '7' } });
+    fireEvent.blur(biasInput());
+
+    expect(await screen.findByTestId('world-edit-error')).toHaveTextContent('0-31');
+    await waitFor(() => expect(biasInput().value).toBe('2'));
   });
 
   // The item index (level-editor.md §14.1; the board's "SetVobClassProp writes
@@ -2528,7 +2575,9 @@ describe('drop to ground', () => {
     act(() => useWorldStore.getState().selectVob(null));
     expect(screen.getByTestId('world-drop-to-ground')).toBeDisabled();
 
-    act(() => useWorldStore.getState().selectVob(1));
+    // Awaited: every selection issues the per-VOB props read, and its answer
+    // lands a microtask later — outside an `act` that has already returned.
+    await act(async () => { useWorldStore.getState().selectVob(1); });
     expect(screen.getByTestId('world-drop-to-ground')).toBeEnabled();
   });
 
@@ -2575,7 +2624,7 @@ describe('align to normal', () => {
     act(() => useWorldStore.getState().selectVob(null));
     expect(screen.getByTestId('world-align-to-normal')).toBeDisabled();
 
-    act(() => useWorldStore.getState().selectVob(1));
+    await act(async () => { useWorldStore.getState().selectVob(1); });
     expect(screen.getByTestId('world-align-to-normal')).toBeEnabled();
   });
 

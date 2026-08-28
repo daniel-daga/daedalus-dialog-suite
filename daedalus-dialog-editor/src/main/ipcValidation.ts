@@ -7,7 +7,7 @@
  */
 
 import {
-  classPropKeys, fieldOf, isAuthorableVobClass, type FieldDescriptor,
+  baseFieldOf, classPropKeys, fieldOf, isAuthorableVobClass, type FieldDescriptor,
 } from 'zen-world';
 import type { WorldOp } from '../shared/worldTypes';
 
@@ -624,6 +624,7 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
           throw new Error(`Invalid op: ${side} must be an object of properties`);
         }
         for (const [key, value] of Object.entries(op[side])) {
+          const base = baseFieldOf(key);
           if (key === 'name' || key === 'visual') {
             if (typeof value !== 'string') {
               throw new Error(`Invalid op: ${side}.${key} must be a string`);
@@ -632,6 +633,14 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
             if (typeof value !== 'boolean') {
               throw new Error(`Invalid op: ${side}.${key} must be a boolean`);
             }
+          } else if (base !== null) {
+            // The three base fields that have no column, checked through the
+            // catalogue's own descriptor exactly as a class field is — the
+            // bounds are the packed vob layout's two and five bits, and a value
+            // outside them is written truncated by ZenGin's own writer and
+            // reported as written. Both sides, because `from` is what an undo
+            // writes.
+            assertClassPropValue(base, side, value);
           } else {
             throw new Error(`Invalid op: unknown property ${key}`);
           }

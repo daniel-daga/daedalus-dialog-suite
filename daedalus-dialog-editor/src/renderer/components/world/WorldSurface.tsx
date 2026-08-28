@@ -9,13 +9,13 @@ import {
 import {
   AUTHORABLE_VOB_CLASSES,
   addVob, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
-  classPropKeys, connectWaypoints, disconnectWaypoints,
+  connectWaypoints, disconnectWaypoints,
   deleteVob, deleteWaypoint, dropVobsToGround,
   duplicateVobSubtree, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
   matchVobs,
   moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
-  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, topLevelVobs,
+  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps, topLevelVobs,
   translateVobs, vobIndexPath,
   type AuthorableVobClass, type ClassProps, type NewVob, type VobProps, type VobSubtree,
   type ZenBounds,
@@ -341,9 +341,12 @@ const WorldSurface: React.FC = () => {
 
     const { reader } = vobModelOf(summary);
     const className = reader.className(primary);
-    // Nothing is asked for a class the catalogue has no fields for — 35 of the
-    // 37 in a retail world, and the selection moves with every click.
-    if (className === null || classPropKeys(className).length === 0) return undefined;
+    // Asked for every class, not only the two of a retail world's 37 the
+    // catalogue has fields for: the three base fields (§16.17) are on every VOB
+    // and in none of the index's columns, so this read is the only thing the
+    // grid can draw or invert them from. It costs one round trip per selection
+    // change, and the per-VOB read is the cheap half of the dump.
+    if (className === null) return undefined;
     const path = vobIndexPath(reader, primary);
     if (path === null) return undefined;
 
@@ -748,6 +751,27 @@ const WorldSurface: React.FC = () => {
     // VOB never had.
     if (current === null || vob === null || classProps?.vob !== vob) return;
     await commitOps([setVobClassProp(vobModelOf(current).reader, vob, classProps.props, props)]);
+  }, [commitOps, classProps]);
+
+  /**
+   * A base-field change from the grid — `presetName`, `visualCamAlign` or
+   * `bias`, and the described VOB alone.
+   *
+   * A `SetVobProp` like the name and the flags above, but built here rather than
+   * in `handleEditProps` because these three have no column: the op cannot read
+   * their `from` back out of the index, so it takes the fetched props, and that
+   * is a read per VOB the batch path does not have. Hence one VOB, exactly as a
+   * class field is — the same constraint reached from the other side.
+   */
+  const handleEditBaseProps = useCallback(async (props: VobProps) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const vob = primaryVob(selected);
+    // The tag, for `handleEditClassProps`' reason: props read for another VOB
+    // would build an op — and an inverse — out of values this VOB never had.
+    if (current === null || vob === null || classProps?.vob !== vob) return;
+    await commitOps([
+      setVobProp(vobModelOf(current).reader, vob, props, null, classProps.props),
+    ]);
   }, [commitOps, classProps]);
 
   /**
@@ -1603,6 +1627,7 @@ const WorldSurface: React.FC = () => {
                     onRotateSelection={handleRotateSelection}
                     classProps={classProps?.vob === primary ? classProps.props : null}
                     onEditClassProps={handleEditClassProps}
+                    onEditBaseProps={handleEditBaseProps}
                     itemInstances={itemInstances}
                   />
                 )}

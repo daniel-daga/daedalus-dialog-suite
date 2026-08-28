@@ -10,7 +10,8 @@
 // other two readers unchanged.
 
 import {
-  AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, classPropKeys, fieldOf, isAuthorableVobClass,
+  AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, baseFieldOf, classPropKeys, fieldOf,
+  isAuthorableVobClass,
 } from '../src/model';
 
 describe('the per-class field catalogue', () => {
@@ -280,5 +281,27 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('constructor', 'key')).toBeNull();
     expect(classPropKeys('toString')).toEqual([]);
     expect(classPropKeys('__proto__')).toEqual([]);
+  });
+});
+
+describe('the base fields no class owns', () => {
+  it('bounds the two numbers by the packed layout, not by the archive type', () => {
+    // `visualCamAlign` is two bits and `bias` is five in the packed `zCVob`
+    // layout, and a wider value is written truncated and reported as written.
+    // The alignment's max is 3 rather than the enum's 2 because retail carries
+    // 3 — an inverse has to be able to write back what was there.
+    expect(baseFieldOf('visualCamAlign')).toEqual({ key: 'visualCamAlign', kind: 'int', min: 0, max: 3 });
+    expect(baseFieldOf('bias')).toEqual({ key: 'bias', kind: 'int', min: 0, max: 31 });
+    expect(baseFieldOf('presetName')).toEqual({ key: 'presetName', kind: 'string' });
+  });
+
+  it('is not a class entry, so an unknown class stays unknown', () => {
+    // `SetVobClassProp` refuses a class the catalogue does not know by asking
+    // whether it has any keys at all. Folding the base fields into `CLASS_FIELDS`
+    // would answer "yes" for every string.
+    expect(classPropKeys('zCVob')).toEqual([]);
+    expect(fieldOf('zCVob', 'bias')).toBeNull();
+    expect(baseFieldOf('name')).toBeNull();
+    expect(baseFieldOf('toString')).toBeNull();
   });
 });

@@ -105,7 +105,8 @@ was true for so long nobody re-reads it.
   **Why it matters that a stale `.node` is silent:** the editor's Jest suites
   fake the worker, so they stay green against a binary with neither
   `getVobProps` nor `setVobClassProp` while the running app has no class
-  properties at all.
+  properties at all — and, since §16.17 V1, against one whose `setVobProp`
+  refuses `presetName`, `visualCamAlign` and `bias`.
 - `daedalus-dialog-editor/dist/` holds a packaged app (`win-unpacked`, the
   installer) that is **no longer fresh** — it predates the waypoint delete, and
   every session that only compiles leaves it further behind. `.gitignore`d, and
@@ -126,8 +127,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **`zCVob` V1 — preset name, `visualCamAlign`, bias** — catalogue idiom, no
-  known hazards. Unowned. §16.17
 - **`zCVob` V2 — `dynamicShadows`, `sleepMode`, decals** — a decal field needs
   the fixture to carry it (A5's lesson). Unowned. §16.17
 
@@ -201,6 +200,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **`zCVob` V1 — preset name, `visualCamAlign`, bias** — landed: `SetVobProp`
+  takes all three, bounded by the packed layout's bit fields, and the per-VOB
+  `getVobProps` read is now issued for every class because every VOB has them.
+  §16.17
 - **Per-class visibility toggles** — landed: a `hiddenClasses` list in the
   toolbar, `matchVobs` asked the complementary question, and an `instanceHidden`
   attribute the VOB shader and the pick pass both read — so a hidden VOB is
@@ -209,12 +212,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   `flattenMatching` in `zen-world` answer the query against the interned
   dictionaries and keep each match's path; the tree's header filters by name
   (debounced) and by class. §16.16
-- **Copy/paste D5 — the subtree** — landed: `duplicateVobSubtree` and
-  `subtreeOps` in `zen-world`, paths computed forward; the clipboard holds
-  subtrees, and both verbs prune the selection to its top-level VOBs. §16.14
 
-Flushed 2026-08-28: I1, I2, D2, W2, W3, and then the typed multi-selection
-rotation (§16.4) and waynet W4 (§16.7) as the budget needed the room. Their
-forward facts are routed — what a copy still drops and the batch-guard
-relaxation it wants are §16.14, the authorable class set is §16.15, the
-last-edge promotion is §16.7 — and the rest is in `git log`.
+Flushed 2026-08-28: I1, I2, D2, W2, W3, the typed multi-selection rotation
+(§16.4), waynet W4 (§16.7) and copy/paste D5 (§16.14), as the budget needed the
+room. Their forward facts are routed — what a copy still drops and the
+batch-guard relaxation it wants are §16.14, the authorable class set is §16.15,
+the last-edge promotion is §16.7 — and the rest is in `git log`.

@@ -161,6 +161,16 @@ export interface VobProps {
   vobStatic?: boolean;
   ambient?: boolean;
   physicsEnabled?: boolean;
+  /** The name of the Spacer template this VOB was made from. An empty string is
+   *  a value, not an absence: it is how the packed layout says "no preset". */
+  presetName?: string;
+  /** How the visual behaves towards the camera — `SpriteAlignment`, 0-3.
+   *  Bounded by the packed layout's two bits rather than by the enum's three
+   *  named values: retail carries 3 on 7 of 41,393 VOBs. */
+  visualCamAlign?: number;
+  /** The Direct3D depth bias, 0-31 — the packed layout's five bits. A wider
+   *  number is refused rather than truncated in silence. */
+  bias?: number;
 }
 /**
  * Set scalar properties on one VOB, addressed by the same index path.
