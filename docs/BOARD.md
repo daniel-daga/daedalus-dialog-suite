@@ -83,7 +83,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patch `0029`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0030`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -135,9 +135,9 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **A malformed world still crashes the reader** — one more instance bounded
-  (`0029`, the BinSafe hash table's insertion index), the class is not. Unowned.
-  §16.11
+- **A malformed world still crashes the reader** — two instances bounded
+  (`0029`, `0030`), the class is not; `tools/fuzz-world.js --seed 39` is the
+  next reproducer, one byte, in `Mesh.cc`. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -156,10 +156,12 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-- **Patch `0029` — the BinSafe hash table's insertion index is bounded** — an
-  out-of-bounds heap *write* on a corrupted world, bisected to one byte of
-  `minimal.g2.zen`; the addon on this machine is rebuilt, every other machine
-  must. The reader is still not crash-safe. §16.11
+- **Patches `0029` and `0030` — two unvalidated counts in the reader are
+  bounded** — the BinSafe hash table's insertion index (an out-of-bounds heap
+  *write*) and a BSP leaf node's polygon range (an out-of-bounds read), each
+  bisected to one byte of `minimal.g2.zen`. The fuzzer that found `0030` is now
+  `zenkit-node/tools/fuzz-world.js`. The addon on this machine is rebuilt,
+  every other machine must. The reader is still not crash-safe. §16.11
 - **§16.8 W2 landed — world → scripts** — `ProjectIndex.waypointSites` rides
   the worker-pool pass like `voiceIds` does, resolving `AI_GotoWP`/
   `Npc_GetDistToWP` plus any project-declared `var string waypoint` parameter;

@@ -3098,12 +3098,43 @@ fuzz run came from. Bisected to one byte of `test/fixtures/minimal.g2.zen`
 covered by a child-process test in `zenkit-node/test/loadWorld.test.js` that
 seeds the field by structure and asserts a clean throw.
 
-That is a single instance, not the class. Still unbounded, and still the reason
-the worker isolation is load-bearing: `get_entry_key()` a few lines below
-indexes the same vector with another file-supplied value (`hash`), and every
-chunk-walking loop in `Mesh.cc`, `BspTree.cc` and the VOB readers. The fuzz run
-above has not been repeated since, so the 19-of-30 number still stands as the
-last measurement.
+**A second instance is bounded (2026-08-28, patch `0030`).** `BspTree::load`
+walked each leaf node's `[polygonIndex, polygonIndex + polygonCount)` range
+straight into `polygon_indices` with `operator[]`. Both ends come off the node
+in the TREE chunk (`0xC040`) while the list is sized by the POLYGONS chunk
+(`0xC010`), so nothing tied the two together — and the list is empty entirely
+if POLYGONS never parsed. Found by a fresh fuzz run and delta-debugged to one
+byte: file offset 1230 of `minimal.g2.zen`, the high byte of the `0xC010` chunk
+id. Covered by a child-process test in `zenkit-node/test/loadWorld.test.js`
+that seeds an out-of-range `polygonIndex` by structure, so it does not depend
+on the fixture's chunk order.
+
+**`get_entry_key()` is *not* a third instance, and this section used to say it
+was.** It does index `_m_hash_table_entries` with an unchecked file-supplied
+`hash`, but it has **no caller anywhere in ZenKit or in `zenkit-node`** — every
+real read goes through `ensure_entry_meta`, which seeks past the same `uint32`
+without dereferencing it. A world with a corrupted entry name index loads
+cleanly. Bounding it would be dead-code hardening; the crash class is
+elsewhere.
+
+Still not the class. `_parse_bsp_nodes` recurses once per file-supplied flag
+bit with no depth bound, `BspTree::load`'s OUTDOORS branch resizes from
+unchecked counts, and every chunk-walking loop in `Mesh.cc` and the VOB readers
+is untouched — which is why the worker isolation stays load-bearing.
+
+**Re-measured 2026-08-28**, with `zenkit-node/tools/fuzz-world.js`, which is now
+checked in so the number is reproducible: 40 seeds of 20 random byte writes
+*confined to the entry stream* (`entryStart` to `hashTableOffset`) gave 4
+`0xC0000005` and 1 hang before `0030`, and **1 crash and 1 hang after it**. The
+old 19-of-30 number was measured a different way and the two are not comparable.
+
+**Corrupt the entry stream, not the whole file.** The same driver flipping 100
+bytes anywhere gave 30 of 30 clean throws: a byte in the text header is rejected
+before any reader runs, so a whole-file fuzz mostly measures the header check.
+
+**The next two reproducers are named.** `--seed 39` delta-debugs to one byte —
+offset 899, inside the mesh's `0xB026` chunk, so the next instance is in
+`Mesh.cc` — and `--seed 17` is the hang, not yet minimized.
 
 ### 16.12 Two viewport constants only Daniel's hands can settle
 

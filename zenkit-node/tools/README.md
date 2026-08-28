@@ -63,6 +63,17 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   discovers worlds itself, isolates each in a child process, writes a report
   artifact and counts coverage honestly. `breadth.js` is kept because it is two
   screens of code and quicker to hack a one-off variation into.
+- `fuzz-world.js [--seeds 40] [--bytes 20] [--whole] [--file <zen>]` — seeded
+  corruption fuzzer for the read path (`../../docs/plans/level-editor.md`
+  §16.11). Each seed writes N random bytes into a copy of a fixture and loads it
+  in a child process, so a segfault or a hang is a reported line, not the end of
+  the run. **It corrupts the entry stream, not the whole file** — a byte in the
+  text header is rejected before any reader runs, and a whole-file run
+  (`--whole`) mostly measures that check: 30 of 30 clean, against 5 of 40 not
+  clean when the writes are confined to the stream.
+  `--seed <n>` replays one seed and then delta-debugs it down to the smallest
+  set of mutations that still fails, which is what turns a crash into a named
+  field — patch `0030` was found this way, minimized to a single byte.
 - `engine-batch.ps1 [-Dir cand] [-Only 00,01] [-Exe Spacer2|Gothic2] [-Windowed]` — the
   manual engine pass, automated as far as it can be. Verifies the pristine
   backup's hash before touching the install, installs each candidate, launches

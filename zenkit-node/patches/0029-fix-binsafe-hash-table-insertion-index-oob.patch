@@ -34,8 +34,8 @@ The fix is a bound on this one field before it is used to index, in the same
 narrow style as patch `0027`: check the count the file supplies against what
 it is actually allowed to address, and throw a named `ParserError` instead of
 trusting it. This is one instance of the unvalidated-count class documented in
-§16.11, not the class-level fix — `get_entry_key()` a few lines below indexes
-the same vector with another unbounded file-supplied value (`hash`), and the
+§16.11, not the class-level fix — `BspTree::load` indexes its polygon list with
+two more unbounded file-supplied values (bounded since, by `0030`), and the
 general fix (making `ReadMemory::seek` clamp or throw) is still deferred, so
 other chunk-walking loops throughout `Mesh.cc`, `BspTree.cc` and the VOB
 readers remain unbounded.

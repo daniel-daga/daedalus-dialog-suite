@@ -195,3 +195,60 @@ test('a hash table insertion index outside the table throws instead of writing p
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A leaf BSP node's `polygonIndex` — a file-supplied offset into the BSP's
+// polygon index list, located by structure: the `MeshAndBsp` blob's chunk table
+// carries the BSP TREE chunk (0xC040), whose payload is `nodeCount` u32,
+// `leafCount` u32, then per node a bbox (6 floats), `polygonIndex` u32 and
+// `polygonCount` u32.
+function seedOutOfRangeBspPolygonIndex(dir, name) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const blob = [...walk(buf)].find((ev) => ev.kind === 'rawBlob' && ev.entryName === 'MeshAndBsp');
+  assert.ok(blob, 'the fixture must have a MeshAndBsp blob to corrupt');
+
+  const end = blob.fileOffset + blob.size;
+  const chunk = (id) => {
+    let p = blob.fileOffset;
+    while (p + 6 <= end && buf.readUInt16LE(p) !== id) p += 6 + buf.readUInt32LE(p + 2);
+    assert.strictEqual(buf.readUInt16LE(p), id, `expected a 0x${id.toString(16)} chunk in the fixture BSP`);
+    return p + 6;
+  };
+
+  const polygons = chunk(0xc010);
+  const tree = chunk(0xc040);
+  assert.strictEqual(buf.readUInt32LE(tree), 1, 'expected the fixture BSP to be a single node');
+  const node = tree + 8 + 6 * 4; // past nodeCount, leafCount and the bbox
+  assert.strictEqual(buf.readUInt32LE(node), 0, 'expected the node to start at polygon index 0');
+  assert.strictEqual(buf.readUInt32LE(node + 4), buf.readUInt32LE(polygons),
+    'expected the node to cover every polygon index in the list');
+
+  buf.writeUInt32LE(0x40000000, node); // far past a list of two indices
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a BSP leaf node addressing polygons outside the index list throws instead of reading wild memory', () => {
+  // `BspTree::load` walks each leaf node's `[polygonIndex, polygonIndex +
+  // polygonCount)` straight into `polygon_indices` with `operator[]`, and both
+  // ends come off the file. The list is sized by a *different* chunk (0xC010),
+  // so nothing ties the two together — an out-of-range node reads past the
+  // vector, which is one of the unvalidated counts §16.11 leaves unbounded.
+  // Found by fuzzing the fixture's entry stream: seed 2 of a 40-seed run
+  // bisected to one byte, the high byte of the 0xC010 chunk's id, which drops
+  // the polygon list entirely and leaves the same node addressing an empty
+  // vector.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-bsp-polys-'));
+  try {
+    const corrupt = seedOutOfRangeBspPolygonIndex(dir, 'bad-bsp-polygon-index.zen');
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 30 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of throwing: ${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /polygon index/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
