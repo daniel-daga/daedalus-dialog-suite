@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import {
   addVob, alignVobsToNormal, applyWaypointPositions, classPropKeys, deleteVob, dropVobsToGround,
-  duplicateVobSpec,
+  duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
   isWaynetOp, moveWaypoint, placeBounds, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
@@ -704,38 +704,38 @@ const WorldSurface: React.FC = () => {
   }, [commitOps, terrainPoint]);
 
   /**
-   * Duplicate one VOB in place (level-editor.md §16.14, D1).
+   * Duplicate the selection in place — **one batch, therefore one undo**
+   * (level-editor.md §16.14, D1 and D4).
    *
    * **In place, and appended beside the original**, which is Spacer's own
    * behaviour: the copy takes the same position, so an offset would be a
    * preference nobody asked for and a copy nobody could find is worse than one
-   * sitting exactly where its original is. It goes into the original's parent,
-   * so a duplicated child stays a child.
+   * sitting exactly where its original is. Each copy goes into its own
+   * original's parent, so a duplicated child stays a child.
    *
-   * It is an ordinary `AddVob` and nothing more — no new op, no validator
-   * branch — because that op already carries a whole description of a VOB and
-   * already inverts to a delete. What the copy does *not* carry is
-   * `physicsEnabled`, which `NewVob` has no room for, and **its class**: the
-   * binding's `insertVob` authors a `zCVob` whatever the original was, so a
-   * duplicated `oCMobDoor` is not a door and a follow-up `SetVobClassProp`
-   * would be refused. D2's class half waits on class-specific insertion
-   * (level-editor.md §16.15); the finding is written up in §16.14.
+   * It is ordinary `AddVob`s and nothing more — no new op, no validator branch
+   * — because that op already carries a whole description of a VOB and already
+   * inverts to a delete. Several of them may share a batch because an append
+   * moves no index path, which is the exception `commitOps` makes and the whole
+   * of what D4 needed; `duplicateVobs` makes the one correction that costs, the
+   * slot two copies of the same parent would otherwise share.
    *
-   * The box is fitted from the visual's own bounds, exactly as a rotation
+   * What a copy does *not* carry is `physicsEnabled`, which `NewVob` has no
+   * room for, and **its class**: the binding's `insertVob` authors a `zCVob`
+   * whatever the original was, so a duplicated `oCMobDoor` is not a door and a
+   * follow-up `SetVobClassProp` would be refused. D2's class half waits on
+   * class-specific insertion (level-editor.md §16.15); the finding is written
+   * up in §16.14.
+   *
+   * Each box is fitted from that VOB's own visual bounds, exactly as a rotation
    * refits one and for the same reason: the index has no bbox column to copy,
    * and the binding's default is a 10 cm cube.
    */
-  const duplicateVob = useCallback(async (vob: number) => {
-    const { summary: current } = useWorldStore.getState();
-    if (current === null) return;
+  const duplicateSelection = useCallback(async () => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
 
-    const { reader } = vobModelOf(current);
-    const parent = reader.columns.parent[vob];
-    await commitOps([addVob(
-      reader,
-      duplicateVobSpec(reader, vob, boundsOf(vob)),
-      parent < 0 ? null : parent,
-    )]);
+    await commitOps(duplicateVobs(vobModelOf(current).reader, selected, boundsOf));
   }, [commitOps, boundsOf]);
 
   /**
@@ -965,18 +965,19 @@ const WorldSurface: React.FC = () => {
               confirm. Exactly one VOB, never a selection: it renumbers, so each
               would need its own batch, and a button that removed only the
               primary of five is the surprise the dialog exists to prevent. */}
-          {/* One VOB, like the delete beside it and for the same reason: a
-              button that copied only the primary of a five-VOB selection is the
-              same surprise. A selection duplicating as one batch is D4. */}
+          {/* The whole selection, unlike the delete beside it: an append moves
+              no index path, so the copies share one batch and one undo (D4).
+              A delete cannot, because it renumbers the paths of everything
+              after it. */}
           {summary && (
             <Button
               size="small"
               variant="outlined"
-              disabled={selection.length !== 1}
-              onClick={() => void duplicateVob(selection[0])}
+              disabled={selection.length === 0}
+              onClick={() => void duplicateSelection()}
               data-testid="world-duplicate-vob"
             >
-              Duplicate VOB
+              {selection.length > 1 ? `Duplicate ${selection.length} VOBs` : 'Duplicate VOB'}
             </Button>
           )}
           {summary && (

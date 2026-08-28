@@ -240,9 +240,11 @@ export interface AddVob {
    * The parent it is appended to; null is a root.
    *
    * It is the field that decides whether this op renumbers. A root is
-   * enumerated last and shifts nothing, so an add can share a batch; under a
-   * parent, every VOB after that parent's subtree moves up one and the op has
-   * to be alone in its batch. `renumbersPaths` is where that is read.
+   * enumerated last and shifts nothing; under a parent, every VOB after that
+   * parent's subtree moves up one. `renumbersPaths` is where that is read —
+   * and what it costs is company of a *different* kind, not solitude: an
+   * append moves no existing path, so `commitOps` takes a batch of adds
+   * whatever their parents (§16.14, D4) and refuses one holding anything else.
    */
   parentPath: string | null;
   /** Null means "not in the world". `from` is null for an add and `to` is null
@@ -828,8 +830,8 @@ export function setVobClassProp(
  * in a depth-first traversal, so a VOB appended to the roots is enumerated last
  * and takes the index one past the end; one appended under a parent is
  * enumerated as soon as that parent's subtree ends, and every VOB after it moves
- * up by one — including every path in the same batch, which is why
- * `renumbersPaths` says so and `commitOps` refuses the batch.
+ * up by one — which is why `renumbersPaths` says so, and why `commitOps` refuses
+ * the batch unless every op in it is an add (`duplicateVobs`).
  *
  * What makes the renumbering safe is the history's discipline rather than
  * anything here, the same answer `reparentVob` needed: the redo stack is cleared
@@ -920,6 +922,63 @@ export function duplicateVobSpec(
     cdStatic: flags.cdStatic,
     cdDynamic: flags.cdDynamic,
   };
+}
+
+/**
+ * Duplicate a whole selection as **one batch**, therefore one undo entry
+ * (level-editor.md §16.14, D4).
+ *
+ * D1's spec, N times, plus the one correction a batch needs — and it is a
+ * correction, not a `map`. `addVob` resolves the slot a copy lands in against
+ * the world as it was, so two copies of the *same* parent would both claim its
+ * last slot and `writeOp` would refuse the second: the list it was appended to
+ * has changed since. The slot is advanced here for each copy already appended
+ * to that list, roots being one such list like any other.
+ *
+ * **Nothing else in the batch needs correcting, and that is the whole reason a
+ * batch of these is safe at all.** An op addresses the world by an index path,
+ * and appending never changes an existing one — a new last child takes a new
+ * slot and moves none of its siblings. What an append does change is every
+ * *flat* index after it, which is why `renumbersPaths` still says so and why
+ * `commitOps` still refuses a delete or a reparent in company.
+ *
+ * The `vob` each op carries is that flat index, and it is right for the batches
+ * that occur: exact for a selection under one parent, and one low only for a
+ * copy whose parent is an ancestor of another copy's — the same approximation a
+ * single `addVob` already carries into any batch. Nothing reads it either way:
+ * a structural op cannot be applied to the projection at all
+ * (`isStructuralOp`), so the renderer re-reads the index whole.
+ *
+ * Like `setVobProps`, one VOB that is not in the index refuses the whole batch
+ * rather than being skipped.
+ */
+export function duplicateVobs(
+  reader: VobReader,
+  vobs: readonly number[],
+  bounds: (vob: number) => ZenBounds | null = () => null,
+): AddVob[] {
+  // How many copies this batch has already appended to each list — keyed by the
+  // parent's path, with the roots keyed by an empty string no path can be.
+  const appended = new Map<string, number>();
+
+  return vobs.map((vob) => {
+    const parent = reader.columns.parent[vob];
+    const op = addVob(
+      reader, duplicateVobSpec(reader, vob, bounds(vob)), parent < 0 ? null : parent,
+    );
+
+    const list = op.parentPath ?? '';
+    const ahead = appended.get(list) ?? 0;
+    appended.set(list, ahead + 1);
+    if (ahead === 0) return op;
+
+    const slot = Number(op.path.slice(op.path.lastIndexOf('/') + 1)) + ahead;
+    return {
+      ...op,
+      vob: op.vob + ahead,
+      path: op.parentPath === null ? String(slot) : `${op.parentPath}/${slot}`,
+    };
+  });
 }
 
 /**
@@ -1178,7 +1237,18 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   // makes the ones after it address different VOBs. Refused here rather than
   // left to callers: the batch is where the addresses were resolved, and this is
   // the only place that can see the whole of one.
-  const renumbering = ops.length > 1 ? ops.find(renumbersPaths) : undefined;
+  //
+  // **A batch of adds is the exception, and it is the only one** (§16.14, D4).
+  // A path is a chain of sibling slots and every add here is an *append*, so it
+  // takes a new last slot and moves none of the paths the ops after it carry —
+  // it renumbers flat indices, which no op is addressed by. The exception is
+  // written as "all adds" rather than "no delete and no reparent" so that the
+  // inverse batch is covered by the same sentence: undo replays these back to
+  // front as removals of exactly the slots they appended, which is the one order
+  // that leaves the remaining paths standing. Any other op in the batch and the
+  // refusal is back, `physicsEnabled`'s follow-up (D2) included.
+  const adds = ops.every((op) => op.op === 'AddVob');
+  const renumbering = ops.length > 1 && !adds ? ops.find(renumbersPaths) : undefined;
   if (renumbering !== undefined) {
     throw new RangeError(
       `a ${renumbering.op} that renumbers invalidates every path after it: `

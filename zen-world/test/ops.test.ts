@@ -27,6 +27,7 @@ import {
   deleteVob,
   dropVobsToGround,
   duplicateVobSpec,
+  duplicateVobs,
   invertOp,
   isBarrierOp,
   isStructuralOp,
@@ -1169,6 +1170,104 @@ describe('the spec a duplicate is built from', () => {
 
   it('is refused for a VOB that is not in the index', () => {
     expect(() => duplicateVobSpec(reader(), 9)).toThrow(/9/);
+  });
+});
+
+describe('a selection duplicated as one batch', () => {
+  // D4 (level-editor.md §16.14). One batch is one undo entry, which is the whole
+  // point: five copies the user has to undo five times is not what "duplicate
+  // the selection" means. It adds no op either — it is D1's spec, N times, with
+  // the one correction a batch needs.
+  //
+  //  vob 0 (root 0) ── vob 1 ── vob 2
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A', visual: 'A.3DS' },
+    { parent: 0, childIndex: 0, name: 'CHILD_A', visual: 'B.3DS' },
+    { parent: 0, childIndex: 1, name: 'CHILD_B', visual: 'C.3DS' },
+    { childIndex: 1, name: 'ROOT_B', visual: 'D.3DS' },
+  ]));
+
+  it('is one AddVob per VOB, each beside the VOB it was copied from', () => {
+    const ops = duplicateVobs(reader(), [1, 3]);
+
+    expect(ops.map((op) => [op.op, op.path, op.parentPath])).toEqual([
+      ['AddVob', '0/2', '0'],
+      ['AddVob', '2', null],
+    ]);
+    expect(ops[0].to).toMatchObject({ name: 'CHILD_A', visual: 'B.3DS' });
+    expect(ops[1].to).toMatchObject({ name: 'ROOT_B', visual: 'D.3DS' });
+  });
+
+  it('gives two copies of the same parent consecutive slots', () => {
+    // The one correction a batch needs, and the reason this is not `map`:
+    // `addVob` resolves the slot against the world as it was, so both copies
+    // would claim `0/2` — and `writeOp` would refuse the second, because the
+    // list it was appended to has changed since.
+    expect(duplicateVobs(reader(), [1, 2]).map((op) => op.path)).toEqual(['0/2', '0/3']);
+    // Roots are the same list and get the same treatment.
+    expect(duplicateVobs(reader(), [0, 3]).map((op) => op.path)).toEqual(['2', '3']);
+  });
+
+  it('takes the bounds each VOB is handed, so a copy keeps the box it had', () => {
+    const bounds = (vob: number): ZenBounds | null => (vob === 3 ? [-1, 0, -10, 1, 2, 10] : null);
+    const ops = duplicateVobs(reader(), [1, 3], bounds);
+
+    expect(ops[0].to).not.toHaveProperty('bbox');
+    expect(ops[1].to!.bbox).toEqual(placeBounds(
+      [-1, 0, -10, 1, 2, 10], [1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 6, 9],
+    ));
+  });
+
+  it('refuses the whole batch when one VOB is not in the index', () => {
+    // The same refusal `setVobProps` makes, for the same reason: a quietly
+    // dropped op is the half-applied state `commitOps` exists to prevent.
+    expect(() => duplicateVobs(reader(), [1, 9])).toThrow(/9/);
+  });
+
+  it('commits as one batch, and unwinds as one', () => {
+    // The batch guard used to refuse this outright — a parented add renumbers.
+    // What it renumbers is flat indices, and an op is addressed by a *path*: an
+    // append never changes an existing one, which is what makes a batch of them
+    // safe and a delete in one still not.
+    const landed: string[] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (_spec, parentPath) => {
+        const path = parentPath === null ? `${2 + landed.length}` : `${parentPath}/${2 + landed.length}`;
+        landed.push(path);
+        return path;
+      },
+      deleteVob: (path) => { landed.splice(landed.indexOf(path), 1); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    };
+
+    commitOps(binding, duplicateVobs(reader(), [1, 2]));
+    expect(landed).toEqual(['0/2', '0/3']);
+
+    // And back to front on the way out: the inverse of the batch is what undo
+    // replays, and it removes the appended slots in the order that leaves the
+    // remaining ones where their ops say they are.
+    commitOps(binding, [...duplicateVobs(reader(), [1, 2])].reverse().map(invertOp));
+    expect(landed).toEqual([]);
+  });
+
+  it('does not let a delete into the batch it opened', () => {
+    // The relaxation is a batch of adds, not a batch of structural ops. A delete
+    // takes every VOB after it down by one wherever it sits — paths included.
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => '0/2', deleteVob: () => {},
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    };
+    const live = reader();
+
+    expect(() => commitOps(binding, [...duplicateVobs(live, [1]), deleteVob(live, 2)]))
+      .toThrow(/only op in its batch/);
   });
 });
 

@@ -960,9 +960,11 @@ describe('duplicating a VOB', () => {
     expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('bbox');
   });
 
-  it('is offered for exactly one VOB, like the delete beside it', async () => {
-    // D4 is where a selection duplicates as one batch. Until then a button that
-    // copied only the primary of five is the same surprise the delete avoids.
+  it('is offered for a selection of any size, unlike the delete beside it', async () => {
+    // D4 (level-editor.md §16.14). A delete stays at one because it renumbers
+    // paths and each would need its own batch; an append moves no path, so a
+    // selection duplicates whole — and the button that used to copy only the
+    // primary of five is what that removes.
     await openWorld();
 
     act(() => useWorldStore.getState().selectVob(null));
@@ -970,7 +972,40 @@ describe('duplicating a VOB', () => {
     act(() => useWorldStore.getState().selectVob(1));
     expect(screen.getByTestId('world-duplicate-vob')).toBeEnabled();
     act(() => useWorldStore.getState().toggleVob(0));
-    expect(screen.getByTestId('world-duplicate-vob')).toBeDisabled();
+    expect(screen.getByTestId('world-duplicate-vob')).toBeEnabled();
+    // And it says how many, because the singular label on a five-VOB selection
+    // would be describing an edit the button no longer makes.
+    expect(screen.getByTestId('world-duplicate-vob')).toHaveTextContent('Duplicate 2 VOBs');
+    expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
+  });
+
+  it('copies a whole selection in one batch, so it is one undo', async () => {
+    // The whole of D4: two ops, one `applyWorldOps` call, therefore one entry
+    // in the main process's history. Both VOBs are roots here, so the copies
+    // take the two slots after the last one — consecutively, which is the
+    // correction `duplicateVobs` makes and a plain `map` would not.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    act(() => useWorldStore.getState().selectVob(0));
+    act(() => useWorldStore.getState().toggleVob(1));
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toHaveLength(2);
+    expect(ops.map((op) => [op.op, (op as { path: string }).path])).toEqual([
+      ['AddVob', '2'], ['AddVob', '3'],
+    ]);
+    // Each copy carries its *own* bounds, not the selection's first: VOB 0 has
+    // no visual instance and VOB 1 is the barrel.
+    const specs = ops.map((op) => (op as { to: Record<string, unknown> }).to);
+    expect(specs[0]).not.toHaveProperty('bbox');
+    expect(specs[1]).toMatchObject({
+      name: 'BARREL',
+      bbox: placeBounds([-1, 0, -10, 1, 2, 10], IDENTITY, [10, 20, 30]),
+    });
   });
 });
 
