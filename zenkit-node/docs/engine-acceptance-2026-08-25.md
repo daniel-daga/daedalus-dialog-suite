@@ -942,6 +942,80 @@ engine is its only witness. Note also that `verify-world-edit.js` sets no class
 property at all, so a rebuilt candidate would have to grow one before it is
 worth the run.
 
+**Superseded in part by Gate 2b (2026-08-28), below.** That run covers those
+four ops and three more, and found the load-time half clean. The
+*"invisible in the viewport"* worry in the paragraph above is the half it did
+**not** settle — read the Gate 2b section before quoting either.
+
+### Gate 2b — the run — 2026-08-28, Gothic2, six candidates, PARTIAL
+
+The run sheet is [`gate2b-run-sheet.md`](gate2b-run-sheet.md); this is what came
+back. Every world **loaded and played**. What is *not* claimed is most of the
+observational A/B the sheet asked for — read both halves before quoting this.
+
+```
+23:22:43  00-control-original.zen  sha b4dac867…  → in-game crash (dialog cam)
+23:23:25  01-resave.zen            sha 9504b295…  → played; access violation at exit
+23:24:49  02-minimal-edit.zen      sha 8000fe72…  → ok
+23:25:37  03-class-props.zen       sha 720adb92…  → played; access violation at exit
+23:26:43  04-authored-classes.zen  sha 4397b245…  → ok
+23:27:26  05-deletes-waynet.zen    sha cbc2ac31…  → ok
+23:28:27  restored pristine NewWorld.zen (hash verified)
+```
+
+**The two access violations on `01` and `03` are not load failures**, and the
+script's own `FAIL (dialog captured)` label on them is wrong. Both stacks are the
+engine's shutdown path — `CGameManager::Done()` → `exit()` → `_c_exit()` →
+`zCRayTurboAdmin::~zCRayTurboAdmin` → `zCMeshOctreeNode::~zCMeshOctreeNode` — and
+Daniel reports the dialogs only became visible after he had already closed the
+game. All five edited candidates carry the same re-saved mesh, so an octree the
+writer had corrupted would have taken `02`, `04` and `05` down too; it did not.
+`01` was also **re-run outside the batch the same evening and loaded fine**,
+after a single startup crash that did not reproduce — so the pure re-save is
+clear, and the engine's noise floor here includes a one-off crash at load.
+`engine-batch.ps1` no longer auto-fails on a captured dialog: it dumps the window
+and still asks. The hazard is recorded in `docs/reference/environment-hazards.md`.
+
+**The control crashed in-game**, in `zCCSCamera::Unarchive` under
+`zCAICamera::StartDialogCam` — in the *pristine retail world*, on a code path no
+edit of ours touches. Treated as a scenario artifact (Daniel's call, 2026-08-28)
+rather than as a void batch. It does mean the sheet's "`00` must pass in the same
+session" rule was not satisfied literally, and a re-run of `00` alone is what
+would settle it.
+
+**What the run does establish:** all seven ops with no prior verdict —
+`DeleteVob` on a six-VOB subtree, `AddWaypoint`, `RenameWaypoint`,
+`MoveWaypoint`, `RemoveWaypoint` with its 2,895-waypoint renumber,
+`SetWaypointEdge`, `SetVobClassProp` — plus `SetVobProp`'s ten new keys and
+`AddVob` authoring 27 classes, produce worlds the engine **loads and plays
+without a load-time complaint**. That was the whole claim for the `03` row on
+`presetName`/`bias`/`dynamicShadows` and for `04`'s trigger, mover, door and
+music zone, so those rows are closed.
+
+**What it does not establish**, per Daniel at the keyboard:
+
+| Row | Outcome |
+|---|---|
+| `04` — `zCVobLight` magenta, `zCPFXController` light cone | **Confirmed, both plainly visible.** The first engine witness of `AddVob` authoring a class |
+| `03` — red fog | "Looks like it is there" — but indistinguishable from the world's ambient fog by eye. Not a verdict |
+| `03` — torch radius 600→5000, three music zones at 0.15 | **Not judgeable by ear** in a live world |
+| `04` — `GATE2B_CHEST` opens | **The chest was never found.** Nothing is claimed about `oCMobContainer` |
+| `05` — torch subtree gone, Xardas still reads | Not reported. The world played and exited clean; the specific rows are open |
+
+So `SetVobClassProp` — the gap §16.2 calls the sharpest, and the one whose edits
+are *invisible in the viewport* — still has **no positive in-engine witness**.
+The honest quote after this run is *"every shipped op produces a world the engine
+loads and plays; two authored classes have been seen to render; class properties
+have not been observed at all."*
+
+**Why the observational half failed, and what the next candidate needs.** Retail
+NewWorld is the wrong instrument for an A/B by eye: ambient fog masks a fog zone,
+a live soundscape masks a sound radius, and a chest 300 units from START is still
+a chest in a forest you have to find. Daniel's read, and it is the right one — the
+next candidate wants a **minimal world and a minimal game state**, where the edit
+is the only thing in the frame. That is a candidate-builder change, not an op
+change; the shape of it is in `docs/plans/level-editor.md` §16.2.
+
 ### Building the candidates
 
 `tools/mutate.js` is now in the repo — the previous handoff left it in a

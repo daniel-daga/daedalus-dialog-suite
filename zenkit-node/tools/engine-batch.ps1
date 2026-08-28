@@ -1,6 +1,6 @@
 # T6.5 engine batch: installs each candidate world, launches Spacer2, waits for
-# either an assertion/error dialog (auto-dumped, Spacer killed, FAIL recorded)
-# or Spacer exiting normally (you are asked for the verdict), then restores the
+# either an assertion/error dialog (auto-dumped, Spacer killed) or Spacer
+# exiting normally, then asks you for the verdict either way and restores the
 # pristine backup. Run in YOUR OWN PowerShell window (it needs the keyboard):
 #   powershell -ExecutionPolicy Bypass -File engine-batch.ps1
 # Optional: -Only 01,06   (run only those candidate numbers)
@@ -144,6 +144,7 @@ try {
     Write-Host " When you are done, just CLOSE the engine and answer the prompt." -ForegroundColor Yellow
     $proc = Start-Process -FilePath $Spacer -WorkingDirectory (Split-Path $Spacer) -PassThru
     $outcome = $null
+    $dialog = $false
     while ($true) {
       Start-Sleep -Seconds 2
       if ($proc.HasExited -and -not (EngineRunning)) { break }
@@ -153,7 +154,7 @@ try {
       if ($hit) {
         Start-Sleep -Seconds 1
         $dump = DumpSpacerWindows
-        $outcome = 'FAIL (dialog captured)'
+        $dialog = $true
         foreach ($l in $dump) { Log "  $l" }
         Write-Host " dialog captured - killing the engine" -ForegroundColor Red
         Get-Process -Name $Watch -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -161,7 +162,18 @@ try {
         break
       }
     }
-    if (-not $outcome) {
+    # A captured dialog is not by itself a failure: ZenGin raises an access
+    # violation in its own exit path (zCRayTurboAdmin / zCMeshOctreeNode) after a
+    # session that played fine, and the retail control has been seen to crash in
+    # zCCSCamera::Unarchive on dialog start. The stack tells them apart and the
+    # script cannot - so it always asks. See docs/reference/environment-hazards.md,
+    # "Gothic II, as the engine oracle".
+    if ($dialog) {
+      Write-Host " Read the stack above: a crash inside exit()/CGameManager::Done is" -ForegroundColor Yellow
+      Write-Host " a shutdown crash on a world that loaded and played - not a fail." -ForegroundColor Yellow
+      $ans = Read-Host " Dialog captured for $($c.Name). Verdict? [ok / fail / unclear] + optional note"
+      $outcome = "USER (dialog captured): $ans"
+    } else {
       $ans = Read-Host " $Exe exited without a captured dialog. Verdict for $($c.Name)? [ok / fail / unclear] + optional note"
       $outcome = "USER: $ans"
     }

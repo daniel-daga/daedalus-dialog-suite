@@ -10,6 +10,13 @@ The record of what *has* passed is
 [`engine-acceptance-2026-08-25.md`](engine-acceptance-2026-08-25.md). Nothing
 here is claimed until it is run.
 
+> **Run 2026-08-28. Result in the acceptance record, *"Gate 2b — the run"*.**
+> Every candidate loaded and played; most of the observation rows below could
+> not be judged in retail NewWorld — the ambient fog and the live soundscape
+> mask them, and the chest was never found. If this sheet is run again it should
+> be against a minimal world and a minimal game state, not this one
+> (`docs/plans/level-editor.md` §16.2).
+
 ## Running it
 
 ```

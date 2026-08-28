@@ -2694,30 +2694,38 @@ ubuntu `editor-e2e-electron` job (`all-tests.yml`) does not set it, so the
 spec skips itself there for want of the addon — that job's platform doesn't
 ship, so it was never the gate this closes.
 
-### 16.2 Four shipped ops have no engine verdict
+### 16.2 The ops' engine verdict — Gate 2b ran, and it is half a verdict
 
-`DeleteVob`, `MoveWaypoint`, `SetVobClassProp` and `RenameWaypoint` all landed
-after candidate `03` was built, so Gate 2 covers five ops — `MoveVob`,
-`RotateVob`, `SetVobProp`, `AddVob`, `ReparentVob` — and not these. The acceptance record
-says so itself, under **"Not run and not claimed here either"** in its Gate 2
-section. Say **"Gate 2 passed for the ops it tested"**, never "Gate 2 passed".
-A removed subtree is still the edit ZenGin has the most room to disagree about.
+**Gate 2b ran 2026-08-28** (Gothic2, six candidates; run sheet
+`zenkit-node/docs/gate2b-run-sheet.md`, result in the acceptance record under
+*"Gate 2b — the run"*). It closed the load-time half of this gap and left the
+observational half open.
 
-The `oCItem.instance` half is closed: the name a `SetVobClassProp` writes is
-checked against the parser's item index, so a typo cannot reach a save — but
-that is a check, not a verdict. Increment 2 widened the gap rather than closing
-it: five more classes are editable, and a sound or a fog zone written wrongly is
-*invisible in the viewport* — the first edits whose only witness is the engine.
+**Closed.** Every op that had no verdict — `DeleteVob` on a six-VOB subtree,
+`AddWaypoint`, `RenameWaypoint`, `MoveWaypoint`, `RemoveWaypoint` with its
+2,895-waypoint renumber, `SetWaypointEdge`, `SetVobClassProp` — plus
+`SetVobProp`'s ten keys from V1/V2 (§16.17) and `AddVob` authoring 27 classes,
+produces a world the engine **loads and plays**. `zCVobLight` and
+`zCPFXController` were seen to *render* what the editor authored, which is the
+first in-engine witness of `AddVob` building a class. The `oCItem.instance`
+half was already closed by a check against the parser's item index.
 
-`SetVobProp` is on Gate 2's list but its key set is not: V1 and V2 (§16.17) added
-`presetName`, `visualCamAlign`, `bias`, `dynamicShadows` and the seven decal
-fields after candidate `03` was built, so what the engine has seen of this op is
-the name, the visual and the six flags.
+**Still open, and it is the sharp half.** `SetVobClassProp`'s edits are
+*invisible in the viewport*, and Gate 2b did not see them in the engine either:
+the fog zone was indistinguishable from the world's ambient fog, the sound
+radius and the three music volumes were not judgeable by ear, and the authored
+`oCMobContainer` was never found in the forest to be opened. `05`'s two rows —
+the torch subtree gone, Xardas still reading — went unreported. So a wrongly
+written class property would still have passed this run.
 
-`verify-world-edit.js` sets no class property at all, so a rebuilt candidate
-would have to grow one before it is worth building. **Whether that rebuild is
-worth doing is Daniel's call** — it costs a staged candidate and two engine
-passes.
+**Why, and what the next candidate needs.** The instrument, not the ops:
+retail NewWorld masks every one of those signals, and a candidate is only an
+A/B if the edit is the only thing in the frame. The next pass wants a **minimal
+world and a minimal game state** — few enough VOBs and quiet enough ambient
+that a red fog, a 5000-unit sound radius or a placed chest is unmistakable, and
+the player spawned in front of it rather than 300 units away. That is a change
+to `tools/mutate.js` and the candidate set, not to any op. **Daniel's call**
+whether it is worth the build.
 
 ### 16.3 Phase 1b-2 — the classes that are left
 
@@ -3066,8 +3074,9 @@ Three things worth knowing next:
   payload in place; an append cannot, so it takes the re-read instead.
 - `verify-world-edit.js` was **not** extended, for W1's reason: it needs a
   Gothic install and a GPU, and an unrun addition to a verification script is
-  worse than none. Nothing about an added waypoint has an engine verdict — it
-  joins the four ops already in that queue (§16.2).
+  worse than none. Nothing about an added waypoint had an engine verdict when
+  this landed — it joined the queue in §16.2, and Gate 2b served it on
+  2026-08-28: the world loads and plays.
 
 **W3 — edge add and delete. Landed 2026-08-28**, and neither of the two answers
 the card offered was needed: **the hazard is fixed in the binding, not carried by
@@ -3125,7 +3134,8 @@ else would rewrite. The selection is kept — an edge renumbers nothing.
 `verify-world-edit.js` and `verify-world-pipeline.js` were **not** extended, for
 W1 and W2's reason: they need a Gothic install and an unrun addition to a
 verification script is worse than none. Nothing about an added or deleted edge
-has an engine verdict; it joins the queue in §16.2. There is no Playwright spec
+had an engine verdict when this landed; it joined the queue in §16.2, served by
+Gate 2b on 2026-08-28 — the world loads and plays. There is no Playwright spec
 either, and that is the standing shape of the World surface rather than a gap
 this card opened — the browser harness has no world to open, so every waynet
 edit is covered by Jest against the mocked IPC.
@@ -3178,10 +3188,12 @@ Three things worth knowing next:
 
 `verify-world-edit.js` and `verify-world-pipeline.js` were **not** extended, for
 W1, W2 and W3's reason: they need a Gothic install, and an unrun addition to a
-verification script is worse than none. Nothing about a deleted waypoint has an
-engine verdict; it joins the queue in §16.2 — and it is the first op in that
-queue that *removes* from the waynet, which is the part a run should look at
-first.
+verification script is worse than none. Nothing about a deleted waypoint had an
+engine verdict when this landed; it joined the queue in §16.2 as the first op in
+it that *removes* from the waynet. Gate 2b ran it on 2026-08-28 — a leaf no
+script names, renumbering the 2,895 waypoints after it, and the world loads and
+plays. Whether the NPC routines that ride on those numbers still hold was the
+run's own assertion and **went unobserved** (§16.2).
 
 **Sequence: W1 → W2 → W3 → W4.** All four landed 2026-08-28, and §16.7 is
 closed but for what it always pointed elsewhere for: the dangling-reference rule
@@ -4775,9 +4787,10 @@ rather than loading that file. Regenerating the `.zen` is the reviewed act the
 regen script reserves; only the golden JSON was regenerated here, with
 `--golden-only`, and its whole diff is five `dynamicShadows: 0` lines.
 
-**Still not in the engine's verdict.** `dynamicShadows` and the decal fields join
-the six ops of §16.2 that no Gate 2 candidate covers — the candidate was built
-2026-08-27 and this is a new key set on `setVobProp`.
+**In the engine's verdict since Gate 2b.** `dynamicShadows`, `presetName` and
+`bias` were written into candidate `03` on 2026-08-28 and the world loads and
+plays — which was the whole claim for keys with nothing specific to look at. The
+decal fields were not in that candidate and are still unwitnessed (§16.2).
 
 ### 16.18 Portals and sectors — the first two slices (§14.3 3.4, §11 Phase 2)
 

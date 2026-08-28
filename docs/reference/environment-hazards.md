@@ -182,6 +182,23 @@ anything does.
   screenshot comparisons are candidate-vs-control only, never against the retail
   look.
 - **Run fullscreen.** Windowed crashes with an access violation here.
+- **Not every Access Violation dialog is a verdict, and two of them are noise.**
+  Both were seen in the Gate 2b batch (2026-08-28) and both are the engine's,
+  not a candidate's — read the stack before you classify a run:
+  - **At shutdown.** `CGameManager::Done()` → `exit()` → `_c_exit()` →
+    `zCRayTurboAdmin::~zCRayTurboAdmin` → `zCMeshOctreeNode::~zCMeshOctreeNode`
+    (`zBsp.cpp:7099`). It appears *after* you close the game, on a session that
+    played fine, and it is not reliable: two of five candidates carrying the
+    same re-saved mesh raised it and three did not. A world that reached this
+    stack **loaded and played**.
+  - **On dialog start, in the pristine retail world.** `oCNpc::EV_PlaySound` →
+    `zCAICamera::StartDialogCam` → `zCCSCamera::Unarchive` → `zMAT4::operator=`
+    (`zAlgebra.cpp:552`). Seen on `00-control-original.zen`, so no edit of ours
+    is in that path. It kills the control, which is what the batch's A/B rests
+    on — if it recurs, re-run `00` alone rather than voiding the batch.
+  `engine-batch.ps1` used to log any such dialog as `FAIL (dialog captured)`;
+  it now dumps the window and still asks for a verdict, because the script
+  cannot tell these apart and the person at the keyboard can.
 - **Never pass a world on Spacer's command line** — `0xC000041D`, on the retail
   original too.
 - **Never OpenGothic.** It is built on ZenKit and shares the code under test.

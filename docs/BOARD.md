@@ -94,7 +94,7 @@ was true for so long nobody re-reads it.
   closed** — the addon is asserted present and unpacked, the packaged app now
   opens a world in CI, and a real-Electron spec now watches the World surface
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
-  six ops with no engine verdict.
+  the class-property writes no engine run has ever observed.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed on 2026-08-28, and the addon again with
@@ -137,11 +137,11 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
 
-- **Six shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
-  `SetVobClassProp`, `RenameWaypoint`, `AddWaypoint`, `SetWaypointEdge`;
-  `AddVob` now authors classes and `SetVobProp` has ten keys it did not have.
-  Say "Gate 2 passed for the ops it tested".
-  Rebuilding a candidate is **Daniel's call**. §16.2
+- **`SetVobClassProp` has no positive engine witness** — Gate 2b ran 2026-08-28
+  and every op now produces a world the engine loads and plays, but the class
+  properties themselves went unobserved: retail NewWorld's ambient fog and live
+  soundscape mask them. Needs a **minimal world and game state**, and that build
+  is **Daniel's call**. §16.2
 
 **Phase 1b-2 — VOB editing**
 
@@ -200,6 +200,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Gate 2b ran** — six candidates in Gothic2, 2026-08-28. Every op loads and
+  plays; the observation rows mostly did not survive retail NewWorld, and the
+  batch script no longer calls a shutdown access violation a FAIL. Daniel.
+  §16.2 and `engine-acceptance-2026-08-25.md`
 - **The viewport's frame is a handle command** — `WorldViewportHandle.frameVob`
   replaces the `frameRequest` prop; the trigger was `raycastDown`, not W4, and
   the last of the three viewport warts is closed. board-loop.
