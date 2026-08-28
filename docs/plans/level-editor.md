@@ -3311,13 +3311,29 @@ stack, so a child always dies childless. A child whose `use_count()` is not 1 is
 left whole — something else owns it. **Read a defect of this shape as reaching
 as far as the object graph does, not as far as the parser does.**
 
-**What is left of it is above the reader, in `zenkit-node`'s own walks.**
-`CountVobs`, `CollectVobNames` (`src/binding.cc`) and `CollectVobs` /
-`CollectVobColumns` (`src/normalize.cc`) all recurse once per level over
-`children`. Measured after both patches: a 300,000-level world **loads**, and
-`worldStats` on it then dies with `0xC00000FD` — so the crash has moved from the
-reader into the binding, where the frames are smaller but the bound is still
-nothing. Not patched; it is four functions in two files and a separate change.
+**The binding's own four walks are iterative too (2026-08-28), and no patch was
+involved — they are `zenkit-node`'s own source.** `CountVobs` and
+`CollectVobNames` (`src/binding.cc`), `CollectVobs` and `CollectVobColumns`
+(`src/normalize.cc`) each recursed once per level over `children`, reached
+through `worldStats`, `vobNames`, `normalizeWorld` and `vobIndex` respectively.
+Measured before the change, on node's 8 MB main thread: 40,000 levels kill
+`vobNames` and `vobIndex`, 10,000 kill `normalizeWorld`, and 300,000 kill even
+`worldStats` — the crash had moved from the reader into the binding, where the
+frames are smaller but the bound was still nothing. All four now walk an
+explicit cursor stack (`VobCursor` / `VobPathCursor` / `VobColumnCursor`), which
+is `0035`'s argument, not a bound: a valid tree's depth has no documented
+ceiling. Pre-order and the parent-before-child ordering both consumers rely on
+are unchanged — checked against retail `NewWorld.zen`, 23,288 VOBs, identical
+counts from all four and every parent index below its child's.
+
+**One thing the fix does not remove, and cannot: `normalizeWorld` is quadratic
+in the depth.** Every VOB gets a slash-joined index path, so a chain of N levels
+retains N strings averaging N characters — ~200 MB at 10,000 levels and ~45 GB
+at 300,000. That is the dump's shape, not the recursion, which is why the deep
+test covers the other three walks at 300,000 and `normalizeWorld` only at
+10,000. It is the fidelity harness's path, not the editor's; the editor reads
+`vobIndex`, whose columns carry a sibling index rather than a path.
+
 The `ReadMemory::seek` decision is still the other open one.
 
 **`Mesh.cc`'s element counts are bounded (2026-08-28, patch `0036`), and the

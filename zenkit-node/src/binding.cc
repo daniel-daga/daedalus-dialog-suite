@@ -168,11 +168,29 @@ Napi::Value LoadWorld(Napi::CallbackInfo const& info) {
   }
 }
 
+// A cursor into one `children` vector, for the iterative walks below. A VOb
+// tree's depth is the file's own `childs<N>` counts, so a walk that recurses
+// once per nesting level overflows the stack on a world the reader itself now
+// parses and destroys fine (patches 0038 and 0039, for the same reason).
+// Measured against a chain fixture: 10,000 levels are enough to kill a walk
+// that builds a JS object per VOB, 40,000 to kill the cheapest one.
+struct VobCursor {
+  std::vector<std::shared_ptr<zenkit::VirtualObject>> const* list;
+  std::size_t index;
+};
+
 void CountVobs(std::vector<std::shared_ptr<zenkit::VirtualObject>> const& vobs, std::size_t& count) {
-  for (auto const& vob : vobs) {
+  std::vector<VobCursor> stack {{&vobs, 0}};
+  while (!stack.empty()) {
+    auto& top = stack.back();
+    if (top.index >= top.list->size()) {
+      stack.pop_back();
+      continue;
+    }
+    auto const& vob = (*top.list)[top.index++];
     if (vob == nullptr) continue;
     ++count;
-    CountVobs(vob->children, count);
+    stack.push_back({&vob->children, 0});  // invalidates `top`
   }
 }
 
@@ -198,10 +216,17 @@ void CollectVobNames(Napi::Env env,
                      std::vector<std::shared_ptr<zenkit::VirtualObject>> const& vobs,
                      Napi::Array& out,
                      std::uint32_t& index) {
-  for (auto const& vob : vobs) {
+  std::vector<VobCursor> stack {{&vobs, 0}};
+  while (!stack.empty()) {
+    auto& top = stack.back();
+    if (top.index >= top.list->size()) {
+      stack.pop_back();
+      continue;
+    }
+    auto const& vob = (*top.list)[top.index++];
     if (vob == nullptr) continue;
     out.Set(index++, Napi::String::New(env, zenkit_node::Windows1252ToUtf16(vob->vob_name)));
-    CollectVobNames(env, vob->children, out, index);
+    stack.push_back({&vob->children, 0});  // invalidates `top`
   }
 }
 

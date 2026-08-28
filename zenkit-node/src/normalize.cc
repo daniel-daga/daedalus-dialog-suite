@@ -1023,17 +1023,34 @@ using namespace zenkit;
 // ---------------------------------------------------------------------------
 // Section builders.
 
+// A cursor into one `children` vector plus the path its parent carries. Both
+// walks below are iterative for the reason `src/binding.cc`'s are: a VOb tree's
+// depth is the file's own `childs<N>` counts, and 10,000 levels overflow the
+// stack on a world the reader itself parses and destroys fine.
+struct VobPathCursor {
+  std::vector<std::shared_ptr<VirtualObject>> const* list;
+  std::size_t index;
+  std::string path;  // the parent's, empty at the roots
+};
+
 void CollectVobs(Napi::Env env,
                  std::vector<std::shared_ptr<VirtualObject>> const& vobs,
                  std::string const& parent_path,
                  Napi::Array& out,
                  std::uint32_t& out_index) {
-  for (std::size_t i = 0; i < vobs.size(); ++i) {
-    auto const& vob = vobs[i];
+  std::vector<VobPathCursor> stack {{&vobs, 0, parent_path}};
+  while (!stack.empty()) {
+    auto& top = stack.back();
+    if (top.index >= top.list->size()) {
+      stack.pop_back();
+      continue;
+    }
+    std::size_t const i = top.index++;
+    auto const& vob = (*top.list)[i];
     if (vob == nullptr) continue;
 
     std::string const path =
-        parent_path.empty() ? std::to_string(i) : parent_path + "/" + std::to_string(i);
+        top.path.empty() ? std::to_string(i) : top.path + "/" + std::to_string(i);
 
     auto entry = Napi::Object::New(env);
     entry.Set("path", Napi::String::New(env, path));
@@ -1065,7 +1082,7 @@ void CollectVobs(Napi::Env env,
     entry.Set("childCount", NumI(env, vob->children.size()));
 
     out.Set(out_index++, entry);
-    CollectVobs(env, vob->children, path, out, out_index);
+    stack.push_back({&vob->children, 0, path});  // invalidates `top`
   }
 }
 
@@ -1105,15 +1122,28 @@ struct VobColumns {
   }
 };
 
+struct VobColumnCursor {
+  std::vector<std::shared_ptr<VirtualObject>> const* list;
+  std::size_t index;
+  std::int32_t parent;
+};
+
 void CollectVobColumns(std::vector<std::shared_ptr<VirtualObject>> const& vobs,
                        std::int32_t parent,
                        VobColumns& out) {
-  for (std::size_t i = 0; i < vobs.size(); ++i) {
-    auto const& vob = vobs[i];
+  std::vector<VobColumnCursor> stack {{&vobs, 0, parent}};
+  while (!stack.empty()) {
+    auto& top = stack.back();
+    if (top.index >= top.list->size()) {
+      stack.pop_back();
+      continue;
+    }
+    std::size_t const i = top.index++;
+    auto const& vob = (*top.list)[i];
     if (vob == nullptr) continue;
 
     auto const self = static_cast<std::int32_t>(out.parent.size());
-    out.parent.push_back(parent);
+    out.parent.push_back(top.parent);
     // The VOB's position among its siblings — the last element of the index
     // path setVobPosition and friends address it by. Rebuilding the whole path
     // is the consumer's job, and it only ever does it for a VOB it is editing.
@@ -1151,7 +1181,7 @@ void CollectVobColumns(std::vector<std::shared_ptr<VirtualObject>> const& vobs,
         vob->visual != nullptr ? std::string {VisualTypeName(vob->visual->type)}
                                : std::string {"UNKNOWN"}));
 
-    CollectVobColumns(vob->children, self, out);
+    stack.push_back({&vob->children, 0, self});  // invalidates `top`
   }
 }
 

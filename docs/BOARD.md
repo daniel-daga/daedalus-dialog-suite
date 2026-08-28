@@ -137,8 +137,8 @@ card waits on live at its pointer — put new prose there, not here.
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
 - **The world reader is still not crash-safe** — eleven instances closed
-  (`0029`–`0039`); the crash has moved *above* the reader, into `zenkit-node`'s
-  own recursive vob walks. Then the `ReadMemory::seek` decision. Unowned. §16.11
+  (`0029`–`0039`) and the binding's own walks with them; what is left is the
+  `ReadMemory::seek` decision. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -153,24 +153,18 @@ card waits on live at its pointer — put new prose there, not here.
 
 **UI/UX improvement**
 
-*(empty — both cards landed, see Done)*
+*(empty — both cards landed; see `git log`)*
 
 ## Done
 
-- **Patches `0038` and `0039` — the VOb tree is parsed *and destroyed*
-  iteratively.** `parse_vob_tree` recursed once per child and its `skip` lambda
-  once per nesting level; 60,000 nested VObs killed the child with `0xC00000FD`.
-  Fixing the parse only got as far as `LOADED` — the defaulted destructor
-  recursed too. The crash is now in the binding's own walks at 300,000 levels,
-  which is where §16.11 leaves it. §16.11
+- **The binding's four vob walks are iterative, and no patch was involved** —
+  `CountVobs`/`CollectVobNames` (`src/binding.cc`) and
+  `CollectVobs`/`CollectVobColumns` (`src/normalize.cc`) are `zenkit-node`'s own
+  source, so the crash that `0038`/`0039` pushed above the reader is closed in
+  the repo. `normalizeWorld` stays quadratic in the *depth* — its per-VOB path
+  string, not the recursion — which is why its test stops at 10,000 levels
+  where the others go to 300,000. §16.11
 
-- **Patch `0037` — the waynet's two counts are bounded, and the way it was found
-  is the point.** `numWays` sized `edges.reserve` and its loop cannot stop —
-  a null endpoint is legal by design — so 268 million junk edges still reported
-  `LOADED`, after 41 s. Random seeds were saturated without saying so (600 over
-  the fixture, 160 over retail NewWorld, all clean); `tools/fuzz-world.js
-  --counts` sweeps every INTEGER entry instead and named it in five seconds.
-  §16.11
-
-Flushed 2026-08-28 (`0035` and `0036` too — their substance is in §16.11 and
-in `git log`).
+Flushed 2026-08-28 (`0035`–`0039`: their substance is in §16.11 and in
+`git log`, including the `--counts` sweep `0037` added and why to prefer it to
+another random seed).

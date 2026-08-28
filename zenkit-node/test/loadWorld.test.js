@@ -777,3 +777,75 @@ for (const testCase of DEEP_VOB_CASES) {
     }
   });
 }
+
+// The reader parses and destroys a deep tree iteratively (patches 0038 and
+// 0039), so the crash moved one layer up: every walk `zenkit-node` itself does
+// over `children` recursed once per level. Four of them across two files —
+// `CountVobs` and `CollectVobNames` in `src/binding.cc`, `CollectVobs` and
+// `CollectVobColumns` in `src/normalize.cc` — reached through the four APIs
+// below, one walk each. Measured before the fix, on node's 8 MB main thread
+// (the editor's worker gets 4 MB): the world loads and the walk then kills the
+// child, `worldStats` at 300,000 levels and the other three at 40,000 or fewer.
+function walkInChild(file, calls, timeoutMs) {
+  const source = `
+    const zenkit = require(${JSON.stringify(path.join(__dirname, '..'))});
+    const handle = zenkit.loadWorld(process.argv[1], 'g2');
+    ${calls.map((call) => `console.log(${JSON.stringify(call.label)} + ' ' + (${call.body}));`).join('; ')}
+  `;
+  const proc = spawnSync(process.execPath, ['-e', source, file], {
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  });
+  return {
+    timedOut: !!(proc.error && proc.error.code === 'ETIMEDOUT'),
+    status: proc.status,
+    stdout: (proc.stdout || '').trim(),
+    stderr: (proc.stderr || '').trim(),
+  };
+}
+
+// The fixture's own five VOBs plus the chain, and the same count from every
+// walk: one that stopped early would still exit 0.
+const DEEP_WALK_CASES = [
+  {
+    // The three walks whose cost is linear in the tree, at the depth §16.11
+    // measured `worldStats` dying at.
+    depth: 300_000,
+    id: 'counts, names and indexes',
+    calls: [
+      { label: 'STATS', body: 'zenkit.worldStats(handle).vobCount' },
+      { label: 'NAMES', body: 'zenkit.vobNames(handle).length' },
+      { label: 'INDEXED', body: 'zenkit.vobIndex(handle).count' },
+    ],
+  },
+  {
+    // `normalizeWorld` is not linear in the depth and cannot be: it gives every
+    // VOB a slash-joined index path, so a chain of N levels retains N strings
+    // averaging N characters. That is a property of the dump's shape, not of
+    // the recursion, and it survives this fix — hence a depth that only has to
+    // be past where the recursion died (measured: 10,000 overflows, ~200 MB of
+    // paths).
+    depth: 10_000,
+    id: 'normalizes',
+    calls: [{ label: 'NORMALIZED', body: 'zenkit.normalizeWorld(handle).vobs.length' }],
+  },
+];
+
+for (const testCase of DEEP_WALK_CASES) {
+  test(`the binding ${testCase.id} a VOb tree ${testCase.depth} levels deep without overflowing the stack`, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-vob-walk-'));
+    try {
+      const corrupt = seedDeepVobChain(dir, `deep-vob-walk-${testCase.depth}.zen`, testCase.depth, 'vob');
+
+      const result = walkInChild(corrupt, testCase.calls, 300_000);
+      assert.strictEqual(result.timedOut, false, 'the walks did not return within 300 s');
+      assert.strictEqual(result.status, 0,
+        `the child died (status ${result.status}) instead of walking the tree: ${result.stdout}\n${result.stderr}`);
+      assert.deepStrictEqual(result.stdout.split(/\r?\n/),
+        testCase.calls.map((call) => `${call.label} ${5 + testCase.depth}`));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
