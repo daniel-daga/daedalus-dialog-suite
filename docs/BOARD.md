@@ -137,11 +137,16 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
 
-- **`SetVobClassProp` has no positive engine witness** — Gate 2b ran 2026-08-28
-  and every op loads and plays, but the class properties went unobserved in
-  retail NewWorld. Candidate **`06-minimal-frame` is built and asserted** and
-  clears the spawn's frame first; what is left is running it. **Daniel**, at the
-  keyboard: `-Only 00,06`. §16.2 and the run sheet §06
+- **One row of Gate 2b is left: does an authored container open?** The red fog
+  and the sound radius both passed in `06-minimal-frame` on 2026-08-29 —
+  `SetVobClassProp` **has** its engine witness now. The chest was invisible
+  (a real `insertVob` defect, fixed), then floating and unfocusable (both fixed
+  in the candidate). Re-run `-Latest`. **Daniel.** §16.2
+
+- **The editor places mobs nobody can use, and says nothing** — a `oCMob*` with
+  an empty `focusName` is visible and inert in the engine. Retail sets it per
+  class, so it is not an `insertVob` default; the guidance or the warning belongs
+  on the editor's side. Unowned. §16.15
 
 **Phase 1b-2 — VOB editing**
 

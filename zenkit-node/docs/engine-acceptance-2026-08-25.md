@@ -1016,6 +1016,38 @@ next candidate wants a **minimal world and a minimal game state**, where the edi
 is the only thing in the frame. That is a candidate-builder change, not an op
 change; the shape of it is in `docs/plans/level-editor.md` §16.2.
 
+### Gate 2b, second pass — 2026-08-28/29, `06-minimal-frame`, the observation half
+
+The candidate built to answer the first pass: the same edits with the spawn's
+frame cleared around them (239 VOBs — 196 lights, 37 sounds, 6 fog zones, and
+nothing of any other class). Run with `-Latest`, so no control in-session.
+
+| Row | Result |
+|---|---|
+| **The screen is red** | **PASS.** An authored `zCZoneZFog`, made red by `SetVobClassProp` and by nothing else. This is the **first positive in-engine witness of a class-property write** — §16.2's sharpest gap, open since the op shipped |
+| **A crackle with no torch** | **PASS.** `radius` 8,000 carried the sound 3,000 units to the spawn in an otherwise silent frame |
+| **A chest, dead ahead** | Visible after the `showVisual` fix below; **floating, and not focusable** — so not yet openable. Fixed in the candidate, not re-run |
+| Magenta light overhead | PASS, as in the first pass |
+
+**The chest row was a defect, not a hard-to-spot crate.** Two passes lost it and
+the third explained why: `insertVob` set its `show_visual` default **per branch**
+and only in the bare-`zCVob` case, so every one of the 26 classes I1–I5 added was
+authored invisible even when handed a real `.MDS`. An invisible world loads, so
+no layer anywhere failed — the editor's suites, the op suite and the binding
+suite were all green against it. Fixed with a test; it silently applied to the
+authored door and mover too, whose rows had only ever claimed load-safety.
+
+Two more things had to be right and were not, both in the candidate rather than
+the ops, both now asserted before the engine sees the file: the chest stood at
+the spawn's Y with the ground 50 units lower (nothing snaps an authored VOB —
+the editor's answer is Drop-to-ground), and it had an empty `focusName`, which
+is what the engine's crosshair finds a mob by. See §16.15 for the durable form
+of the second: it is per class in retail, and an editor that places an
+unopenable chest without saying so is the gap it leaves.
+
+So `SetVobClassProp` now **has** its witness, and what is left of this sheet is
+one row: whether an authored container opens.
+
 ### Building the candidates
 
 `tools/mutate.js` is now in the repo — the previous handoff left it in a

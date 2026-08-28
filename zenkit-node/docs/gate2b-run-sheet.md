@@ -114,7 +114,7 @@ normal.
 | What to look for | Where |
 |---|---|
 | **The screen is red.** An authored `zCZoneZFog`, its own 8,000-unit box centred on the spawn, `rangeCenter` 3,000, `overrideColor` on, pure red. `AddVob` builds the zone; **`SetVobClassProp` is the only thing that makes it red** — a grey world here is that op failing, and it is the one row nothing else on this sheet can substitute for | you spawn inside it |
-| **A chest, dead ahead, and it opens.** `GATE2B_MIN_CHEST`, `oCMobContainer`, unlocked. 250 units along START's own direction vector, with nothing else within 250 units of it — `04`'s chest was placed on a guessed axis and was never found | first frame |
+| **A chest, dead ahead, and it opens.** `GATE2B_MIN_CHEST`, `oCMobContainer`, unlocked. 250 units along START's own direction vector, with nothing else within 250 units of it — `04`'s chest was placed on a guessed axis and was never found. **The only row still open**, and it took four fixes to get here: `showVisual` (a real `insertVob` defect), a measured bbox, a ground snap and a `focusName` | first frame |
 | **A torch crackle with no torch.** `GATE2B_MIN_SOUND` sits 3,000 units ahead with `radius` 8,000, in a frame where every other sound is gone. Audible at the spawn **only if the radius reached the file** — a binary, not a loudness judgement | from the spawn, without moving |
 | Magenta light overhead | already confirmed in the 2026-08-28 run; kept because the frame's own lights were just deleted and this is what lights the chest |
 

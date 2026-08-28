@@ -285,6 +285,45 @@ const LIGHT_ABOVE = 200;
 const SOUND_AT = 3000;      // the sound VOB's distance from the spawn...
 const SOUND_RADIUS = 8000;  // ...and the radius that has to be written for it to carry
 
+// The engine's crosshair finds a mob through `focusName`, and a mob without one
+// is placeable, visible and impossible to use. Retail agrees per class rather
+// than globally — 220 of 225 containers say `MOBNAME_CHEST`, while 7 beds and
+// 121 fires say nothing at all, because those are used by NPC routines and not
+// by the player's hand. So it is set here and not defaulted in the binding.
+const CHEST_FOCUS = 'MOBNAME_CHEST';
+
+/**
+ * The highest world-mesh triangle under (x, z) and below `fromY`.
+ *
+ * A VOB placed at the spawn's own Y hangs in the air as soon as the ground
+ * slopes away, which is what the first `06` run saw. There is no raycast in the
+ * binding — the editor's `raycastDown` is three.js in the renderer — so this
+ * walks the mesh once. One point query over NewWorld's triangles, not a loop.
+ */
+const groundBelow = (mesh, x, z, fromY) => {
+  let best = -Infinity;
+  for (const chunk of mesh.chunks) {
+    const p = new Float32Array(chunk.positions);
+    const idx = new Uint32Array(chunk.indices);
+    for (let i = 0; i < idx.length; i += 3) {
+      const a = idx[i] * 3; const b = idx[i + 1] * 3; const c = idx[i + 2] * 3;
+      const ax = p[a]; const az = p[a + 2];
+      const bx = p[b]; const bz = p[b + 2];
+      const cx = p[c]; const cz = p[c + 2];
+      // Barycentric containment in the XZ plane.
+      const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+      if (d === 0) continue;
+      const u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+      if (u < 0 || u > 1) continue;
+      const v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+      if (v < 0 || u + v > 1) continue;
+      const y = u * p[a + 1] + v * p[b + 1] + (1 - u - v) * p[c + 1];
+      if (y <= fromY && y > best) best = y;
+    }
+  }
+  return best;
+};
+
 // Reverse depth-first order: deleting a VOB shifts only the paths *after* it, so
 // working backwards keeps every path still to be deleted valid. Children sort
 // after their parent, so a subtree is emptied before its root is removed.
@@ -361,12 +400,21 @@ const minimal = stage('06-minimal-frame');
   if (!model) throw new Error(`no retail oCMobContainer with ${CHEST_VISUAL} to measure a box from`);
   const rel = model.bbox.map((n, i) => n - model.position[i % 3]);
   const chestPos = ahead(CHEST_AHEAD);
+  // Stand it on the ground rather than at the spawn's height: the terrain slopes
+  // away over those 250 units, and the first run of this candidate saw the chest
+  // hanging in the air. `+ 512` starts the ray above the spawn so a rise is
+  // caught as well as a fall.
+  const ground = groundBelow(zk.extractWorldMesh(handle), chestPos[0], chestPos[2], sy + 512);
+  if (!Number.isFinite(ground)) throw new Error('no world-mesh ground under the chest — re-measure the placement');
+  if (Math.abs(ground - sy) > 400) throw new Error(`ground under the chest is ${(ground - sy).toFixed(0)} from the spawn — that is not the clearing`);
+  chestPos[1] = ground;
   const chest = zk.insertVob(handle, null, {
     class: 'oCMobContainer', name: 'GATE2B_MIN_CHEST',
     visual: CHEST_VISUAL, position: chestPos,
     bbox: rel.map((n, i) => n + chestPos[i % 3]),
   });
-  zk.setVobClassProp(handle, chest, { locked: false });
+  // `locked` was the row; `focusName` is what makes the row reachable at all.
+  zk.setVobClassProp(handle, chest, { locked: false, focusName: CHEST_FOCUS });
 
   // Confirmed already in Gate 2b, and kept for a second job: the frame's own
   // lights were just deleted, so this is what the chest is lit by.
@@ -406,7 +454,8 @@ const minimal = stage('06-minimal-frame');
   const chestBack = find('GATE2B_MIN_CHEST');
   const chestProps = zk.getVobProps(rh, chestBack.path);
   if (chestProps.locked !== false) throw new Error(`chest read back locked: ${JSON.stringify(chestProps)}`);
-  // The two ways this row has already been lost without anything failing.
+  // The four ways this one row has already been lost without anything failing.
+  if (chestProps.focusName !== CHEST_FOCUS) throw new Error('the chest has no focus name — the engine cannot target it');
   if (chestBack.flags.showVisual !== true) throw new Error('the chest does not claim to draw');
   if (chestBack.bbox[3] - chestBack.bbox[0] < 50) {
     throw new Error(`the chest's box is ${chestBack.bbox[3] - chestBack.bbox[0]} wide — the default, not the measured one`);

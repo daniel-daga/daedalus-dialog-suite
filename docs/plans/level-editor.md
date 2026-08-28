@@ -4320,6 +4320,36 @@ card is D2's `physicsEnabled` half — a sequencing call, above.
 
 ### 16.15 Class-specific insertion (§14.1 1.3)
 
+**What the engine taught this card, 2026-08-29.** Gate 2b's second pass put an
+authored `oCMobContainer` in front of the hero and it was visible, standing on
+the ground, and **impossible to open**. Three of the four things that had to be
+right were not, and none of them failed anywhere in the stack:
+
+- **`showVisual` was written `false` on every class this card added** — the
+  binding's `insertVob` decided the default per branch and set it only in the
+  bare-`zCVob` case, so a chest, a door or a mover handed a real `.MDS` was
+  authored invisible. An invisible world loads, so nothing complained. **Fixed**
+  and covered by `mutations.test.js` — this was a real defect, and it had eaten
+  the chest row of two engine passes.
+- **`focusName` is what makes an authored mob usable at all.** The engine's
+  crosshair finds a mob through it, and a mob with an empty one is placeable,
+  visible and inert. Retail sets it per class rather than globally — 220 of 225
+  `oCMobContainer`s say `MOBNAME_CHEST`, while 7 beds and 121 fires say nothing,
+  because those are used by **NPC routines** and not by the player's hand. So it
+  is deliberately **not** an `insertVob` default: there is no majority to take
+  for `oCMobInter` (30+ values, the top one at 27 %) and `oCMobDoor`'s own
+  majority is `MOBNAME_BED`, a retail copy-paste quirk. What is missing is on the
+  editor's side — it will place a chest nobody can ever open and say nothing.
+  Carded.
+- **The bbox default is a 10 cm cube and ZenGin culls by box.** Not observed to
+  bite yet, but it is the next way that row would have been lost; the candidate
+  now measures a box off a retail VOB with the same visual.
+
+Not a defect, recorded so it is not re-diagnosed: a VOB authored at an arbitrary
+Y **floats**, because nothing snaps it. The editor's answer is the Drop-to-ground
+command (`handleDropToGround`, `raycastDown`); `tools/mutate.js` had no raycast
+at all and now walks the world mesh once for the one point it places.
+
 `insertVob` authors a bare `zCVob`, so every class the property grid can now
 *edit* is a class the editor cannot *create*. In practice that means class
 editing only reaches VOBs retail already placed — you can change a
