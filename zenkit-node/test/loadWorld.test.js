@@ -8,7 +8,7 @@ const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 
 const zenkit = require('..');
-const { walk } = require('../lib/container.js');
+const { walk, readHeader, readHashTable } = require('../lib/container.js');
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'minimal.g2.zen');
 
@@ -148,6 +148,49 @@ test('a mesh chunk length larger than the file throws instead of scanning foreve
       `loadWorld did not return within 30 s — the mesh chunk scan is unbounded again`);
     assert.match(result.stdout, /^THREW failed to load world: .*MeshAndBsp/);
     assert.match(result.stdout, /0xB060/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The BinSafe hash table's `insertion_index` — the second of two independent
+// counts read off the file, and the one that actually indexes the entry vector
+// sized by the first. Located by structure: `readHashTable` already knows the
+// entry layout, so the field is the `uint16` two bytes into an entry header.
+function seedOutOfRangeInsertionIndex(dir, name) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const header = readHeader(buf);
+  const table = readHashTable(buf, header.hashTableOffset);
+  assert.ok(table.count > 0, 'the fixture must have hash table entries to corrupt');
+
+  // First entry in file order: `count` u32, then `keyLength` u16,
+  // `insertionIndex` u16, ...
+  const at = header.hashTableOffset + 4 + 2;
+  assert.strictEqual(buf.readUInt16LE(at), table.physical[0], 'expected the first insertion index here');
+  buf.writeUInt16LE(0xffff, at); // far outside a table of `count` entries
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a hash table insertion index outside the table throws instead of writing past the vector', () => {
+  // `ReadArchiveBinsafe::read_header` sizes `_m_hash_table_entries` to the
+  // file's `hash_table_size` and then indexes it with the file's
+  // `insertion_index`, a second unrelated count. `std::vector::operator[]` is
+  // unchecked, so an index past the table is an out-of-bounds *write* into the
+  // heap — which is why fuzzing this file produced 0xC0000374 (heap
+  // corruption) alongside the 0xC0000005s (§16.11). Patch 0029 bounds it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-binsafe-index-'));
+  try {
+    const corrupt = seedOutOfRangeInsertionIndex(dir, 'bad-insertion-index.zen');
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 30 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of throwing: ${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /insertion index/i);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

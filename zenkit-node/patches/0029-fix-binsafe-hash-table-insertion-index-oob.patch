@@ -1,0 +1,63 @@
+ArchiveBinsafe: bound the hash table's insertion index before it indexes the entry vector.
+
+`ReadArchiveBinsafe::read_header` reads a BinSafe hash table straight off the
+file:
+
+	auto hash_table_size = read->read_uint();
+	_m_hash_table_entries.resize(hash_table_size);
+
+	for (std::uint32_t i = 0; i < hash_table_size; ++i) {
+		auto key_length = read->read_ushort();
+		auto insertion_index = read->read_ushort();
+		auto hash_value = read->read_uint();
+		auto key = read->read_string(key_length);
+
+		_m_hash_table_entries[insertion_index] = hash_table_entry {key, hash_value};
+	}
+
+`_m_hash_table_entries` is sized to `hash_table_size`, but `insertion_index` —
+the index actually used to write into it — is a second, independent count read
+from the same untrusted file and never checked against that size. A corrupted
+`insertion_index` larger than the table is not a bounds-checked failure, it is
+`std::vector::operator[]` writing past the end of the backing allocation: an
+out-of-bounds heap write, which is a stronger and less predictable failure than
+an out-of-bounds *read* — consistent with the mix of `0xC0000005` (access
+violation) and `0xC0000374` (heap corruption) seen fuzzing this file (§16.11).
+
+Found by fuzzing `test/fixtures/minimal.g2.zen` (60 bytes flipped at random,
+several dozen seeds) and bisecting one `0xC0000005` crash down to a single
+byte: file offset 3983, the low byte of the `insertion_index` field belonging
+to the `rangeAniSmooth` hash table entry (the table has 55 entries; corrupting
+this one field to a value outside `[0, 55)` reproduces the crash).
+
+The fix is a bound on this one field before it is used to index, in the same
+narrow style as patch `0027`: check the count the file supplies against what
+it is actually allowed to address, and throw a named `ParserError` instead of
+trusting it. This is one instance of the unvalidated-count class documented in
+§16.11, not the class-level fix — `get_entry_key()` a few lines below indexes
+the same vector with another unbounded file-supplied value (`hash`), and the
+general fix (making `ReadMemory::seek` clamp or throw) is still deferred, so
+other chunk-walking loops throughout `Mesh.cc`, `BspTree.cc` and the VOB
+readers remain unbounded.
+
+Upstreamable as-is: a plain bounds-check bug, no API change, one guard.
+
+diff --git a/src/archive/ArchiveBinsafe.cc b/src/archive/ArchiveBinsafe.cc
+index 54151fa..4e599e1 100644
+--- a/src/archive/ArchiveBinsafe.cc
++++ b/src/archive/ArchiveBinsafe.cc
+@@ -29,6 +29,14 @@ namespace zenkit {
+ 				auto hash_value = read->read_uint();
+ 				auto key = read->read_string(key_length);
+ 
++				// `insertion_index` comes straight from the file and indexes a vector sized
++				// only to `hash_table_size` -- a corrupted index past that bound is an
++				// out-of-bounds write into heap memory, not a bounds-checked failure.
++				if (insertion_index >= hash_table_size) {
++					throw ParserError {"ReadArchive.Binsafe",
++					                   "hash table entry names an insertion index outside the table"};
++				}
++
+ 				_m_hash_table_entries[insertion_index] = hash_table_entry {key, hash_value};
+ 			}
+ 

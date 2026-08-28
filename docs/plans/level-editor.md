@@ -3088,6 +3088,23 @@ or throw would fix the class in one place and change behaviour for every reader
 in ZenKit, which is why `0027` bounded its own loop instead. Until someone takes
 that decision, every chunk-walking loop has to carry its own bound.
 
+**One more instance is bounded (2026-08-28, patch `0029`).**
+`ReadArchiveBinsafe::read_header` sized `_m_hash_table_entries` to the file's
+`hash_table_size` and then indexed it with the file's `insertion_index`, a
+second, independent, unchecked count — so a corrupted index past the table was
+an out-of-bounds *write* into the heap, which is where the `0xC0000374` in the
+fuzz run came from. Bisected to one byte of `test/fixtures/minimal.g2.zen`
+(offset 3983, the low byte of the `rangeAniSmooth` entry's index) and now
+covered by a child-process test in `zenkit-node/test/loadWorld.test.js` that
+seeds the field by structure and asserts a clean throw.
+
+That is a single instance, not the class. Still unbounded, and still the reason
+the worker isolation is load-bearing: `get_entry_key()` a few lines below
+indexes the same vector with another file-supplied value (`hash`), and every
+chunk-walking loop in `Mesh.cc`, `BspTree.cc` and the VOB readers. The fuzz run
+above has not been repeated since, so the 19-of-30 number still stands as the
+last measurement.
+
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
 Both landed with numbers chosen by reasoning, and neither has a test that could
