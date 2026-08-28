@@ -69,8 +69,10 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   in a child process, so a segfault or a hang is a reported line, not the end of
   the run. **It corrupts the entry stream, not the whole file** — a byte in the
   text header is rejected before any reader runs, and a whole-file run
-  (`--whole`) mostly measures that check: 30 of 30 clean, against 5 of 40 not
-  clean when the writes are confined to the stream.
+  (`--whole`) mostly measures that check: 30 of 30 clean, against a stream-
+  confined run that keeps finding defects. **Run 200 seeds, not the default
+  40**: 40 came back clean after patch `0032` and 200 found six more in two
+  minutes (`../../docs/plans/level-editor.md` §16.11).
   `--seed <n>` replays one seed and then delta-debugs it down to the smallest
   set of mutations that still fails, which is what turns a crash into a named
   field — patch `0030` was found this way, minimized to a single byte.

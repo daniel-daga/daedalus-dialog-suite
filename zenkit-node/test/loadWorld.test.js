@@ -357,3 +357,73 @@ test('a lightmap texture declaring more mipmap levels than a texture can have th
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A waypoint's class name in its BinSafe object header, rewritten to a class
+// ZenKit does not know. Located by structure: the header is the entry stream's
+// `[<name> <class> <version> <index>]` string, so this replaces the class token
+// in place with one of the same length — no offset in the file moves.
+function seedUnknownWaypointClass(dir, name, frameName) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const begin = [...walk(buf)].find((ev) => ev.kind === 'objectBegin' && ev.entryName === frameName);
+  assert.ok(begin, `the fixture must contain a ${frameName} object to corrupt`);
+  assert.strictEqual(begin.frame.cls, 'zCWaypoint', `expected ${frameName} to be a zCWaypoint`);
+
+  // `uint8` entry type, `uint16` string length, then the header string itself.
+  const at = buf.indexOf('zCWaypoint', begin.fileOffset + 3, 'latin1');
+  assert.ok(at > 0 && at < begin.fileOffset + 3 + buf.readUInt16LE(begin.fileOffset + 1),
+    'expected the class token inside the object header string');
+  buf.write('zCWayXoint', at, 'latin1'); // same length, unknown to ZenKit
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a free waypoint whose class does not resolve throws instead of dereferencing null', () => {
+  // `WayNet::load` does `points.push_back(r.read_object<WayPoint>(version));`
+  // and then `points.back()->free_point = true` — but `read_object` returns
+  // null for an unknown class, for a `%` empty object and for an unresolved
+  // back-reference, so the very next line dereferences a null `shared_ptr`.
+  // Found by fuzzing the fixture's entry stream: seeds 68 and 81 of a 200-seed
+  // run each delta-debug to one byte inside the first waypoint's object header
+  // (offsets 2716 and 2723). This test seeds the same defect by structure.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-waypoint-class-'));
+  try {
+    const corrupt = seedUnknownWaypointClass(dir, 'bad-waypoint-class.zen', 'waypoint0');
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 30 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of throwing: ${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /waypoint/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a waynet edge endpoint that does not resolve still loads, and is dropped', () => {
+  // The bound above is deliberately narrow. An edge's `wayl`/`wayr` can be null
+  // for the same three reasons, but nothing in `WayNet::load` dereferences one,
+  // and the binding's `CollectWaypoints`/`WayNetGraph` filter nulls out on
+  // purpose — a reference into a waynet ZenGin itself wrote can go unresolved.
+  // Refusing such a world would be a new refusal rather than a crash fix, so
+  // this test holds the reader to loading it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-waynet-edge-'));
+  try {
+    const corrupt = seedUnknownWaypointClass(dir, 'bad-edge-class.zen', 'wayl0');
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 30 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of loading: ${result.stdout}
+${result.stderr}`);
+    assert.strictEqual(result.stdout, 'LOADED');
+
+    assert.strictEqual(zenkit.getWaynet(zenkit.loadWorld(corrupt, 'g2')).count,
+      zenkit.getWaynet(zenkit.loadWorld(FIXTURE, 'g2')).count - 1,
+      'the unresolvable endpoint should be dropped from the waynet, not counted in it');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

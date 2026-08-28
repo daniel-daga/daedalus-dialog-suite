@@ -6,9 +6,12 @@
 //
 // **Corrupt the entry stream, not the whole file.** A byte flipped in the text
 // header is rejected before any reader runs: 100 bytes anywhere gave 30 clean
-// throws in 30 seeds, while 20 bytes confined to the stream gave 4 access
-// violations and 1 hang in 40. `--whole` is there to reproduce that contrast,
-// not to find bugs with.
+// throws in 30 seeds, while 20 bytes confined to the stream keeps finding
+// defects. `--whole` is there to reproduce that contrast, not to find bugs with.
+//
+// **200 seeds is the baseline, not the default 40.** 40 of 40 came back clean
+// after patch 0032 and widening the same run to 200 immediately found six more
+// (two crashes, four hangs) in two minutes -- see level-editor.md 16.11.
 //
 // A seed that fails prints its mutation list; `--seed <n>` replays exactly that
 // seed and then delta-debugs it down to the smallest subset of mutations that

@@ -61,9 +61,10 @@ was true for so long nobody re-reads it.
 
 ## State of the tree
 
-- branch `master`, **pushed to `origin/master`.** `feature/level-editor`
-  was merged and is no longer where work happens. A push is not a release —
-  see the merge note below.
+- `master` is where work lands and is **pushed to `origin/master`**;
+  `feature/level-editor` was merged and is no longer where work happens. The
+  unattended board loop commits on `board-loop` and does not push. A push is not
+  a release — see the merge note below.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
@@ -83,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0032`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0033`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -135,10 +136,9 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — four instances bounded
-  (`0029`–`0032`) and the 40-seed fuzz is clean, but no reproducer is named and
-  the class is open. Wider fuzzing, or the `ReadMemory::seek` decision. Unowned.
-  §16.11
+- **The world reader is still not crash-safe** — five instances bounded
+  (`0029`–`0033`); the next patch is named and small: the `0xC050` OUTDOORS
+  `sector_count` hang (`--seed 124`, one byte). Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -157,14 +157,13 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-- **Patches `0029`–`0032` — four unvalidated counts in the reader are bounded**
-  — the BinSafe hash table's insertion index, a BSP leaf's polygon range, a
-  shared lightmap's texture index and a texture's `mipmapCount`, each bisected
-  to one byte of `minimal.g2.zen` with `zenkit-node/tools/fuzz-world.js`. `0032`
-  closed the last named reproducer (`--seed 17`, a *quadratic* walk, not the
-  `seek` hazard) and the 40-seed run is now 40 of 40 clean throws — which is not
-  crash-safety, see Next. The addon on this machine is rebuilt; every other
-  machine and CI must. §16.11
+- **Patches `0029`–`0033` — five reader defects bounded**, each bisected to one
+  byte of `minimal.g2.zen` with `zenkit-node/tools/fuzz-world.js`. `0033` is a
+  null deref, not a count: `WayNet::load` dereferenced `read_object`'s result.
+  **The fuzz baseline is now 200 seeds, not 40** — 40 of 40 was clean and 200
+  found six more. Four hangs are left and the first is named. Not crash-safety,
+  see Next. The addon on this machine is rebuilt; every other machine and CI
+  must. §16.11
 - **§16.8 W2 landed — world → scripts** — `ProjectIndex.waypointSites` rides
   the worker-pool pass like `voiceIds` does, resolving `AI_GotoWP`/
   `Npc_GetDistToWP` plus any project-declared `var string waypoint` parameter;

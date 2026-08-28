@@ -3157,14 +3157,53 @@ levels — `width` and `height` are `uint32`, so a chain cannot need more halvin
 than that — and covered by a child-process test in
 `zenkit-node/test/loadWorld.test.js` that seeds the count by structure.
 
-**The 40-seed run is now 40 of 40 clean throws** (2026-08-28, after `0032`): no
-crash, no hang, no named reproducer left. That is a milestone and **not** a
+**The 40-seed run is 40 of 40 clean throws** (2026-08-28, after `0032`): no
+crash, no hang, no named reproducer left in it. That is a milestone and **not** a
 crash-safety claim — it is 40 seeds of 20 bytes over one small synthetic
 fixture. The unvalidated counts listed above are still unvalidated, the recursion
 in `_parse_bsp_nodes` is still unbounded, and **the worker isolation stays
-load-bearing.** The next move is either more seeds and more bytes, or a wider
-fixture, or the `ReadMemory::seek` decision that would close the class in one
-place — not a claim that the reader is safe.
+load-bearing.**
+
+**Widening it to 200 seeds immediately found six more** (2026-08-28), which is
+the answer to "is 40 of 40 enough": two crashes and four hangs, and the whole
+run costs two minutes. **Take the widened run as the baseline from here** — the
+40-seed number is only kept above because the patch headers cite it.
+
+**A fifth instance is bounded (2026-08-28, patch `0033`), and it is a null
+dereference, not a count.** `WayNet::load` does
+`points.push_back(r.read_object<WayPoint>(version))` and then
+`points.back()->free_point = true`, but `ReadArchive::read_object` returns null
+for three separate file-supplied conditions — an unknown class name, an object
+marked empty (`%`), and a reference whose index is not in the object cache. Seeds
+68 and 81 of the 200-seed run each delta-debug to **one byte** inside the first
+waypoint's `[waypoint0 zCWaypoint 0 7]` header (offsets 2716 and 2723: the class
+name, and the space before the object index), both `0xC0000005`. Covered by a
+child-process test in `zenkit-node/test/loadWorld.test.js` that rewrites the
+class token in place with an equal-length name ZenKit does not know.
+
+**The bound stops at the free-point loop on purpose, and the second test in that
+file says so.** An edge's `wayl`/`wayr` can be null for the same three reasons,
+but nothing in `WayNet::load` dereferences one and `CollectWaypoints` /
+`WayNetGraph` in `src/normalize.cc` already filter nulls out deliberately — a
+reference into a waynet ZenGin itself wrote can go unresolved, so refusing that
+world would be a new refusal rather than a crash fix. Measured: such a world
+still loads and its endpoint is dropped from the waynet.
+
+**Four hangs are left, and the first one is already named.** Seeds 124, 129, 178
+and 181 of the 200-seed run still hang (`0033` fixed both crashes and no hang).
+Seed 124 delta-debugs to **one byte** — file offset 1317, the first byte of the
+`0xC050` OUTDOORS chunk's `sector_count`, turning 0 into 0x79000000. That is the
+`BspTree::load` OUTDOORS branch this section already names as unvalidated: the
+loop runs once per sector doing a `read_line` and two `resize`s, and reads past
+the end of an exhausted reader return nothing rather than failing, so two
+billion iterations neither throw nor return. **The chunk reader is bounded, so
+the guard is available**: a sector needs bytes, and `c->eof()` inside the loop is
+already the fact the loop is ignoring. The other three hangs are unminimized and
+may or may not be the same byte. This is the next patch, and it is small.
+
+The class is still open either way: `_parse_bsp_nodes` recursion, the chunk-
+walking loops in `Mesh.cc` and the VOB readers, and the `ReadMemory::seek`
+decision that would close it in one place.
 
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
