@@ -2845,6 +2845,16 @@ no way back but undo. Single selection stays absolute
 angle is what the grid can read off one VOB — the asymmetry is the same one
 position already has and is not a wart.
 
+**The function already exists and the gizmo already uses it.** `rotateVobs`
+(`zen-world/src/model/ops.ts:888`) takes a delta and applies it to a selection,
+and its own doc settles the remaining semantic: **the delta is applied on the
+left**, so the turn happens in world space after each VOB's own orientation and
+a selection of differently-oriented VOBs all turn the same way on screen rather
+than each about its own axes. The typed field must produce the same delta the
+drag does, or the two paths disagree about what "turn 45°" means. So this
+increment is a conversion — typed Euler angles to a `ZenRotation` delta — and a
+call, not a new op or a new derivation, in the shape D1 turned out to have.
+
 **What that means for the increment.** The three angle fields stop being hidden
 for N VOBs. The per-angle equality refusal still applies — a field the user did
 not change must not write, because reading and writing back an unchanged angle
