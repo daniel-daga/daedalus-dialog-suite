@@ -134,11 +134,6 @@ card waits on live at its pointer — put new prose there, not here.
   the file) are the last of Gate 2b's unwitnessed rows. Needs the engine, so it
   needs a person. **Daniel.** §16.2, run sheet §07
 
-- **The editor places mobs nobody can use, and says nothing** — a `oCMob*` with
-  an empty `focusName` is visible and inert in the engine. Retail sets it per
-  class, so it is not an `insertVob` default; the guidance or the warning belongs
-  on the editor's side. Unowned. §16.15
-
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -185,6 +180,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The editor says when a mob nobody can use has been placed** — a warning
+  under `focusName` in the world property grid, per class and measured over two
+  retail worlds, naming a value to type. Fires and beds are out of the table on
+  purpose. board-loop-4. §16.15
 - **The instrument for `05`'s two rows exists** — `07a`/`07b`/`07c` in
   `tools/mutate.js`, plus run sheet §07. Its own read-back assertions caught
   three things that could have faked a result: a torch's flame is a plain

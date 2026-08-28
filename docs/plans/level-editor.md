@@ -4422,10 +4422,42 @@ right were not, and none of them failed anywhere in the stack:
   for `oCMobInter` (30+ values, the top one at 27 %) and `oCMobDoor`'s own
   majority is `MOBNAME_BED`, a retail copy-paste quirk. What is missing is on the
   editor's side — it will place a chest nobody can ever open and say nothing.
-  Carded.
+  **Closed 2026-08-29**, below.
 - **The bbox default is a 10 cm cube and ZenGin culls by box.** Not observed to
   bite yet, but it is the next way that row would have been lost; the candidate
   now measures a box off a retail VOB with the same visual.
+
+**The editor says it now, 2026-08-29, and what it says is measured.** The
+warning sits under the `focusName` field in the world property grid, drawn from
+`focusNameExpectation` in `zen-world`'s catalogue — the same table the grid, the
+op builder and the IPC validator already read, rather than a second list.
+
+Every `oCMob*` VOB in retail NewWorld and OldWorld, read through `getVobProps`:
+
+| class | instances | with a focus name |
+|---|---|---|
+| `oCMobInter` | 538 | 94.1 % |
+| `oCMobContainer` | 224 | 100 % |
+| `oCMobDoor` | 224 | 96.9 % |
+| `oCMobFire` | 134 | 9.7 % |
+| `oCMobSwitch` | 27 | 77.8 % |
+| `oCMobBed` | 7 | 0 % |
+| `oCMobWheel` | 1 | 100 % |
+
+Four classes are in the table and the rest are deliberately out. **Fires and
+beds are the reason the warning is per class and not per family**: an empty name
+on one is correct, and a warning on every one an author places is how a warning
+stops being read. `oCMobWheel` (one instance) and `oCMobLadder` (none in either
+world) are out for the opposite reason — one instance is not a majority, and
+this table exists so the editor stops guessing.
+
+Two smaller calls worth keeping. The warning **names a value to type**
+(`MOBNAME_CHEST`), because "this is empty" is a complaint and the card asked for
+guidance; and the example is not always the commonest string — 178 of the 224
+doors say `MOBNAME_BED`, so teaching the majority would propagate the quirk.
+Whitespace counts as empty, because the engine matches the string. It is **not**
+a `Problem`: the Problems panel is built on a file, a dialog and a function, and
+a VOB in a world has none of the three (§16.18).
 
 Not a defect, recorded so it is not re-diagnosed: a VOB authored at an arbitrary
 Y **floats**, because nothing snaps it. The editor's answer is the Drop-to-ground

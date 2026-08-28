@@ -633,3 +633,61 @@ export function decalSubKey(key: string): string {
   const rest = key.slice('decal'.length);
   return rest.charAt(0).toLowerCase() + rest.slice(1);
 }
+
+/**
+ * What retail expects of an `oCMob*` class's `focusName`, or null for a class
+ * that has no expectation.
+ *
+ * `share` is the fraction of retail instances that carry one; `example` is a
+ * name that class actually uses.
+ */
+export interface FocusNameExpectation {
+  share: number;
+  example: string;
+}
+
+/**
+ * Measured over retail NewWorld and OldWorld, 2026-08-29 — every `oCMob*` VOB
+ * in both, read through `getVobProps`:
+ *
+ * | class | instances | with a focus name |
+ * |---|---|---|
+ * | `oCMobInter` | 538 | 94.1 % |
+ * | `oCMobContainer` | 224 | 100 % |
+ * | `oCMobDoor` | 224 | 96.9 % |
+ * | `oCMobFire` | 134 | 9.7 % |
+ * | `oCMobSwitch` | 27 | 77.8 % |
+ * | `oCMobBed` | 7 | 0 % |
+ * | `oCMobWheel` | 1 | 100 % |
+ *
+ * Only the four above the line are in the table. **Fires and beds are left out
+ * deliberately** — they are used by NPC routines rather than by the player's
+ * hand, so an empty name on one is correct and warning about it would be noise
+ * on every one an author places. `oCMobWheel` (one instance) and `oCMobLadder`
+ * (none) are left out for the opposite reason: one instance is not a majority,
+ * and this table exists so the editor stops guessing.
+ *
+ * The examples are not always the commonest string. 178 of the 224 doors say
+ * `MOBNAME_BED` — a retail copy-paste quirk, and teaching it would propagate
+ * it — so the example is the name that describes the class.
+ */
+const FOCUS_NAME_EXPECTED: Readonly<Record<string, FocusNameExpectation>> = {
+  oCMobContainer: { share: 1.0, example: 'MOBNAME_CHEST' },
+  oCMobDoor: { share: 0.969, example: 'MOBNAME_DOOR' },
+  oCMobInter: { share: 0.941, example: 'MOBNAME_CHAIR' },
+  oCMobSwitch: { share: 0.778, example: 'MOBNAME_SWITCH' },
+};
+
+/**
+ * What retail expects of this class's `focusName`, or null when it expects
+ * nothing.
+ *
+ * The engine's crosshair finds a mob through this field, so a mob with an empty
+ * one is placeable, visible and impossible to use — and that is why it cannot
+ * simply be defaulted at insertion: there is no majority to take for
+ * `oCMobInter` (30-odd values, the top one at 27 %), and two of the family
+ * legitimately carry nothing at all (level-editor.md §16.15).
+ */
+export function focusNameExpectation(className: string): FocusNameExpectation | null {
+  return FOCUS_NAME_EXPECTED[className] ?? null;
+}

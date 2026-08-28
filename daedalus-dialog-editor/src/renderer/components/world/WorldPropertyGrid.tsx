@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import {
   BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, eulerDeltaRotation,
-  eulerToZenRotation, fieldOf,
+  eulerToZenRotation, fieldOf, focusNameExpectation,
   zenRotationToEuler,
   type ClassPropValue, type ClassProps, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
@@ -252,6 +252,41 @@ const ClassField: React.FC<{
         } else onCommit(parsed);
       }}
     />
+  );
+};
+
+/**
+ * The one class field whose *emptiness* is a defect the editor can see.
+ *
+ * The engine's crosshair finds a mob through `focusName`, so a mob without one
+ * is placeable, visible and impossible to use — which is what an authored
+ * chest turned out to be in Gate 2b's second pass (level-editor.md §16.15).
+ * `insertVob` cannot default it: retail sets it per class, `oCMobInter` has no
+ * majority to take, and fires and beds carry nothing on purpose because NPC
+ * routines use them rather than the player's hand. So this is where it is said,
+ * against the measured table in `zen-world`, and it names a value that class
+ * actually uses rather than only reporting that something is wrong.
+ *
+ * Not a `Problem`: the Problems panel is built on a file, a dialog and a
+ * function, and a VOB in a world has none of the three (§16.18).
+ */
+const FocusNameWarning: React.FC<{ className: string; value: ClassPropValue }> = ({
+  className, value,
+}) => {
+  const expectation = focusNameExpectation(className);
+  // Whitespace is empty: the engine matches the string, and " " finds nothing.
+  if (!expectation || (typeof value === 'string' && value.trim() !== '')) return null;
+
+  return (
+    <Typography
+      variant="caption"
+      color="warning.main"
+      data-testid="world-prop-class-focusName-warning"
+      sx={{ display: 'block', mt: 0.25 }}
+    >
+      {`Empty — the crosshair cannot find this ${className}, so nobody can use it.`}
+      {` Retail names ${Math.round(expectation.share * 100)} % of them, e.g. ${expectation.example}.`}
+    </Typography>
   );
 };
 
@@ -870,6 +905,9 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                     : 'Must be an item instance declared by the loaded scripts.'}
                   onCommit={(value) => onEditClassProps({ [classField.key]: value })}
                 />
+                {classField.key === 'focusName' && (
+                  <FocusNameWarning className={className} value={classProps[classField.key]} />
+                )}
               </Field>
             ))}
         </Box>

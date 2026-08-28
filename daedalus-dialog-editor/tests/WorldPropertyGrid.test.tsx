@@ -110,6 +110,10 @@ const WORLD = summaryOf(vobIndex([
   // only ever seen here.
   { name: 'NW_MUSIC', cls: 'oCZoneMusic', visualType: 'UNKNOWN' },
   { name: 'NW_FOG', cls: 'zCZoneZFog', visualType: 'UNKNOWN' },
+  // A mob the player uses by hand, and one an NPC routine uses. The difference
+  // is the whole of the focus-name warning below.
+  { name: 'CHEST', cls: 'oCMobContainer', visual: 'CHESTBIG.MDS' },
+  { name: 'BED', cls: 'oCMobBed', visual: 'BEDHIGH.MDS' },
 ]));
 
 /**
@@ -130,6 +134,23 @@ const MUSIC: ClassProps = {
   class: 'oCZoneMusic',
   enabled: true, priority: 2, ellipsoid: false, reverb: -30, volume: 0.5, loop: true,
   ...BASE_READ,
+};
+/** A chest as `insertVob` authors one: no focus name, so the engine's crosshair
+ *  cannot find it and nobody can ever open it. */
+const CHEST: ClassProps = {
+  class: 'oCMobContainer',
+  focusName: '', hp: 20, damage: 0, movable: false, takable: false,
+  focusOverride: false, visualDestroyed: '', owner: '', ownerGuild: '',
+  destroyed: false, stateCount: 1, conditionFunction: '',
+  onStateChangeFunction: '', rewind: false, locked: false, pickString: '',
+  ...BASE_READ,
+};
+const BED: ClassProps = {
+  class: 'oCMobBed',
+  focusName: '', hp: 20, damage: 0, movable: false, takable: false,
+  focusOverride: false, visualDestroyed: '', owner: '', ownerGuild: '',
+  destroyed: false, stateCount: 1, conditionFunction: '',
+  onStateChangeFunction: '', rewind: false, ...BASE_READ,
 };
 const FOG: ClassProps = {
   class: 'zCZoneZFog',
@@ -1209,4 +1230,57 @@ describe('WorldPropertyGrid, typed rotation', () => {
     expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
     expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
   });
+
+  // A mob the crosshair cannot find (level-editor.md §16.15). The engine finds
+  // one through `focusName`, and `insertVob` cannot default it — retail sets it
+  // per class, and two of the family carry nothing on purpose — so the editor's
+  // job is to say so rather than to guess.
+  describe('the focus name a mob needs to be usable at all', () => {
+    it('warns when a class retail always names has none', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={CHEST} />);
+
+      const warning = screen.getByTestId('world-prop-class-focusName-warning');
+      expect(warning).toBeInTheDocument();
+      // And it says what to type, not only that something is wrong.
+      expect(warning.textContent).toContain('MOBNAME_CHEST');
+    });
+
+    it('says nothing once the field has a name', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[7]}
+          {...wiring}
+          classProps={{ ...CHEST, focusName: 'MOBNAME_CHEST' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+    });
+
+    it('treats whitespace as empty, because the engine does', () => {
+      render(
+        <WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={{ ...CHEST, focusName: '  ' }} />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-focusName-warning')).toBeInTheDocument();
+    });
+
+    it('says nothing about a bed, which retail leaves empty on purpose', () => {
+      // 7 beds and 121 fires carry no focus name in retail: they are used by NPC
+      // routines, not by the player's hand. A warning here would be noise on
+      // every one an author places, which is how a warning stops being read.
+      render(<WorldPropertyGrid summary={WORLD} selection={[8]} {...wiring} classProps={BED} />);
+
+      expect(screen.getByTestId('world-prop-class-focusName')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+    });
+
+    it('draws no warning anywhere on a class that has no focus name', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+    });
+  });
+
 });
