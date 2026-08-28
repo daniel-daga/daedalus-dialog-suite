@@ -124,12 +124,13 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Copy/paste D2 — the fields `NewVob` drops** — unblocked by I1; what is left
-  after it is `physicsEnabled`, **Daniel's call** (A6: no save keeps it). §16.14
 - **Waynet W2 — add a free waypoint, appended** — must be an `FP_` free point
   or `WayNet::save` drops it. Unowned. §16.7
 - **Waynet W3 — edge add and delete** — the op carries the edge memberships it
   destroys; §15's barrier is the fallback. Unowned. §16.7
+- **Waynet W4 — delete an arbitrary waypoint** — decided 2026-08-28: §15's
+  barrier, closer Spacer parity than an id scheme (Spacer has no undo at all).
+  No new addressing needed. Unowned. §16.7
 - **VOB search and filter in the scene tree** — by name and class, over columns
   already in the summary; 41,393 VOBs, so derive, don't rebuild. §16.16
 - **Per-class visibility toggles** — Spacer's VOB-type show/hide, on the
@@ -152,9 +153,6 @@ card waits on live at its pointer — put new prose there, not here.
 - **Copy/paste D5 — the subtree** — one op carrying a serialized tree, or N ops
   and no single undo step. The only part of §16.14 that adds a validator branch
   and a binding change. **Daniel's call.** §16.14
-- **Waynet W4 — delete an arbitrary waypoint** — the only waynet op that
-  renumbers, so it is where the addressing scheme has to be answered: synthetic
-  ids, §15's barrier (recommended), or out of scope. **Daniel's call.** §16.7
 
 **Waynet, and the scripts that name it**
 
@@ -214,6 +212,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   dispatches on `class`, `oCItem` first; `insertItemVob` folded into it. §16.15
 - **Class insertion I2 — lights and sounds** (board-loop) — three constructions
   on retail's measured majority; the authorable set is now one shared list. §16.15
+- **Copy/paste D2 — the class** (board-loop) — a copy carries the class the
+  binding can construct; the residue (class props, `oCItem`'s instance,
+  `physicsEnabled`) all wants the batch-guard call. §16.14
 
 Last flushed 2026-08-28 at the merge to master: D1, D3, D4 and W1: forward facts
 in §16.14 and §16.7, the rest in `git log`.

@@ -953,6 +953,39 @@ describe('duplicating a VOB', () => {
     }]);
   });
 
+  it('carries the class, so a duplicated light is a light', async () => {
+    // D2's class half (level-editor.md §16.14). The class reaches the op
+    // through the same spec every other field does — nothing new is fetched —
+    // and it is the difference between a copy of a light and a `zCVob` wearing
+    // its name, on which every `SetVobClassProp` would then be refused.
+    mockVobProps = LIGHT_PROPS;
+    const summary = await openWorld(['zCVob', 'zCVobLight']);
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops[0]).toMatchObject({ op: 'AddVob', to: { class: 'zCVobLight' } });
+  });
+
+  it('drops a class the binding cannot construct, rather than refusing the copy', async () => {
+    // A `zCVobStartpoint` duplicates as it always did — name, visual, pose, no
+    // class — because naming a class `insertVob` has no construction for is
+    // refused by `assertApplyOpsRequest`, and a refused op is worse than a
+    // lossy copy.
+    const summary = await openWorld(['zCVob', 'zCVobStartpoint']);
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('class');
+  });
+
   it('carries no box for a VOB with no visual instance', async () => {
     // VOB 0 is not in the visuals payload — a decal, a `.pfx`. There is nothing
     // to fit, so the copy takes the binding's default rather than VOB 1's box.

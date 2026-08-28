@@ -1169,6 +1169,45 @@ describe('the spec a duplicate is built from', () => {
     });
   });
 
+  it('carries the class of a VOB the binding can construct', () => {
+    // D2's class half (level-editor.md §16.14): a duplicate of a light is a
+    // light, not a `zCVob` wearing its name. The class is in the index — it is
+    // a column — so this is the reading and nothing more; `insertVob` learned
+    // the construction in I1/I2.
+    const live = createVobReader(vobIndex([
+      { cls: 'zCVobLight', name: 'TORCH' },
+      { cls: 'zCVobSoundDaytime', name: 'BIRDS' },
+    ]));
+
+    expect(duplicateVobSpec(live, 0).class).toBe('zCVobLight');
+    expect(duplicateVobSpec(live, 1).class).toBe('zCVobSoundDaytime');
+  });
+
+  it('omits the class of a plain `zCVob`, which is the default anyway', () => {
+    expect(duplicateVobSpec(reader(), 0)).not.toHaveProperty('class');
+  });
+
+  it('drops a class the binding cannot construct, rather than refusing the copy', () => {
+    // An `oCMobDoor` still duplicates as a `zCVob` with the door's name, pose
+    // and visual — lossy, exactly as it was before the class was carried at
+    // all. Emitting the class would be refused by the IPC validator, which
+    // turns a lossy duplicate into no duplicate.
+    const live = createVobReader(vobIndex([{ cls: 'oCMobDoor', name: 'DOOR' }]));
+
+    expect(duplicateVobSpec(live, 0)).not.toHaveProperty('class');
+  });
+
+  it('drops `oCItem`, whose `instance` is not in the index', () => {
+    // The one authorable class this cannot carry: an `AddVob` of an `oCItem`
+    // needs the instance it spawns, that is a class property behind
+    // `getVobProps`, and a spec naming the class without it is refused.
+    const live = createVobReader(vobIndex([{ cls: 'oCItem', name: 'ITMW_1H_SWORD_01' }]));
+
+    const spec = duplicateVobSpec(live, 0);
+    expect(spec).not.toHaveProperty('class');
+    expect(spec).not.toHaveProperty('instance');
+  });
+
   it('drops `physicsEnabled`, because `NewVob` has no place for it', () => {
     // D2's field, and the one the row carries that this cannot pass on:
     // `insertVob` does not take it. Asserted rather than left implicit, so the

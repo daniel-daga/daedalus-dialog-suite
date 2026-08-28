@@ -760,12 +760,14 @@ const WorldSurface: React.FC = () => {
    * of what D4 needed; `duplicateVobs` makes the one correction that costs, the
    * slot two copies of the same parent would otherwise share.
    *
-   * What a copy does *not* carry is `physicsEnabled`, which `NewVob` has no
-   * room for, and **its class**: `duplicateVobSpec` emits none, so a duplicated
-   * `oCMobDoor` is a `zCVob` with the door's name and a follow-up
-   * `SetVobClassProp` on it would be refused. `insertVob` can author a class
-   * since I1 (level-editor.md §16.15) — carrying it out of the index is D2's
-   * remaining half, and the classes beyond `oCItem` are I2's.
+   * **The class comes across** since D2 (level-editor.md §16.14), for the
+   * classes `insertVob` can construct: a duplicated `zCVobLight` is a light.
+   * What a copy still does not carry is `physicsEnabled`, which `NewVob` has no
+   * room for; the class *properties*, which are follow-up `SetVobClassProp`s;
+   * and the class itself for an `oCItem` — the instance it spawns is behind
+   * `getVobProps`, and the spec is read synchronously off the index. A class
+   * outside that set is dropped rather than named, because naming it would have
+   * the IPC validator refuse the op and a lossy copy beats no copy.
    *
    * Each box is fitted from that VOB's own visual bounds, exactly as a rotation
    * refits one and for the same reason: the index has no bbox column to copy,
@@ -797,7 +799,8 @@ const WorldSurface: React.FC = () => {
    * its original; here the reading happens now and the placing happens at the
    * paste, so the clipboard outlives the selection, and outlives the VOBs it
    * was read from being deleted. It loses exactly what a duplicate loses —
-   * `physicsEnabled`, and the class, which `insertVob` cannot author.
+   * `physicsEnabled`, the class properties, and the class of an `oCItem` or of
+   * anything `insertVob` cannot construct.
    */
   const copySelection = useCallback(() => {
     const { summary: current, selection: selected } = useWorldStore.getState();

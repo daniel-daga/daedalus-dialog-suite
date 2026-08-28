@@ -32,7 +32,10 @@
 // the binding call for them does, not before.
 
 import type { VobReader } from './vobTree';
-import { classPropKeys, fieldOf, type AuthorableVobClass, type ClassProps } from './vobClasses';
+import {
+  classPropKeys, fieldOf, isAuthorableVobClass,
+  type AuthorableVobClass, type ClassProps,
+} from './vobClasses';
 
 /** ZenGin space, centimetres — unconverted, exactly as the binding takes it. */
 export type ZenPosition = [number, number, number];
@@ -963,13 +966,26 @@ export function addVob(reader: VobReader, spec: NewVob, parent: number | null = 
  * duplicates with the box it had; without bounds there is nothing honest to
  * fit, and the VOB gets the binding's default exactly as a placement does.
  *
- * The **class is not here either, and neither are the class properties**, which
- * is now a gap rather than a wall: `insertVob` can author a class since I1
- * (§16.15), so a duplicate of an `oCItem` *could* be one — this function still
- * emits no `class`, so a duplicated `oCMobDoor` is a `zCVob` with the door's
- * name, visual and pose. Reading the class back out of the index and carrying
- * the class properties with it is D2's remaining half (§16.14), and it wants
- * the classes I1 does not author yet.
+ * The **class is carried**, since D2 (§16.14): it is a column, so reading it is
+ * all there is to it, and a duplicated `zCVobLight` is a light rather than a
+ * `zCVob` wearing its name. Two classes are still dropped, and dropping is
+ * right for both — a spec naming a class the binding cannot construct is
+ * *refused* by the IPC validator, which would turn a lossy duplicate into no
+ * duplicate at all:
+ *
+ * - a class outside `AUTHORABLE_VOB_CLASSES` — an `oCMobDoor` duplicates as it
+ *   always did, a `zCVob` with the door's name, visual and pose;
+ * - **`oCItem`**, which the binding *can* construct but only from the instance
+ *   it spawns — and that is a class property behind `getVobProps`, not a column
+ *   here. A synchronous read of the index cannot produce it.
+ *
+ * A plain `zCVob` is omitted rather than stated, unlike the flags above: there
+ * the binding's default differs from the row's value, and here it *is* the row's
+ * value, so omission is exact.
+ *
+ * The **class properties** are not here at all — a duplicated light has the
+ * binding's range and colour. They are follow-up `SetVobClassProp`s in the same
+ * batch, and that is the rest of D2 (§16.14).
  */
 export function duplicateVobSpec(
   reader: VobReader, vob: number, bounds: ZenBounds | null = null,
@@ -981,8 +997,13 @@ export function duplicateVobSpec(
   const name = reader.name(vob);
   const visual = reader.visual(vob);
   const flags = reader.flags(vob);
+  const className = reader.className(vob);
 
   return {
+    // Not `zCVob`, which is the default, and not `oCItem`, whose `instance`
+    // this cannot read — see above for why a dropped class beats a refused op.
+    ...(className !== null && className !== 'zCVob' && className !== 'oCItem'
+      && isAuthorableVobClass(className) ? { class: className } : {}),
     ...(name ? { name } : {}),
     ...(visual ? { visual } : {}),
     position,
