@@ -93,8 +93,9 @@ was true for so long nobody re-reads it.
   not this one. The release-gate gaps that used to be named here are **all
   closed** — the addon is asserted present and unpacked, the packaged app now
   opens a world in CI, and a real-Electron spec now watches the World surface
-  draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
-  the class-property writes no engine run has ever observed.
+  draw (§16.1, Done). What a dispatch would still ship unproven is now narrow
+  and is in Next: the subtree delete and the waypoint renumber have loaded in an
+  engine but have never been *looked at* in a frame where they could be seen.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed on 2026-08-28, and the addon again with
@@ -137,11 +138,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
 
-- **One row of Gate 2b is left: does an authored container open?** The red fog
-  and the sound radius both passed in `06-minimal-frame` on 2026-08-29 —
-  `SetVobClassProp` **has** its engine witness now. The chest was invisible
-  (a real `insertVob` defect, fixed), then floating and unfocusable (both fixed
-  in the candidate). Re-run `-Latest`. **Daniel.** §16.2
+- **`05`'s two observation rows have never been run in a cleared frame** — that
+  the deleted torch subtree is *wholly* gone, and that NPC routines survive the
+  2,895-waypoint renumber. Both are "loads and plays" only. A `07` in `06`'s
+  shape settles them cheaply now the frame-clearing exists. Unowned. §16.2
 
 - **The editor places mobs nobody can use, and says nothing** — a `oCMob*` with
   an empty `focusName` is visible and inert in the engine. Retail sets it per
@@ -205,10 +205,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Gate 2b ran** — six candidates in Gothic2, 2026-08-28. Every op loads and
-  plays; the observation rows mostly did not survive retail NewWorld, and the
-  batch script no longer calls a shutdown access violation a FAIL. Daniel.
-  §16.2 and `engine-acceptance-2026-08-25.md`
+- **Gate 2b ran, both passes** — 2026-08-28/29. Every op loads and plays, and
+  `06-minimal-frame` then witnessed the class-property writes the first pass
+  could not see: red fog, a carried sound radius, an authored chest the player
+  opens. `SetVobClassProp` has its engine witness. Daniel + one real
+  `insertVob` defect fixed on the way (§16.15). §16.2 and
+  `engine-acceptance-2026-08-25.md`
 - **The viewport's frame is a handle command** — `WorldViewportHandle.frameVob`
   replaces the `frameRequest` prop; the trigger was `raycastDown`, not W4, and
   the last of the three viewport warts is closed. board-loop.

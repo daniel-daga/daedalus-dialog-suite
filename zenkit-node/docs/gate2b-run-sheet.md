@@ -15,8 +15,10 @@ here is claimed until it is run.
 > not be judged in retail NewWorld — the ambient fog and the live soundscape
 > mask them, and the chest was never found.
 >
-> **`06` is the answer to that and is the one to run next** — the same edits in a
-> cleared frame, built the same day. `-Only 00,06` is the whole second pass.
+> **`06` answered it on 2026-08-29 and every row of it passed** — red fog, the
+> carried sound radius, and an authored chest the player opens. This sheet is
+> spent except for one thing: **`05`'s own two observation rows were never run
+> in a cleared frame**, and a `07` in `06`'s shape would settle them.
 
 ## Running it
 

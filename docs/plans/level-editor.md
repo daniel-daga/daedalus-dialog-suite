@@ -2710,13 +2710,26 @@ produces a world the engine **loads and plays**. `zCVobLight` and
 first in-engine witness of `AddVob` building a class. The `oCItem.instance`
 half was already closed by a check against the parser's item index.
 
-**Still open, and it is the sharp half.** `SetVobClassProp`'s edits are
-*invisible in the viewport*, and Gate 2b did not see them in the engine either:
-the fog zone was indistinguishable from the world's ambient fog, the sound
-radius and the three music volumes were not judgeable by ear, and the authored
-`oCMobContainer` was never found in the forest to be opened. `05`'s two rows —
-the torch subtree gone, Xardas still reading — went unreported. So a wrongly
-written class property would still have passed this run.
+**Closed too, by the second pass — `06-minimal-frame`, 2026-08-29.** Every row
+of it passed: a red screen from an authored fog zone, a torch crackle carried
+3,000 units by a written `radius`, and an authored `oCMobContainer` the player
+opens by hand. **`SetVobClassProp` has its positive in-engine witness**, on
+three classes and six properties, and `AddVob` has been seen to author five
+classes the engine acts on. The sharpest gap in this section is shut.
+
+Getting there cost four fixes to one row, and the first was a real defect —
+`insertVob` wrote `showVisual: false` on every class I1–I5 added (§16.15). The
+other three were the candidate's: a 10 cm bbox against an engine that culls by
+box, a VOB standing at the spawn's Y over ground 50 units lower, and an empty
+`focusName`, which is what the crosshair finds a mob by.
+
+**What is still unwitnessed** — say this rather than "Gate 2b passed":
+`05`'s own two observation rows (the torch subtree *wholly* gone, and NPC
+routines surviving the 2,895-waypoint renumber) were never run in a cleared
+frame and are "loads and plays" only; a `07` in `06`'s shape would settle both
+cheaply now the frame-clearing exists. The seven decal fields are in no
+candidate. `oCZoneMusic.volume` is dropped by decision, below. And five of the
+27 authorable classes have been seen in an engine.
 
 **Why, and the candidate that answers it — `06-minimal-frame`, built
 2026-08-28.** The instrument, not the ops: retail NewWorld masks every one of

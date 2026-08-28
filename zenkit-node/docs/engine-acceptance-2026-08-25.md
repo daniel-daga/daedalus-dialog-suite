@@ -1026,8 +1026,15 @@ nothing of any other class). Run with `-Latest`, so no control in-session.
 |---|---|
 | **The screen is red** | **PASS.** An authored `zCZoneZFog`, made red by `SetVobClassProp` and by nothing else. This is the **first positive in-engine witness of a class-property write** — §16.2's sharpest gap, open since the op shipped |
 | **A crackle with no torch** | **PASS.** `radius` 8,000 carried the sound 3,000 units to the spawn in an otherwise silent frame |
-| **A chest, dead ahead** | Visible after the `showVisual` fix below; **floating, and not focusable** — so not yet openable. Fixed in the candidate, not re-run |
+| **A chest, dead ahead, and it opens** | **PASS**, on the third build of the row — visible, standing, focusable, openable. An `oCMobContainer` the editor authored and unlocked, used by the player's own hand |
 | Magenta light overhead | PASS, as in the first pass |
+
+**Every row of `06` passed.** Taken with the first pass, that makes the shipped
+op set witnessed in the engine rather than merely load-safe: `AddVob` authoring
+a class (`zCZoneZFog`, `zCVobSound`, `zCVobLight`, `zCPFXController`,
+`oCMobContainer`), and `SetVobClassProp` writing properties the engine **acts
+on** — a fog zone's colour and range, a sound's name and radius, a container's
+`locked` and `focusName`.
 
 **The chest row was a defect, not a hard-to-spot crate.** Two passes lost it and
 the third explained why: `insertVob` set its `show_visual` default **per branch**
@@ -1045,8 +1052,18 @@ is what the engine's crosshair finds a mob by. See §16.15 for the durable form
 of the second: it is per class in retail, and an editor that places an
 unopenable chest without saying so is the gap it leaves.
 
-So `SetVobClassProp` now **has** its witness, and what is left of this sheet is
-one row: whether an authored container opens.
+**What is still not witnessed, after both passes.** Say this, not "Gate 2b
+passed":
+
+- **`05`'s two observation rows were never run in a cleared frame** — that the
+  deleted torch subtree is *wholly* gone (a partial removal is the interesting
+  failure), and that NPC routines still work across the 2,895-waypoint
+  renumber. Both were "loads and plays" only. A `07` in the same shape as `06`
+  would settle them cheaply, since the frame-clearing is already written.
+- **`SetVobProp`'s seven decal fields** — not in any candidate.
+- **`oCZoneMusic.volume`** — dropped deliberately (§16.2): no ear can rank two
+  music volumes in a live world, so it is unclaimed rather than tested badly.
+- **The 20-odd other authorable classes** — five have been seen in an engine.
 
 ### Building the candidates
 
