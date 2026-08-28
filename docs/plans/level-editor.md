@@ -3012,7 +3012,7 @@ op just wrote rather than the one it replaced (`writeOp` takes the guard from
 the other side; the zen-world suite pins it). The UI is the waypoint panel's
 name field, the only waynet edit that is not a gizmo drag. **A rename can still
 orphan a script that names the waypoint as a literal, and nothing warns** —
-that is §16.8's Problems rule, still blocked.
+that is §16.8's Problems rule — decided 2026-08-28, unbuilt.
 
 `verify-world-pipeline.js` was **not** extended: it drives a real Gothic install
 and its waypoint section proves the renderer's index and the binding's are the
@@ -3184,7 +3184,8 @@ Three things worth knowing next:
   the overlay payload, and asks for no fresh VOB index at all.
 - **A script that names the deleted waypoint is orphaned and nothing warns** —
   W1's caveat, unchanged and now reachable by a second verb. The dialog says so
-  in prose, which is all this side can do; the rule is §16.8's, still blocked.
+  in prose, which is all this side can do; the rule is §16.8's — decided
+2026-08-28, unbuilt.
 
 `verify-world-edit.js` and `verify-world-pipeline.js` were **not** extended, for
 W1, W2 and W3's reason: they need a Gothic install, and an unrun addition to a
@@ -3316,7 +3317,9 @@ currently open world. Closing this needs either a new input the Problems
 pipeline threads through (from `worldStore`, only meaningful with a world
 open) or folding the free-point prefix-match exception in above into whatever
 shape that takes — a small design decision, not a measurement, so it stays
-open rather than being guessed at here.
+open rather than being guessed at here. **Answered later the same day**, and
+the answer is the first of those two shapes: see *"The Problems-pipeline
+question is answered"* below.
 
 **W1, picked up 2026-08-28: three of its four bullets were already in the tree,
 and the fourth has no consumer.** W2 could not list a waypoint's routines
@@ -3345,8 +3348,9 @@ was missing and the defect it exposed:
 
 **What is left of W1 is the lookup, and it still has no consumer that is
 both unblocked and built.** The lookup exists to answer "where is this name in
-the world", which is the jump (W4) and the dangling-waypoint rule (still
-blocked on how world data reaches `ProjectView`). W4's own blocker is gone —
+the world", which is the jump (W4) and the dangling-waypoint rule (how world
+data reaches `ProjectView` was answered later the same day, below — decided,
+unbuilt). W4's own blocker is gone —
 the mount-lifetime fix landed on 2026-08-28, `refactoring-targets.md` §8 — but
 W4 itself is unbuilt, so the lookup would still be an exported function with no
 caller until somebody does it.
