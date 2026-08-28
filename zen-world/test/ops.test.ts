@@ -26,6 +26,7 @@ import {
   createVobReader,
   deleteVob,
   dropVobsToGround,
+  duplicateVobSpec,
   invertOp,
   isBarrierOp,
   isStructuralOp,
@@ -60,6 +61,10 @@ interface Spec {
   parent?: number;
   childIndex?: number;
   pos?: [number, number, number];
+  /** Row-major 3x3. Identity when omitted — the same default the columnar
+   *  builder writes, and the pose every op before the duplicate spec reads for
+   *  nothing. */
+  rot?: number[];
   name?: string;
   visual?: string;
   /** The VOB's class. Defaulted rather than required, because every op before
@@ -101,7 +106,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     parent[i] = vob.parent ?? -1;
     childIndex[i] = vob.childIndex ?? 0;
     positions.set(vob.pos ?? [i, i * 2, i * 3], i * 3);
-    rotations.set([1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
+    rotations.set(vob.rot ?? [1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
     for (const [flag, bit] of FLAG_BITS) if (vob.flags?.[flag]) flags[i] |= bit;
   });
 
@@ -1087,6 +1092,83 @@ describe('an add op', () => {
     expect(() => applyOps(live, [addVob(live, SPEC)])).toThrow(/structural|re-read/i);
     expect(isStructuralOp(addVob(live, SPEC))).toBe(true);
     expect(isStructuralOp(moveVob(live, 0, [1, 2, 3]))).toBe(false);
+  });
+});
+
+describe('the spec a duplicate is built from', () => {
+  // The whole of D1 (level-editor.md §16.14): a duplicate needs no new op,
+  // because `addVob` already takes a description of a VOB — so the work is
+  // reading one back out of the index, and what makes it worth a function of
+  // its own is that the reading is where a field gets silently dropped.
+  const reader = () => createVobReader(vobIndex([
+    {
+      childIndex: 0,
+      name: 'BARREL_01',
+      visual: 'BARREL.3DS',
+      pos: [10, 20, 30],
+      rot: [0, 0, 1, 0, 1, 0, -1, 0, 0],
+      flags: { showVisual: true, cdDynamic: true, physicsEnabled: true },
+    },
+    { childIndex: 1 },
+  ]));
+
+  it('carries every field of the row a `NewVob` has a place for', () => {
+    expect(duplicateVobSpec(reader(), 0)).toEqual({
+      name: 'BARREL_01',
+      visual: 'BARREL.3DS',
+      position: [10, 20, 30],
+      rotation: [0, 0, 1, 0, 1, 0, -1, 0, 0],
+      // The five authorable flags, each of them stated: a spec that omitted the
+      // false ones would author the binding's defaults instead of the row's
+      // values, and a duplicate of a VOB with `showVisual` off would come back
+      // visible.
+      showVisual: true,
+      vobStatic: false,
+      ambient: false,
+      cdStatic: false,
+      cdDynamic: true,
+    });
+  });
+
+  it('drops `physicsEnabled`, because `NewVob` has no place for it', () => {
+    // D2's field, and the one the row carries that this cannot pass on:
+    // `insertVob` does not take it. Asserted rather than left implicit, so the
+    // increment that adds the follow-up op has a test that changes.
+    expect(duplicateVobSpec(reader(), 0)).not.toHaveProperty('physicsEnabled');
+  });
+
+  it('omits a name and a visual the row does not have', () => {
+    // An unnamed VOB interns to the empty string, and an empty `name` is not
+    // the same as no name — the binding writes what it is given.
+    expect(duplicateVobSpec(reader(), 1)).toEqual({
+      position: [1, 2, 3],
+      rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      showVisual: false,
+      vobStatic: false,
+      ambient: false,
+      cdStatic: false,
+      cdDynamic: false,
+    });
+  });
+
+  it('takes the bounding box it is handed, fitted where the VOB stands', () => {
+    // The one field of a duplicate that is *not* in the row: the index carries
+    // no bbox column at all. The caller holds the visual's own bounds — the
+    // same ones a rotation refits from — and the box is fitted through the
+    // row's rotation, so a turned VOB duplicates with the box it had.
+    const spec = duplicateVobSpec(reader(), 0, [-1, 0, -10, 1, 2, 10]);
+
+    expect(spec.bbox).toEqual(placeBounds(
+      [-1, 0, -10, 1, 2, 10], [0, 0, 1, 0, 1, 0, -1, 0, 0], [10, 20, 30],
+    ));
+  });
+
+  it('carries no box when there are no bounds, rather than a guessed one', () => {
+    expect(duplicateVobSpec(reader(), 0)).not.toHaveProperty('bbox');
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => duplicateVobSpec(reader(), 9)).toThrow(/9/);
   });
 });
 

@@ -3642,16 +3642,29 @@ means the usual warning does not apply to D1 — there is no
 `assertApplyOpsRequest` branch to forget, because no new op reaches it. From D2
 on, the warning is back and is written on the increment that earns it.
 
-**D1 — duplicate one selected VOB, base fields, in place.** Build a `NewVob`
-from the selection's own `vobIndex` row — `name`, `visual`, the five authorable
-flags, `position`, `rotation`, `bbox` — and commit one `AddVob` into the same
-parent. Undo comes free. Pasting in place is Spacer's behaviour and therefore
-parity; do not invent an offset. The test that matters is on the spec-building
-function (given a row, does the spec carry every field the row has), plus an
-E2E that duplicates and sees two VOBs.
+**D1 — duplicate one selected VOB, base fields, in place. Landed 2026-08-28**
+as `duplicateVobSpec` in `zen-world/src/model/ops.ts` and a *Duplicate VOB*
+button beside the delete, and it went exactly as the paragraph above predicted:
+no new op, no validator branch, no binding change. The spec carries `name`,
+`visual`, `position`, `rotation` and all five authorable flags — the false ones
+too, because an omitted flag is authored as the binding's default rather than
+the row's value — and the op goes into the original's parent, in place.
 
-**D2 — the fields the spec silently drops, and this is where the decision is.**
-`NewVob` is *not* the whole VOB. `NEW_VOB_FLAG_KEYS` is `VOB_FLAG_KEYS` minus
+**The one field that is not in the row is `bbox`: `vobIndex` has no bbox
+column.** So the spec takes the visual's own bounds as an argument and fits them
+through the row's pose with `placeBounds`, which is what a rotation already
+does; the surface hands it `boundsOf(vob)`, so no IPC and no async. A VOB with
+no visual instance gets no box and the binding's default, exactly as a placement
+does.
+
+Verified by Jest on both sides — the spec function in `zen-world/test/ops.test.ts`
+and the surface in `tests/WorldSurface.editing.test.tsx` — and **not** by an
+E2E: the browser harness has no native addon and therefore no open world, which
+is why every other world edit is tested the same way.
+
+**D2 — the fields the spec drops, and this is where the decision is.** They are
+not dropped silently any more: `duplicateVobSpec`'s tests assert the absence, so
+this increment has a test that changes. `NewVob` is *not* the whole VOB. `NEW_VOB_FLAG_KEYS` is `VOB_FLAG_KEYS` minus
 `physicsEnabled` (`ipcValidation.ts:315`), and class properties are not in the
 spec at all — so D1's duplicate of an `oCMobDoor` comes back without its door
 fields. Two ways to close it, and **the cheap one is right**: emit a follow-up

@@ -868,6 +868,56 @@ export function addVob(reader: VobReader, spec: NewVob, parent: number | null = 
 }
 
 /**
+ * Read a VOB back out of the index as something `addVob` can author — the whole
+ * of a duplicate (level-editor.md §16.14, D1).
+ *
+ * A duplicate needs no op of its own: `AddVob` already carries a full
+ * description of a VOB, and its one-null-side shape is already its own inverse.
+ * What it needs is this — the reading — and the reason it is a function rather
+ * than an object literal at the call site is that this is where a field goes
+ * missing. **Two do, and both are deliberate.**
+ *
+ * `physicsEnabled` is dropped because `NewVob` has no place for it: `insertVob`
+ * does not take it (`NEW_VOB_FLAG_KEYS` is `VOB_FLAG_KEYS` minus that one).
+ * D2 is where it comes back, as a follow-up `SetVobProp` in the same batch.
+ *
+ * The **bbox is not in the index at all** — there is no column for it — so it
+ * comes in as `bounds`, the visual's own box, which the caller already holds
+ * for a rotation. It is fitted through the row's own pose, so a turned VOB
+ * duplicates with the box it had; without bounds there is nothing honest to
+ * fit, and the VOB gets the binding's default exactly as a placement does.
+ *
+ * Class properties are not here either, and cannot be: they are not in the
+ * index and not in `NewVob`. That is the rest of D2.
+ */
+export function duplicateVobSpec(
+  reader: VobReader, vob: number, bounds: ZenBounds | null = null,
+): NewVob {
+  const position = reader.position(vob);
+  const rotation = reader.rotation(vob);
+  if (position === null || rotation === null) throw new RangeError(`no vob ${vob} in the index`);
+
+  const name = reader.name(vob);
+  const visual = reader.visual(vob);
+  const flags = reader.flags(vob);
+
+  return {
+    ...(name ? { name } : {}),
+    ...(visual ? { visual } : {}),
+    position,
+    rotation: rotation as ZenRotation,
+    ...(bounds === null ? {} : { bbox: placeBounds(bounds, rotation as ZenRotation, position) }),
+    // Every authorable flag, false ones included: an omitted flag is authored
+    // as the binding's default, not as the value the row had.
+    showVisual: flags.showVisual,
+    vobStatic: flags.vobStatic,
+    ambient: flags.ambient,
+    cdStatic: flags.cdStatic,
+    cdDynamic: flags.cdDynamic,
+  };
+}
+
+/**
  * The flat index just past `vob`'s whole subtree — where a depth-first traversal
  * reaches its new last child.
  *

@@ -124,8 +124,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Copy/paste D1 — duplicate one VOB, base fields, in place** — needs no new
-  op: `addVob` exists and `AddVob` is its own inverse. Unowned. §16.14
 - **Copy/paste D2 — the fields `NewVob` drops** (class props, `physicsEnabled`)
   as a follow-up op in the same batch. Unowned. §16.14
 - **Copy/paste D4 — a multi-selection duplicates as one batch**, one undo
@@ -213,12 +211,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty)*
+- **Copy/paste D1 — duplicate one VOB in place** — `duplicateVobSpec` +
+  a *Duplicate VOB* button; no new op, and the bbox is refit from the visual's
+  bounds because the index has no bbox column. §16.14
 
-Flushed 2026-08-28, a second time, down to empty. The overnight run landed
-patches `0035`–`0048` and the binding's four iterative vob walks; their
-substance is in §16.9, §16.11, §16.13 and in `git log` — the `--counts` sweep
-`0037` added and why to prefer it to another random seed, the two fixture
-variants `0040` and `0042` needed, the `ReadMemory::seek` decision to leave seek
-as it is, and A2/A3's finding that A6's headline number was never A6's. The
-forward facts went to Deferred (what is left of the ASCII writer) and to §16.9.
+Last flushed 2026-08-28 (twice); the forward facts from those cards are in
+Deferred and in §16.9, and the rest is in `git log`.

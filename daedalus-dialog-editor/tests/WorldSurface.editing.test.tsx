@@ -48,6 +48,8 @@ const mockRaycastDown = jest.fn() as jest.Mock<
 >;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+/** The pose every VOB in the fixture index has. */
+const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 // The house pattern for react-window under jsdom, which has no layout — without
 // it the scene tree renders no rows at all and the drag-and-drop test below has
 // nothing to drag.
@@ -897,6 +899,78 @@ describe('deleting a VOB', () => {
     // the world's.
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
     expect(summary.vobIndex.count).toBe(2);
+  });
+});
+
+describe('duplicating a VOB', () => {
+  // Spacer's most-used verb after move (level-editor.md §16.14, D1), and it
+  // adds no op: the spec is read out of the row and committed as an ordinary
+  // `AddVob`, so undo comes free.
+
+  it('is an AddVob carrying the row it was copied from, appended beside it', async () => {
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    act(() => useWorldStore.getState().selectVob(1));
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toEqual([{
+      op: 'AddVob',
+      // VOB 1 is a root, so the copy is appended to the roots: enumerated last,
+      // and in the slot after the last one. Which is also why it renumbers
+      // nothing and the selection survives it.
+      vob: 2,
+      path: '2',
+      parentPath: null,
+      from: null,
+      to: {
+        name: 'BARREL',
+        visual: 'BARREL.3DS',
+        position: [10, 20, 30],
+        rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        // Fitted from the visual's own bounds, which is the same box VOB 1
+        // has — the index carries no bbox column to copy, and the binding's
+        // default is a 10 cm cube that would cull a barrel.
+        bbox: placeBounds([-1, 0, -10, 1, 2, 10], IDENTITY, [10, 20, 30]),
+        showVisual: false,
+        vobStatic: false,
+        ambient: false,
+        cdStatic: false,
+        cdDynamic: false,
+      },
+    }]);
+  });
+
+  it('carries no box for a VOB with no visual instance', async () => {
+    // VOB 0 is not in the visuals payload — a decal, a `.pfx`. There is nothing
+    // to fit, so the copy takes the binding's default rather than VOB 1's box.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    act(() => useWorldStore.getState().selectVob(0));
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops[0]).toMatchObject({ op: 'AddVob', vob: 2, path: '2' });
+    expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('bbox');
+  });
+
+  it('is offered for exactly one VOB, like the delete beside it', async () => {
+    // D4 is where a selection duplicates as one batch. Until then a button that
+    // copied only the primary of five is the same surprise the delete avoids.
+    await openWorld();
+
+    act(() => useWorldStore.getState().selectVob(null));
+    expect(await screen.findByTestId('world-duplicate-vob')).toBeDisabled();
+    act(() => useWorldStore.getState().selectVob(1));
+    expect(screen.getByTestId('world-duplicate-vob')).toBeEnabled();
+    act(() => useWorldStore.getState().toggleVob(0));
+    expect(screen.getByTestId('world-duplicate-vob')).toBeDisabled();
   });
 });
 
