@@ -199,6 +199,23 @@ export function setVobClassProp(
 ): void;
 /** A VOB to author. Only `position` is required; an unrecognised key is refused. */
 export interface NewVob {
+  /**
+   * The class the new VOB *is* — its C++ type, not a field on it — defaulting to
+   * `zCVob` (level-editor.md §16.15, I1).
+   *
+   * A closed set, because each class needs its own field-complete construction:
+   * ZenKit's structs have uninitialized fields, and `setVobClassProp` switches
+   * on the type the object really has, so nothing can turn a `zCVob` into an
+   * `oCItem` after the fact. A class with no construction is refused rather than
+   * authored as a bare `zCVob` wearing its name.
+   */
+  class?: 'zCVob' | 'oCItem';
+  /**
+   * The script instance an `oCItem` spawns — required for one, and refused for
+   * any other class, which has no such field. The name is not checked against
+   * any script here: this layer holds no semantic model.
+   */
+  instance?: string;
   name?: string;
   /**
    * The visual's class is derived from the extension — `.3DS` →
@@ -224,7 +241,7 @@ export interface NewVob {
   ambient?: boolean;
 }
 /**
- * Append a `zCVob` to `parentPath`'s children — `null` for a root — and return
+ * Append a VOB of `opts.class` to `parentPath`'s children — `null` for a root — and return
  * the index path it landed at.
  *
  * **A null parent renumbers nothing and a parent renumbers.** A VOB's flat index

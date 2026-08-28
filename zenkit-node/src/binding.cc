@@ -1623,8 +1623,31 @@ std::shared_ptr<zenkit::Visual> AuthorVisual(Napi::Env env, std::string const& n
   throw Napi::Error::New(env, "opts.visual: no visual class is known for '" + ext + "'");
 }
 
-// insertVob(handle, parentPath | null, opts) — appends a zCVob to a parent's
-// children, or to the roots when the parent is null, and returns its index path.
+// The classes `insertVob` can author (level-editor.md §16.15, I1).
+//
+// A closed set, and it has to be: **the class is the object's C++ type**, not a
+// field, so nothing can turn a `zCVob` into an `oCItem` afterwards —
+// `setVobClassProp` resolves the VOB and switches on the type it really has.
+// And ZenKit's structs have uninitialized fields, so each class needs its own
+// field-complete construction rather than a type tag. A class with no
+// construction here is refused rather than authored as a bare `zCVob` wearing
+// its name.
+enum class NewVobClass { kZCVob, kOCItem };
+
+NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
+  if (value.IsUndefined()) return NewVobClass::kZCVob;
+  if (!value.IsString()) {
+    throw Napi::TypeError::New(env, "opts.class must be 'zCVob' or 'oCItem'");
+  }
+  std::string const str = value.As<Napi::String>().Utf8Value();
+  if (str == "zCVob") return NewVobClass::kZCVob;
+  if (str == "oCItem") return NewVobClass::kOCItem;
+  throw Napi::Error::New(env, "opts.class: no construction is known for '" + str + "'");
+}
+
+// insertVob(handle, parentPath | null, opts) — appends a VOB of the class
+// `opts.class` names to a parent's children, or to the roots when the parent is
+// null, and returns its index path.
 //
 // **A null parent renumbers nothing and a parent renumbers.** Every VOB is
 // enumerated depth-first and its flat index is its position in that traversal,
@@ -1656,9 +1679,9 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   }
   auto opts = info[2].As<Napi::Object>();
 
-  static constexpr std::array<char const*, 10> kKnownKeys {
-      "name",      "visual",   "position", "rotation", "bbox",
-      "showVisual", "cdStatic", "cdDynamic", "vobStatic", "ambient"};
+  static constexpr std::array<char const*, 12> kKnownKeys {
+      "class",     "instance", "name",      "visual",    "position", "rotation",
+      "bbox",      "showVisual", "cdStatic", "cdDynamic", "vobStatic", "ambient"};
   auto names = opts.GetPropertyNames();
   for (std::uint32_t i = 0; i < names.Length(); ++i) {
     std::string const key = names.Get(i).As<Napi::String>().Utf8Value();
@@ -1683,9 +1706,9 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
     rotation = FloatsFromValue(env, opts.Get("rotation"), 9, "opts.rotation");
   }
 
-  // A box around the position, the same shape insertItemVob uses, unless the
-  // caller has one — and it will, because it owns the asset layer and the box is
-  // a pure function of (visual, rotation, position).
+  // A box around the position unless the caller has one — and it will, because
+  // it owns the asset layer and the box is a pure function of (visual, rotation,
+  // position).
   constexpr float kDefaultHalfExtent = 10.0f;
   std::vector<float> bbox {
       position.x - kDefaultHalfExtent, position.y - kDefaultHalfExtent,
@@ -1701,10 +1724,49 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   auto const vob_static = OptionalBool(env, opts, "vobStatic");
   auto const ambient = OptionalBool(env, opts, "ambient");
 
-  // Every field ZenKit does not default-initialize is set here, as
-  // insertItemVob's construction is.
-  auto vob = std::make_shared<zenkit::VirtualObject>();
-  vob->type = zenkit::VirtualObjectType::zCVob;
+  // The class first, because it decides which fields exist at all — and every
+  // refusal below happens before anything is appended, so a refused call leaves
+  // the world exactly as it was.
+  auto const vob_class = ParseNewVobClass(env, opts.Get("class"));
+  bool const has_instance = !opts.Get("instance").IsUndefined();
+
+  std::shared_ptr<zenkit::VirtualObject> vob;
+  // Whether a VOB claims to draw when the caller has not said. A `zCVob` with
+  // nothing to draw does not claim otherwise; an `oCItem` does, because the
+  // engine derives an item's visual from its script instance rather than from
+  // this file.
+  bool default_show_visual = false;
+
+  if (vob_class == NewVobClass::kOCItem) {
+    // The name of a script instance, and the field that makes an item an item:
+    // without one the engine has nothing to spawn. Mirrors the fixture's VItem
+    // construction (src/fixture.cc) — every field it initializes is initialized
+    // here, because ZenKit structs have uninitialized fields.
+    if (!has_instance) {
+      throw Napi::Error::New(env, "opts.instance is required for an oCItem");
+    }
+    auto item = std::make_shared<zenkit::VItem>();
+    item->type = zenkit::VirtualObjectType::oCItem;
+    item->instance = RequiredCp1252String(env, opts, "instance");
+    // Save-game only fields, not default-initialized in ZenKit.
+    item->s_amount = 0;
+    item->s_flags = 0;
+    vob = item;
+    default_show_visual = true;
+  } else {
+    // Refused rather than dropped: a `zCVob` has no instance field, so naming
+    // one is a mistake about the class and not a value to ignore.
+    if (has_instance) {
+      throw Napi::Error::New(env, "opts.instance: only an oCItem carries an instance");
+    }
+    auto plain = std::make_shared<zenkit::VirtualObject>();
+    plain->type = zenkit::VirtualObjectType::zCVob;
+    vob = plain;
+    default_show_visual = visual != nullptr;
+  }
+
+  // Every field ZenKit does not default-initialize is set here — the base-class
+  // half, which every class above shares.
   vob->vob_name = std::move(name);
   vob->position = position;
   vob->rotation = zenkit::Mat3 {rotation[0], rotation[3], rotation[6],
@@ -1713,8 +1775,7 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   vob->bbox = zenkit::AxisAlignedBoundingBox {zenkit::Vec3 {bbox[0], bbox[1], bbox[2]},
                                               zenkit::Vec3 {bbox[3], bbox[4], bbox[5]}};
   vob->visual = visual;
-  // A VOB with nothing to draw does not claim otherwise.
-  vob->show_visual = show_visual ? *show_visual : (visual != nullptr);
+  vob->show_visual = show_visual ? *show_visual : default_show_visual;
   vob->cd_static = cd_static ? *cd_static : true;
   vob->cd_dynamic = cd_dynamic ? *cd_dynamic : true;
   vob->vob_static = vob_static ? *vob_static : false;
@@ -1857,59 +1918,6 @@ Napi::Value ReparentVob(Napi::CallbackInfo const& info) {
   return Napi::String::New(env, landed);
 }
 
-// insertItemVob(handle, parentPath | null, {name, instance, position}) —
-// appends a new oCItem vob and returns its index path. The visual is left
-// empty: the engine derives item visuals from the script instance.
-Napi::Value InsertItemVob(Napi::CallbackInfo const& info) {
-  Napi::Env env = info.Env();
-  auto* handle = UnwrapHandle(env, info[0]);
-
-  std::vector<std::size_t> parent_indices;
-  bool const has_parent = !(info[1].IsNull() || info[1].IsUndefined());
-  if (has_parent) {
-    parent_indices = ParseIndexPath(env, info[1], "parentPath");
-  }
-
-  if (!info[2].IsObject()) {
-    throw Napi::TypeError::New(env, "opts must be an object with name, instance and position");
-  }
-  auto opts = info[2].As<Napi::Object>();
-  auto name = RequiredCp1252String(env, opts, "name");
-  auto instance = RequiredCp1252String(env, opts, "instance");
-  auto position = Vec3FromValue(env, opts.Get("position"), "opts.position");
-
-  // Mirrors the fixture's VItem construction (src/fixture.cc): every field it
-  // initializes is initialized here; ZenKit structs have uninitialized fields.
-  auto item = std::make_shared<zenkit::VItem>();
-  item->type = zenkit::VirtualObjectType::oCItem;
-  item->vob_name = std::move(name);
-  item->instance = std::move(instance);
-  item->position = position;
-  item->rotation = zenkit::Mat3::identity();
-  item->show_visual = true;
-  constexpr float kItemBboxHalfExtent = 10.0f;  // engine units (cm)
-  item->bbox = zenkit::AxisAlignedBoundingBox {
-      zenkit::Vec3 {position.x - kItemBboxHalfExtent, position.y - kItemBboxHalfExtent,
-                    position.z - kItemBboxHalfExtent},
-      zenkit::Vec3 {position.x + kItemBboxHalfExtent, position.y + kItemBboxHalfExtent,
-                    position.z + kItemBboxHalfExtent}};
-  // Save-game only fields, not default-initialized in ZenKit.
-  item->s_amount = 0;
-  item->s_flags = 0;
-
-  std::string child_path;
-  if (has_parent) {
-    auto parent = ResolveVob(env, *handle, parent_indices, "parentPath");
-    parent->children.push_back(item);
-    child_path = info[1].As<Napi::String>().Utf8Value() + "/" +
-                 std::to_string(parent->children.size() - 1);
-  } else {
-    handle->world->world_vobs.push_back(item);
-    child_path = std::to_string(handle->world->world_vobs.size() - 1);
-  }
-  return Napi::String::New(env, child_path);
-}
-
 zenkit::ArchiveFormat ParseArchiveFormat(Napi::Env env, Napi::Value value) {
   if (!value.IsString()) {
     throw Napi::TypeError::New(env, "format must be 'binary', 'binsafe' or 'ascii'");
@@ -2028,7 +2036,6 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));
   exports.Set("setWaypointPosition", Napi::Function::New(env, SetWaypointPosition));
   exports.Set("setWaypointName", Napi::Function::New(env, SetWaypointName));
-  exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));
   return exports;

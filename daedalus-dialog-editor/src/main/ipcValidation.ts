@@ -480,7 +480,24 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       const spec = op.from === null ? op.to : op.from;
       if (!isPlainObject(spec)) throw new Error('Invalid op: the vob to add must be an object');
       for (const [key, value] of Object.entries(spec)) {
-        if (key === 'name' || key === 'visual') {
+        if (key === 'class') {
+          // A closed set, and the one key here whose value the binding cannot
+          // fall back on: the class is the object's C++ type, so a class it has
+          // no construction for would either throw in C++ or — worse, if this
+          // waved it through as a tag — be authored as a bare `zCVob` wearing
+          // the name, on which every `SetVobClassProp` is then refused.
+          if (value !== 'zCVob' && value !== 'oCItem') {
+            throw new Error(`Invalid op: class must be zCVob or oCItem, not ${JSON.stringify(value)}`);
+          }
+        } else if (key === 'instance') {
+          // The shape of a Daedalus symbol is the whole of what this process can
+          // say about an item instance — it holds no item index, and a world may
+          // be edited with no script project open. The renderer makes the
+          // existence check, exactly as it does for `SetVobClassProp`.
+          if (typeof value !== 'string' || !DAEDALUS_INSTANCE.test(value)) {
+            throw new Error(`Invalid op: instance must be a Daedalus instance name, not ${JSON.stringify(value)}`);
+          }
+        } else if (key === 'name' || key === 'visual') {
           if (typeof value !== 'string') throw new Error(`Invalid op: ${key} must be a string`);
         } else if (NEW_VOB_FLAG_KEYS.includes(key)) {
           if (typeof value !== 'boolean') throw new Error(`Invalid op: ${key} must be a boolean`);
@@ -495,6 +512,15 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
         }
       }
       if (!('position' in spec)) throw new Error('Invalid op: a vob to add needs a position');
+      // The instance belongs to the one class that has one, in both directions:
+      // an `oCItem` without it spawns nothing the engine can resolve, and any
+      // other class has no such field, so naming one is a mistake about the
+      // class rather than a value the binding should drop.
+      if (('class' in spec ? spec.class : 'zCVob') === 'oCItem') {
+        if (!('instance' in spec)) throw new Error('Invalid op: an oCItem needs an instance');
+      } else if ('instance' in spec) {
+        throw new Error('Invalid op: only an oCItem carries an instance');
+      }
       continue;
     }
 

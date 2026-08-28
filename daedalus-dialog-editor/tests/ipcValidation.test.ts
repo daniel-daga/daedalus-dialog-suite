@@ -906,6 +906,48 @@ describe('assertApplyOpsRequest', () => {
       })).toThrow(/scale/);
     });
 
+    it('takes a class the binding can author, and refuses one it cannot', () => {
+      // The class is the object's C++ type and the binding's set of
+      // constructions is closed (level-editor.md §16.15, I1), so a class it has
+      // no construction for cannot be authored as a `zCVob` wearing the name —
+      // `setVobClassProp` would then refuse every property of it.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], class: 'zCVob' } }],
+      })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], class: 'oCItem', instance: 'ITFO_APPLE' } }],
+      })).not.toThrow();
+      for (const bad of ['oCMobDoor', 'zCVobLight', 'ocitem', '', 7, null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, to: { position: [0, 0, 0], class: bad } }],
+        })).toThrow(/class/);
+      }
+    });
+
+    it('pairs the instance with the one class that has one', () => {
+      // An `instance` on any other class is a mistake about the class, and an
+      // `oCItem` without one spawns nothing the engine can resolve. Both are
+      // shape, so both hold here — unlike whether the scripts declare the name,
+      // which only the renderer can answer.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], instance: 'ITFO_APPLE' } }],
+      })).toThrow(/instance/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...add, to: { position: [0, 0, 0], class: 'oCItem' } }],
+      })).toThrow(/instance/);
+    });
+
+    it('refuses an instance that could not be a Daedalus symbol', () => {
+      // The strongest statement a process with no semantic model can make, and
+      // the same one `SetVobClassProp` already makes — the main process holds no
+      // item index and a world may be edited with no script project open.
+      for (const bad of ['1TFO', 'IT FO', 'ITFO-APPLE', '', 7]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, to: { position: [0, 0, 0], class: 'oCItem', instance: bad } }],
+        })).toThrow(/instance/);
+      }
+    });
+
     it('checks the matrix and the box it is given', () => {
       expect(() => assertApplyOpsRequest({
         ops: [{ ...add, to: { position: [0, 0, 0], rotation: [1, 2, 3] } }],

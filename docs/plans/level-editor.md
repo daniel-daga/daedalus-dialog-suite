@@ -2167,8 +2167,9 @@ and `4.43e-33` on 17 — uninitialised memory Piranha Bytes shipped, which a gri
 that writes back on blur would move under the fidelity gate.
 **Class-specific insertion** (item 1.3): `insertItemVob` already exists in the
 binding and is wired to nothing, which makes it adjacent and tempting, but it is
-`AddVob` with a different invariant. And **validating `instance` against the
-parser's item index** — a real hazard, since an unknown instance crashes the
+`AddVob` with a different invariant. *(I1 landed 2026-08-28 — it folded
+`insertItemVob` into a class dispatch inside `insertVob`; see §16.15.)*
+And **validating `instance` against the parser's item index** — a real hazard, since an unknown instance crashes the
 engine, but it couples the World surface to the semantic model; the field ships
 as free text at the trust level `name` already has. *(Closed 2026-08-28 — see
 "The item instance stops being free text" below.)*
@@ -2817,8 +2818,8 @@ is not an enum, held out for the `keyframes`-emptiness reason above instead.
 
 Also out: `isStatic` and anything else changing *which* fields the archive
 contains, list fields, and base-`zCVob` widening (§14.1 item 1.8). Alongside and
-independent: class-specific *insertion* (item 1.3 — `insertItemVob` is in the
-binding and wired to nothing), and copy/paste (1.2). Numeric transform entry
+independent: class-specific *insertion* (item 1.3 — I1 landed 2026-08-28,
+`oCItem` only, §16.15), and copy/paste (1.2). Numeric transform entry
 (1.5) is landed bar the multi-selection decision (§16.4); snapping (1.6) is
 fully landed (§16.5). All still before Phase 1c in §11.
 
@@ -3720,6 +3721,13 @@ Two consequences, and neither is this card's to take.
 carry class properties once the editor can *author* a VOB of that class, and the
 binding already has the first half of that in `insertItemVob` (an `oCItem`
 insert, exported and reachable, with no `OpBinding` member and no op yet).
+**I1 landed on 2026-08-28 and unblocks exactly as much as it authors**: `NewVob`
+now carries a `class`, so a duplicate of an `oCItem` *can* be one — but
+`duplicateVobSpec` still emits no class, and every class I1 does not construct
+(the `oCMobDoor` this paragraph is about, above all) is still refused by
+`insertVob`. So D2's class half is now two questions, not one: read the class
+out of the index and carry it, which is this card's, and construct the classes,
+which is I2's.
 **And D1 is lossier than its own comments say** — `ops.ts`' `duplicateVobSpec`
 and `WorldSurface`'s `duplicateVob` both claim the copy loses the class
 *fields*; they now say it loses the class. That correction is the whole of this
@@ -3840,22 +3848,59 @@ every class needs its own construction that initializes every field. This is
 not a type-tag switch, and an increment that treats it as one will author
 garbage.
 
-**I1 — `AddVob` can name a class, and `oCItem` is the first.** Route the op to a
-class-dispatched constructor and wire the existing `insertItemVob` behind it, so
-the increment proves the mechanism against a class whose C++ side already
-exists. `oCItem` also brings the validation that cannot live in the main process
-(below), so I1 settles that shape once for every class after it. Every layer in
-one change, per `ReparentVob`'s rule.
+**I1 — `AddVob` can name a class, and `oCItem` is the first. Landed 2026-08-28**,
+every layer in one change per `ReparentVob`'s rule: `NewVob` grew `class` and
+`instance` (`zen-world/src/model/ops.ts`), `assertApplyOpsRequest` grew the
+branch that checks them, `insertVob` dispatches on the class in C++, and the
+*Place a VOB* dialog offers the choice. **`insertItemVob` is gone** — its `VItem`
+construction moved behind the dispatch and its three tests now drive `insertVob`
+with `class: 'oCItem'`, so there is one authoring path and not two. (The
+acceptance record's T6 row names `insertItemVob`; it was the entry point the
+Gate 2 candidate's `tools/mutate.js` used, and that tool now calls `insertVob`.)
+
+**The class dispatch is a `switch` over constructions, deliberately, not a type
+tag.** Each branch owns the fields ZenKit leaves to the struct's own defaults
+plus the ones it does not initialize at all: an `oCItem` sets `instance`,
+`s_amount` and `s_flags`, and takes `show_visual = true` because the engine
+derives an item's visual from the script instance rather than from the file. The
+base-class half — name, pose, box, the five flags, `physics_enabled = false` —
+is shared and runs after. **One behaviour changed for an authored item**:
+`physics_enabled` was left at ZenKit's `true` by `insertItemVob` and is now
+`false` like every other authored VOB. Invisible in a saved world either way,
+because the packed `zCVob` writer drops the field (A6, Deferred).
+
+**The `instance` refusal is split across three layers, each as strong as it
+can be**, and the split is the one the property grid already settled (see *"The
+item instance stops being free text"*): the binding requires an `instance` for an
+`oCItem` and refuses one on any other class; `assertApplyOpsRequest` checks the
+class against the closed set, the same pairing, and that the instance is the
+shape of a Daedalus symbol; and `WorldSurface` disables *Place* for a name the
+loaded project does not declare — with an empty index meaning "nothing is
+known", never "nothing is legal".
+
+**An engine verdict for an authored `oCItem` covers the construction and not the
+entry point.** Checklist row 10 of the acceptance record placed an item through
+exactly these field assignments, so I1 changed which function assigns them
+rather than what is written. Nothing in Gate 2 covers a *`zCVob`* authored with a
+class named, because there was no such thing to author.
 
 **I2 — the next classes**, `zCVobLight` and `zCVobSound`/`Daytime`, each needing
 its own field-complete construction against `fixture.cc`'s idiom. The catalogue
 is the field list; if I2 finds itself writing a second list, the catalogue's
-shape is wrong and that is the finding.
+shape is wrong and that is the finding. **I1 left it the seams and no more**:
+`ParseNewVobClass` is where a class name becomes a construction, the dispatch in
+`InsertVob` is where a construction lives, and the validator's closed set is the
+third place a class name is written. A class added to two of the three is
+refused by the one it was not added to — which is the shape of the warning
+`assertApplyOpsRequest` already carries for a new op. I1 did **not** generalise
+the UI: the dialog's `<option>` list is written out, because two entries do not
+justify deriving it and the catalogue does not yet say which classes are
+authorable.
 
 **Then the trigger family, then `oCMobInter` and friends** — more of I2's shape,
 carded when I2 has shown what one costs.
 
-**`oCItem` is first and is also the awkward one.** Its `instance` is the
+**`oCItem` was first and was also the awkward one.** Its `instance` is the
 validation that cannot live in the main process at all: there is no semantic
 model there — `ProjectIndex` carries npcs, dialogs, routines and voice ids but
 no instances, `primedModels` is a take-once cache that deletes as it reads, and

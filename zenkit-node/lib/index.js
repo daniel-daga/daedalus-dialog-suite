@@ -72,15 +72,9 @@ function reparentVob(handle, ...rest) {
   return result;
 }
 
-function insertItemVob(handle, ...rest) {
-  const result = addon.insertItemVob(handle, ...rest);
-  markMutated(handle);
-  return result;
-}
-
 module.exports = {
   ...addon,
   loadWorld, normalizeWorld,
   setVobPosition, setVobRotation, setVobProp, setVobClassProp,
-  insertVob, deleteVob, reparentVob, insertItemVob,
+  insertVob, deleteVob, reparentVob,
 };

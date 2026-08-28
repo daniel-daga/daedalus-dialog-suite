@@ -371,13 +371,24 @@ differs from `reparentVob`. A reparent has to be able to put a VOB back exactly
 where it came from; an insert's inverse is a delete of the VOB it just made, and
 the end of the list is where a delete leaves no hole to reason about.
 
-`opts` is `{ name?, visual?, position, rotation?, bbox?, showVisual?, cdStatic?,
-cdDynamic?, vobStatic?, ambient? }`; only `position` is required and an
-unrecognised key is refused. Without a `bbox` it gets a 10 cm box around the
-position, the same as `insertItemVob` — the caller that owns the asset layer
-should pass the real one, since the box is a pure function of (visual, rotation,
-position). Without a `visual` it gets none, and then `showVisual` defaults to
-false: a VOB with nothing to draw does not claim otherwise.
+`opts` is `{ class?, instance?, name?, visual?, position, rotation?, bbox?,
+showVisual?, cdStatic?, cdDynamic?, vobStatic?, ambient? }`; only `position` is
+required and an unrecognised key is refused. Without a `bbox` it gets a 10 cm box
+around the position — the caller that owns the asset layer should pass the real
+one, since the box is a pure function of (visual, rotation, position). Without a
+`visual` it gets none, and then `showVisual` defaults to false: a VOB with
+nothing to draw does not claim otherwise.
+
+**`class` is the object's C++ type, not a field on it**, which is why the set is
+closed: `'zCVob'` (the default) and `'oCItem'`. Each class needs its own
+field-complete construction — ZenKit's structs leave fields uninitialized — and
+`setVobClassProp` switches on the type the object really has, so nothing can turn
+a `zCVob` into an `oCItem` afterwards. A class with no construction is refused
+rather than authored as a bare `zCVob` wearing its name. An `oCItem` requires
+`instance`, the script instance the engine spawns; any other class refuses one,
+having no such field. An item is normally authored with **no** `visual` — the
+engine derives one from the instance — so `showVisual` defaults to true for an
+`oCItem` rather than to whether a visual was given.
 
 **The visual's class is derived from the extension here, which is exactly what
 `setVobProp` refuses to do — and for the opposite reason.** Renaming an existing
@@ -580,7 +591,7 @@ only the JSON with `node scripts/fixtures-regen.js --golden-only`.
 
 It is `null` for a handle that has been mutated: the section describes the
 bytes the handle was loaded from, and after `setVobPosition` /
-`insertItemVob` those bytes no longer describe the handle. Save the world and
+`insertVob` those bytes no longer describe the handle. Save the world and
 load the result to get a container section back.
 
 `containerFromBuffer` dispatches on the archive format. ASCII

@@ -1037,6 +1037,31 @@ describe('an add op', () => {
     expect(calls).toEqual(['insert PLACED under 0', 'delete 0/1']);
   });
 
+  it('carries the class and the instance an item is, untouched', () => {
+    // The class is the object's C++ type and the binding is the only layer that
+    // can author one (level-editor.md §16.15, I1), so this package's whole part
+    // in it is to carry the two fields through unread — an `AddVob` describes a
+    // VOB completely, and a spec that lost its class would insert a `zCVob`
+    // wearing an item's name.
+    let seen: NewVob | null = null;
+    const binding: OpBinding = {
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (spec) => { seen = spec; return '2'; },
+      deleteVob: () => {},
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const item: NewVob = {
+      class: 'oCItem', instance: 'ITFO_APPLE', name: 'APPLE_01', position: [1, 2, 3],
+    };
+
+    commitOps(binding, [addVob(reader(), item)]);
+
+    expect(seen).toEqual(item);
+  });
+
   it('reaches the binding as an insert one way and a delete the other', () => {
     const calls: string[] = [];
     const binding: OpBinding = {

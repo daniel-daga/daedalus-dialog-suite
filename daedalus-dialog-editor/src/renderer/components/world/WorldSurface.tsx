@@ -86,7 +86,8 @@ const WorldSurface: React.FC = () => {
    * the user meant, and appending a root is the case that renumbers nothing.
    */
   const [placing, setPlacing] = useState<
-    { name: string; visual: string; parent: number | null } | null
+    { vobClass: 'zCVob' | 'oCItem'; name: string; visual: string; instance: string;
+      parent: number | null } | null
   >(null);
   /** The VOB the delete warning is about, or null when it is closed. A flat
    *  index rather than a boolean: the dialog names what it is about to remove,
@@ -573,6 +574,20 @@ const WorldSurface: React.FC = () => {
 
   const parentLabel = labelOf(parentCandidate);
 
+  /**
+   * Whether the placement dialog is holding an item it must not send.
+   *
+   * The same refusal `WorldPropertyGrid` makes for the same field and for the
+   * same reason — ZenGin crashes on an instance no script declares, and nothing
+   * below the renderer holds an index to check it against. **An empty index
+   * means "nothing is known", never "nothing is legal"**, so a world edited with
+   * no project open places items exactly as it did before; an empty name is
+   * refused whatever the index says, because an item without one spawns nothing.
+   */
+  const placeRefused = placing !== null && placing.vobClass === 'oCItem'
+    && (placing.instance.trim() === ''
+      || (itemInstances.size > 0 && !itemInstances.has(placing.instance.trim().toUpperCase())));
+
   const handleRotateSelection = useCallback((delta: ZenRotation) => {
     const { summary: current, selection: selected } = useWorldStore.getState();
     if (current === null || selected.length === 0) return;
@@ -694,17 +709,25 @@ const WorldSurface: React.FC = () => {
    * selection afterwards.
    */
   const placeVob = useCallback(async (
-    spec: { name: string; visual: string; parent: number | null },
+    spec: {
+      vobClass: 'zCVob' | 'oCItem'; name: string; visual: string; instance: string;
+      parent: number | null;
+    },
   ) => {
     const { summary: current } = useWorldStore.getState();
     if (current === null || terrainPoint === null) return;
 
-    const visual = spec.visual.trim();
+    // An item has no visual in the file — the engine derives one from its script
+    // instance — so there is nothing to resolve a box from either, and it keeps
+    // the binding's default exactly as a VOB with an unresolvable visual does.
+    const item = spec.vobClass === 'oCItem';
+    const visual = item ? '' : spec.visual.trim();
     const bounds = visual === '' ? null : await window.editorAPI.getVisualBounds(visual)
       .catch(() => null);
 
     const placed: NewVob = {
       position: terrainPoint,
+      ...(item ? { class: 'oCItem' as const, instance: spec.instance.trim() } : {}),
       ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
       ...(visual === '' ? {} : { visual }),
       ...(bounds === null ? {} : {
@@ -733,11 +756,11 @@ const WorldSurface: React.FC = () => {
    * slot two copies of the same parent would otherwise share.
    *
    * What a copy does *not* carry is `physicsEnabled`, which `NewVob` has no
-   * room for, and **its class**: the binding's `insertVob` authors a `zCVob`
-   * whatever the original was, so a duplicated `oCMobDoor` is not a door and a
-   * follow-up `SetVobClassProp` would be refused. D2's class half waits on
-   * class-specific insertion (level-editor.md §16.15); the finding is written
-   * up in §16.14.
+   * room for, and **its class**: `duplicateVobSpec` emits none, so a duplicated
+   * `oCMobDoor` is a `zCVob` with the door's name and a follow-up
+   * `SetVobClassProp` on it would be refused. `insertVob` can author a class
+   * since I1 (level-editor.md §16.15) — carrying it out of the index is D2's
+   * remaining half, and the classes beyond `oCItem` are I2's.
    *
    * Each box is fitted from that VOB's own visual bounds, exactly as a rotation
    * refits one and for the same reason: the index has no bbox column to copy,
@@ -1329,7 +1352,9 @@ const WorldSurface: React.FC = () => {
                 </Typography>
                 <Button
                   size="small"
-                  onClick={() => setPlacing({ name: '', visual: '', parent: null })}
+                  onClick={() => setPlacing({
+                    vobClass: 'zCVob', name: '', visual: '', instance: '', parent: null,
+                  })}
                   data-testid="world-place-vob"
                 >
                   Place VOB here…
@@ -1373,6 +1398,27 @@ const WorldSurface: React.FC = () => {
               label={<Typography variant="caption">Place under {parentLabel}</Typography>}
             />
           )}
+          {/* The class is chosen here or never: it is the object's C++ type, so
+              nothing can turn a placed `zCVob` into an item afterwards
+              (level-editor.md §16.15, I1). A native select, because the set is
+              closed and short — the binding refuses any class it has no
+              field-complete construction for. */}
+          <TextField
+            select
+            fullWidth
+            size="small"
+            variant="standard"
+            label="Class"
+            value={placing?.vobClass ?? 'zCVob'}
+            onChange={(event) => setPlacing((was) => (was === null ? was : {
+              ...was, vobClass: event.target.value as 'zCVob' | 'oCItem',
+            }))}
+            SelectProps={{ native: true, inputProps: { 'data-testid': 'world-place-class' } }}
+            sx={{ mb: 1 }}
+          >
+            <option value="zCVob">zCVob</option>
+            <option value="oCItem">oCItem</option>
+          </TextField>
           <TextField
             autoFocus
             fullWidth
@@ -1383,24 +1429,46 @@ const WorldSurface: React.FC = () => {
             onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, name: event.target.value }))}
             inputProps={{ 'data-testid': 'world-place-name' }}
           />
-          <TextField
-            fullWidth
-            size="small"
-            variant="standard"
-            label="Visual"
-            placeholder="NW_CRATE.3DS"
-            helperText="Its class comes from the extension. A .TGA decal is refused — it carries settings this does not take."
-            value={placing?.visual ?? ''}
-            onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, visual: event.target.value }))}
-            inputProps={{ 'data-testid': 'world-place-visual' }}
-            sx={{ mt: 2 }}
-          />
+          {/* An item carries an instance *instead of* a visual, not beside one:
+              the engine derives an item's visual from the script instance, and
+              the binding leaves the field empty for exactly that reason. */}
+          {placing?.vobClass === 'oCItem' ? (
+            <TextField
+              fullWidth
+              size="small"
+              variant="standard"
+              label="Instance"
+              placeholder="ITFO_APPLE"
+              error={placeRefused}
+              helperText={placeRefused
+                ? 'The loaded project declares no such item instance — ZenGin crashes on one it cannot resolve.'
+                : 'The script instance the engine spawns. It supplies the visual, so there is none to give here.'}
+              value={placing?.instance ?? ''}
+              onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, instance: event.target.value }))}
+              inputProps={{ 'data-testid': 'world-place-instance' }}
+              sx={{ mt: 2 }}
+            />
+          ) : (
+            <TextField
+              fullWidth
+              size="small"
+              variant="standard"
+              label="Visual"
+              placeholder="NW_CRATE.3DS"
+              helperText="Its class comes from the extension. A .TGA decal is refused — it carries settings this does not take."
+              value={placing?.visual ?? ''}
+              onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, visual: event.target.value }))}
+              inputProps={{ 'data-testid': 'world-place-visual' }}
+              sx={{ mt: 2 }}
+            />
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPlacing(null)} data-testid="world-place-cancel">Cancel</Button>
           <Button
             variant="contained"
             data-testid="world-place-confirm"
+            disabled={placeRefused}
             onClick={() => {
               const spec = placing;
               setPlacing(null);

@@ -212,6 +212,23 @@ export interface SetVobClassProp {
  * why deleting one is a different op that does not exist yet.
  */
 export interface NewVob {
+  /**
+   * The class the new VOB *is* — its C++ type rather than a field on it —
+   * defaulting to `zCVob` when it is absent (level-editor.md §16.15, I1).
+   *
+   * A closed set the binding owns: each class needs its own field-complete
+   * construction, because ZenKit's structs have uninitialized fields, and
+   * nothing can turn a `zCVob` into an `oCItem` afterwards — `setVobClassProp`
+   * switches on the type the object really has. This package neither authors nor
+   * reads it; it carries it, because an `AddVob` describes a VOB completely and
+   * a spec that lost its class would insert something else.
+   */
+  class?: 'zCVob' | 'oCItem';
+  /** The script instance an `oCItem` spawns — required for one and refused for
+   *  any other class. Whether the name is one the scripts declare is a question
+   *  no layer below the renderer can answer: the main process holds no semantic
+   *  model, so its half is a shape check and nothing more. */
+  instance?: string;
   name?: string;
   /** The visual's class is derived from the extension by the binding, which is
    *  the opposite of what a rename does and for the opposite reason: a rename
@@ -944,13 +961,13 @@ export function addVob(reader: VobReader, spec: NewVob, parent: number | null = 
  * duplicates with the box it had; without bounds there is nothing honest to
  * fit, and the VOB gets the binding's default exactly as a placement does.
  *
- * Class properties are not here either, and **no widening of this function
- * could put them here**: the copy is not of the original's class. `AddVob`
- * reaches the world through `insertVob`, which hard-codes the new object's type
- * to `zCVob`, so a duplicated `oCMobDoor` is a `zCVob` with the door's name,
- * visual and pose — and a follow-up `SetVobClassProp` on it is refused by the
- * binding, which switches on the VOB's real type. D2's class half therefore
- * waits on class-specific insertion (§16.15); see §16.14 for the finding.
+ * The **class is not here either, and neither are the class properties**, which
+ * is now a gap rather than a wall: `insertVob` can author a class since I1
+ * (§16.15), so a duplicate of an `oCItem` *could* be one — this function still
+ * emits no `class`, so a duplicated `oCMobDoor` is a `zCVob` with the door's
+ * name, visual and pose. Reading the class back out of the index and carrying
+ * the class properties with it is D2's remaining half (§16.14), and it wants
+ * the classes I1 does not author yet.
  */
 export function duplicateVobSpec(
   reader: VobReader, vob: number, bounds: ZenBounds | null = null,

@@ -124,8 +124,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Class insertion I1 — `AddVob` names a class** — the wall D2 hit: `InsertVob`
-  hard-codes `zCVob`; `insertItemVob` ships unused with half of it. §16.15
 - **Class insertion I2 — `zCVobLight`, `zCVobSound`/`Daytime`** — each a
   field-complete construction, consuming the catalogue. Unowned. §16.15
 - **Copy/paste D2 — the fields `NewVob` drops** — unblocked by I1; what is left
@@ -214,7 +212,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty)*
+- **Class insertion I1 — `AddVob` names a class** (board-loop) — `insertVob`
+  dispatches on `class`, `oCItem` first; `insertItemVob` folded into it. §16.15
 
 Last flushed 2026-08-28 at the merge to master: D1, D3, D4 and W1: forward facts
 in §16.14 and §16.7, the rest in `git log`.

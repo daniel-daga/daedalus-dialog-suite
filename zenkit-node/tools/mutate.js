@@ -62,7 +62,8 @@ const edited = stage('02-minimal-edit');
 
   const moved = [vob.position[0], vob.position[1] + LIFT_Y, vob.position[2]];
   zk.setVobPosition(handle, MOVED_VOB, moved);
-  const itemPath = zk.insertItemVob(handle, null, {
+  const itemPath = zk.insertVob(handle, null, {
+    class: 'oCItem',
     name: 'ITEM_PHASE0_APPLE_01',
     instance: 'ITFO_APPLE',
     position: [start.position[0], start.position[1] + ITEM_ABOVE_START, start.position[2]],

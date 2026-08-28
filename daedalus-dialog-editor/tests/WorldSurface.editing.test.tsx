@@ -1246,6 +1246,72 @@ describe('placing a VOB', () => {
     expect(ops[0]).toMatchObject({ op: 'AddVob', parentPath: null, path: '2' });
   });
 
+  it('places an oCItem, which carries an instance instead of a visual', async () => {
+    // The class is the object's C++ type (level-editor.md §16.15, I1), so it is
+    // chosen here or never: nothing can turn the `zCVob` this used to always
+    // author into an item afterwards. An item has no visual in the file at all —
+    // the engine derives it from the script instance — so the dialog offers the
+    // instance in the visual's place rather than beside it.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    act(() => useWorldStore.getState().selectVob(null));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    fireEvent.change(screen.getByTestId('world-place-class'), { target: { value: 'oCItem' } });
+    expect(screen.queryByTestId('world-place-visual')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('world-place-instance'), { target: { value: 'ITFO_APPLE' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: 'AddVob',
+      path: '2',
+      parentPath: null,
+      to: { class: 'oCItem', instance: 'ITFO_APPLE', position: TERRAIN },
+    });
+    expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('visual');
+  });
+
+  it('will not place an item whose instance the project does not declare', async () => {
+    // The same refusal the property grid makes, in the one other place an
+    // instance is typed: ZenGin crashes on a name no script declares, and
+    // nothing below the renderer holds an index to check it against.
+    useProjectStore.setState({
+      mergedSemanticModel: {
+        ...useProjectStore.getState().mergedSemanticModel,
+        items: { ITFO_APPLE: { name: 'ITFO_APPLE' } },
+      },
+    } as never);
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValue(summary as never);
+    api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    act(() => useWorldStore.getState().selectVob(null));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+    fireEvent.change(screen.getByTestId('world-place-class'), { target: { value: 'oCItem' } });
+    fireEvent.change(screen.getByTestId('world-place-instance'), { target: { value: 'ITFO_APPEL' } });
+
+    expect(screen.getByTestId('world-place-confirm')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+
+    // Daedalus is case-insensitive, and the index is folded on both sides — so
+    // the name the project does declare is placeable however it is typed.
+    fireEvent.change(screen.getByTestId('world-place-instance'), { target: { value: 'itfo_apple' } });
+    expect(screen.getByTestId('world-place-confirm')).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops[0]).toMatchObject({ to: { class: 'oCItem', instance: 'itfo_apple' } });
+  });
+
   it('clears the selection after an op that renumbers, and keeps it otherwise', async () => {
     // A selection is a list of flat indices, and after a reparent or a parented
     // add there is no telling which VOB one of them now names — the property

@@ -1,6 +1,6 @@
 'use strict';
 
-// §1 minimal mutations — setVobPosition + insertItemVob. They exist only to
+// §1 minimal mutations — setVobPosition + insertVob. They exist only to
 // feed the in-engine pass (checklist row 10); nothing beyond that is in scope.
 
 const test = require('node:test');
@@ -625,11 +625,19 @@ test('an inserted vob survives a save and reload', () => {
   assert.deepStrictEqual(reloaded.rotation, ROTATION_90_Y);
 });
 
-test('insertItemVob appends an oCItem under the parent and returns its path', () => {
+// The class dispatch (level-editor.md §16.15, I1). `insertVob` authors the
+// class it is told to, and `oCItem` is the first: the class is the object's C++
+// type rather than a field, so a bare `zCVob` cannot be turned into one
+// afterwards — `setVobClassProp` switches on the type the object really has.
+// Each class needs its own field-complete construction, because ZenKit's structs
+// have uninitialized fields; `class` is therefore a closed set and not a tag.
+
+test('insertVob authors an oCItem when the class names one, and returns its path', () => {
   const handle = load();
   const statsBefore = zenkit.worldStats(handle);
 
-  const itemPath = zenkit.insertItemVob(handle, '0', {
+  const itemPath = zenkit.insertVob(handle, '0', {
+    class: 'oCItem',
     name: 'ITEM_TEST_ÄÖÜ_01',
     instance: 'ITFO_APPLE',
     position: [12.5, 3, -7],
@@ -655,9 +663,10 @@ test('insertItemVob appends an oCItem under the parent and returns its path', ()
   }
 });
 
-test('insertItemVob with a null parent appends a new root vob', () => {
+test('an oCItem with a null parent appends a new root vob', () => {
   const handle = load();
-  const itemPath = zenkit.insertItemVob(handle, null, {
+  const itemPath = zenkit.insertVob(handle, null, {
+    class: 'oCItem',
     name: 'ITEM_ROOT_01',
     instance: 'ITMI_GOLD',
     position: [0, 0, 0],
@@ -668,12 +677,13 @@ test('insertItemVob with a null parent appends a new root vob', () => {
   assert.strictEqual(item.props.instance, 'ITMI_GOLD');
 });
 
-test('insertItemVob throws on a bad parent path', () => {
+test('an oCItem throws on a bad parent path', () => {
   const handle = load();
   for (const bad of ['9', '0/7', 'x', '']) {
     assert.throws(
       () =>
-        zenkit.insertItemVob(handle, bad, {
+        zenkit.insertVob(handle, bad, {
+          class: 'oCItem',
           name: 'ITEM_X',
           instance: 'ITMI_GOLD',
           position: [0, 0, 0],
@@ -684,12 +694,47 @@ test('insertItemVob throws on a bad parent path', () => {
   }
 });
 
+test('insertVob refuses a class it has no construction for', () => {
+  const handle = load();
+  for (const bad of ['oCMobDoor', 'zCVobLight', 'oCitem', '', 7]) {
+    assert.throws(
+      () => zenkit.insertVob(handle, null, { class: bad, position: [0, 0, 0] }),
+      Error,
+      String(bad)
+    );
+  }
+  // Nothing was authored by any of the refusals.
+  assert.strictEqual(zenkit.worldStats(handle).vobCount, zenkit.worldStats(load()).vobCount);
+});
+
+test('an instance belongs to the class that has one, in either direction', () => {
+  const handle = load();
+  // A zCVob has no instance field, so naming one is a mistake about the class
+  // rather than a value to drop silently — and the default class is zCVob.
+  assert.throws(
+    () => zenkit.insertVob(handle, null, { instance: 'ITFO_APPLE', position: [0, 0, 0] }),
+    /instance/
+  );
+  // An oCItem without one would spawn an item the engine cannot resolve.
+  assert.throws(
+    () => zenkit.insertVob(handle, null, { class: 'oCItem', position: [0, 0, 0] }),
+    /instance/
+  );
+});
+
+test('insertVob still authors a zCVob when no class is named', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, null, { name: 'DEFAULT_CLASS', position: [0, 0, 0] });
+  assert.strictEqual(vobAt(dumpOf(handle), at).class, 'zCVob');
+});
+
 test('mutations survive a save/reload round trip', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-node-mut-'));
   try {
     const handle = load();
     zenkit.setVobPosition(handle, '0/1', [77, 88, 99]);
-    zenkit.insertItemVob(handle, '0', {
+    zenkit.insertVob(handle, '0', {
+      class: 'oCItem',
       name: 'ITEM_ROUNDTRIP_01',
       instance: 'ITFO_APPLE',
       position: [5, 6, 7],
