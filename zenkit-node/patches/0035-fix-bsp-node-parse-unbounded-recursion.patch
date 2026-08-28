@@ -1,0 +1,189 @@
+BspTree: parse the node tree iteratively, so its depth is not the call stack.
+
+`_parse_bsp_nodes` recurses once per set flag bit in the node it just read:
+
+	if ((flags & 0x01) != 0) {
+		node.front_index = ...;
+		_parse_bsp_nodes(in, nodes, indices, version, self_index, flags & 0x04);
+	}
+
+Nothing bounds how often that can happen. A node is 49 bytes on the wire (a
+bbox, two counts, the flags byte and the split plane), so a file that sets bit 0
+on every node descends one level per 49 bytes it carries -- and a BSP tree is
+part of a world file, where 49 bytes are nothing. **Measured on the fixture
+grown to a chain of 100,000 nodes (4.9 MB): the process dies with 0xC00000FD,
+a stack overflow, which is not catchable and takes the whole process with it.**
+That is worse in the editor than the number suggests: node's main thread has an
+8 MB stack, and worlds are loaded on a `worker_threads` worker, whose default is
+half of it.
+
+This is the site `docs/plans/level-editor.md` 16.11 has named as open since the
+fuzzing began, and the one the fuzzer could not reach: 200 seeds of 20 byte
+writes over a 4 KB fixture cannot manufacture a chain that needs megabytes.
+
+The fix is not a depth limit. Every bound in this series so far checks a count
+against the bytes left in the reader, but that argument does not work here --
+the depth a *valid* world may reach rises with its size, and a real BSP is
+built by ZenGin's own compiler with no documented ceiling. Guessing one risks
+refusing a world the engine loads. Parsing the tree iteratively removes the
+question instead: the walk keeps its own stack of the back children still owed,
+so depth costs heap, which the reader already bounds elsewhere, and not the
+call stack, which nothing can.
+
+The traversal is unchanged and deliberately so -- the entry stream is read
+positionally, so the order of the reads *is* the format. A node is read, then
+its whole front subtree, then its back subtree; `front_index` is assigned as
+the front child begins and `back_index` as the back child begins, after the
+front subtree has been read.
+
+It also fixes a latent use-after-realloc that only the recursion could have.
+`node` is a reference into `nodes`, and the recursive version assigned
+`node.back_index` *after* the front subtree had pushed its own nodes onto that
+same vector. `BspTree::load` calls `nodes.reserve(node_count)` with the file's
+own count first, which is why this has never been seen -- a valid file's tree
+fits the reservation it declares. A file whose `node_count` is smaller than the
+nodes it actually carries reallocates mid-walk and the assignment writes into
+freed memory. The iterative walk indexes the vector instead.
+
+Upstreamable as-is: no API change, no behaviour change on any valid world, and
+the transformation is mechanical.
+
+--- a/src/world/BspTree.cc
++++ b/src/world/BspTree.cc
+@@ -33,57 +33,85 @@
+ 		return end > here ? end - here : 0;
+ 	}
+ 
+-	static void _parse_bsp_nodes(Read* in,
+-	                             std::vector<BspNode>& nodes,
+-	                             std::vector<std::uint64_t>& indices,
+-	                             std::uint32_t version,
+-	                             std::int32_t parent_index,
+-	                             bool leaf = false) {
+-		std::uint64_t self_index = nodes.size();
+-
+-		auto& node = nodes.emplace_back();
+-		node.parent_index = parent_index;
+-		node.bbox.load(in);
+-		node.polygon_index = in->read_uint();
+-		node.polygon_count = in->read_uint();
+-
+-		if (leaf) {
+-			indices.push_back(self_index);
+-		} else {
+-			auto flags = in->read_ubyte();
+-
+-			node.plane = {};
+-			node.plane.w = in->read_float();
+-			node.plane.x = in->read_float();
+-			node.plane.y = in->read_float();
+-			node.plane.z = in->read_float();
+-
+-			if (version == version_g1) {
+-				node.lod = in->read_ubyte(); // "lod-flag"
+-			}
+-
+-			if ((flags & 0x01) != 0) {
+-				node.front_index = static_cast<std::int32_t>(nodes.size());
+-				_parse_bsp_nodes(in,
+-				                 nodes,
+-				                 indices,
+-				                 version,
+-				                 static_cast<std::int32_t>(self_index),
+-				                 (flags & 0x04) != 0);
+-			}
+-
+-			if ((flags & 0x02) != 0) {
+-				node.back_index = static_cast<std::int32_t>(nodes.size());
+-				_parse_bsp_nodes(in,
+-				                 nodes,
+-				                 indices,
+-				                 version,
+-				                 static_cast<std::int32_t>(self_index),
+-				                 (flags & 0x08) != 0);
+-			}
+-		}
+-	}
+-
++	// The back child a node still owes, innermost first. This walk used to recurse
++	// once per child, which put a file-supplied flag bit in charge of the call
++	// stack; an explicit stack costs one heap allocation and cannot be overflowed.
++	struct _BspPendingChild {
++		std::int32_t parent;
++		bool leaf;
++	};
++
++	static void _parse_bsp_nodes(Read* in,
++	                             std::vector<BspNode>& nodes,
++	                             std::vector<std::uint64_t>& indices,
++	                             std::uint32_t version,
++	                             std::int32_t parent_index,
++	                             bool leaf = false) {
++		std::vector<_BspPendingChild> pending;
++
++		for (;;) {
++			std::uint64_t self_index = nodes.size();
++
++			auto& node = nodes.emplace_back();
++			node.parent_index = parent_index;
++			node.bbox.load(in);
++			node.polygon_index = in->read_uint();
++			node.polygon_count = in->read_uint();
++
++			bool descended = false;
++
++			if (leaf) {
++				indices.push_back(self_index);
++			} else {
++				auto flags = in->read_ubyte();
++
++				node.plane = {};
++				node.plane.w = in->read_float();
++				node.plane.x = in->read_float();
++				node.plane.y = in->read_float();
++				node.plane.z = in->read_float();
++
++				if (version == version_g1) {
++					node.lod = in->read_ubyte(); // "lod-flag"
++				}
++
++				// The front subtree is read first and in full, so the back child is owed
++				// until that subtree ends -- the order the two recursive calls had.
++				if ((flags & 0x02) != 0) {
++					pending.push_back({static_cast<std::int32_t>(self_index), (flags & 0x08) != 0});
++				}
++
++				if ((flags & 0x01) != 0) {
++					node.front_index = static_cast<std::int32_t>(nodes.size());
++					parent_index = static_cast<std::int32_t>(self_index);
++					leaf = (flags & 0x04) != 0;
++					descended = true;
++				}
++			}
++
++			if (descended) {
++				continue;
++			}
++
++			if (pending.empty()) {
++				return;
++			}
++
++			auto next = pending.back();
++			pending.pop_back();
++
++			// Written through the vector rather than through a reference: the whole
++			// front subtree has been read since this node was pushed, and every node
++			// it added may have reallocated `nodes`. The recursive version assigned
++			// `node.back_index` through a reference taken before that, which is a
++			// use-after-realloc whenever the tree outgrows the `reserve` the file's
++			// own node count asked for.
++			nodes[static_cast<std::size_t>(next.parent)].back_index = static_cast<std::int32_t>(nodes.size());
++			parent_index = next.parent;
++			leaf = next.leaf;
++		}
++	}
++
+ 	void BspTree::load(Read* r, std::uint32_t version) {
+ 		proto::read_chunked<BspChunkType>(r, "BspTree", [this, version](Read* c, BspChunkType type) {
+ 			ZKLOGI("BspTree", "Parsing chunk %x", static_cast<std::uint16_t>(type));

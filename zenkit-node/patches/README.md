@@ -39,7 +39,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (26)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (27)
 
 | Patch | What it fixes |
 |---|---|
@@ -69,11 +69,12 @@ regardless of what upstream does with it.
 | `0032` | `Texture::load` trusted the file's `mipmapCount` and `_ztex_mipmap_size` halves the dimensions once per level *inside* the walk, so the cost is quadratic in an unbounded count — a few million levels neither throws nor returns |
 | `0033` | `WayNet::load` pushed `read_object`'s result into `points` and dereferenced it on the next line — but `read_object` returns null for an unknown class, an empty object and an unresolved reference, so one corrupted byte in a waypoint's object header is a null deref |
 | `0034` | `BspTree::load`'s OUTDOORS branch sized a loop and two `resize`s from unvalidated file counts, and `read_chunked` hands the callback the whole reader rather than one bounded to the chunk — so one corrupted byte made the first sector read its node count out of the next chunk's header and `resize` to 17 GB |
+| `0035` | `BspTree::load`'s `_parse_bsp_nodes` recursed once per set flag bit of the node it had just read, so a file-supplied bit ran the call stack — a chain of 100,000 nodes (49 bytes each) kills the process with an uncatchable `0xC00000FD`. Parsed iteratively instead of bounded, because the depth a *valid* world may reach has no documented ceiling; it also removes a use-after-realloc the recursion had on `back_index` |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
-`0027`, `0029`–`0034` are the same class of standalone
-fix — a one-guard hardening of the read path, reachable by any consumer that opens a
+`0027`, `0029`–`0035` are the same class of standalone
+fix — a hardening of the read path, reachable by any consumer that opens a
 file it did not write. `0029` is the strongest of the seven: the bug it stops is an
 out-of-bounds write, not a hang, a null deref or an out-of-bounds read.
 `0024` and `0026` are now just as strong and arguably stronger: each is a
@@ -107,7 +108,8 @@ from the `oCMOB` save sites; until someone writes that, this stays local.
 
 Independent, highest-value and least arguable first:
 
-1. `0020`, `0021`, `0022`, `0027`, `0029`, `0030`, `0031`, `0032`, `0033`, `0034` — one PR
+1. `0020`, `0021`, `0022`, `0027`, `0029`, `0030`, `0031`, `0032`, `0033`, `0034`,
+   `0035` — one PR
    each.
 2. `0002`, `0003`, `0004`, `0005`, `0006`, `0028` — small self-evident writer bugs.
 3. `0018`, then `0013`.

@@ -3128,9 +3128,10 @@ without dereferencing it. A world with a corrupted entry name index loads
 cleanly. Bounding it would be dead-code hardening; the crash class is
 elsewhere.
 
-Still not the class. `_parse_bsp_nodes` recurses once per file-supplied flag
-bit with no depth bound, and every chunk-walking loop in `Mesh.cc` and the VOB
-readers is untouched — which is why the worker isolation stays load-bearing.
+Still not the class. Every chunk-walking loop in `Mesh.cc` and the VOB readers
+is untouched — which is why the worker isolation stays load-bearing.
+(`_parse_bsp_nodes`'s unbounded recursion was named here too, and is gone with
+`0035` below.)
 (`BspTree::load`'s OUTDOORS branch was named here too, and is bounded by `0034`
 below.)
 
@@ -3216,16 +3217,41 @@ implementation can seek to the end and back. Covered by a child-process test in
 
 **The 200-seed run is now 200 of 200 clean throws.** Same caveat as the 40-seed
 milestone above, only louder: it is 200 seeds of 20 bytes over one small
-synthetic fixture, and it is **not** a crash-safety claim. `_parse_bsp_nodes`
-still recurses once per file-supplied flag bit with no depth bound, the
-chunk-walking loops in `Mesh.cc` and the VOB readers are untouched, and **the
-worker isolation stays load-bearing.** The next step is not another seed — it is
-either widening the corpus (more seeds, more bytes, a real world) or taking the
+synthetic fixture, and it is **not** a crash-safety claim. The chunk-walking
+loops in `Mesh.cc` and the VOB readers are untouched, and **the worker isolation
+stays load-bearing.** The next step is not another seed — it is either widening
+the corpus (more seeds, more bytes, a real world) or taking the
 `ReadMemory::seek` decision, and neither is named as a card yet.
 
-The class is still open either way: `_parse_bsp_nodes` recursion, the chunk-
-walking loops in `Mesh.cc` and the VOB readers, and the `ReadMemory::seek`
-decision that would close it in one place.
+**The BSP node recursion is gone (2026-08-28, patch `0035`), and it is the one
+site here the fuzzer could never have found.** `_parse_bsp_nodes` recursed once
+per set flag bit of the node it had just read, and a node is 49 bytes on the
+wire — so a chain deep enough to exhaust the stack needs megabytes, and 200
+seeds of 20 byte writes over a 4 KB fixture cannot manufacture one. Measured by
+growing the fixture's TREE chunk into a chain instead: 100,000 nodes (4.9 MB)
+kill the child with `0xC00000FD`, a stack overflow, which no `catch` can turn
+into a thrown error. **The editor is worse off than that number says** — node's
+main thread has an 8 MB stack and worlds are loaded on a `worker_threads`
+worker, whose default is 4 MB.
+
+**It is the one bound in the series that is not a bound.** Every other patch
+here checks a file count against the bytes left in the reader, and that argument
+does not transfer: the depth a *valid* world may reach rises with its size and
+ZenGin's compiler documents no ceiling, so a guessed limit risks refusing a
+world the engine loads. Parsing the tree iteratively — an explicit stack of the
+back children still owed — removes the question rather than answering it, and
+costs heap, which the reader already bounds elsewhere. It also removes a latent
+use-after-realloc only the recursion could have: `node.back_index` was assigned
+through a reference into `nodes` *after* the front subtree had pushed onto that
+same vector, which is safe only while `reserve(node_count)` holds — that is, only
+while the file's own count is not smaller than the nodes it carries. Covered by
+a child-process test in `zenkit-node/test/loadWorld.test.js` that grows the TREE
+chunk by structure (the blob's declared size and the header's hash-table offset
+move with it; nothing else in the container is an absolute offset).
+
+The class is still open either way: the chunk-walking loops in `Mesh.cc` and the
+VOB readers, and the `ReadMemory::seek` decision that would close it in one
+place.
 
 ### 16.12 Two viewport constants only Daniel's hands can settle
 

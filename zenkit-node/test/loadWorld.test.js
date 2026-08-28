@@ -478,3 +478,78 @@ test('a BSP declaring more sectors than the chunk holds bytes throws instead of 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A BSP tree whose nodes descend in one unbroken chain, located by structure:
+// the `MeshAndBsp` blob's chunk table carries TREE (0xC040), whose payload is
+// `nodeCount` u32, `leafCount` u32 and then the nodes themselves — a bbox (6
+// floats), `polygonIndex` u32, `polygonCount` u32 and, for a non-leaf, a flags
+// byte plus the split plane (4 floats), 49 bytes in all. Bit 0 of the flags
+// says "a front child follows", so a run of nodes that all set it and nothing
+// else is a chain of `depth` nodes with no branching. The chunk grows, so the
+// blob's own declared size and the header's hash table offset move with it;
+// nothing else in the container carries an absolute offset.
+function seedDeepBspChain(dir, name, depth) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const header = readHeader(buf);
+  const blob = [...walk(buf)].find((ev) => ev.kind === 'rawBlob' && ev.entryName === 'MeshAndBsp');
+  assert.ok(blob, 'the fixture must have a MeshAndBsp blob to corrupt');
+
+  const end = blob.fileOffset + blob.size;
+  let p = blob.fileOffset;
+  while (p + 6 <= end && buf.readUInt16LE(p) !== 0xc040) p += 6 + buf.readUInt32LE(p + 2);
+  assert.strictEqual(buf.readUInt16LE(p), 0xc040, 'expected a TREE chunk in the fixture BSP');
+  const oldLength = buf.readUInt32LE(p + 2);
+  assert.strictEqual(buf.readUInt32LE(p + 6), 1, 'expected the fixture BSP to be a single node');
+
+  const NODE_SIZE = 49;
+  const inner = Buffer.alloc(NODE_SIZE);
+  inner.writeUInt8 (0x01, 32); // flags: a front child follows, and this node is not a leaf
+  const last = Buffer.alloc(NODE_SIZE); // flags 0: no children, so the chain ends here
+
+  const payload = Buffer.concat([
+    Buffer.alloc(8),
+    ...Array.from({ length: depth - 1 }, () => inner),
+    last,
+  ]);
+  // A `nodeCount` of 1 would make the root a leaf and stop before the flags are
+  // ever read; the value is otherwise only a `reserve` hint.
+  payload.writeUInt32LE(depth, 0);
+  payload.writeUInt32LE(0, 4);
+
+  const chunk = Buffer.alloc(6);
+  chunk.writeUInt16LE(0xc040, 0);
+  chunk.writeUInt32LE(payload.length, 2);
+
+  const grown = Buffer.concat([buf.subarray(0, p), chunk, payload, buf.subarray(p + 6 + oldLength)]);
+  const delta = payload.length - oldLength;
+  grown.writeUInt32LE(blob.size + delta, blob.fileOffset - 4);        // the blob's declared size
+  grown.writeUInt32LE(header.hashTableOffset + delta, header.entryStart - 4);
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, grown);
+  return file;
+}
+
+test('a BSP tree that descends in one long chain loads instead of overflowing the stack', () => {
+  // `_parse_bsp_nodes` recursed once per file-supplied flag bit with no depth
+  // bound — the last unbounded site §16.11 names by name, and the one the
+  // fuzzer could never reach, because a chain deep enough to exhaust the stack
+  // needs more bytes than the fixture has. Measured before patch 0035: 100,000
+  // nodes killed the child with 0xC00000FD (stack overflow) on node's 8 MB main
+  // thread, and the editor loads worlds on a `worker_threads` worker whose
+  // default stack is 4 MB — half of that. The depth below is a chain, not a
+  // tree: no world ZenGin wrote looks like this, but nothing in the format
+  // stops a corrupted one from claiming it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-bsp-depth-'));
+  try {
+    const corrupt = seedDeepBspChain(dir, 'deep-bsp-chain.zen', 200_000);
+
+    const result = loadInChild(corrupt, 60_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of parsing the chain: ${result.stdout}\n${result.stderr}`);
+    assert.strictEqual(result.stdout, 'LOADED');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

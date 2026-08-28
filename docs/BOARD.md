@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0034`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0035`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,10 +136,10 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — six instances bounded
-  (`0029`–`0034`) and the 200-seed run is clean, which is a milestone and not a
-  claim: no named reproducer is left, so the next step is a wider corpus or the
-  `ReadMemory::seek` decision. Unowned. §16.11
+- **The world reader is still not crash-safe** — seven instances closed
+  (`0029`–`0035`) and the 200-seed run is clean, which is a milestone and not a
+  claim: the `Mesh.cc` and VOB-reader loops are untouched, and the next step is a
+  wider corpus or the `ReadMemory::seek` decision. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -158,24 +158,13 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
-- **Patch `0034` — the last four hangs in the 200-seed run were one chunk.**
-  All four delta-debug into `BspTree::load`'s `0xC050` OUTDOORS branch, whose
-  three counts are unvalidated; one sector is enough, because `read_chunked`
-  hands the callback the whole reader and the first sector reads its node count
-  across the next chunk header. The run is now 200 of 200 clean. Two claims
-  §16.11 made about this hang were wrong and are corrected there. §16.11
-- **Patches `0029`–`0033` — five reader defects bounded**, each bisected to one
-  byte of `minimal.g2.zen` with `zenkit-node/tools/fuzz-world.js`. `0033` is a
-  null deref, not a count: `WayNet::load` dereferenced `read_object`'s result.
-  **The fuzz baseline is now 200 seeds, not 40** — 40 of 40 was clean and 200
-  found six more. Four hangs are left and the first is named. Not crash-safety,
-  see Next. The addon on this machine is rebuilt; every other machine and CI
-  must. §16.11
-- **§16.8 W2 landed — world → scripts** — `ProjectIndex.waypointSites` rides
-  the worker-pool pass like `voiceIds` does, resolving `AI_GotoWP`/
-  `Npc_GetDistToWP` plus any project-declared `var string waypoint` parameter;
-  a new `WaypointPanel` shows the routines that name the selected waypoint.
-  The dangling-waypoint Problems rule that was meant to come "for free" did
-  not — moved to Next with why. §16.8
+- **Patch `0035` — the BSP node recursion is gone, and the fuzzer could never
+  have found it.** `_parse_bsp_nodes` recursed once per set flag bit of the node
+  it had just read; a node is 49 bytes, so a chain deep enough to exhaust the
+  stack needs megabytes and 20 byte writes over a 4 KB fixture cannot make one.
+  Grown by structure instead: 100,000 nodes kill the child with `0xC00000FD`,
+  uncatchable, and the editor loads worlds on a 4 MB worker stack. Parsed
+  iteratively rather than bounded — a valid world's depth has no documented
+  ceiling — which also removes a use-after-realloc on `back_index`. §16.11
 
 Flushed 2026-08-28 (see git log for what landed before this).
