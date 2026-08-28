@@ -956,16 +956,17 @@ unreadable**, all 24 container-instrumented.
 `semantic-drift`, not `identical`, and no ASCII world has been through the
 engine. What remains:
 
-- **A6** — `physicsEnabled` dropped on every save, 43,341 of the 43,469 findings
-  a `--drill` run reports, and **not an ASCII defect**: it is the packed `zCVob`
-  writer (`VirtualObject.cc:251` gating bit 6 on a `rigid_body` only savegames
-  fill), so the BinSafe path this plan's save pipeline uses has it too. It
-  changes no retail byte today — 0 `physicsEnabled` VOBs across 41,393 in the
-  three measurable BinSafe worlds — which is why it went unseen.
-  (The old "396 of 400" here was the harness's per-world finding cap read as a
+- **A6** — `physicsEnabled` dropped on every save, and **not an ASCII defect**:
+  it is the packed `zCVob` writer (`VirtualObject.cc:251` gating bit 6 on a
+  `rigid_body` only savegames fill), so the BinSafe path this plan's save
+  pipeline uses has it too. It changes no retail byte today — 0
+  `physicsEnabled` VOBs across 41,393 in the three measurable BinSafe worlds —
+  which is why it went unseen. **The 43,341-of-43,469 figure that used to sit
+  here was not A6**: it was A2's packed conversion, and it went with A2 (§16.9).
+  (The older "396 of 400" was the harness's per-world finding cap read as a
   total; the report says when it caps now.)
-- **A2 and A3**, both on the unpacked write path that nothing reaches while
-  `VirtualObject.cc:12`'s file-static `pack` is unconditionally true.
+- **A2 and A3 — closed 2026-08-28**, patches `0045`–`0047`. What replaced them
+  on the ASCII path is float text precision, §16.9.
 - **`animMode` on 128 VOBs — diagnosed, and no patch is possible.** 130 retail
   `oCMobContainer` chests store a heap-pointer-shaped `visualAniMode` (Spacer
   serialising an uninitialised member; 128 of them `0x08A8B0E8`). ZenKit narrows
@@ -976,7 +977,7 @@ engine. What remains:
   0–3 and the mask is the identity on those, measured as 0 findings across all
   four BinSafe worlds. The packed format has two bits for this field, so a
   byte-faithful fix would need `AnimationType` widened upstream *and* the
-  unpacked writer resurrected, which A2 and A3 block.
+  unpacked writer, which `0045`–`0047` have now resurrected.
 
 **The Phase 1a consequence is unchanged and is not optional:** the binding
 still **refuses to save** a non-BinSafe world. "Loads back" is not "is
@@ -2598,7 +2599,7 @@ the format promises they are unique.
 
 | # | Missing | Status | Note |
 |---|---|---|---|
-| 3.1 | **ASCII / BINARY ZEN save** | measured, deferred (§5) | Not an oversight, and half-closed since. T8 found all 20 ASCII worlds aborting the process when their own re-save was loaded back; patches `0024`–`0026` fixed A1, A4 and A5, and all 20 now load, save and re-load (§10.4). They still classify `semantic-drift` — A6, A2, A3 — and none has an engine verdict, so `saveWorld` stays BinSafe-only. BINARY has had no fidelity work at all. Only 4 of 28 retail `.zen` files are BinSafe, and Blender/KrxImpExp exports are not among them. |
+| 3.1 | **ASCII / BINARY ZEN save** | measured, deferred (§5) | Not an oversight, and half-closed since. T8 found all 20 ASCII worlds aborting the process when their own re-save was loaded back; patches `0024`–`0026` fixed A1, A4 and A5, and all 20 now load, save and re-load (§10.4). Patches `0045`–`0047` then closed A2 and A3, and a re-save now keeps each VObject's original packed/unpacked layout: OldCamp's container diff goes from `whole-file` to `event-aligned`, gap 0. They still classify `semantic-drift` — A6, `animMode`, and ASCII float text precision — and none has an engine verdict, so `saveWorld` stays BinSafe-only. BINARY has had no fidelity work at all. Only 4 of 28 retail `.zen` files are BinSafe, and Blender/KrxImpExp exports are not among them. |
 | 3.2 | **Static light recompute** | warning planned (§11) | Spacer re-bakes vertex lighting; we do not, so moving geometry or a light leaves stale lightmaps. Phase 1b promises the warning. The bake stays out. |
 | 3.3 | **Merge/import another ZEN, export a selection** | planned (Phase 3) | Spacer's part workflow depends on it. |
 | 3.4 | **Portal / sector work** | planned (Phase 2) | Face selection, material assignment, leak detection. |
@@ -3009,38 +3010,52 @@ open) or folding the free-point prefix-match exception in above into whatever
 shape that takes — a small design decision, not a measurement, so it stays
 open rather than being guessed at here.
 
-### 16.9 What is left of the ASCII writer — A2, A3 and A6
+### 16.9 What is left of the ASCII writer — A6, and float text precision
 
-A1, A4 and A5 landed, and the corpus now measures all 20 retail ASCII worlds
-instead of crashing on them. They classify **`semantic-drift`** in two findings
-across all 20. The counts below are `--drill` totals, not the capped quotas an
-ordinary run reports.
+**A2 and A3 landed 2026-08-28** as patches `0045`, `0046` and `0047`, a chain:
+`0045` made the unpacked `zCVob` layout readable at all (`write_mat3x3` emitted
+a `rawFloat:` entry where `read_mat3x3` and ZenGin both use `raw:`), `0046` made
+the unpacked writer correct (`presetName`/`vobName`/`visual` written twice, and
+the visual and ai objects the unpacked reader always takes out of the stream but
+`save` never wrote), and `0047` made it reachable by having `load` record the
+layout on the object and `save` reproduce it instead of packing everything.
+`zenkit-node/test/asciiUnpackedVob.test.js` is the regression, and
+`_authorFixtureWorld`'s fifth argument is the only thing that reaches the
+unpacked writer.
 
-**A6 — `physicsEnabled` is dropped on every save, 43,341 of the 43,469 findings
-a `--drill` run reports, and it is not an ASCII defect at all.**
-`VirtualObject.cc:251` writes packed bit 6 as `physics_enabled && rigid_body` on
-G2, but `rigid_body` is only ever filled inside `if (r.is_save_game())` (`:210`)
-— so in a *world* it is always empty and the flag is always lost. The
-`&& rigid_body` guard belongs at `:325`, where the rigid body is actually
-written, and it is already there; the fix is deleting it from `:251`. **This is
-the packed `zCVob` writer, so the BinSafe path the editor saves through has it
-too.** It changes no retail byte today — measured 0 `physicsEnabled` VOBs across
-NewWorld, OldWorld and AddonWorld, 41,393 VOBs — which is why the BinSafe worlds
-still classify `identical` and why nobody has seen it. A user-edited or modded
-world is another matter, and that is the editor's own save path. Not landed
-because it needs a fixture VOB with the flag set and, being a save-path byte
-change, the project's own engine-A/B rule.
+**Closing A2 re-diagnosed A6's headline number, which was never A6's.** The
+43,341-of-43,469 `physicsEnabled` findings were an artifact of the packed
+conversion: an unpacked VObject carries no `physicsEnabled` entry, so `load`
+leaves ZenKit's `= true` default on it, and only the re-save's packed form —
+where A6 writes bit 6 false — disagreed. Measured on OldCamp, before and after
+over the retail install: container diff `whole-file` (unalignable) →
+`event-aligned` with **gap 0**; re-save 3,511,964 B → 4,012,132 B against a
+3,979,132 B original; struct findings down to **440, none of them
+`physicsEnabled`**. `OldWorld` and `DragonIsland` re-save `identical` either
+way — retail BinSafe is packed throughout, so `0047` cannot move it.
 
-**A2 and A3 are unchanged and still chained.** A2 is dead code with no reachable
-switch: `VirtualObject.cc:12` has `static bool pack = true;`, `:336`
-`enable_packed_save` is its only writer, and grep over `src/`, `include/` and
-`zenkit-node/src/` finds **no caller at all** — so `:269`'s unpacked branch,
-which holds A3's only call site (`:272 write_mat3x3("trafoOSToWSRot")`), can
-never execute. A2's re-enabled path also has a second, undocumented
-**duplicate-entry bug**: `VirtualObject.cc:270-275` and `:297-307` both write
-`presetName`/`vobName`/`visual`, and the two `visual` writes are not even the
-same value (`visual_name` vs `visual->name`). ASCII entries are read
-positionally, so the extras are pure stream desync.
+**A6 is still open and still the editor's own path.** `VirtualObject.cc` writes
+packed bit 6 as `physics_enabled && rigid_body` on G2, but `rigid_body` is only
+filled inside `if (r.is_save_game())` — so in a *world* it is always empty and
+the flag is always lost. The `&& rigid_body` guard belongs where the rigid body
+is actually written, and it is already there; the fix is deleting it from the
+bit-6 line. It changes no retail byte today (0 `physicsEnabled` VOBs across
+41,393 in the three measurable BinSafe worlds), but it is the packed writer, so
+the BinSafe path the editor saves through has it. **Not landed because it needs
+a fixture VOB with the flag set and, being a save-path byte change, the
+project's own engine-A/B rule** — the same reason the three ops of §16.2 have no
+verdict.
+
+**What is now the dominant ASCII defect: float text precision.** ZenKit writes
+every ASCII float with `std::to_string` — six decimal places, always — where
+ZenGin writes a shortest-round-trip form. `1511.77087` comes back
+`1511.770874`, `0` comes back `0.000000`, and at retail magnitudes it costs
+significant digits: OldCamp's remaining 440 struct findings are all `position`,
+`bbox`, `speed` and waypoint `direction`, and the re-save is now 33 KB *larger*
+than the original for this reason alone. It is the ASCII-entry counterpart of
+what patch `0009` does for binary `texScale`, so the shape of the fix is known
+and the same argument (byte fidelity only; the parsed value is unchanged)
+applies. Unowned, and it is what a fourth patch in this area should be.
 
 **The lesson A5 taught, and it will repeat.** A5 was invisible to CI for one
 reason: `decalAlphaWeight` is the only `write_byte` field reachable outside a
@@ -3048,7 +3063,10 @@ savegame and the authored fixture had no decal — so the fixture round-tripped
 clean while all 20 retail worlds failed at the first decal in the file. The
 fixture now hangs a `VisualDecal` on the chest. **Any writer path with no
 fixture field on it is a defect CI cannot see**, and the cheap audit is to walk
-`WriteArchive`'s methods and ask which have no fixture data behind them.
+`WriteArchive`'s methods and ask which have no fixture data behind them. A2 and
+A3 were the same lesson at the level of a whole *branch* rather than a field —
+they survived because nothing could execute the branch, which is why `0047`
+came with a fixture switch that can.
 
 **There is still no ZenGin-written ASCII fixture**, so CI cannot regression-test
 an ASCII round-trip against anything but ZenKit itself.
@@ -3056,6 +3074,7 @@ an ASCII round-trip against anything but ZenKit itself.
 proves self-consistency and nothing about the engine. A real ASCII fidelity
 result stays a developer-local `--root` run unless a small ZenGin-authored ASCII
 world is checked in.
+
 
 ### 16.10 `resavedSize` is fragile at a day or month boundary, not a second one
 

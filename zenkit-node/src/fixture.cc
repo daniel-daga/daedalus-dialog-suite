@@ -1055,7 +1055,8 @@ std::shared_ptr<WayNet> BuildWayNet(FixtureVariant variant) {
 void AuthorFixtureWorld(std::filesystem::path const& path,
                         zenkit::ArchiveFormat format,
                         zenkit::GameVersion version,
-                        FixtureVariant variant) {
+                        FixtureVariant variant,
+                        bool packed_vobs) {
   auto world = std::make_shared<World>();
 
   if (variant == FixtureVariant::kMeshExtraction) {
@@ -1080,12 +1081,16 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
 
   auto w = Write::to(path);
   auto archive = WriteArchive::to(w.get(), format);
+  // `pack` is a file-static in ZenKit, so it is process-global: set it around
+  // the save and put it back, or every later save in this process inherits it.
+  zenkit::VirtualObject::enable_packed_save(packed_vobs);
   // Same top-level flow as loading expects: a single "[% oCWorld:zCWorld ...]"
   // wrapper object (write_object derives class name and version identifier
   // from the World object itself), then a final write_header() to patch the
   // object count and emit the binsafe hash table.
   archive->write_object("%", std::static_pointer_cast<Object>(world), version);
   archive->write_header();
+  zenkit::VirtualObject::enable_packed_save(true);
 }
 
 void AuthorFixtureAssets(std::filesystem::path const& dir) {

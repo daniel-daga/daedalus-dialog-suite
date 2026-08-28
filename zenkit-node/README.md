@@ -596,21 +596,27 @@ hash of the decoded bytes could not have seen it. **BINARY has no walker**: for 
 `{ archiver, format, covered: false, header }` and nothing more, and
 `classifyDumps` returns `containerCoverage: false` for the pair.
 
-**The ASCII writer is usable but not yet trusted.** A1, A4 and A5 are fixed
-(patches 0024–0026): ZenKit re-loads its own ASCII output, the authored fixture
-round-trips `identical` fully instrumented, and a retail G2 install's 20 ASCII
-worlds went from 20 crashed to 20 measured. They classify **`semantic-drift`**,
-which is the instrument working, not the writer passing — 43,341 of the 43,469
-findings a `--drill` run reports are the newly-found A6 (`physicsEnabled`
-dropped by the packed `zCVob` writer, which is *not* ASCII-specific). The
-remaining 128 are `animMode`, and that one is **diagnosed and unfixable in
-principle**: 130 retail `oCMobContainer` chests store a heap-pointer-shaped
-`visualAniMode` that ZenKit narrows twice — uint32 to the `uint8_t`
-`AnimationType` on load, then to two bits by the packed writer — so the format
-has nowhere to put the value. The editor's BinSafe path is unaffected, measured:
-a packed reader can only produce 0–3 and the mask is the identity there. A2 and
-A3 also remain open, both on the unpacked write path that nothing reaches while
-`VirtualObject.cc`'s file-static `pack` is unconditionally true. And **no ZenGin-written ASCII fixture exists**,
-so the checked-in corpus can only ever prove that ZenKit agrees with itself.
-`saveWorld` is still BinSafe-only for all of those reasons. The evidence is in
-the acceptance record §10.2 and §10.4.
+**The ASCII writer is usable but not yet trusted.** A1–A5 are fixed (patches
+0024–0026 and 0045–0047): ZenKit re-loads its own ASCII output, the authored
+fixture round-trips `identical` fully instrumented, a retail G2 install's 20
+ASCII worlds went from 20 crashed to 20 measured, and a re-save now keeps each
+VObject in the layout it was loaded in instead of packing it — which takes
+OldCamp's container diff from `whole-file` (unalignable) to `event-aligned`
+with gap 0. They still classify **`semantic-drift`**, which is the instrument
+working, not the writer passing, but for two reasons that are both smaller than
+they looked. The `physicsEnabled` findings that were 43,341 of 43,469 were an
+artifact of that packed conversion, not of A6: an unpacked VObject has no
+`physicsEnabled` entry, so it keeps ZenKit's `= true` default, and only the
+re-save's packed form wrote it false. What remains is **ASCII float text
+precision** — every float is written with six decimal places where ZenGin
+writes a shortest-round-trip form, so `1511.77087` returns as `1511.770874` —
+plus `animMode`, which is **diagnosed and unfixable in principle**: 130 retail
+`oCMobContainer` chests store a heap-pointer-shaped `visualAniMode` that ZenKit
+narrows twice — uint32 to the `uint8_t` `AnimationType` on load, then to two
+bits by the packed writer — so the format has nowhere to put the value. The
+editor's BinSafe path is unaffected by both, measured: retail BinSafe worlds
+are packed throughout and still re-save `identical`. A6 is still open, and it
+is the *packed* writer, so it is the editor's path. And **no ZenGin-written
+ASCII fixture exists**, so the checked-in corpus can only ever prove that ZenKit
+agrees with itself. `saveWorld` is still BinSafe-only for all of those reasons.
+The evidence is in the acceptance record §10.2 and §10.4.

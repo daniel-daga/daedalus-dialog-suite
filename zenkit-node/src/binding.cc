@@ -1887,15 +1887,24 @@ zenkit_node::FixtureVariant ParseFixtureVariant(Napi::Env env, Napi::Value value
 // golden and is only invoked through the explicit `fixtures:regen` script;
 // 'mesh-extraction', 'npc' and 'camera' are authored into a temp directory by
 // the tests.
+// The optional fifth argument selects the unpacked `zCVob` write path when it
+// is false; it exists only so a test can reach a writer nothing else calls.
 Napi::Value AuthorFixtureWorld(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto path = PathFromValue(env, info[0]);
   auto format = ParseArchiveFormat(env, info[1]);
   auto version = ParseGameVersion(env, info[2]);
   auto variant = ParseFixtureVariant(env, info[3]);
+  bool packed_vobs = true;
+  if (!info[4].IsUndefined() && !info[4].IsNull()) {
+    if (!info[4].IsBoolean()) {
+      throw Napi::TypeError::New(env, "packedVobs must be a boolean");
+    }
+    packed_vobs = info[4].As<Napi::Boolean>().Value();
+  }
 
   try {
-    zenkit_node::AuthorFixtureWorld(path, format, version, variant);
+    zenkit_node::AuthorFixtureWorld(path, format, version, variant, packed_vobs);
   } catch (Napi::Error&) {
     throw;
   } catch (std::exception const& e) {

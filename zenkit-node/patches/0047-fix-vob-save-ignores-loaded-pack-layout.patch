@@ -1,0 +1,93 @@
+VirtualObject::save writes every VObject packed, whichever layout it was
+loaded in, and the packed layout cannot hold the fields it drops.
+
+ZenGin stores a VObject in one of two layouts: packed, with every scalar field
+in a single `dataRaw` blob, or unpacked, one archive entry per field. `load`
+reads both; `save` writes the packed one unconditionally, because the choice
+lives in a file-static `pack` that is initialised to `true` and that only
+`enable_packed_save` writes.
+
+That is a conversion, not a re-save, and it is lossy in both directions. All
+1277 VObjects of a retail Gothic II ASCII world are `pack=int:0` in the
+original and `pack=int:1` in ZenKit's re-save, and 43.9% of the ASCII entries
+go with them. (It is also the reason the unpacked writer's own defects could
+sit unnoticed - see 0045 and 0046, which this patch requires: it is what makes
+that writer reachable at all.)
+
+The layout is a property of the file, so `load` now records it on the object
+and `save` reproduces it. `enable_packed_save(false)` still forces the unpacked
+form for every VObject, which is the only behaviour that switch ever had; the
+new member defaults to `true`, so a VObject that was built rather than loaded
+is still written packed, as ZenGin's own tools write it. Retail BinSafe worlds
+are packed throughout and their bytes are unchanged.
+
+Upstreamable with work: it adds a public field (`packed_layout`), the same
+shape and the same justification as 0016's `packed_reserved_bit`, and it
+changes what `save` writes for any consumer that loads an unpacked world.
+
+--- a/include/zenkit/vobs/VirtualObject.hh
++++ b/include/zenkit/vobs/VirtualObject.hh
+@@ -444,6 +444,14 @@
+ 		/// \note This property is only available in Gothic II.
+ 		bool packed_reserved_bit = false;
+ 
++		/// rief Whether this VObject was stored in the packed layout (`pack=1`).
++		///
++		/// <p>ZenGin writes a VObject either packed — every scalar field in one `dataRaw` blob — or unpacked, one
++		/// archive entry per field; #load reads both. The choice is a property of the file, not of the object, so it
++		/// is kept here and #save reproduces it instead of packing unconditionally. A VObject that was never loaded
++		/// defaults to the packed form, which is what ZenGin's own tools write.</p>
++		bool packed_layout = true;
++
+ 		/// \brief Indicates the strength of the animation set through #anim_mode.
+ 		///
+ 		/// <p>Essentialy, this controls the strength of the wind to be animated using the given #anim_mode. This value
+--- a/src/vobs/VirtualObject.cc
++++ b/src/vobs/VirtualObject.cc
+@@ -106,6 +106,7 @@
+ 		Object::load(r, version);
+ 
+ 		auto packed = r.read_int() != 0; // pack
++		this->packed_layout = packed;
+ 		bool has_visual_object = true;
+ 		bool has_ai_object = true;
+ 		bool has_event_manager_object = false;
+@@ -244,7 +245,12 @@
+ 	void VirtualObject::save(WriteArchive& w, GameVersion version) const {
+ 		Object::save(w, version);
+ 
+-		if (pack) {
++		// The layout this VObject came in, unless packing is switched off wholesale.
++		// Converting an unpacked VObject to the packed form loses every field the
++		// packed layout has no room for, which is most of the tail.
++		bool const pack_this = pack && this->packed_layout;
++
++		if (pack_this) {
+ 			w.write_int("pack", 1);
+ 			std::vector<std::byte> packed;
+ 			auto pw = Write::to(&packed);
+@@ -331,7 +337,7 @@
+ 		// has already written all three unconditionally, in the order `load` reads
+ 		// them back, and an ASCII stream is read positionally — so writing them a
+ 		// second time is a desync, not a harmless repeat.
+-		if (pack) {
++		if (pack_this) {
+ 			if (!this->preset_name.empty()) {
+ 				w.write_string("presetName", this->preset_name);
+ 			}
+@@ -350,13 +356,13 @@
+ 		// missing entry.
+ 		if (this->visual && this->visual->type != VisualType::UNKNOWN) {
+ 			w.write_object("visual", this->visual, version);
+-		} else if (!pack) {
++		} else if (!pack_this) {
+ 			w.write_object("visual", static_cast<Object const*>(nullptr), version);
+ 		}
+ 
+ 		if (this->ai) {
+ 			w.write_object("ai", this->ai, version);
+-		} else if (!pack) {
++		} else if (!pack_this) {
+ 			w.write_object("ai", static_cast<Object const*>(nullptr), version);
+ 		}
+ 

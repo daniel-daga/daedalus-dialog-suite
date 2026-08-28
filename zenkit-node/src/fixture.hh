@@ -36,10 +36,17 @@ enum class FixtureVariant {
 // Builds a tiny deterministic world with ZenKit's own writer and saves it to
 // `path`. The kMinimal variant is only ever invoked through the explicit
 // `fixtures:regen` script — nothing regenerates fixtures automatically.
+//
+// `packed_vobs` selects the `zCVob` write path: true is the packed `dataRaw`
+// blob every checked-in fixture and every retail world uses, false is the
+// unpacked one-entry-per-field form ZenGin also reads. The unpacked path has no
+// other caller — `VirtualObject`'s `pack` flag is a file-static nothing else
+// switches — so this argument is the only thing that exercises it.
 void AuthorFixtureWorld(std::filesystem::path const& path,
                         zenkit::ArchiveFormat format,
                         zenkit::GameVersion version,
-                        FixtureVariant variant = FixtureVariant::kMinimal);
+                        FixtureVariant variant = FixtureVariant::kMinimal,
+                        bool packed_vobs = true);
 
 // Writes the Phase 1a asset fixtures into `dir` — a proto mesh, a compiled
 // zCMesh visual, a two-mipmap ZTEX, and the empty files the name-mapping tests

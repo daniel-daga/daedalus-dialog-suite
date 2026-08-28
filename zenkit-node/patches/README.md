@@ -14,7 +14,7 @@ apply in any order relative to each other, but they are numbered in the order
 they were found: `0026` is only *reachable* once `0024` lets a file load far
 enough to hit a byte entry.
 
-## Order matters in four places
+## Order matters in six places
 
 These are not independent patches that happen to be numbered.
 
@@ -39,6 +39,14 @@ These are not independent patches that happen to be numbered.
   can hand the item loop *inside* any such bound. `0041`'s context lines sit
   after the item-count guard `0040` adds.
 
+- **0045 → 0046 → 0047.** A chain, not three takes on one bug. `0045` makes the
+  unpacked `zCVob` layout readable at all (`trafoOSToWSRot` was written in an
+  entry type nothing reads); `0046` makes it *correct* (three entries written
+  twice, two objects the reader expects and `save` omitted); `0047` then makes
+  it *reachable* by having `save` keep the layout `load` saw. In the other order
+  the third patch would turn 20 retail ASCII worlds' re-saves from lossy into
+  unreadable.
+
 `0013` and `0018` both touch archive headers but different writers (Binary vs
 BinSafe/Ascii) in opposite directions, and do not conflict.
 
@@ -47,7 +55,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (35)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (37)
 
 | Patch | What it fixes |
 |---|---|
@@ -87,6 +95,8 @@ regardless of what upstream does with it.
 | `0042` | `VCutsceneCamera::load` reads `numPos` and `numTargets` off the file and `push_back`s one keyframe object per iteration into a vector it never reserves — so there is not even a `bad_alloc` to stop an absurd count, and every value is a merely large one. 0x0FFFFFFF builds 268 million null keyframes, 4.33 GB, and the world still reports as loaded after 15.8 s; a negative count loads a camera with no keyframes at all |
 | `0043` | `ReadArchiveBinsafe::read_header` sizes the hash table entry vector from the file's own `hash_table_size` with no check, and the loop after it cannot stop: every read past the end of the file returns zero, so a zero key length and a zero insertion index pass `0029`'s bound. 0x0FFFFFFF is a 20.5 GB peak working set and a world that still reports as loaded, after 35 s. `0029`'s own chunk — it bounded the count that *indexes* this vector, not the one that *sizes* it |
 | `0044` | `0028`'s own chunk. `VTrigger::load` unpacks bits 0 and 2 of `flags` and bits 0-5 of `filterFlags` into bools, and `0028` made `save` rebuild both bytes from exactly those bools — so bits 1 and 3-7 of `flags` (and 6-7 of `filterFlags`), which retail sets, are written as zero. It cost the four retail BinSafe worlds their `identical` verdict: 121 differing events, all of them this one field. Keeps the unmapped bits on two new zero-initialized members and merges them back in when writing |
+| `0045` | `WriteArchiveAscii::write_mat3x3` emitted a `rawFloat:` entry where `ReadArchiveAscii::read_mat3x3` reads `raw:` and ZenGin writes `raw:` (all 1277 `trafoOSToWSRot` entries in OldCamp). ZenKit could not read back its own unpacked `zCVob`s — the same class of writer/reader disagreement as `0024` and `0026`, on the library's only `write_mat3x3` caller |
+| `0046` | `VirtualObject::save`'s unpacked branch writes `presetName`/`vobName`/`visual` and the common tail wrote all three again; entries are read positionally, so the repeat is a stream desync. The mirror-image hole: `load` hardcodes `has_visual_object`/`has_ai_object` to true in the unpacked layout, so the reader takes two objects out of the stream that `save` never wrote. `visual` also came from `visual_name`, empty on any VOB that was built rather than loaded, where the packed tail writes `visual->name` |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
@@ -94,13 +104,13 @@ no fidelity argument needed. `0018` is a portability crash fix with identical ou
 fix — a hardening of the read path, reachable by any consumer that opens a
 file it did not write. `0029` is the strongest of the eight: the bug it stops is an
 out-of-bounds write, not a hang, a null deref or an out-of-bounds read.
-`0024` and `0026` are now just as strong and arguably stronger: each is a
-self-evident writer/reader disagreement that made ZenKit unable to read its own
-ASCII output, with no API change and a one-line diff. Together with `0025` they
+`0024`, `0026` and `0045` are now just as strong and arguably stronger: each is
+a self-evident writer/reader disagreement that made ZenKit unable to read its
+own ASCII output, with no API change and a one-line diff. Together with `0025` they
 took a retail G2 install's ASCII worlds from 20 crashed to 20 measured
 (`../docs/engine-acceptance-2026-08-25.md` §10.4).
 
-### Upstreamable with work — each adds public API purely to preserve original bytes (8)
+### Upstreamable with work — each adds public API purely to preserve original bytes (9)
 
 | Patch | Why it needs work |
 |---|---|
@@ -112,6 +122,7 @@ took a retail G2 install's ASCII worlds from 20 crashed to 20 measured
 | `0016` | Adds public `packed_reserved_bit` for bit 15, which ZenGin never assigns (49 VObjects in NewWorld have it set from stale memory). Same class as `0012` |
 | `0044` | Adds public `reserved_flags`/`reserved_filter_flags` so the bits of `zCTrigger`'s two deprecated bytes that `load` does not unpack survive a save. Same class as `0016`, and not independently applicable — it is the correction to `0028` |
 | `0019` | The fidelity half of `0015`. Adds public `Mesh::shared_lightmap_textures`; not independently applicable |
+| `0047` | The fidelity half of `0045`/`0046`. `save` wrote every VObject packed whatever layout `load` read, and the packed layout has no room for most of the tail — all 1277 of OldCamp's `pack=int:0` VObjects come back `pack=int:1`. Adds public `VirtualObject::packed_layout` so the layout survives; same shape as `0016`, but it also changes what `save` writes for any consumer that loads an unpacked world |
 
 ### Ours forever (1)
 
@@ -128,15 +139,16 @@ Independent, highest-value and least arguable first:
 
 1. `0020`, `0021`, `0022`, `0027`, `0029`, `0030`, `0031`, `0032`, `0033`, `0034`,
    `0035`, `0036`, `0037`, `0038` (with `0039`), `0040`, `0041`, `0042`,
-   `0043` — one PR
+   `0043`, `0045` — one PR
    each.
-2. `0002`, `0003`, `0004`, `0005`, `0006`, `0028` — small self-evident writer bugs.
+2. `0002`, `0003`, `0004`, `0005`, `0006`, `0028`, `0046` — small self-evident
+   writer bugs.
 3. `0018`, then `0013`.
 4. `0001`, then `0010`.
 5. `0014`, `0015`, `0023`.
 6. The API-adding fidelity patches, each needing a written rationale and a
    fixture: `0011`, `0019` (after `0015`), `0016` (after `0001`),
-   `0044` (after `0028`), `0012`, then
+   `0044` (after `0028`), `0047` (after `0045` and `0046`), `0012`, then
    `0008` reshaped to keep the counter internal, then `0009`.
 7. `0017` — do not send as written.
 
