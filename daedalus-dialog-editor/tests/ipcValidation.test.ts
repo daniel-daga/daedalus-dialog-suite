@@ -995,8 +995,13 @@ describe('assertApplyOpsRequest', () => {
       expect(() => assertApplyOpsRequest({
         ops: [{ ...add, to: { position: [0, 0, 0], class: 'oCItem', instance: 'ITFO_APPLE' } }],
       })).not.toThrow();
-      // The lights and the sounds (I2), which take no instance and need none.
-      for (const className of ['zCVobLight', 'zCVobSound', 'zCVobSoundDaytime']) {
+      // The lights and the sounds (I2) and the trigger family (I3), none of
+      // which takes an instance or needs one.
+      for (const className of [
+        'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
+        'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
+        'zCMover', 'zCCodeMaster', 'zCMessageFilter',
+      ]) {
         expect(() => assertApplyOpsRequest({
           ops: [{ ...add, to: { position: [0, 0, 0], class: className } }],
         })).not.toThrow();
@@ -1004,6 +1009,9 @@ describe('assertApplyOpsRequest', () => {
           ops: [{ ...add, to: { position: [0, 0, 0], class: className, instance: 'ITFO_APPLE' } }],
         })).toThrow(/instance/);
       }
+      // `zCTriggerScript` is the pointed one since I3: that class *is*
+      // authorable and the archive spells it `oCTriggerScript`, so the spoken
+      // name is still one the binding has no construction for.
       for (const bad of ['oCMobDoor', 'zCTriggerScript', 'ocitem', '', 7, null]) {
         expect(() => assertApplyOpsRequest({
           ops: [{ ...add, to: { position: [0, 0, 0], class: bad } }],

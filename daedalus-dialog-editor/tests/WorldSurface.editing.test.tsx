@@ -1456,17 +1456,21 @@ describe('placing a VOB', () => {
     expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('visual');
   });
 
-  it('places a light or a sound, which take no instance and no visual', async () => {
-    // I2's classes (level-editor.md §16.15). Neither carries a visual — a light
-    // *is* its own light and a sound its own sound — and neither takes an
-    // instance, so the dialog offers the visual field and nothing else, and what
-    // makes the VOB the thing it is comes from the binding's construction and
-    // then from the property grid.
+  it('places every class but the item with no instance and no visual', async () => {
+    // I2's classes and I3's trigger family (level-editor.md §16.15). None
+    // carries a visual — a light *is* its own light, a sound its own sound and
+    // a trigger a volume — and none takes an instance, so the dialog offers the
+    // visual field and nothing else, and what makes the VOB the thing it is
+    // comes from the binding's construction and then from the property grid.
     const summary = await openWorld();
     api.refreshWorldIndex.mockResolvedValue(summary as never);
     api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
 
-    for (const className of ['zCVobLight', 'zCVobSound', 'zCVobSoundDaytime']) {
+    for (const className of [
+      'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
+      'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
+      'zCMover', 'zCCodeMaster', 'zCMessageFilter',
+    ]) {
       api.applyWorldOps.mockClear();
       fireEvent.click(screen.getByTestId('stub-pick-terrain'));
       act(() => useWorldStore.getState().selectVob(null));

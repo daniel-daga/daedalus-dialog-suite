@@ -415,6 +415,22 @@ export const CLASS_FIELDS = {
  * refused. What stays separate is the C++ dispatch, which is the construction
  * itself and cannot be shared; a per-class insertion test in `zenkit-node` is
  * what ties the two lists together.
+ *
+ * **Every trigger I3 added is inert until its `target` is reachable, and
+ * `target` is not in the catalogue.** A trigger's whole purpose is the
+ * `OnTrigger` it forwards, and the field naming where it goes is held out with
+ * the rest of the family's cross-reference strings — so a placed `zCTrigger`
+ * fires at nothing and the grid offers no way to change that. Not a defect of
+ * the construction: the same holds for every retail trigger the editor can
+ * already *edit*. A `zCMover` is the one member that does something on its own,
+ * since it moves along its visual's animation.
+ *
+ * Three of the seven go further and carry no catalogued field at all —
+ * `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` — because what
+ * configures each is a list (`targets`, `slaves`) or an enum (`mode`,
+ * `onTrigger`/`onUntrigger`), and the catalogue holds neither by the rules at
+ * the top of this file. **Authorable with no editable field is a real state
+ * since I3**, and the dialog offers those three knowing it.
  */
 export const AUTHORABLE_VOB_CLASSES = [
   'zCVob',
@@ -422,7 +438,19 @@ export const AUTHORABLE_VOB_CLASSES = [
   'zCVobLight',
   'zCVobSound',
   'zCVobSoundDaytime',
+  // The trigger family (I3). Two of the names are the trap: everyday speech and
+  // the board card say `zCTriggerScript` and `zCTriggerChangeLevel`, and both
+  // are spelled with the `oC` prefix everywhere a world, a dump or the binding
+  // is involved — so those are the names here.
+  'zCTrigger',
+  'zCTriggerList',
+  'oCTriggerScript',
+  'oCTriggerChangeLevel',
+  'zCMover',
+  'zCCodeMaster',
+  'zCMessageFilter',
 ] as const;
+
 
 /** A class `insertVob` can construct. */
 export type AuthorableVobClass = (typeof AUTHORABLE_VOB_CLASSES)[number];

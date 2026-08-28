@@ -4342,6 +4342,50 @@ shown what one costs: a construction, one shared list entry, and a measurement
 sweep per class over the retail worlds. What I2 did *not* need was a new
 validator branch, a new op or a binding signature change.
 
+**I3 — the trigger family. Landed 2026-08-28**, all seven classes, and it cost
+exactly what I2 predicted: seven constructions in the `InsertVob` dispatch,
+seven names in `AUTHORABLE_VOB_CLASSES`, and no new op, validator branch or
+signature. Five derive from `VTrigger` and share `AuthorTriggerFields` — the
+eight of its twelve fields retail agrees about across all 294 of these VOBs;
+`zCCodeMaster` and `zCMessageFilter` derive straight from `zCVob` and share
+nothing. **The other four `VTrigger` flags are set per class and not shared**,
+because the family does not agree about them: a mover is fired at and never
+touched (148 of 150), a plain trigger is touched by nearly everything, a script
+trigger answers the player alone. One shared answer would have been wrong for
+four of the five.
+
+**Two of the seven names are not the names anyone says.** The archive — and so
+`CLASS_FIELDS`, the dump and the binding — spells them `oCTriggerScript` and
+`oCTriggerChangeLevel`, while the board card, this section and everyday speech
+say `zCTrigger…`. The spoken forms stay refused, and both test suites keep
+`zCTriggerScript` in their bad-class list for exactly that reason.
+
+**A placed trigger fires at nothing, and that is the finding to carry forward.**
+`target` and `vobTarget` are held out of the catalogue with the rest of the
+family's cross-reference strings, so nothing in the editor can tell a placed
+trigger where to send its `OnTrigger`. It is not a defect of the construction —
+the same is true of every retail trigger the grid can already *edit* — but it
+does mean placement alone does not yet produce a working trigger. Three of the
+seven go further: `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` are
+configured only by lists (`targets`, `slaves`) and enums (`mode`,
+`onTrigger`/`onUntrigger`), and the catalogue holds neither, so a placed one has
+**no editable field of its own at all**. Authorable-with-nothing-catalogued is
+therefore a real state since I3, and `zen-world`'s invariant test now says so
+rather than forbidding it. The one member that works unaided is `zCMover`: it
+runs its visual's animation, needing neither a target nor keyframes.
+
+**One default is chosen against its own measurement, and the round-trip test is
+what found it.** A mover's `lerpMode` is authored `CURVE` — ZenKit's default —
+where retail's majority is `LINEAR`, because `VMover::save` writes the field only
+when `keyframes` is non-empty and this cannot author keyframes: a reloaded mover
+comes back `CURVE` whatever was written, so the majority would have made the VOB
+differ from itself across a save. The same instrument that proves no field is
+left indeterminate is the only one that can see a field the writer drops.
+
+**`zCMover.locked` is the sweep's other surprise**: false on every one of
+retail's 150 movers against ZenKit's `true`, and unlike the sound and light
+disagreements this one is catalogued, so it is also the user's to change.
+
 **`oCItem` was first and was also the awkward one.** Its `instance` is the
 validation that cannot live in the main process at all: there is no semantic
 model there — `ProjectIndex` carries npcs, dialogs, routines and voice ids but

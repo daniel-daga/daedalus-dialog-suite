@@ -1036,6 +1036,155 @@ test('an authored light and sound survive a save and reload', () => {
   }
 });
 
+// The trigger family (level-editor.md §16.15, I3). Five of the seven derive
+// from `VTrigger` and share its twelve fields; two derive from nothing but
+// `zCVob`. Every default below is retail's own majority over
+// NewWorld/OldWorld/AddonWorld (2026-08-28), and the four flags the family
+// *disagrees* about are set per class rather than shared — a mover is touched
+// by nothing and a trigger is touched by almost everything.
+
+// The props every VOB carries whatever its class; a construction is not
+// answerable for these, `zCVob`'s own half is.
+const BASE_PROP_KEYS = [
+  'presetName', 'bias', 'visualCamAlign', 'dynamicShadows', 'animStrength',
+  'farClipScale', 'sleepMode', 'nextOnTimer', 'rigidBody', 'eventManager', 'ai', 'decal',
+];
+
+// The eight the whole family agrees on, across all 294 retail VOBs of these
+// classes. `target` and `vobTarget` are empty because there is no name to
+// invent — and, the catalogue holding no field for either, a placed trigger
+// fires at nothing until that changes.
+const TRIGGER_BASE = {
+  target: '',
+  startEnabled: true,
+  reactToOnTrigger: true,
+  reactToOnDamage: false,
+  respondToPc: true,
+  vobTarget: '',
+  maxActivationCount: -1,
+  retriggerDelaySec: 0,
+  damageThreshold: 0,
+  fireDelaySec: 0,
+};
+
+// class -> the props the construction is answerable for, base fields excluded.
+const I3_EXPECTED = {
+  // 47 retail zCTriggers: touched (35), not sending an untrigger (36),
+  // responding to objects (26) and to NPCs (31).
+  zCTrigger: {
+    ...TRIGGER_BASE,
+    sendUntrigger: false, reactToOnTouch: true, respondToObject: true, respondToNpc: true,
+  },
+  // 44 retail lists: reached by an event and not by a touch (39). `mode` is ALL
+  // on every one of them, and it is an enum, so a placed list keeps it.
+  zCTriggerList: {
+    ...TRIGGER_BASE,
+    sendUntrigger: false, reactToOnTouch: false, respondToObject: true, respondToNpc: true,
+    mode: 0, targets: [],
+  },
+  // 46 retail script triggers: they send an untrigger (43) and they are for the
+  // player - not for objects (29) and not for NPCs (25).
+  oCTriggerScript: {
+    ...TRIGGER_BASE,
+    sendUntrigger: true, reactToOnTouch: true, respondToObject: false, respondToNpc: false,
+    function: '',
+  },
+  // All 7 retail level changers are touched by the player and by nothing else.
+  oCTriggerChangeLevel: {
+    ...TRIGGER_BASE,
+    sendUntrigger: true, reactToOnTouch: true, respondToObject: false, respondToNpc: false,
+    levelName: '', startVob: '',
+  },
+  // 150 retail movers: fired at, not touched (148), and `locked` is false on
+  // every single one against ZenKit's `true`. Two seconds open is the majority
+  // (129). `speed`, `lerpMode` and `speedMode` are written only when a mover
+  // has keyframes, which this cannot author — so `lerpMode` is ZenKit's CURVE
+  // (1) rather than retail's LINEAR majority: the field never reaches the
+  // archive, and a reload would hand back CURVE whatever was authored.
+  zCMover: {
+    ...TRIGGER_BASE,
+    sendUntrigger: true, reactToOnTouch: false, respondToObject: true, respondToNpc: true,
+    behavior: 0, touchBlockerDamage: 0, stayOpenTimeSec: 2, locked: false,
+    autoLink: false, autoRotate: false, speed: 0, lerpMode: 1, speedMode: 0, keyframes: [],
+    sfxOpenStart: '', sfxOpenEnd: '', sfxTransitioning: '', sfxCloseStart: '',
+    sfxCloseEnd: '', sfxLock: '', sfxUnlock: '', sfxUseLocked: '',
+  },
+  // 7 retail code masters: unordered (6) and not cancelled by an untrigger (7).
+  zCCodeMaster: {
+    target: '', ordered: false, firstFalseIsFailure: false, failureTarget: '',
+    untriggeredCancels: false, slaves: [],
+  },
+  // 26 retail filters. Both actions are TRIGGER on the plurality (8 of 26
+  // each), and both are enums the catalogue holds no field for - so, like a
+  // sound's `mode`, what is chosen here is what a placed filter keeps.
+  zCMessageFilter: { target: '', onTrigger: 1, onUntrigger: 1 },
+};
+
+for (const [className, expected] of Object.entries(I3_EXPECTED)) {
+  test(`insertVob authors a ${className} on retail's own majority`, () => {
+    const handle = load();
+    const at = zenkit.insertVob(handle, null, {
+      class: className, name: `PLACED_${className}`, position: [1, 2, 3],
+    });
+
+    const vob = vobAt(dumpOf(handle), at);
+    assert.strictEqual(vob.class, className);
+    assert.strictEqual(vob.name, `PLACED_${className}`);
+    for (const [key, value] of Object.entries(expected)) {
+      assert.deepStrictEqual(vob.props[key], value, `${className}.${key}`);
+    }
+    // The construction is answerable for *every* field of the class and not
+    // only the ones named above: a key the dump reports and this table forgets
+    // is a field left to whatever the struct's memory happened to hold.
+    const unclaimed = Object.keys(vob.props)
+      .filter((key) => !(key in expected) && !BASE_PROP_KEYS.includes(key));
+    assert.deepStrictEqual(unclaimed, [], className);
+  });
+}
+
+test('no member of the trigger family takes an instance', () => {
+  const handle = load();
+  for (const className of Object.keys(I3_EXPECTED)) {
+    assert.throws(
+      () => zenkit.insertVob(handle, null, {
+        class: className, instance: 'ITFO_APPLE', position: [0, 0, 0],
+      }),
+      /instance/,
+      className
+    );
+  }
+});
+
+test('every authored trigger survives a save and reload', () => {
+  // The writer is the half the dump cannot see: a field the construction left
+  // indeterminate round-trips as whatever was on the stack, and a trigger has
+  // twelve of them before its own class starts.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zk-i3-'));
+  try {
+    const handle = load();
+    const placed = Object.keys(I3_EXPECTED).map((className) => [
+      className,
+      zenkit.insertVob(handle, null, { class: className, position: [1, 2, 3] }),
+    ]);
+    const before = dumpOf(handle);
+
+    const out = path.join(dir, 'triggers.zen');
+    zenkit.saveWorld(handle, out);
+    const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+
+    for (const [className, at] of placed) {
+      const was = vobAt(before, at);
+      const is = vobAt(reloaded, at);
+      assert.strictEqual(is.class, className);
+      assert.deepStrictEqual(is.props, was.props, className);
+      assert.deepStrictEqual(is.flags, was.flags, className);
+      assert.deepStrictEqual(is.position, was.position, className);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('insertVob still authors a zCVob when no class is named', () => {
   const handle = load();
   const at = zenkit.insertVob(handle, null, { name: 'DEFAULT_CLASS', position: [0, 0, 0] });

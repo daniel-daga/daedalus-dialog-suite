@@ -232,7 +232,7 @@ export function setVobClassProp(
 export interface NewVob {
   /**
    * The class the new VOB *is* — its C++ type, not a field on it — defaulting to
-   * `zCVob` (level-editor.md §16.15, I1 and I2).
+   * `zCVob` (level-editor.md §16.15, I1 to I3).
    *
    * A closed set, because each class needs its own field-complete construction:
    * ZenKit's structs have uninitialized fields, and `setVobClassProp` switches
@@ -244,7 +244,22 @@ export interface NewVob {
    * three G2 worlds, not ZenKit's struct defaults — which differ on five fields
    * and, for a light's `lightType`, name a value retail never writes.
    */
-  class?: 'zCVob' | 'oCItem' | 'zCVobLight' | 'zCVobSound' | 'zCVobSoundDaytime';
+  class?:
+    | 'zCVob'
+    | 'oCItem'
+    | 'zCVobLight'
+    | 'zCVobSound'
+    | 'zCVobSoundDaytime'
+    // The trigger family (I3). The two `oC*` names are the ones to get right:
+    // everyday speech says `zCTriggerScript` and `zCTriggerChangeLevel`, and a
+    // world spells both with the `oC` prefix.
+    | 'zCTrigger'
+    | 'zCTriggerList'
+    | 'oCTriggerScript'
+    | 'oCTriggerChangeLevel'
+    | 'zCMover'
+    | 'zCCodeMaster'
+    | 'zCMessageFilter';
   /**
    * The script instance an `oCItem` spawns — required for one, and refused for
    * any other class, which has no such field. The name is not checked against

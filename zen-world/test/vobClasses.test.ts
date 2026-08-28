@@ -250,14 +250,31 @@ describe('the per-class field catalogue', () => {
     // construction — so neither list is a subset of the other.
     expect(isAuthorableVobClass('zCVob')).toBe(true);
     expect(classPropKeys('zCVob')).toEqual([]);
-    expect(isAuthorableVobClass('zCMover')).toBe(false);
-    expect(classPropKeys('zCMover').length).toBeGreaterThan(0);
-    // Every class that *is* authorable and carries fields is catalogued, or the
-    // dialog would place a VOB whose own fields the grid cannot then reach.
-    for (const className of AUTHORABLE_VOB_CLASSES) {
-      if (className === 'zCVob') continue;
-      expect(classPropKeys(className).length).toBeGreaterThan(0);
+    expect(isAuthorableVobClass('zCVobAnimate')).toBe(false);
+    expect(classPropKeys('zCVobAnimate').length).toBeGreaterThan(0);
+    // And since I3 the other direction has three examples too: a class can be
+    // authorable and carry no catalogued field at all. It is not an oversight —
+    // everything that configures one of these three is an enum or a list, and
+    // the catalogue holds neither.
+    for (const className of ['zCTriggerList', 'zCCodeMaster', 'zCMessageFilter']) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className)).toEqual([]);
     }
+  });
+
+  it('places the whole trigger family, under the names the archive uses', () => {
+    // I3 (level-editor.md §16.15). The two `oC*` names are the trap: the board
+    // card and everyday speech say `zCTriggerScript` and `zCTriggerChangeLevel`,
+    // and a world — and therefore `CLASS_FIELDS`, the dump and the binding —
+    // spells both with the `oC` prefix. A list that carried the spoken name
+    // would offer the dialog a class the binding refuses.
+    expect(AUTHORABLE_VOB_CLASSES).toEqual([
+      'zCVob', 'oCItem', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
+      'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
+      'zCMover', 'zCCodeMaster', 'zCMessageFilter',
+    ]);
+    expect(isAuthorableVobClass('zCTriggerScript')).toBe(false);
+    expect(isAuthorableVobClass('zCTriggerChangeLevel')).toBe(false);
   });
 
   it('refuses a class name that is a property of every object', () => {

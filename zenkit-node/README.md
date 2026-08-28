@@ -407,8 +407,13 @@ one, since the box is a pure function of (visual, rotation, position). Without a
 nothing to draw does not claim otherwise.
 
 **`class` is the object's C++ type, not a field on it**, which is why the set is
-closed: `'zCVob'` (the default), `'oCItem'`, `'zCVobLight'`, `'zCVobSound'` and
-`'zCVobSoundDaytime'`. Each class needs its own field-complete construction —
+closed: `'zCVob'` (the default), `'oCItem'`, `'zCVobLight'`, `'zCVobSound'`,
+`'zCVobSoundDaytime'` and the trigger family — `'zCTrigger'`,
+`'zCTriggerList'`, `'oCTriggerScript'`, `'oCTriggerChangeLevel'`, `'zCMover'`,
+`'zCCodeMaster'` and `'zCMessageFilter'`, the last two deriving from `zCVob`
+rather than from `zCTrigger`. **Spell the two `oC*` names as the archive does**:
+`zCTriggerScript` and `zCTriggerChangeLevel` are what everyone says and neither
+is a class this authors. Each class needs its own field-complete construction —
 ZenKit's structs leave fields uninitialized — and `setVobClassProp` switches on
 the type the object really has, so nothing can turn a `zCVob` into an `oCItem`
 afterwards. A class with no construction is refused rather than authored as a
@@ -431,6 +436,25 @@ contains. A sound is authored `LOOP` (1,077 of retail's 1,237; ZenKit says
 `setVobClassProp`, and a `zCVobSoundDaytime` additionally wakes at 6 and sleeps
 at 20, retail's medians. The enums matter most because the class catalogue holds
 no field for one, so what is chosen here is what the placed VOB keeps.
+
+The trigger family is measured the same way, over its own 294 retail VOBs, and
+**the four flags the family disagrees about are per class rather than shared**:
+a mover is fired at and never touched (148 of 150), a plain trigger is touched
+by almost everything, and a script trigger answers the player alone. A mover is
+also authored `locked = false` — every one of retail's 150 is, against ZenKit's
+`true` — and stays open 2 s. Two caveats travel with the family. Its `target` is
+not in the class catalogue, so **a placed trigger fires at nothing** until it
+is; and `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` are configured
+only by lists and enums, which the catalogue holds none of, so a placed one has
+no editable field of its own at all. A mover is the member that does something
+unaided: it runs its visual's animation, needing neither a target nor keyframes.
+
+**One field is chosen against its own measurement, and the round trip is why.**
+A mover's `lerpMode` is authored `CURVE`, ZenKit's default, where retail's
+majority is `LINEAR`: `VMover::save` writes it only when `keyframes` is
+non-empty, which this call cannot author, so a reloaded mover comes back `CURVE`
+whatever was written. Authoring the majority would make the VOB differ from
+itself across a save.
 
 **The visual's class is derived from the extension here, which is exactly what
 `setVobProp` refuses to do — and for the opposite reason.** Renaming an existing

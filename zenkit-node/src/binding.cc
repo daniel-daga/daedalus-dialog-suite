@@ -2092,7 +2092,24 @@ std::shared_ptr<zenkit::Visual> AuthorVisual(Napi::Env env, std::string const& n
 // field-complete construction rather than a type tag. A class with no
 // construction here is refused rather than authored as a bare `zCVob` wearing
 // its name.
-enum class NewVobClass { kZCVob, kOCItem, kZCVobLight, kZCVobSound, kZCVobSoundDaytime };
+enum class NewVobClass {
+  kZCVob,
+  kOCItem,
+  kZCVobLight,
+  kZCVobSound,
+  kZCVobSoundDaytime,
+  // The trigger family (I3). Two of these names are the trap: everyday speech
+  // says `zCTriggerScript` and `zCTriggerChangeLevel`, and a world spells both
+  // with the `oC` prefix -- which is the spelling `zen-world`'s
+  // `AUTHORABLE_VOB_CLASSES` carries, so the two lists agree.
+  kZCTrigger,
+  kZCTriggerList,
+  kOCTriggerScript,
+  kOCTriggerChangeLevel,
+  kZCMover,
+  kZCCodeMaster,
+  kZCMessageFilter,
+};
 
 NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
   if (value.IsUndefined()) return NewVobClass::kZCVob;
@@ -2105,6 +2122,13 @@ NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
   if (str == "zCVobLight") return NewVobClass::kZCVobLight;
   if (str == "zCVobSound") return NewVobClass::kZCVobSound;
   if (str == "zCVobSoundDaytime") return NewVobClass::kZCVobSoundDaytime;
+  if (str == "zCTrigger") return NewVobClass::kZCTrigger;
+  if (str == "zCTriggerList") return NewVobClass::kZCTriggerList;
+  if (str == "oCTriggerScript") return NewVobClass::kOCTriggerScript;
+  if (str == "oCTriggerChangeLevel") return NewVobClass::kOCTriggerChangeLevel;
+  if (str == "zCMover") return NewVobClass::kZCMover;
+  if (str == "zCCodeMaster") return NewVobClass::kZCCodeMaster;
+  if (str == "zCMessageFilter") return NewVobClass::kZCMessageFilter;
   throw Napi::Error::New(env, "opts.class: no construction is known for '" + str + "'");
 }
 
@@ -2140,6 +2164,43 @@ void AuthorSoundFields(zenkit::VSound& sound) {
   // so this does the same rather than leaving it indeterminate.
   sound.s_is_running = sound.initially_playing;
   sound.s_is_allowed_to_run = true;
+}
+
+// The half of a trigger every class in the family shares (I3) -- the eight of
+// `VTrigger`'s twelve fields that retail agrees about across all 294 of its
+// `zCTrigger`, `zCTriggerList`, `oCTriggerScript`, `oCTriggerChangeLevel` and
+// `zCMover` VOBs (measured 2026-08-28 over NewWorld, OldWorld and AddonWorld).
+//
+// **The other four are set per class and not here**, because the family does
+// not agree about them: a mover is fired at and never touched, a plain trigger
+// is touched by almost everything, and a script trigger is for the player
+// alone. One shared answer would be wrong for four of the five classes.
+//
+// `target` and `vob_target` are empty because there is no name to invent -- and
+// the class catalogue holds no field for either, so **a placed trigger fires at
+// nothing until that changes**. That is not a defect of this construction: it
+// is equally true of every retail trigger the property grid can already edit,
+// and it is written down in `zen-world`'s `vobClasses.ts`.
+void AuthorTriggerFields(zenkit::VTrigger& trigger) {
+  trigger.target = "";
+  trigger.vob_target = "";
+  trigger.start_enabled = true;        // 291 of 294
+  trigger.react_to_on_trigger = true;  // 272 of 294
+  trigger.react_to_on_damage = false;  // 257 of 294
+  trigger.respond_to_pc = true;        // every one of the 294
+  // ZenKit documents -1 as "process an infinite number of events", and it is
+  // also retail's majority (218 of 294) -- the reason the catalogue leaves the
+  // field unbounded below.
+  trigger.max_activation_count = -1;
+  trigger.retrigger_delay_sec = 0.0f;
+  trigger.damage_threshold = 0.0f;
+  trigger.fire_delay_sec = 0.0f;
+  // The deprecated packed bytes. `VTrigger::save` rebuilds both from the bools
+  // above and the two `reserved_*` members (which ZenKit does default), so
+  // these are read by nothing -- but they are members with no initializer, and
+  // the rule for a construction is that no field is left to the stack.
+  trigger.flags = 0;
+  trigger.filter_flags = 0;
 }
 
 // insertVob(handle, parentPath | null, opts) — appends a VOB of the class
@@ -2312,6 +2373,152 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
     sound->end_time = 20.0f;
     sound->sound_name2 = "";
     vob = sound;
+  } else if (vob_class == NewVobClass::kZCTrigger) {
+    RefuseInstance();
+    auto trigger = std::make_shared<zenkit::VTrigger>();
+    trigger->type = zenkit::VirtualObjectType::zCTrigger;
+    AuthorTriggerFields(*trigger);
+    // Retail's 47 plain triggers: touched (35), sending no untrigger (36), and
+    // responding to objects (26) as well as to NPCs (31).
+    trigger->send_untrigger = false;
+    trigger->react_to_on_touch = true;
+    trigger->respond_to_object = true;
+    trigger->respond_to_npc = true;
+    vob = trigger;
+  } else if (vob_class == NewVobClass::kZCTriggerList) {
+    RefuseInstance();
+    auto list = std::make_shared<zenkit::VTriggerList>();
+    list->type = zenkit::VirtualObjectType::zCTriggerList;
+    AuthorTriggerFields(*list);
+    // Retail's 44 lists: reached by an event, not by a touch (39).
+    list->send_untrigger = false;
+    list->react_to_on_touch = false;
+    list->respond_to_object = true;
+    list->respond_to_npc = true;
+    // ALL on every one of the 44, and an enum -- so what is chosen here is what
+    // a placed list keeps, the same permanence a sound's `mode` has. `targets`
+    // is an unbounded list the catalogue cannot author either, so a placed list
+    // relays to nobody yet.
+    list->mode = zenkit::TriggerBatchMode::ALL;
+    list->targets = {};
+    vob = list;
+  } else if (vob_class == NewVobClass::kOCTriggerScript) {
+    RefuseInstance();
+    auto script = std::make_shared<zenkit::VTriggerScript>();
+    script->type = zenkit::VirtualObjectType::oCTriggerScript;
+    AuthorTriggerFields(*script);
+    // Retail's 46 script triggers: they send an untrigger (43) and they are for
+    // the player -- not for objects (29) and not for NPCs (25).
+    script->send_untrigger = true;
+    script->react_to_on_touch = true;
+    script->respond_to_object = false;
+    script->respond_to_npc = false;
+    // The one field only the caller can fill, and `setVobClassProp` is where --
+    // the same shape as a sound's name. An empty one calls nothing rather than
+    // naming a Daedalus function that may not exist.
+    script->function = "";
+    vob = script;
+  } else if (vob_class == NewVobClass::kOCTriggerChangeLevel) {
+    RefuseInstance();
+    auto change = std::make_shared<zenkit::VTriggerChangeLevel>();
+    change->type = zenkit::VirtualObjectType::oCTriggerChangeLevel;
+    AuthorTriggerFields(*change);
+    // All 7 retail level changers are touched by the player and by nothing
+    // else, and 5 of the 7 send an untrigger.
+    change->send_untrigger = true;
+    change->react_to_on_touch = true;
+    change->respond_to_object = false;
+    change->respond_to_npc = false;
+    // Both are catalogued, so the grid fills them; empty here means the level
+    // changer does nothing rather than naming a level that does not exist.
+    change->level_name = "";
+    change->start_vob = "";
+    vob = change;
+  } else if (vob_class == NewVobClass::kZCMover) {
+    RefuseInstance();
+    auto mover = std::make_shared<zenkit::VMover>();
+    mover->type = zenkit::VirtualObjectType::zCMover;
+    AuthorTriggerFields(*mover);
+    // Retail's 150 movers: fired at (150), never touched (148), responding to
+    // objects (147) and to NPCs (144), and sending an untrigger (91).
+    mover->send_untrigger = true;
+    mover->react_to_on_touch = false;
+    mover->respond_to_object = true;
+    mover->respond_to_npc = true;
+    mover->behavior = zenkit::MoverBehavior::TOGGLE;  // 126 of 150
+    mover->touch_blocker_damage = 0.0f;
+    mover->stay_open_time_sec = 2.0f;  // 129 of 150; ZenKit's default is 0
+    // **False on every one of retail's 150, against ZenKit's `true`** -- and
+    // `locked` is catalogued, so this one is the user's to change.
+    mover->locked = false;
+    mover->auto_link = false;
+    mover->auto_rotate = false;  // 139 of 150
+    // Written by `VMover::save` only when `keyframes` is non-empty, which this
+    // cannot author -- so all four are the shape of a mover that takes its
+    // animation from its visual.
+    //
+    // **`lerp_mode` is CURVE against retail's own majority** (LINEAR, 89 of
+    // 150), and that is the round-trip talking rather than the sweep: with no
+    // keyframes the field never reaches the archive, so `load` gives a reloaded
+    // mover ZenKit's CURVE whatever was authored. LINEAR here would make the
+    // VOB differ from itself across a save -- caught by the reload test, which
+    // is the only instrument that can see a field the writer drops.
+    mover->speed = 0.0f;
+    mover->lerp_mode = zenkit::MoverLerpType::CURVE;
+    mover->speed_mode = zenkit::MoverSpeedType::CONSTANT;  // 73 of 150, and
+                                                           // ZenKit's default
+    mover->keyframes = {};
+    // Empty on the majority of retail movers for all eight, and each is a
+    // catalogued field the grid can fill.
+    mover->sfx_open_start = "";
+    mover->sfx_open_end = "";
+    mover->sfx_transitioning = "";
+    mover->sfx_close_start = "";
+    mover->sfx_close_end = "";
+    mover->sfx_lock = "";
+    mover->sfx_unlock = "";
+    mover->sfx_use_locked = "";
+    // Save-game only and not default-initialized, exactly like an `oCItem`'s
+    // `s_amount`.
+    mover->s_act_key_pos_delta = zenkit::Vec3 {0, 0, 0};
+    mover->s_act_keyframe_f = 0.0f;
+    mover->s_act_keyframe = 0;
+    mover->s_next_keyframe = 0;
+    mover->s_move_speed_unit = 0.0f;
+    mover->s_advance_dir = 0.0f;
+    mover->s_mover_state = 0;
+    mover->s_trigger_event_count = 0;
+    mover->s_stay_open_time_dest = 0.0f;
+    vob = mover;
+  } else if (vob_class == NewVobClass::kZCCodeMaster) {
+    RefuseInstance();
+    // Not a `VTrigger` -- a code master derives straight from `zCVob`, so none
+    // of the twelve applies to it.
+    auto master = std::make_shared<zenkit::VCodeMaster>();
+    master->type = zenkit::VirtualObjectType::zCCodeMaster;
+    // Retail's 7: unordered (6), never cancelled by an untrigger (7).
+    master->target = "";
+    master->ordered = false;
+    master->first_false_is_failure = false;
+    master->failure_target = "";
+    master->untriggered_cancels = false;
+    // The list that makes a code master do anything, and an unbounded one the
+    // catalogue cannot author -- so a placed master watches nobody yet.
+    master->slaves = {};
+    master->s_num_triggered_slaves = 0;  // save-game only, not initialized
+    vob = master;
+  } else if (vob_class == NewVobClass::kZCMessageFilter) {
+    RefuseInstance();
+    auto filter = std::make_shared<zenkit::VMessageFilter>();
+    filter->type = zenkit::VirtualObjectType::zCMessageFilter;
+    filter->target = "";
+    // Retail's 26 filters split four ways and TRIGGER is the plurality of both
+    // fields (8 each) rather than a majority. Both are enums the catalogue
+    // holds no field for, so this is what a placed filter keeps -- the same
+    // permanence, and the same caveat, as a sound's `mode`.
+    filter->on_trigger = zenkit::MessageFilterAction::TRIGGER;
+    filter->on_untrigger = zenkit::MessageFilterAction::TRIGGER;
+    vob = filter;
   } else {
     RefuseInstance();
     auto plain = std::make_shared<zenkit::VirtualObject>();
