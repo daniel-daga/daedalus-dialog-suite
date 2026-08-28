@@ -166,8 +166,19 @@ inside `openWorld`, and there is no mount-time refetch — so leaving the World
 view and returning leaves `mesh === null`, the viewport guard renders nothing,
 and the world looks closed while `worldStore.status` still says open.
 
-**The fix is a decision nobody has taken:** keep tens of MB of buffers mounted,
-or refetch on mount and pay the latency.
+**Decided 2026-08-28 (Daniel): keep it mounted.** The choice was between keeping
+tens of MB of buffers resident and refetching on mount. Mounted wins on three
+counts: `MainLayout` already keeps the *dialog* view alive with a display
+toggle, so this is the mechanism the file teaches rather than a second one; the
+buffers arrive over IPC from the one stateful `zenkit.worker`, so a refetch is
+world-open latency on every tab return, not a cheap re-read; and the memory is
+already resident while the tab is open, making this a change of duration and not
+of magnitude.
+
+**The requirement that does not follow from the mechanism:** hidden must mean
+the frame loop does not run. A mounted-but-hidden canvas that keeps drawing is a
+worse defect than the one being fixed, and the display toggle does nothing about
+it on its own.
 
 Hard prerequisite for the script → world direction of the waypoint jump
 (`docs/plans/level-editor.md` §16.8, W4).

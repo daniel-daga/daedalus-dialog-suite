@@ -126,8 +126,18 @@ Each card is one line, an owner and a pointer. A bare `§` is a section of
 `docs/plans/level-editor.md`. The diagnosis, the measurement and the decision a
 card waits on live at its pointer — put new prose there, not here.
 
+**The World surface — the mount that blocks W4**
+
+- **The surface loses its geometry on navigate-away** — decided 2026-08-28: mount
+  it the way the dialog view is mounted (a display toggle in `MainLayout`), and
+  make the frame loop a no-op while hidden. Unowned.
+  `docs/refactoring-targets.md` §8
+
 **Daedalus scripts — where a script names a place**
 
+- **W5 — the rest of the engine externals that take a waypoint name** — the seed
+  table holds the two the plan confirmed of "~6"; measure the rest against the
+  MDK's externals and add only what is measured, never a guess. Unowned. §16.8
 - **§16.8 W1 — the script-side waypoint index** — blocked: the extraction half
   is landed and now tested against the `TA_*` shape (a case-sensitive parameter
   match was dropping whole files); the lookup half has no unblocked consumer and
@@ -143,6 +153,13 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
+- **I3 — the trigger family becomes authorable** — `zCTrigger`, `zCTriggerList`,
+  `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`,
+  `zCTriggerChangeLevel`. One construction each in the `InsertVob` dispatch, one
+  `AUTHORABLE_VOB_CLASSES` entry, a retail sweep per default. Unowned. §16.15
+- **I4 — `oCMobInter` and the `oCMob*` subclasses become authorable** —
+  `Container`, `Door`, `Bed`, `Ladder`, `Switch`, `Wheel`, and `oCTouchDamage`.
+  I3's shape exactly; take it after I3. Unowned. §16.15
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
   singularity counts, not a Spacer match. Needs Spacer itself, and only two
   functions change if it differs. **Daniel.** §16.4
@@ -163,9 +180,9 @@ card waits on live at its pointer — put new prose there, not here.
   clean runs), so there is nothing to bisect; needs a captured crash dump. The
   addon is cleared — the run's native code is tree-sitter.
   `docs/reference/environment-hazards.md`
-- **Three viewport and World-surface warts** — the surface loses its geometry on
-  navigate-away (a hard prerequisite for §16.8 W4), the imperative handle, the
-  31 px reservation. `docs/refactoring-targets.md` §8–10
+- **Two viewport warts** — the imperative handle (do it immediately before the
+  caller that justifies it, which is W4) and the 31 px reservation.
+  `docs/refactoring-targets.md` §9–10
 
 ## Deferred
 
@@ -196,24 +213,14 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **`resavedSize` at a day or month boundary** — landed: `size` and
-  `resavedSize` are both the stamp-stripped length (`withoutHeaderStamps`), one
-  field with one meaning on every row, so the un-padded `%d.%d.%d` day can no
-  longer make a faithful re-save look like a different size. §16.10
-- **`zCVob` V2 — `dynamicShadows` and the decals** — landed: `dynamicShadows` on
-  `visualCamAlign`'s two bits, and all seven decal fields as a third table
-  (`DECAL_FIELDS`) with a new `vec2` kind, flat keys and a per-VOB refusal in the
-  binding. **`sleepMode` is out for good** — `is_save_game()` only, so a world
-  never carries it; §14.1 1.8 is closed. §16.17
-- **`zCVob` V1 — preset name, `visualCamAlign`, bias** — landed: `SetVobProp`
-  takes all three, bounded by the packed layout's bit fields, and the per-VOB
-  `getVobProps` read is now issued for every class because every VOB has them.
-  §16.17
+*(empty — flushed for the budget as the cards below were written)*
 
-Flushed 2026-08-28: the scene tree's VOB search/filter and its per-class
-visibility toggles (both landed, both §16.16), and earlier the same day I1,
-I2, D2, W2, W3, the typed multi-selection rotation
-(§16.4), waynet W4 (§16.7) and copy/paste D5 (§16.14), as the budget needed the
-room. Their forward facts are routed — what a copy still drops and the
-batch-guard relaxation it wants are §16.14, the authorable class set is §16.15,
-the last-edge promotion is §16.7 — and the rest is in `git log`.
+Flushed 2026-08-28, all landed the same day and all routed: `zCVob` V1 and V2
+(§16.17, which also closes §14.1 1.8 and says why `sleepMode` and `farClipScale`
+stay out), `resavedSize` (§16.10, closed), the scene tree's VOB search/filter and
+its per-class visibility toggles (§16.16), and earlier I1, I2, D2, W2, W3, the
+typed multi-selection rotation (§16.4), waynet W4 (§16.7) and copy/paste D5
+(§16.14) — what a copy still drops and the batch-guard relaxation it wants are
+§16.14, the authorable class set is §16.15, the last-edge promotion is §16.7.
+W1's case-insensitivity fix is in §16.8 and the card stayed in Next, blocked.
+The rest is in `git log`.
