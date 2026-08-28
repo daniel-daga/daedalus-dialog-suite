@@ -966,7 +966,8 @@ engine. What remains:
   (The older "396 of 400" was the harness's per-world finding cap read as a
   total; the report says when it caps now.)
 - **A2 and A3 — closed 2026-08-28**, patches `0045`–`0047`. What replaced them
-  on the ASCII path is float text precision, §16.9.
+  on the ASCII path was float text precision, closed the same day by `0048`;
+  what is left after that is two residuals worth 8 findings, §16.9.
 - **`animMode` on 128 VOBs — diagnosed, and no patch is possible.** 130 retail
   `oCMobContainer` chests store a heap-pointer-shaped `visualAniMode` (Spacer
   serialising an uninitialised member; 128 of them `0x08A8B0E8`). ZenKit narrows
@@ -3010,7 +3011,7 @@ open) or folding the free-point prefix-match exception in above into whatever
 shape that takes — a small design decision, not a measurement, so it stays
 open rather than being guessed at here.
 
-### 16.9 What is left of the ASCII writer — A6, and float text precision
+### 16.9 What is left of the ASCII writer — A6, and what `0048` left behind
 
 **A2 and A3 landed 2026-08-28** as patches `0045`, `0046` and `0047`, a chain:
 `0045` made the unpacked `zCVob` layout readable at all (`write_mat3x3` emitted
@@ -3046,16 +3047,43 @@ a fixture VOB with the flag set and, being a save-path byte change, the
 project's own engine-A/B rule** — the same reason the three ops of §16.2 have no
 verdict.
 
-**What is now the dominant ASCII defect: float text precision.** ZenKit writes
-every ASCII float with `std::to_string` — six decimal places, always — where
-ZenGin writes a shortest-round-trip form. `1511.77087` comes back
-`1511.770874`, `0` comes back `0.000000`, and at retail magnitudes it costs
-significant digits: OldCamp's remaining 440 struct findings are all `position`,
-`bbox`, `speed` and waypoint `direction`, and the re-save is now 33 KB *larger*
-than the original for this reason alone. It is the ASCII-entry counterpart of
-what patch `0009` does for binary `texScale`, so the shape of the fix is known
-and the same argument (byte fidelity only; the parsed value is unchanged)
-applies. Unowned, and it is what a fourth patch in this area should be.
+**Float text precision — closed 2026-08-28 as patch `0048`.** ZenKit wrote every
+ASCII float with `std::to_string`, i.e. `%f`: six decimals, always. That both
+*pads* (`0` became `0.000000`) and *truncates*, because six decimals is fewer
+significant digits than a float has at world magnitudes (`1511.77087` became
+`1511.770874`) and none at all below 1e-6 (`2.98023224e-008` became
+`0.000000`). ZenGin's form, measured across the retail ASCII worlds, is `%.9g`
+with the three exponent digits its MSVC CRT always printed — the same shape of
+fix as `0009` does for `zCMaterial`'s `texScale`, and byte fidelity only, since
+nine significant digits is exactly what round-trips a float. `write_float`,
+`write_vec3` and `write_raw_float` are the three text-float writers;
+`write_vec2` and `write_bbox` go through the last of them.
+`zenkit-node/test/asciiFloatFormat.test.js` is the regression. **OldCamp: 440
+struct findings → 8, and the re-save 4,012,132 B → 3,979,084 B against a
+3,979,132 B original** (it was 33 KB larger before).
+
+**The two residuals `0048` left, both now visible because the floats stopped
+drowning them.** OldCamp's remaining 8 findings are exactly these:
+
+1. **Half-way rounding, 5 of the 8.** ZenGin's MSVC 6 CRT rounded an exact tie
+   away from zero; the UCRT rounds half-to-even. So a coordinate whose decimal
+   expansion terminates in `…5` at the tenth significant digit — common, because
+   those are the exact binary fractions — comes back one ulp of *text* low:
+   `-3055.89063` vs our `-3055.89062`, `-4509.32813` vs `-4509.32812`. The value
+   is identical either way. A fix has to detect the tie itself (print the exact
+   decimal expansion and look past digit nine), which is real code for the last
+   5 findings in a world; not obviously worth it, and deliberately not attempted.
+2. **`bool:` writes `1` where ZenGin writes `-1` for `locked` and `moveable`,
+   3 of the 8, and it is `0017`'s missing other half.** ZenGin declares some
+   `oCMOB` flags as *signed* one-bit bitfields, so a set flag reads back as −1;
+   `0017` already special-cases exactly `locked`, `moveable` and `focusOverride`
+   in `WriteArchiveBinsafe::write_bool` to write `0xFFFFFFFF`, and
+   `WriteArchiveAscii::write_bool` was never given the same treatment. The
+   retail ASCII worlds agree with the rule and nothing else does: 56 `=bool:-1`
+   in 45,068 bool entries, and all 56 are `locked` (51) or `moveable` (5).
+   Carded in the board; it is a three-line patch with `0017` as its template,
+   and it inherits `0017`'s "ours forever" triage — keying the archive layer on
+   entry names is the layering violation upstream should reject.
 
 **The lesson A5 taught, and it will repeat.** A5 was invisible to CI for one
 reason: `decalAlphaWeight` is the only `write_byte` field reachable outside a

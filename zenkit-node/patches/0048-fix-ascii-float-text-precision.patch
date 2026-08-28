@@ -1,0 +1,104 @@
+WriteArchiveAscii prints every float with `std::to_string` - `%f`, six
+decimals, always - where ZenGin printed nine significant digits.
+
+The two writers disagree in both directions and neither is a rounding
+nicety. `%f` *pads* every round value, so `0` is written `0.000000` and
+`500` is written `500.000000`; and it *truncates* at world magnitudes,
+where six decimals is more digits than a float has: ZenGin's
+`1511.77087` comes back as `1511.770874`, and anything below 1e-6 - the
+retail worlds hold 57 such values in OldCamp alone - collapses to
+`0.000000` outright.
+
+The ZenGin form, measured across a retail Gothic II install's ASCII
+worlds, is `%.9g` with the three-digit exponent its MSVC CRT always
+printed: `range=float:1200`, `=float:10.0000105`,
+`trafoOSToWSPos=vec3:1552.21545 756.087585 -6289.54248`,
+`bbox3DWS=rawFloat:751.806152 -128.8302 -7089.83691 ...`,
+`2.98023224e-008`. Nine significant digits is also exactly what
+round-trips a float, so this is byte fidelity only - no parsed value
+changes, in either direction, for any input.
+
+Same shape of fix as 0009, which does this for `zCMaterial`'s `texScale`
+and `texAniMapDir` strings (eight digits there: a different ZenGin call
+site, measured separately). The three text-float writers are covered
+here: `write_float`, `write_vec3` and `write_raw_float`, which is what
+`write_vec2` and `write_bbox` go through.
+
+After 0045-0047 made the unpacked `zCVob` layout writable, this is the
+dominant remaining ASCII defect: OldCamp's 440 struct findings are all
+`position`, `bbox`, `speed` and waypoint `direction`.
+
+Upstreamable as-is: a plain fidelity fix in three writer functions, no
+API change.
+
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -12,6 +12,7 @@
+ #include <ctime>
+ #include <sstream>
+ #include <stdexcept>
++#include <string>
+ #include <utility>
+ 
+ namespace zenkit {
+@@ -253,6 +254,27 @@
+ 		return std::string_view {buf.data(), static_cast<size_t>(r.ptr - buf.data())};
+ 	}
+ 
++	/// \brief Formats a float the way ZenGin's ASCII archiver did.
++	///
++	/// Nine significant digits, trailing zeros stripped, and the three exponent
++	/// digits ZenGin's MSVC CRT always printed (`2.98023224e-008`; modern CRTs
++	/// print two). `std::to_string` is `%f` - six decimals, always - which both
++	/// pads every round value (`0` became `0.000000`) and *loses* digits at
++	/// world magnitudes (`1511.77087` became `1511.770874`) and below
++	/// (`2.98023224e-008` became `0.000000`). Byte fidelity only: nine digits
++	/// round-trips a float exactly, so no parsed value changes.
++	static std::string ftosv(float v) {
++		char buf[64];
++		std::snprintf(buf, sizeof buf, "%.9g", static_cast<double>(v));
++
++		std::string out {buf};
++		auto e = out.find('e');
++		if (e != std::string::npos && out.size() - e == 4) {
++			out.insert(e + 2, 1, '0');
++		}
++		return out;
++	}
++
+ 	std::uint32_t WriteArchiveAscii::write_object_begin(std::string_view object_name,
+ 	                                                    std::string_view class_name,
+ 	                                                    std::uint16_t version) {
+@@ -309,7 +331,7 @@
+ 	}
+ 
+ 	void WriteArchiveAscii::write_float(std::string_view name, float v) {
+-		this->write_entry(name, "float", std::to_string(v));
++		this->write_entry(name, "float", ftosv(v));
+ 	}
+ 
+ 	// The type token is `int`, not `byte`/`word`. ReadArchiveAscii::read_byte
+@@ -346,13 +368,7 @@
+ 	}
+ 
+ 	void WriteArchiveAscii::write_vec3(std::string_view name, Vec3 const& v) {
+-		std::array<char,
+-		           (std::numeric_limits<float>::max_exponent10 + std::numeric_limits<float>::max_digits10 + 3) * 3>
+-		    buf {};
+-		auto n = std::snprintf(buf.data(), buf.size(), "%f %f %f", v.x, v.y, v.z);
+-
+-		std::string_view s(buf.data(), static_cast<size_t>(n));
+-		this->write_entry(name, "vec3", s);
++		this->write_entry(name, "vec3", ftosv(v.x) + " " + ftosv(v.y) + " " + ftosv(v.z));
+ 	}
+ 
+ 	void WriteArchiveAscii::write_vec2(std::string_view name, Vec2 v) {
+@@ -409,7 +425,7 @@
+ 		this->_m_write->write_string("=rawFloat:");
+ 
+ 		for (auto i = 0u; i < length; ++i) {
+-			this->_m_write->write_string(std::to_string(v[i]));
++			this->_m_write->write_string(ftosv(v[i]));
+ 			this->_m_write->write_char(' ');
+ 		}
+ 

@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0047`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -135,8 +135,12 @@ card waits on live at its pointer — put new prose there, not here.
 - **ASCII writer A6** — the packed `zCVob` writer drops `physicsEnabled`, so the
   editor's own BinSafe save path has it. Needs a fixture VOB with the flag set
   and an engine A/B, like §16.2. Unowned. §16.9
-- **ASCII float text precision** — six decimals where ZenGin writes
-  shortest-round-trip; now the dominant ASCII defect. Unowned. §16.9
+- **ASCII `bool:` writes `1` where ZenGin writes `-1`** for `locked` and
+  `moveable` — `0017` already does this for BinSafe and is the template. 3 of
+  OldCamp's 8 remaining findings. Unowned. §16.9
+- **ASCII half-way float rounding** — the UCRT rounds a tie to even, ZenGin's
+  MSVC 6 CRT rounded away from zero. The other 5 findings, and a fix has to
+  detect the tie itself. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
@@ -156,6 +160,12 @@ card waits on live at its pointer — put new prose there, not here.
 *(empty — both cards landed; see `git log`)*
 
 ## Done
+
+- **ASCII float text precision is closed** — patch `0048` writes ZenGin's `%.9g`
+  with its three-digit exponent instead of `std::to_string`'s six fixed
+  decimals, in all three text-float writers. OldCamp: 440 struct findings → 8,
+  re-save 4,012,132 B → 3,979,084 B against a 3,979,132 B original. What is left
+  is the two cards now in Next. §16.9
 
 - **A2 and A3 are closed, and closing them showed A6's headline number was never
   A6's** — patches `0045`–`0047` make the unpacked `zCVob` layout readable,

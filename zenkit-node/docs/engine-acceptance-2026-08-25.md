@@ -691,14 +691,19 @@ they are gone: OldCamp's re-measured findings are 440, none of them
 *packed* writer, which is what the editor's own BinSafe save path uses, and it
 needs a fixture VOB carrying the flag plus an engine A/B before it can land.
 
-What is left on the ASCII path is a different defect class: **float text
-precision.** ZenKit writes every ASCII float with `std::to_string`, i.e. six
-decimal places always, where ZenGin writes a shortest-round-trip form — so
-`1511.77087` comes back `1511.770874` and `0` comes back `0.000000`. It costs
-significant digits at retail magnitudes (OldCamp's remaining 440 struct
-findings are all `position`, `bbox`, `speed` and waypoint `direction`) and it
-makes the re-save *larger* than the original. It is the ASCII-entry counterpart
-of what patch 0009 does for binary `texScale`.
+What was left on the ASCII path was a different defect class, **float text
+precision**, and it is **closed as of 2026-08-28, patch 0048.** ZenKit wrote
+every ASCII float with `std::to_string`, i.e. six decimal places always, where
+ZenGin wrote `%.9g` with its MSVC CRT's three-digit exponent — so `1511.77087`
+came back `1511.770874`, `0` came back `0.000000`, and anything below 1e-6 came
+back `0.000000` outright. It was the ASCII-entry counterpart of what patch 0009
+does for binary `texScale`, and it accounted for all but 8 of those 440
+findings: **OldCamp is now 8 struct findings, and its re-save 3,979,084 B
+against a 3,979,132 B original** (it had been 4,012,132 B). The 8 are two
+residuals named in `docs/plans/level-editor.md` §16.9 — five last-digit
+half-way roundings (the UCRT rounds a tie to even, ZenGin's MSVC 6 CRT rounded
+away from zero) and three `bool:1` where ZenGin writes `bool:-1` for `locked`
+and `moveable`, which is patch 0017's missing ASCII half.
 
 ### 10.3 Scope decision — Phase 0 covers the BinSafe path only
 

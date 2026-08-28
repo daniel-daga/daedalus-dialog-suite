@@ -55,7 +55,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (37)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (38)
 
 | Patch | What it fixes |
 |---|---|
@@ -97,6 +97,7 @@ regardless of what upstream does with it.
 | `0044` | `0028`'s own chunk. `VTrigger::load` unpacks bits 0 and 2 of `flags` and bits 0-5 of `filterFlags` into bools, and `0028` made `save` rebuild both bytes from exactly those bools — so bits 1 and 3-7 of `flags` (and 6-7 of `filterFlags`), which retail sets, are written as zero. It cost the four retail BinSafe worlds their `identical` verdict: 121 differing events, all of them this one field. Keeps the unmapped bits on two new zero-initialized members and merges them back in when writing |
 | `0045` | `WriteArchiveAscii::write_mat3x3` emitted a `rawFloat:` entry where `ReadArchiveAscii::read_mat3x3` reads `raw:` and ZenGin writes `raw:` (all 1277 `trafoOSToWSRot` entries in OldCamp). ZenKit could not read back its own unpacked `zCVob`s — the same class of writer/reader disagreement as `0024` and `0026`, on the library's only `write_mat3x3` caller |
 | `0046` | `VirtualObject::save`'s unpacked branch writes `presetName`/`vobName`/`visual` and the common tail wrote all three again; entries are read positionally, so the repeat is a stream desync. The mirror-image hole: `load` hardcodes `has_visual_object`/`has_ai_object` to true in the unpacked layout, so the reader takes two objects out of the stream that `save` never wrote. `visual` also came from `visual_name`, empty on any VOB that was built rather than loaded, where the packed tail writes `visual->name` |
+| `0048` | Every ASCII float written with `std::to_string` — `%f`, six decimals, always — where ZenGin wrote nine significant digits with its MSVC CRT's three-digit exponent. It both pads (`0` → `0.000000`) and *truncates* (`1511.77087` → `1511.770874`, and anything under 1e-6 → `0.000000`). `%.9g` is what the retail ASCII worlds hold and is also what round-trips a float exactly, so no parsed value changes. OldCamp: 440 struct findings → 8, re-save 4,012,132 B → 3,979,084 B against a 3,979,132 B original |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
