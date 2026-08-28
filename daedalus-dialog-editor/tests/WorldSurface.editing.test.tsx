@@ -1058,11 +1058,13 @@ describe('duplicating a VOB', () => {
   });
 
   it('drops a class the binding cannot construct, rather than refusing the copy', async () => {
-    // A `zCVobStartpoint` duplicates as it always did — name, visual, pose, no
+    // A `zCVobLensFlare` duplicates as it always did — name, visual, pose, no
     // class — because naming a class `insertVob` has no construction for is
-    // refused by `assertApplyOpsRequest`, and a refused op is worse than a
-    // lossy copy.
-    const summary = await openWorld(['zCVob', 'zCVobStartpoint']);
+    // refused by `assertApplyOpsRequest`, and a refused op is worse than a lossy
+    // copy. This was `zCVobStartpoint` until I5 made the markers authorable, and
+    // a lens flare is its closest remaining analogue: neither authorable nor
+    // catalogued, so the grid draws no class field for it either.
+    const summary = await openWorld(['zCVob', 'zCVobLensFlare']);
     api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
     api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
 

@@ -1326,6 +1326,164 @@ test('every authored movable object survives a save and reload', () => {
   }
 });
 
+// The zones, the markers and the two effect classes (level-editor.md 16.15,
+// I5) - the increment that closes 14.1 1.3. Five of the seven were already
+// *editable*: `setVobClassProp` has had a case for each since the catalogue
+// landed, and none of them had a construction, so the property grid could only
+// ever reach one retail had already placed. Every default below is retail's own
+// majority over NewWorld/OldWorld/AddonWorld (2026-08-28).
+const I5_EXPECTED = {
+  // 59 retail music zones, and they agree about nearly everything: enabled and
+  // looping on every one, volume 1 on every one, not an ellipsoid on 58, and
+  // priority 1 on 33. ZenKit's struct says false/0/0/false to all of them, so
+  // this class disagrees with its own defaults on five of six fields.
+  //
+  // **A music zone is complete when it is placed**, unlike a sound or a PFX
+  // controller: the theme it plays is the VOB's *name*, which the placement
+  // dialog already supplies, and there is no cross-reference string held out of
+  // the catalogue here at all.
+  oCZoneMusic: {
+    enabled: true,
+    priority: 1,
+    ellipsoid: false,
+    // 42 of 59, and the same value in all three worlds - ZenGin's own default
+    // reverb level in negative decibels rather than a level designer's choice.
+    reverb: Math.fround(-3.219),
+    volume: 1,
+    loop: true,
+  },
+  // 8 placed fog zones (the four `zCZoneZFogDefault`s are a world's fallback
+  // and not one of them). They agree about less than any class in I2-I4, so two
+  // of the five defaults are chosen rather than counted:
+  //
+  // - `rangeCenter` splits 4500x2, 6000x2, 8000, 16000x2, 20000 - no majority,
+  //   and 6000 is both the lower median and one of the three modes.
+  // - `overrideColor` and `fadeOutSky` are *true* on 5 of 8, and this authors
+  //   both false. They are perfectly correlated in retail, and the five that
+  //   override carry five different colours: there is no majority colour to go
+  //   with a true. A zone that overrides with a colour nobody chose tints the
+  //   world; one that does not override uses the world's own fog, which is what
+  //   a fog zone placed for its *range* means. Both are catalogued, so a user
+  //   who wants a coloured fog has both switches.
+  // - The colour is then the one all three non-overriding retail zones carry,
+  //   and three of the four fallbacks with them.
+  zCZoneZFog: {
+    rangeCenter: 6000,
+    innerRangePercentage: 0.5,
+    color: [120, 120, 120, 255],
+    fadeOutSky: false,
+    overrideColor: false,
+  },
+  // Only 2 placed far-plane zones in all three worlds, at 3600 and 6500, so
+  // `vobFarPlaneZ` has no majority either and the larger is authored: a
+  // far-plane zone *shortens* VOB draw distance, and one that hides scenery
+  // closer than any retail zone does is the worse of the two ways to be wrong.
+  // `innerRangePercentage` is 0.7 on both, and on three of the four fallbacks.
+  zCZoneVobFarPlane: {
+    vobFarPlaneZ: 6500,
+    innerRangePercentage: Math.fround(0.7),
+  },
+  // The two markers declare not one field beyond `zCVob` - `VSpot` and
+  // `VStartPoint` are `final` structs with an object type and nothing else - so
+  // there is nothing per class to author and the expectation is empty. They are
+  // authorable-with-nothing-catalogued like `zCTriggerList`, and for the
+  // opposite reason: not fields the catalogue refuses, but no fields at all.
+  zCVobSpot: {},
+  zCVobStartpoint: {},
+  // 158 retail animated VOBs, 120 of them not started at load. What makes one
+  // animate is its visual - a `.MDS`/`.ASC` with an animation on it - which the
+  // placement dialog supplies as the visual, so `startOn` is the whole class.
+  zCVobAnimate: { startOn: false },
+  // 109 retail controllers: killed when done (89) and not started at load (82).
+  // `pfxName` names a particle-system `.ZEN` this cannot invent, exactly like a
+  // sound's `soundName`, so it is empty and catalogued - a placed controller
+  // emits nothing until the grid names an effect.
+  zCPFXController: { pfxName: '', killWhenDone: true, initiallyRunning: false },
+};
+
+for (const [className, expected] of Object.entries(I5_EXPECTED)) {
+  test(`insertVob authors a ${className} on retail's own majority`, () => {
+    const handle = load();
+    const at = zenkit.insertVob(handle, null, {
+      class: className, name: `PLACED_${className}`, position: [1, 2, 3],
+    });
+
+    const vob = vobAt(dumpOf(handle), at);
+    assert.strictEqual(vob.class, className);
+    assert.strictEqual(vob.name, `PLACED_${className}`);
+    for (const [key, value] of Object.entries(expected)) {
+      assert.deepStrictEqual(vob.props[key], value, `${className}.${key}`);
+    }
+    // Answerable for *every* field of the class, as I3's and I4's tables are.
+    // It matters most here: a far-plane zone's two floats have no initializer
+    // in ZenKit at all, and a PFX controller's two bools have none either, so
+    // three of these seven classes would otherwise be authored from the stack.
+    const unclaimed = Object.keys(vob.props)
+      .filter((key) => !(key in expected) && !BASE_PROP_KEYS.includes(key));
+    assert.deepStrictEqual(unclaimed, [], className);
+  });
+}
+
+test('none of the zones, markers or effect classes takes an instance', () => {
+  const handle = load();
+  for (const className of Object.keys(I5_EXPECTED)) {
+    assert.throws(
+      () => zenkit.insertVob(handle, null, {
+        class: className, instance: 'ITFO_APPLE', position: [0, 0, 0],
+      }),
+      /instance/,
+      className
+    );
+  }
+});
+
+test('the Default zone variants are refused, not authored', () => {
+  // A world's fallback fog, far plane and music are one object each and are not
+  // placed by hand. The catalogue holds no entry for any of them, so authoring
+  // one would produce a VOB the property grid cannot draw.
+  const handle = load();
+  for (const className of [
+    'zCZoneZFogDefault', 'zCZoneVobFarPlaneDefault', 'oCZoneMusicDefault',
+  ]) {
+    assert.throws(
+      () => zenkit.insertVob(handle, null, { class: className, position: [0, 0, 0] }),
+      /no construction is known/,
+      className
+    );
+  }
+});
+
+test('every authored zone, marker and effect survives a save and reload', () => {
+  // The writer is the half the dump cannot see. It is the whole point for this
+  // increment: `VZoneFarPlane`'s two floats and `VParticleEffectController`'s
+  // two bools are declared without initializers, so a field this construction
+  // forgot would round-trip as whatever the stack held.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zk-i5-'));
+  try {
+    const handle = load();
+    const placed = Object.keys(I5_EXPECTED).map((className) => [
+      className,
+      zenkit.insertVob(handle, null, { class: className, position: [1, 2, 3] }),
+    ]);
+    const before = dumpOf(handle);
+
+    const out = path.join(dir, 'zones.zen');
+    zenkit.saveWorld(handle, out);
+    const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+
+    for (const [className, at] of placed) {
+      const was = vobAt(before, at);
+      const is = vobAt(reloaded, at);
+      assert.strictEqual(is.class, className);
+      assert.deepStrictEqual(is.props, was.props, className);
+      assert.deepStrictEqual(is.flags, was.flags, className);
+      assert.deepStrictEqual(is.position, was.position, className);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('insertVob still authors a zCVob when no class is named', () => {
   const handle = load();
   const at = zenkit.insertVob(handle, null, { name: 'DEFAULT_CLASS', position: [0, 0, 0] });

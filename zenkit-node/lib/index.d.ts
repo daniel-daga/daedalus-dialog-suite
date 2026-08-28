@@ -270,7 +270,17 @@ export interface NewVob {
     | 'oCMobWheel'
     | 'oCMobDoor'
     | 'oCMobContainer'
-    | 'oCTouchDamage';
+    | 'oCTouchDamage'
+    // The zones, the markers and the two effect classes (I5). The three
+    // `…Default` zone variants are deliberately absent: a world's fallback fog,
+    // far plane and music are one object each, not a placed zone.
+    | 'oCZoneMusic'
+    | 'zCZoneZFog'
+    | 'zCZoneVobFarPlane'
+    | 'zCVobStartpoint'
+    | 'zCVobSpot'
+    | 'zCVobAnimate'
+    | 'zCPFXController';
   /**
    * The script instance an `oCItem` spawns — required for one, and refused for
    * any other class, which has no such field. The name is not checked against

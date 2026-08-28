@@ -471,6 +471,25 @@ export const AUTHORABLE_VOB_CLASSES = [
   'oCMobDoor',
   'oCMobContainer',
   'oCTouchDamage',
+  // The zones, the markers and the two effect classes (I5) -- the increment
+  // that closes the row, because five of these seven had been catalogued and
+  // therefore *editable* since the property grid landed while the binding had
+  // no construction for any of them. The `…Default` variants of the three zones
+  // stay out for the same reason they are out of `CLASS_FIELDS` above: a
+  // world's fallback fog, far plane and music are one object each rather than
+  // something a designer places.
+  //
+  // `zCVobSpot` and `zCVobStartpoint` are the third and fourth
+  // authorable-with-nothing-catalogued classes, and for the opposite reason to
+  // `zCTriggerList`'s: not fields this table refuses, but no fields at all --
+  // `VSpot` and `VStartPoint` declare nothing beyond `zCVob`.
+  'oCZoneMusic',
+  'zCZoneZFog',
+  'zCZoneVobFarPlane',
+  'zCVobStartpoint',
+  'zCVobSpot',
+  'zCVobAnimate',
+  'zCPFXController',
 ] as const;
 
 

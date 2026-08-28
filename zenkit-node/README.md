@@ -414,7 +414,12 @@ closed: `'zCVob'` (the default), `'oCItem'`, `'zCVobLight'`, `'zCVobSound'`,
 rather than from `zCTrigger`; then the movable objects — `'oCMobInter'` and the
 four that add nothing to it (`'oCMobBed'`, `'oCMobLadder'`, `'oCMobSwitch'`,
 `'oCMobWheel'`), `'oCMobDoor'`, `'oCMobContainer'` — and `'oCTouchDamage'`,
-which is not one of them at all but the other volume placed by hand.
+which is not one of them at all but the other volume placed by hand; then the
+zones, the markers and the two effect classes — `'oCZoneMusic'`,
+`'zCZoneZFog'`, `'zCZoneVobFarPlane'`, `'zCVobStartpoint'`, `'zCVobSpot'`,
+`'zCVobAnimate'` and `'zCPFXController'`. The three `…Default` zone variants are
+**not** in the set: a world's fallback fog, far plane and music are one object
+each rather than something placed.
 **Spell the `oC*` names as the archive does**: `zCTriggerScript`,
 `zCTriggerChangeLevel` and `zCTouchDamage` are what everyone says (the last is
 ZenKit's own documentation) and not one of the three is a class this authors. Each class needs its own field-complete construction —
@@ -470,6 +475,28 @@ use. Two of the eight are placeable with no editable field: `oCMobBed` has no
 `CLASS_FIELDS` entry (its fields are exactly `oCMobInter`'s) and `oCTouchDamage`
 has never been catalogued. `oCMOB` and `oCMobFire` go the other way — catalogued
 and editable, and not authorable.
+
+The zones, the markers and the two effect classes are measured the same way, and
+they are where the measurement runs out: retail places 59 `oCZoneMusic` but only
+8 `zCZoneZFog` and 2 `zCZoneVobFarPlane` across all three worlds. A music zone is
+authored enabled, looping, at volume 1, priority 1 and not an ellipsoid — retail
+agrees about all of it and ZenKit's struct disagrees about five of the six — and
+it is the one class here that is **complete when placed**, because the theme it
+plays is the VOB's own name. A fog zone gets `rangeCenter` 6000 (three-way tie,
+and the lower median), inner range 0.5, and `overrideColor`/`fadeOutSky`
+**false** against retail's 5-of-8 true: the five that override carry five
+different colours, so there is no majority colour to pair with a true, and both
+fields are catalogued. A far-plane zone gets 6500, the larger of the only two
+retail values, since the field shortens draw distance and popping scenery out
+early is the worse error. `zCVobSpot` and `zCVobStartpoint` declare nothing
+beyond `zCVob` and are the type tag alone — and **a second startpoint is not
+refused**: nothing in the archive forbids one. `zCVobAnimate` is authored not
+running (120 of 158) and what animates it is its *visual*; a `zCPFXController` is
+killed when done (89 of 109), not running (82) and **emits nothing until
+`pfxName` is set** through `setVobClassProp`, the same caveat a sound's
+`soundName` carries. Two of these constructions matter more than the rest for
+the reason the round-trip test exists: `VZoneFarPlane`'s two floats and
+`VParticleEffectController`'s two bools are declared with no initializer at all.
 
 **One field is chosen against its own measurement, and the round trip is why.**
 A mover's `lerpMode` is authored `CURVE`, ZenKit's default, where retail's

@@ -250,8 +250,8 @@ describe('the per-class field catalogue', () => {
     // construction — so neither list is a subset of the other.
     expect(isAuthorableVobClass('zCVob')).toBe(true);
     expect(classPropKeys('zCVob')).toEqual([]);
-    expect(isAuthorableVobClass('zCVobAnimate')).toBe(false);
-    expect(classPropKeys('zCVobAnimate').length).toBeGreaterThan(0);
+    expect(isAuthorableVobClass('zCTriggerWorldStart')).toBe(false);
+    expect(classPropKeys('zCTriggerWorldStart').length).toBeGreaterThan(0);
     // And since I3 the other direction has three examples too: a class can be
     // authorable and carry no catalogued field at all. It is not an oversight —
     // everything that configures one of these three is an enum or a list, and
@@ -274,6 +274,8 @@ describe('the per-class field catalogue', () => {
       'zCMover', 'zCCodeMaster', 'zCMessageFilter',
       'oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
       'oCMobDoor', 'oCMobContainer', 'oCTouchDamage',
+      'oCZoneMusic', 'zCZoneZFog', 'zCZoneVobFarPlane',
+      'zCVobStartpoint', 'zCVobSpot', 'zCVobAnimate', 'zCPFXController',
     ]);
     expect(isAuthorableVobClass('zCTriggerScript')).toBe(false);
     expect(isAuthorableVobClass('zCTriggerChangeLevel')).toBe(false);
@@ -305,6 +307,36 @@ describe('the per-class field catalogue', () => {
     // catalogue entry *and* a `setVobClassProp` case, which is not this card.
     expect(classPropKeys('oCMobBed')).toEqual([]);
     expect(classPropKeys('oCTouchDamage')).toEqual([]);
+  });
+
+  it('places the zones, the markers and the two effect classes (I5)', () => {
+    // I5 (level-editor.md §16.15), the increment that closes §14.1 1.3. Five of
+    // the seven were catalogued-but-unplaceable, which is the state the
+    // separation test used `zCVobAnimate` to stand for until this landed — so
+    // the row it closes is exactly the one that made "editable" and
+    // "authorable" different words.
+    for (const className of [
+      'oCZoneMusic', 'zCZoneZFog', 'zCZoneVobFarPlane', 'zCVobAnimate', 'zCPFXController',
+    ]) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className).length).toBeGreaterThan(0);
+    }
+    // The other two are markers: `VSpot` and `VStartPoint` declare not one
+    // field beyond `zCVob`, so they join `zCVob` itself in being authorable
+    // with nothing to edit — and for the opposite reason to a code master's,
+    // which has fields the catalogue refuses rather than no fields at all.
+    for (const className of ['zCVobSpot', 'zCVobStartpoint']) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className)).toEqual([]);
+    }
+    // The `…Default` zone variants stay refused. They are a world's fallback
+    // settings rather than placed zones, the catalogue holds none of them, and
+    // a second one placed by hand is not a thing a world has.
+    for (const className of [
+      'oCZoneMusicDefault', 'zCZoneZFogDefault', 'zCZoneVobFarPlaneDefault',
+    ]) {
+      expect(isAuthorableVobClass(className)).toBe(false);
+    }
   });
 
   it('refuses a class name that is a property of every object', () => {

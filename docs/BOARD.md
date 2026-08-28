@@ -97,7 +97,8 @@ was true for so long nobody re-reads it.
   six ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
-  and the editor's `dist/` all changed this session. The recipe
+  and the editor's `dist/` all changed on 2026-08-28, and the addon again with
+  I5's seven constructions. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
   `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
@@ -143,10 +144,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **I5 — the last of §14.1 1.3 becomes authorable** — `oCZoneMusic`,
-  `zCZoneZFog`, `zCZoneVobFarPlane`, `zCVobStartpoint`, `zCVobSpot`,
-  `zCVobAnimate`, `zCPFXController`. I2's shape, fifth time; it closes the row.
-  Unowned. §16.15
 - **`oCMobBed` is placeable with nothing editable** — a `CLASS_FIELDS` entry (its
   fields are exactly `oCMobInter`'s) *and* a `case oCMobBed:` in
   `SetVobClassProp`'s switch, which names Inter, Ladder, Switch and Wheel and
@@ -213,7 +210,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty — flushed for the budget as the cards above were written)*
+- **I5 — the zones, the markers and the two effect classes are authorable** —
+  all seven landed; §14.1 1.3 is closed. board-loop. §16.15
 
 **Everything landed on 2026-08-28 was flushed that day**, and each card's
 substance is at its pointer rather than restated here: class insertion I1–I4 and

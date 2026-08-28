@@ -4311,10 +4311,15 @@ catalogue *cannot* reach.
 `<option>`s, so the "added to two of the three and refused by the third" trap
 I1 left is gone. What stays separate is `ParseNewVobClass` and the C++ dispatch
 — the construction itself, which cannot be shared — and the per-class insertion
-tests in `zenkit-node` are what tie the two lists together. **Authorable and
+tests in `zenkit-node` are what tie the two lists together. (I5 found a
+*third*: `NewVob['class']` in `zenkit-node/lib/index.d.ts` is its own hand-kept
+union. Nothing shares it either, but the editor's `build:main` typechecks
+`zen-world`'s union against it, so an omission is a compile error rather than a
+refusal at runtime — which is how I5's was caught.) **Authorable and
 editable are different sets and neither contains the other**: `zCVob` is
-authorable with no catalogued field, and every mover, trigger and zone is
-editable with no construction.
+authorable with no catalogued field, and at I2 every mover, trigger and zone
+was editable with no construction. I5 closed the zones; what is still
+editable-only is `zCTriggerWorldStart`, `oCMOB` and `oCMobFire`.
 
 **Every default is the retail majority, measured over NewWorld, OldWorld and
 AddonWorld on 2026-08-28 — and ZenKit's struct defaults disagree on five
@@ -4446,6 +4451,75 @@ no instances, `primedModels` is a take-once cache that deletes as it reads, and
 only side holding the index. It cannot be a hard refusal either: a world may
 legitimately be edited with no script project open, so an empty index means
 "nothing is known", never "nothing is legal".
+
+**I5 — the zones, the markers and the two effect classes. Landed 2026-08-28**,
+and it closes §14.1 1.3: `oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`,
+`zCVobStartpoint`, `zCVobSpot`, `zCVobAnimate` and `zCPFXController`. I2's shape
+for the fifth time — seven constructions in the `InsertVob` dispatch, seven
+names in `AUTHORABLE_VOB_CLASSES`, one retail sweep — and, as with I3 and I4, no
+new op, no validator branch and no binding signature change.
+
+**Five of the seven were the row's own example of the gap.** They had been
+*editable* since the catalogue landed — `setVobClassProp` has a case for each —
+and authorable by nothing, which is what "the property grid only reaches VOBs
+retail already placed" meant in practice. `zen-world`'s separation test used
+`zCVobAnimate` as its editable-not-authorable example and now uses
+`zCTriggerWorldStart`, which with `oCMOB` and `oCMobFire` is all that is left of
+that set.
+
+**The two markers are the fourth kind of class this dispatch has met.** `VSpot`
+and `VStartPoint` are `final` structs declaring not one field beyond `zCVob`, so
+they are authorable-with-nothing-catalogued like `zCTriggerList` — but for the
+opposite reason: not fields the catalogue refuses, but no fields to hold. A
+second `zCVobStartpoint` is **not** refused, and that is a decision: retail has
+one per world, nothing in the archive forbids a second, the engine picks one,
+and a uniqueness rule invented in the binding would be a refusal no format asks
+for.
+
+**`oCZoneMusic` is the first class since `oCTouchDamage` that is complete the
+moment it is placed**, and for a reason no other class has: the music theme it
+plays *is the VOB's name*, which the placement dialog already supplies. There is
+no cross-reference string held out of the catalogue here at all — unlike a
+sound's `soundName`, a PFX controller's `pfxName` or a trigger's `target`.
+
+**Two defaults are chosen rather than counted, and the fog zone is where this
+family's measurement finally runs out.** Retail places eight `zCZoneZFog` and
+two `zCZoneVobFarPlane` in all three worlds together, which is not enough for a
+majority to mean anything:
+
+- A fog zone's `rangeCenter` splits 4500×2, 6000×2, 8000, 16000×2, 20000 — three
+  modes. 6000 is the lower median and one of them.
+- `overrideColor` and `fadeOutSky` are *true* on five of the eight and are
+  authored **false**. The two are perfectly correlated in retail and the five
+  that override carry five *different* colours, so there is no majority colour
+  to pair with a true — and a zone that tints the world a colour nobody chose is
+  worse than one that uses the world's own fog and only shortens its range. Both
+  are catalogued, so the switch is the user's. The colour is then the one all
+  three non-overriding retail zones carry, and three of the four `…Default`
+  fallbacks with them.
+- A far-plane zone's `vobFarPlaneZ` is 3600 on one and 6500 on the other, and
+  the larger is authored: the field *shortens* VOB draw distance, so one that
+  pops scenery out closer than any retail zone does is the worse of the two ways
+  to be wrong.
+
+**The three `…Default` zone variants stay refused**, in the binding and in
+`AUTHORABLE_VOB_CLASSES` both, and there is now a test saying so. A world's
+fallback fog, far plane and music are one object each rather than a placed zone
+— the same reason `CLASS_FIELDS` has never held an entry for one.
+
+**Two constructions here would have authored from the stack.**
+`VZoneFarPlane`'s two floats and `VParticleEffectController`'s two bools are
+declared with no initializer at all, which is the sharpest instance yet of the
+rule I1 wrote down. The round-trip test is what proves neither was forgotten:
+the dump cannot see a field the writer drops, and the writer cannot be trusted
+with a field the construction never set.
+
+**A placed `zCPFXController` emits nothing and a placed `zCVobAnimate` may not
+move**, both for the reason a placed trigger fires at nothing: the effect is a
+`.PFX`/`.ZEN` name and the animation is a property of the *visual*. `pfxName` is
+catalogued so the grid supplies it; the visual comes from the placement dialog.
+
+**No engine verdict covers any of this**, like every op since candidate `03`.
 
 ### 16.16 The scene tree has no filter, and no per-class visibility (§14.4)
 

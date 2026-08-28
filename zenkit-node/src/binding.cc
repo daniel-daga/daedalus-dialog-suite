@@ -2120,6 +2120,18 @@ enum class NewVobClass {
   kOCMobDoor,
   kOCMobContainer,
   kOCTouchDamage,
+  // The zones, the markers and the two effect classes (I5), which close the
+  // catalogue's row: five of these seven were editable long before they were
+  // authorable. The `Default` variant of each zone stays refused -- a world's
+  // fallback fog, far plane and music are one object each, not something a
+  // designer places.
+  kOCZoneMusic,
+  kZCZoneZFog,
+  kZCZoneVobFarPlane,
+  kZCVobStartpoint,
+  kZCVobSpot,
+  kZCVobAnimate,
+  kZCPFXController,
 };
 
 NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
@@ -2148,6 +2160,13 @@ NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
   if (str == "oCMobDoor") return NewVobClass::kOCMobDoor;
   if (str == "oCMobContainer") return NewVobClass::kOCMobContainer;
   if (str == "oCTouchDamage") return NewVobClass::kOCTouchDamage;
+  if (str == "oCZoneMusic") return NewVobClass::kOCZoneMusic;
+  if (str == "zCZoneZFog") return NewVobClass::kZCZoneZFog;
+  if (str == "zCZoneVobFarPlane") return NewVobClass::kZCZoneVobFarPlane;
+  if (str == "zCVobStartpoint") return NewVobClass::kZCVobStartpoint;
+  if (str == "zCVobSpot") return NewVobClass::kZCVobSpot;
+  if (str == "zCVobAnimate") return NewVobClass::kZCVobAnimate;
+  if (str == "zCPFXController") return NewVobClass::kZCPFXController;
   throw Napi::Error::New(env, "opts.class: no construction is known for '" + str + "'");
 }
 
@@ -2672,6 +2691,125 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
     // is what all 51 retail damage volumes use.
     touch->collision = zenkit::TouchCollisionType::BOX;
     vob = touch;
+  } else if (vob_class == NewVobClass::kOCZoneMusic) {
+    RefuseInstance();
+    // **The one class in I5 that is complete the moment it is placed.** A music
+    // zone's theme is the VOB's *name* -- `NW_CITY_DAY_STD` and the like -- and
+    // the placement dialog already supplies that, so unlike a sound or a PFX
+    // controller there is no cross-reference string held out of the catalogue.
+    //
+    // Retail's 59 (NewWorld, OldWorld, AddonWorld, 2026-08-28) agree about
+    // nearly all of it, and disagree with ZenKit's struct about five of six:
+    // every one is enabled, looping and at volume 1, 58 are boxes rather than
+    // ellipsoids, and 33 sit at priority 1.
+    auto music = std::make_shared<zenkit::VZoneMusic>();
+    music->type = zenkit::VirtualObjectType::oCZoneMusic;
+    music->enabled = true;
+    music->priority = 1;
+    music->ellipsoid = false;
+    // 42 of 59, identical in all three worlds -- ZenGin's own reverb level in
+    // negative decibels rather than anything a level designer chose.
+    music->reverb = -3.219f;
+    music->volume = 1.0f;
+    music->loop = true;
+    // Save-game only, and the header does default all three -- set here anyway
+    // so the construction states every field it owns rather than leaving a
+    // reader to go and check the struct.
+    music->s_local_enabled = true;
+    music->s_day_entrance_done = false;
+    music->s_night_entrance_done = false;
+    vob = music;
+  } else if (vob_class == NewVobClass::kZCZoneZFog) {
+    RefuseInstance();
+    // Retail places 8 of these (the four `zCZoneZFogDefault`s are a world's
+    // fallback, not a placed zone), and they agree about less than any class in
+    // I2-I4, so two of the five fields are *chosen* rather than counted.
+    //
+    // `range_center` splits 4500x2, 6000x2, 8000, 16000x2, 20000 with no
+    // majority; 6000 is the lower median and one of the three modes.
+    //
+    // `override_color` and `fade_out_sky` are true on 5 of the 8 and are
+    // authored false all the same. The two are perfectly correlated in retail
+    // and the five that override carry five different colours, so there is no
+    // majority colour to pair with a true -- and a zone that tints the world a
+    // colour nobody chose is worse than one that uses the world's own fog and
+    // only shortens its range. Both fields are catalogued, so the switch is the
+    // user's. The colour is then the one all three non-overriding retail zones
+    // carry, and three of the four fallbacks with them.
+    auto fog = std::make_shared<zenkit::VZoneFog>();
+    fog->type = zenkit::VirtualObjectType::zCZoneZFog;
+    fog->range_center = 6000.0f;
+    fog->inner_range_percentage = 0.5f;  // 4 of 8, and 0..1 rather than 0..100
+    fog->color = zenkit::Color {120, 120, 120, 255};
+    fog->fade_out_sky = false;
+    fog->override_color = false;
+    vob = fog;
+  } else if (vob_class == NewVobClass::kZCZoneVobFarPlane) {
+    RefuseInstance();
+    // **Both fields are declared without an initializer**, so this is one of
+    // the two constructions in I5 that would author from the stack if it forgot
+    // one -- and the round-trip test is what proves neither did.
+    //
+    // Only 2 are placed across the three worlds, at 3600 and 6500, and the
+    // larger is authored: a far-plane zone *shortens* VOB draw distance, and
+    // one that pops scenery out closer than any retail zone does is the worse
+    // of the two ways to be wrong. `inner_range_percentage` is 0.7 on both, and
+    // on three of the four `Default` fallbacks.
+    auto far_plane = std::make_shared<zenkit::VZoneFarPlane>();
+    far_plane->type = zenkit::VirtualObjectType::zCZoneVobFarPlane;
+    far_plane->vob_far_plane_z = 6500.0f;
+    far_plane->inner_range_percentage = 0.7f;
+    vob = far_plane;
+  } else if (vob_class == NewVobClass::kZCVobStartpoint
+             || vob_class == NewVobClass::kZCVobSpot) {
+    RefuseInstance();
+    // Two markers, and they declare not one field beyond `zCVob`: `VSpot` and
+    // `VStartPoint` are `final` structs holding an object type and nothing
+    // else. So the construction is the base half alone and only the type tag
+    // differs -- the same shape the four `oCMob*` subclasses have in I4, and
+    // for the same reason: `setVobClassProp` and the writers switch on the
+    // type, so a spot has to *be* a `VSpot`.
+    //
+    // A world already has exactly one start point (retail has one per world),
+    // and a second is not refused here: nothing in the archive forbids it, the
+    // engine picks one, and a uniqueness rule invented in the binding would be
+    // a refusal no format asks for.
+    std::shared_ptr<zenkit::VirtualObject> marker;
+    if (vob_class == NewVobClass::kZCVobStartpoint) {
+      marker = std::make_shared<zenkit::VStartPoint>();
+      marker->type = zenkit::VirtualObjectType::zCVobStartpoint;
+    } else {
+      marker = std::make_shared<zenkit::VSpot>();
+      marker->type = zenkit::VirtualObjectType::zCVobSpot;
+    }
+    vob = marker;
+  } else if (vob_class == NewVobClass::kZCVobAnimate) {
+    RefuseInstance();
+    // One field, and what actually animates is the *visual* -- a model with an
+    // animation on it, which the placement dialog supplies. 120 of retail's 158
+    // are not started at load.
+    auto animate = std::make_shared<zenkit::VAnimate>();
+    animate->type = zenkit::VirtualObjectType::zCVobAnimate;
+    animate->start_on = false;
+    // Save-game only, and seeded from `start_on` exactly as `VAnimate::load`
+    // does -- the same pairing a sound's `s_is_running` has.
+    animate->s_is_running = animate->start_on;
+    vob = animate;
+  } else if (vob_class == NewVobClass::kZCPFXController) {
+    RefuseInstance();
+    // The other I5 construction ZenKit leaves uninitialized: `kill_when_done`
+    // and `initially_running` are plain `bool` members with no default. Retail's
+    // 109 say killed when done (89) and not started at load (82).
+    //
+    // `pfx_name` names a particle-system `.ZEN` this cannot invent, exactly
+    // like a sound's `sound_name`: it is catalogued, so **a placed controller
+    // emits nothing until the property grid names an effect**.
+    auto pfx = std::make_shared<zenkit::VParticleEffectController>();
+    pfx->type = zenkit::VirtualObjectType::zCPFXController;
+    pfx->pfx_name = "";
+    pfx->kill_when_done = true;
+    pfx->initially_running = false;
+    vob = pfx;
   } else {
     RefuseInstance();
     auto plain = std::make_shared<zenkit::VirtualObject>();
