@@ -101,7 +101,6 @@ function props(overrides: Record<string, unknown> = {}) {
     onRotateSelection: () => {},
     appliedOps: null,
     selectedWaypoint: null,
-    frameRequest: null,
     terrainPoint: null,
     exposure: 1,
     hiddenVobs: null,

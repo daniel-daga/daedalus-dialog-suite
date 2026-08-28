@@ -247,20 +247,25 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [selectVob, toggleVob]);
 
   /**
+   * The imperative handle onto the viewport (level-editor.md §16.5,
+   * `refactoring-targets.md` §9) — what the surface needs of the scene that is
+   * a command or a query rather than a prop: a per-VOB downward raycast for
+   * drop-to-ground and align-to-normal, and the camera jump below.
+   */
+  const viewportRef = useRef<WorldViewportHandle>(null);
+
+  /**
    * A double-click on a scene-tree row, or its locator: select the VOB and jump
    * the camera to it, leaving the orbit pivot on it.
    *
-   * The request is a fresh object every time and carries the VOB rather than
-   * relying on the selection, because both of those are what make it a request
-   * and not a state — the same VOB is jumped to twice precisely after the
-   * camera has been flown away from it, and the selection reaches the viewport
-   * a render later.
+   * It carries the VOB rather than relying on the selection, which reaches the
+   * viewport a render later — and it is a call rather than a prop because it is
+   * a command and not a state: the same VOB is jumped to twice precisely after
+   * the camera has been flown away from it.
    */
-  const [frameRequest, setFrameRequest] = useState<{ vob: number } | null>(null);
-
   const focusVob = useCallback((vob: number) => {
     handleSelect(vob, false);
-    setFrameRequest({ vob });
+    viewportRef.current?.frameVob(vob);
   }, [handleSelect]);
 
   const handlePick = useCallback((
@@ -584,14 +589,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
     return (vob: number) => byVob.get(vob) ?? null;
   }, [visuals]);
-
-  /**
-   * The imperative handle onto the viewport (level-editor.md §16.5) — the one
-   * thing drop-to-ground and align-to-normal need that is a query rather than a
-   * prop: a per-VOB downward raycast against the world mesh, answered
-   * synchronously in response to a toolbar click.
-   */
-  const viewportRef = useRef<WorldViewportHandle>(null);
 
   /**
    * Drop each selected VOB straight to its own ground point — a per-VOB batch,
@@ -1598,7 +1595,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               onRotateSelection={handleRotateSelection}
               appliedOps={appliedOps}
               selectedWaypoint={selectedWaypoint}
-              frameRequest={frameRequest}
               terrainPoint={terrainPoint}
               exposure={exposure}
               hiddenVobs={hiddenVobs}

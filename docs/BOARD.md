@@ -164,8 +164,6 @@ card waits on live at its pointer — put new prose there, not here.
   clean runs), so there is nothing to bisect; needs a captured crash dump. The
   addon is cleared — the run's native code is tree-sitter.
   `docs/reference/environment-hazards.md`
-- **The viewport wants an imperative handle** — the last of the three warts.
-  Do it immediately before W4, its caller. `docs/refactoring-targets.md` §9
 
 ## Deferred
 
@@ -196,6 +194,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The viewport's frame is a handle command** — `WorldViewportHandle.frameVob`
+  replaces the `frameRequest` prop; the trigger was `raycastDown`, not W4, and
+  the last of the three viewport warts is closed. board-loop.
+  `docs/refactoring-targets.md` §9
 - **The portal polygon payload is data** — `getPortals` reads out `is_portal`,
   `is_sector`, `sector_index` and the BSP portal list; columnar, one row per
   portal/sector polygon, and unplumbed like slice 1. board-loop. §16.18

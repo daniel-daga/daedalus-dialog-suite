@@ -31,7 +31,6 @@ let mockSelection: readonly number[] | undefined;
 const DRAG: [number, number, number] = [1, 2, 3];
 let mockGizmoMode: string | undefined;
 let mockSelectedWaypoint: number | null | undefined;
-let mockFrameRequest: { vob: number } | null | undefined;
 /** What the viewport is told to draw a marker at. */
 let mockTerrainPoint: [number, number, number] | null | undefined;
 /** How bright the viewport is told to draw. */
@@ -48,6 +47,9 @@ const mockRaycastDown = jest.fn() as jest.Mock<
   { point: [number, number, number]; normal: [number, number, number] } | null,
   [[number, number, number]]
 >;
+/** The viewport's other imperative command: the camera jump the scene tree's
+ *  double-click asks for. */
+const mockFrameVob = jest.fn() as jest.Mock<void, [number]>;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 /** The pose every VOB in the fixture index has. */
@@ -75,7 +77,6 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     selection: readonly number[];
     appliedOps: WorldOp[] | null;
     selectedWaypoint: number | null;
-    frameRequest: { vob: number } | null;
     terrainPoint: [number, number, number] | null;
     exposure: number;
     hiddenVobs: Uint8Array | null;
@@ -87,21 +88,25 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
       from: [number, number, number],
       to: [number, number, number],
     ) => void;
-  }, ref: React.Ref<{ raycastDown: typeof mockRaycastDown }>) => {
+  }, ref: React.Ref<{
+    raycastDown: typeof mockRaycastDown; frameVob: typeof mockFrameVob;
+  }>) => {
     mockAppliedOps = props.appliedOps;
     mockSelection = props.selection;
     mockGizmoMode = props.gizmoMode;
     mockSelectedWaypoint = props.selectedWaypoint;
-    mockFrameRequest = props.frameRequest;
     mockTerrainPoint = props.terrainPoint;
     mockExposure = props.exposure;
     mockHiddenVobs = props.hiddenVobs;
     mockSnapGrid = props.snapGrid;
     mockSnapAngle = props.snapAngle;
-    // The imperative surface drop-to-ground and align-to-normal call directly
-    // — see `WorldViewportHandle`'s doc — stood in by one jest.fn so the shell
-    // side can be tested without a WebGL raycast.
-    ReactActual.useImperativeHandle(ref, () => ({ raycastDown: mockRaycastDown }));
+    // The imperative surface drop-to-ground, align-to-normal and the scene
+    // tree's camera jump call directly — see `WorldViewportHandle`'s doc —
+    // stood in by jest.fns so the shell side can be tested without a WebGL
+    // raycast or a real camera.
+    ReactActual.useImperativeHandle(ref, () => ({
+      raycastDown: mockRaycastDown, frameVob: mockFrameVob,
+    }));
     return (
       <div data-testid="world-viewport-stub">
         <button type="button" data-testid="stub-drag" onClick={() => props.onTranslateSelection(DRAG)}>
@@ -323,7 +328,6 @@ async function openWorld(cls?: string | readonly string[], parents?: readonly nu
 beforeEach(() => {
   jest.clearAllMocks();
   mockAppliedOps = undefined;
-  mockFrameRequest = undefined;
   mockTerrainPoint = undefined;
   mockExposure = undefined;
   mockHiddenVobs = undefined;
@@ -331,6 +335,7 @@ beforeEach(() => {
   mockSnapAngle = undefined;
   mockVobProps = { class: 'zCVob', ...BASE_PROPS };
   mockRaycastDown.mockReset();
+  mockFrameVob.mockReset();
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
 });
 
@@ -2587,33 +2592,34 @@ describe('jumping to a VOB from the scene tree', () => {
   // Not an edit, but the same seam every edit uses: the shell is what the tree
   // and the viewport reach each other through. The framing itself is
   // `frameVobs` in `cameraNav`, tested against a real camera in
-  // `tests/cameraNav.test.ts`; what is left to pin here is that the request
-  // names the VOB that was double-clicked and that the selection follows it.
+  // `tests/cameraNav.test.ts`, and the handle it is reached through in
+  // `tests/WorldViewport.frameHandle.test.tsx`; what is left to pin here is
+  // that the command names the VOB that was double-clicked and that the
+  // selection follows it.
   it('asks the viewport for the double-clicked VOB, and selects it', async () => {
-    // VOB 1 is selected by `openWorld`, so a request that merely repeated the
+    // VOB 1 is selected by `openWorld`, so a command that merely repeated the
     // selection — or a tree that reported its row — would not say 0 here.
     await openWorld();
     expect(useWorldStore.getState().selection).toEqual([1]);
 
     fireEvent.doubleClick(screen.getByTestId('world-vob-row-0'));
 
-    await waitFor(() => expect(mockFrameRequest).toEqual({ vob: 0 }));
+    await waitFor(() => expect(mockFrameVob).toHaveBeenCalledWith(0));
     expect(useWorldStore.getState().selection).toEqual([0]);
   });
 
-  it('is a fresh request every time, so the same VOB can be jumped to twice', async () => {
-    // The viewport fires on the request's identity: a bare number would make
-    // the second double-click on an already-framed VOB do nothing, which is
-    // exactly when it is asked for — after the camera has wandered off.
+  it('asks again every time, so the same VOB can be jumped to twice', async () => {
+    // A command, not a state: the second double-click on an already-framed VOB
+    // has to move the camera, which is exactly when it is asked for — after
+    // the camera has wandered off.
     await openWorld();
 
     fireEvent.doubleClick(screen.getByTestId('world-vob-row-0'));
-    await waitFor(() => expect(mockFrameRequest).toEqual({ vob: 0 }));
-    const first = mockFrameRequest;
+    await waitFor(() => expect(mockFrameVob).toHaveBeenCalledTimes(1));
 
     fireEvent.doubleClick(screen.getByTestId('world-vob-row-0'));
-    await waitFor(() => expect(mockFrameRequest).not.toBe(first));
-    expect(mockFrameRequest).toEqual({ vob: 0 });
+    await waitFor(() => expect(mockFrameVob).toHaveBeenCalledTimes(2));
+    expect(mockFrameVob.mock.calls).toEqual([[0], [0]]);
   });
 });
 

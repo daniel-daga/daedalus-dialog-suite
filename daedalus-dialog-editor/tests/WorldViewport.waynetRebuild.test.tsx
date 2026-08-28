@@ -121,7 +121,6 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
     onRotateSelection: () => {},
     appliedOps: null,
     selectedWaypoint: null,
-    frameRequest: null,
     terrainPoint: null,
     exposure: 1,
     hiddenVobs: null,

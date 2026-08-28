@@ -193,20 +193,31 @@ keeps them and nothing would restore them if it were ever unmounted again.
 
 ---
 
-### 9. The viewport wants an imperative handle
-**File:** `daedalus-dialog-editor/src/renderer/components/world/WorldViewport.tsx`
+### 9. The viewport wants an imperative handle — fixed
+**Files:** `daedalus-dialog-editor/src/renderer/components/world/WorldViewport.tsx`,
+`components/world/WorldSurface.tsx`
 
-`frameSelection` and the scene-tree jump both live inside the big scene effect,
-so reaching them needs a ref hop plus a request prop. A **third** viewport
-command should promote that to a handle rather than adding a second prop.
+**Landed 2026-08-28.** The scene-tree jump reached the framing closure through a
+`frameRequest` prop — a fresh `{ vob }` object per double-click, watched by an
+effect that hopped through `frameVobRef` — while the closure itself lives inside
+the big scene effect.
 
-Sized (§16.8, W3): small, ~60 lines net negative — the closures already exist and
-`frameVobRef` is already a ref. Do it immediately before the caller that
-justifies it, not earlier.
+**The third command arrived, and it did not arrive as W4.** This entry said to
+wait for the caller that justifies the promotion and named W4, the script → world
+jump, which is still unbuilt. What actually happened is that snapping's
+`raycastDown` (2026-08-28) needed a query rather than a prop and *created* the
+handle — so the wart stopped being "no handle" and became "one command on the
+handle, one on a prop", which is the shape this entry existed to prevent. The
+frame is now `WorldViewportHandle.frameVob`, the prop, its state and its effect
+are gone, and the surface calls it beside the raycast it already calls.
 
-**The one hazard:** the handle is only alive while the scene effect is, and that
-effect re-runs on `[mesh, visuals, bbox]` — a command requested during a rebuild
-must be a no-op, not a crash.
+**The hazard it named is the reason `frameVob` reads through the ref.** The
+handle is alive whenever the component is, but `frameVobRef` is set by the scene
+effect and cleared by its teardown, and that effect re-runs on
+`[mesh, visuals, bbox]`. `frameVob` is `frameVobRef.current?.(vob)`, so a command
+during a rebuild is a no-op — pinned by `WorldViewport.frameHandle.test.tsx`,
+which asks for one from a parent layout effect, i.e. before the child's scene
+effect has ever run.
 
 ---
 

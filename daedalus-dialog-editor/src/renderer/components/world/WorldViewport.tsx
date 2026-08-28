@@ -147,16 +147,6 @@ export interface WorldViewportProps {
    */
   selectedWaypoint: number | null;
   /**
-   * A VOB to jump the camera to, leaving the orbit pivot on it — the scene
-   * tree's double-click.
-   *
-   * An object rather than a bare index, because it is a *request* and not a
-   * state: jumping to the same VOB twice is two of them, and that is precisely
-   * when the second one is asked for — after the camera has been flown
-   * somewhere else. Null before any has been made.
-   */
-  frameRequest: { vob: number } | null;
-  /**
    * The last point picked on the terrain, in **ZenGin space** — the one the
    * placement bar names — or null when there is none.
    *
@@ -246,6 +236,17 @@ export interface WorldViewportHandle {
    * sky, or off the edge of the mesh).
    */
   raycastDown: (origin: ZenPosition) => { point: ZenPosition; normal: ZenPosition } | null;
+  /**
+   * Jump the camera to a VOB, leaving the orbit pivot on it — the scene tree's
+   * double-click.
+   *
+   * A command and not a state: jumping to the same VOB twice is two of them,
+   * and that is precisely when the second one is asked for — after the camera
+   * has been flown somewhere else. A VOB that is not drawn (a decal, a sound
+   * VOB) has no position to frame, and neither has any VOB while the scene
+   * effect is between a teardown and its rebuild: both are no-ops.
+   */
+  frameVob: (vob: number) => void;
 }
 
 /** What the selection and edit effects need of the imperative viewport, so
@@ -270,7 +271,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
-  selectedWaypoint, frameRequest, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
+  selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
   onSelectWaypoint, onMoveWaypoint, paused = false,
 }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -304,6 +305,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         normal: threeToZen(worldNormal.toArray() as [number, number, number]),
       };
     },
+    frameVob: (vob) => { frameVobRef.current?.(vob); },
   }), []);
 
   const overlayRef = useRef<WaynetOverlay | null>(null);
@@ -335,7 +337,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   // Set by the scene effect, because the camera and the controls live inside
-  // it. The frame effect below is the only caller.
+  // it, and cleared by its teardown — which is why the handle's `frameVob`
+  // calls it through the ref rather than closing over it.
   const frameVobRef = useRef<((vob: number) => void) | null>(null);
   // Read by the draw loop, which lives outside React's render path: going off
   // screen must not tear the scene down and rebuild 31 MB of buffers — that
@@ -1158,13 +1161,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     sceneRef.current?.setHiddenVobs(hiddenVobs);
   }, [hiddenVobs, mesh, visuals]);
-
-  // A jump asked for from the scene tree. It fires on the request's identity,
-  // not on the VOB — see `frameRequest`.
-  useEffect(() => {
-    if (frameRequest === null) return;
-    frameVobRef.current?.(frameRequest.vob);
-  }, [frameRequest]);
 
   // An edit the main process has taken — a commit, an undo, a redo, or the
   // reversal of a refused one. The scene is a projection and has to follow it;

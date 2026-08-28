@@ -3266,8 +3266,9 @@ the lookup over it:
 scripts (small-medium, and the one that landed first)**: click a waypoint, see the routines that name it. It needs neither
 inherited decision, no viewport refactor and no new navigation model, and it
 delivers a Problems rule — 128 dangling waypoint sites — for free. W3 the
-imperative handle (small, ~60 lines net negative; do it immediately before the
-caller that justifies it, not earlier). W4 script → world is **large**, and not
+imperative handle **landed 2026-08-28** — not before W4, its named caller, but
+after snapping's `raycastDown` created the handle and left the frame the only
+command still on a prop (`refactoring-targets.md` §9). W4 script → world is **large**, and not
 for the camera: it needs the mount-lifetime fix in `refactoring-targets.md`.
 
 Note a selected waypoint has **no UI at all** today, so W2 builds a panel from
