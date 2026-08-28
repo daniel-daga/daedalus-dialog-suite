@@ -3143,11 +3143,28 @@ old 19-of-30 number was measured a different way and the two are not comparable.
 bytes anywhere gave 30 of 30 clean throws: a byte in the text header is rejected
 before any reader runs, so a whole-file fuzz mostly measures the header check.
 
-**`--seed 39` is closed by `0031`; `--seed 17` is not.** After `0031` the same
-40-seed run gives **0 crashes and 1 hang**, and that hang is seed 17, still not
-minimized. That is the next reproducer, and it is the only one currently named:
-the run reaches a state where nothing throws and nothing returns, which is the
-`ReadMemory::seek` hazard above wearing a different hat than `0027`'s.
+**A fourth instance is bounded (2026-08-28, patch `0032`), and it was not the
+`seek` hazard.** `--seed 17`, the last failure left after `0031`, delta-debugged
+to one byte — file offset 679 of `minimal.g2.zen`, byte 2 of the first shared
+lightmap texture's `mipmapCount`, turning 1 into 9,568,257. `Texture::load`
+walks one iteration per level and `_ztex_mipmap_size` halves the dimensions
+*inside* that walk, once per level, so the work is **quadratic in a count
+nothing bounds** — on the order of 9e13 halvings, which neither throws nor
+returns. It looks exactly like `0027`'s spin from outside and shares no
+mechanism with it: no seek is involved, and the `ReadMemory::seek` hazard above
+is not the only way to build a hang out of an unvalidated count. Bounded at 32
+levels — `width` and `height` are `uint32`, so a chain cannot need more halvings
+than that — and covered by a child-process test in
+`zenkit-node/test/loadWorld.test.js` that seeds the count by structure.
+
+**The 40-seed run is now 40 of 40 clean throws** (2026-08-28, after `0032`): no
+crash, no hang, no named reproducer left. That is a milestone and **not** a
+crash-safety claim — it is 40 seeds of 20 bytes over one small synthetic
+fixture. The unvalidated counts listed above are still unvalidated, the recursion
+in `_parse_bsp_nodes` is still unbounded, and **the worker isolation stays
+load-bearing.** The next move is either more seeds and more bytes, or a wider
+fixture, or the `ReadMemory::seek` decision that would close the class in one
+place — not a claim that the reader is safe.
 
 ### 16.12 Two viewport constants only Daniel's hands can settle
 

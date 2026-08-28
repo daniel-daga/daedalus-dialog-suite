@@ -1,0 +1,77 @@
+Texture: bound a texture's mipmap count, which is quadratic work read off the file.
+
+`Texture::load` (`src/Texture.cc`) reads `mipmapCount` straight from the stream
+and then walks one iteration per level:
+
+	this->_m_mipmap_count = std::max(1u, r->read_uint());
+	...
+	for (std::int64_t level = this->_m_mipmap_count - 1; level >= 0; --level) {
+		auto size = _ztex_mipmap_size(format, width, height, level);
+		...
+	}
+
+Nothing bounds the count, and `_ztex_mipmap_size` halves the dimensions *inside*
+its own loop, once per level:
+
+	for (uint32_t i = 0; i < level; i++) {
+		if (x > 1) x >>= 1;
+		if (y > 1) y >>= 1;
+	}
+
+So loading one texture costs work quadratic in a number the file supplies. It is
+not an allocation blow-up and not an out-of-bounds access — nothing throws and
+nothing is corrupted, the reader simply never comes back. That is what makes it
+hard to tell apart from patch `0027`: `0027` fixed a spin at 100% CPU with the
+cursor parked at the end of the archive, and this one looks identical from
+outside while being a different defect entirely.
+
+Measured against our synthetic BinSafe fixture (`test/fixtures/minimal.g2.zen`,
+4211 bytes): one byte at file offset 679 — byte 2 of the first shared lightmap
+texture's `mipmapCount`, inside the mesh's LIGHTMAPS_SHARED (`0xB026`) chunk —
+turns 1 into 9,568,257, which is on the order of 9e13 halvings. Found by
+`tools/fuzz-world.js --seed 17`, the last of the 40-seed run still failing after
+patch `0031`, and delta-debugged from 20 mutations down to that one byte.
+
+The fix is a bound and nothing else. `width` and `height` are `uint32`, so a
+mipmap chain cannot need more than 32 halvings to reach 1x1 and no well-formed
+texture can reach the limit — the check is only ever hit by a file whose texture
+header is already nonsense.
+
+`ParserError` derives from `zenkit::Error`, so this reports as a normal parse
+failure through the same path a truncated archive already takes.
+
+Upstreamable as-is: a plain robustness bug, no API change, one guard.
+
+diff --git a/src/Texture.cc b/src/Texture.cc
+index bc5106c..2d24a9f 100644
+--- a/src/Texture.cc
++++ b/src/Texture.cc
+@@ -10,6 +10,10 @@
+ namespace zenkit {
+ 	constexpr std::string_view ZTEX_SIGNATURE = "ZTEX";
+ 
++	// The most mipmap levels a texture can have: `width` and `height` are `uint32`,
++	// so halving them cannot take more than 32 steps to reach 1x1.
++	constexpr std::uint32_t ZTEX_MAX_MIPMAPS = 32;
++
+ #pragma pack(push, 1)
+ 	struct r5g6b5 {
+ 		std::uint16_t b : 5;
+@@ -290,6 +294,17 @@ namespace zenkit {
+ 		this->_m_width = r->read_uint();
+ 		this->_m_height = r->read_uint();
+ 		this->_m_mipmap_count = std::max(1u, r->read_uint());
++
++		// `mipmapCount` comes straight off the file and nothing bounds it, while the
++		// mipmap walk below halves the dimensions once per level *inside* the loop
++		// (`_ztex_mipmap_size`) — so the work is quadratic in it. A corrupted count
++		// of a few million levels therefore neither throws nor returns: it is the
++		// hang that survived patch 0027. A mipmap chain cannot be longer than the
++		// number of times a `uint32` dimension can be halved, so no valid texture
++		// ever reaches this bound.
++		if (this->_m_mipmap_count > ZTEX_MAX_MIPMAPS) {
++			throw ParserError {"texture", "mipmap count out of range"};
++		}
+ 		this->_m_reference_width = r->read_uint();
+ 		this->_m_reference_height = r->read_uint();
+ 		this->_m_average_color = r->read_uint();

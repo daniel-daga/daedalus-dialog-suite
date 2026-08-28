@@ -306,3 +306,54 @@ test('a shared lightmap naming a texture outside the list throws instead of read
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A shared lightmap texture's `mipmapCount`, located by structure: the
+// LIGHTMAPS_SHARED chunk's payload is `textureCount` u32 followed by that many
+// `ZTEX` textures, and a `ZTEX` header is the 4-byte signature, `version`,
+// `format`, `width`, `height` and then `mipmapCount` — so the count sits 20
+// bytes into the first texture.
+function seedAbsurdLightmapMipmapCount(dir, name) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const blob = [...walk(buf)].find((ev) => ev.kind === 'rawBlob' && ev.entryName === 'MeshAndBsp');
+  assert.ok(blob, 'the fixture must have a MeshAndBsp blob to corrupt');
+
+  const end = blob.fileOffset + blob.size;
+  let p = blob.fileOffset;
+  while (p + 6 <= end && buf.readUInt16LE(p) !== 0xb026) p += 6 + buf.readUInt32LE(p + 2);
+  assert.strictEqual(buf.readUInt16LE(p), 0xb026, 'expected a LIGHTMAPS_SHARED chunk in the fixture mesh');
+
+  const texture = p + 6 + 4; // past the chunk header and `textureCount`
+  assert.strictEqual(buf.toString('latin1', texture, texture + 4), 'ZTEX',
+    'expected the chunk to declare at least one texture');
+
+  const at = texture + 20;
+  assert.strictEqual(buf.readUInt32LE(at), 1, 'expected the fixture texture to carry a single mipmap level');
+  buf.writeUInt32LE(0x00920001, at); // the fuzzer's byte, 9.5 million levels
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a lightmap texture declaring more mipmap levels than a texture can have throws instead of hanging', () => {
+  // `Texture::load` trusts the file's `mipmapCount` and walks one iteration per
+  // level, and `_ztex_mipmap_size` halves the dimensions once per level *inside*
+  // that walk — so the cost is quadratic in a count nothing bounds, and 9.5
+  // million levels is ~9e13 iterations that neither throw nor return. Found by
+  // fuzzing the fixture's entry stream: seed 17 of a 40-seed run delta-debugged
+  // to one byte, file offset 679, which is byte 2 of the first shared lightmap
+  // texture's mipmap count. This test seeds the same defect by structure.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-mipmap-count-'));
+  try {
+    const corrupt = seedAbsurdLightmapMipmapCount(dir, 'bad-mipmap-count.zen');
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 30 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of throwing: ${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /mipmap/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
