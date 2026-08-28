@@ -39,7 +39,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (22)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (23)
 
 | Patch | What it fixes |
 |---|---|
@@ -65,13 +65,14 @@ regardless of what upstream does with it.
 | `0028` | `VTrigger::save` wrote the deprecated raw `flags`/`filterFlags` bytes `load()` unpacks into eight public bools, verbatim, instead of reconstructing them from the bools — the same writer/reader asymmetry as `0003`, on the trigger family's own base fields |
 | `0029` | `ReadArchiveBinsafe::read_header` sized the hash table to the file's `hash_table_size` and then indexed it with the file's `insertion_index`, an independent unchecked count — an out-of-bounds heap *write* on a corrupted world (the `0xC0000374` seen fuzzing this file) |
 | `0030` | `BspTree::load` walked each leaf node's `polygonIndex`/`polygonCount` range straight into `polygon_indices`, a list sized by a different chunk — an out-of-bounds read reachable from one corrupted byte of a world file |
+| `0031` | `Mesh::load`'s LIGHTMAPS_SHARED chunk indexed the shared texture list with a second, unchecked file-supplied index — an out-of-range value copy-constructs a `shared_ptr` from memory past the vector, so it is a wild refcount increment as well as an out-of-bounds read |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
-`0027`, `0029` and `0030` are the same class of standalone fix — a one-guard hardening
-of the read path, reachable by any consumer that opens a file it did not write. `0029`
-is the strongest of the three: the bug it stops is an out-of-bounds write, not a hang
-or an out-of-bounds read.
+`0027`, `0029`, `0030` and `0031` are the same class of standalone fix — a one-guard
+hardening of the read path, reachable by any consumer that opens a file it did not
+write. `0029` is the strongest of the four: the bug it stops is an out-of-bounds write,
+not a hang or an out-of-bounds read.
 `0024` and `0026` are now just as strong and arguably stronger: each is a
 self-evident writer/reader disagreement that made ZenKit unable to read its own
 ASCII output, with no API change and a one-line diff. Together with `0025` they
@@ -103,7 +104,7 @@ from the `oCMOB` save sites; until someone writes that, this stays local.
 
 Independent, highest-value and least arguable first:
 
-1. `0020`, `0021`, `0022`, `0027`, `0029`, `0030` — one PR each.
+1. `0020`, `0021`, `0022`, `0027`, `0029`, `0030`, `0031` — one PR each.
 2. `0002`, `0003`, `0004`, `0005`, `0006`, `0028` — small self-evident writer bugs.
 3. `0018`, then `0013`.
 4. `0001`, then `0010`.

@@ -3109,6 +3109,17 @@ id. Covered by a child-process test in `zenkit-node/test/loadWorld.test.js`
 that seeds an out-of-range `polygonIndex` by structure, so it does not depend
 on the fixture's chunk order.
 
+**A third instance is bounded (2026-08-28, patch `0031`).** `Mesh::load`'s
+LIGHTMAPS_SHARED (`0xB026`) branch read a per-lightmap `texture_index` off the
+file and handed it straight to `lightmap_textures[texture_index]`, a vector of
+`shared_ptr` sized by a *different* count in the same chunk. An out-of-range
+index therefore copy-constructs a `shared_ptr` from memory past the allocation
+— a wild refcount increment, not only an out-of-bounds read. This is the
+`--seed 39` reproducer named below, delta-debugged to file offset 899, byte 2
+of the third lightmap's texture index. Covered by a child-process test in
+`zenkit-node/test/loadWorld.test.js` that seeds the index by structure (the
+chunk's last four bytes are, by its layout, the last lightmap's index).
+
 **`get_entry_key()` is *not* a third instance, and this section used to say it
 was.** It does index `_m_hash_table_entries` with an unchecked file-supplied
 `hash`, but it has **no caller anywhere in ZenKit or in `zenkit-node`** — every
@@ -3132,9 +3143,11 @@ old 19-of-30 number was measured a different way and the two are not comparable.
 bytes anywhere gave 30 of 30 clean throws: a byte in the text header is rejected
 before any reader runs, so a whole-file fuzz mostly measures the header check.
 
-**The next two reproducers are named.** `--seed 39` delta-debugs to one byte —
-offset 899, inside the mesh's `0xB026` chunk, so the next instance is in
-`Mesh.cc` — and `--seed 17` is the hang, not yet minimized.
+**`--seed 39` is closed by `0031`; `--seed 17` is not.** After `0031` the same
+40-seed run gives **0 crashes and 1 hang**, and that hang is seed 17, still not
+minimized. That is the next reproducer, and it is the only one currently named:
+the run reaches a state where nothing throws and nothing returns, which is the
+`ReadMemory::seek` hazard above wearing a different hat than `0027`'s.
 
 ### 16.12 Two viewport constants only Daniel's hands can settle
 

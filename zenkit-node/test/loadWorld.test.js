@@ -252,3 +252,57 @@ test('a BSP leaf node addressing polygons outside the index list throws instead 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A shared lightmap's `textureIndex` — a file-supplied index into the texture
+// list the same chunk declares, located by structure: the `MeshAndBsp` blob's
+// chunk table carries LIGHTMAPS_SHARED (0xB026), whose payload is
+// `textureCount` u32, that many `ZTEX` textures, `lightmapCount` u32, then per
+// lightmap three vec3s and a `textureIndex` u32 — so the chunk's last four
+// bytes are the last lightmap's index.
+function seedOutOfRangeLightmapTextureIndex(dir, name) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const blob = [...walk(buf)].find((ev) => ev.kind === 'rawBlob' && ev.entryName === 'MeshAndBsp');
+  assert.ok(blob, 'the fixture must have a MeshAndBsp blob to corrupt');
+
+  const end = blob.fileOffset + blob.size;
+  let p = blob.fileOffset;
+  while (p + 6 <= end && buf.readUInt16LE(p) !== 0xb026) p += 6 + buf.readUInt32LE(p + 2);
+  assert.strictEqual(buf.readUInt16LE(p), 0xb026, 'expected a LIGHTMAPS_SHARED chunk in the fixture mesh');
+
+  const payload = p + 6;
+  const textureCount = buf.readUInt32LE(payload);
+  assert.ok(textureCount > 0, 'expected the fixture to share at least one lightmap texture');
+
+  const at = payload + buf.readUInt32LE(p + 2) - 4; // the last lightmap's textureIndex
+  assert.ok(buf.readUInt32LE(at) < textureCount,
+    'expected the chunk to end with a texture index inside the fixture texture list');
+  buf.writeUInt32LE(0x003c0000, at); // far past a list of `textureCount` textures
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+test('a shared lightmap naming a texture outside the list throws instead of reading wild memory', () => {
+  // `Mesh::load`'s LIGHTMAPS_SHARED branch reads a `texture_index` per lightmap
+  // and hands it straight to `lightmap_textures[texture_index]`, an unchecked
+  // `operator[]` on a vector of `shared_ptr` sized by the chunk's own texture
+  // count. An out-of-range index therefore constructs a `shared_ptr` copy from
+  // wild memory — an out-of-bounds read *and* a bogus refcount increment.
+  // Found by fuzzing the fixture's entry stream: seed 39 of a 40-seed run
+  // delta-debugged to one byte, file offset 899, which is byte 2 of the third
+  // lightmap's texture index. This test seeds the same defect by structure.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-lightmap-texture-'));
+  try {
+    const corrupt = seedOutOfRangeLightmapTextureIndex(dir, 'bad-lightmap-texture-index.zen');
+
+    const result = loadInChild(corrupt, 30_000);
+    assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 30 s');
+    assert.strictEqual(result.status, 0,
+      `the child died (status ${result.status}) instead of throwing: ${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /^THREW failed to load world: /);
+    assert.match(result.stdout, /texture index/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

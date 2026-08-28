@@ -83,7 +83,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0030`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0031`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -135,9 +135,9 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **A malformed world still crashes the reader** — two instances bounded
-  (`0029`, `0030`), the class is not; `tools/fuzz-world.js --seed 39` is the
-  next reproducer, one byte, in `Mesh.cc`. Unowned. §16.11
+- **A malformed world still crashes the reader** — three instances bounded
+  (`0029`–`0031`), the class is not; `tools/fuzz-world.js --seed 17` is the
+  next reproducer, a hang, not yet minimized. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -156,6 +156,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
+- **Patch `0031` — a shared lightmap's texture index is bounded** — `Mesh.cc`'s
+  `0xB026` branch indexed a `shared_ptr` vector with a second unchecked count,
+  so an out-of-range index was a wild refcount increment. The `--seed 39`
+  reproducer is closed; a 40-seed fuzz run is now 0 crashes, 1 hang. §16.11
 - **Patches `0029` and `0030` — two unvalidated counts in the reader are
   bounded** — the BinSafe hash table's insertion index (an out-of-bounds heap
   *write*) and a BSP leaf node's polygon range (an out-of-bounds read), each
