@@ -126,13 +126,6 @@ Each card is one line, an owner and a pointer. A bare `§` is a section of
 `docs/plans/level-editor.md`. The diagnosis, the measurement and the decision a
 card waits on live at its pointer — put new prose there, not here.
 
-**The World surface — the mount that blocks W4**
-
-- **The surface loses its geometry on navigate-away** — decided 2026-08-28: mount
-  it the way the dialog view is mounted (a display toggle in `MainLayout`), and
-  make the frame loop a no-op while hidden. Unowned.
-  `docs/refactoring-targets.md` §8
-
 **Daedalus scripts — where a script names a place**
 
 - **W5 — the rest of the engine externals that take a waypoint name** — the seed
@@ -140,8 +133,8 @@ card waits on live at its pointer — put new prose there, not here.
   MDK's externals and add only what is measured, never a guess. Unowned. §16.8
 - **§16.8 W1 — the script-side waypoint index** — blocked: the extraction half
   is landed and now tested against the `TA_*` shape (a case-sensitive parameter
-  match was dropping whole files); the lookup half has no unblocked consumer and
-  its third answer needs the other worlds. Unowned. §16.8
+  match was dropping whole files); the lookup half has no consumer that is both
+  unblocked and built, and its third answer needs the other worlds. Unowned. §16.8
 
 **Release gates**
 
@@ -213,7 +206,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty — flushed for the budget as the cards below were written)*
+- **The World surface keeps its geometry across a navigate-away** — mounted from
+  the first visit onwards behind a display toggle, `paused` stops the frame loop
+  outright while hidden, and the surface's and viewport's window shortcuts are
+  off with it. `docs/refactoring-targets.md` §8, now a landed record.
 
 Flushed 2026-08-28, all landed the same day and all routed: `zCVob` V1 and V2
 (§16.17, which also closes §14.1 1.8 and says why `sleepMode` and `farClipScale`

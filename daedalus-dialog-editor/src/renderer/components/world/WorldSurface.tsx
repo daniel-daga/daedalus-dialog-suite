@@ -67,7 +67,17 @@ const ANGLE_STEPS = [0, 5, 15, 45, 90].map((degrees) => ({
   value: degrees, label: degrees === 0 ? 'Free' : `${degrees}°`,
 }));
 
-const WorldSurface: React.FC = () => {
+interface WorldSurfaceProps {
+  /**
+   * Another view is on screen and this one is only kept mounted so its geometry
+   * survives the trip (`docs/refactoring-targets.md` §8). Everything React is
+   * unaffected — what it buys is the viewport's frame loop stopping, which the
+   * display toggle that hides us does nothing about on its own.
+   */
+  hidden?: boolean;
+}
+
+const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const status = useWorldStore((s) => s.status);
   const summary = useWorldStore((s) => s.summary);
   const error = useWorldStore((s) => s.error);
@@ -1108,6 +1118,12 @@ const WorldSurface: React.FC = () => {
 
   useEffect(() => {
     if (summary === null) return undefined;
+    // Every shortcut below is a *window* listener, and the surface stays
+    // mounted behind whichever view is on screen (refactoring-targets.md §8) —
+    // so bound while hidden, Ctrl+Z in the dialog view would undo a world edit
+    // as well as the dialog edit `MainLayout` performs, and W would swallow a
+    // keystroke on a view that has never heard of a gizmo.
+    if (hidden) return undefined;
 
     const handler = (event: KeyboardEvent) => {
       // Lower-cased because holding Shift changes the letter itself: Ctrl+Shift+Z
@@ -1165,7 +1181,7 @@ const WorldSurface: React.FC = () => {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [summary, applied, copySelection, pasteClipboard]);
+  }, [summary, hidden, applied, copySelection, pasteClipboard]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1594,6 +1610,7 @@ const WorldSurface: React.FC = () => {
               snapAngle={(snapAngleDegrees * Math.PI) / 180}
               onSelectWaypoint={selectWaypoint}
               onMoveWaypoint={moveWaypointTo}
+              paused={hidden}
             />
           )}
         </Box>

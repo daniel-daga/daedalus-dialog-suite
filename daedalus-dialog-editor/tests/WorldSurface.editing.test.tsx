@@ -285,6 +285,10 @@ const api = {
  * has nothing to drag: VOB 1 is selected here as the gizmo's own attachment
  * would do it.
  */
+/** The last `openWorld` render, so a test can re-render the surface with a
+ *  different prop — `hidden`, which nothing else here varies. */
+let lastRender: ReturnType<typeof render>;
+
 async function openWorld(cls?: string | readonly string[], parents?: readonly number[]) {
   const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], cls, parents) };
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
@@ -306,7 +310,7 @@ async function openWorld(cls?: string | readonly string[], parents?: readonly nu
     stats: { vobsPlaced: 1 },
   } as never);
 
-  render(<WorldSurface />);
+  lastRender = render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
   await screen.findByTestId('stub-drag');
   // Awaited, not the bare synchronous `act`: selecting a VOB of a catalogued
@@ -1760,6 +1764,26 @@ describe('undo and redo in the World view', () => {
     await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalled());
     expect(createVobReader(summary.vobIndex).position(1)).toEqual([10, 20, 30]);
     expect(mockAppliedOps).toBeNull();
+  });
+
+  it('is not bound while the surface is hidden behind another view', async () => {
+    // The surface is kept mounted when you navigate away from it
+    // (`docs/refactoring-targets.md` §8), and its shortcut is a *window*
+    // listener — so without this, Ctrl+Z in the dialog view would undo a world
+    // edit as well as the dialog edit `MainLayout` performs.
+    await openWorld();
+    act(() => { lastRender.rerender(<WorldSurface hidden />); });
+
+    pressUndo();
+    pressRedo();
+
+    expect(api.undoWorldEdit).not.toHaveBeenCalled();
+    expect(api.redoWorldEdit).not.toHaveBeenCalled();
+
+    // And it is bound again when the view comes back.
+    act(() => { lastRender.rerender(<WorldSurface />); });
+    pressUndo();
+    await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalledTimes(1));
   });
 
   it('is not bound at all while no world is open', async () => {

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, memo, useEffect } from 'react';
+import React, { Suspense, lazy, memo, useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Alert, Box, CircularProgress, ToggleButton, ToggleButtonGroup, Paper, Tooltip, Typography } from '@mui/material';
 import { Chat as ChatIcon, Book as BookIcon, DataObject as VariableIcon, ReportProblem as ProblemsIcon, Public as WorldIcon } from '@mui/icons-material';
@@ -61,6 +61,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
   const activeFileHasParseErrors = !!fileState?.semanticModel?.hasErrors;
   const activeParseErrorCount =
     fileState?.semanticModel?.errors?.length ?? fileState?.errors?.length ?? 0;
+
+  // Latched on the first visit to the World view and never cleared — see the
+  // mount below.
+  const [worldVisited, setWorldVisited] = useState(false);
+  useEffect(() => {
+    if (view === 'world') setWorldVisited(true);
+  }, [view]);
 
   useEffect(() => {
     if ((view === 'quest' || view === 'variable') && isProjectMode) {
@@ -187,10 +194,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
              </Box>
          )}
 
-         {view === 'world' && (
-             <Box sx={{ height: '100%' }}>
+         {/* Kept mounted from the first visit onwards, like the dialog view
+             above (refactoring-targets.md §8): `WorldSurface` holds the world's
+             geometry in local state and has no mount-time refetch, so a
+             conditional mount loses tens of MB of buffers on every
+             navigate-away. Mounted from the *first visit* rather than from the
+             first render, because the lazy chunk is the other half of the
+             bargain — a dialog-only session still never loads three.js. */}
+         {worldVisited && (
+             <Box sx={{ display: view === 'world' ? 'block' : 'none', height: '100%' }}>
                  <Suspense fallback={<LoadingView label="Loading world editor..." />}>
-                   <WorldSurface />
+                   <WorldSurface hidden={view !== 'world'} />
                  </Suspense>
              </Box>
          )}

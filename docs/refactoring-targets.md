@@ -155,33 +155,41 @@ one a rule rather than a coincidence.
 
 ---
 
-### 8. The World surface loses its geometry when you navigate away from it
-**Files:** `daedalus-dialog-editor/src/renderer/components/MainLayout.tsx:189`,
-`components/world/WorldSurface.tsx`
+### 8. The World surface loses its geometry when you navigate away from it — fixed
+**Files:** `daedalus-dialog-editor/src/renderer/components/MainLayout.tsx`,
+`components/world/WorldSurface.tsx`, `components/world/WorldViewport.tsx`
 
-Pre-existing and unowned. `MainLayout` renders `<WorldSurface>` under a
-*conditional*, unlike the dialog view which is deliberately kept mounted by a
-display toggle. `mesh`, `visuals` and `waynet` are local `useState` filled only
-inside `openWorld`, and there is no mount-time refetch — so leaving the World
-view and returning leaves `mesh === null`, the viewport guard renders nothing,
-and the world looks closed while `worldStore.status` still says open.
+**Landed 2026-08-28.** `MainLayout` rendered `<WorldSurface>` under a
+*conditional*, unlike the dialog view; `mesh`, `visuals` and `waynet` are local
+`useState` filled only inside `openWorld` and there is no mount-time refetch, so
+leaving the World view and coming back left `mesh === null`, the viewport guard
+rendering nothing, and the world looking closed while `worldStore.status` still
+said open.
 
-**Decided 2026-08-28 (Daniel): keep it mounted.** The choice was between keeping
-tens of MB of buffers resident and refetching on mount. Mounted wins on three
-counts: `MainLayout` already keeps the *dialog* view alive with a display
-toggle, so this is the mechanism the file teaches rather than a second one; the
-buffers arrive over IPC from the one stateful `zenkit.worker`, so a refetch is
-world-open latency on every tab return, not a cheap re-read; and the memory is
-already resident while the tab is open, making this a change of duration and not
-of magnitude.
+Fixed the way Daniel decided: keep it mounted, with a display toggle — the
+mechanism `MainLayout` already teaches for the dialog view — and mount it from
+the **first visit** rather than the first render, so the lazy chunk that keeps
+three.js out of a dialog-only session is still lazy.
 
-**The requirement that does not follow from the mechanism:** hidden must mean
-the frame loop does not run. A mounted-but-hidden canvas that keeps drawing is a
-worse defect than the one being fixed, and the display toggle does nothing about
-it on its own.
+Two things the display toggle does nothing about on its own, and both are the
+change rather than a follow-up:
 
-Hard prerequisite for the script → world direction of the waypoint jump
-(`docs/plans/level-editor.md` §16.8, W4).
+- **Hidden means the frame loop does not run.** `WorldViewport` takes `paused`
+  and starts/stops the loop through a `start`/`stop` pair the scene effect
+  publishes, so a hidden canvas schedules no frame at all. `paused` is
+  deliberately not a dependency of the scene effect: rebuilding 31 MB of buffers
+  on every tab switch is precisely the cost the mount was kept to avoid. The
+  benchmark and `renderFrom` go through the same pair, since both stop the loop
+  for the length of a fixed camera path.
+- **A mounted surface's shortcuts are still window listeners.** `WorldSurface`
+  binds Ctrl+Z/Y, Ctrl+C/V and W/E on `window`, and `WorldViewport` binds `.`
+  and Home; bound while hidden, a Ctrl+Z in the dialog view would undo a world
+  edit *as well as* the dialog edit `MainLayout` performs. Both handlers are
+  off while hidden.
+
+What remains is the shape, not a defect: the surface still holds the world's
+buffers in local `useState` with no mount-time refetch, so it is the mount that
+keeps them and nothing would restore them if it were ever unmounted again.
 
 ---
 

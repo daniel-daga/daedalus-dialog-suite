@@ -3330,10 +3330,13 @@ was missing and the defect it exposed:
   field assignment rather than a call site, so it needs a second extraction
   path for the 2 sites the corpus has.
 
-**What is left of W1 is the lookup, and both of its consumers are blocked.**
-The lookup exists to answer "where is this name in the world", which is the
-jump (W4, blocked on the mount-lifetime fix in `refactoring-targets.md` §8) and
-the dangling-waypoint rule (blocked on how world data reaches `ProjectView`).
+**What is left of W1 is the lookup, and it still has no consumer that is
+both unblocked and built.** The lookup exists to answer "where is this name in
+the world", which is the jump (W4) and the dangling-waypoint rule (still
+blocked on how world data reaches `ProjectView`). W4's own blocker is gone —
+the mount-lifetime fix landed on 2026-08-28, `refactoring-targets.md` §8 — but
+W4 itself is unbuilt, so the lookup would still be an exported function with no
+caller until somebody does it.
 Nothing in the editor displays a script-side waypoint name today — the only
 waypoint UI is `WaypointPanel`, and the waypoint it describes is selected *in*
 the world, so it never needs to ask whether it is there. Building the lookup now

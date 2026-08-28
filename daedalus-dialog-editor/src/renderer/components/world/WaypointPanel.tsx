@@ -6,8 +6,8 @@ import {
 /**
  * The right-panel counterpart of a selected waypoint (level-editor.md §16.8
  * W2) — a waypoint had no UI at all before this. The routine list is read-only:
- * what a jump into the source file would need (the mount-lifetime fix in
- * refactoring-targets.md) is W4's job, not this one. The *name* is not, since
+ * a jump into the source file is W4's job, not this one — the mount-lifetime
+ * fix it waited on landed (refactoring-targets.md §8). The *name* is not, since
  * §16.7's W1 — this panel is the only UI a waypoint has, so it is where the one
  * waynet edit that is not a gizmo drag lives.
  *

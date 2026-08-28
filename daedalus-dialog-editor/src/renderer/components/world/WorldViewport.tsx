@@ -211,6 +211,16 @@ export interface WorldViewportProps {
     from: [number, number, number],
     to: [number, number, number],
   ) => void;
+  /**
+   * The surface is mounted but off screen — `MainLayout` keeps it that way so
+   * its geometry survives a navigate-away (`docs/refactoring-targets.md` §8).
+   *
+   * The frame loop stops outright rather than drawing into a hidden canvas: a
+   * mounted viewport that keeps rendering is a worse defect than the geometry
+   * loss the mount is fixing. Nothing else changes — the scene, its buffers and
+   * the camera pose are all still here when it comes back.
+   */
+  paused?: boolean;
 }
 
 export type GizmoMode = 'translate' | 'rotate';
@@ -261,7 +271,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, frameRequest, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
-  onSelectWaypoint, onMoveWaypoint,
+  onSelectWaypoint, onMoveWaypoint, paused = false,
 }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -327,6 +337,16 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // Set by the scene effect, because the camera and the controls live inside
   // it. The frame effect below is the only caller.
   const frameVobRef = useRef<((vob: number) => void) | null>(null);
+  // Read by the draw loop, which lives outside React's render path: going off
+  // screen must not tear the scene down and rebuild 31 MB of buffers — that
+  // would be the geometry loss the mount exists to prevent, once per tab
+  // switch. Initialised from the prop so a viewport that mounts hidden never
+  // draws a frame at all.
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  // The other half: the scene effect owns the loop, so pausing has to reach it
+  // through a handle it publishes. Null while no scene is built.
+  const drawLoopRef = useRef<{ start: () => void; stop: () => void } | null>(null);
   // Survives the scene rebuild a structural op forces — see the restore below.
   const poseRef = useRef<{
     key: string; position: number[]; target: number[];
@@ -810,6 +830,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // Another view is on screen: this is a window listener, and framing a
+      // camera nobody can see is at best a swallowed keystroke.
+      if (pausedRef.current) return;
       // The property grid is a pile of text fields, and a '.' typed into one of
       // them is a decimal point, not a camera move.
       const target = event.target as HTMLElement | null;
@@ -832,13 +855,31 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     });
     resize.observe(host);
 
+    // The loop is started and stopped through this pair rather than by calling
+    // `draw` directly: `paused` stops it while the surface is off screen, and
+    // the benchmark and the screenshot both stop it for the length of a fixed
+    // camera path. Both callers must leave it in the state they found it, and a
+    // second `start` on a running loop would leave an orphaned frame behind
+    // that no `cancelAnimationFrame` can reach.
     let frame = 0;
+    let running = false;
     const draw = () => {
       frame = requestAnimationFrame(draw);
       controls.update();
       renderer.render(scene, camera);
     };
-    draw();
+    const startDraw = () => {
+      if (running || pausedRef.current) return;
+      running = true;
+      draw();
+    };
+    const stopDraw = () => {
+      if (!running) return;
+      running = false;
+      cancelAnimationFrame(frame);
+    };
+    drawLoopRef.current = { start: startDraw, stop: stopDraw };
+    startDraw();
 
     // ── the measurement handle (level-editor.md §3) ─────────────────────────
     // Framerate, draw calls per frame and pick latency are the budget rows that
@@ -886,7 +927,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
       // The draw loop and OrbitControls both write the camera every frame, and
       // the sweep's whole point is that the camera follows a fixed path.
-      cancelAnimationFrame(frame);
+      stopDraw();
       controls.enabled = false;
       try {
         return await runViewportBenchmark(probe, {
@@ -904,7 +945,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       } finally {
         controls.enabled = true;
         controls.update();
-        draw();
+        startDraw();
       }
     };
 
@@ -959,7 +1000,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         await Promise.all([bvhReady, texturesReady]);
 
         // The draw loop and OrbitControls both write the camera every frame.
-        cancelAnimationFrame(frame);
+        stopDraw();
         controls.enabled = false;
         try {
           camera.position.set(...zenToThree(from));
@@ -980,7 +1021,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
           return { width, height, rgba: btoa(binary) };
         } finally {
           controls.enabled = true;
-          draw();
+          startDraw();
         }
       },
       gizmoRotation: () => (gizmoVobs.length === 0 ? null : world.rotationOf(gizmoVobs[gizmoVobs.length - 1])),
@@ -1000,7 +1041,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       gizmoRef.current = null;
       frameVobRef.current = null;
       delete window.__worldViewport;
-      cancelAnimationFrame(frame);
+      drawLoopRef.current = null;
+      stopDraw();
       resize.disconnect();
       renderer.domElement.removeEventListener('click', handleClick);
       window.removeEventListener('keydown', onKeyDown);
@@ -1018,6 +1060,15 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // Rebuilt only when a different world's payloads arrive — the callbacks are
     // read through refs precisely so they are not dependencies.
   }, [mesh, visuals, bbox]);
+
+  // Going off screen stops the loop; coming back starts it again. Deliberately
+  // not a dependency of the scene effect above: `paused` flips on every tab
+  // switch and rebuilding the scene for it is the cost the mount was kept for.
+  useEffect(() => {
+    const loop = drawLoopRef.current;
+    if (loop === null) return;
+    if (paused) loop.stop(); else loop.start();
+  }, [paused, mesh, visuals, bbox]);
 
   // The overlay lives and dies on its own, under the scene's converted root so
   // it needs no conversion of its own. `mesh` and `visuals` are dependencies

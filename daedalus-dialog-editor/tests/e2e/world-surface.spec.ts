@@ -57,14 +57,17 @@ test.describe('World surface', () => {
     await expect(page.getByTestId('world-viewport')).toHaveCount(0);
   });
 
-  test('switching away from the World view and back keeps it usable', async ({ page }) => {
-    // The surface is behind React.lazy; a Suspense boundary that resolves once
-    // and then unmounts wrongly is the classic failure here.
+  test('switching away from the World view hides it without unmounting it', async ({ page }) => {
+    // `docs/refactoring-targets.md` §8: the surface holds the world's geometry
+    // in local state and never refetches it on mount, so a conditional mount
+    // loses it on every navigate-away. It is hidden by a display toggle now —
+    // off screen but still in the DOM, and still the same instance.
     await openWorldView(page);
     await expect(page.getByTestId('world-open')).toBeVisible();
 
     await page.getByRole('button', { name: 'Dialog Editor' }).click();
-    await expect(page.getByTestId('world-open')).toHaveCount(0);
+    await expect(page.getByTestId('world-open')).toHaveCount(1);
+    await expect(page.getByTestId('world-open')).not.toBeVisible();
 
     await page.getByTestId('world-toggle').click();
     await expect(page.getByTestId('world-open')).toBeVisible();
