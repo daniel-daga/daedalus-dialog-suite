@@ -71,12 +71,12 @@ was true for so long nobody re-reads it.
 ## State of the tree
 
 - `master` is where work lands and is **pushed to `origin/master`**;
-  `feature/level-editor` was merged and is no longer where work happens. The
-  unattended board loop commits on `board-loop-3` and does not push; its
-  predecessor `board-loop` was fast-forwarded into master on 2026-08-28 and is
-  spent. **Local master is ahead of `origin/master` and has been for a while** —
-  the push in the first clause is the intent, not the current state. A push is
-  not a release — see the merge note below.
+  `feature/level-editor` was merged and is no longer where work happens.
+  `board-loop-3` was fast-forwarded into master on 2026-08-28 (35 commits) and
+  is **spent** — as `board-loop` was before it. The next unattended loop takes a
+  fresh branch. **Local master is ahead of `origin/master`** — the push in the
+  first clause is the intent, not the current state. A push is not a release —
+  see the merge note below.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
