@@ -3440,13 +3440,13 @@ result stays a developer-local `--root` run unless a small ZenGin-authored ASCII
 world is checked in.
 
 
-### 16.10 `resavedSize` is fragile at a day or month boundary, not a second one
+### 16.10 `resavedSize` was fragile at a day or month boundary, not a second one — closed
 
 Found while making the ASCII stamp comparisons robust, and left alone
 deliberately. Patch `0018` formats the header stamp `"%d.%d.%d %02d:%02d:%02d"`
 — hour, minute and second are zero-padded, **day and month are not** — so the
 header's *length* changes when the day crosses 9→10 (or the month does), and the
-re-save is then a different size from the original. That breaks
+re-save is then a different size from the original. That broke
 `assert.strictEqual(ascii.resavedSize, ascii.size)`
 (`test/roundtrip.test.js:165`) and `row.wholeFileIdentical` with it; reproduced
 by rewriting the fixture's stamp shorter before the re-save, `sizes 5064 5068`.
@@ -3465,6 +3465,25 @@ timestamp is the one part of the file that is *supposed* to differ.
 already known — rewrite the fixture's stamp shorter before the re-save
 (`sizes 5064 5068`) — so the test does not need a real 9→10 boundary and must
 not wait for one.
+
+**Landed 2026-08-28.** `zen-roundtrip`'s `strippedSize(buf)` is
+`withoutHeaderStamps(buf).length`, and it is what `size` and `resavedSize` both
+report — including the crashed row's `size`, which used to be a raw
+`fs.statSync`, so the field has one meaning across every row rather than two.
+`withoutHeaderStamps` was already there and already stamp-length-insensitive
+(it rewrites the values to a fixed form, in *every* header, so the world's
+nested `MeshAndBsp` archive is covered too); nothing new had to learn the
+header's shape. Covered by *"the reported sizes exclude the header stamp, so
+its length cannot break them"* in `zenkit-node/test/roundtrip.test.js`, which
+rewrites the fixture's stamp to `date 1.1.1 0:0:0` — shorter than any the
+writer can emit on any day — and asserts the equality holds; it fails
+`4837 !== 4825` without the strip.
+
+Untouched deliberately: `wholeFileIdentical` stays `original.equals(resaved)`.
+It is already false for any pair written a second apart, so the day boundary
+is not what breaks it, and making it stamp-insensitive is a different question
+about what a whole-file claim should mean — `deterministic` and
+`byteDiff` are the fields that already answer it stamp-insensitively.
 
 ### 16.11 A malformed world still crashes the reader — the hang was the small half
 

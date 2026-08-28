@@ -113,6 +113,22 @@ function capFindings(findings, drill) {
   return { findings: findings.slice(0, FINDING_CAP), total, truncated: true };
 }
 
+// The size a fidelity report can compare. Every ZenGin archive header carries a
+// `date`/`user` stamp taken from the clock, and patch 0018 renders it
+// `%d.%d.%d` — no zero padding on the day or the month — so the header is a
+// byte shorter on the 9th than on the 10th. A re-save that crosses that
+// boundary is a different *length* from the original for a reason that says
+// nothing about the writer, which is exactly what `resavedSize === size` must
+// not be able to fail on. `withoutHeaderStamps` rewrites both stamps (the world
+// nests an archive) to a fixed form, so the number is a size with the one part
+// of the file that is *supposed* to differ excluded.
+//
+// One field, not two: a report carrying both a raw and a stripped size makes
+// every consumer choose, and the raw one answers no question the harness asks.
+function strippedSize(buf) {
+  return withoutHeaderStamps(buf).length;
+}
+
 function measure(file, game, drill) {
   const zk = require('..');
   const original = fs.readFileSync(file);
@@ -123,7 +139,7 @@ function measure(file, game, drill) {
     archiver: kind.archiver,
     format: kind.format,
     gameVersion: game,
-    size: original.length,
+    size: strippedSize(original),
   };
 
   let handle;
@@ -153,7 +169,7 @@ function measure(file, game, drill) {
 
     const resaved = fs.readFileSync(out1);
     const resavedAgain = fs.readFileSync(out2);
-    row.resavedSize = resaved.length;
+    row.resavedSize = strippedSize(resaved);
     row.savesBitIdentical = sha256(resaved) === sha256(resavedAgain);
     row.deterministic = row.savesBitIdentical
       || withoutHeaderStamps(resaved).equals(withoutHeaderStamps(resavedAgain));
@@ -247,7 +263,7 @@ function runChild(file, opts) {
     name: path.basename(file),
     archiver: kind.archiver,
     format: kind.format,
-    size: fs.statSync(file).size,
+    size: strippedSize(fs.readFileSync(file)),
     status: 'crashed',
     verdict: 'crashed',
     instrument: 'none',

@@ -15,7 +15,7 @@ const { spawnSync } = require('node:child_process');
 
 const zenkit = require('..');
 const { walk } = require('../lib/container.js');
-const { byteDiff } = require('../lib/container-diff.js');
+const { byteDiff, withoutHeaderStamps } = require('../lib/container-diff.js');
 
 const HARNESS = path.join(__dirname, '..', 'scripts', 'zen-roundtrip.js');
 const FIXTURE = path.join(__dirname, 'fixtures', 'minimal.g2.zen');
@@ -289,6 +289,42 @@ test('the byte diff sees past a header stamp in either archive header, and nothi
       entryDiff.differing.length > 0,
       'a perturbed entry byte went unreported'
     );
+  });
+});
+
+// The two sizes the report carries — `size` and `resavedSize` — are compared
+// straight against each other (`resavedSize === size`, the ASCII round-trip test
+// above), and patch 0018 formats the header stamp `%d.%d.%d` with no zero
+// padding on the day or the month. So the header is one byte shorter on the 9th
+// than on the 10th, and a re-save that crosses the boundary is a different
+// SIZE from the original for a reason that says nothing about the writer.
+// Both numbers therefore exclude the stamp's variable part (§16.10) — one field,
+// stripped on both sides, so the equality above keeps meaning what it says.
+//
+// Reproduced by rewriting the fixture's stamp shorter, not by waiting for a
+// 9 -> 10: the clock the re-save reads is not ours to set.
+test('the reported sizes exclude the header stamp, so its length cannot break them', () => {
+  withTmpDir((dir) => {
+    const at = path.join(dir, 'ascii.zen');
+    zenkit._authorFixtureWorld(at, 'ascii', 'g2');
+    const base = fs.readFileSync(at);
+    // Shorter than any stamp the writer can emit, whatever day it runs on.
+    const short = Buffer.from(
+      base.toString('latin1').replace(HEADER_LINES, '$1date 1.1.1 0:0:0\nuser u\n$3'),
+      'latin1'
+    );
+    assert.ok(short.length < base.length, 'the rewritten stamp must be shorter');
+    fs.writeFileSync(at, short);
+
+    const { proc, worlds } = run(dir);
+    assert.strictEqual(proc.status, 0, proc.stderr);
+    const row = worlds['ascii.zen'];
+    assert.strictEqual(row.status, 'ok');
+    assert.strictEqual(row.resavedSize, row.size);
+    // Still a size, and the stamp is the only thing it drops: the two headers a
+    // world has (top-level and the blob's own) are the whole difference.
+    assert.ok(row.size < short.length, 'nothing was stripped at all');
+    assert.strictEqual(row.size, withoutHeaderStamps(short).length);
   });
 });
 

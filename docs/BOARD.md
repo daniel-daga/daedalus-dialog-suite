@@ -155,9 +155,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **zenkit-node / fidelity**
 
-- **`resavedSize` breaks at a day or month boundary** — decided 2026-08-28:
-  strip the stamp in the existing field, no second field. Reproduce by
-  shortening the fixture's stamp, not by waiting for a 9→10. Unowned. §16.10
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
 **Elsewhere, with a home of their own**
@@ -198,6 +195,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **`resavedSize` at a day or month boundary** — landed: `size` and
+  `resavedSize` are both the stamp-stripped length (`withoutHeaderStamps`), one
+  field with one meaning on every row, so the un-padded `%d.%d.%d` day can no
+  longer make a faithful re-save look like a different size. §16.10
 - **`zCVob` V2 — `dynamicShadows` and the decals** — landed: `dynamicShadows` on
   `visualCamAlign`'s two bits, and all seven decal fields as a third table
   (`DECAL_FIELDS`) with a new `vec2` kind, flat keys and a per-VOB refusal in the
@@ -207,16 +208,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   takes all three, bounded by the packed layout's bit fields, and the per-VOB
   `getVobProps` read is now issued for every class because every VOB has them.
   §16.17
-- **Per-class visibility toggles** — landed: a `hiddenClasses` list in the
-  toolbar, `matchVobs` asked the complementary question, and an `instanceHidden`
-  attribute the VOB shader and the pick pass both read — so a hidden VOB is
-  neither drawn nor clickable, and its instance matrix is untouched. §16.16
-- **VOB search and filter in the scene tree** — landed: `matchVobs` /
-  `flattenMatching` in `zen-world` answer the query against the interned
-  dictionaries and keep each match's path; the tree's header filters by name
-  (debounced) and by class. §16.16
 
-Flushed 2026-08-28: I1, I2, D2, W2, W3, the typed multi-selection rotation
+Flushed 2026-08-28: the scene tree's VOB search/filter and its per-class
+visibility toggles (both landed, both §16.16), and earlier the same day I1,
+I2, D2, W2, W3, the typed multi-selection rotation
 (§16.4), waynet W4 (§16.7) and copy/paste D5 (§16.14), as the budget needed the
 room. Their forward facts are routed — what a copy still drops and the
 batch-guard relaxation it wants are §16.14, the authorable class set is §16.15,
