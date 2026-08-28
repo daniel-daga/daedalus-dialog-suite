@@ -3232,10 +3232,33 @@ three main ones, so the UI must distinguish "no such waypoint" from **"not in
 *this* world"** or it will lie about the largest cluster of references in the
 corpus.
 
+**W1 is now application logic, not parser work — carded 2026-08-28.** The
+correction above is the whole reason: `parameters` already existed and
+`callSites` landed with `ParsedArg[]` and 1-based line/column, so joining a call
+site's arguments against its callee's parameters to find the `waypoint` index
+needs nothing further from `daedalus-parser`. What W1 builds is the index and
+the lookup over it:
+
+- **Derive the rule, do not hardcode a call list.** Map a function to the
+  position of a parameter literally named `var string waypoint` (58 `TA_*`
+  functions declare one), then read the literal argument at that position. Only
+  the engine externals need a seed table — `AI_GotoWP`, `Npc_GetDistToWP` and
+  about four more — and that set is closed because the engine's is.
+- **The `TA_*` routines are the feature**, 6,223 literal sites against
+  `AI_GotoWP`'s 6. A card that ships only the externals ships 0.1 % of the
+  corpus and should be read as not having shipped W1.
+- **The residue is the design work, not the extraction.** 98.0 % of the 6,529
+  literal sites resolve against all 24 worlds but only 84.3 % against the three
+  main ones, so the lookup has three answers and not two: found here, **not in
+  this world**, and no such waypoint anywhere. Collapsing the middle one into
+  "missing" misreports the largest cluster in the corpus.
+- **Multi-valued, and do not design for duplicates**: 0 collisions across 12,341
+  waypoints, so build the lookup multi-valued because it is free, jump to the
+  first, and spend nothing else on it.
+
 **Phasing, and the half worth doing first is the back-direction.** W1 the index
-(medium — needs the parser change, and line/column must survive a path that today
-keeps only `node.text`); **W2 world → scripts (small-medium, and the one to land
-first)**: click a waypoint, see the routines that name it. It needs neither
+(medium, and the parser prerequisite it named is now landed); **W2 world →
+scripts (small-medium, and the one that landed first)**: click a waypoint, see the routines that name it. It needs neither
 inherited decision, no viewport refactor and no new navigation model, and it
 delivers a Problems rule — 128 dangling waypoint sites — for free. W3 the
 imperative handle (small, ~60 lines net negative; do it immediately before the

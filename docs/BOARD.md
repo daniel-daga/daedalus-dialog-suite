@@ -131,6 +131,12 @@ card waits on live at its pointer — put new prose there, not here.
 - **`zCVob` V2 — `dynamicShadows`, `sleepMode`, decals** — a decal field needs
   the fixture to carry it (A5's lesson). Unowned. §16.17
 
+**Daedalus scripts — where a script names a place**
+
+- **§16.8 W1 — the script-side waypoint index** — derive the `waypoint`
+  parameter from the project (58 `TA_*` declare one), seed only the ~6 engine
+  externals; the parser half already landed. Unowned. §16.8
+
 **Release gates**
 
 - **Six shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
@@ -165,10 +171,6 @@ card waits on live at its pointer — put new prose there, not here.
 - **Three viewport and World-surface warts** — the surface loses its geometry on
   navigate-away (a hard prerequisite for §16.8 W4), the imperative handle, the
   31 px reservation. `docs/refactoring-targets.md` §8–10
-
-**UI/UX improvement**
-
-*(empty — both cards landed; see `git log`)*
 
 ## Deferred
 
