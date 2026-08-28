@@ -171,6 +171,27 @@ export interface VobProps {
   /** The Direct3D depth bias, 0-31 — the packed layout's five bits. A wider
    *  number is refused rather than truncated in silence. */
   bias?: number;
+  /** Whether the VOB casts a blob shadow — `ShadowType`, bounded 0-3 by the same
+   *  two bits `visualCamAlign` is. Retail holds only 0 and 1. */
+  dynamicShadows?: number;
+  /**
+   * The seven fields of a decal visual, flat and prefixed.
+   *
+   * A decal is the one visual type carrying data of its own, and these are legal
+   * only on a VOB whose visual *is* one — every other VOB is refused, because
+   * defaulting a decal onto it would replace the visual, which is `visual`'s own
+   * refusal. `getVobProps` answers them nested, under `decal`.
+   */
+  decalDimension?: readonly number[];
+  decalOffset?: readonly number[];
+  decalTwoSided?: boolean;
+  /** `AlphaFunction`, 0-6. */
+  decalAlphaFunc?: number;
+  /** Frames per **minute** for an animated texture; not negative. */
+  decalTextureAnimFps?: number;
+  /** The transparency byte, 0-255. */
+  decalAlphaWeight?: number;
+  decalIgnoreDaylight?: boolean;
 }
 /**
  * Set scalar properties on one VOB, addressed by the same index path.

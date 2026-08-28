@@ -397,6 +397,116 @@ test('setVobProp refuses a base field the packed layout cannot hold', () => {
   assert.strictEqual(zenkit.getVobProps(handle, '0/1').presetName, before.presetName);
 });
 
+// V2's half of the same section: the shadow flag, and the seven fields a decal
+// visual carries (level-editor.md §16.17).
+//
+// `dynamicShadows` is `(bit0 & 0b11000000) >> 6` in the packed layout, so it is
+// bounded 0-3 like `visualCamAlign` and not by `ShadowType`'s two named values.
+// Measured over the same 41,393 retail VOBs on 2026-08-28: 41,260 hold 0 and
+// 133 hold 1, so nothing in the corpus needs the wider bound — the layout is
+// what silently truncates, and that is what the bound is taken from.
+//
+// **`sleepMode` is not here and cannot be.** `VirtualObject` reads and writes it
+// only under `is_save_game()`, so a value set on a world archive never reaches
+// the file. It was listed for V2 before the field was traced.
+
+test('setVobProp writes dynamicShadows, and it survives a save and reload', () => {
+  const handle = load();
+
+  zenkit.setVobProp(handle, '0/1', { dynamicShadows: 1 });
+  assert.strictEqual(zenkit.getVobProps(handle, '0/1').dynamicShadows, 1);
+  // The same field the dump has always carried under the enum's own name.
+  assert.strictEqual(vobAt(dumpOf(handle), '0/1').flags.shadowType, 1);
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-shadow-')), 'shadow.zen');
+  zenkit.saveWorld(handle, out);
+  assert.strictEqual(
+    zenkit.getVobProps(zenkit.loadWorld(out, 'g2'), '0/1').dynamicShadows, 1,
+  );
+});
+
+test('setVobProp refuses a dynamicShadows the packed layout cannot hold', () => {
+  const handle = load();
+  for (const bad of [4, -1, 0.5, '1', null, [1]]) {
+    assert.throws(
+      () => zenkit.setVobProp(handle, '0/1', { dynamicShadows: bad }), /dynamicShadows/,
+      String(bad),
+    );
+  }
+});
+
+// The decal fields need a fixture that carries a decal, and the committed
+// `minimal.g2.zen` predates `fixture.cc` growing one — so this authors a world
+// rather than loading that file. `0/2`, the container, is the decal; every other
+// VOB in the fixture has an UNKNOWN visual, which is what the refusal below is
+// checked against.
+function loadWithDecal() {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-decal-')), 'decal.zen');
+  zenkit._authorFixtureWorld(out, 'binsafe', 'g2');
+  return { handle: zenkit.loadWorld(out, 'g2'), dir: path.dirname(out) };
+}
+
+test('setVobProp writes all seven decal fields, and they survive a save and reload', () => {
+  // The decal is the one visual carrying data of its own, and every field of it
+  // goes through the archive as its own entry — `decalAlphaWeight` as a
+  // `write_byte`, which is the field A5's lesson was learned on.
+  const { handle, dir } = loadWithDecal();
+
+  zenkit.setVobProp(handle, '0/2', {
+    decalDimension: [55, 65], decalOffset: [-3, 7], decalTwoSided: false,
+    decalAlphaFunc: 6, decalTextureAnimFps: 9.5, decalAlphaWeight: 128,
+    decalIgnoreDaylight: true,
+  });
+
+  const expected = {
+    dimension: [55, 65], offset: [-3, 7], twoSided: false, alphaFunc: 6,
+    textureAnimFps: 9.5, alphaWeight: 128, ignoreDaylight: true,
+  };
+  assert.deepStrictEqual(zenkit.getVobProps(handle, '0/2').decal, expected);
+
+  const out = path.join(dir, 'saved.zen');
+  zenkit.saveWorld(handle, out);
+  assert.deepStrictEqual(zenkit.getVobProps(zenkit.loadWorld(out, 'g2'), '0/2').decal, expected);
+});
+
+test('setVobProp refuses a decal field on a vob whose visual is not one', () => {
+  // There is no decal object to write into, and defaulting one would replace the
+  // visual — which is `props.visual`'s refusal, for the same reason.
+  const { handle } = loadWithDecal();
+  assert.throws(
+    () => zenkit.setVobProp(handle, '0/1', { decalTwoSided: false }), /decal/,
+  );
+  // And the VOB beside it is untouched by the refusal.
+  assert.strictEqual(zenkit.getVobProps(handle, '0/2').decal.twoSided, true);
+});
+
+test('setVobProp refuses a decal value the archive cannot hold', () => {
+  const { handle } = loadWithDecal();
+  const bad = {
+    decalDimension: [[1], [1, 2, 3], 'x', [1, NaN], null],
+    decalOffset: [[], [0, 0, 0], 5],
+    decalAlphaFunc: [7, -1, 1.5, '2'],
+    decalAlphaWeight: [256, -1, 0.5, '80'],
+    decalTextureAnimFps: [-1, Infinity, '9'],
+    decalTwoSided: [1, 'true', null],
+    decalIgnoreDaylight: [0, 'false'],
+  };
+  for (const [key, values] of Object.entries(bad)) {
+    for (const value of values) {
+      assert.throws(
+        () => zenkit.setVobProp(handle, '0/2', { [key]: value }),
+        new RegExp(key), `${key}=${String(value)}`,
+      );
+    }
+  }
+  // A refused field writes nothing beside it.
+  assert.throws(
+    () => zenkit.setVobProp(handle, '0/2', { decalTwoSided: false, decalAlphaWeight: 999 }),
+    /decalAlphaWeight/,
+  );
+  assert.strictEqual(zenkit.getVobProps(handle, '0/2').decal.twoSided, true);
+});
+
 test('setVobProp refuses a bad index path', () => {
   const handle = load();
   for (const bad of ['9', '0/9', '0/1/0', 'abc', '', '0//1', '-1']) {

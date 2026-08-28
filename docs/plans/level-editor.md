@@ -2576,7 +2576,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.5 | **Numeric transform entry** | **landed** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half landed too (2026-08-28).** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` with the round-trip tolerance test the old wording asked for, and `WorldPropertyGrid` now has three angle fields on top of it. Unlike position, a committed angle leaves as an **absolute** pose (`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute angle is the thing the grid can now read off a VOB; the equality refusal below is therefore applied **per angle**, and it compares the typed number against the *displayed* rounded value as well as the exact decomposed one — `coordinate()` rounds to 2 dp, so a field reading "30" can be 30.000000000000004 underneath and retyping what is on screen would otherwise re-orthonormalize the matrix. `zenRotationToEuler`'s throw is caught and the row renders as unavailable rather than blanking the grid. **A multi-selection landed 2026-08-28** and is the one asymmetry: the fields describe the anchor VOB as always, but with N selected a committed angle leaves as a **delta** through the gizmo's own `onRotateSelection` → `rotateVobs`, so the selection turns together and keeps the relative orientation it had — the rule the position fields already have, and the one that keeps typing and dragging on one op-building path. The delta is `eulerDeltaRotation(displayed, typed)` (`zen-world/coords`), built from the two angle triples rather than from the anchor's stored matrix: a `R(to) * M^-1` would carry the anchor's own non-orthonormality into every other VOB of the selection. See §16.4. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
 | 1.6 | **Snapping** | **partial** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal are still out**, and not for want of a raycast — the world mesh has a BVH and the terrain pick already uses it. They are out because both are *per-VOB* answers (each VOB finds its own ground, its own normal) and the commit path takes one delta for the whole selection: `translateVobs`/`rotateVobs` would need a per-VOB variant, which is a second op-building path and the thing the gizmo work has avoided since Phase 1b began. Align-to-normal additionally has to decide which axis of a visual is up — the same question that keeps a placed VOB unrotated (`IDENTITY` in `WorldSurface`). |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
-| 1.8 | **The rest of `zCVob`** | **partial** (§16.17) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 is `dynamicShadows`, `sleepMode` and the decal parameters. `farClipScale` stays out: retail ships uninitialised junk in it (§7). |
+| 1.8 | **The rest of `zCVob`** | **landed** (§16.17) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 landed the same day: `dynamicShadows` on the same two bits, and all seven fields of a decal visual, flat and prefixed. Two fields stay out and both by a fact rather than by time — `farClipScale`, because retail ships uninitialised junk in it (§7), and **`sleepMode`, because `VirtualObject` reads and writes it only under `is_save_game()`**, so a value set on a world archive never reaches the file. |
 
 **Not a gap: scale.** `zCVob` has no scale field, so the two-mode gizmo is
 correct and a third mode would author a representation ZenGin does not have.
@@ -2708,6 +2708,11 @@ checked against the parser's item index, so a typo cannot reach a save — but
 that is a check, not a verdict. Increment 2 widened the gap rather than closing
 it: five more classes are editable, and a sound or a fog zone written wrongly is
 *invisible in the viewport* — the first edits whose only witness is the engine.
+
+`SetVobProp` is on Gate 2's list but its key set is not: V1 and V2 (§16.17) added
+`presetName`, `visualCamAlign`, `bias`, `dynamicShadows` and the seven decal
+fields after candidate `03` was built, so what the engine has seen of this op is
+the name, the visual and the six flags.
 
 `verify-world-edit.js` sets no class property at all, so a rebuilt candidate
 would have to grow one before it is worth building. **Whether that rebuild is
@@ -4395,5 +4400,63 @@ VOB has these three. One `getVobProps` round trip per selection change, which is
 the cheap half of the dump (the whole dump is 933 ms on NewWorld; this is one
 VOB).
 
-**Still V2's:** `dynamicShadows`, `sleepMode` and the decals. The decal warning
-above stands unchanged.
+**V2 landed 2026-08-28** — `dynamicShadows` and the decals, end to end through
+the same five layers V1 went through. Four things it settled.
+
+**`sleepMode` is not a `zCVob` world field and never was.** `VirtualObject::load`
+and `::save` touch it only inside `if (r.is_save_game())`, so a value set on a
+world archive is dropped on write and reads back as 0 — which is exactly what all
+41,393 retail VOBs hold, and why the measurement alone would have read as "retail
+never uses it" rather than as "this cannot be written". It is out of `BASE_FIELDS`
+and out of `kKnownKeys`, and the test that says so is in `vobClasses.test.ts`
+rather than a comment, because the next person to read §14.1's V2 list will
+otherwise re-add it. The same `is_save_game()` guard covers `nextOnTimer` and the
+rigid body, so nothing else in that block is authorable either.
+
+**`dynamicShadows` took V1's bound rule unchanged**: `(bit0 & 0b11000000) >> 6`,
+so 0-3 and not `ShadowType`'s NONE and BLOB. Retail holds only those two (41,260
+and 133 of 41,393, swept 2026-08-28), so unlike `visualCamAlign` there is no
+corpus value the enum's own bound would have refused — the wider bound is the
+*layout* rule holding, not a measurement forcing it. `normalizeWorld` gained
+`props.dynamicShadows` beside `flags.shadowType`, for `visualCamAlign`'s reason:
+the flags object is the classifier's shape and the props object is the only thing
+the grid can read a writable field's current value from.
+
+**The decals are a third table, not more base fields.** `DECAL_FIELDS`, beside
+`BASE_FIELDS` and `CLASS_FIELDS`, because they are legal only on a VOB whose
+visual *is* a decal — a per-VOB condition, and no class predicts it: all 1,932
+decals in the three retail worlds sit on a plain `zCVob`. The keys are flat and
+prefixed (`decalTwoSided`, not a nested `decal.twoSided`) so the IPC assertion
+stays the flat walk over keys the catalogue's header promises, and `decalSubKey`
+is the one place the flat op and the nested `getVobProps` read are tied together.
+The refusal is made three times over, deliberately and at different strengths:
+the op builder cannot find a `from` when the read answered `decal: null`, the IPC
+validator checks shape and bounds only — the main process holds no world, so it
+cannot know whether *this* VOB has a decal — and the binding makes the real
+per-VOB refusal against `get_object_type()`. That is `oCItem.instance`'s split
+reached from the other side.
+
+**The bounds, measured 2026-08-28 over the same three worlds.** Dimensions run
+10-550 and every one of the 1,932 offsets is [0, 0]; a size cannot be negative
+and an offset is a direction, so only `decalDimension` is floored at 0 and
+`decalOffset` has no bound at all. `alphaFunc` is 1, 2, 3 or — once — 6, all
+inside `AlphaFunction`'s seven values, which is why this enum is bounded by the
+enum where `zCMover.lerpMode` could not be. `alphaWeight` runs 80-255 and is
+bounded 0-255 by being the byte `write_byte` puts in the archive; `textureAnimFps`
+is frames per *minute* and runs 0-10, floored at 0 and otherwise free.
+
+**A new value kind came with them.** `vec2` — two finite floats, fixed arity for
+`color`'s reason (the binding reads them positionally) — through the descriptor,
+the grid's `parse`, and `assertClassPropValue`. The grid's colour branch and this
+one are now one branch with an arity and a wholeness taken off the kind.
+
+**A5's lesson held.** The fixture already carried a `VisualDecal` (`fixture.cc`,
+the container at `0/2`), which is what makes the round-trip test real — but the
+*committed* `minimal.g2.zen` predates it, so the decal tests author a world
+rather than loading that file. Regenerating the `.zen` is the reviewed act the
+regen script reserves; only the golden JSON was regenerated here, with
+`--golden-only`, and its whole diff is five `dynamicShadows: 0` lines.
+
+**Still not in the engine's verdict.** `dynamicShadows` and the decal fields join
+the six ops of §16.2 that no Gate 2 candidate covers — the candidate was built
+2026-08-27 and this is a new key set on `setVobProp`.

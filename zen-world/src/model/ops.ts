@@ -33,8 +33,8 @@
 
 import type { VobReader } from './vobTree';
 import {
-  baseFieldOf, classPropKeys, fieldOf, isAuthorableVobClass,
-  type AuthorableVobClass, type ClassProps,
+  baseFieldOf, classPropKeys, decalFieldOf, decalSubKey, fieldOf, isAuthorableVobClass,
+  type AuthorableVobClass, type ClassPropValue, type ClassProps, type ReadProps,
 } from './vobClasses';
 
 /** ZenGin space, centimetres — unconverted, exactly as the binding takes it. */
@@ -106,13 +106,25 @@ export interface VobProps {
   cdStatic?: boolean;
   cdDynamic?: boolean;
   physicsEnabled?: boolean;
-  /** The last three are the base fields `BASE_FIELDS` describes, and they are
+  /** The next four are the base fields `BASE_FIELDS` describes, and they are
    *  **not in the columnar index**: it carries the name, the visual and the six
    *  flags and nothing else of `zCVob`. So an op that names one of them needs
    *  its `from` side handed in — see `setVobProp`'s `current`. */
   presetName?: string;
   visualCamAlign?: number;
   bias?: number;
+  dynamicShadows?: number;
+  /** The seven fields of a decal visual, flat and prefixed — `DECAL_FIELDS`.
+   *  They are legal only on a VOB whose visual is a decal, and the `from` side
+   *  comes out of the props record's nested `decal`, which is null for every
+   *  other VOB. That null is the refusal. */
+  decalDimension?: readonly number[];
+  decalOffset?: readonly number[];
+  decalTwoSided?: boolean;
+  decalAlphaFunc?: number;
+  decalTextureAnimFps?: number;
+  decalAlphaWeight?: number;
+  decalIgnoreDaylight?: boolean;
 }
 
 /** The keys of `VobProps`, in the order an op reads them back out of the index.
@@ -120,7 +132,9 @@ export interface VobProps {
 const PROP_KEYS = [
   'name', 'visual', 'showVisual', 'vobStatic', 'ambient',
   'cdStatic', 'cdDynamic', 'physicsEnabled',
-  'presetName', 'visualCamAlign', 'bias',
+  'presetName', 'visualCamAlign', 'bias', 'dynamicShadows',
+  'decalDimension', 'decalOffset', 'decalTwoSided', 'decalAlphaFunc',
+  'decalTextureAnimFps', 'decalAlphaWeight', 'decalIgnoreDaylight',
 ] as const satisfies ReadonlyArray<keyof VobProps>;
 
 export interface SetVobProp {
@@ -980,16 +994,34 @@ export interface VisualSwap {
  * can see. The kind is checked for the same reason the catalogue separates `int`
  * from `float`: this value goes back to C++ on an undo.
  */
-function baseFrom(key: string, current: ClassProps | null): string | number {
-  const value = current === null ? undefined : current[key];
+function baseFrom(key: string, current: ReadProps | null): ClassPropValue {
+  const decalField = decalFieldOf(key);
+  // A decal field is read one level down, and a VOB that is not a decal answers
+  // `decal: null` — which lands on the same refusal a missing base field does,
+  // and deliberately: neither has a `from` to invert on, and the op must not
+  // exist rather than be refused at the binding after a batch has half applied.
+  const record = decalField === null
+    ? current
+    : ((current?.decal ?? null) as ReadProps | null);
+  const value = record === null || record === undefined ? undefined : record[
+    decalField === null ? key : decalSubKey(key)
+  ];
   if (value === undefined) {
     throw new RangeError(`no current value for ${key}: its inverse would restore nothing`);
   }
-  const wanted = baseFieldOf(key)!.kind === 'string' ? 'string' : 'number';
+  const { kind } = decalField ?? baseFieldOf(key)!;
+  if (kind === 'vec2') {
+    if (!Array.isArray(value) || value.length !== 2
+      || value.some((part) => typeof part !== 'number')) {
+      throw new RangeError(`the current ${key} is not two numbers`);
+    }
+    return value as readonly number[];
+  }
+  const wanted = kind === 'string' ? 'string' : (kind === 'bool' ? 'boolean' : 'number');
   if (typeof value !== wanted) {
     throw new RangeError(`the current ${key} is not a ${wanted}`);
   }
-  return value as string | number;
+  return value as ClassPropValue;
 }
 
 /**
@@ -1002,7 +1034,7 @@ function baseFrom(key: string, current: ClassProps | null): string | number {
  */
 export function setVobProp(
   reader: VobReader, vob: number, to: VobProps, bounds: VisualSwap | null = null,
-  current: ClassProps | null = null,
+  current: ReadProps | null = null,
 ): SetVobProp {
   const keys = PROP_KEYS.filter((key) => to[key] !== undefined);
   if (keys.length === 0) throw new RangeError('a property op must set at least one property');
@@ -1028,8 +1060,14 @@ export function setVobProp(
     // literal union is what tells the compiler `flags` is not being indexed by
     // one of them below.
     else if (key === 'presetName') from.presetName = baseFrom(key, current) as string;
-    else if (key === 'visualCamAlign' || key === 'bias') {
+    else if (key === 'visualCamAlign' || key === 'bias' || key === 'dynamicShadows'
+      || key === 'decalAlphaFunc' || key === 'decalTextureAnimFps'
+      || key === 'decalAlphaWeight') {
       from[key] = baseFrom(key, current) as number;
+    } else if (key === 'decalDimension' || key === 'decalOffset') {
+      from[key] = baseFrom(key, current) as readonly number[];
+    } else if (key === 'decalTwoSided' || key === 'decalIgnoreDaylight') {
+      from[key] = baseFrom(key, current) as boolean;
     } else from[key] = flags[key];
   }
 

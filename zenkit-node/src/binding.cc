@@ -1040,16 +1040,19 @@ std::optional<bool> OptionalBool(Napi::Env env, Napi::Object props, char const* 
   return value.As<Napi::Boolean>().Value();
 }
 
-// The OptionalBool idiom for one of the two base fields that live in a *bit
-// field* rather than in a word of their own. ZenGin writes a VObject either
-// packed — every scalar in one `dataRaw` blob — or unpacked, and the packed
-// layout gives `visualCamAlign` 2 bits and `bias` 5 (`VirtualObject.cc`). So the
-// bound here is the layout's, not the C++ member's: a `bias` of 32 is an
-// `int32_t` ZenKit accepts and `& 0b11111` writes as 0, silently, in a field
-// that is invisible in the viewport. Whole numbers only, for setVobClassProp's
-// `int` reason — a fraction truncates on the cast and reports success.
-std::optional<std::int32_t> OptionalPackedInt(
-    Napi::Env env, Napi::Object props, char const* key, std::int32_t max) {
+// The OptionalBool idiom for a bounded whole number, and `why` is the half that
+// is not shared: the three base fields live in a *bit field* rather than in a
+// word of their own — ZenGin writes a VObject either packed, every scalar in one
+// `dataRaw` blob, or unpacked, and the packed layout gives `visualCamAlign` and
+// `dynamicShadows` 2 bits each and `bias` 5 (`VirtualObject.cc`) — while a
+// decal's alpha weight is bounded by being the byte `write_byte` puts in the
+// archive and its alpha function by `AlphaFunction`'s seven values. Every one of
+// them is silently truncated rather than refused if it goes through: a `bias` of
+// 32 is an `int32_t` ZenKit accepts and `& 0b11111` writes as 0, in a field that
+// is invisible in the viewport. Whole numbers only, for setVobClassProp's `int`
+// reason — a fraction truncates on the cast and reports success.
+std::optional<std::int32_t> OptionalWholeInt(
+    Napi::Env env, Napi::Object props, char const* key, std::int32_t max, char const* why) {
   Napi::Value const value = props.Get(key);
   if (value.IsUndefined()) return std::nullopt;
   if (!value.IsNumber()) {
@@ -1058,10 +1061,58 @@ std::optional<std::int32_t> OptionalPackedInt(
   double const number = value.As<Napi::Number>().DoubleValue();
   if (!std::isfinite(number) || number != std::floor(number) || number < 0 || number > max) {
     throw Napi::Error::New(env, std::string {"props."} + key + " must be a whole number 0-" +
-                                    std::to_string(max) +
-                                    " — the packed vob layout has no room for more");
+                                    std::to_string(max) + " — " + why);
   }
   return static_cast<std::int32_t>(number);
+}
+
+/// The packed layout's bit fields, by far the commonest reason for a bound here.
+constexpr char const* kPackedReason = "the packed vob layout has no room for more";
+
+// A decal's size or offset: exactly two finite floats. `floor` is applied to
+// neither — these are float32 members and a fractional dimension is a legal
+// decal. `min` is 0 for a size (a negative one is not a size) and absent for an
+// offset, which retail only ever holds at [0, 0] but which means a direction.
+std::optional<zenkit::Vec2> OptionalVec2(
+    Napi::Env env, Napi::Object props, char const* key, bool non_negative) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsArray() || value.As<Napi::Array>().Length() != 2) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be two numbers");
+  }
+  auto arr = value.As<Napi::Array>();
+  float parts[2];
+  for (std::uint32_t i = 0; i < 2; ++i) {
+    Napi::Value const element = arr.Get(i);
+    if (!element.IsNumber()) {
+      throw Napi::TypeError::New(env, std::string {"props."} + key + " must be two numbers");
+    }
+    double const number = element.As<Napi::Number>().DoubleValue();
+    if (!std::isfinite(number) || (non_negative && number < 0)) {
+      throw Napi::Error::New(env, std::string {"props."} + key + " must be two finite numbers" +
+                                      (non_negative ? ", neither negative" : ""));
+    }
+    parts[i] = static_cast<float>(number);
+  }
+  return zenkit::Vec2 {parts[0], parts[1]};
+}
+
+// A decal's texture animation rate — frames per minute, so a finite float that is
+// not negative. Its own helper rather than `OptionalFloat` below because that one
+// has no bound and is declared for `setVobClassProp`, further down the file.
+std::optional<float> OptionalNonNegativeFloat(
+    Napi::Env env, Napi::Object props, char const* key) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsNumber()) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be a number");
+  }
+  double const number = value.As<Napi::Number>().DoubleValue();
+  if (!std::isfinite(number) || number < 0) {
+    throw Napi::Error::New(env,
+                           std::string {"props."} + key + " must be a finite number, not negative");
+  }
+  return static_cast<float>(number);
 }
 
 Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
@@ -1074,10 +1125,16 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   }
   auto props = info[2].As<Napi::Object>();
 
-  static constexpr std::array<char const*, 12> kKnownKeys {
-      "name",       "visual",    "bbox",           "showVisual",     "cdStatic",
-      "cdDynamic",  "vobStatic", "ambient",        "physicsEnabled", "presetName",
-      "visualCamAlign", "bias"};
+  static constexpr std::array<char const*, 20> kKnownKeys {
+      "name",         "visual",         "bbox",           "showVisual",
+      "cdStatic",     "cdDynamic",      "vobStatic",      "ambient",
+      "physicsEnabled", "presetName",   "visualCamAlign", "bias",
+      "dynamicShadows",
+      // The decal visual's own seven, flat and prefixed. They are legal only on
+      // a VOB whose visual *is* a decal, which is a per-VOB condition and so is
+      // checked below rather than here.
+      "decalDimension", "decalOffset",  "decalTwoSided",  "decalAlphaFunc",
+      "decalTextureAnimFps", "decalAlphaWeight", "decalIgnoreDaylight"};
   auto names = props.GetPropertyNames();
   if (names.Length() == 0) {
     throw Napi::Error::New(env, "props must set at least one property");
@@ -1124,10 +1181,45 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
   // carries the fourth — 7 VOBs over the three worlds' 41,393 hold 3 — and a
   // bound that refused it would make an edit on one of them un-undoable: the
   // inverse writes the value that was there.
-  auto const cam_align = OptionalPackedInt(env, props, "visualCamAlign", 3);
-  auto const bias = OptionalPackedInt(env, props, "bias", 31);
+  auto const cam_align = OptionalWholeInt(env, props, "visualCamAlign", 3, kPackedReason);
+  auto const bias = OptionalWholeInt(env, props, "bias", 31, kPackedReason);
+  // The same two bits `visualCamAlign` has — `(bit0 & 0b11000000) >> 6` — so the
+  // bound is the layout's and not `ShadowType`'s two named values. Retail holds
+  // only 0 and 1 (41,260 and 133 of 41,393, measured 2026-08-28), so nothing in
+  // the corpus needs the wider bound; the layout is what truncates in silence.
+  auto const dynamic_shadows = OptionalWholeInt(env, props, "dynamicShadows", 3, kPackedReason);
+
+  // The decal's own fields. `decalAlphaWeight` is the byte `write_byte` puts in
+  // the archive and `decalAlphaFunc` is an `AlphaFunction`, whose seven values
+  // retail stays inside — unlike `zCMover.lerpMode`, which is why an enum is
+  // otherwise not something this editor writes.
+  auto const decal_dimension = OptionalVec2(env, props, "decalDimension", true);
+  auto const decal_offset = OptionalVec2(env, props, "decalOffset", false);
+  auto const decal_two_sided = OptionalBool(env, props, "decalTwoSided");
+  auto const decal_alpha_func =
+      OptionalWholeInt(env, props, "decalAlphaFunc", 6, "AlphaFunction has seven values");
+  auto const decal_fps = OptionalNonNegativeFloat(env, props, "decalTextureAnimFps");
+  auto const decal_alpha_weight =
+      OptionalWholeInt(env, props, "decalAlphaWeight", 255, "the archive holds one byte");
+  auto const decal_ignore_daylight = OptionalBool(env, props, "decalIgnoreDaylight");
+  bool const has_decal_field = decal_dimension || decal_offset || decal_two_sided
+      || decal_alpha_func || decal_fps || decal_alpha_weight || decal_ignore_daylight;
 
   auto vob = ResolveVob(env, *handle, indices, "indexPath");
+
+  // Dispatched via get_object_type() rather than dynamic_cast, for the reason
+  // `normalizeWorld`'s reader gives: node-gyp builds with RTTI disabled on some
+  // platforms. Defaulting a decal onto a VOB that has none would replace its
+  // visual, which is `props.visual`'s refusal and the same one.
+  zenkit::VisualDecal* decal = nullptr;
+  if (has_decal_field) {
+    if (vob->visual == nullptr
+        || vob->visual->get_object_type() != zenkit::ObjectType::zCDecal) {
+      throw Napi::Error::New(
+          env, "props: a decal field needs a vob whose visual is a decal — this one's is not");
+    }
+    decal = static_cast<zenkit::VisualDecal*>(vob->visual.get());
+  }
 
   if (has_visual && (vob->visual == nullptr || vob->visual->type == zenkit::VisualType::UNKNOWN)) {
     throw Napi::Error::New(
@@ -1152,6 +1244,21 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
     vob->sprite_camera_facing_mode = static_cast<zenkit::SpriteAlignment>(*cam_align);
   }
   if (bias) vob->bias = *bias;
+  if (dynamic_shadows) {
+    vob->dynamic_shadows = static_cast<zenkit::ShadowType>(*dynamic_shadows);
+  }
+
+  if (decal_dimension) decal->dimension = *decal_dimension;
+  if (decal_offset) decal->offset = *decal_offset;
+  if (decal_two_sided) decal->two_sided = *decal_two_sided;
+  if (decal_alpha_func) {
+    decal->alpha_func = static_cast<zenkit::AlphaFunction>(*decal_alpha_func);
+  }
+  if (decal_fps) decal->texture_anim_fps = *decal_fps;
+  if (decal_alpha_weight) {
+    decal->alpha_weight = static_cast<std::uint8_t>(*decal_alpha_weight);
+  }
+  if (decal_ignore_daylight) decal->ignore_daylight = *decal_ignore_daylight;
 
   return env.Undefined();
 }

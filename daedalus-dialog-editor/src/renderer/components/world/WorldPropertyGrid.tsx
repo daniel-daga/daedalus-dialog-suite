@@ -3,7 +3,8 @@ import {
   Box, Checkbox, Chip, FormControlLabel, Stack, TextField, Typography,
 } from '@mui/material';
 import {
-  BASE_FIELDS, classPropKeys, eulerDeltaRotation, eulerToZenRotation, fieldOf,
+  BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, eulerDeltaRotation,
+  eulerToZenRotation, fieldOf,
   zenRotationToEuler,
   type ClassPropValue, type ClassProps, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
@@ -156,17 +157,22 @@ const parse = (field: FieldDescriptor, text: string): ClassPropValue | null => {
     return field.kind === 'int' && !Number.isInteger(value) ? null : value;
   }
 
+  // The two array kinds: a colour is four whole channels, a decal's size or
+  // offset is two float32s. Arity and wholeness differ, nothing else does.
+  const arity = field.kind === 'color' ? 4 : 2;
   const parts = text.split(',');
-  if (parts.length !== 4) return null;
+  if (parts.length !== arity) return null;
   // The same rule the float branch above states, and for the same reason:
   // `Number('')` is 0, so "255,,180,255" would parse as a green of 0 and commit
   // it. A typo that dropped a channel is not a request to darken the light.
   if (parts.some((part) => part.trim() === '')) return null;
-  const channels = parts.map((part) => Number(part.trim()));
-  // Integers, because a channel is a byte in the archive and 127.5 is written
-  // as something else entirely.
-  return channels.every((channel) => Number.isInteger(channel) && within(channel))
-    ? channels
+  const values = parts.map((part) => Number(part.trim()));
+  // Integers for a colour, because a channel is a byte in the archive and 127.5
+  // is written as something else entirely; a decal dimension is a float.
+  const whole = field.kind === 'color';
+  return values.every((value) => (whole ? Number.isInteger(value) : Number.isFinite(value))
+    && within(value))
+    ? values
     : null;
 };
 
@@ -191,7 +197,7 @@ const ClassField: React.FC<{
    *  two groups reach the world by different ops but are typed identically, and
    *  a second copy of the blur/Escape/refusal rules is exactly what this
    *  component exists not to have. */
-  group?: 'class' | 'base';
+  group?: 'class' | 'base' | 'decal';
   field: FieldDescriptor;
   value: ClassPropValue;
   /**
@@ -410,11 +416,12 @@ export interface WorldPropertyGridProps {
    */
   onEditClassProps: (props: ClassProps) => void;
   /**
-   * One base-field change — `presetName`, `visualCamAlign` or `bias` — as the
-   * single key that changed, and on the described VOB alone.
+   * One base-field change — `presetName`, `visualCamAlign`, `bias`,
+   * `dynamicShadows` or one of the seven decal fields — as the single key that
+   * changed, and on the described VOB alone.
    *
-   * Separate from `onEditProps` although both build a `SetVobProp`: these three
-   * have no column in the index, so their `from` side is the fetched props
+   * Separate from `onEditProps` although both build a `SetVobProp`: none of them
+   * has a column in the index, so their `from` side is the fetched props
    * rather than something the op builder can read back per VOB. That is the
    * class fields' constraint reached by a different route, and it has the class
    * fields' consequence — the described VOB only, where a flag takes the whole
@@ -513,6 +520,16 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   // it does not have — 35 of the 37 in a retail world — and that empty list is
   // the whole test for whether there is a section to draw at all.
   const classFields = classPropKeys(className).flatMap((key) => fieldOf(className, key) ?? []);
+
+  // The decal a VOB's visual may be, out of the same read. `getVobProps` answers
+  // `decal: null` for every VOB whose visual is not one, which is 39,461 of a
+  // retail world's 41,393 — so a record here is the whole test for whether the
+  // decal section exists, exactly as `classFields` being empty is for that one.
+  const decalRecord = classProps === null ? null : classProps.decal;
+  const decal = decalRecord !== null && typeof decalRecord === 'object'
+    && !Array.isArray(decalRecord)
+    ? decalRecord as unknown as Record<string, ClassPropValue>
+    : null;
 
   // The one catalogued field whose legal values are a set this app already
   // holds. Undefined for every other field and for every class, so nothing else
@@ -716,9 +733,10 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
           ))}
         </Stack>
       </Field>
-      {/* The three base fields that are not in the columnar index — the Spacer
-          preset a VOB was made from, how its visual faces the camera, and the
-          depth bias. They are drawn for every class, unlike the section below,
+      {/* The base fields that are not in the columnar index — the Spacer preset a
+          VOB was made from, how its visual faces the camera, the depth bias and
+          whether it casts a shadow. They are drawn for every class, unlike the
+          section below,
           because every VOB has them; they sit here because they arrive with the
           same read, one round trip behind the selection. */}
       <Box
@@ -745,22 +763,59 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
               Reading this VOB&apos;s base fields…
             </Typography>
           )
-          : BASE_FIELDS.map((baseField) => (
+          : BASE_FIELDS
+            // A field the read did not answer is not drawn. In the app that
+            // cannot happen — `getVobProps` sets every one of them — but a build
+            // running against an older native addon would otherwise draw a field
+            // with no value and write whatever a blur made of it.
+            .filter((baseField) => classProps[baseField.key] !== undefined)
+            .map((baseField) => (
+              <Field
+                key={`${baseField.key}-${refusalGeneration}`}
+                label={baseField.key}
+                name={`base-${baseField.key}`}
+              >
+                <ClassField
+                  vob={selectedVob}
+                  group="base"
+                  field={baseField}
+                  value={classProps[baseField.key]}
+                  onCommit={(value) => onEditBaseProps({ [baseField.key]: value })}
+                />
+              </Field>
+            ))}
+      </Box>
+      {/* The decal fields (§16.17 V2) — drawn only for a VOB whose visual is a
+          decal, which is 1,932 of a retail world's VOBs and is not predicted by
+          the class: every one of them is a plain `zCVob`. `getVobProps` answers
+          them nested and the op carries them flat, so this is the one place the
+          two shapes meet, through `decalSubKey`. They commit down the base
+          handler because they are the same `SetVobProp`. */}
+      {decal !== null && (
+        <Box
+          data-testid="world-prop-decal-section"
+          sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            decal visual
+          </Typography>
+          {DECAL_FIELDS.map((decalField) => (
             <Field
-              key={`${baseField.key}-${refusalGeneration}`}
-              label={baseField.key}
-              name={`base-${baseField.key}`}
+              key={`${decalField.key}-${refusalGeneration}`}
+              label={decalSubKey(decalField.key)}
+              name={`decal-${decalField.key}`}
             >
               <ClassField
                 vob={selectedVob}
-                group="base"
-                field={baseField}
-                value={classProps[baseField.key]}
-                onCommit={(value) => onEditBaseProps({ [baseField.key]: value })}
+                group="decal"
+                field={decalField}
+                value={decal[decalSubKey(decalField.key)]}
+                onCommit={(value) => onEditBaseProps({ [decalField.key]: value })}
               />
             </Field>
           ))}
-      </Box>
+        </Box>
+      )}
       {/* The fields that make a VOB the thing it *is* — an item's Daedalus
           instance, a light's range and colour. They sit after the base ones
           rather than among them because they are read over IPC and the base ones

@@ -710,6 +710,65 @@ describe('a property op', () => {
       expect(applyOps(live, [op])).toEqual([1]);
       expect(live.name(1)).toBe('BARREL_01');
     });
+
+    it('reads dynamicShadows out of the same props', () => {
+      const op = setVobProp(reader(), 1, { dynamicShadows: 1 }, null,
+        { ...current, dynamicShadows: 0 });
+
+      expect(op.from).toEqual({ dynamicShadows: 0 });
+      expect(op.to).toEqual({ dynamicShadows: 1 });
+    });
+  });
+
+  describe('and the decal fields, which the props answer nested', () => {
+    // A decal is the one visual carrying data of its own, and `getVobProps`
+    // answers it as `decal: { … }` — so the flat key the op uses has to be
+    // resolved through `decalSubKey` on the way in. A VOB with no decal answers
+    // `decal: null`, and that is the whole of the refusal: the op cannot be
+    // built, rather than being built and refused three layers down.
+    const current = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 };
+    const decal = {
+      dimension: [40, 40], offset: [0, 0], twoSided: true, alphaFunc: 2,
+      textureAnimFps: 0, alphaWeight: 200, ignoreDaylight: false,
+    };
+
+    it('reads `from` out of the nested record and inverts on it', () => {
+      const op = setVobProp(
+        reader(), 1, { decalAlphaWeight: 128, decalDimension: [50, 60] }, null,
+        { ...current, decal },
+      );
+
+      expect(op.from).toEqual({ decalAlphaWeight: 200, decalDimension: [40, 40] });
+      expect(op.to).toEqual({ decalAlphaWeight: 128, decalDimension: [50, 60] });
+      expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+    });
+
+    it('carries a decal field beside a base one and a flag', () => {
+      const op = setVobProp(
+        reader(), 1, { bias: 7, decalTwoSided: false, ambient: true }, null,
+        { ...current, decal },
+      );
+
+      expect(op.from).toEqual({ bias: 2, decalTwoSided: true, ambient: false });
+      expect(op.to).toEqual({ bias: 7, decalTwoSided: false, ambient: true });
+    });
+
+    it('is refused for a VOB whose visual is not a decal', () => {
+      expect(() => setVobProp(reader(), 1, { decalTwoSided: false }, null,
+        { ...current, decal: null }))
+        .toThrow(/no current value for decalTwoSided/);
+      expect(() => setVobProp(reader(), 1, { decalTwoSided: false }, null, current))
+        .toThrow(/no current value for decalTwoSided/);
+    });
+
+    it('is refused when the current value is of the wrong kind', () => {
+      expect(() => setVobProp(reader(), 1, { decalDimension: [1, 2] }, null,
+        { ...current, decal: { ...decal, dimension: 40 } }))
+        .toThrow(/decalDimension/);
+      expect(() => setVobProp(reader(), 1, { decalTwoSided: false }, null,
+        { ...current, decal: { ...decal, twoSided: 1 } }))
+        .toThrow(/decalTwoSided/);
+    });
   });
 
   describe('and the box, which only a visual swap can change', () => {

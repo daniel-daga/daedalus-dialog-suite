@@ -105,8 +105,9 @@ was true for so long nobody re-reads it.
   **Why it matters that a stale `.node` is silent:** the editor's Jest suites
   fake the worker, so they stay green against a binary with neither
   `getVobProps` nor `setVobClassProp` while the running app has no class
-  properties at all — and, since §16.17 V1, against one whose `setVobProp`
-  refuses `presetName`, `visualCamAlign` and `bias`.
+  properties at all — and, since §16.17 V1 and V2, against one whose `setVobProp`
+  refuses `presetName`, `visualCamAlign`, `bias`, `dynamicShadows` and the seven
+  decal keys, and whose `getVobProps` answers no `dynamicShadows` at all.
 - `daedalus-dialog-editor/dist/` holds a packaged app (`win-unpacked`, the
   installer) that is **no longer fresh** — it predates the waypoint delete, and
   every session that only compiles leaves it further behind. `.gitignore`d, and
@@ -125,11 +126,6 @@ Each card is one line, an owner and a pointer. A bare `§` is a section of
 `docs/plans/level-editor.md`. The diagnosis, the measurement and the decision a
 card waits on live at its pointer — put new prose there, not here.
 
-**Spacer parity — Phase 1b-2 (the priority)**
-
-- **`zCVob` V2 — `dynamicShadows`, `sleepMode`, decals** — a decal field needs
-  the fixture to carry it (A5's lesson). Unowned. §16.17
-
 **Daedalus scripts — where a script names a place**
 
 - **§16.8 W1 — the script-side waypoint index** — derive the `waypoint`
@@ -139,8 +135,9 @@ card waits on live at its pointer — put new prose there, not here.
 **Release gates**
 
 - **Six shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
-  `SetVobClassProp`, `RenameWaypoint`, `AddWaypoint`, `SetWaypointEdge`, and
-  `AddVob` now authors classes. Say "Gate 2 passed for the ops it tested".
+  `SetVobClassProp`, `RenameWaypoint`, `AddWaypoint`, `SetWaypointEdge`;
+  `AddVob` now authors classes and `SetVobProp` has ten keys it did not have.
+  Say "Gate 2 passed for the ops it tested".
   Rebuilding a candidate is **Daniel's call**. §16.2
 
 **Phase 1b-2 — VOB editing**
@@ -200,6 +197,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **`zCVob` V2 — `dynamicShadows` and the decals** — landed: `dynamicShadows` on
+  `visualCamAlign`'s two bits, and all seven decal fields as a third table
+  (`DECAL_FIELDS`) with a new `vec2` kind, flat keys and a per-VOB refusal in the
+  binding. **`sleepMode` is out for good** — `is_save_game()` only, so a world
+  never carries it; §14.1 1.8 is closed. §16.17
 - **`zCVob` V1 — preset name, `visualCamAlign`, bias** — landed: `SetVobProp`
   takes all three, bounded by the packed layout's bit fields, and the per-VOB
   `getVobProps` read is now issued for every class because every VOB has them.

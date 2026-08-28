@@ -635,6 +635,10 @@ void PutBaseProps(Napi::Env env, Napi::Object props, VirtualObject const& vob) {
   // the whole of what the property grid can read a writable base field's
   // current value from, and the flags object is the classifier's shape.
   props.Set("visualCamAlign", EnumI(env, vob.sprite_camera_facing_mode));
+  // Likewise `flags.shadowType` under the archive's own name, and here for the
+  // same reason: it is writable (§16.17 V2) and the grid can read a writable
+  // base field's current value from nowhere else.
+  props.Set("dynamicShadows", EnumI(env, vob.dynamic_shadows));
   props.Set("animStrength", NumF(env, vob.anim_strength));
   props.Set("farClipScale", NumF(env, vob.far_clip_scale));
   props.Set("sleepMode", NumI(env, vob.sleep_mode));

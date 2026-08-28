@@ -305,18 +305,33 @@ is no scaled representation to author against.
 The third mutation, and the first that writes nothing derived: the name, the six
 boolean flags `vobIndex` emits (`showVisual`, `cdStatic`, `cdDynamic`,
 `vobStatic`, `ambient`, `physicsEnabled`), the visual's name, and three more
-`zCVob` base fields — `presetName`, `visualCamAlign` and `bias`.
+`zCVob` base fields — `presetName`, `visualCamAlign`, `bias` and
+`dynamicShadows` — and the seven fields of a decal visual.
 
-**The two numbers are bounded by the packed layout, not by their C++ types.**
+**The three numbers are bounded by the packed layout, not by their C++ types.**
 ZenGin writes a VObject either packed — every scalar in one `dataRaw` blob — or
-unpacked, and the packed layout gives `visualCamAlign` two bits and `bias` five.
-An `int32_t` bias of 32 is therefore written as 0 and reported as written, so
-0-31 and 0-3 are refusals here rather than truncations. The alignment's bound is
-those two bits and not `SpriteAlignment`'s three named values: retail carries 3
-on 7 of the 41,393 VOBs, and a bound that refused it would make an edit on one of
-them un-undoable, since the inverse writes back what was there. Measured over
-NewWorld, OldWorld and AddonWorld on 2026-08-28: 5,660 VOBs carry a preset name
-(122 distinct), `bias` is 0, 1 or 2, and `visualCamAlign` is 0-3.
+unpacked, and the packed layout gives `visualCamAlign` and `dynamicShadows` two
+bits each and `bias` five. An `int32_t` bias of 32 is therefore written as 0 and
+reported as written, so 0-31 and 0-3 are refusals here rather than truncations.
+The alignment's bound is those two bits and not `SpriteAlignment`'s three named
+values: retail carries 3 on 7 of the 41,393 VOBs, and a bound that refused it
+would make an edit on one of them un-undoable, since the inverse writes back what
+was there. Measured over NewWorld, OldWorld and AddonWorld on 2026-08-28: 5,660
+VOBs carry a preset name (122 distinct), `bias` is 0, 1 or 2, `visualCamAlign` is
+0-3, and `dynamicShadows` is 0 on 41,260 VOBs and 1 on 133.
+
+**`sleepMode` is not writable and cannot be.** `VirtualObject` reads and writes
+it only under `is_save_game()`, so a value set on a world archive never reaches
+the file — which is why all 41,393 retail VOBs read back 0.
+
+**The decal fields are `decalDimension`, `decalOffset`, `decalTwoSided`,
+`decalAlphaFunc`, `decalTextureAnimFps`, `decalAlphaWeight` and
+`decalIgnoreDaylight`** — flat and prefixed, though `getVobProps` answers them
+nested under `decal`. They are legal only on a VOB whose visual is a decal; any
+other is refused, because defaulting a decal onto it would replace the visual,
+which is `visual`'s own refusal. Measured over the same three worlds: 1,932 VOBs
+carry a decal, all of them plain `zCVob`; dimensions run 10-550, every offset is
+[0, 0], `alphaFunc` is 1, 2, 3 or (once) 6, and `alphaWeight` runs 80-255.
 
 Every key is optional and only the keys present are written, so setting one flag
 does not require knowing the other five. **An unrecognised key is refused**

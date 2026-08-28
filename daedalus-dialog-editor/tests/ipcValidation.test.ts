@@ -437,6 +437,56 @@ describe('assertApplyOpsRequest', () => {
       })).toThrow(/presetName/);
     });
 
+    it('takes dynamicShadows on the same two bits', () => {
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...props, from: { dynamicShadows: 0 }, to: { dynamicShadows: 1 } }],
+      })).not.toThrow();
+      for (const bad of [4, -1, 0.5, '1', null]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...props, from: { dynamicShadows: 0 }, to: { dynamicShadows: bad } }],
+        })).toThrow(/dynamicShadows/);
+      }
+    });
+
+    it('takes the seven decal fields, bounded by what the archive holds', () => {
+      // Whether the VOB *has* a decal is not knowable here — the main process
+      // holds no world of its own — so this layer checks the shape and the
+      // binding makes the per-VOB refusal. The op builder refuses it earlier
+      // still, on a `getVobProps` read that answered `decal: null`.
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          ...props,
+          from: {
+            decalDimension: [40, 40], decalOffset: [0, 0], decalTwoSided: true,
+            decalAlphaFunc: 2, decalTextureAnimFps: 0, decalAlphaWeight: 200,
+            decalIgnoreDaylight: false,
+          },
+          to: {
+            decalDimension: [55, 65], decalOffset: [-3, 7], decalTwoSided: false,
+            decalAlphaFunc: 6, decalTextureAnimFps: 9.5, decalAlphaWeight: 128,
+            decalIgnoreDaylight: true,
+          },
+        }],
+      })).not.toThrow();
+
+      const bad: Record<string, unknown[]> = {
+        decalDimension: [[1], [1, 2, 3], 'x', [1, NaN], null, [-1, 0]],
+        decalOffset: [[], [0, 0, 0], 5, [Infinity, 0]],
+        decalAlphaFunc: [7, -1, 1.5, '2'],
+        decalAlphaWeight: [256, -1, 0.5, '80'],
+        decalTextureAnimFps: [-1, Infinity, '9'],
+        decalTwoSided: [1, 'true', null],
+        decalIgnoreDaylight: [0, 'false'],
+      };
+      for (const [key, values] of Object.entries(bad)) {
+        for (const value of values) {
+          expect(() => assertApplyOpsRequest({
+            ops: [{ ...props, from: { [key]: value }, to: { [key]: value } }],
+          })).toThrow(new RegExp(key));
+        }
+      }
+    });
+
     it('rejects sides that do not carry the same properties', () => {
       // The inverse is `from` and `to` swapped. Sides that disagree give an
       // undo that restores a different set of fields than the op wrote, and

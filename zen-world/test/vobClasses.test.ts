@@ -10,8 +10,8 @@
 // other two readers unchanged.
 
 import {
-  AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, baseFieldOf, classPropKeys, fieldOf,
-  isAuthorableVobClass,
+  AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, DECAL_FIELDS, baseFieldOf, classPropKeys,
+  decalFieldOf, decalSubKey, fieldOf, isAuthorableVobClass,
 } from '../src/model';
 
 describe('the per-class field catalogue', () => {
@@ -295,6 +295,21 @@ describe('the base fields no class owns', () => {
     expect(baseFieldOf('presetName')).toEqual({ key: 'presetName', kind: 'string' });
   });
 
+  it('bounds dynamicShadows by the same two bits, not by ShadowType', () => {
+    // `dynamicShadows` is `(bit0 & 0b11000000) >> 6` in the packed layout, so
+    // the bound is 0-3 and not `ShadowType`'s two named values — the same rule
+    // `visualCamAlign` above is bounded by, and for the same reason: an inverse
+    // has to be able to write back whatever a world was holding.
+    expect(baseFieldOf('dynamicShadows')).toEqual({ key: 'dynamicShadows', kind: 'int', min: 0, max: 3 });
+  });
+
+  it('leaves sleepMode out — it is a save-game field a world never carries', () => {
+    // `VirtualObject::save` writes `sleepMode` only under `is_save_game()`, so a
+    // value set on a world archive is dropped on write and read back as 0.
+    // Measured 2026-08-28: 0 on all 41,393 retail VOBs.
+    expect(baseFieldOf('sleepMode')).toBeNull();
+  });
+
   it('is not a class entry, so an unknown class stays unknown', () => {
     // `SetVobClassProp` refuses a class the catalogue does not know by asking
     // whether it has any keys at all. Folding the base fields into `CLASS_FIELDS`
@@ -303,5 +318,56 @@ describe('the base fields no class owns', () => {
     expect(fieldOf('zCVob', 'bias')).toBeNull();
     expect(baseFieldOf('name')).toBeNull();
     expect(baseFieldOf('toString')).toBeNull();
+  });
+});
+
+describe('the decal fields, which live on the visual and not on the vob', () => {
+  it('catalogues all seven, prefixed so the op stays a flat walk over keys', () => {
+    // A decal is the one visual that carries data of its own, and `getVobProps`
+    // answers it as a nested `decal` record. The catalogue keeps the flat shape
+    // every other field has — the prefix is what makes the two views one key
+    // set, and `decalSubKey` is the only place that mapping is written down.
+    expect(DECAL_FIELDS.map((field) => field.key)).toEqual([
+      'decalDimension', 'decalOffset', 'decalTwoSided', 'decalAlphaFunc',
+      'decalTextureAnimFps', 'decalAlphaWeight', 'decalIgnoreDaylight',
+    ]);
+    for (const field of DECAL_FIELDS) {
+      expect(decalFieldOf(field.key)).toEqual(field);
+    }
+    expect(decalFieldOf('dimension')).toBeNull();
+    expect(decalFieldOf('presetName')).toBeNull();
+    expect(decalFieldOf('toString')).toBeNull();
+  });
+
+  it('maps each key onto the name the props record answers it under', () => {
+    expect(DECAL_FIELDS.map((field) => decalSubKey(field.key))).toEqual([
+      'dimension', 'offset', 'twoSided', 'alphaFunc',
+      'textureAnimFps', 'alphaWeight', 'ignoreDaylight',
+    ]);
+  });
+
+  it('bounds each field by what the archive holds, measured over retail', () => {
+    // Swept 2026-08-28 over NewWorld/OldWorld/AddonWorld: 1,932 of the 41,393
+    // VOBs carry a decal, all of them plain `zCVob`. Dimensions run 10-550 and
+    // an offset is always [0,0] — a size cannot be negative, an offset can, so
+    // only the first is floored. `alphaFunc` is an `AlphaFunction`, whose seven
+    // values retail stays inside (1, 2, 3 and one 6); `alphaWeight` is the byte
+    // `write_byte` puts in the archive, so 0-255 and whole.
+    expect(decalFieldOf('decalDimension')).toEqual({ key: 'decalDimension', kind: 'vec2', min: 0 });
+    expect(decalFieldOf('decalOffset')).toEqual({ key: 'decalOffset', kind: 'vec2' });
+    expect(decalFieldOf('decalTwoSided')).toEqual({ key: 'decalTwoSided', kind: 'bool' });
+    expect(decalFieldOf('decalAlphaFunc')).toEqual({ key: 'decalAlphaFunc', kind: 'int', min: 0, max: 6 });
+    expect(decalFieldOf('decalTextureAnimFps')).toEqual({ key: 'decalTextureAnimFps', kind: 'float', min: 0 });
+    expect(decalFieldOf('decalAlphaWeight')).toEqual({ key: 'decalAlphaWeight', kind: 'int', min: 0, max: 255 });
+    expect(decalFieldOf('decalIgnoreDaylight')).toEqual({ key: 'decalIgnoreDaylight', kind: 'bool' });
+  });
+
+  it('is not a base field and not a class field', () => {
+    // Three separate lookups over three separate tables, because a decal field
+    // is legal only on a VOB whose visual is one — the check `baseFieldOf`
+    // cannot make and `classPropKeys` must go on answering empty for `zCVob`.
+    expect(baseFieldOf('decalDimension')).toBeNull();
+    expect(fieldOf('zCVob', 'decalDimension')).toBeNull();
+    expect(classPropKeys('zCVob')).toEqual([]);
   });
 });

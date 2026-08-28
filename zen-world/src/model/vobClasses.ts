@@ -28,9 +28,12 @@
 /**
  * What a class field's value can be.
  *
- * Five kinds: a plain string, a finite scalar, a whole number, a flag, and a
- * small fixed-arity array of integers. Nothing here is a nested record, which is
- * what keeps the op's IPC assertion a flat walk over keys.
+ * Six kinds: a plain string, a finite scalar, a whole number, a flag, a small
+ * fixed-arity array of integers (`color`, four channels) and one of floats
+ * (`vec2`, the two components of a decal's size or offset). Nothing here is a
+ * nested record, which is what keeps the op's IPC assertion a flat walk over
+ * keys — `DECAL_FIELDS` below is flat for exactly that reason, even though the
+ * props record answers those seven fields nested.
  *
  * `int` is not a `float` with a rule attached. A `float` field whose archive
  * member is an `int32_t` truncates on write and reports success, so the two are
@@ -45,6 +48,18 @@ export interface ClassProps {
 }
 
 /**
+ * The whole record `getVobProps` answers, as the op builders read it.
+ *
+ * Wider than `ClassProps` in one way only: the reader carries a nested record
+ * for a decal visual, and an op that names a decal field reads its `from` side
+ * out of it. Nothing writes nested — `DECAL_FIELDS` is flat — so this shape is
+ * the *read* side alone.
+ */
+export interface ReadProps {
+  [key: string]: ClassPropValue | ReadProps | null | undefined;
+}
+
+/**
  * One field: what it is called, what kind of value it takes, and the bounds a
  * value outside of which is refused.
  *
@@ -56,7 +71,7 @@ export interface ClassProps {
  */
 export interface FieldDescriptor {
   key: string;
-  kind: 'string' | 'float' | 'int' | 'bool' | 'color';
+  kind: 'string' | 'float' | 'int' | 'bool' | 'color' | 'vec2';
   min?: number;
   max?: number;
 }
@@ -477,15 +492,73 @@ export function fieldOf(className: string, key: string): FieldDescriptor | null 
  * named values, because retail carries the fourth — 7 VOBs of the three worlds'
  * 41,393 hold 3 — and a bound that refused it would make an edit on one of them
  * un-undoable, since the inverse writes back the value that was there.
+ *
+ * **`dynamicShadows` (V2) is bounded the same way**: `(bit0 & 0b11000000) >> 6`,
+ * so 0-3 rather than `ShadowType`'s NONE and BLOB. Retail holds only those two
+ * (41,260 zero and 133 one over the same 41,393), so nothing in the corpus needs
+ * the wider bound — it is here because the *layout* is what silently truncates,
+ * and V1 already settled that as the rule.
+ *
+ * **`sleepMode` is deliberately not here.** `VirtualObject` reads and writes it
+ * only under `is_save_game()`, so a value set on a world archive is dropped on
+ * write and reads back as 0 — which is what all 41,393 retail VOBs hold. An
+ * editable field whose write does not survive a save is worse than a missing
+ * one. It was listed for V2 (§16.17) before the field was traced.
  */
 export const BASE_FIELDS = [
   { key: 'presetName', kind: 'string' },
   { key: 'visualCamAlign', kind: 'int', min: 0, max: 3 },
   { key: 'bias', kind: 'int', min: 0, max: 31 },
+  { key: 'dynamicShadows', kind: 'int', min: 0, max: 3 },
 ] as const satisfies readonly FieldDescriptor[];
 
 /** The descriptor for a base field, or null for a key that is not one — the
  *  `fieldOf` of the fields no class owns. */
 export function baseFieldOf(key: string): FieldDescriptor | null {
   return BASE_FIELDS.find((field) => field.key === key) ?? null;
+}
+
+/**
+ * The fields of a decal visual (level-editor.md §16.17, V2).
+ *
+ * A third table for a third reason. These are not class fields — every one of
+ * the 1,932 decals in retail NewWorld/OldWorld/AddonWorld sits on a plain
+ * `zCVob`, so no class implies them — and they are not base fields either,
+ * because they are legal only on a VOB whose visual *is* a decal. That is a
+ * per-VOB condition no class name answers, so it is a table of its own and the
+ * three lookups stay separate.
+ *
+ * **The keys are prefixed and flat.** `getVobProps` answers a decal as a nested
+ * record, but an op that carried one would be the first nested payload in the
+ * key set the IPC assertion walks. `decalSubKey` is the one place the two views
+ * are tied together.
+ *
+ * Bounds measured 2026-08-28 over the same three worlds: dimensions run 10-550
+ * and every offset is [0,0]. A size cannot be negative and an offset can, so
+ * only `decalDimension` is floored. `decalAlphaFunc` is an `AlphaFunction` and
+ * retail stays inside its seven values (1, 2, 3, and 6 once) — unlike
+ * `zCMover.lerpMode`, which is why enums are otherwise out of the catalogue.
+ * `decalAlphaWeight` is the byte `write_byte` puts in the archive.
+ */
+export const DECAL_FIELDS = [
+  { key: 'decalDimension', kind: 'vec2', min: 0 },
+  { key: 'decalOffset', kind: 'vec2' },
+  { key: 'decalTwoSided', kind: 'bool' },
+  { key: 'decalAlphaFunc', kind: 'int', min: 0, max: 6 },
+  { key: 'decalTextureAnimFps', kind: 'float', min: 0 },
+  { key: 'decalAlphaWeight', kind: 'int', min: 0, max: 255 },
+  { key: 'decalIgnoreDaylight', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** The descriptor for a decal field, or null for a key that is not one. */
+export function decalFieldOf(key: string): FieldDescriptor | null {
+  return DECAL_FIELDS.find((field) => field.key === key) ?? null;
+}
+
+/** The name the props record answers a decal field under — `decalTwoSided` is
+ *  `decal.twoSided`. Derived rather than tabulated, so a field added above
+ *  cannot be added here wrongly. */
+export function decalSubKey(key: string): string {
+  const rest = key.slice('decal'.length);
+  return rest.charAt(0).toLowerCase() + rest.slice(1);
 }

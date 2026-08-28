@@ -7,7 +7,8 @@
  */
 
 import {
-  baseFieldOf, classPropKeys, fieldOf, isAuthorableVobClass, type FieldDescriptor,
+  baseFieldOf, classPropKeys, decalFieldOf, fieldOf, isAuthorableVobClass,
+  type FieldDescriptor,
 } from 'zen-world';
 import type { WorldOp } from '../shared/worldTypes';
 
@@ -230,6 +231,17 @@ function assertClassPropValue(field: FieldDescriptor, side: string, value: unkno
   if (field.kind === 'color') {
     if (!isColorChannels(value, field.min ?? 0, field.max ?? 255)) {
       throw new Error(`Invalid op: ${where} must be four whole channels ${field.min ?? 0}-${field.max ?? 255}`);
+    }
+    return;
+  }
+  // A decal's size or offset: two float32s, so finite rather than whole, and
+  // fixed arity for `color`'s reason — the binding reads them positionally.
+  if (field.kind === 'vec2') {
+    const ok = Array.isArray(value) && value.length === 2
+      && value.every((part) => typeof part === 'number' && Number.isFinite(part)
+        && (field.min === undefined || part >= field.min));
+    if (!ok) {
+      throw new Error(`Invalid op: ${where} must be two finite numbers${field.min === undefined ? '' : `, ${field.min} or greater`}`);
     }
     return;
   }
@@ -624,7 +636,12 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
           throw new Error(`Invalid op: ${side} must be an object of properties`);
         }
         for (const [key, value] of Object.entries(op[side])) {
-          const base = baseFieldOf(key);
+          // A decal field is looked up in its own table: it is legal only on a
+          // VOB whose visual is a decal, and this process holds no world to ask.
+          // So the shape is checked here and the per-VOB refusal is the
+          // binding's — the split `oCItem.instance` already has, for the same
+          // reason and in the other direction.
+          const base = baseFieldOf(key) ?? decalFieldOf(key);
           if (key === 'name' || key === 'visual') {
             if (typeof value !== 'string') {
               throw new Error(`Invalid op: ${side}.${key} must be a string`);
@@ -634,12 +651,12 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
               throw new Error(`Invalid op: ${side}.${key} must be a boolean`);
             }
           } else if (base !== null) {
-            // The three base fields that have no column, checked through the
-            // catalogue's own descriptor exactly as a class field is — the
-            // bounds are the packed vob layout's two and five bits, and a value
-            // outside them is written truncated by ZenGin's own writer and
-            // reported as written. Both sides, because `from` is what an undo
-            // writes.
+            // The base and decal fields, which have no column, checked through
+            // the catalogue's own descriptor exactly as a class field is — the
+            // bounds are the packed vob layout's bit fields for three of them,
+            // and a value outside those is written truncated by ZenGin's own
+            // writer and reported as written. Both sides, because `from` is what
+            // an undo writes.
             assertClassPropValue(base, side, value);
           } else {
             throw new Error(`Invalid op: unknown property ${key}`);

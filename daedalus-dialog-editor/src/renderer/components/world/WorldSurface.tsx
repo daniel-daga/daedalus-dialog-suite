@@ -342,7 +342,7 @@ const WorldSurface: React.FC = () => {
     const { reader } = vobModelOf(summary);
     const className = reader.className(primary);
     // Asked for every class, not only the two of a retail world's 37 the
-    // catalogue has fields for: the three base fields (§16.17) are on every VOB
+    // catalogue has fields for: the base fields (§16.17) are on every VOB
     // and in none of the index's columns, so this read is the only thing the
     // grid can draw or invert them from. It costs one round trip per selection
     // change, and the per-VOB read is the cheap half of the dump.
@@ -754,8 +754,9 @@ const WorldSurface: React.FC = () => {
   }, [commitOps, classProps]);
 
   /**
-   * A base-field change from the grid — `presetName`, `visualCamAlign` or
-   * `bias`, and the described VOB alone.
+   * A base-field change from the grid — `presetName`, `visualCamAlign`, `bias`,
+   * `dynamicShadows` or one of the seven decal fields, and the described VOB
+   * alone.
    *
    * A `SetVobProp` like the name and the flags above, but built here rather than
    * in `handleEditProps` because these three have no column: the op cannot read

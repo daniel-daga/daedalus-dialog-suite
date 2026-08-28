@@ -685,6 +685,12 @@ describe('WorldPropertyGrid, the base fields with no column', () => {
     expect(input('base-bias').value).toBe('2');
     // The class section is a different question and this VOB still has none.
     expect(screen.queryByTestId('world-prop-class-section')).not.toBeInTheDocument();
+    // And a base field this read did not answer is not drawn at all. The app's
+    // own `getVobProps` answers every one of them; a build against an older
+    // native addon would otherwise draw a field with no value and write
+    // whatever a blur made of it.
+    expect(screen.queryByTestId('world-prop-base-dynamicShadows-input'))
+      .not.toBeInTheDocument();
   });
 
   it('waits rather than showing empty fields before the read arrives', () => {
@@ -739,11 +745,96 @@ describe('WorldPropertyGrid, the base fields with no column', () => {
     expect(baseEdits).toEqual([{ visualCamAlign: 3 }]);
   });
 
+  it('draws dynamicShadows alongside them', () => {
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[0]}
+      {...wiring}
+      classProps={{ ...BASE, dynamicShadows: 1 }}
+    />);
+
+    expect(input('base-dynamicShadows').value).toBe('1');
+    fireEvent.change(input('base-dynamicShadows'), { target: { value: '0' } });
+    fireEvent.blur(input('base-dynamicShadows'));
+    expect(baseEdits).toEqual([{ dynamicShadows: 0 }]);
+  });
+
   it('says a base edit is the described VOB alone, not the selection', () => {
     // The described VOB is the last of the selection — the one the gizmo
     // anchors on — so the props handed in are that one's.
     render(<WorldPropertyGrid summary={WORLD} selection={[1, 0]} {...wiring} classProps={BASE} />);
     expect(screen.getByTestId('world-prop-base-scope')).toBeInTheDocument();
+  });
+});
+
+// The decal fields (level-editor.md §16.17, V2).
+//
+// A third group, drawn only for a VOB whose visual is a decal — 1,932 of the
+// 41,393 retail VOBs, all of them plain `zCVob`, so no class name predicts one.
+// `getVobProps` answers them nested and the op carries them flat, which is the
+// one thing this section has to get right in both directions.
+describe('WorldPropertyGrid, the decal fields', () => {
+  const DECAL = {
+    dimension: [40, 40], offset: [0, 0], twoSided: true, alphaFunc: 2,
+    textureAnimFps: 0, alphaWeight: 200, ignoreDaylight: false,
+  };
+  const WITH_DECAL = {
+    class: 'zCVob', presetName: '', visualCamAlign: 0, bias: 0, dynamicShadows: 0,
+    decal: DECAL,
+  } as unknown as ClassProps;
+
+  it('draws nothing for a VOB whose visual is not a decal', () => {
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[0]}
+      {...wiring}
+      classProps={{ ...WITH_DECAL, decal: null } as unknown as ClassProps}
+    />);
+
+    expect(screen.queryByTestId('world-prop-decal-section')).not.toBeInTheDocument();
+    // The base fields above it are unaffected — every VOB has those.
+    expect(input('base-bias').value).toBe('0');
+  });
+
+  it('draws all seven, reading them out of the nested record', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={WITH_DECAL} />);
+
+    expect(screen.getByTestId('world-prop-decal-section')).toBeInTheDocument();
+    expect(input('decal-decalDimension').value).toBe('40, 40');
+    expect(input('decal-decalAlphaWeight').value).toBe('200');
+    expect(input('decal-decalAlphaFunc').value).toBe('2');
+    expect(screen.getByTestId('world-prop-decal-decalTwoSided-input')).toBeChecked();
+    expect(screen.getByTestId('world-prop-decal-decalIgnoreDaylight-input')).not.toBeChecked();
+  });
+
+  it('commits the flat, prefixed key the op carries', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={WITH_DECAL} />);
+
+    fireEvent.change(input('decal-decalDimension'), { target: { value: '55, 65' } });
+    fireEvent.blur(input('decal-decalDimension'));
+    fireEvent.click(screen.getByTestId('world-prop-decal-decalTwoSided-input'));
+
+    expect(baseEdits).toEqual([{ decalDimension: [55, 65] }, { decalTwoSided: false }]);
+    expect(edits).toEqual([]);
+  });
+
+  it('refuses a value the archive cannot hold', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={WITH_DECAL} />);
+
+    for (const bad of ['40', '40, 40, 40', '40, ', '-1, 40', 'a, b']) {
+      fireEvent.change(input('decal-decalDimension'), { target: { value: bad } });
+      fireEvent.blur(input('decal-decalDimension'));
+    }
+    for (const bad of ['256', '-1', '0.5']) {
+      fireEvent.change(input('decal-decalAlphaWeight'), { target: { value: bad } });
+      fireEvent.blur(input('decal-decalAlphaWeight'));
+    }
+
+    expect(baseEdits).toEqual([]);
+    // An offset may be negative — it is a direction, not a size.
+    fireEvent.change(input('decal-decalOffset'), { target: { value: '-3, 7' } });
+    fireEvent.blur(input('decal-decalOffset'));
+    expect(baseEdits).toEqual([{ decalOffset: [-3, 7] }]);
   });
 });
 
