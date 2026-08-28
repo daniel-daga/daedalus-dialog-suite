@@ -127,8 +127,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Copy/paste D5 — the subtree** — measured 2026-08-28: N appends in one
-  batch, paths predictable, one undo entry. No tree format, no new op. §16.14
 - **VOB search and filter in the scene tree** — by name and class, over columns
   already in the summary; 41,393 VOBs, so derive, don't rebuild. §16.16
 - **Per-class visibility toggles** — Spacer's VOB-type show/hide, on the
@@ -206,6 +204,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Copy/paste D5 — the subtree** — landed: `duplicateVobSubtree` and
+  `subtreeOps` in `zen-world`, paths computed forward; the clipboard holds
+  subtrees, and both verbs prune the selection to its top-level VOBs. §16.14
 - **Typed rotation for a multi-selection** — landed: the angle fields describe
   the anchor for N VOBs and commit a delta through `rotateVobs`, the gizmo's own
   path; the conversion is `eulerDeltaRotation`, from the two angle triples and

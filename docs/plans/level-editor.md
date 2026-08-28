@@ -2570,7 +2570,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | # | Missing | Status | Note |
 |---|---|---|---|
 | 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
-| 1.2 | **Copy / paste / duplicate**, incl. subtree | **partial** (§16.14) | The most-used Spacer verb after move. D1 (duplicate one VOB in place), D4 (a selection as one batch, one undo) and D3 (copy and paste as verbs) all landed 2026-08-28, as ordinary `AddVob`s with no new op. D2's class half landed 2026-08-28 on top of I1/I2 — a copy carries its **class** for the classes `insertVob` can construct, and drops it for the rest (and for `oCItem`, whose instance is not in the index) rather than have the op refused. What a copy still drops is the class *properties* and `physicsEnabled`. D5 (the subtree) is open; a cross-world clipboard only if part-to-part copying is wanted. |
+| 1.2 | **Copy / paste / duplicate**, incl. subtree | **done, less `physicsEnabled`** (§16.14) | The most-used Spacer verb after move. D1 (duplicate one VOB in place), D4 (a selection as one batch, one undo) and D3 (copy and paste as verbs) all landed 2026-08-28, as ordinary `AddVob`s with no new op. D2's class half landed 2026-08-28 on top of I1/I2 — a copy carries its **class** for the classes `insertVob` can construct, and drops it for the rest (and for `oCItem`, whose instance is not in the index) rather than have the op refused. What a copy still drops is the class *properties* and `physicsEnabled`. D5 (the subtree) landed 2026-08-28 as N appends in one batch. What is left is `physicsEnabled`; a cross-world clipboard only if part-to-part copying is wanted. |
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
 | 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), enums (retail carries out-of-range values a dropdown would destroy), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
 | 1.5 | **Numeric transform entry** | **landed** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half landed too (2026-08-28).** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` with the round-trip tolerance test the old wording asked for, and `WorldPropertyGrid` now has three angle fields on top of it. Unlike position, a committed angle leaves as an **absolute** pose (`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute angle is the thing the grid can now read off a VOB; the equality refusal below is therefore applied **per angle**, and it compares the typed number against the *displayed* rounded value as well as the exact decomposed one — `coordinate()` rounds to 2 dp, so a field reading "30" can be 30.000000000000004 underneath and retyping what is on screen would otherwise re-orthonormalize the matrix. `zenRotationToEuler`'s throw is caught and the row renders as unavailable rather than blanking the grid. **A multi-selection landed 2026-08-28** and is the one asymmetry: the fields describe the anchor VOB as always, but with N selected a committed angle leaves as a **delta** through the gizmo's own `onRotateSelection` → `rotateVobs`, so the selection turns together and keeps the relative orientation it had — the rule the position fields already have, and the one that keeps typing and dragging on one op-building path. The delta is `eulerDeltaRotation(displayed, typed)` (`zen-world/coords`), built from the two angle triples rather than from the anchor's stored matrix: a `R(to) * M^-1` would carry the anchor's own non-orthonormality into every other VOB of the selection. See §16.4. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
@@ -4056,15 +4056,46 @@ note is that `addVob(reader, spec, parent)` resolves its parent against the
 pre-batch world, so a subtree's ops want constructing with forward-computed
 paths rather than through that helper.
 
+**Landed 2026-08-28**, exactly as the note above sized it. `duplicateVobSubtree`
+in `zen-world/src/model/ops.ts` reads a VOB and its descendants as a `VobSubtree`
+— D1's spec at every node, so each loses what a single copy loses and each is
+fitted its *own* visual bounds — and `subtreeOps` turns one of those into the
+root's `AddVob` followed by one per descendant, at slots `0, 1, 2 …` under the
+path its own parent's op names. Nothing is resolved against the world for a
+descendant, because a copy is appended to an empty list of children. Both verbs
+carry it for free: `duplicateVobs` flat-maps it, and the clipboard now holds
+subtrees rather than specs, so `pasteVobs` takes `VobSubtree[]`.
+
+**The one thing the card did not name, and it is not cosmetic: the selection has
+to be pruned.** A parent and its own child both selected would give the child a
+copy inside the parent's copy *and* another beside itself. `topLevelVobs` drops
+any VOB an ancestor of which is also selected, and both the duplicate and the
+copy go through it. A VOB not in the index is kept rather than dropped, so the
+refusal it earns is still `duplicateVobSpec`'s, naming it.
+
+The per-list slot count in `duplicateVobs` counts **copies, not ops** — a
+subtree appends exactly one VOB to its root's list however many descendants it
+brings — and the flat `vob` runs on from the root's, which is exact for one
+appended subtree and carries the same approximation D4 already documented where
+a batch holds several. Nothing reads it either way.
+
+Verified by Jest on both sides, as D1, D3 and D4 were: `zen-world/test/ops.test.ts`
+predicts the paths of a two-deep subtree before any insert runs and commits the
+batch against a fake binding that appends the way the real one does, unwinding
+it back to front to the world's exact starting set; `tests/WorldSurface.editing.test.tsx`
+duplicates and pastes a parent with a child. **The two things §16.14 listed as
+unmeasured are still unmeasured** — a subtree deep or wide enough to matter for
+performance, and what a paste does about name collisions — and neither was in
+this card's scope.
+
 **What was not measured:** a subtree deep or wide enough to matter for
 performance, and what a *paste* of a subtree does about name collisions. Neither
 blocks the card.
 
-**Sequence: D1 → D4 → D3, with D2 blocked on §16.15 and D5 held back.** D4 and
-D3 were both taken ahead of D2, which needs class-specific insertion first;
-neither needed anything from D2 but the batch, and D4 is what built it. What is
-left of this card is D2's `physicsEnabled` half (a sequencing call, above) and
-D5.
+**Sequence: D1 → D4 → D3 → D5, with D2 blocked on §16.15.** D4, D3 and D5 were
+all taken ahead of D2, which needs class-specific insertion first; none needed
+anything from D2 but the batch, and D4 is what built it. What is left of this
+card is D2's `physicsEnabled` half — a sequencing call, above.
 
 ### 16.15 Class-specific insertion (§14.1 1.3)
 

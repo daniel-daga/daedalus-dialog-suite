@@ -29,6 +29,7 @@ import {
   deleteWaypoint,
   dropVobsToGround,
   duplicateVobSpec,
+  duplicateVobSubtree,
   duplicateVobs,
   pasteVobs,
   invertOp,
@@ -1328,8 +1329,12 @@ describe('a selection duplicated as one batch', () => {
     // would claim `0/2` — and `writeOp` would refuse the second, because the
     // list it was appended to has changed since.
     expect(duplicateVobs(reader(), [1, 2]).map((op) => op.path)).toEqual(['0/2', '0/3']);
-    // Roots are the same list and get the same treatment.
-    expect(duplicateVobs(reader(), [0, 3]).map((op) => op.path)).toEqual(['2', '3']);
+    // Roots are the same list and get the same treatment. ROOT_A brings its two
+    // children with it since D5, so the slot ROOT_B's copy takes is advanced by
+    // the *copies appended to that list*, which is one, and not by the ops the
+    // subtree emitted.
+    expect(duplicateVobs(reader(), [0, 3]).map((op) => op.path))
+      .toEqual(['2', '2/0', '2/1', '3']);
   });
 
   it('takes the bounds each VOB is handed, so a copy keeps the box it had', () => {
@@ -1418,7 +1423,7 @@ describe('a clipboard pasted into a list', () => {
     { parent: 0, childIndex: 1, name: 'CHILD_B', visual: 'C.3DS' },
     { childIndex: 1, name: 'ROOT_B', visual: 'D.3DS' },
   ]));
-  const specs = (live = reader()) => [duplicateVobSpec(live, 1), duplicateVobSpec(live, 3)];
+  const specs = (live = reader()) => [duplicateVobSubtree(live, 1), duplicateVobSubtree(live, 3)];
 
   it('is one AddVob per spec, all appended to the list it is given', () => {
     // Every copy goes into the *one* list the paste chose, which is the whole
@@ -1447,7 +1452,7 @@ describe('a clipboard pasted into a list', () => {
     const copied = specs();
     const ops = pasteVobs(reader(), [copied[0]], null);
 
-    expect(ops[0].to).toBe(copied[0]);
+    expect(ops[0].to).toBe(copied[0].spec);
   });
 
   it('is nothing at all for an empty clipboard', () => {
@@ -1456,6 +1461,129 @@ describe('a clipboard pasted into a list', () => {
 
   it('refuses a parent that is not in the index', () => {
     expect(() => pasteVobs(reader(), specs(), 9)).toThrow(/9/);
+  });
+});
+
+describe('a duplicate that carries the subtree', () => {
+  // D5 (level-editor.md §16.14). The decision this card was held for is void:
+  // a batch of pure appends already unwinds as one undo entry (D4), which is
+  // the only property the serialized tree format was ever wanted for. So a
+  // subtree is N ordinary `AddVob`s — no tree in an op payload, no validator
+  // branch, no binding change.
+  //
+  // What it does need is paths computed *forward*. `addVob` resolves a parent
+  // against the world as it was, and a copied child's parent does not exist
+  // there: it is the copy the op before it makes.
+  //
+  //  vob 0 (root 0) ─┬─ vob 1
+  //                  └─ vob 2 ── vob 3
+  //  vob 4 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A', visual: 'A.3DS' },
+    { parent: 0, childIndex: 0, name: 'CHILD_A', visual: 'B.3DS' },
+    { parent: 0, childIndex: 1, name: 'CHILD_B', visual: 'C.3DS' },
+    { parent: 2, childIndex: 0, name: 'GRANDCHILD', visual: 'D.3DS' },
+    { childIndex: 1, name: 'ROOT_B', visual: 'E.3DS' },
+  ]));
+  /** The paths the fixture's own VOBs occupy, in enumeration order. */
+  const WORLD = ['0', '0/0', '0/1', '0/1/0', '1'];
+
+  it('reads a VOB and its descendants as a tree of specs', () => {
+    const tree = duplicateVobSubtree(reader(), 0);
+
+    expect(tree.spec).toMatchObject({ name: 'ROOT_A', visual: 'A.3DS' });
+    // Slot order, because that is the order the copies are appended in and a
+    // subtree that came back with its children swapped is not a copy.
+    expect(tree.children.map((child) => child.spec.name)).toEqual(['CHILD_A', 'CHILD_B']);
+    expect(tree.children[0].children).toEqual([]);
+    expect(tree.children[1].children.map((child) => child.spec.name)).toEqual(['GRANDCHILD']);
+  });
+
+  it('appends the descendants at the paths the copies take, depth first', () => {
+    // Predicted before any insert runs — measured against the binding when the
+    // card was sized (§16.14, D5), and this is the prediction it measured.
+    const ops = duplicateVobs(reader(), [0]);
+
+    expect(ops.map((op) => [op.op, op.path, op.parentPath, op.vob])).toEqual([
+      ['AddVob', '2', null, 5],
+      ['AddVob', '2/0', '2', 6],
+      ['AddVob', '2/1', '2', 7],
+      ['AddVob', '2/1/0', '2/1', 8],
+    ]);
+    expect(ops.map((op) => op.to!.name))
+      .toEqual(['ROOT_A', 'CHILD_A', 'CHILD_B', 'GRANDCHILD']);
+  });
+
+  it('fits each descendant its own box', () => {
+    // The bounds callback is asked per VOB in the subtree, not once for the
+    // root: a copied child keeps the box its own visual has.
+    const bounds = (vob: number): ZenBounds | null => (vob === 3 ? [-1, 0, -10, 1, 2, 10] : null);
+    const ops = duplicateVobs(reader(), [0], bounds);
+
+    expect(ops[3].to!.bbox).toEqual(placeBounds(
+      [-1, 0, -10, 1, 2, 10], [1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 6, 9],
+    ));
+    expect(ops[0].to).not.toHaveProperty('bbox');
+  });
+
+  it('copies a VOB already inside another copy once, not twice', () => {
+    // The selection is pruned to its top-level VOBs, and that is not tidiness:
+    // a parent and its own child both selected would otherwise give the child
+    // one copy inside the parent's copy *and* another beside itself.
+    expect(duplicateVobs(reader(), [0, 2, 3]).map((op) => op.path))
+      .toEqual(['2', '2/0', '2/1', '2/1/0']);
+    // A VOB whose ancestor is not selected is top-level however deep it sits.
+    expect(duplicateVobs(reader(), [3]).map((op) => op.path)).toEqual(['0/1/1']);
+  });
+
+  it('pastes a subtree into the list the paste chose', () => {
+    // The clipboard holds trees since D5, and a paste puts the whole of one
+    // under the list it is given — the root beside the selection, the
+    // descendants under the root's copy.
+    const ops = pasteVobs(reader(), [duplicateVobSubtree(reader(), 0)], 4);
+
+    expect(ops.map((op) => [op.path, op.parentPath])).toEqual([
+      ['1/0', '1'],
+      ['1/0/0', '1/0'],
+      ['1/0/1', '1/0'],
+      ['1/0/1/0', '1/0/1'],
+    ]);
+  });
+
+  it('commits as one batch and unwinds it back to front', () => {
+    // Against a binding that appends the way the real one does — the child's
+    // add works because `commitOps` applies ops in order, so by the time it
+    // runs its parent is in the world.
+    const world = new Set(WORLD);
+    const slots = (parentPath: string | null) => [...world].filter((path) => (
+      (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null) === parentPath
+    )).length;
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (_spec, parentPath) => {
+        const path = parentPath === null
+          ? String(slots(null)) : `${parentPath}/${slots(parentPath)}`;
+        world.add(path);
+        return path;
+      },
+      deleteVob: (path) => { world.delete(path); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    commitOps(binding, duplicateVobs(reader(), [0]));
+    expect([...world]).toEqual([...WORLD, '2', '2/0', '2/1', '2/1/0']);
+
+    // Back to front, which is the one order that leaves the paths of the ops
+    // still to be unwound standing.
+    commitOps(binding, [...duplicateVobs(reader(), [0])].reverse().map(invertOp));
+    expect([...world]).toEqual(WORLD);
   });
 });
 

@@ -1055,6 +1055,47 @@ describe('duplicating a VOB', () => {
     expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
   });
 
+  it('brings the whole subtree, at paths the batch computes forward', async () => {
+    // D5 (level-editor.md §16.14). VOB 1 is a child of VOB 0 here, so
+    // duplicating VOB 0 is two adds: the root's copy beside it, and the child's
+    // copy under *that* — a path that cannot be resolved against the world as
+    // it is, because the parent it names is the op before it.
+    const summary = await openWorld(undefined, [-1, 0]);
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    act(() => useWorldStore.getState().selectVob(0));
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.map((op) => [
+      op.op, (op as { path: string }).path, (op as { parentPath: string | null }).parentPath,
+    ])).toEqual([['AddVob', '1', null], ['AddVob', '1/0', '1']]);
+    // The child's copy is the child's own row, fitted the child's own box.
+    expect((ops[1] as { to: Record<string, unknown> }).to).toMatchObject({
+      name: 'BARREL',
+      position: [10, 20, 30],
+      bbox: placeBounds([-1, 0, -10, 1, 2, 10], IDENTITY, [10, 20, 30]),
+    });
+  });
+
+  it('copies a selected child once when its parent is selected too', async () => {
+    // The selection is pruned to its top-level VOBs. Without it the child would
+    // get a copy inside its parent's copy *and* another beside itself.
+    const summary = await openWorld(undefined, [-1, 0]);
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    act(() => useWorldStore.getState().selectVob(0));
+    act(() => useWorldStore.getState().toggleVob(1));
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.map((op) => (op as { path: string }).path)).toEqual(['1', '1/0']);
+  });
+
   it('copies a whole selection in one batch, so it is one undo', async () => {
     // The whole of D4: two ops, one `applyWorldOps` call, therefore one entry
     // in the main process's history. Both VOBs are roots here, so the copies
@@ -1087,7 +1128,7 @@ describe('duplicating a VOB', () => {
 
 describe('copying and pasting a VOB', () => {
   // D3 (level-editor.md §16.14): duplicate taken apart into two verbs. The
-  // clipboard is in-process and holds *specs* — what the rows said when Ctrl+C
+  // clipboard is in-process and holds *subtrees* — what the rows said when Ctrl+C
   // was pressed — so where a copy lands is chosen at the paste, and the paste
   // is still a batch of pure adds and still one undo entry.
   const copy = () => fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
@@ -1132,6 +1173,24 @@ describe('copying and pasting a VOB', () => {
         cdDynamic: false,
       },
     }]);
+  });
+
+  it('pastes a subtree under the copy of its own root', async () => {
+    // The clipboard holds subtrees since D5, so a paste puts the root beside
+    // the selection and the descendants under the root's copy — not all of
+    // them into the one list.
+    const summary = await openWorld(undefined, [-1, 0]);
+    expectRefresh(summary);
+
+    act(() => useWorldStore.getState().selectVob(0));
+    copy();
+    paste();
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.map((op) => [
+      (op as { path: string }).path, (op as { parentPath: string | null }).parentPath,
+    ])).toEqual([['1', null], ['1/0', '1']]);
   });
 
   it('pastes what was copied, not what is selected now', async () => {

@@ -1219,7 +1219,9 @@ export function duplicateVobSpec(
  * (level-editor.md §16.14, D4).
  *
  * D1's spec, N times, plus the one correction a batch needs — and it is a
- * correction, not a `map`. `addVob` resolves the slot a copy lands in against
+ * correction, not a `map`. Since D5 each of those N is a whole *subtree*
+ * (`duplicateVobSubtree`), which is why the selection is pruned to its top-level
+ * VOBs first and why this flat-maps rather than maps. `addVob` resolves the slot a copy lands in against
  * the world as it was, so two copies of the *same* parent would both claim its
  * last slot and `writeOp` would refuse the second: the list it was appended to
  * has changed since. The slot is advanced here for each copy already appended
@@ -1248,20 +1250,111 @@ export function duplicateVobs(
   bounds: (vob: number) => ZenBounds | null = () => null,
 ): AddVob[] {
   // How many copies this batch has already appended to each list — keyed by the
-  // parent's path, with the roots keyed by an empty string no path can be.
+  // parent's path, with the roots keyed by an empty string no path can be. It
+  // counts *copies*, not ops: a subtree appends one VOB to that list however
+  // many descendants it brings, and the rest go into lists of their own.
   const appended = new Map<string, number>();
 
-  return vobs.map((vob) => {
+  return topLevelVobs(reader, vobs).flatMap((vob) => {
     const parent = reader.columns.parent[vob];
-    const op = addVob(
-      reader, duplicateVobSpec(reader, vob, bounds(vob)), parent < 0 ? null : parent,
-    );
+    const tree = duplicateVobSubtree(reader, vob, bounds);
+    const op = addVob(reader, tree.spec, parent < 0 ? null : parent);
 
     const list = op.parentPath ?? '';
     const ahead = appended.get(list) ?? 0;
     appended.set(list, ahead + 1);
-    return appendedAfter(op, ahead);
+    return subtreeOps(appendedAfter(op, ahead), tree.children);
   });
+}
+
+/**
+ * The VOBs in `vobs` that no other VOB in `vobs` is an ancestor of.
+ *
+ * A duplicate carries the subtree (§16.14, D5), so a parent and its own child
+ * both selected would otherwise copy the child twice — once inside the parent's
+ * copy and once beside itself. Order is the selection's, and a VOB that is not
+ * in the index at all is kept rather than dropped: the refusal it earns belongs
+ * to `duplicateVobSpec`, which names it.
+ */
+export function topLevelVobs(reader: VobReader, vobs: readonly number[]): number[] {
+  const selected = new Set(vobs);
+  return vobs.filter((vob) => {
+    for (let up = reader.columns.parent[vob]; up >= 0; up = reader.columns.parent[up]) {
+      if (selected.has(up)) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * A VOB read out of the index with its descendants — what a duplicate and a
+ * copy both carry since D5 (level-editor.md §16.14).
+ *
+ * A tree of `NewVob`s rather than a serialized format, because the ops it turns
+ * into are ordinary appends: nothing crosses the IPC boundary but `AddVob`s,
+ * and this shape exists only long enough to compute their paths (and, for a
+ * copy, to sit on the clipboard until the paste).
+ */
+export interface VobSubtree {
+  readonly spec: NewVob;
+  /** In slot order, which is the order the copies are appended in. */
+  readonly children: readonly VobSubtree[];
+}
+
+/**
+ * Read a VOB and everything under it, as `duplicateVobSpec` reads one
+ * (level-editor.md §16.14, D5).
+ *
+ * Each descendant is that same spec, so each loses exactly what a single copy
+ * loses and each is fitted its *own* visual bounds — the callback is asked per
+ * VOB rather than once for the root.
+ */
+export function duplicateVobSubtree(
+  reader: VobReader,
+  vob: number,
+  bounds: (vob: number) => ZenBounds | null = () => null,
+): VobSubtree {
+  const spec = duplicateVobSpec(reader, vob, bounds(vob));
+  const children: VobSubtree[] = [];
+  // Enumeration order is depth-first, so a parent's children come out in slot
+  // order without sorting.
+  for (let child = 0; child < reader.count; child++) {
+    if (reader.columns.parent[child] === vob) children.push(duplicateVobSubtree(reader, child, bounds));
+  }
+  return { spec, children };
+}
+
+/**
+ * A subtree's ops: the root's own `AddVob`, already placed, followed by one per
+ * descendant with the path it will take.
+ *
+ * **Forward-computed, and that is the whole of D5's implementation note.**
+ * `addVob` resolves a parent against the world as it was, and a copied child's
+ * parent is not there — it is the copy the op before it makes. But a copy is
+ * appended to an empty list of children, so its slots are 0, 1, 2 … under the
+ * path its own parent's op names, and nothing has to be resolved at all.
+ *
+ * The flat `vob` runs on from the root's, which is exact for one appended
+ * subtree because a depth-first traversal reaches it in this order. Where the
+ * batch holds several it carries the same approximation a single `addVob`
+ * already does, and nothing reads it: a structural op is never applied to the
+ * projection.
+ */
+function subtreeOps(root: AddVob, children: readonly VobSubtree[]): AddVob[] {
+  const ops: AddVob[] = [root];
+
+  const append = (parentPath: string, trees: readonly VobSubtree[]): void => {
+    trees.forEach((tree, slot) => {
+      const path = `${parentPath}/${slot}`;
+      ops.push({
+        op: 'AddVob', vob: root.vob + ops.length, path, parentPath, from: null, to: tree.spec,
+      });
+      append(path, tree.children);
+    });
+  };
+  append(root.path, children);
+
+  return ops;
 }
 
 /**
@@ -1288,20 +1381,23 @@ function appendedAfter(op: AddVob, ahead: number): AddVob {
  * (level-editor.md §16.14, D3).
  *
  * Copy and paste are `duplicateVobs` taken apart at the seam that makes them
- * different verbs: the specs are read out of the index at the copy
- * (`duplicateVobSpec`), and *where* they land is chosen at the paste. So this
+ * different verbs: the subtrees are read out of the index at the copy
+ * (`duplicateVobSubtree`), and *where* they land is chosen at the paste. So this
  * takes values rather than VOB indices, and a clipboard outlives the selection
  * that filled it — and outlives the VOBs themselves, which is the point of
  * having copied them.
  *
- * All the copies go into the one list, unlike a duplicate, which puts each back
- * beside its own original. That is still a batch of pure adds, so it is still
+ * All the copied *roots* go into the one list, unlike a duplicate, which puts
+ * each back beside its own original; each root's descendants go under its own
+ * copy, wherever the paste put it. That is still a batch of pure adds, so it is still
  * one undo entry and `commitOps` still takes it: an append moves no index path.
  */
 export function pasteVobs(
-  reader: VobReader, specs: readonly NewVob[], parent: number | null = null,
+  reader: VobReader, trees: readonly VobSubtree[], parent: number | null = null,
 ): AddVob[] {
-  return specs.map((spec, ahead) => appendedAfter(addVob(reader, spec, parent), ahead));
+  return trees.flatMap((tree, ahead) => subtreeOps(
+    appendedAfter(addVob(reader, tree.spec, parent), ahead), tree.children,
+  ));
 }
 
 /**

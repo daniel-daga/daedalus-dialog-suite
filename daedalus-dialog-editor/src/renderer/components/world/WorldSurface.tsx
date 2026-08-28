@@ -11,11 +11,13 @@ import {
   addVob, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
   classPropKeys, connectWaypoints, disconnectWaypoints,
   deleteVob, deleteWaypoint, dropVobsToGround,
-  duplicateVobSpec, duplicateVobs,
+  duplicateVobSubtree, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
   moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
-  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
-  type AuthorableVobClass, type ClassProps, type NewVob, type VobProps, type ZenBounds,
+  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, topLevelVobs,
+  translateVobs, vobIndexPath,
+  type AuthorableVobClass, type ClassProps, type NewVob, type VobProps, type VobSubtree,
+  type ZenBounds,
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
@@ -793,7 +795,9 @@ const WorldSurface: React.FC = () => {
    * behaviour: the copy takes the same position, so an offset would be a
    * preference nobody asked for and a copy nobody could find is worse than one
    * sitting exactly where its original is. Each copy goes into its own
-   * original's parent, so a duplicated child stays a child.
+   * original's parent, so a duplicated child stays a child — **and brings its
+   * own children with it** (D5), which is why a selection holding a VOB and its
+   * parent copies that VOB once rather than twice.
    *
    * It is ordinary `AddVob`s and nothing more — no new op, no validator branch
    * — because that op already carries a whole description of a VOB and already
@@ -827,14 +831,14 @@ const WorldSurface: React.FC = () => {
    *
    * **In-process, and a `ref` rather than state**: nothing on screen changes
    * when it is filled, so a render would be for nothing, and it is deliberately
-   * not the OS clipboard — a VOB spec has no serialization anybody else reads,
+   * not the OS clipboard — a VOB subtree has no serialization anybody else reads,
    * and giving it one is the cross-world clipboard nobody has asked for.
    */
-  const clipboard = useRef<NewVob[]>([]);
+  const clipboard = useRef<VobSubtree[]>([]);
 
   /**
-   * Copy the selection — the same specs a duplicate commits, read at the copy
-   * and held as values.
+   * Copy the selection — the same subtrees a duplicate commits, read at the
+   * copy and held as values.
    *
    * That is the whole difference between the two verbs. `duplicateVobs` reads a
    * VOB and appends it in one step, so it can only ever put a copy back beside
@@ -849,12 +853,18 @@ const WorldSurface: React.FC = () => {
     if (current === null || selected.length === 0) return;
 
     const { reader } = vobModelOf(current);
-    clipboard.current = selected.map((vob) => duplicateVobSpec(reader, vob, boundsOf(vob)));
+    // Pruned as a duplicate's selection is, and for the same reason: a child
+    // whose parent is also copied is already inside its parent's subtree.
+    clipboard.current = topLevelVobs(reader, selected)
+      .map((vob) => duplicateVobSubtree(reader, vob, boundsOf));
   }, [boundsOf]);
 
   /**
    * Paste the clipboard into the selection's own list — beside it, not inside
    * it — and into the roots when nothing is selected.
+   *
+   * The *root* of each copied subtree, that is: its descendants go under it,
+   * wherever it landed.
    *
    * A sibling rather than a child because that is what makes a paste undo a
    * copy's place: the copy lands where the thing it was copied from lives. A
