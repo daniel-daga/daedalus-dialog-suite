@@ -129,10 +129,11 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Daedalus scripts — where a script names a place**
 
-- **§16.8 W1 — the script-side waypoint index** — blocked: the extraction half
-  is landed and now tested against the `TA_*` shape (a case-sensitive parameter
-  match was dropping whole files); the lookup half has no consumer that is both
-  unblocked and built, and its third answer needs the other worlds. Unowned. §16.8
+- **§16.8 W1 — the script-side waypoint index** — the extraction half is landed
+  and tested; the lookup rides with the dangling-waypoint card below, which is
+  its first consumer. What stays open is only the **third answer** — "no such
+  waypoint anywhere" needs worlds the app does not hold, so the rule says "not
+  in this world" and never "missing". Unowned. §16.8
 
 **Release gates**
 
@@ -150,9 +151,14 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Waynet, and the scripts that name it**
 
-- **Dangling-waypoint Problems rule** — blocked: `ProjectView` holds no
-  world/waypoint data, so the rule has no known-waypoints set; needs a design
-  decision on how that reaches the Problems pipeline. Unowned. §16.8
+- **The dangling-waypoint rule, and the world input it needs** — decided
+  2026-08-28, three parts and all three or none: an optional `world` on
+  `ProjectScanInput`/`ProjectView` read from `worldStore` the way
+  `knownNpcNames` is read from `projectStore`; a re-scan on world open/close and
+  on `AddWaypoint`/`DeleteWaypoint`/`RenameWaypoint` and nothing else; and the
+  rule itself, prefix-matching free points. Absent world means the rule returns
+  nothing, never a finding. Closes W1's lookup for the two answers it can give.
+  Unowned. §16.8
 
 **zenkit-node / fidelity**
 

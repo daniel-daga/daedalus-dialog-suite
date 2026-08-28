@@ -3390,6 +3390,37 @@ above); `AI_UseMob`/`Wld_IsMobAvailable`/`Wld_GetMobState` take a mob scheme,
 `Wld_AssignRoomToGuild`/`Wld_AssignRoomToNpc` a room. `Npc_GetNearestWP` and
 `Npc_GetNextWP` *return* a waypoint name and take none.
 
+**The Problems-pipeline question is answered, 2026-08-28 (Daniel), and it turned
+out to be two questions with different answers.** What blocked the rule also
+blocked W1's lookup and both portal slices, so it was worth separating.
+
+**The dangling-waypoint rule fits the panel as it is.** Its problem lives in a
+`.d` file, at a script site naming a waypoint that does not exist; `filePath`,
+`dialogName` and `functionName` are exactly the navigation it wants, and the
+world is only *reference data* — a set of names. That is what `knownNpcNames`
+already is: a non-file input threaded from a different store through
+`ProjectScanInput` into `ProjectView`. So `world` joins it as an optional field,
+read in `problemsStore.runScan` from `worldStore` the way the NPC names are read
+from `projectStore`, and **an absent world means the rule returns nothing** —
+the `oCItem.instance` rule again, where an empty index means "nothing is known"
+and never "nothing is legal".
+
+**The re-scan trigger is the part that needed deciding rather than deriving.** A
+full project scan per gizmo drag would be intolerable, and it is also
+unnecessary: the *name set* changes only on `AddWaypoint`, `DeleteWaypoint` and
+`RenameWaypoint`. A `MoveWaypoint`, every VOB op and every property write cannot
+affect it. So the scan re-runs on world open/close and on those three ops, and
+on nothing else.
+
+**The portal findings do not fit the panel, and are not being made to.** A
+malformed `P:OWCAVE01_` material is in a world mesh: there is no file, no dialog
+and no function, so making it a `Problem` means `filePath` becomes optional and
+a world locus is added — a change to five working rules and the panel's whole
+navigation model, paid now for a consumer that does not exist. **The open
+question is therefore where world findings surface**, and it stays open
+deliberately rather than being answered by widening a type that does not fit.
+See §16.18.
+
 ### 16.9 What is left of the ASCII writer — A6, and what `0048` left behind
 
 **A2 and A3 landed 2026-08-28** as patches `0045`, `0046` and `0047`, a chain:
@@ -4823,3 +4854,13 @@ untouched, so no fidelity claim moved.
 **Do not widen either card.** Face-material *authoring* is explicitly gated on
 validation proving out (§11), and the BSP compiler is out of scope for good —
 the editor validates portal metadata and never recompiles a world.
+
+**Where world findings surface is the open question these two slices leave.**
+Both functions are correct, tested and have no consumer, and that is a real cost
+rather than a tidy pause — `checkPortalMaterials` and `getPortals` are the second
+and third things now waiting on a decision about world-shaped findings. The
+Problems panel is **not** the answer (§16.8 says why: a portal finding has no
+file, dialog or function, which is the panel's entire navigation model), so the
+answer is a surface on the World side, and nobody has designed one. Until then
+neither slice is plumbed, and a third portal check would only deepen the debt --
+prefer designing the surface over adding checks.
