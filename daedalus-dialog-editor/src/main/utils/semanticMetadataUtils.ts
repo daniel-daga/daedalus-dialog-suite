@@ -112,13 +112,24 @@ const extractVoiceIds = (semanticModel: SemanticModel): Array<{ id: string; func
   return voiceIds;
 };
 
-// Engine externals known to take a waypoint name literal, and the 0-based
-// argument index it sits at. Not exhaustive — AI_GotoWP and Npc_GetDistToWP
-// are the two the corpus measurement (level-editor.md §16.8) confirmed; the
-// plan names "~4 more" left to add once verified.
+// Engine externals that take a waypoint name literal, and the 0-based argument
+// index it sits at. Closed, and measured rather than guessed (W5,
+// level-editor.md §16.8): every external declared in the G2 MDK's own
+// Content/AI/AI_Intern/Externals.d whose string parameter names a place. The
+// engine's set is closed, so this one is too — a project's *own* helpers are
+// derived from their declarations below, never listed here.
 const ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX: Record<string, number> = {
   ai_gotowp: 1,
-  npc_getdisttowp: 1
+  npc_getdisttowp: 1,
+  ai_teleport: 1,
+  ai_startstate: 3,
+  ta: 4,
+  ta_min: 6,
+  // spawnPoint: a waypoint *or* a free point, and both spellings are literal
+  // here. Retail measures 3,018 of 3,722 Wld_InsertNpc literals as waypoint
+  // names; the FP_ remainder simply never matches a selected waypoint.
+  wld_insertnpc: 1,
+  wld_insertitem: 1
 };
 
 /**

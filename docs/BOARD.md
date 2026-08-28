@@ -128,9 +128,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Daedalus scripts — where a script names a place**
 
-- **W5 — the rest of the engine externals that take a waypoint name** — the seed
-  table holds the two the plan confirmed of "~6"; measure the rest against the
-  MDK's externals and add only what is measured, never a guess. Unowned. §16.8
 - **§16.8 W1 — the script-side waypoint index** — blocked: the extraction half
   is landed and now tested against the `TA_*` shape (a case-sensitive parameter
   match was dropping whole files); the lookup half has no consumer that is both
@@ -205,6 +202,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **W5 — the waypoint seed table is measured and closed** — six more externals
+  read off the MDK's own `Externals.d`, each at its own argument index; the
+  biggest cluster in the corpus turned out to be `Wld_InsertNpc`'s `spawnPoint`,
+  so the panel no longer calls every site a routine. §16.8
 
 - **The World surface keeps its geometry across a navigate-away** — mounted from
   the first visit onwards behind a display toggle, `paused` stops the frame loop

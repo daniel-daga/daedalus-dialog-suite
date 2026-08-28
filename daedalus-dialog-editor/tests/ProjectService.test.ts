@@ -695,6 +695,68 @@ FUNC VOID Rtn_Start_99()
         { filePath: '/test/TA_Cased.d', functionName: 'Rtn_Start_99' }
       ]);
     });
+
+    // W5 (level-editor.md §16.8): the rest of the engine externals that take a
+    // waypoint name, measured against the G2 MDK's own Externals.d rather than
+    // guessed. Each is at a different argument index, which is the whole reason
+    // the seed table maps a name to a position instead of assuming the last arg.
+    it('resolves waypoint arguments of every seeded engine external', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `
+FUNC VOID Startup_NewWorld()
+{
+	AI_Teleport (self, "WP_TELEPORT");
+	AI_StartState (self, ZS_Stand, 0, "WP_STARTSTATE");
+	TA (self, 8, 22, ZS_Stand, "WP_TA");
+	TA_Min (self, 8, 0, 22, 0, ZS_Stand, "WP_TA_MIN");
+	Wld_InsertNpc (Grd_200_Gardist, "WP_SPAWN_NPC");
+	Wld_InsertItem (ItMi_Gold, "WP_SPAWN_ITEM");
+};
+        `,
+        '/test/Startup.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/Startup.d', semanticModel: file.semanticModel! }
+      ]);
+
+      for (const name of [
+        'WP_TELEPORT', 'WP_STARTSTATE', 'WP_TA', 'WP_TA_MIN', 'WP_SPAWN_NPC', 'WP_SPAWN_ITEM'
+      ]) {
+        expect(sites[name]).toEqual([{ filePath: '/test/Startup.d', functionName: 'Startup_NewWorld' }]);
+      }
+    });
+
+    // The same externals must not turn any other string argument into a
+    // waypoint: AI_StartState's first string is at index 3, so a call whose
+    // other arguments are literals stays a single site.
+    it('takes only the argument index the seed table names', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `
+FUNC VOID Rtn_Mixed()
+{
+	AI_PlayAni (self, "T_SEARCH");
+	AI_Output (self, other, "DIA_Test_15_00");
+	AI_Teleport (self, "WP_ONLY");
+};
+        `,
+        '/test/Mixed.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/Mixed.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(Object.keys(sites)).toEqual(['WP_ONLY']);
+    });
   });
 
   describe('voice id extraction (semanticMetadataUtils)', () => {

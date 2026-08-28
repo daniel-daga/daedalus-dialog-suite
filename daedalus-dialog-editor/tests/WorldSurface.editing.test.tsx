@@ -1956,7 +1956,7 @@ describe('a waypoint dragged in the viewport', () => {
 
     fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
 
-    expect(await screen.findByTestId('world-waypoint-panel')).toHaveTextContent(/no routine/i);
+    expect(await screen.findByTestId('world-waypoint-panel')).toHaveTextContent(/no script in this project/i);
   });
 
   describe('renamed in that panel', () => {

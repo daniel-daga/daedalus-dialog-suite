@@ -5,7 +5,7 @@ import {
 
 /**
  * The right-panel counterpart of a selected waypoint (level-editor.md §16.8
- * W2) — a waypoint had no UI at all before this. The routine list is read-only:
+ * W2) — a waypoint had no UI at all before this. The site list is read-only:
  * a jump into the source file is W4's job, not this one — the mount-lifetime
  * fix it waited on landed (refactoring-targets.md §8). The *name* is not, since
  * §16.7's W1 — this panel is the only UI a waypoint has, so it is where the one
@@ -94,7 +94,7 @@ const WaypointPanel: React.FC<{
       </Typography>
       {routines.length === 0 ? (
         <Typography variant="caption" color="text.secondary">
-          No routine in this project names it.
+          No script in this project names it.
         </Typography>
       ) : (
         <List dense disablePadding>

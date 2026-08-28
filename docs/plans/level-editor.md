@@ -3350,6 +3350,45 @@ unblocks a consumer decides that: either the UI says only what it knows ("not in
 this world", never "missing"), or something has to index the other worlds' waynets.
 That is a design decision, not a measurement, so it is not taken here.
 
+**W5 landed 2026-08-28: the seed table is measured and closed.** The "~6" was
+an estimate; the measurement is the G2 MDK's own
+`Content/AI/AI_Intern/Externals.d`, read for every external whose string
+parameter names a place, with retail literal-call-site counts beside it:
+
+| External | waypoint arg | retail literal sites |
+|---|---|---|
+| `AI_GotoWP` | 1 | 6 |
+| `Npc_GetDistToWP` | 1 | 300 |
+| `AI_Teleport` | 1 | 60 |
+| `AI_StartState` | 3 | 104 |
+| `TA` | 4 | 0 |
+| `TA_Min` | 6 | 0 |
+| `Wld_InsertNpc` | 1 | 3,722 |
+| `Wld_InsertItem` | 1 | 363 |
+
+Three things the measurement settled that the estimate could not. **`TA` and
+`TA_Min` have no literal site in retail at all** — every one of the 6,223 goes
+through a `TA_*` wrapper passing its own `waypoint` variable, which the
+derivation rule already catches; they are seeded so the index does not silently
+depend on whether the project being edited parses `Externals.d`. **The largest
+cluster is not a routine**: `Wld_InsertNpc` alone has more literal sites than
+every other external together, and its parameter is `spawnPoint`, a waypoint
+*or* a free point — 3,018 of its 3,722 literals are waypoint names (NW_, ADW_,
+OW_, WP_ and the named ones), the FP_ remainder keys entries that simply never
+match a selected waypoint. `Wld_InsertItem` is the same parameter and inverts
+the ratio (303 of 363 are free points). Both are in, because both measurably
+carry waypoint names; the cost of the remainder is index size, not a wrong
+answer. **`WaypointPanel`'s empty state stopped being true** and now says "No
+*script* in this project names it" — a spawn is not a routine, and it was the
+one place the panel asserted what the index holds.
+
+Excluded and measured, not overlooked: `AI_GotoFP`, `AI_GotoNextFP`,
+`Wld_IsFPAvailable`, `Wld_IsNextFPAvailable` and `Npc_IsOnFP` take a *free
+point* name, which is a different namespace the engine prefix-matches (the trap
+above); `AI_UseMob`/`Wld_IsMobAvailable`/`Wld_GetMobState` take a mob scheme,
+`Wld_AssignRoomToGuild`/`Wld_AssignRoomToNpc` a room. `Npc_GetNearestWP` and
+`Npc_GetNextWP` *return* a waypoint name and take none.
+
 ### 16.9 What is left of the ASCII writer — A6, and what `0048` left behind
 
 **A2 and A3 landed 2026-08-28** as patches `0045`, `0046` and `0047`, a chain:

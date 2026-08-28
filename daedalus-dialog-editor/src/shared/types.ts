@@ -28,10 +28,12 @@ export interface ProjectIndex {
    */
   voiceIds: Record<string, Array<{ filePath: string; functionName: string }>>;
   /**
-   * Waypoint name literals passed to AI_GotoWP/Npc_GetDistToWP or to a
-   * project-declared function taking a `var string waypoint` parameter,
-   * keyed by UPPERCASED waypoint name; entries keep the original file/routine
-   * locations. Built at project load/reindex time, same as voiceIds.
+   * Waypoint name literals passed to one of the engine externals that take a
+   * place name (`ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX`, measured against the G2
+   * MDK's Externals.d) or to a project-declared function taking a
+   * `var string waypoint` parameter, keyed by UPPERCASED waypoint name;
+   * entries keep the original file/function locations. Built at project
+   * load/reindex time, same as voiceIds.
    */
   waypointSites: Record<string, Array<{ filePath: string; functionName: string }>>;
   /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
