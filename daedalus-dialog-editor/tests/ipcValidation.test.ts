@@ -1056,4 +1056,36 @@ describe('assertApplyOpsRequest', () => {
       }
     });
   });
+
+  describe('a waypoint rename', () => {
+    // The second waynet op, and it carries no `vob` and no `path` either — so
+    // it shares the waypoint branch's placement and needs its own shape check:
+    // the two sides are *names* here, and a move's three-number check would
+    // refuse every one of them.
+    const rename = { op: 'RenameWaypoint', waypoint: 12, from: 'WP_CITY_01', to: 'WP_CITY_02' };
+
+    it('is accepted carrying no vob and no path at all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [rename] })).not.toThrow();
+    });
+
+    it('rejects a waypoint index that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rename, waypoint: bad }] }))
+          .toThrow(/waypoint/);
+      }
+    });
+
+    it('rejects a side that is not a string — `from` is the guard here', () => {
+      for (const bad of [undefined, null, 12, {}, ['WP']]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rename, from: bad }] })).toThrow(/from/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...rename, to: bad }] })).toThrow(/to/);
+      }
+    });
+
+    it('rejects an empty new name', () => {
+      // A waypoint with no name cannot be addressed by the index+name pair at
+      // all — the guard every waynet op stands on would have nothing to check.
+      expect(() => assertApplyOpsRequest({ ops: [{ ...rename, to: '' }] })).toThrow(/to/);
+    });
+  });
 });

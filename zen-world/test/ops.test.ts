@@ -20,6 +20,7 @@ import {
   addVob,
   alignVobsToNormal,
   applyOps,
+  applyWaypointNames,
   applyWaypointPositions,
   reparentVob,
   commitOps,
@@ -35,6 +36,7 @@ import {
   isWaynetOp,
   moveVob,
   moveWaypoint,
+  renameWaypoint,
   multiplyRotation,
   placeBounds,
   renumbersPaths,
@@ -47,6 +49,7 @@ import {
   vobIndexPath,
   type ClassProps,
   type MoveWaypoint,
+  type RenameWaypoint,
   type NewVob,
   type OpBinding,
   type RotateVob,
@@ -411,6 +414,7 @@ describe('a rotate op', () => {
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     commitOps(binding, [rotateVob(reader(), 1, QUARTER_Y, BOUNDS)]);
@@ -431,6 +435,7 @@ describe('a rotate op', () => {
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
 
@@ -838,6 +843,7 @@ describe('a class-property op', () => {
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = setVobClassProp(reader(), 1, { instance: 'ITMW_1H_SWORD_01' }, { instance: 'ITMI_GOLD' });
 
@@ -864,6 +870,7 @@ describe('a class-property op', () => {
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     expect(() => commitOps(binding, [
@@ -997,6 +1004,7 @@ describe('an add op', () => {
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
 
@@ -1019,6 +1027,7 @@ describe('an add op', () => {
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = addVob(reader(), SPEC, 0);
 
@@ -1039,6 +1048,7 @@ describe('an add op', () => {
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = addVob(reader(), SPEC);
 
@@ -1059,6 +1069,7 @@ describe('an add op', () => {
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     expect(() => commitOps(binding, [addVob(reader(), SPEC)])).toThrow(/7|2/);
@@ -1074,6 +1085,7 @@ describe('an add op', () => {
       deleteVob: (path) => { calls.push(`delete ${path}`); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     expect(() => commitOps(binding, [
@@ -1243,6 +1255,7 @@ describe('a selection duplicated as one batch', () => {
       deleteVob: (path) => { landed.splice(landed.indexOf(path), 1); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     commitOps(binding, duplicateVobs(reader(), [1, 2]));
@@ -1264,6 +1277,7 @@ describe('a selection duplicated as one batch', () => {
       insertVob: () => '0/2', deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const live = reader();
 
@@ -1385,6 +1399,7 @@ describe('a delete op', () => {
       deleteVob: (path) => { calls.push(`delete ${path}`); return undefined; },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     commitOps(binding, [deleteVob(reader(), 1)]);
@@ -1402,6 +1417,7 @@ describe('a delete op', () => {
       deleteVob: () => {},
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
 
@@ -1480,6 +1496,7 @@ describe('a reparent op', () => {
         return parent === null ? String(slot) : `${parent}/${slot}`;
       },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = reparentVob(reader(), 2, 1, 0);
 
@@ -1496,6 +1513,7 @@ describe('a reparent op', () => {
       insertVob: () => '0', deleteVob: () => {},
       reparentVob: () => '9/9',
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     expect(() => commitOps(binding, [reparentVob(reader(), 2, 1, 0)])).toThrow(/9\/9|0\/0\/0/);
@@ -1533,6 +1551,7 @@ describe('a reparent op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const live = reader();
 
@@ -1656,6 +1675,7 @@ describe('committing ops to the world', () => {
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     return { binding, calls };
   }
@@ -1704,6 +1724,7 @@ describe('committing ops to the world', () => {
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const box: ZenBounds = [0, 0, 0, 1, 1, 1];
 
@@ -1732,6 +1753,7 @@ describe('committing ops to the world', () => {
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
     expect(() => commitOps(binding, [
@@ -1777,6 +1799,10 @@ describe('moving a waypoint', () => {
       setWaypointPosition: (waypoint, name, to) => {
         if (name === refuse) throw new Error(`no waypoint ${name}`);
         calls.push(['waypoint', waypoint, name, to]);
+      },
+      setWaypointName: (waypoint, name, to) => {
+        if (name === refuse) throw new Error(`no waypoint ${name}`);
+        calls.push(['rename', waypoint, name, to]);
       },
     };
     return { binding, calls };
@@ -1891,5 +1917,118 @@ describe('moving a waypoint', () => {
     const bogus = { op: 'ScaleVob', vob: 0, path: '0/1', from: [0, 0, 0], to: [1, 1, 1] };
 
     expect(() => commitOps(binding, [bogus as unknown as WorldOp])).toThrow(/ScaleVob/);
+  });
+});
+
+describe('renaming a waypoint', () => {
+  // W1 (§16.7). It renumbers nothing, so it stands on the shipped index+name
+  // pair rather than needing an addressing scheme of its own — and its guard
+  // *is* its origin, which is what makes the inverse the plain swap.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+
+  function renameBinding(refuse?: string) {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: (waypoint, name, to) => {
+        if (name === refuse) throw new Error(`no waypoint ${name}`);
+        calls.push(['rename', waypoint, name, to]);
+      },
+    };
+    return { binding, calls };
+  }
+
+  it('carries the name the index had, read out of the payload', () => {
+    const op = renameWaypoint(NAMES, 1, 'WP_RENAMED');
+
+    expect(op).toEqual({
+      op: 'RenameWaypoint', waypoint: 1, from: 'WP_FIXTURE_A', to: 'WP_RENAMED',
+    });
+  });
+
+  it('is refused for a waypoint that is not in the payload', () => {
+    expect(() => renameWaypoint(NAMES, 3, 'WP_X')).toThrow(/3/);
+    expect(() => renameWaypoint(NAMES, -1, 'WP_X')).toThrow(/-1/);
+  });
+
+  it('inverts by swapping the two sides, and is its own round trip', () => {
+    const op = renameWaypoint(NAMES, 2, 'WP_RENAMED');
+    const undo = invertOp(op) as RenameWaypoint;
+
+    expect(undo.from).toBe('WP_RENAMED');
+    expect(undo.to).toBe('WP_FIXTURE_B');
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('reaches the binding as setWaypointName, guarded by the name it replaces', () => {
+    const { binding, calls } = renameBinding();
+
+    commitOps(binding, [renameWaypoint(NAMES, 1, 'WP_RENAMED')]);
+
+    expect(calls).toEqual([['rename', 1, 'WP_FIXTURE_A', 'WP_RENAMED']]);
+  });
+
+  it('is unwound guarded by the name it just wrote, not the one it replaced', () => {
+    // The half a plain `from`/`to` swap does not give for free. By the time the
+    // batch unwinds, the waypoint is called `to` — a guard still naming `from`
+    // would be refused by the binding, and the unwind would be the thing that
+    // failed.
+    const { binding, calls } = renameBinding('WP_FIXTURE_B');
+
+    expect(() => commitOps(binding, [
+      renameWaypoint(NAMES, 1, 'WP_RENAMED'),
+      renameWaypoint(NAMES, 2, 'WP_ALSO_RENAMED'),
+    ])).toThrow('no waypoint WP_FIXTURE_B');
+
+    expect(calls).toEqual([
+      ['rename', 1, 'WP_FIXTURE_A', 'WP_RENAMED'],
+      ['rename', 1, 'WP_RENAMED', 'WP_FIXTURE_A'],   // unwound
+    ]);
+  });
+
+  it('is neither structural nor renumbering, and is a waynet op', () => {
+    const op = renameWaypoint(NAMES, 1, 'WP_RENAMED');
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(isWaynetOp(op)).toBe(true);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    // The VOB columns have no row for a waypoint. Refused rather than skipped:
+    // a skip would leave the panel showing a name the world no longer has.
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+
+    expect(() => applyOps(live, [renameWaypoint(NAMES, 1, 'WP_RENAMED')]))
+      .toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+
+  it('writes the name list the panel reads, and answers which moved', () => {
+    const names = [...NAMES];
+
+    const touched = applyWaypointNames(names, [
+      renameWaypoint(NAMES, 1, 'WP_RENAMED'),
+      renameWaypoint(NAMES, 2, 'WP_ALSO_RENAMED'),
+    ]);
+
+    expect(names).toEqual(['FP_FIXTURE_FREE', 'WP_RENAMED', 'WP_ALSO_RENAMED']);
+    expect(touched).toEqual([1, 2]);
+  });
+
+  it('refuses to write past the end of that list', () => {
+    const op: RenameWaypoint = {
+      op: 'RenameWaypoint', waypoint: 3, from: 'WP_GONE', to: 'WP_X',
+    };
+
+    expect(() => applyWaypointNames([...NAMES], [op])).toThrow(/3/);
   });
 });

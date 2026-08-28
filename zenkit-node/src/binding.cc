@@ -569,6 +569,59 @@ Napi::Value SetWaypointPosition(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// setWaypointName(handle, waypoint, name, newName) — renames one waypoint.
+//
+// The same address as SetWaypointPosition's and for the same reason: a rename
+// inserts, deletes and reorders nothing, so the enumeration the caller read is
+// the one this writes into, and `name` is the guard rather than the address.
+//
+// The edges need no rewriting. `WayNet::save` writes edge endpoints and
+// `WriteArchive::write_object` de-duplicates by pointer, so an edge into a
+// renamed waypoint is an edge into the same object under its new name.
+//
+// Two names are refused where a move refuses none. An empty one cannot be
+// addressed by the index+name pair at all, and one another waypoint already
+// carries makes every by-name lookup ambiguous — the script index the waypoint
+// panel shows above all. Neither is forbidden by the format; both are absent
+// from all 24 retail worlds, and this is the op that could first author one.
+Napi::Value SetWaypointName(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  if (!info[1].IsNumber()) {
+    throw Napi::TypeError::New(env, "waypoint must be a number");
+  }
+  auto const requested = info[1].As<Napi::Number>().Int64Value();
+  if (!info[2].IsString() || !info[3].IsString()) {
+    throw Napi::TypeError::New(env, "name and newName must be strings");
+  }
+  auto const name = info[2].As<Napi::String>().Utf8Value();
+  auto const renamed = info[3].As<Napi::String>().Utf8Value();
+
+  auto points = CollectWaypoints(*handle);
+  if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
+    throw Napi::Error::New(env, "no waypoint at " + std::to_string(requested));
+  }
+
+  auto const at = static_cast<std::size_t>(requested);
+  if (points[at]->name != name) {
+    throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
+                                  + points[at]->name + ", not " + name
+                                  + " — the waynet has changed under this op");
+  }
+  if (renamed.empty()) {
+    throw Napi::Error::New(env, "a waypoint name cannot be empty");
+  }
+  for (std::size_t other = 0; other < points.size(); ++other) {
+    if (other != at && points[other]->name == renamed) {
+      throw Napi::Error::New(
+          env, "waypoint " + std::to_string(other) + " is already named " + renamed);
+    }
+  }
+
+  points[at]->name = renamed;
+  return env.Undefined();
+}
+
 // Reads `count` numbers out of a JS array. The matrix and the box are both
 // read positionally by native code, so a wrong length is refused rather than
 // padded — a short matrix would leave uninitialized rows in a struct ZenKit
@@ -1974,6 +2027,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("deleteVob", Napi::Function::New(env, DeleteVob));
   exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));
   exports.Set("setWaypointPosition", Napi::Function::New(env, SetWaypointPosition));
+  exports.Set("setWaypointName", Napi::Function::New(env, SetWaypointName));
   exports.Set("insertItemVob", Napi::Function::New(env, InsertItemVob));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));

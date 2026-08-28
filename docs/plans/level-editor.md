@@ -1483,8 +1483,8 @@ force there and must actually run, which needs a person at the keyboard.
 > both Spacer2 and Gothic2. The paragraph above stands as the state at the time
 > of writing. What is *still* uncovered is narrower and is listed in the
 > acceptance record's "Not run and not claimed here either": `DeleteVob`,
-> `MoveWaypoint` and `SetVobClassProp` all shipped after that candidate was
-> built.
+> `MoveWaypoint`, `SetVobClassProp` and `RenameWaypoint` all shipped after that
+> candidate was built.
 
 #### The turn gizmo — the second op, and the first that rewrites a bbox (2026-08-26)
 
@@ -1992,9 +1992,9 @@ for the upload. `WaynetOverlay.test.ts` pins the view-not-a-copy, because a copy
 would fail silently — the file would save the move and the overlay would go on
 drawing the old position until the world was reopened.
 
-Translate only. `MoveWaypoint` is the only waynet op there is; a waypoint does
-carry a direction, but nothing writes one, so a rotate ring would turn something
-the world would never be told about.
+Translate only. The waynet's other op is the panel's rename (§16.7, W1), which
+no gizmo produces; a waypoint does carry a direction, but nothing writes one, so
+a rotate ring would turn something the world would never be told about.
 
 `verify-world-edit.js`'s `expectedWaypointMoves` moves from 0 to 1 — the number
 §14.2 said this slice would change — and the driver's waynet comparison was
@@ -2582,12 +2582,13 @@ correct and a third mode would author a representation ZenGin does not have.
 
 ### 14.2 Waynet
 
-Only `MoveWaypoint` exists. Parity wants add, delete, rename, connect and
-disconnect edges, freepoint authoring (the `FP_` convention), and waypoint
-direction — which the binding deliberately leaves alone.
+`MoveWaypoint` and `RenameWaypoint` exist. Parity still wants add, delete,
+connect and disconnect edges, freepoint authoring (the `FP_` convention), and
+waypoint direction — which the binding deliberately leaves alone.
 
-The gizmo that produces a `MoveWaypoint` landed 2026-08-28 (§7), so the one op
-that exists is now reachable from the UI. Everything below still is not.
+The gizmo that produces a `MoveWaypoint` landed 2026-08-28 (§7) and the rename
+the same day (§16.7, W1), the latter in the waypoint panel rather than the
+viewport. Everything below still is not reachable.
 
 §7's op list already ends "… waynet edge ops", so this is *planned*. What it
 does not carry is the actual work: **addressing**. `MoveWaypoint` addresses a
@@ -2687,11 +2688,11 @@ ubuntu `editor-e2e-electron` job (`all-tests.yml`) does not set it, so the
 spec skips itself there for want of the addon — that job's platform doesn't
 ship, so it was never the gate this closes.
 
-### 16.2 Three shipped ops have no engine verdict
+### 16.2 Four shipped ops have no engine verdict
 
-`DeleteVob`, `MoveWaypoint` and `SetVobClassProp` all landed after candidate
-`03` was built, so Gate 2 covers five ops — `MoveVob`, `RotateVob`,
-`SetVobProp`, `AddVob`, `ReparentVob` — and not these. The acceptance record
+`DeleteVob`, `MoveWaypoint`, `SetVobClassProp` and `RenameWaypoint` all landed
+after candidate `03` was built, so Gate 2 covers five ops — `MoveVob`,
+`RotateVob`, `SetVobProp`, `AddVob`, `ReparentVob` — and not these. The acceptance record
 says so itself, under **"Not run and not claimed here either"** in its Gate 2
 section. Say **"Gate 2 passed for the ops it tested"**, never "Gate 2 passed".
 A removed subtree is still the edit ZenGin has the most room to disagree about.
@@ -2931,13 +2932,39 @@ Unlike §16.14's D1, **none of these is free**: each wants a binding function, a
 op, a validator branch in `assertApplyOpsRequest`, and its cases — in one change,
 per the rule that `ReparentVob` broke.
 
-**W1 — rename a waypoint.** Inserts nothing, deletes nothing, reorders nothing,
-so the index+name pair is sound as it stands. Edges are unaffected because the
-binding matches endpoints by pointer identity, not by name. Invertible for free
-(rename back). The one thing it touches outside the waynet is scripts that name
-the waypoint as a literal — which is §16.8's jump, read-only, and *not* this
-card's job to update. Say so in the increment: a rename can orphan a script
-reference, and warning about that is §16.8's Problems rule, still blocked.
+**W1 — rename a waypoint. Landed 2026-08-28**, exactly as sized: `RenameWaypoint`
+→ `setWaypointName`, the shipped index+name pair unchanged, edges untouched
+because the binding matches endpoints by pointer identity. The op carries no
+separate `name` field — `from` *is* the guard, which is what makes the inverse
+the plain swap, and what makes the *unwind* address the waypoint by the name the
+op just wrote rather than the one it replaced (`writeOp` takes the guard from
+the other side; the zen-world suite pins it). The UI is the waypoint panel's
+name field, the only waynet edit that is not a gizmo drag. **A rename can still
+orphan a script that names the waypoint as a literal, and nothing warns** —
+that is §16.8's Problems rule, still blocked.
+
+`verify-world-pipeline.js` was **not** extended: it drives a real Gothic install
+and its waypoint section proves the renderer's index and the binding's are the
+same number, which a rename re-proves nothing about. An unrun addition to a
+verification script is worse than none.
+
+Two refusals were added that a move has none of, both in the binding because it
+is the only layer that can see the whole point list: an **empty** name (the
+index+name pair would have nothing to check) and one **another waypoint already
+carries** (every by-name lookup, the panel's routine index above all, becomes
+ambiguous). Neither is forbidden by the format; retail has neither.
+
+**Two things found on the way, neither fixed:**
+
+- `normalizeWorld` emits the waypoints **sorted by name**, so a rename reorders
+  its dump. A test comparing two dumps positionally reads that as a *moved*
+  waypoint. Compare by name.
+- `lib/index.js` wraps every VOB mutation in `markMutated` and **neither waynet
+  mutation** — so after a `setWaypointPosition` or a `setWaypointName`,
+  `normalizeWorld` still reports the container section computed from the bytes
+  the handle was loaded from. `setWaypointName` was left matching its sibling
+  rather than diverging from it; the pair is wrong together or right together,
+  and which it should be is a fidelity-harness question, not this card's.
 
 **W2 — add a free waypoint, appended.** Appending leaves every existing index
 valid, so again no new scheme. It must be a *free* point (the `FP_` convention)
@@ -2966,8 +2993,9 @@ precedent**, and it is written here as a recommendation rather than taken,
 because it trades a capability away and that is not an unattended run's trade to
 make.
 
-**Sequence: W1 → W2 → W3, with W4 held back.** W1 and W2 are each a session; W3
-is the one to watch, and is the likeliest of the three to come back as Triage.
+**Sequence: W1 → W2 → W3, with W4 held back.** W1 landed 2026-08-28. W2 is a
+session; W3 is the one to watch, and is the likeliest of the two left to come
+back as Triage.
 
 ### 16.8 Jumping between a script reference and the place it names
 

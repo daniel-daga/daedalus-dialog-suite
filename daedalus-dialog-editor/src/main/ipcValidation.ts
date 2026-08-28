@@ -357,7 +357,7 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
       && op.op !== 'SetVobClassProp' && op.op !== 'AddVob' && op.op !== 'ReparentVob'
-      && op.op !== 'MoveWaypoint' && op.op !== 'DeleteVob') {
+      && op.op !== 'MoveWaypoint' && op.op !== 'RenameWaypoint' && op.op !== 'DeleteVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
 
@@ -380,6 +380,28 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
         if (!isFiniteNumbers(op[field], 3)) {
           throw new Error(`Invalid op: ${field} must be three finite numbers`);
         }
+      }
+      continue;
+    }
+
+    // Beside the move rather than after the `vob` check, and for the same
+    // reason: a rename is a waynet op and has neither a `vob` nor a `path`. Its
+    // own shape is the difference — both sides are names, so a move's
+    // three-number check would refuse every legal one.
+    if (op.op === 'RenameWaypoint') {
+      if (typeof op.waypoint !== 'number' || !Number.isInteger(op.waypoint) || op.waypoint < 0) {
+        throw new Error('Invalid op: waypoint must be a non-negative integer');
+      }
+      // `from` is the guard the bare index needs — this op has no separate
+      // `name` field because the name it replaces *is* its origin.
+      if (typeof op.from !== 'string') {
+        throw new Error('Invalid op: from must be the name the waypoint has now');
+      }
+      // Non-empty, because a waypoint with no name cannot be addressed by the
+      // index+name pair at all. Whether the name is already another waypoint's
+      // is a question only the point list can answer, and the binding does.
+      if (typeof op.to !== 'string' || op.to.length === 0) {
+        throw new Error('Invalid op: to must be a non-empty name');
       }
       continue;
     }

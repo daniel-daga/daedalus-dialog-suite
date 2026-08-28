@@ -94,7 +94,7 @@ was true for so long nobody re-reads it.
   closed** — the addon is asserted present and unpacked, the packaged app now
   opens a world in CI, and a real-Electron spec now watches the World surface
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
-  three ops with no engine verdict.
+  four ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
@@ -128,8 +128,6 @@ card waits on live at its pointer — put new prose there, not here.
   as a follow-up op in the same batch — blocked: `insertVob` authors a `zCVob`,
   so a duplicate has no class to write class props to and §16.15 comes first;
   `physicsEnabled` alone is left and its sequencing is a call. Unowned. §16.14
-- **Waynet W1 — rename a waypoint** — renumbers nothing, so the shipped
-  index+name pair holds. Unowned. §16.7
 - **Waynet W2 — add a free waypoint, appended** — must be an `FP_` free point
   or `WayNet::save` drops it. Unowned. §16.7
 - **Waynet W3 — edge add and delete** — the op carries the edge memberships it
@@ -139,9 +137,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
 
-- **Three shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
-  `SetVobClassProp` all post-date candidate `03`. Say "Gate 2 passed for the ops
-  it tested". Rebuilding a candidate is **Daniel's call**. §16.2
+- **Four shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
+  `SetVobClassProp`, `RenameWaypoint` all post-date candidate `03`. Say "Gate 2
+  passed for the ops it tested". Rebuilding a candidate is **Daniel's call**. §16.2
 
 **Phase 1b-2 — VOB editing**
 
@@ -211,6 +209,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 - **Copy/paste D3 — copy and paste are two verbs**: `pasteVobs` and a clipboard
   of specs, `Ctrl+C` / `Ctrl+V`, pasted beside the selection. §16.14
+- **Waynet W1 — rename a waypoint**: `RenameWaypoint` → `setWaypointName`, on
+  the shipped index+name pair, edited in the waypoint panel. §16.7
 
 Last flushed 2026-08-28 (four times; D1 and D4 went with the last two, their
 forward facts being §16.14's). The forward facts from the earlier cards are in

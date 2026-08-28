@@ -7,10 +7,11 @@ import {
   TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
-  addVob, alignVobsToNormal, applyWaypointPositions, classPropKeys, deleteVob, dropVobsToGround,
+  addVob, alignVobsToNormal, applyWaypointNames, applyWaypointPositions, classPropKeys,
+  deleteVob, dropVobsToGround,
   duplicateVobSpec, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
-  isWaynetOp, moveWaypoint, pasteVobs, placeBounds, renumbersPaths,
+  moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
   type ClassProps, type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
 } from 'zen-world';
@@ -377,9 +378,20 @@ const WorldSurface: React.FC = () => {
     //
     // Undo and redo come through here as well, which is the whole reason it is
     // in `applied` rather than beside the commit.
-    const waynetOps = ops.filter(isWaynetOp);
-    if (waynetOps.length > 0 && waynet !== null) {
-      applyWaypointPositions(new Float32Array(waynet.positions), waynetOps);
+    const moves = ops.filter((op) => op.op === 'MoveWaypoint');
+    if (moves.length > 0 && waynet !== null) {
+      applyWaypointPositions(new Float32Array(waynet.positions), moves);
+    }
+    // The names are the other half, and they are written differently on
+    // purpose. The positions column is a buffer the overlay's attribute is a
+    // *view* over, so writing it in place is writing what is on screen; nothing
+    // draws a name, and the panel that shows one is React — so this replaces
+    // the list rather than mutating it, keeping the same `positions` buffer.
+    const renames = ops.filter((op) => op.op === 'RenameWaypoint');
+    if (renames.length > 0 && waynet !== null) {
+      const names = [...waynet.names];
+      applyWaypointNames(names, renames);
+      setWaynet({ ...waynet, names });
     }
 
     setAppliedOps([...ops]);
@@ -816,6 +828,21 @@ const WorldSurface: React.FC = () => {
   }, [commitOps, waynet]);
 
   /**
+   * A waypoint renamed in the panel (§16.7, W1) — the one waynet edit that is
+   * not a drag, and the only edit in this surface that does not come from the
+   * viewport at all.
+   *
+   * `from` is read out of the payload rather than taken from the panel, for the
+   * reason every op reads its own origin: it is the guard the bare index is
+   * addressed by, and the panel's copy is whatever the user has been typing
+   * over.
+   */
+  const renameWaypointTo = useCallback((waypoint: number, to: string) => {
+    if (waynet === null) return;
+    void commitOps([renameWaypoint(waynet.names, waypoint, to)]);
+  }, [commitOps, waynet]);
+
+  /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
    * undone** (level-editor.md §15).
    *
@@ -1247,6 +1274,7 @@ const WorldSurface: React.FC = () => {
                   <WaypointPanel
                     name={waynet.names[selectedWaypoint]}
                     routines={waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || []}
+                    onRename={(to) => renameWaypointTo(selectedWaypoint, to)}
                   />
                 )
                 : (

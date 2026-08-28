@@ -291,6 +291,20 @@ export function setWaypointPosition(
   handle: WorldHandle, waypoint: number, name: string, position: readonly [number, number, number],
 ): void;
 /**
+ * Rename the waypoint at `waypoint` in `getWaynet`'s point list.
+ *
+ * The same address and the same guard as `setWaypointPosition`, for the same
+ * reason: a rename inserts, deletes and reorders nothing. The edges are
+ * untouched because they hold the waypoint by pointer, not by name.
+ *
+ * Refuses an empty `newName` and one another waypoint already carries — the
+ * format forbids neither, but both would make a by-name lookup meaningless and
+ * no retail world has either.
+ */
+export function setWaypointName(
+  handle: WorldHandle, waypoint: number, name: string, newName: string,
+): void;
+/**
  * Write the world to `path`, through a temp file and a rename.
  *
  * **Throws for a world that was not loaded from a `zCArchiverBinSafe`

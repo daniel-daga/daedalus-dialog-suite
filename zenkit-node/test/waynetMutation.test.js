@@ -143,3 +143,100 @@ test('setWaypointPosition survives a save and a reload, edges intact', () => {
     require('node:fs').rmSync(saved, { force: true });
   }
 });
+
+// setWaypointName — the rename (level-editor.md §16.7, W1).
+//
+// It renumbers nothing, so it stands on the same index+name pair a move does:
+// the index is `getWaynet`'s and the name is checked, never resolved. The
+// edges need no rewriting for the same reason a move does not — `WayNet::save`
+// writes edge endpoints by pointer identity, so an edge into a renamed
+// waypoint is an edge into the same object.
+
+test('setWaypointName renames the waypoint at getWaynet\'s own index', () => {
+  const handle = load();
+  const at = indexOf(handle, 'WP_FIXTURE_B');
+
+  zenkit.setWaypointName(handle, at, 'WP_FIXTURE_B', 'WP_RENAMED');
+
+  assert.strictEqual(zenkit.getWaynet(handle).names[at], 'WP_RENAMED');
+  assert.strictEqual(
+    waypointsOf(handle).filter((point) => point.name === 'WP_FIXTURE_B').length, 0
+  );
+});
+
+test('setWaypointName touches nothing but that waypoint\'s name', () => {
+  const handle = load();
+  const before = waypointsOf(load());
+  const at = indexOf(handle, 'WP_FIXTURE_B');
+
+  zenkit.setWaypointName(handle, at, 'WP_FIXTURE_B', 'WP_RENAMED');
+
+  // Compared by name rather than by position in the list: `normalizeWorld`
+  // emits the waypoints sorted by name, so a rename moves the renamed one
+  // within the dump, and a positional comparison reads that reordering as a
+  // moved waypoint.
+  const after = waypointsOf(handle);
+  assert.strictEqual(after.length, before.length);
+  for (const point of before) {
+    const still = after.find(
+      (candidate) => candidate.name === (point.name === 'WP_FIXTURE_B' ? 'WP_RENAMED' : point.name)
+    );
+    assert.deepStrictEqual({ ...still, name: point.name }, point);
+  }
+});
+
+test('setWaypointName refuses an index outside the point list, and a name that is not the one there', () => {
+  const handle = load();
+  const count = zenkit.getWaynet(handle).names.length;
+
+  assert.throws(() => zenkit.setWaypointName(handle, count, 'WP_FIXTURE_A', 'WP_X'), /no waypoint/);
+  assert.throws(() => zenkit.setWaypointName(handle, -1, 'WP_FIXTURE_A', 'WP_X'), /no waypoint/);
+  assert.throws(
+    () => zenkit.setWaypointName(handle, indexOf(handle, 'WP_FIXTURE_B'), 'WP_FIXTURE_C', 'WP_X'),
+    /WP_FIXTURE_B.*WP_FIXTURE_C|changed under this op/s
+  );
+  assert.notStrictEqual(zenkit.getWaynet(handle).names.indexOf('WP_FIXTURE_B'), -1);
+});
+
+test('setWaypointName refuses an empty name and one another waypoint already has', () => {
+  // A waypoint with no name cannot be addressed by the index+name pair at all,
+  // and a duplicate is what makes every by-name lookup — the script index the
+  // panel shows, above all — ambiguous. Nothing in the format forbids either;
+  // retail has neither, in 24 worlds and 12,341 waypoints.
+  const handle = load();
+  const at = indexOf(handle, 'WP_FIXTURE_B');
+
+  assert.throws(() => zenkit.setWaypointName(handle, at, 'WP_FIXTURE_B', ''), /empty/);
+  assert.throws(
+    () => zenkit.setWaypointName(handle, at, 'WP_FIXTURE_B', 'WP_FIXTURE_A'), /already/
+  );
+  assert.strictEqual(zenkit.getWaynet(handle).names[at], 'WP_FIXTURE_B');
+});
+
+test('setWaypointName survives a save and a reload, edges intact', () => {
+  // The assertion that says a rename cannot desynchronise a waypoint from
+  // itself: `WriteArchive::write_object` de-duplicates by pointer, so a
+  // waypoint shared by N edges is written once with the new name and
+  // referenced N times. An edge list that still named the old one would be an
+  // edge into a waypoint the file does not have.
+  const handle = load();
+  const at = indexOf(handle, 'WP_FIXTURE_A');
+  zenkit.setWaypointName(handle, at, 'WP_FIXTURE_A', 'WP_RENAMED_A');
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-rename-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+    const was = zenkit.normalizeWorld(load());
+
+    assert.strictEqual(dump.waynet.waypoints.length, was.waynet.waypoints.length);
+    assert.notStrictEqual(
+      dump.waynet.waypoints.findIndex((point) => point.name === 'WP_RENAMED_A'), -1
+    );
+    assert.strictEqual(dump.waynet.edges.length, was.waynet.edges.length);
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});

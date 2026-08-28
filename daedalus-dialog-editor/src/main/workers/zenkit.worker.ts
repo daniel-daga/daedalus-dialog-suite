@@ -257,6 +257,8 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
       reparentVob: (from, parentPath, slot) => zenkit.reparentVob(handle!, from, parentPath, slot),
       setWaypointPosition: (waypoint, name, to) =>
         zenkit.setWaypointPosition(handle!, waypoint, name, to),
+      setWaypointName: (waypoint, name, to) =>
+        zenkit.setWaypointName(handle!, waypoint, name, to),
     },
     payload.ops,
   );

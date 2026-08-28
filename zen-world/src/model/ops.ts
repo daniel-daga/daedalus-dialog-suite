@@ -303,6 +303,34 @@ export interface MoveWaypoint {
 }
 
 /**
+ * The rename of one waypoint (§16.7, W1).
+ *
+ * Stands on exactly the address a move does — the index into `getWaynet`'s
+ * point list — because it earns it the same way: a rename inserts, deletes and
+ * reorders nothing, so the enumeration the op was made against is the one it is
+ * applied against.
+ *
+ * It carries no separate `name` guard because `from` *is* the guard: the name
+ * the index had when the op was made, and the name the binding checks before
+ * writing. That is also what makes the inverse the plain swap — undoing a
+ * rename is a rename back, guarded by the name it just wrote.
+ *
+ * The edges are untouched. The binding matches edge endpoints by pointer
+ * identity, so an edge into a renamed waypoint is an edge into the same object;
+ * a *script* that names the waypoint as a literal is the one thing this can
+ * orphan, and warning about that is §16.8's Problems rule, not this op's job.
+ */
+export interface RenameWaypoint {
+  op: 'RenameWaypoint';
+  /** The index into the point list `getWaynet` emits. */
+  waypoint: number;
+  /** The name that index had when the op was made — the guard, and the
+   *  inverse's destination. */
+  from: string;
+  to: string;
+}
+
+/**
  * The removal of a VOB and its whole subtree — **the one op with no inverse.**
  *
  * Deliberately not an `AddVob` with a null `to`. That shape carries a `NewVob`
@@ -329,7 +357,11 @@ export interface DeleteVob {
 
 export type WorldOp =
   MoveVob | RotateVob | SetVobProp | SetVobClassProp | AddVob | ReparentVob
-  | MoveWaypoint | DeleteVob;
+  | MoveWaypoint | RenameWaypoint | DeleteVob;
+
+/** The ops that write the waynet rather than a VOB — what `isWaynetOp` narrows
+ *  to, and the only ops `applyOps` has no column for. */
+export type WaynetOp = MoveWaypoint | RenameWaypoint;
 
 /**
  * The tail of every dispatch over `WorldOp`.
@@ -381,8 +413,8 @@ export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob | Delete
  * authoritative world, leaving the world one edit ahead of a history that
  * cannot undo it.
  */
-export function isWaynetOp(op: WorldOp): op is MoveWaypoint {
-  return op.op === 'MoveWaypoint';
+export function isWaynetOp(op: WorldOp): op is WaynetOp {
+  return op.op === 'MoveWaypoint' || op.op === 'RenameWaypoint';
 }
 
 export function renumbersPaths(op: WorldOp): boolean {
@@ -581,6 +613,29 @@ export function moveWaypoint(
     from: [positions[at], positions[at + 1], positions[at + 2]],
     to,
   };
+}
+
+/**
+ * A rename of one waypoint.
+ *
+ * Takes the payload's own names for the same reason `moveWaypoint` takes its
+ * positions: there is no waynet reader, and `from` has to be read where the op
+ * is made rather than out of the world at apply time.
+ *
+ * The new name is not checked here. Emptiness and collision are refused by the
+ * binding, which is the only layer that can see the whole point list — this one
+ * is handed the payload the overlay happens to be holding.
+ */
+export function renameWaypoint(
+  names: readonly string[],
+  waypoint: number,
+  to: string,
+): RenameWaypoint {
+  if (waypoint < 0 || waypoint >= names.length) {
+    throw new RangeError(`no waypoint ${waypoint} in the waynet`);
+  }
+
+  return { op: 'RenameWaypoint', waypoint, from: names[waypoint], to };
 }
 
 /**
@@ -1146,6 +1201,12 @@ export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
   if (op.op === 'MoveWaypoint') {
     return { ...op, from: op.to, to: op.from };
   }
+  if (op.op === 'RenameWaypoint') {
+    // `from` is the guard as well as the origin, so the swap moves the guard
+    // too — which is exactly right: undoing a rename addresses the waypoint by
+    // the name the rename gave it.
+    return { ...op, from: op.to, to: op.from };
+  }
   if (op.op === 'MoveVob') {
     return { ...op, from: op.to, to: op.from };
   }
@@ -1179,6 +1240,10 @@ export interface OpBinding {
    *  guard, not the address: the binding refuses a mismatch rather than moving
    *  whichever waypoint the index now names. */
   setWaypointPosition(waypoint: number, name: string, to: ZenPosition): void;
+  /** Renames the waypoint at `waypoint`, guarded by `name` the same way. It
+   *  refuses an empty name and one another waypoint already carries — the two
+   *  refusals the point list can see and this package cannot. */
+  setWaypointName(waypoint: number, name: string, to: string): void;
 }
 
 /** One op against the world, and its own inverse — the two directions
@@ -1237,6 +1302,15 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   }
   if (op.op === 'MoveWaypoint') {
     binding.setWaypointPosition(op.waypoint, op.name, op[direction]);
+    return;
+  }
+  if (op.op === 'RenameWaypoint') {
+    // The guard is the *other* side, because this op's guard is its origin:
+    // going forward the waypoint is still called `from`, and unwinding it is
+    // called `to`.
+    binding.setWaypointName(
+      op.waypoint, direction === 'to' ? op.from : op.to, op[direction],
+    );
     return;
   }
   if (op.op === 'DeleteVob') {
@@ -1352,6 +1426,34 @@ export function applyWaypointPositions(
   return touched;
 }
 
+/**
+ * Apply rename ops to the payload's own name list, and answer which waypoints
+ * were renamed.
+ *
+ * Separate from `applyWaypointPositions` rather than folded into it, because
+ * the two write payloads with opposite lifetimes. The positions column is a
+ * `Float32Array` the point cloud and the edge lines *share*, so it is written
+ * in place and the sharing is the point. Names are drawn by nothing — only the
+ * waypoint panel reads them — so this writes an array the caller then hands to
+ * React, and mutating the payload's own would leave the panel showing the old
+ * name until something else re-rendered it.
+ */
+export function applyWaypointNames(
+  names: string[], ops: readonly RenameWaypoint[],
+): number[] {
+  const touched: number[] = [];
+
+  for (const op of ops) {
+    if (op.waypoint < 0 || op.waypoint >= names.length) {
+      throw new RangeError(`no waypoint ${op.waypoint} in the waynet`);
+    }
+    names[op.waypoint] = op.to;
+    touched.push(op.waypoint);
+  }
+
+  return touched;
+}
+
 export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
   const { positions, rotations, flags, nameIndex, visualIndex } = reader.columns;
   const touched: number[] = [];
@@ -1367,13 +1469,13 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
         `${op.op} is structural: re-read the index rather than applying it to the projection`,
       );
     }
-    if (op.op === 'MoveWaypoint') {
+    if (isWaynetOp(op)) {
       // Refused by name rather than skipped, for the same reason a structural op
       // is: these are the *VOB* columns and a waypoint has no row in them. The
       // caller partitions the batch — a silent skip would leave the overlay
       // drawing a waypoint the world no longer has there.
       throw new RangeError(
-        'MoveWaypoint is a waynet op: it does not project onto the vob columns',
+        `${op.op} is a waynet op: it does not project onto the vob columns`,
       );
     }
     if (op.op === 'SetVobProp') {

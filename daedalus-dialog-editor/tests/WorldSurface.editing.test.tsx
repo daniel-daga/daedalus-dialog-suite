@@ -1650,7 +1650,8 @@ describe('a waypoint dragged in the viewport', () => {
 
     fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
 
-    expect(await screen.findByTestId('world-waypoint-panel')).toHaveTextContent('WP_MIDDLE');
+    // The name is the rename field's value since W1, not text content.
+    expect(await screen.findByDisplayValue('WP_MIDDLE')).toBeInTheDocument();
     expect(screen.getByTestId('world-waypoint-panel')).toHaveTextContent('TA_Baker_Day');
     expect(screen.getByTestId('world-waypoint-panel')).toHaveTextContent('TA_Baker.d');
   });
@@ -1661,6 +1662,82 @@ describe('a waypoint dragged in the viewport', () => {
     fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
 
     expect(await screen.findByTestId('world-waypoint-panel')).toHaveTextContent(/no routine/i);
+  });
+
+  describe('renamed in that panel', () => {
+    // W1 (§16.7). The panel is the only UI a waypoint has, so it is where the
+    // one waynet edit that is not a drag lives.
+    const nameField = () => screen.getByTestId('world-waypoint-name-input') as HTMLInputElement;
+
+    async function pickWaypoint(): Promise<WaynetPayload> {
+      const payload = await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await screen.findByTestId('world-waypoint-panel');
+      return payload;
+    }
+
+    const commitName = (value: string) => {
+      fireEvent.change(nameField(), { target: { value } });
+      fireEvent.blur(nameField());
+    };
+
+    it('becomes a RenameWaypoint carrying the name it replaces', async () => {
+      // `from` is the guard as well as the origin: a bare index always resolves
+      // to *some* waypoint, so the name it had is the only check the address
+      // admits.
+      await pickWaypoint();
+
+      commitName('WP_RENAMED');
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+        op: 'RenameWaypoint', waypoint: 1, from: 'WP_MIDDLE', to: 'WP_RENAMED',
+      }]));
+    });
+
+    it('writes the committed name into the payload the panel reads', async () => {
+      // Nothing else does. The VOB projection has no row for a waypoint and
+      // refuses the op by name, so without this the panel keeps showing the old
+      // name until the world is re-opened.
+      await pickWaypoint();
+
+      commitName('WP_RENAMED');
+
+      expect(await screen.findByDisplayValue('WP_RENAMED')).toBeInTheDocument();
+    });
+
+    it('commits nothing for a name that did not change, or an empty one', async () => {
+      await pickWaypoint();
+
+      commitName('WP_MIDDLE');
+      commitName('');
+
+      expect(api.applyWorldOps).not.toHaveBeenCalled();
+    });
+
+    it('puts the name back when the op is refused, and says so', async () => {
+      // A rename the world refused — a duplicate, say — leaves the panel naming
+      // a waypoint the file does not have.
+      await pickWaypoint();
+      api.applyWorldOps.mockRejectedValueOnce(new Error('waypoint 2 is already named WP_TAKEN'));
+
+      commitName('WP_TAKEN');
+
+      expect(await screen.findByTestId('world-edit-error')).toHaveTextContent('WP_TAKEN');
+      await waitFor(() => expect(nameField().value).toBe('WP_MIDDLE'));
+    });
+
+    it('is undone through the same path a waypoint move is', async () => {
+      await pickWaypoint();
+      commitName('WP_RENAMED');
+      await screen.findByDisplayValue('WP_RENAMED');
+
+      api.undoWorldEdit.mockResolvedValueOnce([{
+        op: 'RenameWaypoint', waypoint: 1, from: 'WP_RENAMED', to: 'WP_MIDDLE',
+      }] as never);
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+      expect(await screen.findByDisplayValue('WP_MIDDLE')).toBeInTheDocument();
+    });
   });
 });
 

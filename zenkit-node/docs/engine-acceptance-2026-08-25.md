@@ -931,9 +931,10 @@ control only per Environment) was not exercised, and the deleted-VOB and
 moved-waypoint edits the board flagged as absent from every staged candidate
 are still absent from `03-ui-edited.zen` — that gap is unchanged by this run.
 
-**The ops this gate covers are the five named above, and no others.** Three
+**The ops this gate covers are the five named above, and no others.** Four
 have shipped since the candidate was built and therefore have **no engine
-verdict at all**: `DeleteVob`, `MoveWaypoint` and `SetVobClassProp`. Quote this
+verdict at all**: `DeleteVob`, `MoveWaypoint`, `SetVobClassProp` and
+`RenameWaypoint`. Quote this
 result as *"Gate 2 passed for the ops it tested"*, never as "Gate 2 passed".
 A removed subtree is the edit ZenGin has the most room to disagree about, and a
 wrongly-written sound or zone property is *invisible in the viewport* — the
