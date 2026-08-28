@@ -163,9 +163,8 @@ card waits on live at its pointer — put new prose there, not here.
   clean runs), so there is nothing to bisect; needs a captured crash dump. The
   addon is cleared — the run's native code is tree-sitter.
   `docs/reference/environment-hazards.md`
-- **Two viewport warts** — the imperative handle (do it immediately before the
-  caller that justifies it, which is W4) and the 31 px reservation.
-  `docs/refactoring-targets.md` §9–10
+- **The viewport wants an imperative handle** — the other viewport wart, the
+  31 px one being closed. Do it immediately before W4, its caller. `docs/refactoring-targets.md` §9
 
 ## Deferred
 
@@ -195,6 +194,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **The terrain bar's 31 px reservation is gone** — a hidden real small button
+  reserves the row, so no copied constant can drift. `refactoring-targets.md` §10
 
 - **I4 — the movable objects are authorable** — eight constructions on a family
   that agrees with itself (1,424 retail VOBs); a container is authored *unlocked*

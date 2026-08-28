@@ -46,10 +46,6 @@ import WaypointPanel from './WaypointPanel';
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
-/** A small MUI button's height, rounded up — what the placement bar's row
- *  reserves so it is the same height with a point and without one. */
-const BAR_HEIGHT = 31;
-
 /** What a move drag can be quantised to. **ZenGin centimetres** — every position
  *  in this app is in them (`WorldPropertyGrid` says so too), so a metre is 100
  *  and the labels say which is which. */
@@ -1676,11 +1672,42 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               it. That is also why the row reserves the height of the button it
               only sometimes carries: a bar that changes height is the same
               shove. */}
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: BAR_HEIGHT }}>
+          <Stack direction="row" spacing={1} alignItems="center">
             {terrainPoint === null ? (
-              <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
-                Click the ground to choose where a VOB goes.
-              </Typography>
+              <>
+                <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
+                  Click the ground to choose where a VOB goes.
+                </Typography>
+                {/* The reservation itself, and it is a button rather than a
+                    number: a hard-coded height read off MUI's small-button
+                    metrics drifts the moment a theme sets one, and jsdom has no
+                    layout, so nothing could catch the drift. A real small
+                    button, hidden, zero-width and out of the tab and
+                    accessibility trees, is the theme's own metric and cannot
+                    disagree with the buttons it stands in for.
+
+                    Only the horizontal metrics are taken off it: the vertical
+                    padding is the height, and it carries a space so it has a
+                    line box to be as tall as. */}
+                <Button
+                  size="small"
+                  aria-hidden
+                  tabIndex={-1}
+                  /* Stack's spacing wins on specificity, so the margin the
+                     spacer would otherwise add is overridden here. */
+                  sx={{
+                    visibility: 'hidden',
+                    width: 0,
+                    minWidth: 0,
+                    px: 0,
+                    overflow: 'hidden',
+                    margin: '0 !important',
+                  }}
+                  data-testid="world-terrain-bar-spacer"
+                >
+                  &nbsp;
+                </Button>
+              </>
             ) : (
               <>
                 <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">

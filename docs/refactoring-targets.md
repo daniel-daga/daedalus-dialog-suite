@@ -210,10 +210,25 @@ must be a no-op, not a crash.
 
 ---
 
-### 10. The terrain bar reserves a hard-coded 31 px
-**File:** `daedalus-dialog-editor/src/renderer/components/world/` (the World bar)
+### 10. The terrain bar reserves a hard-coded 31 px — fixed
+**File:** `daedalus-dialog-editor/src/renderer/components/world/WorldSurface.tsx`
 
-The row reserves 31 px for the button its picked state adds, derived from MUI's
-small-button metrics, so the bar does not shove when a point is picked. If the
-theme ever sets a button height it drifts, and **jsdom has no layout, so no test
-can catch it.**
+**Landed 2026-08-28.** The row reserved 31 px for the button its picked state
+adds — MUI's small-button metrics, copied into a constant so the bar does not
+shove when a point is picked. The number was right and unverifiable: a theme
+that sets a button height moves it, and jsdom has no layout, so no test could
+have caught the drift.
+
+The reservation is now a real small `Button`, hidden (`visibility: hidden`,
+zero-width, `aria-hidden`, `tabIndex={-1}`) and rendered only in the branch that
+has no buttons of its own. Only its *horizontal* metrics are taken away: the
+vertical padding is the height being reserved, and it carries a `&nbsp;` so it
+has a line box to be as tall as — an empty button would have reserved nothing,
+which is the shove back again. It is the theme's own metric rather than a copy of
+it, so it cannot disagree with the buttons it stands in for — which turns the
+untestable claim into a structural one a jsdom test *can* make: the spacer is a
+`MuiButton-sizeSmall`, and it gives way to the real ones on a pick
+(`WorldSurface.editing.test.tsx`).
+
+The one wart the fix carries: MUI's `Stack` spacing selector outranks a child's
+`sx`, so the spacer overrides its own margin with `!important`.

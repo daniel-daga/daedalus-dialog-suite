@@ -1691,6 +1691,26 @@ describe('placing a VOB', () => {
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
   });
 
+  it('reserves the placement button’s own height, not a pixel count of its own', async () => {
+    // The row must be the same height before and after a pick, and it used to
+    // buy that with a hard-coded 31 px read off MUI's small-button metrics —
+    // a number that drifts silently the moment a theme sets a button height,
+    // and jsdom has no layout, so no test can catch the drift. The reservation
+    // is a real small button instead, hidden and inert: it cannot disagree with
+    // the buttons it stands in for, whatever the theme says they are.
+    await openWorld();
+    const spacer = screen.getByTestId('world-terrain-bar-spacer');
+    expect(spacer.className).toContain('MuiButton-sizeSmall');
+    expect(spacer).toHaveAttribute('aria-hidden', 'true');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+
+    // And it gives way to the buttons themselves — same component, same size.
+    const placed = await screen.findByTestId('world-place-vob');
+    expect(placed.className).toContain('MuiButton-sizeSmall');
+    expect(screen.queryByTestId('world-terrain-bar-spacer')).toBeNull();
+  });
+
   it('keeps the bar mounted, so a pick does not resize the viewport under the click', async () => {
     // Mounting the bar on the first terrain hit shortened the viewport by its
     // height the moment a point landed, which moves the picture out from under
