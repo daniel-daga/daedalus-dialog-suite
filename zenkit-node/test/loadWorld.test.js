@@ -681,3 +681,99 @@ ${result.stderr}`);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A VOb tree that nests one child per level, located by structure: the
+// `VobTree` object opens with the root count (`childs0`), then each root VOb
+// followed by its own child count. The first root VOb and its count are found
+// by walking, the count is raised by one and a chain is spliced in directly
+// after it, so the chain becomes that VOb's first child. The entry stream
+// grows, so the header's hash table offset moves with it; nothing else in the
+// container carries an absolute offset.
+//
+// `kind` picks which of the two walks the chain drives. A `vob` chain repeats
+// the fixture's own root VOb, so every level is parsed and attached; an `empty`
+// chain repeats a `%`-classed object, which `read_object` refuses, so the whole
+// subtree goes down the skip path instead. The empty node is far cheaper on the
+// wire — an object header, an object end and a child count.
+function seedDeepVobChain(dir, name, depth, kind) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const header = readHeader(buf);
+  const events = [...walk(buf)];
+
+  const tree = events.findIndex((ev) => ev.kind === 'objectBegin' && ev.entryName === 'VobTree');
+  assert.ok(tree >= 0, 'the fixture must have a VobTree to nest into');
+  const rootBegin = events.slice(tree + 1).find((ev) => ev.kind === 'objectBegin');
+  assert.ok(rootBegin, 'the fixture VobTree must hold at least one root VOb');
+  const after = events.indexOf(rootBegin) + 1;
+  const end = events.slice(after).findIndex((ev) => ev.kind === 'objectEnd' && ev.objectDepth === rootBegin.objectDepth);
+  const rootChilds = events[after + end + 1];
+  assert.strictEqual(rootChilds.entryType, 'INTEGER', 'a root VOb must be followed by its child count');
+
+  // A `childs<N>` entry: the HASH tag of its name, the name hash itself (never
+  // dereferenced — `ensure_entry_meta` seeks past it), the INTEGER tag and the
+  // count.
+  const childCount = (value) => {
+    const entry = Buffer.alloc(10);
+    entry.writeUInt8(0x12, 0);
+    entry.writeUInt32LE(buf.readUInt32LE(rootChilds.fileOffset + 1), 1);
+    entry.writeUInt8(0x02, 5);
+    entry.writeInt32LE(value, 6);
+    return entry;
+  };
+
+  const emptyObject = () => {
+    const line = Buffer.from('[x % 0 0]', 'latin1');
+    const length = Buffer.alloc(2);
+    length.writeUInt16LE(line.length);
+    return Buffer.concat([
+      Buffer.from([0x01]), length, line,          // the object header
+      Buffer.from([0x01, 0x02, 0x00, 0x5b, 0x5d]), // and its `[]` end, with no fields between
+    ]);
+  };
+
+  const node = kind === 'vob'
+    ? buf.subarray(rootBegin.fileOffset, rootChilds.fileOffset)
+    : emptyObject();
+
+  const chain = [];
+  for (let level = 0; level < depth; level++) chain.push(node, childCount(level === depth - 1 ? 0 : 1));
+  const spliced = Buffer.concat(chain);
+
+  const at = rootChilds.payloadOffset + 4;
+  const grown = Buffer.concat([buf.subarray(0, at), spliced, buf.subarray(at)]);
+  grown.writeInt32LE(buf.readInt32LE(rootChilds.payloadOffset) + 1, rootChilds.payloadOffset);
+  grown.writeUInt32LE(header.hashTableOffset + spliced.length, header.entryStart - 4);
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, grown);
+  return file;
+}
+
+// Both walks in `VobTree.cc` recursed once per nesting level, and the depth of
+// the nesting is the file's own `childs<N>` counts — the same defect patch 0035
+// removed from the BSP node tree, and cheaper to trigger, because a nested node
+// costs an object header and a count. Measured before patch 0038, on node's
+// 8 MB main thread (worlds are loaded on a `worker_threads` worker, whose
+// default stack is 4 MB — half of that): both depths below killed the child
+// with 0xC00000FD, a stack overflow, which no `catch` can turn into an error.
+const DEEP_VOB_CASES = [
+  { kind: 'vob', depth: 60_000, id: 'parses every level' },
+  { kind: 'empty', depth: 200_000, id: 'skips every level' },
+];
+
+for (const testCase of DEEP_VOB_CASES) {
+  test(`a VOb tree ${testCase.depth} levels deep that ${testCase.id} loads instead of overflowing the stack`, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-vob-depth-'));
+    try {
+      const corrupt = seedDeepVobChain(dir, `deep-vob-${testCase.kind}.zen`, testCase.depth, testCase.kind);
+
+      const result = loadInChild(corrupt, 60_000);
+      assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+      assert.strictEqual(result.status, 0,
+        `the child died (status ${result.status}) instead of parsing the chain: ${result.stdout}\n${result.stderr}`);
+      assert.strictEqual(result.stdout, 'LOADED');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}

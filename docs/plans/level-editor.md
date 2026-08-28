@@ -3291,11 +3291,34 @@ throws `invalid format` in 70 ms — loud, so not patched. And
 `dynamic_pointer_cast<Visual>` above it can only produce the seven visual classes,
 and all seven are in the map. Bounding either would be `get_entry_key()` again.
 
-`parse_vob_tree` **is** still recursive, once per nesting level, and unlike
-`_parse_bsp_nodes` a deep tree is cheap to write: a nested object costs an object
-header and a child count, so a file far smaller than a retail world can nest
-deeper than a 4 MB worker stack. Not measured, not patched — the next thing to do
-under this heading, ahead of another seed.
+**`parse_vob_tree`'s recursion is gone, and so is the tree's destructor (2026-08-28, patches `0038` and `0039`).** It was recursive twice over: once
+per child in `parse_vob_tree` itself, and once per nesting level in the `skip`
+lambda it uses for an object it cannot parse. Unlike `_parse_bsp_nodes` a deep
+tree is cheap to write — a nested node costs an object header and a child count
+— so both were measured by growing the fixture rather than by fuzzing: a chain
+spliced into the root VOb's children, one child per level. **60,000 nested
+`zCVob`s (9 MB) and 200,000 nested empty (`%`) objects (5 MB) each kill the child
+with `0xC00000FD`**, on node's 8 MB main thread; the editor loads worlds on a
+worker whose default stack is half that. Parsed iteratively for `0035`'s reason,
+not bounded: a valid tree's depth has no documented ceiling.
+
+**The parse was the smaller half.** With `0038` alone the 60,000-level world
+loads, prints `LOADED`, and the process *then* dies with the same
+`0xC00000FD`: `children` is a vector of `shared_ptr` and the defaulted
+destructor tears the tree down by recursing once per level too. `0039` gives
+`VirtualObject` a destructor that moves each child's children onto an explicit
+stack, so a child always dies childless. A child whose `use_count()` is not 1 is
+left whole — something else owns it. **Read a defect of this shape as reaching
+as far as the object graph does, not as far as the parser does.**
+
+**What is left of it is above the reader, in `zenkit-node`'s own walks.**
+`CountVobs`, `CollectVobNames` (`src/binding.cc`) and `CollectVobs` /
+`CollectVobColumns` (`src/normalize.cc`) all recurse once per level over
+`children`. Measured after both patches: a 300,000-level world **loads**, and
+`worldStats` on it then dies with `0xC00000FD` — so the crash has moved from the
+reader into the binding, where the frames are smaller but the bound is still
+nothing. Not patched; it is four functions in two files and a separate change.
+The `ReadMemory::seek` decision is still the other open one.
 
 **`Mesh.cc`'s element counts are bounded (2026-08-28, patch `0036`), and the
 failure they allowed is not a crash.** Every chunk in `Mesh::load` sized a

@@ -1,0 +1,143 @@
+VobTree: parse and skip the VOb tree iteratively, so its depth is not the call stack.
+
+`parse_vob_tree` recursed once per child, and the `skip` lambda it uses for an
+object it could not parse recursed once per nesting level too. Nothing bounds
+either depth: it is the file's own `childs<N>` counts that say how deep the tree
+goes, and a nested node is cheap to write -- an object header and a child count.
+
+This is the same defect patch `0035` removed from `_parse_bsp_nodes`, and it is
+cheaper to trigger. Measured against `zenkit-node`'s 1.4 KB fixture with one
+chain of nested VObs spliced into the root's children, on node's 8 MB main
+thread (the editor loads worlds on a `worker_threads` worker, whose default
+stack is 4 MB -- half of that):
+
+- 60,000 nested `zCVob`s (a 9 MB file) kill the process with 0xC00000FD, a
+  stack overflow, which no `catch` can turn into a thrown error;
+- 200,000 nested *empty* (`%`) objects (a 5 MB file) kill it the same way
+  through the `skip` lambda, which is the cheaper of the two paths on the wire
+  because nothing between the object header and the child count is read.
+
+The fix is not a depth limit, for the reason `0035` gives: the depth a valid
+world may reach rises with its size and ZenGin documents no ceiling, so a
+guessed limit risks refusing a world the engine loads. Both walks keep their own
+stack of the children still owed instead, so depth costs heap and not the call
+stack.
+
+The read order is unchanged and deliberately so -- the entry stream is read
+positionally, so the order of the reads *is* the format. A node is read, then
+its child count, then its whole subtree before the next sibling, and a child is
+appended to its parent in the order it is read.
+
+`read_vob_node` is the node read the two loops share: it returns the object and
+its child count, and reports a count of zero for an object that is not a VOb,
+since its children are skipped rather than attached. That is what the recursive
+version did with the early `return nullptr` after `skip`.
+
+Upstreamable as-is: no API change, no behaviour change on any valid world, and
+the transformation is mechanical.
+--- a/src/world/VobTree.cc
++++ b/src/world/VobTree.cc
+@@ -4,8 +4,33 @@
+ #include "zenkit/Archive.hh"
+ #include "zenkit/vobs/VirtualObject.hh"
+ 
++#include <vector>
++
+ namespace zenkit {
+-	std::shared_ptr<VirtualObject> parse_vob_tree(ReadArchive& in, GameVersion version) {
++	// Skips `count` sibling subtrees without parsing them. Iterative for the same
++	// reason `parse_vob_tree` below is: the nesting depth comes off the file and
++	// nothing in the format bounds it, so it must not be the call stack. The read
++	// order is unchanged -- an object, its child count, then its whole subtree
++	// before the next sibling.
++	static void skip_vob_tree(ReadArchive& in, size_t count) {
++		std::vector<size_t> remaining {count};
++
++		while (!remaining.empty()) {
++			if (remaining.back() == 0) {
++				remaining.pop_back();
++				continue;
++			}
++
++			remaining.back() -= 1;
++			in.skip_object(false);
++			remaining.push_back(static_cast<size_t>(in.read_int()));
++		}
++	}
++
++	// Reads one node of the tree: the object itself and its child count. An
++	// object that is not a VOb yields null, and its children are skipped rather
++	// than attached, so the caller gets a child count of zero for it.
++	static std::shared_ptr<VirtualObject> read_vob_node(ReadArchive& in, GameVersion version, size_t& child_count) {
+ 		auto obj = in.read_object(version);
+ 		if (obj != nullptr && !is_vobject(obj->get_object_type())) {
+ 			obj = nullptr;
+@@ -14,32 +39,50 @@
+ 		// NOTE(lmichaelis): The NDK does not seem to support `reinterpret_pointer_cast`.
+ 		std::shared_ptr<VirtualObject> object {obj, reinterpret_cast<VirtualObject*>(obj.get())};
+ 
+-		auto child_count = static_cast<size_t>(in.read_int());
+-		if (object == nullptr) {
+-			std::function<void(size_t)> skip;
+-			skip = [&skip, &in](size_t count) {
+-				for (auto i = 0u; i < count; ++i) {
+-					in.skip_object(false);
+-
+-					auto num_children = static_cast<size_t>(in.read_int());
+-					skip(num_children);
+-				}
+-			};
++		child_count = static_cast<size_t>(in.read_int());
+ 
+-			skip(child_count);
+-			return nullptr;
++		if (object == nullptr) {
++			skip_vob_tree(in, child_count);
++			child_count = 0;
+ 		}
+ 
+-		object->children.reserve(child_count);
++		return object;
++	}
++
++	std::shared_ptr<VirtualObject> parse_vob_tree(ReadArchive& in, GameVersion version) {
++		struct frame {
++			std::shared_ptr<VirtualObject> object;
++			size_t remaining;
++		};
++
++		size_t child_count = 0;
++		auto root = read_vob_node(in, version, child_count);
++		if (root == nullptr) return nullptr;
++
++		root->children.reserve(child_count);
++
++		std::vector<frame> stack {frame {root, child_count}};
+ 
+-		for (auto i = 0u; i < child_count; ++i) {
+-			auto child = parse_vob_tree(in, version);
++		while (!stack.empty()) {
++			if (stack.back().remaining == 0) {
++				stack.pop_back();
++				continue;
++			}
++
++			stack.back().remaining -= 1;
++
++			size_t children = 0;
++			auto child = read_vob_node(in, version, children);
+ 			if (child == nullptr) continue;
+ 
+-			object->children.push_back(std::move(child));
++			child->children.reserve(children);
++			stack.back().object->children.push_back(child);
++
++			// `stack.back()` is invalid from here: the push may reallocate.
++			stack.push_back(frame {std::move(child), children});
+ 		}
+ 
+-		return object;
++		return root;
+ 	}
+ 
+ 	void

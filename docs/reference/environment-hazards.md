@@ -31,6 +31,11 @@ doc, not here. This file is only for the ground the code stands on.
   against a copy you took first, save that as `patches/00NN-*.patch`, and only
   then run the build — editing and building straight away loses the edit
   silently, because the reset happens before the compile and reports nothing.
+- **`git diff` inside `vendor/ZenKit` is not that diff.** The submodule's index
+  is the pinned commit, so it hands you *every* applied patch's hunks in the
+  file you touched — `0038` came out carrying `0008`'s change to the same file.
+  Copy the file before editing and `diff -u` against that copy (it is CRLF on
+  this machine, so write the new one CRLF too or the diff is the whole file).
 - **Use `node-gyp rebuild`, never `build`.** A stale `build/` fails with
   `LNK1103`.
 - `node-gyp rebuild` **deletes `build/`**, which is why the CMake output lives in

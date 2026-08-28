@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0037`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0039`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,9 +136,9 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — nine instances closed
-  (`0029`–`0037`); next is `parse_vob_tree`'s recursion, then the
-  `ReadMemory::seek` decision. Unowned. §16.11
+- **The world reader is still not crash-safe** — eleven instances closed
+  (`0029`–`0039`); the crash has moved *above* the reader, into `zenkit-node`'s
+  own recursive vob walks. Then the `ReadMemory::seek` decision. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -156,6 +156,13 @@ card waits on live at its pointer — put new prose there, not here.
 *(empty — both cards landed, see Done)*
 
 ## Done
+
+- **Patches `0038` and `0039` — the VOb tree is parsed *and destroyed*
+  iteratively.** `parse_vob_tree` recursed once per child and its `skip` lambda
+  once per nesting level; 60,000 nested VObs killed the child with `0xC00000FD`.
+  Fixing the parse only got as far as `LOADED` — the defaulted destructor
+  recursed too. The crash is now in the binding's own walks at 300,000 levels,
+  which is where §16.11 leaves it. §16.11
 
 - **Patch `0037` — the waynet's two counts are bounded, and the way it was found
   is the point.** `numWays` sized `edges.reserve` and its loop cannot stop —
