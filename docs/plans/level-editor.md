@@ -3872,10 +3872,12 @@ together because the second is the first one's data reaching the render path.
 
 **Search and filter.** The scene tree lists what the world holds and offers no
 way to narrow it — on a retail world that is 41,393 VOBs. Spacer filters by name
-and by VOB type, and both are worth having. The columns to filter on are already
-in the summary `vobIndex` emits (`name`, and the class `getVobProps` reports),
-so this is renderer work over data that has crossed the boundary once; it must
-not become a per-VOB IPC call.
+and by VOB type, and both are worth having. **Both columns are already in the summary, interned.** `vobIndex` emits
+`names`/`nameIndex` and `classes`/`classIndex` (`zenkit-node/src/normalize.cc:1331`)
+— string tables plus a per-VOB index into them. So a class filter is an integer
+comparison against a table position, not a string scan, and neither filter needs
+`getVobProps` or any per-VOB IPC. Renderer work over data that crossed the
+boundary once.
 
 **Per-class visibility.** Spacer's VOB-type toggles, hiding a whole class in the
 viewport. The filter above decides which VOBs a query selects; this decides
@@ -3900,9 +3902,19 @@ catalogue closed `oCMob*`, the trigger family, `zCMover`, `zCPFXController` and
 the refusal-counter field behaviour the grid already has — so the risk here is
 low and the value is that a modder stops needing Spacer for the last few fields.
 
-**V1 — preset name, `visualCamAlign`, bias.** Three fields, no hazards known.
-`presetName` is a string the ASCII writer already round-trips; `visualCamAlign`
-is an enum and wants the catalogue's bound, not a free integer.
+**All five fields exist and none is exposed.** In `VirtualObject.hh`:
+`preset_name:476`, `bias:424` (`int32`), `dynamic_shadows:402` (`ShadowType`),
+`sleep_mode:499` (`uint8`), and the camera alignment is `SpriteAlignment:55`.
+What ships today is narrower than the class catalogue suggests: `SetVobProp`
+accepts `name`, `visual` and the six flags and nothing else
+(`ipcValidation.ts:311`). **So V1 and V2 widen `SetVobProp`'s key set** — the
+base-field analogue of what `SetVobClassProp` did per class, and the same
+validator-branch-in-the-same-change rule applies.
+
+**V1 — preset name, camera alignment, bias.** No hazards known. `presetName` is
+a string the ASCII writer already round-trips; the alignment is an enum and
+wants the catalogue's bound, not a free integer; `bias` is a signed depth bias,
+so its bound is not "non-negative".
 
 **V2 — `dynamicShadows`, `sleepMode`, and the decal parameters.** The decals are
 the awkward part and are the reason V2 is separate: a decal is not a mesh but a
