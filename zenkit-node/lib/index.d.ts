@@ -201,15 +201,19 @@ export function setVobClassProp(
 export interface NewVob {
   /**
    * The class the new VOB *is* — its C++ type, not a field on it — defaulting to
-   * `zCVob` (level-editor.md §16.15, I1).
+   * `zCVob` (level-editor.md §16.15, I1 and I2).
    *
    * A closed set, because each class needs its own field-complete construction:
    * ZenKit's structs have uninitialized fields, and `setVobClassProp` switches
    * on the type the object really has, so nothing can turn a `zCVob` into an
    * `oCItem` after the fact. A class with no construction is refused rather than
    * authored as a bare `zCVob` wearing its name.
+   *
+   * Every construction's defaults are the retail majority measured over the
+   * three G2 worlds, not ZenKit's struct defaults — which differ on five fields
+   * and, for a light's `lightType`, name a value retail never writes.
    */
-  class?: 'zCVob' | 'oCItem';
+  class?: 'zCVob' | 'oCItem' | 'zCVobLight' | 'zCVobSound' | 'zCVobSoundDaytime';
   /**
    * The script instance an `oCItem` spawns — required for one, and refused for
    * any other class, which has no such field. The name is not checked against

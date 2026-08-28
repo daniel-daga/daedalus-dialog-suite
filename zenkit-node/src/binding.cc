@@ -1632,17 +1632,54 @@ std::shared_ptr<zenkit::Visual> AuthorVisual(Napi::Env env, std::string const& n
 // field-complete construction rather than a type tag. A class with no
 // construction here is refused rather than authored as a bare `zCVob` wearing
 // its name.
-enum class NewVobClass { kZCVob, kOCItem };
+enum class NewVobClass { kZCVob, kOCItem, kZCVobLight, kZCVobSound, kZCVobSoundDaytime };
 
 NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
   if (value.IsUndefined()) return NewVobClass::kZCVob;
   if (!value.IsString()) {
-    throw Napi::TypeError::New(env, "opts.class must be 'zCVob' or 'oCItem'");
+    throw Napi::TypeError::New(env, "opts.class must be the name of a class this can author");
   }
   std::string const str = value.As<Napi::String>().Utf8Value();
   if (str == "zCVob") return NewVobClass::kZCVob;
   if (str == "oCItem") return NewVobClass::kOCItem;
+  if (str == "zCVobLight") return NewVobClass::kZCVobLight;
+  if (str == "zCVobSound") return NewVobClass::kZCVobSound;
+  if (str == "zCVobSoundDaytime") return NewVobClass::kZCVobSoundDaytime;
   throw Napi::Error::New(env, "opts.class: no construction is known for '" + str + "'");
+}
+
+// The base half of a sound, shared by `zCVobSound` and the `zCVobSoundDaytime`
+// that derives from it — the same inheritance the catalogue's entry spells out,
+// rather than two lists that would have to agree by hand.
+//
+// **Every default here is the retail majority measured over NewWorld, OldWorld
+// and AddonWorld's 1,237 sounds (2026-08-28), not ZenKit's struct default**, and
+// two of them differ: retail loops where ZenKit plays once, and retail leaves
+// obstruction off where ZenKit turns it on. `mode` matters most because it is an
+// *enum*, which the class catalogue deliberately holds no field for — so a
+// placed sound keeps the mode chosen here forever, and once is not what an
+// ambient sound placed in a world means.
+void AuthorSoundFields(zenkit::VSound& sound) {
+  sound.volume = 100.0f;  // the median, and the cap on all but six retail sounds
+  sound.mode = zenkit::SoundMode::LOOP;
+  // Read by the engine only in RANDOM mode, which nothing can select.
+  sound.random_delay = 0.0f;
+  sound.random_delay_var = 0.0f;
+  sound.initially_playing = true;  // 1,207 of 1,237
+  sound.ambient3d = false;
+  sound.obstruction = false;
+  sound.cone_angle = 0.0f;  // every retail sound; there are no directional cones
+  sound.volume_type = zenkit::SoundTriggerVolumeType::SPHERICAL;
+  sound.radius = 1500.0f;  // the median of NewWorld and AddonWorld alike
+  // The one field only the caller can fill, and `setVobClassProp` is where —
+  // there is no name to invent, and an empty one plays nothing rather than
+  // resolving to something wrong.
+  sound.sound_name = "";
+  // Save-game only and not default-initialized in ZenKit, exactly like an
+  // `oCItem`'s `s_amount`. `VAnimate` seeds the first from `start_on` at load,
+  // so this does the same rather than leaving it indeterminate.
+  sound.s_is_running = sound.initially_playing;
+  sound.s_is_allowed_to_run = true;
 }
 
 // insertVob(handle, parentPath | null, opts) — appends a VOB of the class
@@ -1729,6 +1766,13 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   // the world exactly as it was.
   auto const vob_class = ParseNewVobClass(env, opts.Get("class"));
   bool const has_instance = !opts.Get("instance").IsUndefined();
+  // Refused rather than dropped: no class below has an instance field, so naming
+  // one is a mistake about the class and not a value to ignore.
+  auto RefuseInstance = [&] {
+    if (has_instance) {
+      throw Napi::Error::New(env, "opts.instance: only an oCItem carries an instance");
+    }
+  };
 
   std::shared_ptr<zenkit::VirtualObject> vob;
   // Whether a VOB claims to draw when the caller has not said. A `zCVob` with
@@ -1753,12 +1797,63 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
     item->s_flags = 0;
     vob = item;
     default_show_visual = true;
+  } else if (vob_class == NewVobClass::kZCVobLight) {
+    RefuseInstance();
+    // A light retail could have written, on the majority measured over the three
+    // retail worlds (2026-08-28) — where three of ZenKit's own defaults are
+    // values retail never writes at all: SPOT (every one of 4,649 lights is
+    // POINT), MEDIUM quality (LOW is the majority) and `can_move` (false on
+    // every one of the 1,111 dynamic lights).
+    auto light = std::make_shared<zenkit::VLight>();
+    light->type = zenkit::VirtualObjectType::zCVobLight;
+    // **Dynamic, and it is not a preference.** A static light is baked into the
+    // world when its lighting is compiled, so one added to a compiled world
+    // lights nothing until somebody recompiles it; and `is_static` decides
+    // *which fields the archive contains*, which is why the catalogue has no
+    // field for it and why the choice made here is the one the placed VOB keeps.
+    light->is_static = false;
+    light->on = true;
+    light->light_type = zenkit::LightType::POINT;
+    light->range = 400.0f;  // the median of retail's dynamic lights
+    // White, where retail's colours are as varied as its scenes: the two fields
+    // a user changes first are this and the range, and both are in the
+    // catalogue. A black light would read as the editor having done nothing.
+    light->color = zenkit::Color {255, 255, 255, 255};
+    light->cone_angle = 0.0f;  // ignored by a POINT light, and zero in retail
+    light->quality = zenkit::LightQuality::LOW;
+    // Self-contained: no preset template to resolve, no lensflare, no animation.
+    // 105 of retail's dynamic lights name no preset either, so this is a shape
+    // the engine already reads.
+    light->preset = "";
+    light->lensflare_fx = "";
+    light->range_animation_scale = {};
+    light->range_animation_fps = 0.0f;
+    light->range_animation_smooth = true;
+    light->color_animation_list = {};
+    light->color_animation_fps = 0.0f;
+    light->color_animation_smooth = true;
+    light->can_move = false;
+    vob = light;
+  } else if (vob_class == NewVobClass::kZCVobSound) {
+    RefuseInstance();
+    auto sound = std::make_shared<zenkit::VSound>();
+    sound->type = zenkit::VirtualObjectType::zCVobSound;
+    AuthorSoundFields(*sound);
+    vob = sound;
+  } else if (vob_class == NewVobClass::kZCVobSoundDaytime) {
+    RefuseInstance();
+    auto sound = std::make_shared<zenkit::VSoundDaytime>();
+    sound->type = zenkit::VirtualObjectType::zCVobSoundDaytime;
+    AuthorSoundFields(*sound);
+    // The medians of retail's 84 daytime sounds: awake at 6, quiet at 20. A
+    // window rather than the zero-width one ZenKit's defaults would give, which
+    // is a daytime sound that is never its own daytime.
+    sound->start_time = 6.0f;
+    sound->end_time = 20.0f;
+    sound->sound_name2 = "";
+    vob = sound;
   } else {
-    // Refused rather than dropped: a `zCVob` has no instance field, so naming
-    // one is a mistake about the class and not a value to ignore.
-    if (has_instance) {
-      throw Napi::Error::New(env, "opts.instance: only an oCItem carries an instance");
-    }
+    RefuseInstance();
     auto plain = std::make_shared<zenkit::VirtualObject>();
     plain->type = zenkit::VirtualObjectType::zCVob;
     vob = plain;

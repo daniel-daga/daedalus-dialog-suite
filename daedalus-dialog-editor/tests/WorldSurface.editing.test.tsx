@@ -1277,6 +1277,36 @@ describe('placing a VOB', () => {
     expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('visual');
   });
 
+  it('places a light or a sound, which take no instance and no visual', async () => {
+    // I2's classes (level-editor.md §16.15). Neither carries a visual — a light
+    // *is* its own light and a sound its own sound — and neither takes an
+    // instance, so the dialog offers the visual field and nothing else, and what
+    // makes the VOB the thing it is comes from the binding's construction and
+    // then from the property grid.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValue(summary as never);
+    api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    for (const className of ['zCVobLight', 'zCVobSound', 'zCVobSoundDaytime']) {
+      api.applyWorldOps.mockClear();
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+      fireEvent.change(screen.getByTestId('world-place-class'), { target: { value: className } });
+      expect(screen.queryByTestId('world-place-instance')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+      const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+      expect(ops).toHaveLength(1);
+      expect(ops[0]).toMatchObject({ op: 'AddVob', to: { class: className, position: TERRAIN } });
+      const { to } = ops[0] as { to: Record<string, unknown> };
+      expect(to).not.toHaveProperty('instance');
+      expect(to).not.toHaveProperty('visual');
+    }
+  });
+
   it('will not place an item whose instance the project does not declare', async () => {
     // The same refusal the property grid makes, in the one other place an
     // instance is typed: ZenGin crashes on a name no script declares, and

@@ -6,7 +6,9 @@
  * with a clear error rather than reaching deep service internals.
  */
 
-import { classPropKeys, fieldOf, type FieldDescriptor } from 'zen-world';
+import {
+  classPropKeys, fieldOf, isAuthorableVobClass, type FieldDescriptor,
+} from 'zen-world';
 import type { WorldOp } from '../shared/worldTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -485,9 +487,11 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
           // fall back on: the class is the object's C++ type, so a class it has
           // no construction for would either throw in C++ or — worse, if this
           // waved it through as a tag — be authored as a bare `zCVob` wearing
-          // the name, on which every `SetVobClassProp` is then refused.
-          if (value !== 'zCVob' && value !== 'oCItem') {
-            throw new Error(`Invalid op: class must be zCVob or oCItem, not ${JSON.stringify(value)}`);
+          // the name, on which every `SetVobClassProp` is then refused. The set
+          // is `zen-world`'s, shared with the dialog that offers it, so a class
+          // the binding learns is not refused here by omission.
+          if (!isAuthorableVobClass(value)) {
+            throw new Error(`Invalid op: no class construction exists for ${JSON.stringify(value)}`);
           }
         } else if (key === 'instance') {
           // The shape of a Daedalus symbol is the whole of what this process can

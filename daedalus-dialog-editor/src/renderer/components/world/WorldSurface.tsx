@@ -7,13 +7,15 @@ import {
   TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import {
+  AUTHORABLE_VOB_CLASSES,
   addVob, alignVobsToNormal, applyWaypointNames, applyWaypointPositions, classPropKeys,
   deleteVob, dropVobsToGround,
   duplicateVobSpec, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
   moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
-  type ClassProps, type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
+  type AuthorableVobClass, type ClassProps, type NewVob, type VobProps, type ZenBounds,
+  type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { primaryVob, useWorldStore } from '../../store/worldStore';
@@ -86,7 +88,7 @@ const WorldSurface: React.FC = () => {
    * the user meant, and appending a root is the case that renumbers nothing.
    */
   const [placing, setPlacing] = useState<
-    { vobClass: 'zCVob' | 'oCItem'; name: string; visual: string; instance: string;
+    { vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
       parent: number | null } | null
   >(null);
   /** The VOB the delete warning is about, or null when it is closed. A flat
@@ -710,24 +712,27 @@ const WorldSurface: React.FC = () => {
    */
   const placeVob = useCallback(async (
     spec: {
-      vobClass: 'zCVob' | 'oCItem'; name: string; visual: string; instance: string;
+      vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
       parent: number | null;
     },
   ) => {
     const { summary: current } = useWorldStore.getState();
     if (current === null || terrainPoint === null) return;
 
-    // An item has no visual in the file — the engine derives one from its script
-    // instance — so there is nothing to resolve a box from either, and it keeps
-    // the binding's default exactly as a VOB with an unresolvable visual does.
+    // Only a `zCVob` carries a visual from this dialog. An item has none in the
+    // file — the engine derives one from its script instance — and a light or a
+    // sound *is* what it does rather than something drawn, so for all three
+    // there is nothing to resolve a box from either, and they keep the binding's
+    // default exactly as a VOB with an unresolvable visual does.
     const item = spec.vobClass === 'oCItem';
-    const visual = item ? '' : spec.visual.trim();
+    const visual = spec.vobClass === 'zCVob' ? spec.visual.trim() : '';
     const bounds = visual === '' ? null : await window.editorAPI.getVisualBounds(visual)
       .catch(() => null);
 
     const placed: NewVob = {
       position: terrainPoint,
-      ...(item ? { class: 'oCItem' as const, instance: spec.instance.trim() } : {}),
+      ...(spec.vobClass === 'zCVob' ? {} : { class: spec.vobClass }),
+      ...(item ? { instance: spec.instance.trim() } : {}),
       ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
       ...(visual === '' ? {} : { visual }),
       ...(bounds === null ? {} : {
@@ -1411,13 +1416,14 @@ const WorldSurface: React.FC = () => {
             label="Class"
             value={placing?.vobClass ?? 'zCVob'}
             onChange={(event) => setPlacing((was) => (was === null ? was : {
-              ...was, vobClass: event.target.value as 'zCVob' | 'oCItem',
+              ...was, vobClass: event.target.value as AuthorableVobClass,
             }))}
             SelectProps={{ native: true, inputProps: { 'data-testid': 'world-place-class' } }}
             sx={{ mb: 1 }}
           >
-            <option value="zCVob">zCVob</option>
-            <option value="oCItem">oCItem</option>
+            {AUTHORABLE_VOB_CLASSES.map((className) => (
+              <option key={className} value={className}>{className}</option>
+            ))}
           </TextField>
           <TextField
             autoFocus
@@ -1431,8 +1437,10 @@ const WorldSurface: React.FC = () => {
           />
           {/* An item carries an instance *instead of* a visual, not beside one:
               the engine derives an item's visual from the script instance, and
-              the binding leaves the field empty for exactly that reason. */}
-          {placing?.vobClass === 'oCItem' ? (
+              the binding leaves the field empty for exactly that reason. A light
+              and a sound carry neither — what makes each the thing it is comes
+              from the binding's construction and then from the property grid. */}
+          {placing?.vobClass === 'oCItem' && (
             <TextField
               fullWidth
               size="small"
@@ -1448,7 +1456,8 @@ const WorldSurface: React.FC = () => {
               inputProps={{ 'data-testid': 'world-place-instance' }}
               sx={{ mt: 2 }}
             />
-          ) : (
+          )}
+          {placing?.vobClass === 'zCVob' && (
             <TextField
               fullWidth
               size="small"

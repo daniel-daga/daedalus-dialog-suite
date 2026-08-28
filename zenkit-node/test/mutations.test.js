@@ -696,7 +696,7 @@ test('an oCItem throws on a bad parent path', () => {
 
 test('insertVob refuses a class it has no construction for', () => {
   const handle = load();
-  for (const bad of ['oCMobDoor', 'zCVobLight', 'oCitem', '', 7]) {
+  for (const bad of ['oCMobDoor', 'zCTriggerScript', 'oCitem', '', 7]) {
     assert.throws(
       () => zenkit.insertVob(handle, null, { class: bad, position: [0, 0, 0] }),
       Error,
@@ -720,6 +720,130 @@ test('an instance belongs to the class that has one, in either direction', () =>
     () => zenkit.insertVob(handle, null, { class: 'oCItem', position: [0, 0, 0] }),
     /instance/
   );
+});
+
+// The lights and the sounds (level-editor.md §16.15, I2). Each construction is
+// field-complete against `fixture.cc`'s idiom, and each default is the retail
+// majority measured over NewWorld/OldWorld/AddonWorld rather than ZenKit's
+// struct default — three of which retail never writes at all.
+
+test('insertVob authors a dynamic zCVobLight, on the measured retail defaults', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, null, {
+    class: 'zCVobLight', name: 'PLACED_LIGHT', position: [1, 2, 3],
+  });
+
+  const light = vobAt(dumpOf(handle), at);
+  assert.strictEqual(light.class, 'zCVobLight');
+  assert.strictEqual(light.name, 'PLACED_LIGHT');
+  // POINT, not ZenKit's SPOT: all 4,649 retail lights are POINT.
+  assert.strictEqual(light.props.lightType, 0);
+  // Dynamic and on — a static light is baked by the world's lighting compile,
+  // so one added afterwards lights nothing, and `isStatic` is not editable.
+  assert.strictEqual(light.props.isStatic, false);
+  assert.strictEqual(light.props.on, true);
+  assert.strictEqual(light.props.range, 400);
+  assert.deepStrictEqual(light.props.color, [255, 255, 255, 255]);
+  assert.strictEqual(light.props.quality, 2);
+  assert.strictEqual(light.props.coneAngle, 0);
+  // Every one of the 1,111 retail dynamic lights holds `false`, against
+  // ZenKit's `true`.
+  assert.strictEqual(light.props.canMove, false);
+  // Self-contained: no preset template, no lensflare, no animation.
+  assert.strictEqual(light.props.preset, '');
+  assert.strictEqual(light.props.lensflareFx, '');
+  assert.deepStrictEqual(light.props.rangeAnimationScale, []);
+  assert.strictEqual(light.props.rangeAnimationFps, 0);
+  assert.deepStrictEqual(light.props.colorAnimationList, []);
+  assert.strictEqual(light.props.colorAnimationFps, 0);
+});
+
+test('insertVob authors a zCVobSound that loops, like the retail majority', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, null, {
+    class: 'zCVobSound', name: 'PLACED_SOUND', position: [4, 5, 6],
+  });
+
+  const sound = vobAt(dumpOf(handle), at);
+  assert.strictEqual(sound.class, 'zCVobSound');
+  // LOOP, not ZenKit's ONCE: 1,077 of retail's 1,237 sounds loop, and `mode` is
+  // an enum the catalogue keeps out — so this choice is the user's for good.
+  assert.strictEqual(sound.props.mode, 0);
+  assert.strictEqual(sound.props.volume, 100);
+  assert.strictEqual(sound.props.radius, 1500);
+  assert.strictEqual(sound.props.initiallyPlaying, true);
+  assert.strictEqual(sound.props.ambient3d, false);
+  // The retail majority, against ZenKit's `true`.
+  assert.strictEqual(sound.props.obstruction, false);
+  assert.strictEqual(sound.props.coneAngle, 0);
+  assert.strictEqual(sound.props.volumeType, 0);
+  // The one field only the caller can fill, and `setVobClassProp` is where.
+  assert.strictEqual(sound.props.soundName, '');
+  assert.strictEqual(sound.props.randomDelay, 0);
+  assert.strictEqual(sound.props.randomDelayVar, 0);
+});
+
+test('a zCVobSoundDaytime carries the base sound fields and its own three', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, null, {
+    class: 'zCVobSoundDaytime', name: 'PLACED_DAYTIME', position: [7, 8, 9],
+  });
+
+  const sound = vobAt(dumpOf(handle), at);
+  assert.strictEqual(sound.class, 'zCVobSoundDaytime');
+  // The derived class writes the base half too — the fixture's own daytime VOB
+  // is there to prove the same thing for `setVobClassProp`.
+  assert.strictEqual(sound.props.mode, 0);
+  assert.strictEqual(sound.props.volume, 100);
+  assert.strictEqual(sound.props.radius, 1500);
+  // The retail medians of the 84 daytime sounds: awake at 6, quiet at 20.
+  assert.strictEqual(sound.props.startTime, 6);
+  assert.strictEqual(sound.props.endTime, 20);
+  assert.strictEqual(sound.props.soundName2, '');
+});
+
+test('a light and a sound take no instance, and need none', () => {
+  const handle = load();
+  for (const cls of ['zCVobLight', 'zCVobSound', 'zCVobSoundDaytime']) {
+    assert.throws(
+      () => zenkit.insertVob(handle, null, { class: cls, instance: 'ITFO_APPLE', position: [0, 0, 0] }),
+      /instance/,
+      cls
+    );
+  }
+});
+
+test('an authored light and sound survive a save and reload', () => {
+  // The writer is the half the dump cannot see: a construction that left a
+  // field indeterminate round-trips as whatever was on the stack.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zk-i2-'));
+  try {
+    const handle = load();
+    const lightAt = zenkit.insertVob(handle, null, { class: 'zCVobLight', position: [1, 2, 3] });
+    const soundAt = zenkit.insertVob(handle, null, {
+      class: 'zCVobSoundDaytime', position: [4, 5, 6],
+    });
+    const before = dumpOf(handle);
+
+    const out = path.join(dir, 'authored.zen');
+    zenkit.saveWorld(handle, out);
+    const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+
+    // Everything but the visual, which no class here has: in memory it is a null
+    // pointer and a saved world spells the absence as an empty visual object, so
+    // the two are the same absence written two ways.
+    for (const at of [lightAt, soundAt]) {
+      const was = vobAt(before, at);
+      const is = vobAt(reloaded, at);
+      assert.strictEqual(is.class, was.class);
+      assert.deepStrictEqual(is.props, was.props);
+      assert.deepStrictEqual(is.flags, was.flags);
+      assert.deepStrictEqual(is.position, was.position);
+      assert.deepStrictEqual(is.bbox, was.bbox);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('insertVob still authors a zCVob when no class is named', () => {

@@ -32,7 +32,7 @@
 // the binding call for them does, not before.
 
 import type { VobReader } from './vobTree';
-import { classPropKeys, fieldOf, type ClassProps } from './vobClasses';
+import { classPropKeys, fieldOf, type AuthorableVobClass, type ClassProps } from './vobClasses';
 
 /** ZenGin space, centimetres — unconverted, exactly as the binding takes it. */
 export type ZenPosition = [number, number, number];
@@ -221,9 +221,11 @@ export interface NewVob {
    * nothing can turn a `zCVob` into an `oCItem` afterwards — `setVobClassProp`
    * switches on the type the object really has. This package neither authors nor
    * reads it; it carries it, because an `AddVob` describes a VOB completely and
-   * a spec that lost its class would insert something else.
+   * a spec that lost its class would insert something else. The set itself is
+   * `AUTHORABLE_VOB_CLASSES`, next door, because the validator and the dialog
+   * need the same one.
    */
-  class?: 'zCVob' | 'oCItem';
+  class?: AuthorableVobClass;
   /** The script instance an `oCItem` spawns — required for one and refused for
    *  any other class. Whether the name is one the scripts declare is a question
    *  no layer below the renderer can answer: the main process holds no semantic

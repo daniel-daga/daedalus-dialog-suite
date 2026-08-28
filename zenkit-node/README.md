@@ -380,15 +380,30 @@ one, since the box is a pure function of (visual, rotation, position). Without a
 nothing to draw does not claim otherwise.
 
 **`class` is the object's C++ type, not a field on it**, which is why the set is
-closed: `'zCVob'` (the default) and `'oCItem'`. Each class needs its own
-field-complete construction — ZenKit's structs leave fields uninitialized — and
-`setVobClassProp` switches on the type the object really has, so nothing can turn
-a `zCVob` into an `oCItem` afterwards. A class with no construction is refused
-rather than authored as a bare `zCVob` wearing its name. An `oCItem` requires
-`instance`, the script instance the engine spawns; any other class refuses one,
-having no such field. An item is normally authored with **no** `visual` — the
-engine derives one from the instance — so `showVisual` defaults to true for an
-`oCItem` rather than to whether a visual was given.
+closed: `'zCVob'` (the default), `'oCItem'`, `'zCVobLight'`, `'zCVobSound'` and
+`'zCVobSoundDaytime'`. Each class needs its own field-complete construction —
+ZenKit's structs leave fields uninitialized — and `setVobClassProp` switches on
+the type the object really has, so nothing can turn a `zCVob` into an `oCItem`
+afterwards. A class with no construction is refused rather than authored as a
+bare `zCVob` wearing its name. An `oCItem` requires `instance`, the script
+instance the engine spawns; any other class refuses one, having no such field. An
+item is normally authored with **no** `visual` — the engine derives one from the
+instance — so `showVisual` defaults to true for an `oCItem` rather than to
+whether a visual was given.
+
+**A construction's defaults are the retail majority, not ZenKit's**, measured
+over NewWorld, OldWorld and AddonWorld (2026-08-28) — and the two disagree on
+five fields. A light is authored `POINT` (all 4,649 retail lights are; ZenKit's
+default is `SPOT`), `LOW` quality, `can_move = false` (every one of the 1,111
+dynamic lights, against ZenKit's `true`), range 400 and white, **dynamic and on**
+— a static light is baked by the world's lighting compile, so one added
+afterwards lights nothing, and `is_static` decides which fields the archive even
+contains. A sound is authored `LOOP` (1,077 of retail's 1,237; ZenKit says
+`ONCE`) with `obstruction = false` (the retail majority, against ZenKit's
+`true`), volume 100, radius 1500 and no sound name — the caller sets that through
+`setVobClassProp`, and a `zCVobSoundDaytime` additionally wakes at 6 and sleeps
+at 20, retail's medians. The enums matter most because the class catalogue holds
+no field for one, so what is chosen here is what the placed VOB keeps.
 
 **The visual's class is derived from the extension here, which is exactly what
 `setVobProp` refuses to do — and for the opposite reason.** Renaming an existing

@@ -72,7 +72,7 @@ was true for so long nobody re-reads it.
 
 - `master` is where work lands and is **pushed to `origin/master`**;
   `feature/level-editor` was merged and is no longer where work happens. The
-  unattended board loop commits on `board-loop-2` and does not push; its
+  unattended board loop commits on `board-loop-3` and does not push; its
   predecessor `board-loop` was fast-forwarded into master on 2026-08-28 and is
   spent. **Local master is ahead of `origin/master` and has been for a while** —
   the push in the first clause is the intent, not the current state. A push is
@@ -124,8 +124,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Class insertion I2 — `zCVobLight`, `zCVobSound`/`Daytime`** — each a
-  field-complete construction, consuming the catalogue. Unowned. §16.15
 - **Copy/paste D2 — the fields `NewVob` drops** — unblocked by I1; what is left
   after it is `physicsEnabled`, **Daniel's call** (A6: no save keeps it). §16.14
 - **Waynet W2 — add a free waypoint, appended** — must be an `FP_` free point
@@ -214,6 +212,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 - **Class insertion I1 — `AddVob` names a class** (board-loop) — `insertVob`
   dispatches on `class`, `oCItem` first; `insertItemVob` folded into it. §16.15
+- **Class insertion I2 — lights and sounds** (board-loop) — three constructions
+  on retail's measured majority; the authorable set is now one shared list. §16.15
 
 Last flushed 2026-08-28 at the merge to master: D1, D3, D4 and W1: forward facts
 in §16.14 and §16.7, the rest in `git log`.

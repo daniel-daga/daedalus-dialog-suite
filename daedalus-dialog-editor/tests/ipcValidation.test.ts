@@ -917,7 +917,16 @@ describe('assertApplyOpsRequest', () => {
       expect(() => assertApplyOpsRequest({
         ops: [{ ...add, to: { position: [0, 0, 0], class: 'oCItem', instance: 'ITFO_APPLE' } }],
       })).not.toThrow();
-      for (const bad of ['oCMobDoor', 'zCVobLight', 'ocitem', '', 7, null]) {
+      // The lights and the sounds (I2), which take no instance and need none.
+      for (const className of ['zCVobLight', 'zCVobSound', 'zCVobSoundDaytime']) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, to: { position: [0, 0, 0], class: className } }],
+        })).not.toThrow();
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...add, to: { position: [0, 0, 0], class: className, instance: 'ITFO_APPLE' } }],
+        })).toThrow(/instance/);
+      }
+      for (const bad of ['oCMobDoor', 'zCTriggerScript', 'ocitem', '', 7, null]) {
         expect(() => assertApplyOpsRequest({
           ops: [{ ...add, to: { position: [0, 0, 0], class: bad } }],
         })).toThrow(/class/);

@@ -9,7 +9,9 @@
 // a class nobody catalogued — because those are the failures that reach the
 // other two readers unchanged.
 
-import { CLASS_FIELDS, classPropKeys, fieldOf } from '../src/model';
+import {
+  AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, classPropKeys, fieldOf, isAuthorableVobClass,
+} from '../src/model';
 
 describe('the per-class field catalogue', () => {
   it('names each key once per class', () => {
@@ -236,6 +238,31 @@ describe('the per-class field catalogue', () => {
     for (const key of ['initiallyPlaying', 'ambient3d', 'obstruction']) {
       expect(fieldOf('zCVobSoundDaytime', key)).toEqual({ key, kind: 'bool' });
     }
+  });
+
+
+  it('separates the classes it can place from the ones it can edit', () => {
+    // Two different questions (level-editor.md §16.15): a class is editable when
+    // this file lists its fields, and authorable only when the binding has a
+    // field-complete construction for it. `zCVob` is authorable with no fields
+    // at all, and every catalogued mover, trigger and zone is editable with no
+    // construction — so neither list is a subset of the other.
+    expect(isAuthorableVobClass('zCVob')).toBe(true);
+    expect(classPropKeys('zCVob')).toEqual([]);
+    expect(isAuthorableVobClass('zCMover')).toBe(false);
+    expect(classPropKeys('zCMover').length).toBeGreaterThan(0);
+    // Every class that *is* authorable and carries fields is catalogued, or the
+    // dialog would place a VOB whose own fields the grid cannot then reach.
+    for (const className of AUTHORABLE_VOB_CLASSES) {
+      if (className === 'zCVob') continue;
+      expect(classPropKeys(className).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('refuses a class name that is a property of every object', () => {
+    expect(isAuthorableVobClass('toString')).toBe(false);
+    expect(isAuthorableVobClass('')).toBe(false);
+    expect(isAuthorableVobClass(7)).toBe(false);
   });
 
   it('answers null for a key of another class, and for a class it does not have', () => {

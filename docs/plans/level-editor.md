@@ -3884,21 +3884,49 @@ exactly these field assignments, so I1 changed which function assigns them
 rather than what is written. Nothing in Gate 2 covers a *`zCVob`* authored with a
 class named, because there was no such thing to author.
 
-**I2 — the next classes**, `zCVobLight` and `zCVobSound`/`Daytime`, each needing
-its own field-complete construction against `fixture.cc`'s idiom. The catalogue
-is the field list; if I2 finds itself writing a second list, the catalogue's
-shape is wrong and that is the finding. **I1 left it the seams and no more**:
-`ParseNewVobClass` is where a class name becomes a construction, the dispatch in
-`InsertVob` is where a construction lives, and the validator's closed set is the
-third place a class name is written. A class added to two of the three is
-refused by the one it was not added to — which is the shape of the warning
-`assertApplyOpsRequest` already carries for a new op. I1 did **not** generalise
-the UI: the dialog's `<option>` list is written out, because two entries do not
-justify deriving it and the catalogue does not yet say which classes are
-authorable.
+**I2 — `zCVobLight`, `zCVobSound` and `zCVobSoundDaytime`. Landed 2026-08-28**,
+each a field-complete construction in the `InsertVob` dispatch, the sound's base
+half shared by the derived class exactly as the catalogue's entry inherits it.
+The catalogue was the field list and stayed one: nothing here restates a field
+the grid already edits, and the construction only has to decide the fields the
+catalogue *cannot* reach.
 
-**Then the trigger family, then `oCMobInter` and friends** — more of I2's shape,
-carded when I2 has shown what one costs.
+**The list of authorable classes is now written twice, not four times.**
+`AUTHORABLE_VOB_CLASSES` in `zen-world/src/model/vobClasses.ts` is read by
+`NewVob['class']`, by `assertApplyOpsRequest` and by the placement dialog's
+`<option>`s, so the "added to two of the three and refused by the third" trap
+I1 left is gone. What stays separate is `ParseNewVobClass` and the C++ dispatch
+— the construction itself, which cannot be shared — and the per-class insertion
+tests in `zenkit-node` are what tie the two lists together. **Authorable and
+editable are different sets and neither contains the other**: `zCVob` is
+authorable with no catalogued field, and every mover, trigger and zone is
+editable with no construction.
+
+**Every default is the retail majority, measured over NewWorld, OldWorld and
+AddonWorld on 2026-08-28 — and ZenKit's struct defaults disagree on five
+fields.** A light is `POINT` (all 4,649 retail lights; ZenKit says `SPOT`),
+`LOW` quality (majority), `can_move = false` (all 1,111 dynamic lights; ZenKit
+says `true`), range 400 (the median) and white. A sound is `LOOP` (1,077 of
+1,237; ZenKit says `ONCE`) with `obstruction = false` (majority; ZenKit says
+`true`), volume 100, radius 1500, and a daytime sound wakes at 6 and sleeps at
+20 (the medians of 84).
+
+**The two decisions worth re-reading are the enums and `is_static`, because both
+are permanent.** The catalogue holds no enum field by design, so the `mode` a
+placed sound gets is the one it keeps — and a sound that plays *once* is not
+what placing an ambient sound means. `is_static` is out of the catalogue for a
+harder reason (it decides which fields the archive contains, so its inverse does
+not restore the world), and a *static* light is baked by the world's lighting
+compile: one added to a compiled world lights nothing. So a placed light is
+dynamic and on.
+
+**No engine verdict covers any of this**, like every op since candidate `03` —
+the round-trip is what proves the constructions leave no field indeterminate.
+
+**Then the trigger family, then `oCMobInter` and friends**, now that I2 has
+shown what one costs: a construction, one shared list entry, and a measurement
+sweep per class over the retail worlds. What I2 did *not* need was a new
+validator branch, a new op or a binding signature change.
 
 **`oCItem` was first and was also the awkward one.** Its `instance` is the
 validation that cannot live in the main process at all: there is no semantic

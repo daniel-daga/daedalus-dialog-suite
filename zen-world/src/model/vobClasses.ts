@@ -384,6 +384,41 @@ export const CLASS_FIELDS = {
   oCMobDoor: OC_MOB_DOOR_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
+/**
+ * The classes the editor can *place*, as against the ones it can edit
+ * (level-editor.md §16.15).
+ *
+ * Two different questions, and the answer to the second is longer: a class is
+ * editable when this file lists its fields, and authorable only when the binding
+ * has a field-complete construction for it — ZenKit's structs leave fields
+ * uninitialized, so a class authored from a type tag would be garbage the writer
+ * happily saves.
+ *
+ * It lives here so the list is written **twice and not four times**. The op's
+ * `class`, the IPC validator's closed set and the placement dialog's options all
+ * read it, and a class added to two of the three used to be a class the third
+ * refused. What stays separate is the C++ dispatch, which is the construction
+ * itself and cannot be shared; a per-class insertion test in `zenkit-node` is
+ * what ties the two lists together.
+ */
+export const AUTHORABLE_VOB_CLASSES = [
+  'zCVob',
+  'oCItem',
+  'zCVobLight',
+  'zCVobSound',
+  'zCVobSoundDaytime',
+] as const;
+
+/** A class `insertVob` can construct. */
+export type AuthorableVobClass = (typeof AUTHORABLE_VOB_CLASSES)[number];
+
+/** Whether a value names a class the binding can author — the check the IPC
+ *  validator makes on an `AddVob`, on a value that arrived from a renderer. */
+export function isAuthorableVobClass(value: unknown): value is AuthorableVobClass {
+  return typeof value === 'string'
+    && (AUTHORABLE_VOB_CLASSES as readonly string[]).includes(value);
+}
+
 /** A class the catalogue knows. Not every class in a world is one — a world has
  *  37 and this has eighteen, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
