@@ -26,6 +26,11 @@ doc, not here. This file is only for the ground the code stands on.
 
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the
   submodule, applies `patches/*.patch` and writes `zenkit-abi.json`.
+- **That reset destroys any edit in `vendor/ZenKit` that is not a patch file.**
+  The way to change ZenKit is therefore: edit the vendored source, `diff` it
+  against a copy you took first, save that as `patches/00NN-*.patch`, and only
+  then run the build — editing and building straight away loses the edit
+  silently, because the reset happens before the compile and reports nothing.
 - **Use `node-gyp rebuild`, never `build`.** A stale `build/` fails with
   `LNK1103`.
 - `node-gyp rebuild` **deletes `build/`**, which is why the CMake output lives in

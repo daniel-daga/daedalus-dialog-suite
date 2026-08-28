@@ -553,3 +553,58 @@ test('a BSP tree that descends in one long chain loads instead of overflowing th
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The mesh chunks each open with a `uint32` element count that sizes a `resize`
+// before a single element is read. Located by structure: the `MeshAndBsp` blob's
+// chunk table carries VERTICES (0xB030), FEATURES (0xB040) and POLYGONS
+// (0xB050), and the count is the first field of each payload. The count is
+// rewritten in place, so nothing in the container moves.
+function seedAbsurdMeshCount(dir, name, chunkId, count) {
+  const buf = Buffer.from(fs.readFileSync(FIXTURE));
+  const blob = [...walk(buf)].find((ev) => ev.kind === 'rawBlob' && ev.entryName === 'MeshAndBsp');
+  assert.ok(blob, 'the fixture must have a MeshAndBsp blob to corrupt');
+
+  const end = blob.fileOffset + blob.size;
+  let p = blob.fileOffset;
+  while (p + 6 <= end && buf.readUInt16LE(p) !== chunkId) p += 6 + buf.readUInt32LE(p + 2);
+  assert.strictEqual(buf.readUInt16LE(p), chunkId,
+    `expected chunk 0x${chunkId.toString(16)} in the fixture mesh`);
+
+  buf.writeUInt32LE(count, p + 6);
+
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+// 268 million elements: large enough that the `resize` commits gigabytes
+// (measured on the unpatched reader: 3.2 GB of vertices in 1.6 s, 8.6 GB of
+// features in 5.1 s, and 13.9 s for the polygons) and small enough that it
+// does not simply fail. An *absurd* count is the harmless case — 0xFFFFFFFF
+// vertices throw `bad allocation` before anything is committed — so the value
+// below is the one that has to be refused by a guard, and the assertion names
+// the count so a `bad allocation` on a smaller machine cannot pass for one.
+const MESH_COUNT_CASES = [
+  { chunk: 0xb030, id: 'VERTICES', pattern: /vertex count/i },
+  { chunk: 0xb040, id: 'FEATURES', pattern: /feature count/i },
+  { chunk: 0xb050, id: 'POLYGONS', pattern: /polygon count/i },
+];
+
+for (const testCase of MESH_COUNT_CASES) {
+  test(`a mesh ${testCase.id} chunk declaring more elements than the file holds bytes throws instead of committing gigabytes`,
+    () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-mesh-count-'));
+      try {
+        const corrupt = seedAbsurdMeshCount(dir, `bad-mesh-${testCase.id}.zen`, testCase.chunk, 0x0fffffff);
+
+        const result = loadInChild(corrupt, 60_000);
+        assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+        assert.strictEqual(result.status, 0,
+          `the child died (status ${result.status}): ${result.stdout}\n${result.stderr}`);
+        assert.match(result.stdout, /^THREW failed to load world: /);
+        assert.match(result.stdout, testCase.pattern);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+}

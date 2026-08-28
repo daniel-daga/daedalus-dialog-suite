@@ -3129,7 +3129,8 @@ cleanly. Bounding it would be dead-code hardening; the crash class is
 elsewhere.
 
 Still not the class. Every chunk-walking loop in `Mesh.cc` and the VOB readers
-is untouched — which is why the worker isolation stays load-bearing.
+was untouched — which is why the worker isolation stays load-bearing. (`Mesh.cc`
+is bounded by `0036` below; the VOB readers are not.)
 (`_parse_bsp_nodes`'s unbounded recursion was named here too, and is gone with
 `0035` below.)
 (`BspTree::load`'s OUTDOORS branch was named here too, and is bounded by `0034`
@@ -3218,10 +3219,10 @@ implementation can seek to the end and back. Covered by a child-process test in
 **The 200-seed run is now 200 of 200 clean throws.** Same caveat as the 40-seed
 milestone above, only louder: it is 200 seeds of 20 bytes over one small
 synthetic fixture, and it is **not** a crash-safety claim. The chunk-walking
-loops in `Mesh.cc` and the VOB readers are untouched, and **the worker isolation
-stays load-bearing.** The next step is not another seed — it is either widening
-the corpus (more seeds, more bytes, a real world) or taking the
-`ReadMemory::seek` decision, and neither is named as a card yet.
+loops in the VOB readers are untouched, and **the worker isolation stays
+load-bearing.** The next step is not another seed — it is either widening the
+corpus (more seeds, more bytes, a real world) or taking the `ReadMemory::seek`
+decision, and neither is named as a card yet.
 
 **The BSP node recursion is gone (2026-08-28, patch `0035`), and it is the one
 site here the fuzzer could never have found.** `_parse_bsp_nodes` recursed once
@@ -3249,9 +3250,28 @@ a child-process test in `zenkit-node/test/loadWorld.test.js` that grows the TREE
 chunk by structure (the blob's declared size and the header's hash-table offset
 move with it; nothing else in the container is an absolute offset).
 
-The class is still open either way: the chunk-walking loops in `Mesh.cc` and the
-VOB readers, and the `ReadMemory::seek` decision that would close it in one
-place.
+The class is still open either way: the chunk-walking loops in the VOB readers,
+and the `ReadMemory::seek` decision that would close it in one place.
+
+**`Mesh.cc`'s element counts are bounded (2026-08-28, patch `0036`), and the
+failure they allowed is not a crash.** Every chunk in `Mesh::load` sized a
+container from a `uint32` read off the file — materials, vertices, features,
+polygons, both lightmap chunks — and the same unbounded reader that made `0034`
+possible means the loop after the `resize` neither throws nor stops early: it
+runs to the file's own count over reads that return zero bytes. Measured against
+the 1.4 KB fixture with one count rewritten in place to 0x0FFFFFFF: vertices
+commit 3.2 GB and the world reports **`LOADED`** after 1.6 s, features 8.6 GB
+after 5.1 s, polygons 13.9 s. An *absurd* count is again the harmless one —
+0xFFFFFFFF vertices are 51 GB, `resize` throws `bad_alloc` and the load fails
+loudly — so the dangerous value is the merely large one, and the tests assert on
+the guard's own wording so a `bad_alloc` on a smaller machine cannot pass for a
+pass. The fuzzer never found this because it never would: memory exhaustion is
+not a non-zero exit, and 20 random byte writes have no reason to land on the
+four bytes of a count. Bounded by the bytes left in the reader, the same
+`_bytes_remaining` helper as `BspTree.cc`; the three retail worlds and all 24
+loadable `.zen` under `Gothic II/_work/Data/Worlds` still load unchanged, and
+`--fixtures` is still `identical`. Covered by three child-process tests in
+`zenkit-node/test/loadWorld.test.js`.
 
 ### 16.12 Two viewport constants only Daniel's hands can settle
 

@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0035`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0036`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,10 +136,9 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — seven instances closed
-  (`0029`–`0035`) and the 200-seed run is clean, which is a milestone and not a
-  claim: the `Mesh.cc` and VOB-reader loops are untouched, and the next step is a
-  wider corpus or the `ReadMemory::seek` decision. Unowned. §16.11
+- **The world reader is still not crash-safe** — eight instances closed
+  (`0029`–`0036`); what is left is the VOB readers and the `ReadMemory::seek`
+  decision. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -158,6 +157,11 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
+- **Patch `0036` — every `Mesh.cc` element count is bounded, and the bug was
+  never a crash.** A `uint32` count off the file sized each `resize` and the
+  loop after it read zero bytes to that same count, so a vertex count of
+  0x0FFFFFFF committed 3.2 GB and still reported `LOADED`. Memory exhaustion has
+  no non-zero exit, which is why 200 fuzzer seeds never saw it. §16.11
 - **Patch `0035` — the BSP node recursion is gone, and the fuzzer could never
   have found it.** `_parse_bsp_nodes` recursed once per set flag bit of the node
   it had just read; a node is 49 bytes, so a chain deep enough to exhaust the
