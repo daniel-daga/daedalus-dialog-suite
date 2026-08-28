@@ -702,6 +702,35 @@ test('insertVob refuses a visual it cannot author', () => {
   }
 });
 
+test('a VOB of any class with a visual claims to draw, not only a bare zCVob', () => {
+  // The engine draws nothing for a VOB whose `show_visual` is false, whatever
+  // visual it carries. This defaulted per branch rather than once, so every
+  // class I1-I5 added got `false` even when handed a real mesh — an authored
+  // chest, door or mover was written invisible and the world still loaded, so
+  // nothing anywhere failed. Two engine passes lost the chest row to it
+  // (docs/plans/level-editor.md §16.2) before anyone looked at the flag.
+  const handle = load();
+  for (const [cls, visual] of [
+    ['oCMobContainer', 'CHESTBIG_NW_NORMAL_OPEN.MDS'],
+    ['oCMobDoor', 'DOOR_WOODEN.MDS'],
+    ['zCMover', 'NW_CRATE.3DS'],
+    ['oCMobInter', 'NW_CRATE.3DS'],
+  ]) {
+    const at = zenkit.insertVob(handle, null, { class: cls, visual, position: [1, 2, 3] });
+    const placed = vobAt(dumpOf(handle), at);
+    assert.strictEqual(placed.class, cls);
+    assert.strictEqual(placed.visual, visual);
+    assert.strictEqual(placed.flags.showVisual, true, `${cls} with a visual must claim to draw`);
+  }
+
+  // The other half of the same rule: a class whose whole job is invisible still
+  // gets `false`, because it was given nothing to draw.
+  for (const cls of ['zCZoneZFog', 'zCVobSound', 'zCTrigger', 'oCZoneMusic']) {
+    const at = zenkit.insertVob(handle, null, { class: cls, position: [1, 2, 3] });
+    assert.strictEqual(vobAt(dumpOf(handle), at).flags.showVisual, false, cls);
+  }
+});
+
 test('insertVob without a visual makes a VOB with none, like an inserted item', () => {
   const handle = load();
   const at = zenkit.insertVob(handle, null, { name: 'MARKER', position: [1, 2, 3] });

@@ -351,9 +351,20 @@ const minimal = stage('06-minimal-frame');
 
   // `04`'s chest, at arm's length and dead ahead instead of 280 units off into
   // the trees. It still has to open — that is row 7 for a VOB the editor made.
+  //
+  // The box is measured off a retail container carrying the same visual rather
+  // than left to default: the default is a 10 cm cube around the position, the
+  // engine culls by box, and this candidate exists to stop losing this row to
+  // something other than the op under test.
+  const CHEST_VISUAL = 'CHESTBIG_NW_NORMAL_OPEN.MDS';
+  const model = before.vobs.find((v) => v.class === 'oCMobContainer' && v.visual === CHEST_VISUAL);
+  if (!model) throw new Error(`no retail oCMobContainer with ${CHEST_VISUAL} to measure a box from`);
+  const rel = model.bbox.map((n, i) => n - model.position[i % 3]);
+  const chestPos = ahead(CHEST_AHEAD);
   const chest = zk.insertVob(handle, null, {
     class: 'oCMobContainer', name: 'GATE2B_MIN_CHEST',
-    visual: 'CHESTBIG_NW_NORMAL_OPEN.MDS', position: ahead(CHEST_AHEAD),
+    visual: CHEST_VISUAL, position: chestPos,
+    bbox: rel.map((n, i) => n + chestPos[i % 3]),
   });
   zk.setVobClassProp(handle, chest, { locked: false });
 
@@ -392,8 +403,14 @@ const minimal = stage('06-minimal-frame');
   if (soundProps.radius !== SOUND_RADIUS || soundProps.soundName !== 'TORCH_BURN') {
     throw new Error(`sound read back wrong: ${JSON.stringify(soundProps)}`);
   }
-  const chestProps = zk.getVobProps(rh, find('GATE2B_MIN_CHEST').path);
+  const chestBack = find('GATE2B_MIN_CHEST');
+  const chestProps = zk.getVobProps(rh, chestBack.path);
   if (chestProps.locked !== false) throw new Error(`chest read back locked: ${JSON.stringify(chestProps)}`);
+  // The two ways this row has already been lost without anything failing.
+  if (chestBack.flags.showVisual !== true) throw new Error('the chest does not claim to draw');
+  if (chestBack.bbox[3] - chestBack.bbox[0] < 50) {
+    throw new Error(`the chest's box is ${chestBack.bbox[3] - chestBack.bbox[0]} wide — the default, not the measured one`);
+  }
 
   console.log(`\n06  cleared ${doomed.length} light/sound/pfx/fog VOBs within ${QUIET_RADIUS} of START`);
   console.log(`    fog ${fog} red @${FOG_RANGE_CENTER}, box +-${FOG_HALF} around the spawn`);

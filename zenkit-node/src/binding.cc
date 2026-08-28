@@ -2400,11 +2400,18 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   };
 
   std::shared_ptr<zenkit::VirtualObject> vob;
-  // Whether a VOB claims to draw when the caller has not said. A `zCVob` with
-  // nothing to draw does not claim otherwise; an `oCItem` does, because the
-  // engine derives an item's visual from its script instance rather than from
-  // this file.
-  bool default_show_visual = false;
+  // Whether a VOB claims to draw when the caller has not said. It follows the
+  // visual and nothing else: a VOB given a mesh draws it, whatever class it is,
+  // and one given nothing does not claim otherwise. Decided once here rather
+  // than per branch — it used to be set only in the bare-`zCVob` case, so every
+  // class I1-I5 added was written invisible even when handed a real mesh, and
+  // an invisible world still loads, so nothing failed anywhere. Two engine
+  // passes lost their chest row to it.
+  //
+  // `oCItem` overrides it below: the engine derives an item's visual from its
+  // script instance rather than from this file, so an item with no visual here
+  // still draws.
+  bool default_show_visual = visual != nullptr;
 
   if (vob_class == NewVobClass::kOCItem) {
     // The name of a script instance, and the field that makes an item an item:
@@ -2830,7 +2837,6 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
     auto plain = std::make_shared<zenkit::VirtualObject>();
     plain->type = zenkit::VirtualObjectType::zCVob;
     vob = plain;
-    default_show_visual = visual != nullptr;
   }
 
   // Every field ZenKit does not default-initialize is set here — the base-class
