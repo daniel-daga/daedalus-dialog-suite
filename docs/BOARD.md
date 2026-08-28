@@ -156,9 +156,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 2 — portals and sectors, the first two slices only**
 
-- **Portal material checks** — `P:` material names against `sectorNames`, both
-  already on the payload: report a malformed name and one naming a sector the
-  world does not have. No binding change. Unowned. §16.18
 - **The portal polygon payload is a hash, not data** — `is_portal`, `is_sector`,
   `sector_index` and `portal_polygon_indices` exist only inside the fidelity
   hash; every portal check past the material names needs them read out. Take it
@@ -206,6 +203,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Portal material checks** — `checkPortalMaterials` in `zen-world/src/validate/`;
+  clean on all three retail worlds, and it has no consumer yet. board-loop. §16.18
 - **I5 — the zones, the markers and the two effect classes are authorable** —
   all seven landed; §14.1 1.3 is closed. board-loop. §16.15
 - **`oCMobBed` is editable** — both halves; `oCTouchDamage` is now the family's

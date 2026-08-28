@@ -4762,12 +4762,33 @@ polygons index them) and `sectorNames` (from `bsp.sectors`, sorted — sector
 order is referenced by index nowhere). Both are ordinary data on the world
 summary.
 
-**Slice 1 — the material-name checks, and they need no binding change.**
-ZenGin's portal convention is a material named `P:<sector>_<sector>`, so two
-checks fall straight out of the two lists above: is every `P:` material
-well-formed, and does each one name two sectors the world actually has. A
-dangling sector name is the interesting finding — it is the shape of a portal
-that will not pair at compile time.
+**Slice 1 — the material-name checks — landed 2026-08-28** as
+`checkPortalMaterials` in `zen-world/src/validate/`, a pure function over
+`{ materials, sectorNames }` returning `portal-material-malformed` and
+`portal-material-unknown-sector`. It has **no consumer yet**: the Problems
+pipeline takes script rules over a semantic model, and how world data reaches it
+is the same undecided question that blocks §16.8's waypoint rule. Nothing was
+plumbed, deliberately.
+
+What the retail measurement fixed, taken with the addon rather than assumed
+(OldWorld 100 `P:` materials / 38 sectors, NewWorld 318 / 154, AddonWorld
+154 / 154):
+
+- **A one-sided name is legal, not half-written.** `P:OWCAVE01_` and
+  `P:_OWCAVE01` are 44 of OldWorld's 100 — a portal whose other side is
+  outdoors. Only *both* sides empty is malformed.
+- **Exactly one underscore, and no sector name contains one**, in all three
+  worlds — so a second separator is a malformed name, not a sector called
+  `A_B`.
+- **Case is uniformly uppercase on both sides**, so nothing measured says
+  ZenGin pairs case-sensitively; the match is case-insensitive rather than
+  claiming a finding the data cannot support.
+- **All three worlds are clean** under the shipped function, which is the only
+  reason a finding from it means anything.
+
+Still unwritten because it is the *pairing* check and not a name check: a
+`P:A_B` with no `P:B_A` beside it. Retail has both directions for every portal,
+but whether a missing reverse is an error or a convention was not measured.
 
 **Slice 2 — the polygon payload, and why it is second.** `is_portal`,
 `is_sector` and `sector_index` are read per-polygon in `normalize.cc` and go

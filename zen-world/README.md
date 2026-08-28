@@ -15,6 +15,7 @@ every binding call is injected.
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
+| `validate/` | `checkPortalMaterials` — the `P:<sector>_<sector>` portal convention, checked against the world's own sector names. |
 
 ## The rules it encodes, and why each is a rule
 
