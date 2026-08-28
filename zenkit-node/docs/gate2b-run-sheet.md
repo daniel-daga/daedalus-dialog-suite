@@ -16,9 +16,12 @@ here is claimed until it is run.
 > mask them, and the chest was never found.
 >
 > **`06` answered it on 2026-08-29 and every row of it passed** — red fog, the
-> carried sound radius, and an authored chest the player opens. This sheet is
-> spent except for one thing: **`05`'s own two observation rows were never run
-> in a cleared frame**, and a `07` in `06`'s shape would settle them.
+> carried sound radius, and an authored chest the player opens.
+>
+> **`07a`/`07b`/`07c` were built 2026-08-29 and have NOT been run.** They are
+> `05`'s own two observation rows in `06`'s frame — the last thing this sheet
+> leaves unwitnessed. Until somebody plays them, `05` is still "loads and
+> plays" and nothing more.
 
 ## Running it
 
@@ -132,6 +135,74 @@ children are gone, so they glow and do not crackle.
 
 ---
 
+## 07 — `05`'s two observation rows, in a frame they can be seen in
+
+Built 2026-08-29, after `06` proved the instrument. `05` loaded and played and
+was observed at nothing: the torch it deletes was one of ~196 lights inside the
+spawn's neighbourhood, and the waypoint renumber was never watched at all. These
+three are `06`'s frame pointed at those two rows.
+
+`-Only 00,07` runs the control and all three — `engine-batch.ps1` matches the
+first two characters of the filename, so `07a`, `07b` and `07c` are one subset.
+
+### 07a / 07b — the subtree delete, and its own A/B
+
+**The pair is the experiment.** `07a` clears the frame and *keeps* the torch;
+`07b` clears the same frame and then deletes the torch subtree with one
+`DeleteVob`. One difference between two files, and `00` cannot serve as the
+control here: in retail that torch is one light among hundreds and picking it
+out is the whole problem.
+
+**What they clear:** every `zCVobLight`, `zCVobSound`, `zCVobSoundDaytime` and
+`zCPFXController` within 6,000 units of START **except the torch subtree** —
+230 paths, 231 VOBs with their children. Fog is deliberately left alone: the
+ambient range is 16,000 units and the torch is 318 away, so no zone can hide
+this row, and clearing them would be a second difference from `00` for nothing.
+
+| Candidate | What you should see at the wall, 318 units from the spawn |
+|---|---|
+| `07a` | **One torch, burning, alone.** Post, flame, sparks, flare, and the only two lights left in the frame. Everything else that lit or sounded near the spawn is gone |
+| `07b` | **Nothing there.** No post, no flame, no sparks, no flare, no glow. **A partial removal is the interesting failure** — a flame with no post, a glow with no flame — and this frame is what makes one visible |
+
+**Look at the right torch.** `2/76` is the same wall-torch model 102 units away
+in plan and **884 units lower** — a second storey of the same wall. It keeps its
+post, flame and flare in both candidates (its two lights are cleared with the
+rest of the frame), so a torch still burning *below* the one under test is the
+control working, not the delete failing. This trap found the assertion before it
+found a person: an XZ-only proximity check counted ten pieces of torch where
+six were expected.
+
+**The frame's other fires still show a flame.** A torch's flame and sparks are
+plain `zCVob`s carrying `FIRE_MEDIUM.pfx` and `FIRE_SPARKS.pfx` visuals, not
+`zCPFXController`s, so the clearing does not take them. What makes the test
+torch the only *lit* thing in the frame is its two `zCVobLight` children — the
+same reason `06` leaves fires burning.
+
+### 07c — the renumber, and nothing else
+
+`RemoveWaypoint` on `NW_XARDAS_TOWER_IN1_32` (index 63), renumbering the 2,895
+waypoints after it. **No VOB is touched and no other waynet op runs**: `05`
+bundled this with a subtree delete and four other waynet edits, so a broken
+routine there would have implicated six changes at once. Here it can only be
+the renumber.
+
+| What to do | Look for |
+|---|---|
+| Go to Xardas's tower and watch | **Xardas still walks to his bookstand and reads** — `TA_Read_Bookstand` at `NW_XARDAS_TOWER_IN1_28`. **Lester still sleeps** at `..._31` |
+
+Both waypoints are asserted present in the saved file, and both sit *before* the
+deleted one in stored order — so they do not move, and what has to survive is a
+route computed across 2,895 waypoints that did. The deleted waypoint is named by
+no script on purpose: a broken route then implicates the writer, not a routine
+that lost its waypoint.
+
+**Verified before the engine sees it:** 2,959 → 2,958 waypoints, the deleted
+name absent, both watched names present, `danglingEdges` 0, and the VOB count
+unchanged at 23,288 — which is the "nothing else" claim, checked rather than
+asserted.
+
+---
+
 ## What was verified before the engine ever ran
 
 Every candidate was reloaded and asserted, not merely written
@@ -143,6 +214,15 @@ class and the properties asked for; and in `05` the torch subtree is **exactly
 six VOBs** lighter, the renamed waypoint survives at its moved position with
 **exactly one** surviving edge, the deleted waypoint is absent, and
 `danglingEdges` is 0.
+
+`07a`/`07b`/`07c` are asserted the same way and it paid twice: the torch's six
+pieces are all standing in `07a` and none in `07b`, both counted by full 3D
+proximity after the second wall torch 884 units below was mistaken for them; the
+frame holds exactly the torch's two lights in `07a` and nothing in `07b`; the
+VOB total is checked against the deleted paths **plus their children**, which is
+231 VOBs for 230 paths and not the 230 the first version expected; and `07c`
+loses exactly one waypoint, keeps both names its routines use, ends with no
+dangling edge and changes no VOB at all.
 
 So a failure in the engine is a fidelity or semantics failure, not a write that
 never happened.

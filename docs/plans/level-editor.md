@@ -2725,9 +2725,9 @@ box, a VOB standing at the spawn's Y over ground 50 units lower, and an empty
 
 **What is still unwitnessed** — say this rather than "Gate 2b passed":
 `05`'s own two observation rows (the torch subtree *wholly* gone, and NPC
-routines surviving the 2,895-waypoint renumber) were never run in a cleared
-frame and are "loads and plays" only; a `07` in `06`'s shape would settle both
-cheaply now the frame-clearing exists. The seven decal fields are in no
+routines surviving the 2,895-waypoint renumber) have never been run in a cleared
+frame and are "loads and plays" only — **the candidates for them exist as of
+2026-08-29 and have not been played**, see the `07` paragraph below. The seven decal fields are in no
 candidate. `oCZoneMusic.volume` is dropped by decision, below. And five of the
 27 authorable classes have been seen in an engine.
 
@@ -2764,6 +2764,37 @@ Everything beyond the radius is untouched, so distant routines and mobsis still
 behave and a failure still localizes. Run sheet §06;
 `-Only 00,06` is the whole second pass, and `-Latest` runs the newest candidate
 alone for a re-run where the control has already been seen.
+
+**`07` was built 2026-08-29, and it is an instrument and not a verdict.** Three
+candidates in `06`'s shape, run sheet §07, none of them played yet:
+
+- **`07a` and `07b` are an A/B of one difference.** Both clear every light,
+  sound and effect within 6,000 units of START **except the torch subtree**;
+  `07b` then deletes that subtree with one `DeleteVob`. `00` cannot be the
+  control for this row — in retail the torch is one light among ~196 and
+  picking it out is the whole problem — so `07a` is, and the only difference
+  between the two files is the op under test.
+- **`07c` is the renumber alone.** `05` bundled it with a subtree delete and
+  four other waynet ops; a broken routine there would have implicated six
+  edits. Here nothing else in the file changes, which is asserted rather than
+  claimed: the VOB count is unchanged at 23,288.
+
+**Three things the build's own read-back assertions found, none of them the
+ops' fault and all three able to have faked a result:**
+
+- **A torch's flame is not a `zCPFXController`.** The five children of `2/1248`
+  are two `zCVobLight`s and three plain `zCVob`s carrying `ZFLARE6.TGA`,
+  `FIRE_MEDIUM.pfx` and `FIRE_SPARKS.pfx`. So the frame-clearer never takes a
+  flame — which is also why `06`'s fires still burn — and what makes the test
+  torch the only *lit* thing in the frame is its two lights, not its visual.
+- **There are two identical wall torches on that wall**, `2/76` sitting 102
+  units away in plan and **884 units below**. It keeps its post, flame and
+  flare in both candidates. An XZ-only proximity check counted ten pieces of
+  torch where six were expected, and the same confusion is available to the eye
+  — the run sheet now says which torch the row is about.
+- **A cleared VOB can have a child**: 230 paths take 231 VOBs with them, so a
+  count that assumes one row per path is off by one. `06` never noticed because
+  it only counted what was left, not what went.
 
 **Daniel's idea, unowned and unsized: replace the scripts too, 2026-08-28.**
 The paragraph above says a minimal world is unreachable *because of the script

@@ -129,10 +129,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
 
-- **`05`'s two observation rows have never been run in a cleared frame** — that
-  the deleted torch subtree is *wholly* gone, and that NPC routines survive the
-  2,895-waypoint renumber. Both are "loads and plays" only. A `07` in `06`'s
-  shape settles them cheaply now the frame-clearing exists. Unowned. §16.2
+- **`07` is built and has not been played** — `07a`/`07b` (the torch subtree,
+  its own A/B in a cleared frame) and `07c` (the renumber with nothing else in
+  the file) are the last of Gate 2b's unwitnessed rows. Needs the engine, so it
+  needs a person. **Daniel.** §16.2, run sheet §07
 
 - **The editor places mobs nobody can use, and says nothing** — a `oCMob*` with
   an empty `focusName` is visible and inert in the engine. Retail sets it per
@@ -185,6 +185,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The instrument for `05`'s two rows exists** — `07a`/`07b`/`07c` in
+  `tools/mutate.js`, plus run sheet §07. Its own read-back assertions caught
+  three things that could have faked a result: a torch's flame is a plain
+  `zCVob`, a second wall torch stands 884 units below the one under test, and a
+  cleared VOB can bring a child with it. board-loop-4. §16.2
 - **The dangling-waypoint rule landed, and W1's lookup with it** —
   `waypoint-not-in-world` joins the Problems rules, over the project index's
   waypoint sites and the open world's waynet names. The names reach

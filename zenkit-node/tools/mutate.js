@@ -18,6 +18,9 @@
 //   06-minimal-frame.zen      the same edits in a frame they can be SEEN in —
 //                             built 2026-08-28, after 03-05 loaded clean and
 //                             were observed hardly at all
+//   07a/07b/07c.zen           `05`'s own two observation rows, in `06`'s shape
+//                             — built 2026-08-29, the last thing that sheet
+//                             leaves unwitnessed (§16.2)
 //
 // Each of 03–05 is built from the pristine source, not from the one before it:
 // a candidate that stacked would report the first failure and hide the rest.
@@ -468,10 +471,204 @@ const minimal = stage('06-minimal-frame');
   console.log(`    vobs ${before.vobs.length} -> ${after.vobs.length}`);
 }
 
+// ---------------------------------------------------------------------------
+// 07 — `05`'s two observation rows, in a frame they can be seen in (2026-08-29).
+//
+// `05` came back "loads and plays" and nothing else: retail NewWorld has ~196
+// lights and 37 sounds inside the spawn's neighbourhood, so a torch that went
+// missing changed a frame nobody could read, and the waypoint renumber was
+// never watched at all. `06` proved the instrument works. These three are the
+// same instrument pointed at the two rows it has not answered (§16.2).
+//
+// Three files, because the rows want different experiments:
+//
+//   07a  the frame cleared of every light, sound and effect within 6,000 units
+//        of START **except the torch subtree** — which leaves exactly one lit,
+//        crackling thing in an otherwise dead clearing. Nothing is deleted.
+//        This is row A's control, and `00` cannot be it: in retail the torch is
+//        one of two hundred lights and picking it out is the whole problem.
+//   07b  the same clearing, and then `DeleteVob` on the torch. The one op under
+//        test, against a frame where its effect is the only thing that can have
+//        changed. **A partial removal is the interesting failure** — a flame
+//        with no post, a glow with no flame — and it is only interesting if
+//        there is nothing else glowing.
+//   07c  the 2,895-waypoint renumber and *nothing else*. `05` bundled it with a
+//        subtree delete and four other waynet ops, so a broken routine there
+//        would have implicated six edits; here it can only be the renumber.
+//
+// Fog is deliberately left alone: NewWorld's ambient range is 16,000 units and
+// the torch is 318 away, so no fog zone can hide this row, and clearing them
+// would be a second difference from `00` for nothing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Clear the noise out of the spawn's frame, keeping anything under `keep`.
+ *
+ * `06`'s clearing with one exception, and the exception is the point: the VOB
+ * under test in `07a`/`07b` is a torch whose five children are two lights, two
+ * particle effects and a lens flare — every one of them a class this would
+ * otherwise delete, which would leave nothing for `DeleteVob` to be seen
+ * removing.
+ *
+ * Returns the paths rather than deleting them, because `07b` has one more to
+ * add and the order the two are deleted in is what keeps every path valid.
+ */
+const frameNoiseKeeping = (before, start, keep) => {
+  const [sx, sy, sz] = start.position;
+  const near = (v) => Math.hypot(v.position[0] - sx, v.position[1] - sy, v.position[2] - sz) <= QUIET_RADIUS;
+  const kept = (v) => v.path === keep || v.path.startsWith(`${keep}/`);
+  const doomed = before.vobs
+    .filter((v) => NOISE_CLASSES.has(v.class) && near(v) && !kept(v))
+    .map((v) => v.path);
+  if (doomed.length < 10) throw new Error(`only ${doomed.length} VOBs to clear — re-measure, the frame is not being cleared`);
+  return doomed;
+};
+
+/** Light/sound/effect VOBs still standing inside the frame. */
+const noiseLeft = (dump, start) => {
+  const [sx, sy, sz] = start.position;
+  return dump.vobs.filter((v) => NOISE_CLASSES.has(v.class)
+    && Math.hypot(v.position[0] - sx, v.position[1] - sy, v.position[2] - sz) <= QUIET_RADIUS);
+};
+
+const torchKept = stage('07a-frame-torch');
+const torchGone = stage('07b-frame-torch-deleted');
+{
+  // Measured once off the pristine world and used by both files, so the pair is
+  // an A/B of one difference and not of two builds that drifted.
+  const probe = zk.normalizeWorld(zk.loadWorld(src, 'g2'));
+  const startWp = probe.waynet.waypoints.find((w) => w.name === 'START');
+  if (!startWp) throw new Error('no START waypoint');
+  const torch = at(probe, TORCH_SUBTREE);
+  const children = probe.vobs.filter((v) => v.path.startsWith(`${TORCH_SUBTREE}/`));
+  if (children.length !== 5) throw new Error(`${TORCH_SUBTREE} has ${children.length} children, expected 5`);
+  // Two `zCVobLight` and three plain `zCVob`s carrying `ZFLARE6.TGA`,
+  // `FIRE_MEDIUM.pfx` and `FIRE_SPARKS.pfx`. Measured, not assumed — the first
+  // build of this candidate expected five VOBs of the classes the frame-clearer
+  // knows about and found two, because **a torch's flame is not a
+  // `zCPFXController`**. It is why `06` leaves the frame's other fires burning,
+  // and why the test torch's two lights are what make it the only *lit* thing
+  // in the clearing rather than the only visible one.
+  const sig = (v) => `${v.class}|${v.visual}`;
+  const subtreeSigs = new Set([torch, ...children].map(sig));
+  /**
+   * Everything at the torch's spot that looks like a piece of the torch.
+   *
+   * **Full 3D distance, and that is the point.** `2/76` is the same wall torch
+   * model 102 units away in XZ and 884 units *below* — a second storey of the
+   * same wall. An XZ-only test found ten pieces where six were expected, and
+   * the same confusion is available to the eye: the run sheet has to say which
+   * of the two torches this row is about, or a lower torch still burning reads
+   * as a delete that did not happen.
+   */
+  const atTorch = (dump) => dump.vobs.filter((v) => subtreeSigs.has(sig(v)) && Math.hypot(
+    v.position[0] - torch.position[0],
+    v.position[1] - torch.position[1],
+    v.position[2] - torch.position[2],
+  ) < 200);
+  const away = Math.hypot(
+    torch.position[0] - startWp.position[0],
+    torch.position[1] - startWp.position[1],
+    torch.position[2] - startWp.position[2],
+  );
+  if (away > QUIET_RADIUS) throw new Error(`the torch is ${away.toFixed(0)} from START — outside the frame this clears`);
+
+  for (const [file, deleteTorch] of [[torchKept, false], [torchGone, true]]) {
+    const label = path.basename(file, '.zen');
+    const handle = zk.loadWorld(src, 'g2');
+    const before = zk.normalizeWorld(handle);
+    const doomed = frameNoiseKeeping(before, startWp, TORCH_SUBTREE);
+    // The torch's own root joins the list rather than being deleted before or
+    // after it: sorted descending, every path is still valid when its turn
+    // comes, and the root goes with its five children still under it — which is
+    // the subtree delete this row exists to witness, not five deletes and a
+    // sixth.
+    const order = (deleteTorch ? [...doomed, TORCH_SUBTREE] : doomed).sort(byPathDesc);
+    for (const p of order) zk.deleteVob(handle, p);
+    zk.saveWorld(handle, file);
+
+    const after = zk.normalizeWorld(zk.loadWorld(file, 'g2'));
+
+    // The subtree itself, not a proxy for it: all six pieces still standing at
+    // the torch's spot, or none. Partial removal is the failure this row is for,
+    // and it has to be caught here as well as by eye.
+    const standing = atTorch(after);
+    const owedStanding = deleteTorch ? 0 : 1 + children.length;
+    if (standing.length !== owedStanding) {
+      throw new Error(`${label}: ${standing.length} pieces of the torch left, expected ${owedStanding}`
+        + ` (${standing.map(sig).join(', ')})`);
+    }
+    // And the frame around it is dead either way: every light in `07a` belongs
+    // to the torch, and `07b` leaves none at all.
+    const left = noiseLeft(after, startWp);
+    const owedLeft = deleteTorch ? 0 : children.filter((v) => NOISE_CLASSES.has(v.class)).length;
+    if (left.length !== owedLeft) {
+      throw new Error(`${label}: ${left.length} light/sound/effect VOBs inside the frame, expected ${owedLeft}`);
+    }
+    // What a delete costs is its whole subtree, not one row — and in this frame
+    // that is not the same number. One of the cleared VOBs carries a child of
+    // its own, so 230 paths take 231 VOBs with them; `06` never noticed because
+    // it only counted what was left, not what went.
+    const went = before.vobs.length - after.vobs.length;
+    const owed = before.vobs.filter((v) => order.some((p) => v.path === p || v.path.startsWith(`${p}/`))).length;
+    if (went !== owed) throw new Error(`${label}: ${went} VOBs went, expected ${owed}`);
+
+    console.log(`\n${label}  cleared ${doomed.length} within ${QUIET_RADIUS} of START, torch ${deleteTorch ? 'DELETED with its 5 children' : 'kept'}`);
+    console.log(`    torch ${TORCH_SUBTREE} "${torch.visual}" ${away.toFixed(0)} units from START`);
+    console.log(`    vobs ${before.vobs.length} -> ${after.vobs.length} (${order.length} paths, ${owed} VOBs with their children)`);
+    console.log(`    torch pieces standing ${standing.length}, lights/sounds/effects left in frame ${left.length}`);
+  }
+}
+
+const renumber = stage('07c-renumber-only');
+{
+  const handle = zk.loadWorld(src, 'g2');
+  const before = zk.normalizeWorld(handle);
+  const wpBefore = before.waynet.waypoints.length;
+  // The waypoints the two routines the run sheet watches actually name. They
+  // sit *before* the deleted one in stored order, so they do not move — what
+  // moves is every one of the waypoints after it, which is what a route has to
+  // survive being renumbered around.
+  const WATCHED = ['NW_XARDAS_TOWER_IN1_28', 'NW_XARDAS_TOWER_IN1_31'];
+  for (const name of WATCHED) {
+    if (!before.waynet.waypoints.some((w) => w.name === name)) {
+      throw new Error(`${name} is not in this world — the run sheet watches a routine that cannot run`);
+    }
+  }
+
+  zk.removeWaypoint(handle, DELETE_WP.index, DELETE_WP.name, true);
+  zk.saveWorld(handle, renumber);
+
+  const rh = zk.loadWorld(renumber, 'g2');
+  const after = zk.normalizeWorld(rh);
+  // `danglingEdges` is `getWaynet`'s — `normalizeWorld` reports waypoints and
+  // edges and does not count them, and reading it off the wrong one is
+  // `undefined`, which is not 0 and would have passed a `!== 0` test by luck.
+  const dangling = zk.getWaynet(rh).danglingEdges;
+  const names = after.waynet.waypoints.map((w) => w.name);
+  if (after.waynet.waypoints.length !== wpBefore - 1) {
+    throw new Error(`waypoints ${wpBefore} -> ${after.waynet.waypoints.length}, expected exactly one gone`);
+  }
+  if (names.includes(DELETE_WP.name)) throw new Error(`${DELETE_WP.name} survived the delete`);
+  for (const name of WATCHED) {
+    if (!names.includes(name)) throw new Error(`${name} went with the renumber — the routine has lost its waypoint`);
+  }
+  if (dangling !== 0) throw new Error(`${dangling} dangling edges after the renumber`);
+  // Nothing else changed, which is the whole claim of this candidate.
+  if (after.vobs.length !== before.vobs.length) {
+    throw new Error(`${before.vobs.length - after.vobs.length} VOBs changed in a waynet-only candidate`);
+  }
+
+  console.log(`\n07c  removed waypoint ${DELETE_WP.index} ${DELETE_WP.name}, renumbering ${wpBefore - DELETE_WP.index - 1}`);
+  console.log(`    waypoints ${wpBefore} -> ${after.waynet.waypoints.length}, dangling ${dangling}, vobs unchanged at ${after.vobs.length}`);
+  console.log(`    watched routine waypoints still present: ${WATCHED.join(', ')}`);
+}
+
 for (const [name, file] of [
   ['00-control-original', control], ['01-resave', resave], ['02-minimal-edit', edited],
   ['03-class-props', classProps], ['04-authored-classes', authored], ['05-deletes-waynet', deletes],
-  ['06-minimal-frame', minimal],
+  ['06-minimal-frame', minimal], ['07a-frame-torch', torchKept],
+  ['07b-frame-torch-deleted', torchGone], ['07c-renumber-only', renumber],
 ]) {
   console.log(`\n${name}  ${fs.statSync(file).size} B  ${sha(file)}`);
 }

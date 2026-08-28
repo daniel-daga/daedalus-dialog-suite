@@ -1058,8 +1058,11 @@ passed":
 - **`05`'s two observation rows were never run in a cleared frame** — that the
   deleted torch subtree is *wholly* gone (a partial removal is the interesting
   failure), and that NPC routines still work across the 2,895-waypoint
-  renumber. Both were "loads and plays" only. A `07` in the same shape as `06`
-  would settle them cheaply, since the frame-clearing is already written.
+  renumber. Both are "loads and plays" only. **The candidates now exist and
+  have not been run**: `07a`/`07b` are the frame cleared around the torch with
+  and without it, an A/B of one difference, and `07c` is the renumber with no
+  other edit in the file. Run sheet §07. Until they are played this row is
+  unchanged — building an instrument is not a verdict.
 - **`SetVobProp`'s seven decal fields** — not in any candidate.
 - **`oCZoneMusic.volume`** — dropped deliberately (§16.2): no ear can rank two
   music volumes in a live world, so it is unclaimed rather than tested badly.
