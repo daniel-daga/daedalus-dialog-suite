@@ -15,6 +15,9 @@
 //                             edits whose ONLY witness is the engine
 //   04-authored-classes.zen   AddVob for the classes I1–I5 taught it to build
 //   05-deletes-waynet.zen     DeleteVob on a subtree, and all five waynet ops
+//   06-minimal-frame.zen      the same edits in a frame they can be SEEN in —
+//                             built 2026-08-28, after 03-05 loaded clean and
+//                             were observed hardly at all
 //
 // Each of 03–05 is built from the pristine source, not from the one before it:
 // a candidate that stacked would report the first failure and hide the rest.
@@ -245,9 +248,164 @@ const deletes = stage('05-deletes-waynet');
   console.log(`    vobs ${before.vobs.length} -> ${after.vobs.length}, waypoints ${wpBefore} -> ${after.waynet.waypoints.length}`);
 }
 
+// ---------------------------------------------------------------------------
+// 06 — the minimal-frame candidate (2026-08-28).
+//
+// Gate 2b's load-time half passed and its *observation* half did not: the fog
+// zone was indistinguishable from NewWorld's ambient fog, the sound radius and
+// the music volumes were not judgeable by ear, and the authored chest was never
+// found. None of that was the ops' fault — retail NewWorld is simply the wrong
+// instrument, because an A/B by eye needs the edit to be the only thing in the
+// frame (§16.2).
+//
+// A genuinely minimal *world* is not reachable: the game boots NewWorld through
+// a script layer that spawns every NPC at `NW_*` waypoints, so swapping the file
+// for a small authored world breaks the scripts rather than the scenery. What is
+// reachable is a minimal *frame* — clear the noise out of the spawn's
+// neighbourhood, then put the edits under test where the hero is already
+// looking. Everything beyond the radius is untouched, so distant routines,
+// mobsis and sounds still behave and a failure still localizes.
+// ---------------------------------------------------------------------------
+
+// Everything within this of START that only makes light or noise. 6,000 units is
+// wider than the 5,000-unit sound radius `03` used, so nothing retail is left
+// inside the frame to mask the one sound under test.
+const QUIET_RADIUS = 6000;
+const NOISE_CLASSES = new Set([
+  'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCPFXController',
+]);
+// `oCMobFire` is deliberately NOT in that set: a fire is an interactive mob a
+// routine can name, and its light and particle children are separate VOBs of
+// the classes above, so they go without taking the mob with them.
+
+const FOG_HALF = 4000;      // half-extent of the authored fog zone's box
+const FOG_RANGE_CENTER = 3000;  // thick enough to read as red, open enough to see 250 units
+const CHEST_AHEAD = 250;    // along START's own direction — the hero faces it
+const LIGHT_ABOVE = 200;
+const SOUND_AT = 3000;      // the sound VOB's distance from the spawn...
+const SOUND_RADIUS = 8000;  // ...and the radius that has to be written for it to carry
+
+// Reverse depth-first order: deleting a VOB shifts only the paths *after* it, so
+// working backwards keeps every path still to be deleted valid. Children sort
+// after their parent, so a subtree is emptied before its root is removed.
+const byPathDesc = (a, b) => {
+  const x = a.split('/').map(Number);
+  const y = b.split('/').map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    const d = (y[i] ?? -1) - (x[i] ?? -1);
+    if (d) return d;
+  }
+  return 0;
+};
+
+const minimal = stage('06-minimal-frame');
+{
+  const handle = zk.loadWorld(src, 'g2');
+  const before = zk.normalizeWorld(handle);
+  const start = before.waynet.waypoints.find((w) => w.name === 'START');
+  if (!start) throw new Error('no START waypoint');
+  const [sx, sy, sz] = start.position;
+
+  // "In front of the spawn" is the waypoint's own direction, which is where the
+  // hero faces on a new game. Guessing an axis is what put `04`'s chest in a
+  // forest the run never searched.
+  const d = start.direction;
+  const len = Math.hypot(d[0], d[2]);
+  if (len < 1e-3) throw new Error('START has no usable direction — re-measure before trusting this candidate');
+  const ahead = (n) => [sx + (d[0] / len) * n, sy, sz + (d[2] / len) * n];
+
+  const near = (v) => Math.hypot(v.position[0] - sx, v.position[1] - sy, v.position[2] - sz) <= QUIET_RADIUS;
+  // Every fog zone in the world, not only the near ones: a zone's *position*
+  // says nothing about the volume its box covers, so a distant one can still be
+  // the one the spawn stands in. The world's own `zCZoneZFogDefault` is not a
+  // placed VOB and survives, which is what keeps the control looking normal.
+  const doomed = before.vobs
+    .filter((v) => v.class === 'zCZoneZFog' || (NOISE_CLASSES.has(v.class) && near(v)))
+    .map((v) => v.path)
+    .sort(byPathDesc);
+  if (doomed.length < 10) throw new Error(`only ${doomed.length} VOBs to clear — re-measure, the frame is not being cleared`);
+  for (const p of doomed) zk.deleteVob(handle, p);
+
+  // The sharpest gap in §16.2, given a frame it can actually be seen in: an
+  // authored zone, its own box around the spawn, red and overriding. Both ops in
+  // one row — AddVob builds the zone, SetVobClassProp is the only thing that
+  // makes it red.
+  const fog = zk.insertVob(handle, null, {
+    class: 'zCZoneZFog', name: 'GATE2B_MIN_FOG', position: [sx, sy, sz],
+    bbox: [sx - FOG_HALF, sy - FOG_HALF, sz - FOG_HALF, sx + FOG_HALF, sy + FOG_HALF, sz + FOG_HALF],
+  });
+  zk.setVobClassProp(handle, fog, {
+    rangeCenter: FOG_RANGE_CENTER, innerRangePercentage: 0.3,
+    fadeOutSky: true, overrideColor: true, color: [255, 0, 0, 255],
+  });
+
+  // Radius, tested as a binary rather than as a loudness: the VOB sits 3,000
+  // units away in a frame with no other sound in it, so it is audible at the
+  // spawn only if the radius reached the file.
+  const sound = zk.insertVob(handle, null, {
+    class: 'zCVobSound', name: 'GATE2B_MIN_SOUND', position: ahead(SOUND_AT),
+  });
+  zk.setVobClassProp(handle, sound, {
+    soundName: 'TORCH_BURN', radius: SOUND_RADIUS, volume: 100, initiallyPlaying: true,
+  });
+
+  // `04`'s chest, at arm's length and dead ahead instead of 280 units off into
+  // the trees. It still has to open — that is row 7 for a VOB the editor made.
+  const chest = zk.insertVob(handle, null, {
+    class: 'oCMobContainer', name: 'GATE2B_MIN_CHEST',
+    visual: 'CHESTBIG_NW_NORMAL_OPEN.MDS', position: ahead(CHEST_AHEAD),
+  });
+  zk.setVobClassProp(handle, chest, { locked: false });
+
+  // Confirmed already in Gate 2b, and kept for a second job: the frame's own
+  // lights were just deleted, so this is what the chest is lit by.
+  const light = zk.insertVob(handle, null, {
+    class: 'zCVobLight', name: 'GATE2B_MIN_LIGHT', position: [sx, sy + LIGHT_ABOVE, sz],
+  });
+  zk.setVobClassProp(handle, light, { range: 2000, color: [255, 0, 255, 255] });
+
+  zk.saveWorld(handle, minimal);
+
+  // Asserted on reload, not assumed — a candidate that tests nothing and still
+  // passes is the failure mode this whole file exists to avoid.
+  const rh = zk.loadWorld(minimal, 'g2');
+  const after = zk.normalizeWorld(rh);
+  const find = (name) => {
+    const v = after.vobs.find((x) => x.name === name);
+    if (!v) throw new Error(`${name} is not in the saved world`);
+    return v;
+  };
+  const zones = after.vobs.filter((v) => v.class === 'zCZoneZFog');
+  if (zones.length !== 1 || zones[0].name !== 'GATE2B_MIN_FOG') {
+    throw new Error(`${zones.length} fog zones survived, expected exactly ours`);
+  }
+  const left = after.vobs.filter((v) => NOISE_CLASSES.has(v.class)
+    && Math.hypot(v.position[0] - sx, v.position[1] - sy, v.position[2] - sz) <= QUIET_RADIUS
+    && !v.name.startsWith('GATE2B_MIN_'));
+  if (left.length) throw new Error(`${left.length} light/sound VOBs left inside the frame, e.g. ${left[0].path} ${left[0].class}`);
+
+  const fogProps = zk.getVobProps(rh, find('GATE2B_MIN_FOG').path);
+  if (!fogProps.overrideColor || fogProps.rangeCenter !== FOG_RANGE_CENTER) {
+    throw new Error(`fog zone read back wrong: ${JSON.stringify(fogProps)}`);
+  }
+  const soundProps = zk.getVobProps(rh, find('GATE2B_MIN_SOUND').path);
+  if (soundProps.radius !== SOUND_RADIUS || soundProps.soundName !== 'TORCH_BURN') {
+    throw new Error(`sound read back wrong: ${JSON.stringify(soundProps)}`);
+  }
+  const chestProps = zk.getVobProps(rh, find('GATE2B_MIN_CHEST').path);
+  if (chestProps.locked !== false) throw new Error(`chest read back locked: ${JSON.stringify(chestProps)}`);
+
+  console.log(`\n06  cleared ${doomed.length} light/sound/pfx/fog VOBs within ${QUIET_RADIUS} of START`);
+  console.log(`    fog ${fog} red @${FOG_RANGE_CENTER}, box +-${FOG_HALF} around the spawn`);
+  console.log(`    sound ${sound} TORCH_BURN r=${SOUND_RADIUS} at ${SOUND_AT} ahead`);
+  console.log(`    chest ${chest} at ${CHEST_AHEAD} ahead, light ${light} magenta overhead`);
+  console.log(`    vobs ${before.vobs.length} -> ${after.vobs.length}`);
+}
+
 for (const [name, file] of [
   ['00-control-original', control], ['01-resave', resave], ['02-minimal-edit', edited],
   ['03-class-props', classProps], ['04-authored-classes', authored], ['05-deletes-waynet', deletes],
+  ['06-minimal-frame', minimal],
 ]) {
   console.log(`\n${name}  ${fs.statSync(file).size} B  ${sha(file)}`);
 }

@@ -2718,14 +2718,38 @@ radius and the three music volumes were not judgeable by ear, and the authored
 the torch subtree gone, Xardas still reading — went unreported. So a wrongly
 written class property would still have passed this run.
 
-**Why, and what the next candidate needs.** The instrument, not the ops:
-retail NewWorld masks every one of those signals, and a candidate is only an
-A/B if the edit is the only thing in the frame. The next pass wants a **minimal
-world and a minimal game state** — few enough VOBs and quiet enough ambient
-that a red fog, a 5000-unit sound radius or a placed chest is unmistakable, and
-the player spawned in front of it rather than 300 units away. That is a change
-to `tools/mutate.js` and the candidate set, not to any op. **Daniel's call**
-whether it is worth the build.
+**Why, and the candidate that answers it — `06-minimal-frame`, built
+2026-08-28.** The instrument, not the ops: retail NewWorld masks every one of
+those signals, and a candidate is only an A/B if the edit is the only thing in
+the frame.
+
+A minimal *world* was considered and is not reachable — the game boots NewWorld
+through a script layer that spawns every NPC at `NW_*` waypoints, so replacing
+the file breaks the scripts rather than the scenery. A minimal *frame* is the
+same experiment and costs nothing: `tools/mutate.js` clears every
+`zCVobLight`, `zCVobSound`, `zCVobSoundDaytime` and `zCPFXController` within
+6,000 units of START and **every** `zCZoneZFog` in the world — measured at 239
+VOBs and **zero** of any other class — and then authors the edits into the
+cleared space. Three design calls worth keeping:
+
+- **The fog zone is authored, not borrowed**, with its own 8,000-unit box centred
+  on the spawn. So the row tests both ops at once and `SetVobClassProp` is the
+  only thing that can make it red: a grey world is that op failing, with nothing
+  else to blame.
+- **The sound radius is tested as a binary, not a loudness.** The VOB sits 3,000
+  units away with `radius` 8,000 in a frame with no other sound in it — audible
+  at all only if the radius reached the file. Ears cannot rank two volumes and
+  the first run proved it.
+- **`oCZoneMusic.volume` is dropped rather than tested badly.** No candidate
+  fixes the fact that a person cannot reliably judge one music volume against
+  another in a live world; whatever witnesses it will not be an ear.
+- **`oCMobFire` is deliberately not cleared** — a fire is an interactive mob a
+  routine can name. Its light and sound children are separate VOBs and go
+  without it, so the fires left in the frame glow and do not crackle.
+
+Everything beyond the radius is untouched, so distant routines and mobsis still
+behave and a failure still localizes. Run sheet §06;
+`-Only 00,06` is the whole second pass.
 
 ### 16.3 Phase 1b-2 — the classes that are left
 

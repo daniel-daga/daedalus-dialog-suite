@@ -13,9 +13,10 @@ here is claimed until it is run.
 > **Run 2026-08-28. Result in the acceptance record, *"Gate 2b — the run"*.**
 > Every candidate loaded and played; most of the observation rows below could
 > not be judged in retail NewWorld — the ambient fog and the live soundscape
-> mask them, and the chest was never found. If this sheet is run again it should
-> be against a minimal world and a minimal game state, not this one
-> (`docs/plans/level-editor.md` §16.2).
+> mask them, and the chest was never found.
+>
+> **`06` is the answer to that and is the one to run next** — the same edits in a
+> cleared frame, built the same day. `-Only 00,06` is the whole second pass.
 
 ## Running it
 
@@ -88,10 +89,54 @@ witness to a net that renumbered wrongly.
 
 ---
 
+## 06 — the same edits, in a frame they can be seen in
+
+Built 2026-08-28, **after** `03`–`05` came back "loads and plays" with almost
+nothing observed. It is the answer to why: retail NewWorld masks every signal the
+sheet asks for. This candidate clears the spawn's neighbourhood first and then
+puts the edits where the hero is already looking.
+
+A genuinely minimal *world* is not reachable — the game boots NewWorld through a
+script layer that spawns every NPC at `NW_*` waypoints, so swapping the file
+breaks the scripts rather than the scenery. A minimal *frame* is, and it is the
+same experiment.
+
+**What it clears:** every `zCVobLight`, `zCVobSound`, `zCVobSoundDaytime` and
+`zCPFXController` within 6,000 units of START, plus **every** `zCZoneZFog` in the
+world (a zone's position says nothing about the volume its box covers, so a
+distant one can still be the one you are standing in). Measured: 239 VOBs — 196
+lights, 37 sounds, 6 fog zones — and **zero** of any other class. `oCMobFire` is
+deliberately kept: a fire is an interactive mob a routine can name, and its light
+and particle children are separate VOBs that go without it. The world's own
+`zCZoneZFogDefault` is not a placed VOB and survives, so the control still looks
+normal.
+
+| What to look for | Where |
+|---|---|
+| **The screen is red.** An authored `zCZoneZFog`, its own 8,000-unit box centred on the spawn, `rangeCenter` 3,000, `overrideColor` on, pure red. `AddVob` builds the zone; **`SetVobClassProp` is the only thing that makes it red** — a grey world here is that op failing, and it is the one row nothing else on this sheet can substitute for | you spawn inside it |
+| **A chest, dead ahead, and it opens.** `GATE2B_MIN_CHEST`, `oCMobContainer`, unlocked. 250 units along START's own direction vector, with nothing else within 250 units of it — `04`'s chest was placed on a guessed axis and was never found | first frame |
+| **A torch crackle with no torch.** `GATE2B_MIN_SOUND` sits 3,000 units ahead with `radius` 8,000, in a frame where every other sound is gone. Audible at the spawn **only if the radius reached the file** — a binary, not a loudness judgement | from the spawn, without moving |
+| Magenta light overhead | already confirmed in the 2026-08-28 run; kept because the frame's own lights were just deleted and this is what lights the chest |
+
+**The music-volume row is deliberately absent.** Two music themes, or the same
+theme at two volumes, are not a judgement a person can make reliably in a live
+world — that row failed in the first run for a reason no candidate fixes. Whatever
+witnesses `oCZoneMusic.volume` will not be an ear, and it is left unclaimed rather
+than tested badly.
+
+**Known residue, not a defect:** fires survive by design, so a `FIRE_MEDIUM.pfx`
+and its decals still burn about 340 units from the chest. Their light and sound
+children are gone, so they glow and do not crackle.
+
+---
+
 ## What was verified before the engine ever ran
 
 Every candidate was reloaded and asserted, not merely written
-(2026-08-28): all four `03` writes read back; all seven `04` VOBs carry the
+(2026-08-28): in `06` exactly one fog zone survives and it is ours, no light or
+sound VOB is left inside the 6,000-unit frame, and the fog's `overrideColor` and
+`rangeCenter`, the sound's `radius` and `soundName`, and the chest's `locked`
+all read back off the saved file; all four `03` writes read back; all seven `04` VOBs carry the
 class and the properties asked for; and in `05` the torch subtree is **exactly
 six VOBs** lighter, the renamed waypoint survives at its moved position with
 **exactly one** surviving edge, the deleted waypoint is absent, and

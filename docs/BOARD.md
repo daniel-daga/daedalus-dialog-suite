@@ -138,10 +138,10 @@ card waits on live at its pointer — put new prose there, not here.
 **Release gates**
 
 - **`SetVobClassProp` has no positive engine witness** — Gate 2b ran 2026-08-28
-  and every op now produces a world the engine loads and plays, but the class
-  properties themselves went unobserved: retail NewWorld's ambient fog and live
-  soundscape mask them. Needs a **minimal world and game state**, and that build
-  is **Daniel's call**. §16.2
+  and every op loads and plays, but the class properties went unobserved in
+  retail NewWorld. Candidate **`06-minimal-frame` is built and asserted** and
+  clears the spawn's frame first; what is left is running it. **Daniel**, at the
+  keyboard: `-Only 00,06`. §16.2 and the run sheet §06
 
 **Phase 1b-2 — VOB editing**
 
