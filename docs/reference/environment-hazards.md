@@ -81,19 +81,39 @@ doc, not here. This file is only for the ground the code stands on.
 
 `npm run test:matrix:windows` exists to reproduce an intermittent
 `3221226505` exit of the editor's Jest run. As of 2026-08-28 it is **still
-unexplained**, and one plausible-looking explanation has been ruled out.
+unexplained**, and three plausible-looking explanations have been ruled out.
 
 - **It is not the worker-handle warning.** That warning was a referenced
   two-second timer in `FileWatcherService.notifySelfWrite`, and it is fixed.
   25 full editor runs while closing it all exited 0, so the two never
   reproduced together and share no cause: `0xC0000409` is a native
   `__fastfail`, while a jest-worker force-kill is `SIGTERM`/`SIGKILL`.
-- **The first suspect is the native addon, not Jest.** A native abort with no
-  reproduction is the shape of a C++ failure, and `zenkit-node` is the only
-  native code in the run.
+- **The native code in the run is tree-sitter, not `zenkit-node`.** The old
+  wording here said the addon was "the only native code in the run" and made it
+  the first suspect. That is wrong, and it was the whole basis of the suspicion:
+  **nothing in the Jest run ever loads `zenkit-node`.** No suite imports it,
+  `WorldService.test.ts` injects a fake worker, and the only `require('zenkit-node')`
+  under `tests/` is in `tests/e2e-electron/world-render.spec.ts`, which Playwright
+  runs, not Jest. What *does* `dlopen` is the real parser — `jest.config.js`
+  refuses to fall back to mocks on purpose — and it brings two `.node` files:
+  `daedalus-parser/build/Release/tree_sitter_daedalus_binding.node` and
+  `tree-sitter@0.21.1`'s `prebuilds/win32-x64/tree-sitter.node`. Suspect those.
+- **It is not a V8 heap OOM.** Measured on this machine: a deliberate
+  `--max-old-space-size=8` OOM exits **134**, not `3221226505`. So worker memory
+  pressure — the obvious reading of "intermittent, only under parallel workers" —
+  produces a different exit code and is not this.
 - **`--detectOpenHandles` cannot help.** It implies `--runInBand`, so there are
   no workers and the warning class of bug cannot occur under it at all. It is a
   dead end by construction, not merely unlucky.
+- **It does not reproduce on demand, and that is now the blocker.** 2026-08-28:
+  three more full default runs and one instrumented run all exited 0 (185 suites,
+  1626 tests, ~55 s each), and a targeted GC stress of the parser binding — 3,300
+  parses, a fresh `DaedalusParser` per round, `--expose-gc` between rounds — also
+  exited 0. With the 25 earlier runs that is 29 clean runs and no capture. Until
+  someone catches one, there is nothing to bisect: the next useful thing is not
+  another blind matrix run but a *captured* crash — a Windows crash dump (`procdump`
+  or `HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps` on
+  `node.exe`) so the faulting module is read off a stack instead of guessed at.
 
 ## Running a sabotage harness here
 

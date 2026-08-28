@@ -159,8 +159,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Elsewhere, with a home of their own**
 
-- **`3221226505` is still unexplained** — the worker-handle hypothesis is
-  disproved and the first suspect is the addon.
+- **`3221226505` is still unexplained** — blocked: it will not reproduce (29
+  clean runs), so there is nothing to bisect; needs a captured crash dump. The
+  addon is cleared — the run's native code is tree-sitter.
   `docs/reference/environment-hazards.md`
 - **Three viewport and World-surface warts** — the surface loses its geometry on
   navigate-away (a hard prerequisite for §16.8 W4), the imperative handle, the
