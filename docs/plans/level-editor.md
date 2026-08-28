@@ -2833,11 +2833,24 @@ The three fields are in and the quiet-corruption trap is handled per angle, so
 the 30.2 % of retail VOBs that are non-orthonormal are not re-orthonormalized by
 a commit nobody made. Two things stayed open on purpose.
 
-**Absolute or delta for a multi-selection.** The fields are hidden for N VOBs
-rather than guessing. Single selection is absolute
-(`rotateVob(..., eulerToZenRotation(typed), bounds)`); N VOBs would be
-`multiplyRotation(target, invert(current))` and is a UI decision, not a
-derivation.
+**Absolute or delta for a multi-selection. Decided 2026-08-28: relative.**
+A typed angle with N VOBs selected turns each VOB by that much from where it
+is — `multiplyRotation(target, invert(current))` per VOB — rather than setting
+them all to one pose. **The reason is consistency with the position fields,
+which already commit a typed coordinate as a delta** so a multi-selection moves
+together and keeps its spacing; a rotation that snapped N VOBs to one absolute
+pose would be the odd one out, and it destroys their relative orientation with
+no way back but undo. Single selection stays absolute
+(`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute
+angle is what the grid can read off one VOB — the asymmetry is the same one
+position already has and is not a wart.
+
+**What that means for the increment.** The three angle fields stop being hidden
+for N VOBs. The per-angle equality refusal still applies — a field the user did
+not change must not write, because reading and writing back an unchanged angle
+re-orthonormalizes a matrix that 30.2 % of retail VOBs would be changed by. With
+a delta, "unchanged" means the typed number is the one displayed, not that the
+resulting pose matches.
 
 **Spacer parity is unmeasured.** Nothing in the format, in ZenKit or here
 commits to an Euler order, so Y-X-Z was chosen on retail singularity counts
@@ -3292,9 +3305,20 @@ re-save is then a different size from the original. That breaks
 (`test/roundtrip.test.js:165`) and `row.wholeFileIdentical` with it; reproduced
 by rewriting the fixture's stamp shorter before the re-save, `sizes 5064 5068`.
 
-Not fixed because the fix changes what `resavedSize` *means* in the harness
-report — a stamp-stripped size, or a second field beside it — and that is a
-report-shape decision for Daniel rather than something to do unasked.
+**Decided 2026-08-28: the stamp-stripped size, in the existing field.**
+`resavedSize` keeps being one number and starts meaning "the re-save's length
+with the header stamp's variable part excluded", so
+`assert.strictEqual(ascii.resavedSize, ascii.size)` keeps working as written
+and the day/month boundary stops being able to fail it. `size` is stripped the
+same way or the comparison is meaningless. No second field: a report that
+carries both a raw and a stripped size makes every consumer choose, and the raw
+one answers no question anybody asks — the harness is measuring fidelity, and a
+timestamp is the one part of the file that is *supposed* to differ.
+
+**Test it at the boundary, not on the day you write it.** The reproduction is
+already known — rewrite the fixture's stamp shorter before the re-save
+(`sizes 5064 5068`) — so the test does not need a real 9→10 boundary and must
+not wait for one.
 
 ### 16.11 A malformed world still crashes the reader — the hang was the small half
 
@@ -3922,12 +3946,43 @@ applied to the projection at all and the renderer re-reads the index whole.
 Verified by Jest on both sides, as D1 was and for the same reason — the browser
 harness has no native addon and therefore no open world.
 
-**D5 — the subtree, and it does not start until a human takes the decision.**
-A VOB with children is either one op carrying a serialized subtree or N ops, and
-only the first survives as a single undo step. That argues for the serialized
-subtree — but it puts a tree format in an op payload, which nothing else in the
-op set has, and it is the one part of this card that adds a validator branch and
-a binding change. **Not actionable unattended.**
+**D5 — the subtree. The decision it was held for is void: measured 2026-08-28,
+N appends do everything the serialized tree was wanted for.**
+
+The card used to say a subtree is either one op carrying a serialized tree or N
+ops, and that only the first survives as a single undo step. **That stopped
+being true when D4 landed**, three increments before anyone needed it:
+`commitOps` takes a batch whose ops are all `AddVob` and unwinds it back to
+front, and a batch is one atomic undo entry. So the property that justified
+paying for a tree format is already available from ordinary appends.
+
+**Measured against the binding, not reasoned about** — the fixture world, paths
+predicted before any insert ran, which is what op-building in a batch has to do:
+
+```
+ROOT        predicted 1       got 1       OK
+CHILD_A     predicted 1/0     got 1/0     OK
+CHILD_B     predicted 1/1     got 1/1     OK
+GRANDCHILD  predicted 1/1/0   got 1/1/0   OK
+```
+
+Multiple siblings and depth greater than one both hold; the tree comes out
+genuinely nested rather than flattened; it survives a save and a reload at the
+same paths; and **deleting back to front returns the world to its exact starting
+VOB count**, which is the order `commitOps` already unwinds in. An append into a
+parent created earlier in the same batch works because `commitOps` applies ops
+sequentially through `writeOp` — by the time the child's add runs, its parent is
+in the world.
+
+**So D5 is an ordinary card**: no tree format in an op payload, no validator
+branch, no binding change, unattended-safe like D1 and D4. The one implementation
+note is that `addVob(reader, spec, parent)` resolves its parent against the
+pre-batch world, so a subtree's ops want constructing with forward-computed
+paths rather than through that helper.
+
+**What was not measured:** a subtree deep or wide enough to matter for
+performance, and what a *paste* of a subtree does about name collisions. Neither
+blocks the card.
 
 **Sequence: D1 → D4 → D3, with D2 blocked on §16.15 and D5 held back.** D4 and
 D3 were both taken ahead of D2, which needs class-specific insertion first;

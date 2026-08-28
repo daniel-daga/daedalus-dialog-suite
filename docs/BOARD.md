@@ -94,7 +94,7 @@ was true for so long nobody re-reads it.
   closed** — the addon is asserted present and unpacked, the packaged app now
   opens a world in CI, and a real-Electron spec now watches the World surface
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
-  four ops with no engine verdict.
+  six ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
@@ -127,6 +127,11 @@ card waits on live at its pointer — put new prose there, not here.
 - **Waynet W4 — delete an arbitrary waypoint** — decided 2026-08-28: §15's
   barrier, closer Spacer parity than an id scheme (Spacer has no undo at all).
   No new addressing needed. Unowned. §16.7
+- **Typed rotation for a multi-selection** — decided 2026-08-28: relative, as
+  the position fields already are. The angle fields stop being hidden for N
+  VOBs. Unowned. §16.4
+- **Copy/paste D5 — the subtree** — measured 2026-08-28: N appends in one
+  batch, paths predictable, one undo entry. No tree format, no new op. §16.14
 - **VOB search and filter in the scene tree** — by name and class, over columns
   already in the summary; 41,393 VOBs, so derive, don't rebuild. §16.16
 - **Per-class visibility toggles** — Spacer's VOB-type show/hide, on the
@@ -138,17 +143,16 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
 
-- **Four shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
-  `SetVobClassProp`, `RenameWaypoint` all post-date candidate `03`. Say "Gate 2
-  passed for the ops it tested". Rebuilding a candidate is **Daniel's call**. §16.2
+- **Six shipped ops have no engine verdict** — `DeleteVob`, `MoveWaypoint`,
+  `SetVobClassProp`, `RenameWaypoint`, `AddWaypoint`, `SetWaypointEdge`, and
+  `AddVob` now authors classes. Say "Gate 2 passed for the ops it tested".
+  Rebuilding a candidate is **Daniel's call**. §16.2
 
 **Phase 1b-2 — VOB editing**
 
-- **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
-  parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
-- **Copy/paste D5 — the subtree** — one op carrying a serialized tree, or N ops
-  and no single undo step. The only part of §16.14 that adds a validator branch
-  and a binding change. **Daniel's call.** §16.14
+- **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
+  singularity counts, not a Spacer match. Needs Spacer itself, and only two
+  functions change if it differs. **Daniel.** §16.4
 
 **Waynet, and the scripts that name it**
 
@@ -158,8 +162,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 **zenkit-node / fidelity**
 
-- **`resavedSize` breaks at a day or month boundary** — the fix is a
-  report-shape decision. **Daniel.** §16.10
+- **`resavedSize` breaks at a day or month boundary** — decided 2026-08-28:
+  strip the stamp in the existing field, no second field. Reproduce by
+  shortening the fixture's stamp, not by waiting for a 9→10. Unowned. §16.10
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
 **Elsewhere, with a home of their own**
@@ -204,17 +209,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Class insertion I1 — `AddVob` names a class** (board-loop) — `insertVob`
-  dispatches on `class`, `oCItem` first; `insertItemVob` folded into it. §16.15
-- **Class insertion I2 — lights and sounds** (board-loop) — three constructions
-  on retail's measured majority; the authorable set is now one shared list. §16.15
-- **Copy/paste D2 — the class** (board-loop) — a copy carries the class the
-  binding can construct; the residue (class props, `oCItem`'s instance,
-  `physicsEnabled`) all wants the batch-guard call. §16.14
-- **Waynet W2 — add a free waypoint, appended** (board-loop) — `AddWaypoint`,
-  nullable sides; the overlay payload is re-read, not patched. §16.7
-- **Waynet W3 — edge add and delete** (board-loop) — `SetWaypointEdge`, boolean
-  sides; the last-edge hazard is fixed in the binding, not carried. §16.7
+*(empty)*
 
-Last flushed 2026-08-28 at the merge to master: D1, D3, D4 and W1: forward facts
-in §16.14 and §16.7, the rest in `git log`.
+Flushed 2026-08-28 at the end of the third loop run: I1, I2, D2, W2 and W3 all
+landed that day. Their forward facts are routed — what a copy still drops and
+the batch-guard relaxation it wants are §16.14, the authorable class set is
+§16.15, the last-edge promotion is §16.7 — and the rest is in `git log`.
