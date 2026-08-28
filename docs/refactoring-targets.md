@@ -191,21 +191,7 @@ must be a no-op, not a crash.
 
 ---
 
-### 10. A third real-`WorldViewport` test should promote its five module mocks
-**File:** `daedalus-dialog-editor/src/renderer/components/world/__tests__/`
-
-The waynet-overlay regression test is the first that renders the real
-`WorldViewport`, and it needed five module mocks to do it: `WebGLRenderer`,
-`three-mesh-bvh`, both example controls, `BvhBuilder` and `VobPicker`. A second
-copy is tolerable; a third should become a shared helper.
-
-Jest is the whole regression net for this area — the browser harness refuses
-`openWorld` and two specs assert `world-viewport` has count 0 — so these tests
-will keep being written.
-
----
-
-### 11. The terrain bar reserves a hard-coded 31 px
+### 10. The terrain bar reserves a hard-coded 31 px
 **File:** `daedalus-dialog-editor/src/renderer/components/world/` (the World bar)
 
 The row reserves 31 px for the button its picked state adds, derived from MUI's

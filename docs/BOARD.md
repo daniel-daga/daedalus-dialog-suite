@@ -143,9 +143,9 @@ card waits on live at its pointer — put new prose there, not here.
 - **`3221226505` is still unexplained** — the worker-handle hypothesis is
   disproved and the first suspect is the addon.
   `docs/reference/environment-hazards.md`
-- **Four viewport and World-surface warts** — the surface loses its geometry on
+- **Three viewport and World-surface warts** — the surface loses its geometry on
   navigate-away (a hard prerequisite for §16.8 W4), the imperative handle, the
-  five module mocks, the 31 px reservation. `docs/refactoring-targets.md` §8–11
+  31 px reservation. `docs/refactoring-targets.md` §8–10
 
 **UI/UX improvement**
 
@@ -166,6 +166,10 @@ card waits on live at its pointer — put new prose there, not here.
   GPU's own framebuffer back via `__worldViewport.renderFrom`; the Windows
   E2E job sets `ZENKIT_NODE_FORCE_BUILD=1` so the addon it needs exists.
   Ubuntu's `editor-e2e-electron` self-skips it (no force-build there). §16.1
+- **The third `WorldViewport` test's five module mocks are now a shared
+  helper** — `tests/worldViewportMocks.ts`; `.multiSelect`, `.snapping` and
+  `.waynetRebuild` each keep only their `jest.mock()` calls, delegating the
+  factory bodies. Closed `docs/refactoring-targets.md`'s former §10.
 
-Verified this session: `zen-world` (test/lint/typecheck/build), editor
-(build:main/typecheck:renderer/Jest/lint) all green.
+Verified this session: editor (build:main/typecheck:renderer/Jest/lint) all
+green.

@@ -8,8 +8,8 @@
  * Blender navigation puts panning on **Shift + middle** (`cameraNav.navFor`),
  * so no left-button gesture is spoken for.
  *
- * The mocks are the ones `WorldViewport.snapping.test.tsx` uses and for the
- * same reason — only what jsdom cannot run. The pick itself is the real
+ * The mocks come from `worldViewportMocks.ts`, shared with `.snapping` and
+ * `.waynetRebuild` — only what jsdom cannot run. The pick itself is the real
  * `handleClick`, including the order it reads the modifier in.
  *
  * @jest-environment jsdom
@@ -19,76 +19,20 @@ import React from 'react';
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { render, act } from '@testing-library/react';
 import type { InstancedPayload, WorldMeshPayload } from '../src/shared/worldTypes';
+// Named `mock*` — that prefix is what lets a `jest.mock()` factory below
+// reference it despite jest.mock() being hoisted above other imports.
+import * as mockWorldViewport from './worldViewportMocks';
 
 // ── what jsdom cannot run ───────────────────────────────────────────────────
+// See worldViewportMocks.ts for what each stand-in provides.
 
-jest.mock('three-mesh-bvh', () => ({ acceleratedRaycast: () => {} }));
-
-jest.mock('three', () => {
-  const actual = jest.requireActual('three');
-  return {
-    ...actual,
-    WebGLRenderer: class {
-      domElement = document.createElement('canvas');
-      info = { render: { calls: 0, triangles: 0 } };
-      setPixelRatio() {}
-      setSize() {}
-      render() {}
-      dispose() {}
-      getContext() { return { finish: () => {}, readPixels: () => {} }; }
-    },
-  };
-});
-
-jest.mock('three/examples/jsm/controls/OrbitControls.js', () => {
-  const three = jest.requireActual('three');
-  return {
-    OrbitControls: class {
-      target = new three.Vector3();
-      enabled = true;
-      enableDamping = false;
-      rotateSpeed = 1;
-      mouseButtons: Record<string, unknown> = {};
-      update() { return false; }
-      dispose() {}
-    },
-  };
-});
-
-jest.mock('three/examples/jsm/controls/TransformControls.js', () => {
-  const three = jest.requireActual('three');
-  return {
-    TransformControls: class extends three.EventDispatcher {
-      enabled = false;
-      private helper = new three.Object3D();
-      private mode = 'translate';
-      setSpace() {}
-      getHelper() { return this.helper; }
-      setMode(mode: string) { this.mode = mode; }
-      getMode() { return this.mode; }
-      attach() { return this; }
-      detach() { return this; }
-      dispose() {}
-    },
-  };
-});
-
-jest.mock('../src/renderer/world/BvhBuilder', () => ({
-  BvhBuilder: class {
-    build() { return Promise.resolve(); }
-    dispose() {}
-  },
-}));
-
+jest.mock('three-mesh-bvh', () => mockWorldViewport.mockThreeMeshBvh());
+jest.mock('three', () => mockWorldViewport.mockThree());
+jest.mock('three/examples/jsm/controls/OrbitControls.js', () => mockWorldViewport.mockOrbitControls());
+jest.mock('three/examples/jsm/controls/TransformControls.js', () => mockWorldViewport.mockTransformControls());
+jest.mock('../src/renderer/world/BvhBuilder', () => mockWorldViewport.mockBvhBuilder());
 /** The one VOB the picker ever reports, so a click is a hit on VOB 7. */
-jest.mock('../src/renderer/world/VobPicker', () => ({
-  VobPicker: class {
-    setInstancedMeshes() {}
-    warm() {}
-    pickAsync() { return Promise.resolve(7); }
-    dispose() {}
-  },
-}));
+jest.mock('../src/renderer/world/VobPicker', () => mockWorldViewport.mockVobPicker(7));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
 
