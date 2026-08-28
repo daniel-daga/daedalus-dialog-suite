@@ -129,8 +129,12 @@ card waits on live at its pointer — put new prose there, not here.
   entry. Unowned. §16.14
 - **Copy/paste D3 — copy and paste as verbs**, an in-process clipboard.
   Unowned. §16.14
-- **Waynet edge ops, add/delete/rename** — the index-addressing problem is the
-  whole job and is untouched. Unowned. §16.7
+- **Waynet W1 — rename a waypoint** — renumbers nothing, so the shipped
+  index+name pair holds. Unowned. §16.7
+- **Waynet W2 — add a free waypoint, appended** — must be an `FP_` free point
+  or `WayNet::save` drops it. Unowned. §16.7
+- **Waynet W3 — edge add and delete** — the op carries the edge memberships it
+  destroys; §15's barrier is the fallback. Unowned. §16.7
 - **Class-specific insertion** — `insertVob` authors `zCVob` and nothing else;
   the class-property catalogue is the field list to author from. Unowned. §16.15
 
@@ -147,6 +151,9 @@ card waits on live at its pointer — put new prose there, not here.
 - **Copy/paste D5 — the subtree** — one op carrying a serialized tree, or N ops
   and no single undo step. The only part of §16.14 that adds a validator branch
   and a binding change. **Daniel's call.** §16.14
+- **Waynet W4 — delete an arbitrary waypoint** — the only waynet op that
+  renumbers, so it is where the addressing scheme has to be answered: synthetic
+  ids, §15's barrier (recommended), or out of scope. **Daniel's call.** §16.7
 
 **Waynet, and the scripts that name it**
 

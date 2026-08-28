@@ -2916,6 +2916,59 @@ Waypoint delete has a bounded version of the arbitrary-VOB-delete trap — a
 `WayPoint` is five scalar fields, so what an op cannot describe for free is its
 edge memberships, and those are an enumerable list.
 
+**Split into increments 2026-08-28.** The addressing problem is real but it is
+not evenly distributed: it bites only the ops that *renumber*, and two of the
+four do not.
+
+**The idiom the safe increments reuse is already shipped.**
+`setWaypointPosition` addresses a waypoint by index *and* carries its name as a
+checked pair — the binding refuses the call when the name at that index is not
+the one the op named (`zenkit-node/src/binding.cc:559-564`), so a stale index
+fails loudly instead of moving the wrong waypoint. Any op that does not
+renumber can stand on exactly that, and needs no new addressing scheme.
+
+Unlike §16.14's D1, **none of these is free**: each wants a binding function, an
+op, a validator branch in `assertApplyOpsRequest`, and its cases — in one change,
+per the rule that `ReparentVob` broke.
+
+**W1 — rename a waypoint.** Inserts nothing, deletes nothing, reorders nothing,
+so the index+name pair is sound as it stands. Edges are unaffected because the
+binding matches endpoints by pointer identity, not by name. Invertible for free
+(rename back). The one thing it touches outside the waynet is scripts that name
+the waypoint as a literal — which is §16.8's jump, read-only, and *not* this
+card's job to update. Say so in the increment: a rename can orphan a script
+reference, and warning about that is §16.8's Problems rule, still blocked.
+
+**W2 — add a free waypoint, appended.** Appending leaves every existing index
+valid, so again no new scheme. It must be a *free* point (the `FP_` convention)
+for a reason that is not cosmetic: `WayNet::save` writes free points plus edge
+endpoints, so a non-free waypoint with no edges is dropped at save and the add
+would silently do nothing. Authoring a non-free waypoint therefore belongs with
+W3, not here. Inverse is deleting the one just appended, which is the tail and
+renumbers nothing.
+
+**W3 — edge add and delete.** The hazard is stated above and unchanged: removing
+a waypoint's last edge deletes the waypoint, so an edge op is not invertible *as
+an edge op*. The bounded fix is the one the section already names — edge
+memberships are an enumerable list, so the op can carry the memberships it
+destroys and restore them. If that turns out to be more than a session's work,
+§15's precedent applies: ship it as a barrier that clears the undo stack, with
+the user told before it lands. Do not invent a third answer.
+
+**W4 — delete an arbitrary waypoint, and it is the only one that renumbers.**
+This is where the addressing problem actually has to be answered, and the answer
+is a decision, not a discovery. **Daniel's call**, with the options as they stand
+today: (a) a stable synthetic id assigned per load, which every op then carries;
+(b) §15's barrier — a delete clears the undo stack, which is what `DeleteVob`
+already does for VOBs and would keep the index+name pair honest for everything
+else; (c) leave waypoint delete out of parity. **(b) is the cheapest and has the
+precedent**, and it is written here as a recommendation rather than taken,
+because it trades a capability away and that is not an unattended run's trade to
+make.
+
+**Sequence: W1 → W2 → W3, with W4 held back.** W1 and W2 are each a session; W3
+is the one to watch, and is the likeliest of the three to come back as Triage.
+
 ### 16.8 Jumping between a script reference and the place it names
 
 Daniel's idea, sized 2026-08-28. The core claim survived: **nothing in the
