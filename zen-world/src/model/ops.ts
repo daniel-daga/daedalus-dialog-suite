@@ -970,15 +970,48 @@ export function duplicateVobs(
     const list = op.parentPath ?? '';
     const ahead = appended.get(list) ?? 0;
     appended.set(list, ahead + 1);
-    if (ahead === 0) return op;
-
-    const slot = Number(op.path.slice(op.path.lastIndexOf('/') + 1)) + ahead;
-    return {
-      ...op,
-      vob: op.vob + ahead,
-      path: op.parentPath === null ? String(slot) : `${op.parentPath}/${slot}`,
-    };
+    return appendedAfter(op, ahead);
   });
+}
+
+/**
+ * The same op moved along by `ahead` copies already appended to its list.
+ *
+ * `addVob` resolves a slot against the world as it was, so the second copy into
+ * a list would otherwise claim the first one's slot and `writeOp` would refuse
+ * it — the list it was appended to has changed since. Shared by `duplicateVobs`
+ * and `pasteVobs` because the correction is the same one; only the counting
+ * differs, per original's parent there and once per copy here.
+ */
+function appendedAfter(op: AddVob, ahead: number): AddVob {
+  if (ahead === 0) return op;
+  const slot = Number(op.path.slice(op.path.lastIndexOf('/') + 1)) + ahead;
+  return {
+    ...op,
+    vob: op.vob + ahead,
+    path: op.parentPath === null ? String(slot) : `${op.parentPath}/${slot}`,
+  };
+}
+
+/**
+ * Paste a clipboard of specs into one list — `parent`'s children, or the roots
+ * (level-editor.md §16.14, D3).
+ *
+ * Copy and paste are `duplicateVobs` taken apart at the seam that makes them
+ * different verbs: the specs are read out of the index at the copy
+ * (`duplicateVobSpec`), and *where* they land is chosen at the paste. So this
+ * takes values rather than VOB indices, and a clipboard outlives the selection
+ * that filled it — and outlives the VOBs themselves, which is the point of
+ * having copied them.
+ *
+ * All the copies go into the one list, unlike a duplicate, which puts each back
+ * beside its own original. That is still a batch of pure adds, so it is still
+ * one undo entry and `commitOps` still takes it: an append moves no index path.
+ */
+export function pasteVobs(
+  reader: VobReader, specs: readonly NewVob[], parent: number | null = null,
+): AddVob[] {
+  return specs.map((spec, ahead) => appendedAfter(addVob(reader, spec, parent), ahead));
 }
 
 /**

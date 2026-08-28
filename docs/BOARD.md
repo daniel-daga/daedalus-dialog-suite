@@ -128,8 +128,6 @@ card waits on live at its pointer — put new prose there, not here.
   as a follow-up op in the same batch — blocked: `insertVob` authors a `zCVob`,
   so a duplicate has no class to write class props to and §16.15 comes first;
   `physicsEnabled` alone is left and its sequencing is a call. Unowned. §16.14
-- **Copy/paste D3 — copy and paste as verbs**, an in-process clipboard.
-  Unowned. §16.14
 - **Waynet W1 — rename a waypoint** — renumbers nothing, so the shipped
   index+name pair holds. Unowned. §16.7
 - **Waynet W2 — add a free waypoint, appended** — must be an `FP_` free point
@@ -211,10 +209,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Copy/paste D4 — a selection duplicates as one batch**, one undo:
-  `duplicateVobs` advances the slot per parent, and `commitOps` now takes a
-  batch whose ops are **all** adds — an append moves no index path. §16.14
+- **Copy/paste D3 — copy and paste are two verbs**: `pasteVobs` and a clipboard
+  of specs, `Ctrl+C` / `Ctrl+V`, pasted beside the selection. §16.14
 
-Last flushed 2026-08-28 (three times; D1 went with the third, its forward facts
-being §16.14's). The forward facts from the earlier cards are in Deferred and in
-§16.9, and the rest is in `git log`.
+Last flushed 2026-08-28 (four times; D1 and D4 went with the last two, their
+forward facts being §16.14's). The forward facts from the earlier cards are in
+Deferred and in §16.9, and the rest is in `git log`.

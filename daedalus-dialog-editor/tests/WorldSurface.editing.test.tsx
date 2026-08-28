@@ -174,12 +174,21 @@ const WAYPOINT_MOVE: WorldOp = {
 function vobIndex(
   positions: Array<[number, number, number]>,
   cls: string | readonly string[] = 'zCVob',
+  // One parent per VOB, all roots unless a test wants a hierarchy — which the
+  // paste does, because "into the selection's parent" is only distinguishable
+  // from "into the roots" when the selection has one.
+  parents: readonly number[] = positions.map(() => -1),
 ): VobIndex {
   const count = positions.length;
   const columns = new Float32Array(count * 3);
   positions.forEach((position, i) => columns.set(position, i * 3));
+  const seen = new Map<number, number>();
   const childIndex = new Uint32Array(count);
-  childIndex.forEach((_, i) => { childIndex[i] = i; });
+  parents.forEach((parent, i) => {
+    const slot = seen.get(parent) ?? 0;
+    childIndex[i] = slot;
+    seen.set(parent, slot + 1);
+  });
   // Identity, not zeros: a zero matrix is not a rotation any world contains,
   // and a rotation op composed onto one produces a box collapsed to a point.
   const rotations = new Float32Array(count * 9);
@@ -196,7 +205,7 @@ function vobIndex(
 
   return {
     count,
-    parent: new Int32Array(count).fill(-1).buffer,
+    parent: Int32Array.from(parents).buffer,
     childIndex: childIndex.buffer,
     positions: columns.buffer,
     rotations: rotations.buffer,
@@ -267,8 +276,8 @@ const api = {
  * has nothing to drag: VOB 1 is selected here as the gizmo's own attachment
  * would do it.
  */
-async function openWorld(cls?: string | readonly string[]) {
-  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], cls) };
+async function openWorld(cls?: string | readonly string[], parents?: readonly number[]) {
+  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], cls, parents) };
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
@@ -1006,6 +1015,146 @@ describe('duplicating a VOB', () => {
       name: 'BARREL',
       bbox: placeBounds([-1, 0, -10, 1, 2, 10], IDENTITY, [10, 20, 30]),
     });
+  });
+});
+
+describe('copying and pasting a VOB', () => {
+  // D3 (level-editor.md §16.14): duplicate taken apart into two verbs. The
+  // clipboard is in-process and holds *specs* — what the rows said when Ctrl+C
+  // was pressed — so where a copy lands is chosen at the paste, and the paste
+  // is still a batch of pure adds and still one undo entry.
+  const copy = () => fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+  const paste = () => fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+
+  /** A paste re-reads the index, exactly as a duplicate does. */
+  function expectRefresh(summary: WorldSummary) {
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+  }
+
+  it('pastes into the parent of the selection, so the copy is its sibling', async () => {
+    // VOB 1 is a child of VOB 0 here — the one fixture in this file that is not
+    // flat, because "the selection's parent" and "the roots" are the same
+    // answer in a flat world and this is the assertion that tells them apart.
+    const summary = await openWorld(undefined, [-1, 0]);
+    expectRefresh(summary);
+
+    copy();
+    paste();
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toEqual([{
+      op: 'AddVob',
+      // VOB 0's second child: appended, so it renumbers no path and the batch
+      // is legal for the same reason a duplicate's is.
+      vob: 2,
+      path: '0/1',
+      parentPath: '0',
+      from: null,
+      to: {
+        name: 'BARREL',
+        visual: 'BARREL.3DS',
+        position: [10, 20, 30],
+        rotation: IDENTITY,
+        bbox: placeBounds([-1, 0, -10, 1, 2, 10], IDENTITY, [10, 20, 30]),
+        showVisual: false,
+        vobStatic: false,
+        ambient: false,
+        cdStatic: false,
+        cdDynamic: false,
+      },
+    }]);
+  });
+
+  it('pastes what was copied, not what is selected now', async () => {
+    // The whole difference from duplicate. The clipboard is a value taken at
+    // the copy: moving the selection afterwards moves where the paste lands,
+    // never what it pastes.
+    const summary = await openWorld();
+    expectRefresh(summary);
+
+    copy();
+    act(() => useWorldStore.getState().selectVob(0));
+    paste();
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    // VOB 0 is a root, so the copy goes to the roots — and it is still VOB 1's
+    // barrel, not VOB 0's nameless row.
+    expect(ops[0]).toMatchObject({ op: 'AddVob', path: '2', parentPath: null });
+    expect((ops[0] as { to: Record<string, unknown> }).to).toMatchObject({ name: 'BARREL' });
+  });
+
+  it('copies a whole selection and pastes it as one batch', async () => {
+    const summary = await openWorld();
+    expectRefresh(summary);
+
+    act(() => useWorldStore.getState().selectVob(0));
+    act(() => useWorldStore.getState().toggleVob(1));
+    copy();
+    // Nothing selected at the paste: the roots are where a copy goes when there
+    // is no selection to take a parent from.
+    act(() => useWorldStore.getState().selectVob(null));
+    paste();
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.map((op) => [op.op, (op as { path: string }).path])).toEqual([
+      ['AddVob', '2'], ['AddVob', '3'],
+    ]);
+  });
+
+  it('pastes the same clipboard again, so a copy is not consumed', async () => {
+    const summary = await openWorld();
+    expectRefresh(summary);
+    expectRefresh(summary);
+
+    copy();
+    paste();
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    paste();
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
+  });
+
+  it('leaves the clipboard standing when Ctrl+C is pressed with no selection', async () => {
+    // A copy of nothing is not a copy: with no VOB selected the keystroke is
+    // the browser's, so the surface neither empties its clipboard nor swallows
+    // a copy of the text on screen.
+    const summary = await openWorld();
+    expectRefresh(summary);
+
+    copy();
+    act(() => useWorldStore.getState().selectVob(null));
+    copy();
+    act(() => useWorldStore.getState().selectVob(0));
+    paste();
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect((ops[0] as { to: Record<string, unknown> }).to).toMatchObject({ name: 'BARREL' });
+  });
+
+  it('does nothing at all when nothing has been copied', async () => {
+    await openWorld();
+
+    paste();
+
+    await waitFor(() => expect(mockSelection).toEqual([1]));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('leaves Ctrl+C alone in a text field, where the browser owns it', async () => {
+    // The property grid is full of inputs and this is a *window* listener, so
+    // the guard is the same one the bare W and E shortcuts carry: a copy typed
+    // into a coordinate is the user copying a number.
+    await openWorld();
+
+    fireEvent.keyDown(coordinate('x'), { key: 'c', ctrlKey: true });
+    paste();
+
+    await waitFor(() => expect(mockSelection).toEqual([1]));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 });
 

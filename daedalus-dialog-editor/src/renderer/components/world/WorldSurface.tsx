@@ -8,9 +8,9 @@ import {
 } from '@mui/material';
 import {
   addVob, alignVobsToNormal, applyWaypointPositions, classPropKeys, deleteVob, dropVobsToGround,
-  duplicateVobs,
+  duplicateVobSpec, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
-  isWaynetOp, moveWaypoint, placeBounds, renumbersPaths,
+  isWaynetOp, moveWaypoint, pasteVobs, placeBounds, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProps, translateVobs, vobIndexPath,
   type ClassProps, type NewVob, type VobProps, type ZenBounds, type ZenPosition, type ZenRotation,
 } from 'zen-world';
@@ -739,6 +739,59 @@ const WorldSurface: React.FC = () => {
   }, [commitOps, boundsOf]);
 
   /**
+   * The clipboard copy and paste share (level-editor.md §16.14, D3).
+   *
+   * **In-process, and a `ref` rather than state**: nothing on screen changes
+   * when it is filled, so a render would be for nothing, and it is deliberately
+   * not the OS clipboard — a VOB spec has no serialization anybody else reads,
+   * and giving it one is the cross-world clipboard nobody has asked for.
+   */
+  const clipboard = useRef<NewVob[]>([]);
+
+  /**
+   * Copy the selection — the same specs a duplicate commits, read at the copy
+   * and held as values.
+   *
+   * That is the whole difference between the two verbs. `duplicateVobs` reads a
+   * VOB and appends it in one step, so it can only ever put a copy back beside
+   * its original; here the reading happens now and the placing happens at the
+   * paste, so the clipboard outlives the selection, and outlives the VOBs it
+   * was read from being deleted. It loses exactly what a duplicate loses —
+   * `physicsEnabled`, and the class, which `insertVob` cannot author.
+   */
+  const copySelection = useCallback(() => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+
+    const { reader } = vobModelOf(current);
+    clipboard.current = selected.map((vob) => duplicateVobSpec(reader, vob, boundsOf(vob)));
+  }, [boundsOf]);
+
+  /**
+   * Paste the clipboard into the selection's own list — beside it, not inside
+   * it — and into the roots when nothing is selected.
+   *
+   * A sibling rather than a child because that is what makes a paste undo a
+   * copy's place: the copy lands where the thing it was copied from lives. A
+   * paste *into* the selected VOB is the other reading, and it is the one that
+   * cannot be taken back by selecting something else — every VOB is somewhere's
+   * child, so there would be no way to ask for a root.
+   *
+   * The clipboard is not consumed: pasting twice is two copies, as everywhere
+   * else. And it is one batch of pure adds, so it is one undo entry — the same
+   * relaxation `duplicateVobs` needed, for the same reason.
+   */
+  const pasteClipboard = useCallback(async () => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || clipboard.current.length === 0) return;
+
+    const { reader } = vobModelOf(current);
+    const into = primaryVob(selected);
+    const parent = into === null ? -1 : reader.columns.parent[into];
+    await commitOps(pasteVobs(reader, clipboard.current, parent < 0 ? null : parent));
+  }, [commitOps]);
+
+  /**
    * A finished waypoint drag — the waynet's counterpart of a gizmo move.
    *
    * One waypoint, so this takes a destination where a VOB drag takes a delta:
@@ -805,6 +858,24 @@ const WorldSurface: React.FC = () => {
         return;
       }
 
+      // Ctrl+C / Ctrl+V, guarded like W and E above and for the same reason:
+      // this is a window listener, and in a text field a copy belongs to the
+      // browser.
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
+        && (key === 'c' || key === 'v')) {
+        const target = event.target as HTMLElement | null;
+        if (target?.isContentEditable
+          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        // And with nothing selected a copy is the browser's too, rather than a
+        // swallowed keystroke: the surface shows text — the install path, a VOB
+        // name — that a user may well be trying to copy. It leaves whatever is
+        // already on the clipboard standing.
+        if (key === 'c' && useWorldStore.getState().selection.length === 0) return;
+        event.preventDefault();
+        if (key === 'c') copySelection(); else void pasteClipboard();
+        return;
+      }
+
       const undo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
       const redo = (event.ctrlKey || event.metaKey)
         && (key === 'y' || (key === 'z' && event.shiftKey));
@@ -825,7 +896,7 @@ const WorldSurface: React.FC = () => {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [summary, applied]);
+  }, [summary, applied, copySelection, pasteClipboard]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

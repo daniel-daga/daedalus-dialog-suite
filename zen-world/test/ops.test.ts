@@ -28,6 +28,7 @@ import {
   dropVobsToGround,
   duplicateVobSpec,
   duplicateVobs,
+  pasteVobs,
   invertOp,
   isBarrierOp,
   isStructuralOp,
@@ -1268,6 +1269,61 @@ describe('a selection duplicated as one batch', () => {
 
     expect(() => commitOps(binding, [...duplicateVobs(live, [1]), deleteVob(live, 2)]))
       .toThrow(/only op in its batch/);
+  });
+});
+
+describe('a clipboard pasted into a list', () => {
+  // D3 (level-editor.md §16.14). Copy and paste are duplicate taken apart: the
+  // specs are read at the copy, and where they land is chosen at the paste. So
+  // this takes specs rather than VOBs — the clipboard's contents survive the
+  // selection that filled it, and survive the VOBs being deleted.
+  //
+  //  vob 0 (root 0) -- vob 1 -- vob 2
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A', visual: 'A.3DS' },
+    { parent: 0, childIndex: 0, name: 'CHILD_A', visual: 'B.3DS' },
+    { parent: 0, childIndex: 1, name: 'CHILD_B', visual: 'C.3DS' },
+    { childIndex: 1, name: 'ROOT_B', visual: 'D.3DS' },
+  ]));
+  const specs = (live = reader()) => [duplicateVobSpec(live, 1), duplicateVobSpec(live, 3)];
+
+  it('is one AddVob per spec, all appended to the list it is given', () => {
+    // Every copy goes into the *one* list the paste chose, which is the whole
+    // difference from a duplicate: that puts each copy back beside its own
+    // original.
+    const ops = pasteVobs(reader(), specs(), 0);
+
+    expect(ops.map((op) => [op.op, op.path, op.parentPath])).toEqual([
+      ['AddVob', '0/2', '0'],
+      ['AddVob', '0/3', '0'],
+    ]);
+    expect(ops[0].to).toMatchObject({ name: 'CHILD_A', visual: 'B.3DS' });
+    expect(ops[1].to).toMatchObject({ name: 'ROOT_B', visual: 'D.3DS' });
+  });
+
+  it('appends to the roots when the paste has no parent', () => {
+    // Consecutive there too: `addVob` resolves every slot against the world as
+    // it was, so without the advance both copies would claim slot 2 and
+    // `writeOp` would refuse the second.
+    expect(pasteVobs(reader(), specs(), null).map((op) => op.path)).toEqual(['2', '3']);
+  });
+
+  it('pastes what was copied, not what the world holds now', () => {
+    // The clipboard is a value. The VOB it was read from may be gone by the
+    // time it is pasted, and the paste is still exact.
+    const copied = specs();
+    const ops = pasteVobs(reader(), [copied[0]], null);
+
+    expect(ops[0].to).toBe(copied[0]);
+  });
+
+  it('is nothing at all for an empty clipboard', () => {
+    expect(pasteVobs(reader(), [], null)).toEqual([]);
+  });
+
+  it('refuses a parent that is not in the index', () => {
+    expect(() => pasteVobs(reader(), specs(), 9)).toThrow(/9/);
   });
 });
 
