@@ -2749,7 +2749,25 @@ cleared space. Three design calls worth keeping:
 
 Everything beyond the radius is untouched, so distant routines and mobsis still
 behave and a failure still localizes. Run sheet §06;
-`-Only 00,06` is the whole second pass.
+`-Only 00,06` is the whole second pass, and `-Latest` runs the newest candidate
+alone for a re-run where the control has already been seen.
+
+**Daniel's idea, unowned and unsized: replace the scripts too, 2026-08-28.**
+The paragraph above says a minimal world is unreachable *because of the script
+layer* — so the other half of the move is to replace that layer with a minimal
+one. A `GOTHIC.DAT` that spawns the hero at `START` and does nothing else would
+make the game state as empty as the frame: no NPCs, no routines, no ambient
+script sound, no intro, and a world where nothing but the edit under test is
+happening. It also removes the two things Gate 2b's noise came from — the
+control's dialog-camera crash is in `oCNpc::EV_PlaySound`, and there would be no
+NPC to start a dialog.
+
+What it costs, unmeasured: the suite has no Daedalus **compiler** — the parser
+reads and generates source, and `.DAT` is the compiled VM image, so this needs an
+external compiler in the loop and a script set that satisfies whatever the engine
+calls unconditionally at startup. That is a research task, not an afternoon, and
+it buys a better instrument rather than a shipped feature. Not carded; sized
+first if anyone picks it up.
 
 ### 16.3 Phase 1b-2 — the classes that are left
 

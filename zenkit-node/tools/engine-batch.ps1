@@ -4,9 +4,16 @@
 # pristine backup. Run in YOUR OWN PowerShell window (it needs the keyboard):
 #   powershell -ExecutionPolicy Bypass -File engine-batch.ps1
 # Optional: -Only 01,06   (run only those candidate numbers)
+# Optional: -Latest       (run ONLY the most recently written *.zen in -Dir)
 # Optional: -Windowed     (run the engine in a framed window, restored on exit)
+#
+# -Latest is for the second pass over a candidate you have just rebuilt, when
+# playing the rest of the batch again buys nothing. It skips the control, so the
+# A/B is against a control run EARLIER rather than in the same session - fine
+# for a row whose result is unmistakable on its own (a red screen), not fine for
+# one you would have to compare side by side.
 param([string[]]$Only = @(), [string]$Dir = 'cand', [ValidateSet('Spacer2', 'Gothic2', 'GothicStarter')][string]$Exe = 'Spacer2',
-      [switch]$Windowed)
+      [switch]$Windowed, [switch]$Latest)
 
 $ErrorActionPreference = 'Stop'
 $Gothic  = 'C:\Program Files (x86)\Steam\steamapps\common\Gothic II'
@@ -121,6 +128,12 @@ Log "=== engine batch start; backup verified"
 
 $cands = Get-ChildItem $CandDir -Filter '*.zen' | Sort-Object Name
 if ($Only.Count -gt 0) { $cands = $cands | Where-Object { $n = $_.Name.Substring(0,2); $Only -contains $n } }
+if ($Latest) {
+  $cands = @($cands | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+  Log "-Latest: $($cands[0].Name) only, written $($cands[0].LastWriteTime.ToString('s')) - NO control in this session"
+  Write-Host " -Latest: running $($cands[0].Name) alone, with no control." -ForegroundColor Yellow
+}
+if ($cands.Count -eq 0) { throw "no candidates selected in $CandDir" }
 
 try {
   # Inside the try: everything that modifies the install must be covered by the
