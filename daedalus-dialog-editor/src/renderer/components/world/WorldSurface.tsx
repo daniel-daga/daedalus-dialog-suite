@@ -212,10 +212,27 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // on screen while 31 MB of geometry crosses.
       setMesh(await window.editorAPI.getWorldMesh());
       setVisuals(await window.editorAPI.getWorldVisuals());
+
+      // The waynet is read here rather than when the overlay is first shown,
+      // because it is not only the overlay's any more: the Problems scan reads
+      // its names to answer whether a script names a place this world has
+      // (level-editor.md §16.8). Left lazy, the rule would say nothing at all
+      // until somebody happened to switch the overlay on — silently, since a
+      // world with no findings looks exactly like one with nothing to find.
+      setWaynet(await window.editorAPI.getWorldWaynet());
     } catch (failure) {
       openFailed(failure instanceof Error ? failure.message : String(failure));
     }
   }, [beginOpen, openSucceeded, openFailed]);
+
+  // The payload is the overlay's, and its *names* are also the Problems
+  // scan's world input. Published from one effect rather than beside each of
+  // the three `setWaynet` calls, so a fourth cannot forget: the store keeps its
+  // object identity when a re-read changed no name, which is what confines the
+  // re-scan to the ops that can change the set (§16.8).
+  useEffect(() => {
+    useWorldStore.getState().waynetLoaded(waynet);
+  }, [waynet]);
 
   const toggleWaynet = useCallback(async () => {
     const next = !showWaynet;

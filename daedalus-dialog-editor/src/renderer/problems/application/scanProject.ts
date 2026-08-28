@@ -1,5 +1,11 @@
 import type { SemanticModel } from '../../../shared/types';
-import type { FileFacts, FileModel, Problem } from '../domain/types';
+import type {
+  FileFacts,
+  FileModel,
+  Problem,
+  WaypointSites,
+  WorldWaynetView
+} from '../domain/types';
 import { buildProjectView } from '../domain/projectView';
 import { runRules } from '../domain/runRules';
 
@@ -18,6 +24,14 @@ export interface ProjectScanInput {
    * (see {@link buildProjectView}).
    */
   factsCache?: WeakMap<SemanticModel, FileFacts>;
+  /** The project index's waypoint sites, for the `waypoint-not-in-world` rule. */
+  waypointSites?: WaypointSites;
+  /**
+   * The waynet of the world currently open. Absent when there is none, and the
+   * rule that reads it then returns nothing rather than calling every site
+   * dangling.
+   */
+  world?: WorldWaynetView;
 }
 
 export interface ProjectScanResult {
@@ -30,7 +44,9 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
   const view = buildProjectView({
     files: input.files,
     knownNpcNames: input.knownNpcNames,
-    factsCache: input.factsCache
+    factsCache: input.factsCache,
+    waypointSites: input.waypointSites,
+    world: input.world
   });
   return { problems: runRules(view), scannedFileCount: input.files.length };
 }

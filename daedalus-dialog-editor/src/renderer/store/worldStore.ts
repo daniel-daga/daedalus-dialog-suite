@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
-import type { WorldOp, WorldSummary } from '../../shared/worldTypes';
+import type { WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTypes';
 
 /**
  * World-surface state (level-editor.md §7).
@@ -16,6 +16,25 @@ import type { WorldOp, WorldSummary } from '../../shared/worldTypes';
  */
 
 export type WorldStatus = 'idle' | 'opening' | 'ready' | 'error';
+
+/**
+ * The waynet reduced to what a *name* question needs, uppercased once because
+ * Daedalus is case-insensitive. The overlay's payload — positions, edges,
+ * flags — stays where it is drawn; this is the reference data the Problems
+ * scan reads, the way it reads `knownNpcNames` from `projectStore`.
+ */
+export interface WaynetNames {
+  /** Every point's name: waypoints and free points alike. */
+  all: readonly string[];
+  /** The free-point subset, which the engine matches by prefix. */
+  freePoints: readonly string[];
+}
+
+const FREE_POINT_FLAG = 1;
+
+/** Whether two name lists hold the same names in the same order. */
+const sameNames = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((name, i) => name === b[i]);
 
 interface WorldStore {
   status: WorldStatus;
@@ -40,6 +59,14 @@ interface WorldStore {
    * one of those ambiguous.
    */
   selectedWaypoint: number | null;
+  /**
+   * The open world's waynet names, or null while none has been read.
+   *
+   * Null is "nothing is known", never "no waypoint is legal" — the rule that
+   * reads it returns no findings rather than calling every script site
+   * dangling.
+   */
+  waynetNames: WaynetNames | null;
   /** A refused edit. Deliberately not `error`/`status: 'error'`, which replaces
    *  the whole surface: the world is still open and still correct. */
   editError: string | null;
@@ -51,6 +78,13 @@ interface WorldStore {
   selectVob: (vob: number | null) => void;
   /** Add or remove one VOB — a Ctrl/Cmd click, which is how a batch is built. */
   toggleVob: (vob: number) => void;
+  /**
+   * Publish the waynet the World surface just read. The object identity is
+   * kept when no name changed, which is what keeps a `SetWaypointEdge` or a
+   * `MoveWaypoint` re-read from triggering a project-wide re-scan: only
+   * `AddWaypoint`, `DeleteWaypoint` and `RenameWaypoint` can change the set.
+   */
+  waynetLoaded: (payload: WaynetPayload | null) => void;
   /** Put the gizmo on a waypoint instead — the waynet overlay's own pick.
    *  `null` clears it. */
   selectWaypoint: (waypoint: number | null) => void;
@@ -70,6 +104,7 @@ const EMPTY = {
   error: null,
   selection: [] as readonly number[],
   selectedWaypoint: null as number | null,
+  waynetNames: null as WaynetNames | null,
   editError: null,
 };
 
@@ -96,6 +131,21 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   })),
 
   selectWaypoint: (selectedWaypoint) => set({ selectedWaypoint, selection: [] }),
+
+  waynetLoaded: (payload) => {
+    if (payload === null) {
+      if (get().waynetNames !== null) set({ waynetNames: null });
+      return;
+    }
+
+    const all = payload.names.map((name) => name.toUpperCase());
+    const current = get().waynetNames;
+    if (current !== null && sameNames(current.all, all)) return;
+
+    const flags = new Uint32Array(payload.flags);
+    const freePoints = all.filter((_, i) => (flags[i] & FREE_POINT_FLAG) !== 0);
+    set({ waynetNames: { all, freePoints } });
+  },
 
   applyEdit: (ops) => {
     const summary = get().summary;

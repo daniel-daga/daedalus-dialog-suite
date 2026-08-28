@@ -1,5 +1,13 @@
 import type { SemanticModel } from '../../../shared/types';
-import type { FileFacts, FileFactsEntry, FileModel, FunctionEntry, ProjectView } from './types';
+import type {
+  FileFacts,
+  FileFactsEntry,
+  FileModel,
+  FunctionEntry,
+  ProjectView,
+  WaypointSites,
+  WorldWaynetView
+} from './types';
 import { extractFileFacts } from './fileFacts';
 
 const key = (name: string): string => name.trim().toLowerCase();
@@ -22,8 +30,10 @@ export function buildProjectView(input: {
   files: FileModel[];
   knownNpcNames: string[];
   factsCache?: WeakMap<SemanticModel, FileFacts>;
+  waypointSites?: WaypointSites;
+  world?: WorldWaynetView;
 }): ProjectView {
-  const { files, knownNpcNames, factsCache } = input;
+  const { files, knownNpcNames, factsCache, waypointSites, world } = input;
 
   const fileFacts: FileFactsEntry[] = files.map(({ filePath, model }) => {
     let facts = factsCache?.get(model);
@@ -50,5 +60,12 @@ export function buildProjectView(input: {
     }
   }
 
-  return { fileFacts, dialogNameKeys, npcNameKeys, functionsByKey };
+  return {
+    fileFacts,
+    dialogNameKeys,
+    npcNameKeys,
+    functionsByKey,
+    waypointSites: waypointSites ?? {},
+    world
+  };
 }

@@ -327,6 +327,11 @@ async function openWorld(cls?: string | readonly string[], parents?: readonly nu
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Every world open reads the waynet now — its names are the Problems scan's
+  // world input, not only the overlay's payload — so a default stands here for
+  // the tests that do not care which one they get. A test that does queues its
+  // own with `mockResolvedValueOnce` *before* opening.
+  api.getWorldWaynet.mockResolvedValue(waynetPayload() as never);
   mockAppliedOps = undefined;
   mockTerrainPoint = undefined;
   mockExposure = undefined;
@@ -1836,18 +1841,21 @@ describe('undo and redo in the World view', () => {
 
 describe('a waypoint dragged in the viewport', () => {
   /**
-   * Open a world and turn the waynet on, which is what fetches the payload.
+   * Open a world with a known waynet payload, then turn the overlay on.
    *
-   * A waypoint cannot be picked before that, and deliberately: the overlay is
-   * the only thing that draws one, and it is off until asked for.
+   * The payload is queued *before* the open, which is where it is read: the
+   * waynet's names are the Problems scan's world input, so they are fetched
+   * with the mesh and the visuals rather than when the overlay first asks.
+   * The toggle still matters — a waypoint cannot be picked until something
+   * draws one, and the overlay is off until asked for.
    */
   async function openWithWaynet(): Promise<WaynetPayload> {
-    await openWorld();
     const payload = waynetPayload();
     api.getWorldWaynet.mockResolvedValueOnce(payload as never);
+    await openWorld();
+    await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalled());
 
     fireEvent.click(screen.getByTestId('world-waynet-toggle'));
-    await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalled());
     return payload;
   }
 

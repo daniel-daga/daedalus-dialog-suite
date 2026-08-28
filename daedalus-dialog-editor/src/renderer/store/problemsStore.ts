@@ -13,6 +13,7 @@ import type { SemanticModel } from '../../shared/types';
 import type { FileFacts, FileModel, Problem } from '../problems/domain/types';
 import { scanProject } from '../problems/application/scanProject';
 import { useProjectStore } from './projectStore';
+import { useWorldStore } from './worldStore';
 
 /**
  * Trailing delay for parsed-model-driven scans, so watcher batches and
@@ -88,7 +89,22 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
       }));
       const knownNpcNames = [...project.npcList, ...project.npcPrototypes];
 
-      const { problems, scannedFileCount } = scanProject({ files, knownNpcNames, factsCache });
+      // The world is reference data, exactly like the NPC names above, and
+      // read from its own store for the same reason. No world open means the
+      // rule that needs it returns nothing (level-editor.md §16.8).
+      const waynetNames = useWorldStore.getState().waynetNames;
+      const world = waynetNames === null ? undefined : {
+        pointNameKeys: new Set(waynetNames.all),
+        freePointNames: waynetNames.freePoints
+      };
+
+      const { problems, scannedFileCount } = scanProject({
+        files,
+        knownNpcNames,
+        factsCache,
+        waypointSites: project.waypointSiteIndex,
+        world
+      });
 
       set({
         problems,

@@ -16,7 +16,8 @@ export type ProblemRuleId =
   | 'choice-no-clearchoices'
   | 'orphaned-function'
   | 'voice-id-duplicate'
-  | 'voice-id-malformed';
+  | 'voice-id-malformed'
+  | 'waypoint-not-in-world';
 
 export interface Problem {
   /** Stable key for React lists and cross-scan dedupe. */
@@ -112,6 +113,36 @@ export interface ProjectView {
   npcNameKeys: ReadonlySet<string>;
   /** Every dialog function across the project, keyed by lowercased name. */
   functionsByKey: ReadonlyMap<string, FunctionEntry>;
+  /** Script sites naming a waypoint; empty when the project index has none. */
+  waypointSites: WaypointSites;
+  /** The open world's waynet names, or undefined when no world is open. */
+  world?: WorldWaynetView;
+}
+
+/**
+ * Waypoint-name literals found in scripts, keyed by UPPERCASED name — the
+ * project index's `waypointSites`, threaded in whole rather than rebuilt here:
+ * it rides `buildProjectIndex`'s worker-pool pass, so it sees every file in the
+ * project, while the per-file models this view is otherwise built from are
+ * capped and depend on what has been opened.
+ */
+export type WaypointSites = Record<string, Array<{ filePath: string; functionName: string }>>;
+
+/**
+ * The waynet of the world that is currently open, as a set of names. This is
+ * reference data, not a file the rules walk — the same shape `knownNpcNames`
+ * has, and absent for the same reason it can be empty: no world open means
+ * nothing is known, never that nothing is legal.
+ */
+export interface WorldWaynetView {
+  /** Uppercased names of every point in the waynet, waypoints and free points alike. */
+  pointNameKeys: ReadonlySet<string>;
+  /**
+   * Uppercased free-point names only. The engine matches a free point by
+   * prefix (`"FP_ROAM"` reaches `FP_ROAM_CITY_01`), so an exact-match rule
+   * over these would invent findings.
+   */
+  freePointNames: readonly string[];
 }
 
 /** A pure lint rule: inspects the project view and returns any problems. */

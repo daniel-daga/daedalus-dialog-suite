@@ -73,10 +73,9 @@ was true for so long nobody re-reads it.
 - `master` is where work lands and is **pushed to `origin/master`**;
   `feature/level-editor` was merged and is no longer where work happens.
   `board-loop-3` was fast-forwarded into master on 2026-08-28 (35 commits) and
-  is **spent** — as `board-loop` was before it. The next unattended loop takes a
-  fresh branch. **Local master is ahead of `origin/master`** — the push in the
-  first clause is the intent, not the current state. A push is not a release —
-  see the merge note below.
+  is **spent** — as `board-loop` was before it. `board-loop-4` is the branch in
+  use, cut from a `master` that is level with `origin/master`. A push is not a
+  release — see the merge note below.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
@@ -128,14 +127,6 @@ Each card is one line, an owner and a pointer. A bare `§` is a section of
 `docs/plans/level-editor.md`. The diagnosis, the measurement and the decision a
 card waits on live at its pointer — put new prose there, not here.
 
-**Daedalus scripts — where a script names a place**
-
-- **§16.8 W1 — the script-side waypoint index** — the extraction half is landed
-  and tested; the lookup rides with the dangling-waypoint card below, which is
-  its first consumer. What stays open is only the **third answer** — "no such
-  waypoint anywhere" needs worlds the app does not hold, so the rule says "not
-  in this world" and never "missing". Unowned. §16.8
-
 **Release gates**
 
 - **`05`'s two observation rows have never been run in a cleared frame** — that
@@ -153,17 +144,6 @@ card waits on live at its pointer — put new prose there, not here.
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
   singularity counts, not a Spacer match. Needs Spacer itself, and only two
   functions change if it differs. **Daniel.** §16.4
-
-**Waynet, and the scripts that name it**
-
-- **The dangling-waypoint rule, and the world input it needs** — decided
-  2026-08-28, three parts and all three or none: an optional `world` on
-  `ProjectScanInput`/`ProjectView` read from `worldStore` the way
-  `knownNpcNames` is read from `projectStore`; a re-scan on world open/close and
-  on `AddWaypoint`/`DeleteWaypoint`/`RenameWaypoint` and nothing else; and the
-  rule itself, prefix-matching free points. Absent world means the rule returns
-  nothing, never a finding. Closes W1's lookup for the two answers it can give.
-  Unowned. §16.8
 
 **zenkit-node / fidelity**
 
@@ -205,6 +185,13 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The dangling-waypoint rule landed, and W1's lookup with it** —
+  `waypoint-not-in-world` joins the Problems rules, over the project index's
+  waypoint sites and the open world's waynet names. The names reach
+  `worldStore` and are read at world *open* now, not when the overlay is first
+  shown; the re-scan is a `storeSync` subscription that fires only when the name
+  set actually changed. It says "not in the open world", never "missing" — the
+  third answer stays unanswerable from one world. board-loop-4. §16.8
 - **Gate 2b ran, both passes** — 2026-08-28/29. Every op loads and plays, and
   `06-minimal-frame` then witnessed the class-property writes the first pass
   could not see: red fog, a carried sound radius, an authored chest the player

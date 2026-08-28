@@ -3492,6 +3492,44 @@ question is therefore where world findings surface**, and it stays open
 deliberately rather than being answered by widening a type that does not fit.
 See §16.18.
 
+**The dangling-waypoint rule landed 2026-08-29, and W1's lookup landed with
+it** — the two were one card because the rule is the only consumer the lookup
+has. All three parts of the decision above are in, and the rule is
+`waypoint-not-in-world` (a warning, `problems/domain/rules/`).
+
+- **The world input is `worldStore.waynetNames`** — every point's name
+  uppercased, plus the free-point subset, and `null` while none has been read.
+  `WorldSurface` publishes it from a single effect over the waynet payload
+  rather than beside each `setWaynet` call, so a fourth call site cannot forget.
+  `problemsStore.runScan` reads it exactly as it reads `knownNpcNames` from
+  `projectStore`, and `null` means the rule returns nothing.
+- **The waynet is now read at world open**, after the mesh and the visuals,
+  instead of when the overlay is first switched on. Left lazy the rule would
+  have said nothing until somebody happened to show the overlay — silently,
+  because a world with no findings looks exactly like a world with nothing to
+  find. The cost is one extra IPC per open, and it is the cheap payload: a
+  waynet is thousands of points, not the tens of thousands of VOBs with visuals
+  behind them that the laziness was actually protecting.
+- **The sites are the project index's `waypointSites`, threaded whole** into
+  `ProjectScanInput`/`ProjectView` beside the world. Not rebuilt from the
+  renderer's parsed models — that is the `PARSED_FILES_CAP` trap above, and it
+  would make the rule wrong by construction and non-deterministically so.
+- **The re-scan trigger is a `worldStore` subscription in `storeSync`**, and it
+  is exactly the three ops the decision names without naming them: `waynetLoaded`
+  keeps the object identity when a re-read changed no name, so a
+  `SetWaypointEdge` and a `MoveWaypoint` — both of which re-read or rewrite the
+  payload — do not reach it, while `AddWaypoint`, `DeleteWaypoint` and
+  `RenameWaypoint` do. World open and close come through the same field.
+- **The third answer is now enacted, not only decided.** The message is
+  *"Waypoint "X" is not in the open world. It may belong to another world."*, and
+  a test asserts it never says missing, no such, or does not exist. Free points
+  are prefix-matched, so `"FP_ROAM"` against `FP_ROAM_CITY_01` raises nothing.
+
+What this does **not** do, and nobody asked it to: the reverse direction. A
+waypoint in the world that no script names is not a finding — `WaypointPanel`
+already shows that, one waypoint at a time, and a project-wide rule for it would
+flag most of a retail waynet.
+
 ### 16.9 What is left of the ASCII writer — A6, and what `0048` left behind
 
 **A2 and A3 landed 2026-08-28** as patches `0045`, `0046` and `0047`, a chain:

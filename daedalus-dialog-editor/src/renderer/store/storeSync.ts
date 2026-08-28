@@ -14,6 +14,10 @@
  *   cross-store wiring by subscribing to editorStore's state changes and
  *   forwarding model updates to projectStore's parsed-files cache.
  *
+ *   The world's waynet names reach the Problems scan the same way: the scan
+ *   reads them from `worldStore` when it runs, and this module is what makes it
+ *   run when they change (level-editor.md §16.8).
+ *
  *   A reference-equality guard on `semanticModel` ensures we only push to
  *   projectStore when a file's model has actually changed — not on every
  *   unrelated editorStore mutation (dirty-flag updates, history stack changes,
@@ -26,9 +30,23 @@
 
 import { useEditorStore } from './editorStore';
 import { useProjectStore } from './projectStore';
+import { useProblemsStore } from './problemsStore';
+import { useWorldStore } from './worldStore';
 
 export function initStoreSync(): () => void {
-  return useEditorStore.subscribe((state, prevState) => {
+  /**
+   * A world opening, closing, or gaining/losing/renaming a waypoint changes
+   * which script sites dangle, so the project is re-scanned. `waynetLoaded`
+   * keeps the object identity when a re-read changed no name, which is what
+   * confines this to those events: a gizmo drag and an edge op both re-read
+   * the payload and neither reaches here.
+   */
+  const unsubscribeWorld = useWorldStore.subscribe((state, prevState) => {
+    if (state.waynetNames === prevState.waynetNames) return;
+    useProblemsStore.getState().requestScan();
+  });
+
+  const unsubscribeEditor = useEditorStore.subscribe((state, prevState) => {
     // Skip when openFiles reference is unchanged (e.g. settings-only updates)
     if (state.openFiles === prevState.openFiles) return;
 
@@ -41,4 +59,9 @@ export function initStoreSync(): () => void {
       }
     });
   });
+
+  return () => {
+    unsubscribeWorld();
+    unsubscribeEditor();
+  };
 }

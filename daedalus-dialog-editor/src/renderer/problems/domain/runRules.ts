@@ -4,6 +4,7 @@ import { knowsInfoDanglingRule } from './rules/knowsInfoDangling';
 import { choiceNoClearChoicesRule } from './rules/choiceNoClearChoices';
 import { orphanedFunctionRule } from './rules/orphanedFunction';
 import { voiceIdRule } from './rules/voiceId';
+import { waypointNotInWorldRule } from './rules/waypointNotInWorld';
 
 /** Every lint rule the Problems panel runs, in declaration order. */
 export const ALL_RULES: readonly LintRule[] = [
@@ -11,7 +12,8 @@ export const ALL_RULES: readonly LintRule[] = [
   knowsInfoDanglingRule,
   choiceNoClearChoicesRule,
   orphanedFunctionRule,
-  voiceIdRule
+  voiceIdRule,
+  waypointNotInWorldRule
 ];
 
 const SEVERITY_ORDER: Record<Problem['severity'], number> = { error: 0, warning: 1 };
