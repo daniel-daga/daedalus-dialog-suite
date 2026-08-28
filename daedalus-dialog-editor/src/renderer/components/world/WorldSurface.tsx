@@ -10,7 +10,7 @@ import {
   AUTHORABLE_VOB_CLASSES,
   addVob, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
   classPropKeys, connectWaypoints, disconnectWaypoints,
-  deleteVob, dropVobsToGround,
+  deleteVob, deleteWaypoint, dropVobsToGround,
   duplicateVobSpec, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
   moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
@@ -111,6 +111,12 @@ const WorldSurface: React.FC = () => {
    *  the position is the terrain point and everything else the binding fixes —
    *  so the dialog's state is that one string. */
   const [addingWaypoint, setAddingWaypoint] = useState<string | null>(null);
+  /** The waypoint the delete warning is about, as an index+name pair, or null
+   *  when it is closed. The name is kept beside the index for the dialog to
+   *  show and for the op to be guarded by: it is read when the dialog opens,
+   *  which is the enumeration the user is looking at. */
+  const [deletingWaypoint, setDeletingWaypoint] =
+    useState<{ waypoint: number; name: string } | null>(null);
   /**
    * How bright the viewport draws — component state, beside `showWaynet` and
    * the gizmo mode, because it is the same kind of thing they are: a setting
@@ -417,11 +423,19 @@ const WorldSurface: React.FC = () => {
     // buffer the overlay draws its lines through is a typed array, so it cannot
     // gain or lose a pair in place — and a removal can promote an endpoint to a
     // free point, which is a flags column nothing else would rewrite.
-    if (ops.some((op) => op.op === 'AddWaypoint' || op.op === 'SetWaypointEdge')) {
+    // A delete is re-read for the same reason and one more of its own: it takes
+    // a waypoint out of the *middle*, so the payload cannot shrink in place any
+    // more than it can grow, and every index after it names a different
+    // waypoint afterwards.
+    if (ops.some((op) => op.op === 'AddWaypoint' || op.op === 'SetWaypointEdge'
+      || op.op === 'DeleteWaypoint')) {
       // The removing direction takes the tail away, and a gizmo standing on it
       // would be standing on an index the waynet no longer has. Cleared rather
-      // than followed, exactly as a renumbering VOB op clears the selection.
-      if (ops.some((op) => op.op === 'AddWaypoint' && op.to === null)) selectWaypoint(null);
+      // than followed, exactly as a renumbering VOB op clears the selection —
+      // and a delete renumbers every waypoint after it, so it clears for the
+      // stronger version of the same reason.
+      if (ops.some((op) => (op.op === 'AddWaypoint' && op.to === null)
+        || op.op === 'DeleteWaypoint')) selectWaypoint(null);
       setWaynet(await window.editorAPI.getWorldWaynet());
     }
 
@@ -979,6 +993,21 @@ const WorldSurface: React.FC = () => {
     void commitOps([disconnectWaypoints(waynet.names, selectedWaypoint, to)]);
   }, [commitOps, selectedWaypoint, waynet]);
 
+  /**
+   * Delete a waypoint (§16.7, W4) — **the waynet's one uninvertible edit.**
+   *
+   * It renumbers every waypoint after it, which is what no other waynet op does
+   * and what the index+name pair every one of them is addressed by could not
+   * survive. §15 settled it the way it settled the VOB delete: the history
+   * clears rather than replaying entries against an enumeration that has moved,
+   * and the user is told first — the dialog below, the second and last confirm
+   * in this surface.
+   */
+  const removeWaypoint = useCallback((waypoint: number) => {
+    if (waynet === null) return;
+    void commitOps([deleteWaypoint(waynet.names, waypoint)]);
+  }, [commitOps, waynet]);
+
   /** The name the dialog opens with: `FP_` because a waypoint this authors is a
    *  free point, and the first index nothing is called yet, so the suggestion is
    *  never one the payload already refuses. */
@@ -1337,6 +1366,58 @@ const WorldSurface: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* The waynet's own barrier warning (§16.7, W4). Separate from the VOB
+          one rather than folded into it: they warn about different losses —
+          this one takes the waypoint's *edges* with it, which is the part a
+          user cannot see coming from the point on screen, and there is no
+          subtree to speak of. The undo half of the warning is the same, because
+          the barrier is. */}
+      <Dialog
+        open={deletingWaypoint !== null}
+        onClose={() => setDeletingWaypoint(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete {deletingWaypoint?.name ?? 'waypoint'}?</DialogTitle>
+        <DialogContent>
+          <DialogContentText
+            component="div"
+            variant="body2"
+            data-testid="world-waypoint-delete-warning"
+          >
+            <p>
+              <strong>This cannot be undone.</strong> Every edge into this waypoint is removed
+              with it, and the earlier edits go too: the undo history is cleared, because every
+              entry in it addresses waypoints by numbers this delete has just changed.
+            </p>
+            <p>
+              A routine or a script that names the waypoint is not changed and is not warned
+              about. The world in the editor changes; the file on disk does not until it is saved.
+            </p>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setDeletingWaypoint(null)}
+            data-testid="world-waypoint-delete-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            data-testid="world-waypoint-delete-confirm"
+            onClick={() => {
+              const target = deletingWaypoint;
+              setDeletingWaypoint(null);
+              if (target !== null) removeWaypoint(target.waypoint);
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {status === 'idle' && (
         <Box sx={{ p: 3 }}>
           <Typography variant="body2" color="text.secondary">
@@ -1426,6 +1507,9 @@ const WorldSurface: React.FC = () => {
                     resolveWaypoint={resolveWaypointToJoin}
                     onConnect={joinWaypointTo}
                     onDisconnect={unjoinWaypointFrom}
+                    onDelete={() => setDeletingWaypoint({
+                      waypoint: selectedWaypoint, name: waynet.names[selectedWaypoint],
+                    })}
                   />
                 )
                 : (

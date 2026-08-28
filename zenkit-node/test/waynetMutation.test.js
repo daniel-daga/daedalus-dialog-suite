@@ -328,7 +328,7 @@ test('removeWaypoint undoes an add exactly', () => {
   const before = zenkit.normalizeWorld(load());
 
   const at = zenkit.addWaypoint(handle, 'FP_ADDED', [12.5, 34.5, 56.5]);
-  zenkit.removeWaypoint(handle, at, 'FP_ADDED');
+  zenkit.removeWaypoint(handle, at, 'FP_ADDED', false);
 
   const after = zenkit.normalizeWorld(handle);
   assert.deepStrictEqual(after.waynet, before.waynet);
@@ -341,9 +341,13 @@ test('removeWaypoint refuses a stale name, and anything but the tail', () => {
   const handle = load();
   const at = zenkit.addWaypoint(handle, 'FP_ADDED', [12.5, 34.5, 56.5]);
 
-  assert.throws(() => zenkit.removeWaypoint(handle, at, 'FP_OTHER'), /changed under this op/);
-  assert.throws(() => zenkit.removeWaypoint(handle, 0, zenkit.getWaynet(handle).names[0]), /last/);
-  assert.throws(() => zenkit.removeWaypoint(handle, at + 1, 'FP_ADDED'), /no waypoint/);
+  assert.throws(
+    () => zenkit.removeWaypoint(handle, at, 'FP_OTHER', false), /changed under this op/
+  );
+  assert.throws(
+    () => zenkit.removeWaypoint(handle, 0, zenkit.getWaynet(handle).names[0], false), /last/
+  );
+  assert.throws(() => zenkit.removeWaypoint(handle, at + 1, 'FP_ADDED', false), /no waypoint/);
   assert.strictEqual(zenkit.getWaynet(handle).count, at + 1);
 });
 
@@ -355,7 +359,7 @@ test('removeWaypoint refuses a waypoint an edge still names', () => {
   const last = zenkit.getWaynet(handle).count - 1;
 
   assert.throws(
-    () => zenkit.removeWaypoint(handle, last, zenkit.getWaynet(handle).names[last]), /edge/
+    () => zenkit.removeWaypoint(handle, last, zenkit.getWaynet(handle).names[last], false), /edge/
   );
 });
 
@@ -540,4 +544,111 @@ test('an added edge survives a save and a reload', () => {
   } finally {
     require('node:fs').rmSync(saved, { force: true });
   }
+});
+
+// removeWaypoint's barrier direction — an arbitrary waypoint, deleted with its
+// edges (level-editor.md §16.7, W4).
+//
+// The same call as the append's inverse rather than a second one, with the flag
+// naming the *reason* it is allowed to do more: a barrier removal has an undo
+// stack cleared behind it (§15), so it may take an index in the middle — which
+// renumbers every waypoint after it — and may take the edges that name the
+// waypoint with it, where undoing an append can do neither.
+
+test('a barrier removal takes a waypoint out of the middle, and its edges with it', () => {
+  const handle = load();
+  const at = indexOf(handle, 'WP_FIXTURE_A');
+
+  zenkit.removeWaypoint(handle, at, 'WP_FIXTURE_A', true);
+
+  const after = zenkit.normalizeWorld(handle);
+  assert.deepStrictEqual(after.waynet.waypoints.map((point) => point.name),
+    ['FP_FIXTURE_FREE', 'WP_FIXTURE_B', 'WP_FIXTURE_C']);
+  // Both of A's edges go, and the one that does not name it stays. An edge into
+  // a waypoint the point list no longer has is what `WayNet::save` would write
+  // straight back in — the whole reason the append's inverse refuses instead.
+  assert.deepStrictEqual(after.waynet.edges, [['WP_FIXTURE_B', 'WP_FIXTURE_C']]);
+  // And the renumbering the barrier pays for: what was index 2 is index 1 now.
+  assert.deepStrictEqual(zenkit.getWaynet(handle).names,
+    ['FP_FIXTURE_FREE', 'WP_FIXTURE_B', 'WP_FIXTURE_C']);
+});
+
+test('a barrier removal leaves the waypoints it keeps untouched', () => {
+  const handle = load();
+  const before = zenkit.normalizeWorld(load());
+
+  zenkit.removeWaypoint(handle, indexOf(handle, 'WP_FIXTURE_A'), 'WP_FIXTURE_A', true);
+
+  const after = zenkit.normalizeWorld(handle);
+  for (const point of after.waynet.waypoints) {
+    assert.deepStrictEqual(
+      point, before.waynet.waypoints.find((candidate) => candidate.name === point.name)
+    );
+  }
+});
+
+test('a barrier removal promotes an endpoint it leaves in no edge', () => {
+  // `RemoveWaypointEdge`'s rescue, owed here for the same reason: `WayNet::save`
+  // writes free points plus edge endpoints and nothing else, so a waypoint that
+  // is neither is deleted by the writer without a word. Taking A and then B
+  // leaves C in no edge at all, and C is not a free point in the fixture.
+  const handle = load();
+  zenkit.removeWaypoint(handle, indexOf(handle, 'WP_FIXTURE_A'), 'WP_FIXTURE_A', true);
+  zenkit.removeWaypoint(handle, indexOf(handle, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', true);
+
+  const dump = zenkit.normalizeWorld(handle);
+  assert.deepStrictEqual(dump.waynet.edges, []);
+  assert.strictEqual(
+    dump.waynet.waypoints.find((point) => point.name === 'WP_FIXTURE_C').freePoint, true
+  );
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-delete-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const reloaded = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+    assert.deepStrictEqual(reloaded.waynet.waypoints.map((point) => point.name),
+      ['FP_FIXTURE_FREE', 'WP_FIXTURE_C']);
+    assert.deepStrictEqual(reloaded.waynet.edges, []);
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});
+
+test('a barrier removal survives a save and a reload', () => {
+  const handle = load();
+  zenkit.removeWaypoint(handle, indexOf(handle, 'WP_FIXTURE_A'), 'WP_FIXTURE_A', true);
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-delete-mid-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+
+    assert.deepStrictEqual(dump.waynet.waypoints.map((point) => point.name),
+      ['FP_FIXTURE_FREE', 'WP_FIXTURE_B', 'WP_FIXTURE_C']);
+    assert.deepStrictEqual(dump.waynet.edges, [['WP_FIXTURE_B', 'WP_FIXTURE_C']]);
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});
+
+test('a barrier removal keeps the index+name guard, and the flag is required', () => {
+  // The guard is the one thing the barrier does not buy off: a stale index still
+  // resolves to *some* waypoint, and deleting the wrong one is the failure this
+  // whole address exists to prevent.
+  const handle = load();
+  const count = zenkit.getWaynet(handle).count;
+
+  assert.throws(
+    () => zenkit.removeWaypoint(handle, indexOf(handle, 'WP_FIXTURE_A'), 'WP_FIXTURE_B', true),
+    /changed under this op/
+  );
+  assert.throws(() => zenkit.removeWaypoint(handle, count, 'WP_FIXTURE_A', true), /no waypoint/);
+  // Never defaulted: which of the two removals this is decides whether it may
+  // renumber the waynet, and a caller that forgot to say must not get either.
+  assert.throws(() => zenkit.removeWaypoint(handle, 0, 'FP_FIXTURE_FREE'), /barrier/);
+  assert.strictEqual(zenkit.getWaynet(handle).count, count);
 });

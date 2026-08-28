@@ -373,6 +373,29 @@ describe('the op log', () => {
     service.close();
   });
 
+  test('a waypoint delete is a barrier too, and clears the same way', async () => {
+    // §16.7's W4. The predicate is what the service reads, not a name, so this
+    // op joined the rule without the service learning a second one — but the
+    // wiring is what a user loses an undo stack to, so it is pinned here rather
+    // than left to `isBarrierOp`'s own tests. The reason is the waynet's
+    // version of the VOB one: every recorded op addresses a waypoint by an
+    // index this delete has just moved.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const removing = service.applyOps([
+      { op: 'DeleteWaypoint' as const, waypoint: 3, name: 'WP_CITY_01' },
+    ]);
+    await tick();
+    worker.replyLast('applyOps', null);
+    await removing;
+
+    await expect(service.undo()).resolves.toBeNull();
+    await expect(service.redo()).resolves.toBeNull();
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(2);
+    service.close();
+  });
+
   test('a barrier the worker refused leaves the history alone', async () => {
     // The stacks are cleared only once the world has actually changed. A delete
     // that never happened renumbered nothing, so the batches before it are still

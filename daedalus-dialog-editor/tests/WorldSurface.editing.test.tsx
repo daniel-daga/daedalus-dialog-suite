@@ -2078,6 +2078,94 @@ describe('a waypoint dragged in the viewport', () => {
       expect(mockSelectedWaypoint).toBe(1);
     });
   });
+
+  describe('deleted in that panel', () => {
+    // W4 (§16.7) — the one waynet op that renumbers, so the one that arrives
+    // with §15's barrier: the undo history goes with it and the user is told
+    // first, exactly as a VOB delete does. It lives in the panel for W1's
+    // reason — that is the only UI a waypoint has.
+    async function pickMiddle(): Promise<WaynetPayload> {
+      const payload = await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await screen.findByTestId('world-waypoint-panel');
+      return payload;
+    }
+
+    /** Ask to delete the selected waypoint, without confirming. */
+    async function askToDelete(): Promise<void> {
+      fireEvent.click(await screen.findByTestId('world-waypoint-delete'));
+    }
+
+    it('is a DeleteWaypoint guarded by the name, once the warning is confirmed', async () => {
+      await pickMiddle();
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+
+      await askToDelete();
+      fireEvent.click(screen.getByTestId('world-waypoint-delete-confirm'));
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+        op: 'DeleteWaypoint', waypoint: 1, name: 'WP_MIDDLE',
+      }]));
+    });
+
+    it('warns that the edit cannot be undone and that the history goes with it', async () => {
+      // The requirement §15 put in place of an inverse, and the same one a VOB
+      // delete carries: every other edit in this surface undoes, so the thing
+      // the user has to be told is that this one clears the stack.
+      await pickMiddle();
+
+      await askToDelete();
+
+      const warning = screen.getByTestId('world-waypoint-delete-warning');
+      expect(warning).toHaveTextContent(/cannot be undone/i);
+      expect(warning).toHaveTextContent(/undo history|undo stack|earlier edits/i);
+      // And that the edges go too — the part a user cannot see coming from the
+      // point on screen.
+      expect(warning).toHaveTextContent(/edge/i);
+      expect(api.applyWorldOps).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the warning is dismissed', async () => {
+      await pickMiddle();
+
+      await askToDelete();
+      fireEvent.click(screen.getByTestId('world-waypoint-delete-cancel'));
+
+      expect(api.applyWorldOps).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByTestId('world-waypoint-delete-warning'))
+        .not.toBeInTheDocument());
+    });
+
+    it('re-reads the overlay payload and lets go of the waypoint, because it renumbers', async () => {
+      // Every index after the deleted waypoint names a different one now, so a
+      // gizmo left standing would be on somebody else — and the payload cannot
+      // shrink in place any more than it can grow.
+      await pickMiddle();
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+
+      await askToDelete();
+      fireEvent.click(screen.getByTestId('world-waypoint-delete-confirm'));
+
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(2));
+      expect(mockSelectedWaypoint).toBeNull();
+      // The VOB enumeration is untouched — a waypoint has no row in it.
+      expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+    });
+
+    it('says so and changes nothing when the main process refuses it', async () => {
+      await pickMiddle();
+      api.applyWorldOps.mockRejectedValueOnce(new Error('waypoint 1 is WP_OTHER'));
+
+      await askToDelete();
+      fireEvent.click(screen.getByTestId('world-waypoint-delete-confirm'));
+
+      expect(await screen.findByTestId('world-edit-error')).toHaveTextContent(/WP_OTHER/);
+      // Not re-read: nothing was deleted, so the payload on screen is the
+      // world's — and the selection is still a waypoint that exists.
+      expect(api.getWorldWaynet).toHaveBeenCalledTimes(1);
+      expect(mockSelectedWaypoint).toBe(1);
+    });
+  });
 });
 
 describe('a class property edited in the grid', () => {

@@ -2583,24 +2583,25 @@ correct and a third mode would author a representation ZenGin does not have.
 
 ### 14.2 Waynet
 
-`MoveWaypoint`, `RenameWaypoint`, `AddWaypoint` and `SetWaypointEdge` exist, and
-the third of them *is* freepoint authoring — every waypoint it makes is a free
-point, because `WayNet::save` writes nothing else that is in no edge. Parity
-still wants **delete** (§16.7, W4) and waypoint direction — which the binding
-deliberately leaves alone.
+`MoveWaypoint`, `RenameWaypoint`, `AddWaypoint`, `SetWaypointEdge` and
+`DeleteWaypoint` exist, and the third of them *is* freepoint authoring — every
+waypoint it makes is a free point, because `WayNet::save` writes nothing else
+that is in no edge. Of the verbs Spacer has, parity still wants only **waypoint
+direction** — which the binding deliberately leaves alone.
 
 The gizmo that produces a `MoveWaypoint` landed 2026-08-28 (§7), and the rename
-(W1), the append (W2) and the edge ops (W3) the same day — all three in the
-waypoint panel rather than the viewport, since none of them is a drag.
+(W1), the append (W2), the edge ops (W3) and the delete (W4) the same day — all
+four in the waypoint panel rather than the viewport, since none of them is a
+drag.
 
 §7's op list already ends "… waynet edge ops", so this was *planned*. What it
 did not carry is the actual work: **addressing**. `MoveWaypoint` addresses a
 waypoint by its index into the list `getWaynet` emits, safe only because a move
 inserts, deletes and reorders nothing — and W1, W2 and W3 all earned that same
-address, because a rename, an append and an edge renumber nothing either. What
-is left of the problem is W4's alone: a delete in the middle is the one op that
-renumbers, and the decision there is §15's barrier rather than an identity
-scheme (§16.7).
+address, because a rename, an append and an edge renumber nothing either. W4 was the
+one op that renumbers, and it is answered by §15's barrier rather than by an
+identity scheme: it clears the undo history instead of buying an address that
+would survive it (§16.7).
 
 ### 14.3 World-level
 
@@ -2924,15 +2925,15 @@ documentation-only.
 
 ### 16.7 Waynet editing — the edge ops, and add/delete/rename
 
-Three of the four have landed, plus the move's gizmo: W1's rename, W2's append
-and W3's edge ops. W4 is what is left.
+All four have landed, plus the move's gizmo: W1's rename, W2's append, W3's
+edge ops and W4's delete.
 
-**The addressing problem is the whole job and it is now W4's alone.**
+**The addressing problem was the whole job and W4 was the last of it.**
 `MoveWaypoint` addresses a waypoint by its index into the list `getWaynet`
 emits, and that is safe only because a move inserts, deletes and reorders
 nothing. W1, W2 and W3 all earned that same address — a rename, an append and an
-edge renumber nothing either — so what is left of the problem is W4's, and names cannot
-be the fix either — nothing in the format promises they are unique, which is
+edge renumber nothing either — so the rest of the problem was W4's, and names could
+not be the fix there either — nothing in the format promises they are unique, which is
 why the binding matches edge endpoints by pointer identity. **Retail happens to
 have no duplicate** — 24 worlds, 12,341 waypoints, 0 collisions even
 case-insensitively — but that is a fact about the shipped data,
@@ -3018,11 +3019,12 @@ edge. Everything but the name and the position is fixed by the binding —
 direction (0, 0, 1), depth 0, not underwater — so a name and a position describe
 the waypoint completely, which is what lets redo reproduce it exactly.
 
-`removeWaypoint` is **the tail only**, and refuses a waypoint any edge names.
+`removeWaypoint`'s non-barrier direction is **the tail only**, and refuses a
+waypoint any edge names.
 Both refusals are the card's scope holding: a removal in the middle renumbers
 and is W4's, and removing an edge endpoint would leave an edge into a waypoint
 the point list does not have — which `WayNet::save` would then write straight
-back in. W4 generalises this call rather than adding a second one.
+back in. W4 generalised this call rather than adding a second one.
 
 Three things worth knowing next:
 
@@ -3099,22 +3101,62 @@ either, and that is the standing shape of the World surface rather than a gap
 this card opened — the browser harness has no world to open, so every waynet
 edit is covered by Jest against the mocked IPC.
 
-**W4 — delete an arbitrary waypoint, and it is the only one that renumbers.**
-This is where the addressing problem actually has to be answered. **Decided
-2026-08-28: (b), §15's barrier.** A waypoint delete clears the undo stack, with
-the user told before it lands — the same behaviour `DeleteVob` already has for
-VOBs, keeping the index+name pair honest for everything else. **(b) is not
-just cheaper than (a), it is the closer Spacer parity: Spacer has no undo at
-all, for anything (§15)**, so a barrier with a warning is strictly *more* than
-Spacer gives back after a waypoint delete, not less. (a) — a stable synthetic
-id every op would carry — stays on record as the alternative if a future
-capability needs undo across a waypoint delete specifically, but nothing does
-today.
+**W4 — delete an arbitrary waypoint. Landed 2026-08-28**, on the decision the
+card had already taken: **(b), §15's barrier.** `DeleteWaypoint` carries the
+index+name pair and nothing else, `isBarrierOp` is true for it, `WorldService`
+clears both stacks once the worker confirms, and the panel's Delete button goes
+through a warning first. (a) — a stable synthetic id every op would carry —
+stays on record as the alternative if a future capability needs undo across a
+waypoint delete specifically; nothing does today, and **(b) is the closer Spacer
+parity anyway: Spacer has no undo at all (§15)**, so a barrier with a warning is
+strictly more than it gives back.
 
-**Sequence: W1 → W2 → W3 → W4.** W1, W2, W3 and I1/I2 all landed 2026-08-28. W4
-is now unblocked and a session on its own: `DeleteWaypoint`, the binding call, the
-validator branch, the barrier wiring — no new addressing scheme, per the
-decision above.
+**It is one binding call, not two.** `removeWaypoint` grew a fourth argument,
+`barrier`, which names the *reason* the second removal may do more rather than
+one of the two things it does — and the one difference decides both: where it
+may take a waypoint from (the tail only, against any index) and what it does
+about the edges (refuse, against take them with it). Never defaulted, because a
+caller that did not say must not get either. The append's inverse passes
+`false`, W4 passes `true`, and the binding's own tests pin both directions.
+
+**The edges are what an inverse could not have carried**, and that is the whole
+of why this op is a barrier rather than an `AddWaypoint` with a null side: a
+waypoint is five scalar fields and could be described, but the edges naming it
+are a list, and a restored point with no edges is an undo that looks like it
+worked. Deleting them is not optional either — an edge holds its endpoints by
+pointer and `WayNet::save` writes edge endpoints, so an edge left naming a
+removed point would put the point straight back at the next save.
+
+`RemoveWaypointEdge`'s **promotion is owed here too**, for its exact reason:
+a neighbour the delete leaves in no edge and that is not a free point is not
+written at all, so a delete would silently take a *second* waypoint with it. The
+test that pins it deletes two of the fixture's three chained waypoints and
+reloads: without the promotion the third is gone from the reloaded world.
+
+Three things worth knowing next:
+
+- **A barrier is now alone in its batch by a rule of its own.** `commitOps` used
+  to keep `DeleteVob` alone through `renumbersPaths`, which is about index
+  *paths* — and a waypoint delete moves no path. The new sentence is the general
+  one: a barrier cannot be unwound, so a later op failing beside it would leave
+  the world edited with no history entry describing it.
+- **`renumbersPaths` is deliberately false for it**, which is what keeps the VOB
+  selection standing: the renderer clears the *waypoint* selection and re-reads
+  the overlay payload, and asks for no fresh VOB index at all.
+- **A script that names the deleted waypoint is orphaned and nothing warns** —
+  W1's caveat, unchanged and now reachable by a second verb. The dialog says so
+  in prose, which is all this side can do; the rule is §16.8's, still blocked.
+
+`verify-world-edit.js` and `verify-world-pipeline.js` were **not** extended, for
+W1, W2 and W3's reason: they need a Gothic install, and an unrun addition to a
+verification script is worse than none. Nothing about a deleted waypoint has an
+engine verdict; it joins the queue in §16.2 — and it is the first op in that
+queue that *removes* from the waynet, which is the part a run should look at
+first.
+
+**Sequence: W1 → W2 → W3 → W4.** All four landed 2026-08-28, and §16.7 is
+closed but for what it always pointed elsewhere for: the dangling-reference rule
+(§16.8) and the engine verdict (§16.2).
 
 ### 16.8 Jumping between a script reference and the place it names
 

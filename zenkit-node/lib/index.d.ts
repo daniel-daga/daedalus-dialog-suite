@@ -346,17 +346,24 @@ export function addWaypoint(
   handle: WorldHandle, name: string, position: readonly [number, number, number],
 ): number;
 /**
- * Remove the **last** waypoint — the exact inverse of `addWaypoint`, and
- * nothing more.
+ * Remove a waypoint — the inverse of `addWaypoint`, or W4's arbitrary delete.
  *
- * `name` guards the index the same way it does everywhere else in the waynet.
- * Anything but the tail is refused: a removal in the middle renumbers every
- * index after it, which is a delete of an arbitrary waypoint (§16.7, W4) and
- * comes with an undo barrier this call has no business taking on its own. A
- * waypoint any edge still names is refused too — the edge holds it by pointer,
- * and the writer would put it straight back.
+ * `barrier` says which, and is never defaulted: `false` is the append's inverse
+ * and takes the **last** waypoint only, refusing one any edge still names;
+ * `true` is the delete §15's undo barrier stands behind, and may take any index
+ * — renumbering everything after it — with the edges that name it.
+ *
+ * `name` guards the index the same way it does everywhere else in the waynet,
+ * in both directions: a stale index resolves to *some* waypoint, and the
+ * barrier buys off the renumbering, not the guard.
+ *
+ * An endpoint the removal leaves in no edge is promoted to a free point, for
+ * `removeWaypointEdge`'s reason: `WayNet::save` writes free points plus edge
+ * endpoints, so a waypoint that is neither would be dropped at the next save.
  */
-export function removeWaypoint(handle: WorldHandle, waypoint: number, name: string): void;
+export function removeWaypoint(
+  handle: WorldHandle, waypoint: number, name: string, barrier: boolean,
+): void;
 /**
  * Join two waypoints with an edge (§16.7, W3).
  *

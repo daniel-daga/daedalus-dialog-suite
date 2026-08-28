@@ -1239,4 +1239,40 @@ describe('assertApplyOpsRequest', () => {
         .toThrow(/exactly one/);
     });
   });
+
+  describe('a waypoint delete', () => {
+    // The fifth waynet op (§16.7, W4), and the waynet's `DeleteVob`: an index,
+    // the name that guards it, and nothing else. The exhaustive key check is
+    // here for the reason it is on a VOB delete — this op is a barrier, so a
+    // side arriving on it is somebody reaching for an inverse it has not got,
+    // and an ignored field would let that through as an ordinary delete.
+    const remove = { op: 'DeleteWaypoint', waypoint: 12, name: 'WP_CITY_01' };
+
+    it('is accepted carrying no vob and no path at all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [remove] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [{ ...remove, waypoint: 0 }] })).not.toThrow();
+    });
+
+    it('rejects a waypoint that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, waypoint: bad }] }))
+          .toThrow(/waypoint/);
+      }
+    });
+
+    it('rejects a missing or empty name', () => {
+      // The guard the bare index needs, and the one thing the barrier does not
+      // buy off: a stale index resolves to *a* waypoint and this op deletes it.
+      for (const bad of [undefined, null, 12, {}, '']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, name: bad }] })).toThrow(/name/);
+      }
+    });
+
+    it('rejects anything beyond the address it is allowed to carry', () => {
+      for (const extra of ['from', 'to', 'vob', 'path']) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...remove, [extra]: null }] }))
+          .toThrow(new RegExp(extra));
+      }
+    });
+  });
 });

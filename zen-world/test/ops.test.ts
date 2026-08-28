@@ -26,6 +26,7 @@ import {
   commitOps,
   createVobReader,
   deleteVob,
+  deleteWaypoint,
   dropVobsToGround,
   duplicateVobSpec,
   duplicateVobs,
@@ -2213,7 +2214,9 @@ describe('adding a waypoint', () => {
         calls.push(['add', name, to]);
         return landsAt ?? NAMES.length;
       },
-      removeWaypoint: (waypoint, name) => { calls.push(['remove', waypoint, name]); },
+      removeWaypoint: (waypoint, name, barrier) => {
+        calls.push(['remove', waypoint, name, barrier]);
+      },
       addWaypointEdge: () => { throw new Error('not an edge add'); },
       removeWaypointEdge: () => { throw new Error('not an edge removal'); },
     };
@@ -2252,7 +2255,7 @@ describe('adding a waypoint', () => {
 
     expect(calls).toEqual([
       ['add', 'FP_ADDED', [1, 2, 3]],
-      ['remove', 3, 'FP_ADDED'],
+      ['remove', 3, 'FP_ADDED', false],
     ]);
   });
 
@@ -2266,7 +2269,7 @@ describe('adding a waypoint', () => {
       .toThrow(/landed at 7/);
     expect(calls).toEqual([
       ['add', 'FP_ADDED', [1, 2, 3]],
-      ['remove', 7, 'FP_ADDED'],
+      ['remove', 7, 'FP_ADDED', false],
     ]);
   });
 
@@ -2395,6 +2398,104 @@ describe('joining and unjoining two waypoints', () => {
     const live = createVobReader(index);
 
     expect(() => applyOps(live, [connectWaypoints(NAMES, 0, 2)])).toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('deleting a waypoint', () => {
+  // W4 (§16.7) — the one waynet op that renumbers, and therefore the one that
+  // could not stand on the shipped index+name pair for free. §15 answers it the
+  // way `DeleteVob` is answered rather than with a synthetic id: the op is a
+  // **barrier**, the history clears both stacks behind it, and the user is told
+  // first. That keeps every other waynet op's address honest — an index is only
+  // ever read against the enumeration it was made against, because nothing
+  // survives the delete to be replayed against a different one.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+
+  function deleteBinding() {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('not a vob delete'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: (waypoint, name, barrier) => {
+        calls.push(['remove', waypoint, name, barrier]);
+      },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+    };
+    return { binding, calls };
+  }
+
+  it('carries the index and the name it had, and nothing else', () => {
+    // No `from` side, deliberately, and for `DeleteVob`'s reason: a side that
+    // described the waypoint would claim the op could put it back, and the edges
+    // it was in are not on it. The name is still the guard the bare index needs.
+    expect(deleteWaypoint(NAMES, 1)).toEqual({
+      op: 'DeleteWaypoint', waypoint: 1, name: 'WP_FIXTURE_A',
+    });
+  });
+
+  it('is refused for an index the payload does not have', () => {
+    expect(() => deleteWaypoint(NAMES, 3)).toThrow(/no waypoint 3/);
+    expect(() => deleteWaypoint(NAMES, -1)).toThrow(/no waypoint -1/);
+  });
+
+  it('has no inverse, and says so rather than inventing one', () => {
+    // An inverse built out of the payload would re-add the waypoint at the tail
+    // — a different index, without its edges, and after everything else had been
+    // renumbered. The undo would look like it worked.
+    expect(() => invertOp(deleteWaypoint(NAMES, 1))).toThrow(/barrier|inverse/i);
+    expect(isBarrierOp(deleteWaypoint(NAMES, 1))).toBe(true);
+  });
+
+  it('is a waynet op, and neither structural nor path-renumbering', () => {
+    // It renumbers *waypoints*, which is what the barrier is for; the VOB
+    // enumeration and the index paths are untouched, so the columnar projection
+    // and the VOB selection are not this op's business.
+    const op = deleteWaypoint(NAMES, 1);
+
+    expect(isWaynetOp(op)).toBe(true);
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+  });
+
+  it('reaches the binding as the barrier direction of removeWaypoint', () => {
+    // The same call an undone append makes, with the flag that lets it take an
+    // index in the middle and the edges naming it — which is the whole of what
+    // the barrier buys.
+    const { binding, calls } = deleteBinding();
+
+    commitOps(binding, [deleteWaypoint(NAMES, 1)]);
+
+    expect(calls).toEqual([['remove', 1, 'WP_FIXTURE_A', true]]);
+  });
+
+  it('has to be alone in its batch', () => {
+    // Every other waypoint op in the batch carries an index read before it ran,
+    // and this is the one op that moves them. There is no unwinding it either:
+    // a later failure would replay the applied ops backwards, and this one has
+    // no backwards.
+    const { binding, calls } = deleteBinding();
+    const move = moveWaypoint(new Float32Array(9), NAMES, 2, [1, 2, 3]);
+
+    expect(() => commitOps(binding, [deleteWaypoint(NAMES, 1), move]))
+      .toThrow(/only op in its batch/);
+    expect(calls).toEqual([]);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+
+    expect(() => applyOps(live, [deleteWaypoint(NAMES, 1)])).toThrow(/waynet op/);
     expect(live.position(0)).toEqual([1, 2, 3]);
   });
 });

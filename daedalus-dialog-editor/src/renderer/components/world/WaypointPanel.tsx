@@ -19,6 +19,10 @@ import {
  * a waypoint has. A neighbour is named rather than picked in the viewport
  * because an edge needs a *second* selection and the surface has one; the name
  * is resolved by the caller, which is the side holding the point list.
+ *
+ * The delete is §16.7's W4 and is here for the same reason, but it is the one
+ * control that does not commit: it *asks*, because the op is a barrier (§15)
+ * and the surface owns the warning that has to come before it.
  */
 const WaypointPanel: React.FC<{
   name: string;
@@ -32,7 +36,12 @@ const WaypointPanel: React.FC<{
   resolveWaypoint: (typed: string) => number | null;
   onConnect: (waypoint: number) => void;
   onDisconnect: (waypoint: number) => void;
-}> = ({ name, routines, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect }) => {
+  /** Asks to delete this waypoint. Not a commit: the op is a barrier, and the
+   *  warning that has to precede it is the surface's. */
+  onDelete: () => void;
+}> = ({
+  name, routines, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect, onDelete,
+}) => {
   const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
   // The field shows what the waynet payload says, and goes back to it the moment
@@ -155,6 +164,17 @@ const WaypointPanel: React.FC<{
           Connect
         </Button>
       </Stack>
+      <Button
+        size="small"
+        color="error"
+        variant="outlined"
+        fullWidth
+        sx={{ mt: 2 }}
+        onClick={onDelete}
+        data-testid="world-waypoint-delete"
+      >
+        Delete waypoint
+      </Button>
     </Box>
   );
 };

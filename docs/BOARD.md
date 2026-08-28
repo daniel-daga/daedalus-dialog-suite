@@ -106,9 +106,11 @@ was true for so long nobody re-reads it.
   fake the worker, so they stay green against a binary with neither
   `getVobProps` nor `setVobClassProp` while the running app has no class
   properties at all.
-- `daedalus-dialog-editor/dist/` holds a **freshly packaged app** used to verify
-  the open-world smoke. `.gitignore`d, and it only matters if you are about to
-  trust a package already sitting there.
+- `daedalus-dialog-editor/dist/` holds a packaged app (`win-unpacked`, the
+  installer) that is **no longer fresh** — it predates the waypoint delete, and
+  every session that only compiles leaves it further behind. `.gitignore`d, and
+  it only matters if you are about to trust a package already sitting there:
+  re-package before you do.
 
 ---
 
@@ -124,9 +126,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Waynet W4 — delete an arbitrary waypoint** — decided 2026-08-28: §15's
-  barrier, closer Spacer parity than an id scheme (Spacer has no undo at all).
-  No new addressing needed. Unowned. §16.7
 - **Typed rotation for a multi-selection** — decided 2026-08-28: relative, as
   the position fields already are. The angle fields stop being hidden for N
   VOBs. Unowned. §16.4
@@ -209,7 +208,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty)*
+- **Waynet W4 — delete an arbitrary waypoint** — landed: `DeleteWaypoint` is a
+  barrier op, `removeWaypoint` grew a `barrier` flag rather than a twin, and the
+  edges go with the point. §16.7
 
 Flushed 2026-08-28 at the end of the third loop run: I1, I2, D2, W2 and W3 all
 landed that day. Their forward facts are routed — what a copy still drops and

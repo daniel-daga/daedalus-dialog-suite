@@ -691,19 +691,34 @@ Napi::Value AddWaypoint(Napi::CallbackInfo const& info) {
   return Napi::Number::New(env, static_cast<double>(CollectWaypoints(*handle).size() - 1));
 }
 
-// removeWaypoint(handle, waypoint, name) — the exact inverse of AddWaypoint,
-// and nothing more.
+// removeWaypoint(handle, waypoint, name, barrier) — the append's inverse, and
+// the arbitrary delete (§16.7, W2 and W4).
 //
-// **The tail only.** Removing a waypoint in the middle takes every index after
-// it down by one, which is the addressing problem this card deliberately does
-// not open: an arbitrary delete is §16.7's W4 and arrives with §15's undo
-// barrier. Undoing an append is the one removal that renumbers nothing, so it
-// is the one this refuses to be anything else.
+// One call rather than two, with `barrier` naming the *reason* the second may
+// do more rather than one of the two things it does. A removal is either the
+// inverse of an append — which renumbers nothing and is replayed by undo — or
+// an edit with §15's undo barrier behind it, and that one difference decides
+// both of the ones below:
 //
-// It also refuses a waypoint any edge still names. An edge holds its endpoints
-// by pointer, so removing one out of the point list would leave an edge into a
-// waypoint the list no longer has — and `WayNet::save` writes edge endpoints,
-// so the removal would be undone by the writer without a word.
+//   - **Where.** The append's inverse takes the tail and nothing else: removing
+//     a waypoint in the middle takes every index after it down by one, and the
+//     ops already on the undo stack carry those indices. A barrier removal may
+//     take any index, because the stack it invalidates is cleared.
+//   - **The edges.** An edge holds its endpoints by pointer, so a waypoint the
+//     edge list still names cannot simply leave the point list —
+//     `WayNet::save` writes edge endpoints, and the removal would be undone by
+//     the writer without a word. The append's inverse refuses (the waypoint it
+//     authored was in no edge, so an edge means the world moved under it); a
+//     barrier removal takes the edges with it, which is the one thing the op
+//     cannot describe well enough to put back.
+//
+// Never defaulted. Which of the two removals this is decides whether the call
+// may renumber the waynet, and a caller that did not say must not get either.
+//
+// An endpoint the removal leaves in no edge is promoted to a free point, for
+// `RemoveWaypointEdge`'s reason and by the same rule: a waypoint that is
+// neither free nor an endpoint is not written at all, so a delete would take a
+// neighbour with it.
 Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapHandle(env, info[0]);
@@ -715,6 +730,11 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
     throw Napi::TypeError::New(env, "name must be a string");
   }
   auto const name = info[2].As<Napi::String>().Utf8Value();
+  if (!info[3].IsBoolean()) {
+    throw Napi::TypeError::New(env, "barrier must be a boolean: true deletes an arbitrary "
+                                    "waypoint with its edges, false undoes an append");
+  }
+  auto const barrier = info[3].As<Napi::Boolean>().Value();
 
   auto points = CollectWaypoints(*handle);
   if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
@@ -727,16 +747,32 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
                                   + points[at]->name + ", not " + name
                                   + " — the waynet has changed under this op");
   }
-  if (at + 1 != points.size()) {
+  if (!barrier && at + 1 != points.size()) {
     throw Napi::Error::New(env, "only the last waypoint can be removed; " + name + " is "
                                   + std::to_string(requested) + " of "
                                   + std::to_string(points.size()));
   }
 
   auto const* target = points[at].get();
-  for (auto const& edge : handle->world->way_net->edges) {
-    if (edge.first.get() == target || edge.second.get() == target) {
-      throw Napi::Error::New(env, name + " is an edge endpoint and cannot be removed");
+  auto& edges = handle->world->way_net->edges;
+  if (!barrier) {
+    for (auto const& edge : edges) {
+      if (edge.first.get() == target || edge.second.get() == target) {
+        throw Napi::Error::New(env, name + " is an edge endpoint and cannot be removed");
+      }
+    }
+  }
+
+  // The neighbours are collected before the edges go, because afterwards there
+  // is nothing left to say who they were — and each of them may be left in no
+  // edge at all by this delete.
+  std::vector<std::shared_ptr<zenkit::WayPoint>> neighbours;
+  for (auto it = edges.begin(); it != edges.end();) {
+    if (it->first.get() == target || it->second.get() == target) {
+      neighbours.push_back(it->first.get() == target ? it->second : it->first);
+      it = edges.erase(it);
+    } else {
+      ++it;
     }
   }
 
@@ -747,6 +783,18 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
       stored.erase(it);
       break;
     }
+  }
+
+  for (auto const& endpoint : neighbours) {
+    if (endpoint->free_point) continue;
+    bool still_named = false;
+    for (auto const& edge : edges) {
+      if (edge.first.get() == endpoint.get() || edge.second.get() == endpoint.get()) {
+        still_named = true;
+        break;
+      }
+    }
+    if (!still_named) endpoint->free_point = true;
   }
   return env.Undefined();
 }

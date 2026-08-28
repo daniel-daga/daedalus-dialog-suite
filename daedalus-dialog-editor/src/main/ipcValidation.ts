@@ -360,7 +360,8 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
       && op.op !== 'SetVobClassProp' && op.op !== 'AddVob' && op.op !== 'ReparentVob'
       && op.op !== 'MoveWaypoint' && op.op !== 'RenameWaypoint' && op.op !== 'AddWaypoint'
-      && op.op !== 'SetWaypointEdge' && op.op !== 'DeleteVob') {
+      && op.op !== 'SetWaypointEdge' && op.op !== 'DeleteWaypoint'
+      && op.op !== 'DeleteVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
 
@@ -464,6 +465,31 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       // would still reach the binding as a join or an unjoin nobody asked for.
       if (op.from === op.to) {
         throw new Error('Invalid op: exactly one of from and to must have the edge');
+      }
+      continue;
+    }
+
+    // The fifth waynet op, and the waynet's own `DeleteVob` (§16.7, W4). Beside
+    // its siblings for their reason — it has neither a `vob` nor a `path` — and
+    // exhaustive about its keys for the delete's: it is a barrier, so a side
+    // arriving on it is an inverse somebody expected it to have, and a field
+    // waved through here is that expectation reaching the binding unchallenged.
+    if (op.op === 'DeleteWaypoint') {
+      if (typeof op.waypoint !== 'number' || !Number.isInteger(op.waypoint) || op.waypoint < 0) {
+        throw new Error('Invalid op: waypoint must be a non-negative integer');
+      }
+      // Non-empty, because it is the guard rather than a label: this op deletes
+      // whatever the index names, and the name is what says the index is still
+      // the one the op was made against.
+      if (typeof op.name !== 'string' || op.name.length === 0) {
+        throw new Error('Invalid op: name must be the waypoint\'s name');
+      }
+      for (const key of Object.keys(op)) {
+        if (key !== 'op' && key !== 'waypoint' && key !== 'name') {
+          throw new Error(
+            `Invalid op: a DeleteWaypoint carries only a waypoint and a name, not ${key}`,
+          );
+        }
       }
       continue;
     }
