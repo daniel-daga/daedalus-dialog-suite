@@ -3676,6 +3676,37 @@ undo entry, which is the behaviour wanted anyway.
 writer drops it on every save, so restoring it in a duplicate is invisible until
 A6 lands. Say so in the increment rather than quietly skipping it.
 
+**Blocked, 2026-08-28 — the class-property half rests on a premise that is
+false, and the true statement is worse than the one above.** A duplicate does
+not come back "without its door fields": it comes back **not an `oCMobDoor` at
+all**. `AddVob` reaches the world through `binding.insertVob`, which hard-codes
+`vob->type = zenkit::VirtualObjectType::zCVob` (`zenkit-node/src/binding.cc`,
+`InsertVob`) — the same sentence §16.15 opens with, met from the other end. So
+the follow-up op cannot land: `SetVobClassProp` switches on the VOB's *actual*
+type and its `default:` throws `no class properties are known for a zCVob`. Both
+of the two ways above fail for the one reason, widening `NewVob` included — the
+class is not a field the spec is missing, it is the object's C++ type.
+
+Two consequences, and neither is this card's to take.
+**§16.15 is now D2's prerequisite**, not a card beside it: a duplicate can only
+carry class properties once the editor can *author* a VOB of that class, and the
+binding already has the first half of that in `insertItemVob` (an `oCItem`
+insert, exported and reachable, with no `OpBinding` member and no op yet).
+**And D1 is lossier than its own comments say** — `ops.ts`' `duplicateVobSpec`
+and `WorldSurface`'s `duplicateVob` both claim the copy loses the class
+*fields*; they now say it loses the class. That correction is the whole of this
+session's diff.
+
+What is left of D2 without §16.15 is `physicsEnabled` alone, and it was **not**
+landed: it is one `SetVobProp` follow-up (`from: false` is exact — `InsertVob`
+assigns `physics_enabled = false`), but it needs `commitOps`' batch guard
+relaxed, since a parented `AddVob` renumbers and today refuses every companion
+op. That relaxation is small and defensible — a batch may hold a renumbering
+`AddVob` plus ops addressing only the VOB it added, which is the shape both the
+forward batch and `replay`'s reversed inverse take — but buying it for a field
+A6 says no save preserves, and doing it first when the increment says do it
+last, is a sequencing call for a human rather than for the run that found it.
+
 **D3 — copy and paste as verbs distinct from duplicate.** An in-process
 clipboard, `Ctrl+C` / `Ctrl+V`, paste into the current selection's parent. No
 cross-world clipboard: it is only worth a serialization format if part-to-part

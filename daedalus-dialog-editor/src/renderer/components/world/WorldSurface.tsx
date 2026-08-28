@@ -714,10 +714,12 @@ const WorldSurface: React.FC = () => {
    *
    * It is an ordinary `AddVob` and nothing more — no new op, no validator
    * branch — because that op already carries a whole description of a VOB and
-   * already inverts to a delete. What the copy does *not* carry is what
-   * `NewVob` has no room for: `physicsEnabled` and the per-class properties, so
-   * a duplicated `oCMobDoor` comes back without its door fields. That is D2,
-   * and it is a follow-up op in this same batch rather than a wider `NewVob`.
+   * already inverts to a delete. What the copy does *not* carry is
+   * `physicsEnabled`, which `NewVob` has no room for, and **its class**: the
+   * binding's `insertVob` authors a `zCVob` whatever the original was, so a
+   * duplicated `oCMobDoor` is not a door and a follow-up `SetVobClassProp`
+   * would be refused. D2's class half waits on class-specific insertion
+   * (level-editor.md §16.15); the finding is written up in §16.14.
    *
    * The box is fitted from the visual's own bounds, exactly as a rotation
    * refits one and for the same reason: the index has no bbox column to copy,

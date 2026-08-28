@@ -887,8 +887,13 @@ export function addVob(reader: VobReader, spec: NewVob, parent: number | null = 
  * duplicates with the box it had; without bounds there is nothing honest to
  * fit, and the VOB gets the binding's default exactly as a placement does.
  *
- * Class properties are not here either, and cannot be: they are not in the
- * index and not in `NewVob`. That is the rest of D2.
+ * Class properties are not here either, and **no widening of this function
+ * could put them here**: the copy is not of the original's class. `AddVob`
+ * reaches the world through `insertVob`, which hard-codes the new object's type
+ * to `zCVob`, so a duplicated `oCMobDoor` is a `zCVob` with the door's name,
+ * visual and pose — and a follow-up `SetVobClassProp` on it is refused by the
+ * binding, which switches on the VOB's real type. D2's class half therefore
+ * waits on class-specific insertion (§16.15); see §16.14 for the finding.
  */
 export function duplicateVobSpec(
   reader: VobReader, vob: number, bounds: ZenBounds | null = null,

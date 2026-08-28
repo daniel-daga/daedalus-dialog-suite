@@ -125,7 +125,9 @@ card waits on live at its pointer — put new prose there, not here.
 **Spacer parity — Phase 1b-2 (the priority)**
 
 - **Copy/paste D2 — the fields `NewVob` drops** (class props, `physicsEnabled`)
-  as a follow-up op in the same batch. Unowned. §16.14
+  as a follow-up op in the same batch — blocked: `insertVob` authors a `zCVob`,
+  so a duplicate has no class to write class props to and §16.15 comes first;
+  `physicsEnabled` alone is left and its sequencing is a call. Unowned. §16.14
 - **Copy/paste D4 — a multi-selection duplicates as one batch**, one undo
   entry. Unowned. §16.14
 - **Copy/paste D3 — copy and paste as verbs**, an in-process clipboard.
