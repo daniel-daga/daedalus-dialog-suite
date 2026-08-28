@@ -8,7 +8,8 @@ import {
 } from '@mui/material';
 import {
   AUTHORABLE_VOB_CLASSES,
-  addVob, alignVobsToNormal, applyWaypointNames, applyWaypointPositions, classPropKeys,
+  addVob, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
+  classPropKeys,
   deleteVob, dropVobsToGround,
   duplicateVobSpec, duplicateVobs,
   invertOp, isBarrierOp, isStructuralOp,
@@ -105,6 +106,11 @@ const WorldSurface: React.FC = () => {
   // the cold open.
   const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
+  /** The name being typed into the add-waypoint dialog, or null when it is
+   *  closed. A name is the whole of what a placed waypoint has to be told —
+   *  the position is the terrain point and everything else the binding fixes —
+   *  so the dialog's state is that one string. */
+  const [addingWaypoint, setAddingWaypoint] = useState<string | null>(null);
   /**
    * How bright the viewport draws — component state, beside `showWaynet` and
    * the gizmo mode, because it is the same kind of thing they are: a setting
@@ -397,6 +403,24 @@ const WorldSurface: React.FC = () => {
       setWaynet({ ...waynet, names });
     }
 
+    // An append is the one waynet op the payload cannot be patched for. The
+    // positions column is a typed array the point cloud and the edge lines draw
+    // *through* and it cannot grow, and the names list is only half of it — so
+    // the payload is re-read whole, which is the waynet's version of what a
+    // structural VOB op does to the columnar index. It is cheap for the same
+    // reason the overlay is a separate call at all: a waynet is thousands of
+    // points, not tens of thousands of VOBs with visuals behind them.
+    //
+    // Undo comes through here too, and arrives as the same op with its sides
+    // swapped — so this covers the removal without knowing it is one.
+    if (ops.some((op) => op.op === 'AddWaypoint')) {
+      // The removing direction takes the tail away, and a gizmo standing on it
+      // would be standing on an index the waynet no longer has. Cleared rather
+      // than followed, exactly as a renumbering VOB op clears the selection.
+      if (ops.some((op) => op.op === 'AddWaypoint' && op.to === null)) selectWaypoint(null);
+      setWaynet(await window.editorAPI.getWorldWaynet());
+    }
+
     setAppliedOps([...ops]);
     if (!ops.some(isStructuralOp)) return;
 
@@ -411,7 +435,7 @@ const WorldSurface: React.FC = () => {
 
     useWorldStore.getState().indexRefreshed(await window.editorAPI.refreshWorldIndex());
     setVisuals(await window.editorAPI.getWorldVisuals());
-  }, [waynet]);
+  }, [waynet, selectWaypoint]);
 
   const commitOps = useCallback(async (ops: WorldOp[]) => {
     const { editFailed } = useWorldStore.getState();
@@ -872,6 +896,33 @@ const WorldSurface: React.FC = () => {
     if (waynet === null) return;
     void commitOps([renameWaypoint(waynet.names, waypoint, to)]);
   }, [commitOps, waynet]);
+
+  /**
+   * A free waypoint appended at the terrain point (§16.7, W2).
+   *
+   * The terrain point rather than the camera, for the same reason a placed VOB
+   * takes it: it is the one position in the surface the user has actually
+   * chosen, and it already arrives in ZenGin centimetres.
+   *
+   * It is an *append*, so it renumbers nothing and every index the overlay is
+   * holding — the selected waypoint above all — still names what it named
+   * before. The waypoint is free and in no edge, which is what makes
+   * `WayNet::save` write it at all; joining it to the net is W3.
+   */
+  const addWaypointAt = useCallback((name: string) => {
+    if (waynet === null || terrainPoint === null) return;
+    void commitOps([addWaypoint(waynet.names, name, terrainPoint)]);
+  }, [commitOps, terrainPoint, waynet]);
+
+  /** The name the dialog opens with: `FP_` because a waypoint this authors is a
+   *  free point, and the first index nothing is called yet, so the suggestion is
+   *  never one the payload already refuses. */
+  const suggestedWaypointName = useCallback(() => {
+    const names = waynet === null ? [] : waynet.names;
+    let at = names.length;
+    while (names.includes(`FP_NEW_${at}`)) at += 1;
+    return `FP_NEW_${at}`;
+  }, [waynet]);
 
   /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
@@ -1367,11 +1418,73 @@ const WorldSurface: React.FC = () => {
                 >
                   Place VOB here…
                 </Button>
+                {/* Offered only while the overlay is on, and not as a
+                    preference: the overlay is the only thing that draws a
+                    waypoint, so a waypoint added without it would be invisible
+                    and unpickable the moment it landed. */}
+                {showWaynet && waynet !== null && (
+                  <Button
+                    size="small"
+                    onClick={() => setAddingWaypoint(suggestedWaypointName())}
+                    data-testid="world-add-waypoint"
+                  >
+                    Add waypoint here…
+                  </Button>
+                )}
               </>
             )}
           </Stack>
         </Paper>
       )}
+
+      <Dialog
+        open={addingWaypoint !== null}
+        onClose={() => setAddingWaypoint(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Add a waypoint</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
+            {/* Both facts a user cannot see and would be caught out by: it is
+                appended, so nothing else moves, and it is a free point in no
+                edge — which is what makes the engine keep it, and what makes it
+                not part of the walkable net yet. */}
+            It is appended as a free point at
+            {` ${terrainPoint?.map((v) => Math.round(v)).join(', ')}`}, in no edge and
+            renumbering nothing.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Name"
+            value={addingWaypoint ?? ''}
+            onChange={(event) => setAddingWaypoint(event.target.value)}
+            inputProps={{ 'data-testid': 'world-waypoint-add-name' }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddingWaypoint(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            /* The two refusals the binding makes, made here as well — not
+               instead. This side is holding the very list the user is reading,
+               so a name they can see is taken is worth refusing before a round
+               trip rather than after one. */
+            disabled={addingWaypoint === null || addingWaypoint.trim() === ''
+              || (waynet?.names.includes(addingWaypoint.trim()) ?? false)}
+            onClick={() => {
+              const name = addingWaypoint;
+              setAddingWaypoint(null);
+              if (name !== null) void addWaypointAt(name.trim());
+            }}
+            data-testid="world-waypoint-add-confirm"
+          >
+            Add
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={placing !== null} onClose={() => setPlacing(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Place a VOB</DialogTitle>

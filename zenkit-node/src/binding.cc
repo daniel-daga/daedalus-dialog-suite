@@ -622,6 +622,134 @@ Napi::Value SetWaypointName(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// addWaypoint(handle, name, [x, y, z]) — appends a free waypoint and answers
+// with the index it landed at.
+//
+// **Appending is the whole reason this needs no new addressing scheme.** A
+// waypoint's address is its index into the list `getWaynet` emits, and an
+// append leaves every existing index naming the waypoint it named before — so
+// the enumeration a pending op was made against is still the one it will be
+// applied against. Anything that inserted in the middle would not be.
+//
+// **`free_point` is not cosmetic.** `WayNet::save` writes free points plus edge
+// endpoints and nothing else, so a new waypoint that is neither is dropped at
+// save and the add would silently do nothing. A waypoint authored here is in no
+// edge — the edge ops are §16.7's W3 — so it has to be free, and it is the
+// same flag `WayNet::load` gives every waypoint in the points section.
+//
+// The other four fields are fixed rather than taken: a waypoint is a name, a
+// position, a direction, a water depth and two flags, and only the first two
+// are things a placement chooses. The direction is the fixture's and retail's
+// resting one, (0, 0, 1); the depth is 0 and neither flag beyond `free_point`
+// is set. Fixed, so that an op carrying a name and a position describes the
+// waypoint completely — which is what makes redo reproduce it exactly.
+//
+// The two refusals are `SetWaypointName`'s, for the same reason: an empty name
+// cannot be addressed by the index+name pair at all, and a duplicate makes
+// every by-name lookup ambiguous.
+Napi::Value AddWaypoint(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  if (!info[1].IsString()) {
+    throw Napi::TypeError::New(env, "name must be a string");
+  }
+  auto const name = info[1].As<Napi::String>().Utf8Value();
+  auto position = Vec3FromValue(env, info[2], "position");
+
+  if (name.empty()) {
+    throw Napi::Error::New(env, "a waypoint name cannot be empty");
+  }
+  auto points = CollectWaypoints(*handle);
+  for (std::size_t other = 0; other < points.size(); ++other) {
+    if (points[other]->name == name) {
+      throw Napi::Error::New(
+          env, "waypoint " + std::to_string(other) + " is already named " + name);
+    }
+  }
+
+  // A world with no waynet at all gets one rather than a refusal: the section
+  // is optional in the format, and "there is nowhere to put it" is not a thing
+  // a user placing a point can act on.
+  if (handle->world->way_net == nullptr) {
+    handle->world->way_net = std::make_shared<zenkit::WayNet>();
+  }
+
+  auto point = std::make_shared<zenkit::WayPoint>();
+  point->name = name;
+  point->water_depth = 0;
+  point->under_water = false;
+  point->position = position;
+  point->direction = zenkit::Vec3 {0.0f, 0.0f, 1.0f};
+  point->free_point = true;
+  handle->world->way_net->points.push_back(point);
+
+  // Recomputed rather than assumed to be `points.size()`: `CollectWaypoints`
+  // drops the null slots of the stored list, so the index the caller will see
+  // is the one that list gives — and the caller checks it against the index its
+  // op claims.
+  return Napi::Number::New(env, static_cast<double>(CollectWaypoints(*handle).size() - 1));
+}
+
+// removeWaypoint(handle, waypoint, name) — the exact inverse of AddWaypoint,
+// and nothing more.
+//
+// **The tail only.** Removing a waypoint in the middle takes every index after
+// it down by one, which is the addressing problem this card deliberately does
+// not open: an arbitrary delete is §16.7's W4 and arrives with §15's undo
+// barrier. Undoing an append is the one removal that renumbers nothing, so it
+// is the one this refuses to be anything else.
+//
+// It also refuses a waypoint any edge still names. An edge holds its endpoints
+// by pointer, so removing one out of the point list would leave an edge into a
+// waypoint the list no longer has — and `WayNet::save` writes edge endpoints,
+// so the removal would be undone by the writer without a word.
+Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  if (!info[1].IsNumber()) {
+    throw Napi::TypeError::New(env, "waypoint must be a number");
+  }
+  auto const requested = info[1].As<Napi::Number>().Int64Value();
+  if (!info[2].IsString()) {
+    throw Napi::TypeError::New(env, "name must be a string");
+  }
+  auto const name = info[2].As<Napi::String>().Utf8Value();
+
+  auto points = CollectWaypoints(*handle);
+  if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
+    throw Napi::Error::New(env, "no waypoint at " + std::to_string(requested));
+  }
+
+  auto const at = static_cast<std::size_t>(requested);
+  if (points[at]->name != name) {
+    throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
+                                  + points[at]->name + ", not " + name
+                                  + " — the waynet has changed under this op");
+  }
+  if (at + 1 != points.size()) {
+    throw Napi::Error::New(env, "only the last waypoint can be removed; " + name + " is "
+                                  + std::to_string(requested) + " of "
+                                  + std::to_string(points.size()));
+  }
+
+  auto const* target = points[at].get();
+  for (auto const& edge : handle->world->way_net->edges) {
+    if (edge.first.get() == target || edge.second.get() == target) {
+      throw Napi::Error::New(env, name + " is an edge endpoint and cannot be removed");
+    }
+  }
+
+  auto& stored = handle->world->way_net->points;
+  for (auto it = stored.end(); it != stored.begin();) {
+    --it;
+    if (it->get() == target) {
+      stored.erase(it);
+      break;
+    }
+  }
+  return env.Undefined();
+}
+
 // Reads `count` numbers out of a JS array. The matrix and the box are both
 // read positionally by native code, so a wrong length is refused rather than
 // padded — a short matrix would leave uninitialized rows in a struct ZenKit
@@ -2131,6 +2259,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));
   exports.Set("setWaypointPosition", Napi::Function::New(env, SetWaypointPosition));
   exports.Set("setWaypointName", Napi::Function::New(env, SetWaypointName));
+  exports.Set("addWaypoint", Napi::Function::New(env, AddWaypoint));
+  exports.Set("removeWaypoint", Napi::Function::New(env, RemoveWaypoint));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));
   exports.Set("_authorFixtureAssets", Napi::Function::New(env, AuthorFixtureAssets));
   return exports;

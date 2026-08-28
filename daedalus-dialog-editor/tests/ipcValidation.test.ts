@@ -1139,4 +1139,50 @@ describe('assertApplyOpsRequest', () => {
       expect(() => assertApplyOpsRequest({ ops: [{ ...rename, to: '' }] })).toThrow(/to/);
     });
   });
+
+  describe('a waypoint add', () => {
+    // The third waynet op (§16.7, W2), and the first with a *nullable* side:
+    // null means "not in the waynet", so one shape covers both the append and
+    // the removal its inverse is. The name is at the top level rather than on a
+    // side, because it describes the one waypoint the op is about whichever
+    // direction it runs.
+    const add = { op: 'AddWaypoint', waypoint: 12, name: 'FP_ADDED', from: null, to: [1, 2, 3] };
+
+    it('is accepted carrying no vob and no path at all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [add] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [{ ...add, from: [1, 2, 3], to: null }] }))
+        .not.toThrow();
+    });
+
+    it('rejects a waypoint index that is not a non-negative integer', () => {
+      for (const bad of [-1, 1.5, '0', NaN, null, undefined]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...add, waypoint: bad }] }))
+          .toThrow(/waypoint/);
+      }
+    });
+
+    it('rejects a name that is not a non-empty string', () => {
+      for (const bad of [undefined, null, 12, '', {}]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...add, name: bad }] })).toThrow(/name/);
+      }
+    });
+
+    it('rejects a side that is neither null nor three finite numbers', () => {
+      for (const bad of [[1, 2], [1, 2, 3, 4], [1, 2, NaN], '1,2,3', 3]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...add, to: bad }] })).toThrow(/to/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...add, from: bad, to: null }] }))
+          .toThrow(/from/);
+      }
+    });
+
+    it('rejects an op that is in the waynet on both sides, or on neither', () => {
+      // Exactly one side is null: an add puts a waypoint where there was none,
+      // and its inverse takes it away again. Both sides filled describes no
+      // edit, and neither describes nothing at all — and both would reach the
+      // binding as an append nobody asked for.
+      expect(() => assertApplyOpsRequest({ ops: [{ ...add, from: [4, 5, 6] }] }))
+        .toThrow(/exactly one/);
+      expect(() => assertApplyOpsRequest({ ops: [{ ...add, to: null }] })).toThrow(/exactly one/);
+    });
+  });
 });

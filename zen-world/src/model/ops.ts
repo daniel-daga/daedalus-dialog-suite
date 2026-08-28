@@ -353,6 +353,42 @@ export interface RenameWaypoint {
 }
 
 /**
+ * A waypoint appended to the waynet, and its removal (§16.7, W2).
+ *
+ * **Appending is what lets this stand on the shipped address.** A waypoint's
+ * address is its index into `getWaynet`'s point list, and an append leaves
+ * every existing index naming the waypoint it named before — so an op made
+ * against the enumeration the overlay is holding is still applied against that
+ * enumeration. An insert in the middle would not be, which is why there is no
+ * "add at" and no slot here.
+ *
+ * The two sides are positions rather than descriptions, because a name and a
+ * position are the whole of what a placement chooses: the binding fixes the
+ * direction, the water depth and both remaining flags, and sets `free_point`
+ * — which is not cosmetic, since `WayNet::save` writes free points plus edge
+ * endpoints and nothing else, so a new waypoint that is neither is dropped at
+ * save. A null side means "not in the waynet", exactly as `AddVob`'s does, so
+ * `invertOp` is the plain swap and a removal needs no op of its own.
+ *
+ * The name sits at the top level rather than on each side because an add and
+ * its inverse are about *one* waypoint: it is the description on the side that
+ * exists, and the guard on the side that does not — the same index+name pair
+ * every other waynet op carries.
+ *
+ * The waypoint this authors is in no edge. Edges are W3, and the binding
+ * refuses to remove a waypoint an edge names for the same reason.
+ */
+export interface AddWaypoint {
+  op: 'AddWaypoint';
+  /** The index it takes: one past the end of `getWaynet`'s point list. */
+  waypoint: number;
+  /** The name it is given — and the guard its removal is checked against. */
+  name: string;
+  from: ZenPosition | null;
+  to: ZenPosition | null;
+}
+
+/**
  * The removal of a VOB and its whole subtree — **the one op with no inverse.**
  *
  * Deliberately not an `AddVob` with a null `to`. That shape carries a `NewVob`
@@ -379,11 +415,11 @@ export interface DeleteVob {
 
 export type WorldOp =
   MoveVob | RotateVob | SetVobProp | SetVobClassProp | AddVob | ReparentVob
-  | MoveWaypoint | RenameWaypoint | DeleteVob;
+  | MoveWaypoint | RenameWaypoint | AddWaypoint | DeleteVob;
 
 /** The ops that write the waynet rather than a VOB — what `isWaynetOp` narrows
  *  to, and the only ops `applyOps` has no column for. */
-export type WaynetOp = MoveWaypoint | RenameWaypoint;
+export type WaynetOp = MoveWaypoint | RenameWaypoint | AddWaypoint;
 
 /**
  * The tail of every dispatch over `WorldOp`.
@@ -436,7 +472,8 @@ export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob | Delete
  * cannot undo it.
  */
 export function isWaynetOp(op: WorldOp): op is WaynetOp {
-  return op.op === 'MoveWaypoint' || op.op === 'RenameWaypoint';
+  return op.op === 'MoveWaypoint' || op.op === 'RenameWaypoint'
+    || op.op === 'AddWaypoint';
 }
 
 export function renumbersPaths(op: WorldOp): boolean {
@@ -658,6 +695,27 @@ export function renameWaypoint(
   }
 
   return { op: 'RenameWaypoint', waypoint, from: names[waypoint], to };
+}
+
+/**
+ * A waypoint appended to the end of the waynet.
+ *
+ * Takes the payload's own names for the two things it can answer: where the end
+ * *is*, and whether the name is already taken. The second is checked here as
+ * well as in the binding — not instead of it. The binding sees the whole point
+ * list and is the layer that has to refuse; this one is holding the same list
+ * the user just read, and a name they can see is taken is worth refusing before
+ * a round trip rather than after one.
+ */
+export function addWaypoint(
+  names: readonly string[],
+  name: string,
+  to: ZenPosition,
+): AddWaypoint {
+  if (name === '') throw new RangeError('a waypoint name cannot be empty');
+  if (names.includes(name)) throw new RangeError(`a waypoint is already named ${name}`);
+
+  return { op: 'AddWaypoint', waypoint: names.length, name, from: null, to };
 }
 
 /**
@@ -1247,6 +1305,13 @@ export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
     // the name the rename gave it.
     return { ...op, from: op.to, to: op.from };
   }
+  if (op.op === 'AddWaypoint') {
+    // A null side means "not in the waynet", so the swap turns an append into
+    // the removal of the waypoint it appended and back. The name is untouched
+    // by the swap because it is not a side: it describes the one waypoint the
+    // op is about, whichever direction it is going.
+    return { ...op, from: op.to, to: op.from };
+  }
   if (op.op === 'MoveVob') {
     return { ...op, from: op.to, to: op.from };
   }
@@ -1284,6 +1349,15 @@ export interface OpBinding {
    *  refuses an empty name and one another waypoint already carries — the two
    *  refusals the point list can see and this package cannot. */
   setWaypointName(waypoint: number, name: string, to: string): void;
+  /** Appends a free waypoint and answers with the index it landed at, which
+   *  `writeOp` checks against the one the op claims — the same guard an insert
+   *  gets, and for the same reason: a list that has grown under the op would
+   *  make its own inverse remove somebody else. */
+  addWaypoint(name: string, to: ZenPosition): number;
+  /** Removes the **last** waypoint, guarded by its name. The tail only: a
+   *  removal in the middle renumbers, which is W4's job and comes with an undo
+   *  barrier. */
+  removeWaypoint(waypoint: number, name: string): void;
 }
 
 /** One op against the world, and its own inverse — the two directions
@@ -1351,6 +1425,24 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
     binding.setWaypointName(
       op.waypoint, direction === 'to' ? op.from : op.to, op[direction],
     );
+    return;
+  }
+  if (op.op === 'AddWaypoint') {
+    const position = op[direction];
+    if (position === null) {
+      binding.removeWaypoint(op.waypoint, op.name);
+      return;
+    }
+    // The same guard an inserted VOB gets. If the point list has grown since
+    // the op was made, the waypoint lands at an index this op does not name —
+    // and its own inverse would then remove whatever is at the tail.
+    const landed = binding.addWaypoint(op.name, position);
+    if (landed !== op.waypoint) {
+      binding.removeWaypoint(landed, op.name);
+      throw new RangeError(
+        `the new waypoint landed at ${landed}, not ${op.waypoint} — the waynet has grown`,
+      );
+    }
     return;
   }
   if (op.op === 'DeleteVob') {

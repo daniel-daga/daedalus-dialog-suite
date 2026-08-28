@@ -1868,6 +1868,102 @@ describe('a waypoint dragged in the viewport', () => {
       expect(await screen.findByDisplayValue('WP_MIDDLE')).toBeInTheDocument();
     });
   });
+
+  describe('added at the picked terrain point', () => {
+    // W2 (§16.7). It appends, so it renumbers nothing and needs no addressing
+    // scheme of its own — and it is offered only while the overlay is on,
+    // because the overlay is the only thing that draws the result.
+    async function addWaypoint(name?: string) {
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+
+      if (name !== undefined) {
+        fireEvent.change(screen.getByTestId('world-waypoint-add-name'), {
+          target: { value: name },
+        });
+      }
+      fireEvent.click(screen.getByTestId('world-waypoint-add-confirm'));
+    }
+
+    it('becomes an AddWaypoint one past the end, with a null origin', async () => {
+      // The null side is what makes the inverse a removal with no op of its
+      // own, exactly as it is for a placed VOB.
+      await openWithWaynet();
+
+      await addWaypoint('FP_ADDED');
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+        op: 'AddWaypoint', waypoint: 3, name: 'FP_ADDED', from: null, to: TERRAIN,
+      }]));
+    });
+
+    it('suggests a free-point name, because a name is the only field it has', async () => {
+      await openWithWaynet();
+
+      await addWaypoint();
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
+        expect.objectContaining({ op: 'AddWaypoint', name: 'FP_NEW_3' }),
+      ]));
+    });
+
+    it('refuses a name the payload already carries before the round trip', async () => {
+      await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+
+      fireEvent.change(screen.getByTestId('world-waypoint-add-name'), {
+        target: { value: 'WP_MIDDLE' },
+      });
+
+      expect(screen.getByTestId('world-waypoint-add-confirm')).toBeDisabled();
+    });
+
+    it('re-reads the overlay payload, which is the only thing that can grow it', async () => {
+      // The positions column is a typed array the point cloud draws through and
+      // it cannot be appended to — and the VOB projection has no row for a
+      // waypoint at all. Nothing but a fresh payload puts the new one on screen.
+      await openWithWaynet();
+      const grown = waynetPayload();
+      api.getWorldWaynet.mockResolvedValueOnce(grown as never);
+
+      await addWaypoint('FP_ADDED');
+
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(2));
+    });
+
+    it('is not offered while the waynet overlay is off', async () => {
+      // Nothing would draw the waypoint, and the gizmo could not reach it.
+      await openWorld();
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+
+      expect(await screen.findByTestId('world-place-vob')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-add-waypoint')).not.toBeInTheDocument();
+    });
+
+    it('re-reads the payload on undo too, and lets go of the waypoint', async () => {
+      // Undo removes the tail. A gizmo left standing on it would be sitting on
+      // an index the waynet no longer has.
+      await openWithWaynet();
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+      await addWaypoint('FP_ADDED');
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(2));
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await waitFor(() => expect(mockSelectedWaypoint).toBe(1));
+
+      api.undoWorldEdit.mockResolvedValueOnce([{
+        op: 'AddWaypoint', waypoint: 3, name: 'FP_ADDED', from: TERRAIN, to: null,
+      }] as never);
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(3));
+      expect(mockSelectedWaypoint).toBeNull();
+    });
+  });
 });
 
 describe('a class property edited in the grid', () => {

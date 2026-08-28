@@ -2583,9 +2583,11 @@ correct and a third mode would author a representation ZenGin does not have.
 
 ### 14.2 Waynet
 
-`MoveWaypoint` and `RenameWaypoint` exist. Parity still wants add, delete,
-connect and disconnect edges, freepoint authoring (the `FP_` convention), and
-waypoint direction — which the binding deliberately leaves alone.
+`MoveWaypoint`, `RenameWaypoint` and `AddWaypoint` exist, and the last of them
+*is* freepoint authoring — every waypoint it makes is a free point, because
+`WayNet::save` writes nothing else that is in no edge. Parity still wants
+delete, connect and disconnect edges, and waypoint direction — which the binding
+deliberately leaves alone.
 
 The gizmo that produces a `MoveWaypoint` landed 2026-08-28 (§7) and the rename
 the same day (§16.7, W1), the latter in the waypoint panel rather than the
@@ -2897,15 +2899,18 @@ documentation-only.
 
 ### 16.7 Waynet editing — the edge ops, and add/delete/rename
 
-The gizmo landed, so the one op that exists is now reachable; nothing below is.
+Three of the four have landed: the move's gizmo, W1's rename and W2's append.
+W3 and W4 are what is left.
 
-**The addressing problem is the whole job and it is untouched.** `MoveWaypoint`
-addresses a waypoint by its index into the list `getWaynet` emits, and that is
-safe only because a move inserts, deletes and reorders nothing. Every op left
-here breaks it, and names cannot be the fix — nothing in the format promises
-they are unique, which is why the binding matches edge endpoints by pointer
-identity. **Retail happens to have no duplicate** — 24 worlds, 12,341 waypoints,
-0 collisions even case-insensitively — but that is a fact about the shipped data,
+**The addressing problem is the whole job and it is still untouched.**
+`MoveWaypoint` addresses a waypoint by its index into the list `getWaynet`
+emits, and that is safe only because a move inserts, deletes and reorders
+nothing. W1 and W2 earned that same address — a rename and an append renumber
+nothing either — so what is left of the problem is W4's alone, and names cannot
+be the fix either — nothing in the format promises they are unique, which is
+why the binding matches edge endpoints by pointer identity. **Retail happens to
+have no duplicate** — 24 worlds, 12,341 waypoints, 0 collisions even
+case-insensitively — but that is a fact about the shipped data,
 not a guarantee about a world somebody edits, and an *op* that persists an
 address needs the guarantee. The jump (§16.8) can key on names precisely because
 a jump is read-only.
@@ -2920,7 +2925,8 @@ edge memberships, and those are an enumerable list.
 
 **Split into increments 2026-08-28.** The addressing problem is real but it is
 not evenly distributed: it bites only the ops that *renumber*, and two of the
-four do not.
+four do not — W1 and W2 both landed on the shipped index+name pair, which is the
+split holding.
 
 **The idiom the safe increments reuse is already shipped.**
 `setWaypointPosition` addresses a waypoint by index *and* carries its name as a
@@ -2967,13 +2973,44 @@ ambiguous). Neither is forbidden by the format; retail has neither.
   rather than diverging from it; the pair is wrong together or right together,
   and which it should be is a fidelity-harness question, not this card's.
 
-**W2 — add a free waypoint, appended.** Appending leaves every existing index
-valid, so again no new scheme. It must be a *free* point (the `FP_` convention)
-for a reason that is not cosmetic: `WayNet::save` writes free points plus edge
-endpoints, so a non-free waypoint with no edges is dropped at save and the add
-would silently do nothing. Authoring a non-free waypoint therefore belongs with
-W3, not here. Inverse is deleting the one just appended, which is the tail and
-renumbers nothing.
+**W2 — add a free waypoint, appended. Landed 2026-08-28**, exactly as sized.
+`AddWaypoint` → `addWaypoint`/`removeWaypoint`, the shipped index+name pair
+unchanged because an append leaves every existing index naming the waypoint it
+named before. The op's two sides are *nullable positions* and its name sits at
+the top level: null means "not in the waynet", so `invertOp` is the plain swap
+and the removal needs no op of its own, and the name describes the waypoint on
+the side that exists and guards the index on the side that does not. The UI is a
+second button on the terrain-point bar, offered only while the overlay is on —
+nothing else draws a waypoint, so one added without it would be invisible and
+unpickable the moment it landed.
+
+The free-point flag is the load-bearing part and it is pinned by a test that
+fails without it: sabotaged to `free_point = false`, the save-and-reload case
+reports the appended waypoint missing from the reloaded world, because
+`WayNet::save` writes free points plus edge endpoints and this one is in no
+edge. Everything but the name and the position is fixed by the binding —
+direction (0, 0, 1), depth 0, not underwater — so a name and a position describe
+the waypoint completely, which is what lets redo reproduce it exactly.
+
+`removeWaypoint` is **the tail only**, and refuses a waypoint any edge names.
+Both refusals are the card's scope holding: a removal in the middle renumbers
+and is W4's, and removing an edge endpoint would leave an edge into a waypoint
+the point list does not have — which `WayNet::save` would then write straight
+back in. W4 generalises this call rather than adding a second one.
+
+Three things worth knowing next:
+
+- **The overlay payload is re-read whole after an add**, which is the waynet's
+  version of what a structural VOB op does to the columnar index. It cannot be
+  patched: `positions` is a typed array the point cloud and the edge lines draw
+  *through*, and a typed array cannot grow.
+- **`applyWaypointPositions` and `applyWaypointNames` have no counterpart here**,
+  deliberately. They exist because a move and a rename can be written into the
+  payload in place; an append cannot, so it takes the re-read instead.
+- `verify-world-edit.js` was **not** extended, for W1's reason: it needs a
+  Gothic install and a GPU, and an unrun addition to a verification script is
+  worse than none. Nothing about an added waypoint has an engine verdict — it
+  joins the four ops already in that queue (§16.2).
 
 **W3 — edge add and delete.** The hazard is stated above and unchanged: removing
 a waypoint's last edge deletes the waypoint, so an edge op is not invertible *as
@@ -2995,8 +3032,8 @@ id every op would carry — stays on record as the alternative if a future
 capability needs undo across a waypoint delete specifically, but nothing does
 today.
 
-**Sequence: W1 → W2 → W3 → W4.** W1 and I1/I2 landed 2026-08-28. W2 is a
-session; W3 is the one to watch and the likeliest to come back as Triage. W4 is
+**Sequence: W1 → W2 → W3 → W4.** W1, W2 and I1/I2 landed 2026-08-28. W3 is the
+one to watch and the likeliest to come back as Triage. W4 is
 now unblocked and a session on its own: `DeleteWaypoint`, the binding call, the
 validator branch, the barrier wiring — no new addressing scheme, per the
 decision above.

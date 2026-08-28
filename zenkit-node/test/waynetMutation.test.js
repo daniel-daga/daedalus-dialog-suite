@@ -240,3 +240,121 @@ test('setWaypointName survives a save and a reload, edges intact', () => {
     require('node:fs').rmSync(saved, { force: true });
   }
 });
+
+// addWaypoint / removeWaypoint — the append and its exact inverse
+// (level-editor.md §16.7, W2).
+//
+// Appending leaves every existing index valid, which is what lets this op stand
+// on the same index+name pair a move and a rename do without a new addressing
+// scheme. The one thing these tests exist to pin beyond that is the free-point
+// flag: `WayNet::save` writes free points plus edge endpoints, so a new
+// waypoint that is not free and is in no edge is dropped at save and the add
+// would silently do nothing.
+
+test('addWaypoint appends a free waypoint and answers with its index', () => {
+  const handle = load();
+  const before = zenkit.getWaynet(handle);
+
+  const at = zenkit.addWaypoint(handle, 'FP_ADDED', [12.5, 34.5, 56.5]);
+
+  assert.strictEqual(at, before.count);
+  const after = zenkit.getWaynet(handle);
+  assert.strictEqual(after.count, before.count + 1);
+  assert.strictEqual(after.names[at], 'FP_ADDED');
+  assert.deepStrictEqual(
+    Array.from(new Float32Array(after.positions)).slice(at * 3, at * 3 + 3),
+    [12.5, 34.5, 56.5]
+  );
+  // Bit 0 of the flags column is `free_point` — the bit that decides whether
+  // `WayNet::save` writes this waypoint at all.
+  assert.strictEqual(new Uint32Array(after.flags)[at] & 1, 1);
+});
+
+test('addWaypoint leaves every existing waypoint and every edge alone', () => {
+  const handle = load();
+  const before = zenkit.normalizeWorld(load());
+
+  zenkit.addWaypoint(handle, 'FP_ADDED', [12.5, 34.5, 56.5]);
+
+  const after = zenkit.normalizeWorld(handle);
+  assert.deepStrictEqual(after.waynet.edges, before.waynet.edges);
+  for (const point of before.waynet.waypoints) {
+    assert.deepStrictEqual(
+      after.waynet.waypoints.find((candidate) => candidate.name === point.name), point
+    );
+  }
+});
+
+test('addWaypoint refuses an empty name and one another waypoint already has', () => {
+  // The same two refusals `setWaypointName` makes, for the same reason and in
+  // the same layer: the point list is the only thing that can see a collision,
+  // and an unnamed waypoint cannot be addressed by the index+name pair at all.
+  const handle = load();
+  const count = zenkit.getWaynet(handle).count;
+
+  assert.throws(() => zenkit.addWaypoint(handle, '', [1, 2, 3]), /empty/);
+  assert.throws(() => zenkit.addWaypoint(handle, 'WP_FIXTURE_A', [1, 2, 3]), /already/);
+  assert.strictEqual(zenkit.getWaynet(handle).count, count);
+});
+
+test('an added waypoint survives a save and a reload', () => {
+  // The assertion the free-point flag exists for. Without it the appended point
+  // is in no edge and is not written, so this reload would find the waynet it
+  // started with and the add would have been a no-op nobody was told about.
+  const handle = load();
+  zenkit.addWaypoint(handle, 'FP_ADDED', [12.5, 34.5, 56.5]);
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-add-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+    const was = zenkit.normalizeWorld(load());
+
+    assert.strictEqual(dump.waynet.waypoints.length, was.waynet.waypoints.length + 1);
+    assert.deepStrictEqual(
+      dump.waynet.waypoints.find((point) => point.name === 'FP_ADDED').position,
+      [12.5, 34.5, 56.5]
+    );
+    assert.strictEqual(dump.waynet.edges.length, was.waynet.edges.length);
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});
+
+test('removeWaypoint undoes an add exactly', () => {
+  const handle = load();
+  const before = zenkit.normalizeWorld(load());
+
+  const at = zenkit.addWaypoint(handle, 'FP_ADDED', [12.5, 34.5, 56.5]);
+  zenkit.removeWaypoint(handle, at, 'FP_ADDED');
+
+  const after = zenkit.normalizeWorld(handle);
+  assert.deepStrictEqual(after.waynet, before.waynet);
+});
+
+test('removeWaypoint refuses a stale name, and anything but the tail', () => {
+  // The tail is the whole of what this op is for: it is the inverse of an
+  // append and nothing else. Removing a waypoint in the middle renumbers every
+  // index after it, which is W4's job and comes with §15's barrier.
+  const handle = load();
+  const at = zenkit.addWaypoint(handle, 'FP_ADDED', [12.5, 34.5, 56.5]);
+
+  assert.throws(() => zenkit.removeWaypoint(handle, at, 'FP_OTHER'), /changed under this op/);
+  assert.throws(() => zenkit.removeWaypoint(handle, 0, zenkit.getWaynet(handle).names[0]), /last/);
+  assert.throws(() => zenkit.removeWaypoint(handle, at + 1, 'FP_ADDED'), /no waypoint/);
+  assert.strictEqual(zenkit.getWaynet(handle).count, at + 1);
+});
+
+test('removeWaypoint refuses a waypoint an edge still names', () => {
+  // An edge holds its endpoints by pointer, so removing a point the edge list
+  // still names would leave an edge into a waypoint the point list does not
+  // have — and `WayNet::save` would write it straight back in.
+  const handle = load();
+  const last = zenkit.getWaynet(handle).count - 1;
+
+  assert.throws(
+    () => zenkit.removeWaypoint(handle, last, zenkit.getWaynet(handle).names[last]), /edge/
+  );
+});

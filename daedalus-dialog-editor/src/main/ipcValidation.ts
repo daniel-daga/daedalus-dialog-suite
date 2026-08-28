@@ -359,7 +359,8 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
     if (!isPlainObject(op)) throw new Error('Invalid op: expected a plain object');
     if (op.op !== 'MoveVob' && op.op !== 'RotateVob' && op.op !== 'SetVobProp'
       && op.op !== 'SetVobClassProp' && op.op !== 'AddVob' && op.op !== 'ReparentVob'
-      && op.op !== 'MoveWaypoint' && op.op !== 'RenameWaypoint' && op.op !== 'DeleteVob') {
+      && op.op !== 'MoveWaypoint' && op.op !== 'RenameWaypoint' && op.op !== 'AddWaypoint'
+      && op.op !== 'DeleteVob') {
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
 
@@ -404,6 +405,35 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       // is a question only the point list can answer, and the binding does.
       if (typeof op.to !== 'string' || op.to.length === 0) {
         throw new Error('Invalid op: to must be a non-empty name');
+      }
+      continue;
+    }
+
+    // The third waynet op, beside its two siblings and for the same reason. Its
+    // own shape is the difference again: the sides are *nullable* positions,
+    // because a null side means "not in the waynet" and one op shape is both the
+    // append and the removal it inverts to.
+    if (op.op === 'AddWaypoint') {
+      if (typeof op.waypoint !== 'number' || !Number.isInteger(op.waypoint) || op.waypoint < 0) {
+        throw new Error('Invalid op: waypoint must be a non-negative integer');
+      }
+      // At the top level rather than on a side: it is the description on the
+      // side that exists and the index's guard on the side that does not, so
+      // there is no direction in which it may be absent. Whether it is a name
+      // some other waypoint already carries is a question only the point list
+      // can answer, and the binding does.
+      if (typeof op.name !== 'string' || op.name.length === 0) {
+        throw new Error('Invalid op: name must be a non-empty name');
+      }
+      for (const field of ['from', 'to'] as const) {
+        if (op[field] !== null && !isFiniteNumbers(op[field], 3)) {
+          throw new Error(`Invalid op: ${field} must be three finite numbers, or null`);
+        }
+      }
+      // Exactly one side in the waynet. Two would describe no edit and none
+      // would describe nothing, and both would reach the binding as an append.
+      if ((op.from === null) === (op.to === null)) {
+        throw new Error('Invalid op: exactly one of from and to must be null');
       }
       continue;
     }

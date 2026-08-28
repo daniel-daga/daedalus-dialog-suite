@@ -37,6 +37,7 @@ import {
   moveVob,
   moveWaypoint,
   renameWaypoint,
+  addWaypoint,
   multiplyRotation,
   placeBounds,
   renumbersPaths,
@@ -50,6 +51,7 @@ import {
   type ClassProps,
   type MoveWaypoint,
   type RenameWaypoint,
+  type AddWaypoint,
   type NewVob,
   type OpBinding,
   type RotateVob,
@@ -406,6 +408,8 @@ describe('a rotate op', () => {
   it('reaches the binding as setVobRotation, with the box it carries', () => {
     const calls: unknown[][] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: (path, to) => calls.push(['position', path, to]),
       setVobRotation: (path, to, bbox) => calls.push(['rotation', path, to, bbox]),
       setVobProp: (path, props) => calls.push(['props', path, props]),
@@ -427,6 +431,8 @@ describe('a rotate op', () => {
     // rotating back — not by a move.
     const calls: string[] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); calls.push(`move ${path}`); },
       setVobRotation: (path) => calls.push(`rotate ${path}`),
       setVobProp: (path) => calls.push(`props ${path}`),
@@ -835,6 +841,8 @@ describe('a class-property op', () => {
   it('reaches the binding as setVobClassProp, in whichever direction it is written', () => {
     const calls: Array<[string, ClassProps]> = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a base property change'); },
@@ -862,6 +870,8 @@ describe('a class-property op', () => {
     // ever read `op.to` would leave the edited field standing after a refusal.
     const calls: Array<[string, ClassProps]> = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a base property change'); },
@@ -998,6 +1008,8 @@ describe('an add op', () => {
 
   it('has to be alone in its batch when it has a parent, and need not be otherwise', () => {
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (_spec, parentPath) => (parentPath === null ? '2' : `${parentPath}/1`),
@@ -1018,6 +1030,8 @@ describe('an add op', () => {
   it('reaches the binding with the parent it was made for', () => {
     const calls: string[] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (spec, parentPath) => {
@@ -1045,6 +1059,8 @@ describe('an add op', () => {
     // wearing an item's name.
     let seen: NewVob | null = null;
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (spec) => { seen = spec; return '2'; },
@@ -1065,6 +1081,8 @@ describe('an add op', () => {
   it('reaches the binding as an insert one way and a delete the other', () => {
     const calls: string[] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a property change'); },
@@ -1088,6 +1106,8 @@ describe('an add op', () => {
     // since the op was made, the VOB lands at a different path — and the op's
     // own inverse would then delete somebody else.
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '7',
@@ -1103,6 +1123,8 @@ describe('an add op', () => {
   it('is unwound by a delete when a later op in the batch is refused', () => {
     const calls: string[] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); },
       setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
@@ -1309,6 +1331,8 @@ describe('a selection duplicated as one batch', () => {
     // safe and a delete in one still not.
     const landed: string[] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (_spec, parentPath) => {
@@ -1336,6 +1360,8 @@ describe('a selection duplicated as one batch', () => {
     // The relaxation is a batch of adds, not a batch of structural ops. A delete
     // takes every VOB after it down by one wherever it sits — paths included.
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '0/2', deleteVob: () => {},
@@ -1455,6 +1481,8 @@ describe('a delete op', () => {
   it('reaches the binding as a delete of the path it carries', () => {
     const calls: string[] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a property change'); },
@@ -1475,6 +1503,8 @@ describe('a delete op', () => {
     // Because it renumbers: every other op in the batch carries a path resolved
     // before the batch ran, and a delete moves the VOB each of them names.
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '2',
@@ -1549,6 +1579,8 @@ describe('a reparent op', () => {
     // VOB from where the op *put* it, not from where it started.
     const calls: string[] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: () => { throw new Error('not a property change'); },
@@ -1572,6 +1604,8 @@ describe('a reparent op', () => {
 
   it('refuses a move that did not land where the op says it would', () => {
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '0', deleteVob: () => {},
@@ -1611,6 +1645,8 @@ describe('a reparent op', () => {
     // one legitimately appears in; an add with a parent is refused with the
     // reparent, and that case is in the add's own describe.
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
@@ -1728,6 +1764,8 @@ describe('committing ops to the world', () => {
   function fakeBinding(refuse?: string) {
     const calls: Array<[string, [number, number, number]]> = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: (path, to) => {
         if (path === refuse) throw new Error(`no vob at ${path}`);
         calls.push([path, to]);
@@ -1780,6 +1818,8 @@ describe('committing ops to the world', () => {
     // attached one would leave a swapped visual culled by the old visual's box.
     const calls: Array<[string, VobProps & { bbox?: ZenBounds }]> = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: (path, props) => { calls.push([path, props]); },
@@ -1806,6 +1846,8 @@ describe('committing ops to the world', () => {
   it('unwinds a refused property batch back to the props each VOB had', () => {
     const calls: Array<[string, VobProps & { bbox?: ZenBounds }]> = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a turn'); },
       setVobProp: (path, props) => {
@@ -1853,6 +1895,8 @@ describe('moving a waypoint', () => {
   function waynetBinding(refuse?: string) {
     const calls: unknown[][] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: (path, to) => calls.push(['position', path, to]),
       setVobRotation: () => { throw new Error('not a rotation'); },
       setVobProp: () => { throw new Error('not a prop'); },
@@ -1993,6 +2037,8 @@ describe('renaming a waypoint', () => {
   function renameBinding(refuse?: string) {
     const calls: unknown[][] = [];
     const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
       setVobPosition: () => { throw new Error('not a move'); },
       setVobRotation: () => { throw new Error('not a rotation'); },
       setVobProp: () => { throw new Error('not a prop'); },
@@ -2094,5 +2140,105 @@ describe('renaming a waypoint', () => {
     };
 
     expect(() => applyWaypointNames([...NAMES], [op])).toThrow(/3/);
+  });
+});
+
+describe('adding a waypoint', () => {
+  // W2 (§16.7). It appends, so every existing index still names the waypoint it
+  // named before and the op needs no addressing scheme of its own — and its
+  // inverse is the removal of the tail it just made, which renumbers nothing
+  // either.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+
+  function addBinding(landsAt?: number) {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+      addWaypoint: (name, to) => {
+        calls.push(['add', name, to]);
+        return landsAt ?? NAMES.length;
+      },
+      removeWaypoint: (waypoint, name) => { calls.push(['remove', waypoint, name]); },
+    };
+    return { binding, calls };
+  }
+
+  it('takes the index one past the end, and carries its name at the top level', () => {
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+
+    expect(op).toEqual({
+      op: 'AddWaypoint', waypoint: 3, name: 'FP_ADDED', from: null, to: [1, 2, 3],
+    });
+  });
+
+  it('is refused for an empty name and one the payload already has', () => {
+    expect(() => addWaypoint(NAMES, '', [1, 2, 3])).toThrow(/empty/);
+    expect(() => addWaypoint(NAMES, 'WP_FIXTURE_A', [1, 2, 3])).toThrow(/already/);
+  });
+
+  it('inverts into the removal of the waypoint it made, keeping the name', () => {
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+    const undo = invertOp(op) as AddWaypoint;
+
+    expect(undo.from).toEqual([1, 2, 3]);
+    expect(undo.to).toBeNull();
+    expect(undo.name).toBe('FP_ADDED');
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('reaches the binding as addWaypoint, and as removeWaypoint when undone', () => {
+    const { binding, calls } = addBinding();
+
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual([
+      ['add', 'FP_ADDED', [1, 2, 3]],
+      ['remove', 3, 'FP_ADDED'],
+    ]);
+  });
+
+  it('puts back a waypoint that landed at an index the op does not name', () => {
+    // The waynet grew under the op — so the waypoint is at an index this op
+    // cannot address, and its own inverse would remove whatever is at the tail.
+    // Refused, and undone before the refusal, exactly as an insert is.
+    const { binding, calls } = addBinding(7);
+
+    expect(() => commitOps(binding, [addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3])]))
+      .toThrow(/landed at 7/);
+    expect(calls).toEqual([
+      ['add', 'FP_ADDED', [1, 2, 3]],
+      ['remove', 7, 'FP_ADDED'],
+    ]);
+  });
+
+  it('is neither structural nor renumbering, and is a waynet op', () => {
+    // Structural is about the *VOB* enumeration, which a waypoint has no part
+    // in — so the columnar projection is not re-read for this, and the overlay's
+    // own payload is what has to be.
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(isBarrierOp(op)).toBe(false);
+    expect(isWaynetOp(op)).toBe(true);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+
+    expect(() => applyOps(live, [addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3])]))
+      .toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
   });
 });

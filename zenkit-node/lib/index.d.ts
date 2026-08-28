@@ -326,6 +326,38 @@ export function setWaypointName(
   handle: WorldHandle, waypoint: number, name: string, newName: string,
 ): void;
 /**
+ * Append a free waypoint and answer with the index it landed at (§16.7, W2).
+ *
+ * **Appending is what makes this safe without a new addressing scheme**: every
+ * existing index still names the waypoint it named before, so a pending op is
+ * still applied against the enumeration it was made against.
+ *
+ * The waypoint is a **free point**, and that is not cosmetic — `WayNet::save`
+ * writes free points plus edge endpoints and nothing else, so a new waypoint
+ * that is neither is dropped at save. Everything but the name and the position
+ * is fixed: direction (0, 0, 1), water depth 0, not underwater. Fixed so that a
+ * name and a position describe the waypoint completely, which is what lets an
+ * op redo it exactly.
+ *
+ * Refuses an empty name and one another waypoint already carries, exactly as
+ * `setWaypointName` does.
+ */
+export function addWaypoint(
+  handle: WorldHandle, name: string, position: readonly [number, number, number],
+): number;
+/**
+ * Remove the **last** waypoint — the exact inverse of `addWaypoint`, and
+ * nothing more.
+ *
+ * `name` guards the index the same way it does everywhere else in the waynet.
+ * Anything but the tail is refused: a removal in the middle renumbers every
+ * index after it, which is a delete of an arbitrary waypoint (§16.7, W4) and
+ * comes with an undo barrier this call has no business taking on its own. A
+ * waypoint any edge still names is refused too — the edge holds it by pointer,
+ * and the writer would put it straight back.
+ */
+export function removeWaypoint(handle: WorldHandle, waypoint: number, name: string): void;
+/**
  * Write the world to `path`, through a temp file and a rename.
  *
  * **Throws for a world that was not loaded from a `zCArchiverBinSafe`
