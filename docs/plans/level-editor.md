@@ -3821,8 +3821,39 @@ authoring path that *consumes* that catalogue, not a second hand-written list of
 fields per class. If it turns into the latter, the catalogue's shape is wrong
 and that is the finding worth reporting.
 
-**Order, from §14.1's own inventory:** `oCItem`, `zCVobLight`,
-`zCVobSound`/`Daytime`, then the trigger family, then `oCMobInter` and friends.
+**Split into increments 2026-08-28, after D2 hit the wall this card is.**
+D2 assumed a duplicate could be authored and then have its class properties
+written. It cannot: `InsertVob` hard-codes `vob->type = zCVob`
+(`zenkit-node/src/binding.cc:1707`) and `SetVobClassProp` switches on the VOB's
+real type, so its `default:` throws for a `zCVob`. **The class is the object's
+C++ type, not a field the spec is missing** — which is why this card blocks D2
+rather than sitting beside it.
+
+**What the binding already proves, and what it costs.** `insertItemVob`
+(`binding.cc:1863`) constructs a real `oCItem` — `make_shared<VItem>`,
+`type = oCItem`, the visual left empty because the engine derives item visuals
+from the script instance. It is **exported to JS and called from nowhere**: no
+`zen-world` or editor code references it. So half of I1 is shipped and untested
+in anger. The cost it also reveals: its comment says it mirrors the fixture's
+`VItem` construction because **ZenKit structs have uninitialized fields**, so
+every class needs its own construction that initializes every field. This is
+not a type-tag switch, and an increment that treats it as one will author
+garbage.
+
+**I1 — `AddVob` can name a class, and `oCItem` is the first.** Route the op to a
+class-dispatched constructor and wire the existing `insertItemVob` behind it, so
+the increment proves the mechanism against a class whose C++ side already
+exists. `oCItem` also brings the validation that cannot live in the main process
+(below), so I1 settles that shape once for every class after it. Every layer in
+one change, per `ReparentVob`'s rule.
+
+**I2 — the next classes**, `zCVobLight` and `zCVobSound`/`Daytime`, each needing
+its own field-complete construction against `fixture.cc`'s idiom. The catalogue
+is the field list; if I2 finds itself writing a second list, the catalogue's
+shape is wrong and that is the finding.
+
+**Then the trigger family, then `oCMobInter` and friends** — more of I2's shape,
+carded when I2 has shown what one costs.
 
 **`oCItem` is first and is also the awkward one.** Its `instance` is the
 validation that cannot live in the main process at all: there is no semantic
@@ -3833,3 +3864,55 @@ no instances, `primedModels` is a take-once cache that deletes as it reads, and
 only side holding the index. It cannot be a hard refusal either: a world may
 legitimately be edited with no script project open, so an empty index means
 "nothing is known", never "nothing is legal".
+
+### 16.16 The scene tree has no filter, and no per-class visibility (§14.4)
+
+Two Spacer verbs from the editor-UX half of the parity inventory, carded
+together because the second is the first one's data reaching the render path.
+
+**Search and filter.** The scene tree lists what the world holds and offers no
+way to narrow it — on a retail world that is 41,393 VOBs. Spacer filters by name
+and by VOB type, and both are worth having. The columns to filter on are already
+in the summary `vobIndex` emits (`name`, and the class `getVobProps` reports),
+so this is renderer work over data that has crossed the boundary once; it must
+not become a per-VOB IPC call.
+
+**Per-class visibility.** Spacer's VOB-type toggles, hiding a whole class in the
+viewport. The filter above decides which VOBs a query selects; this decides
+which the scene draws, so the two want one predicate and not two. Do the filter
+first and let visibility consume it.
+
+**The performance constraint is the whole design.** `worldStore` deliberately
+holds no `immer` because the summary carries `ArrayBuffer` columns, and
+`CLAUDE.md`'s rule against passing `semanticModel` into memoized components
+applies here for the same reason. A filter that rebuilds a 41,393-element array
+on every keystroke, or that lands in a component's props as a new object each
+render, will be slower than no filter at all. Debounce, and derive.
+
+**Not in scope:** saving a filter, named filter sets, or a query language.
+Spacer has none of them.
+
+### 16.17 The rest of `zCVob` (§14.1 1.8)
+
+The base-class fields the property grid still does not expose, after the class
+catalogue closed `oCMob*`, the trigger family, `zCMover`, `zCPFXController` and
+`zCVobAnimate`. Same idiom as those increments — the catalogue, its bounds, and
+the refusal-counter field behaviour the grid already has — so the risk here is
+low and the value is that a modder stops needing Spacer for the last few fields.
+
+**V1 — preset name, `visualCamAlign`, bias.** Three fields, no hazards known.
+`presetName` is a string the ASCII writer already round-trips; `visualCamAlign`
+is an enum and wants the catalogue's bound, not a free integer.
+
+**V2 — `dynamicShadows`, `sleepMode`, and the decal parameters.** The decals are
+the awkward part and are the reason V2 is separate: a decal is not a mesh but a
+textured quad, `DECAL` resolves 0 of 23 in the visual inventory (§5), and A5's
+lesson was learned on `decalAlphaWeight` — the one `write_byte` field reachable
+outside a savegame, invisible to CI until the fixture grew a `VisualDecal`. So
+**a decal field added here needs the fixture to carry it**, or the round-trip
+proves nothing.
+
+**The measurement to take before writing either card's test:** how many retail
+VOBs carry a non-default value for each field. The class increments took that
+over NewWorld/OldWorld/AddonWorld's 41,393 VOBs and it repeatedly changed what
+the bound should be.

@@ -124,16 +124,24 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Copy/paste D2 — the fields `NewVob` drops** (class props, `physicsEnabled`)
-  as a follow-up op in the same batch — blocked: `insertVob` authors a `zCVob`,
-  so a duplicate has no class to write class props to and §16.15 comes first;
-  `physicsEnabled` alone is left and its sequencing is a call. Unowned. §16.14
+- **Class insertion I1 — `AddVob` names a class** — the wall D2 hit: `InsertVob`
+  hard-codes `zCVob`; `insertItemVob` ships unused with half of it. §16.15
+- **Class insertion I2 — `zCVobLight`, `zCVobSound`/`Daytime`** — each a
+  field-complete construction, consuming the catalogue. Unowned. §16.15
+- **Copy/paste D2 — the fields `NewVob` drops** — unblocked by I1; what is left
+  after it is `physicsEnabled`, **Daniel's call** (A6: no save keeps it). §16.14
 - **Waynet W2 — add a free waypoint, appended** — must be an `FP_` free point
   or `WayNet::save` drops it. Unowned. §16.7
 - **Waynet W3 — edge add and delete** — the op carries the edge memberships it
   destroys; §15's barrier is the fallback. Unowned. §16.7
-- **Class-specific insertion** — `insertVob` authors `zCVob` and nothing else;
-  the class-property catalogue is the field list to author from. Unowned. §16.15
+- **VOB search and filter in the scene tree** — by name and class, over columns
+  already in the summary; 41,393 VOBs, so derive, don't rebuild. §16.16
+- **Per-class visibility toggles** — Spacer's VOB-type show/hide, on the
+  filter's predicate. Unowned. §16.16
+- **`zCVob` V1 — preset name, `visualCamAlign`, bias** — catalogue idiom, no
+  known hazards. Unowned. §16.17
+- **`zCVob` V2 — `dynamicShadows`, `sleepMode`, decals** — a decal field needs
+  the fixture to carry it (A5's lesson). Unowned. §16.17
 
 **Release gates**
 
@@ -154,10 +162,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Waynet, and the scripts that name it**
 
-- **Dangling-waypoint Problems rule** — blocked: `ProjectView` carries no
-  world/waypoint data at all, so the rule has no known-waypoints set to check
-  a literal against; needs a small design decision on how that data reaches
-  the Problems pipeline. Unowned. §16.8
+- **Dangling-waypoint Problems rule** — blocked: `ProjectView` holds no
+  world/waypoint data, so the rule has no known-waypoints set; needs a design
+  decision on how that reaches the Problems pipeline. Unowned. §16.8
 
 **zenkit-node / fidelity**
 
@@ -207,11 +214,7 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Copy/paste D3 — copy and paste are two verbs**: `pasteVobs` and a clipboard
-  of specs, `Ctrl+C` / `Ctrl+V`, pasted beside the selection. §16.14
-- **Waynet W1 — rename a waypoint**: `RenameWaypoint` → `setWaypointName`, on
-  the shipped index+name pair, edited in the waypoint panel. §16.7
+*(empty)*
 
-Last flushed 2026-08-28 (four times; D1 and D4 went with the last two, their
-forward facts being §16.14's). The forward facts from the earlier cards are in
-Deferred and in §16.9, and the rest is in `git log`.
+Last flushed 2026-08-28 at the merge to master: D1, D3, D4 and W1: forward facts
+in §16.14 and §16.7, the rest in `git log`.
