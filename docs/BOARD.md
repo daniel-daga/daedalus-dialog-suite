@@ -128,9 +128,10 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Daedalus scripts — where a script names a place**
 
-- **§16.8 W1 — the script-side waypoint index** — derive the `waypoint`
-  parameter from the project (58 `TA_*` declare one), seed only the ~6 engine
-  externals; the parser half already landed. Unowned. §16.8
+- **§16.8 W1 — the script-side waypoint index** — blocked: the extraction half
+  is landed and now tested against the `TA_*` shape (a case-sensitive parameter
+  match was dropping whole files); the lookup half has no unblocked consumer and
+  its third answer needs the other worlds. Unowned. §16.8
 
 **Release gates**
 

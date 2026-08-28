@@ -133,7 +133,9 @@ export function buildWaypointParamIndex(fileModels: Array<{ semanticModel: Seman
   for (const { semanticModel } of fileModels) {
     for (const func of Object.values(semanticModel.functions || {})) {
       const paramIndex = (func.parameters || []).findIndex(
-        (param) => param.name === 'waypoint' && param.type?.toLowerCase() === 'string'
+        // Both halves case-insensitively: Daedalus is, and the corpus spells
+        // the same parameter `waypoint`, `WayPoint` and `WAYPOINT`.
+        (param) => param.name?.toLowerCase() === 'waypoint' && param.type?.toLowerCase() === 'string'
       );
       if (paramIndex !== -1) {
         index[func.name.toLowerCase()] = paramIndex;

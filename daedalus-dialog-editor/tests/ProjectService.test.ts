@@ -621,6 +621,80 @@ FUNC VOID TA_Guard_Day()
       expect(sites['FP_BAKER_OVEN']).toEqual([{ filePath: '/test/TA_Baker.d', functionName: 'TA_Baker_Day' }]);
       expect(sites['WP_GUARD_POST']).toEqual([{ filePath: '/test/TA_Guard.d', functionName: 'TA_Guard_Day' }]);
     });
+
+    // The dominant corpus shape (level-editor.md §16.8): a daily routine calls a
+    // TA_* wrapper whose own signature declares `var string waypoint` as the
+    // *last* of five parameters, and the declaration lives in another file than
+    // the Rtn_* function calling it. 6,223 sites against AI_GotoWP's 6, so a
+    // derivation that only handles a one-parameter helper ships 0.1% of W1.
+    it('resolves a TA_* routine waypoint at the fifth parameter, declared in another file', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const taFile = extractFileMetadataFromSource(
+        `
+FUNC VOID TA_Stand_Guarding (VAR INT start_h, VAR INT start_m, VAR INT stop_h, VAR INT stop_m, VAR STRING waypoint)
+{
+	TA_Min (self, start_h, start_m, stop_h, stop_m, ZS_STAND_GUARDING, waypoint);
+};
+        `,
+        '/test/TA_Wrappers.d'
+      );
+      const rtnFile = extractFileMetadataFromSource(
+        `
+FUNC VOID Rtn_Start_1234()
+{
+	TA_Stand_Guarding (8,0,22,0,"NW_CITY_HABOUR_02");
+	TA_Stand_Guarding (22,0,8,0,"NW_CITY_HABOUR_03");
+};
+        `,
+        '/test/Rtn_Guard.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/TA_Wrappers.d', semanticModel: taFile.semanticModel! },
+        { filePath: '/test/Rtn_Guard.d', semanticModel: rtnFile.semanticModel! }
+      ]);
+
+      expect(sites['NW_CITY_HABOUR_02']).toEqual([
+        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234' }
+      ]);
+      expect(sites['NW_CITY_HABOUR_03']).toEqual([
+        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234' }
+      ]);
+    });
+
+    // Daedalus is case-insensitive, so a declaration spelling the parameter
+    // `WayPoint` names the same thing as one spelling it `waypoint`.
+    it('derives the parameter regardless of how the declaration cases its name', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `
+FUNC VOID TA_Smalltalk (VAR INT start_h, VAR STRING WayPoint)
+{
+	AI_GotoWP(self, WayPoint);
+};
+
+FUNC VOID Rtn_Start_99()
+{
+	TA_Smalltalk (8,"NW_TAVERN_BAR");
+};
+        `,
+        '/test/TA_Cased.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/TA_Cased.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites['NW_TAVERN_BAR']).toEqual([
+        { filePath: '/test/TA_Cased.d', functionName: 'Rtn_Start_99' }
+      ]);
+    });
   });
 
   describe('voice id extraction (semanticMetadataUtils)', () => {

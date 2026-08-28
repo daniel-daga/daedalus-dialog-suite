@@ -3305,6 +3305,48 @@ open) or folding the free-point prefix-match exception in above into whatever
 shape that takes — a small design decision, not a measurement, so it stays
 open rather than being guessed at here.
 
+**W1, picked up 2026-08-28: three of its four bullets were already in the tree,
+and the fourth has no consumer.** W2 could not list a waypoint's routines
+without the index, so it built it — `extractWaypointSites` /
+`buildWaypointParamIndex` are the derivation bullet, the `TA_*` bullet and the
+multi-valued bullet, all three. What this session added is the coverage that
+was missing and the defect it exposed:
+
+- The dominant corpus shape was **untested**. The only tests were a helper
+  taking the waypoint as its sole parameter; nothing covered a `TA_*` wrapper
+  declaring it as the *last* of five, called from an `Rtn_*` function in another
+  file — the shape 6,223 of the 6,229 project-declared sites have. It works, and
+  it is now tested (`ProjectService.test.ts`), so the "ships 0.1 % of the corpus"
+  failure mode is ruled out rather than assumed against.
+- **The parameter name was matched case-sensitively** — `param.name ===
+  'waypoint'` — so a declaration spelling it `WayPoint` or `WAYPOINT` dropped
+  every site calling it, silently and with no way to notice from the UI, since a
+  waypoint with no routines looks exactly like a waypoint no routine names.
+  Daedalus is case-insensitive; the compare now is too, on both halves. Fixed
+  and tested.
+- Still **two of the "~6" engine externals**, unchanged: the plan forbids
+  guessing the rest and nothing measured them this session.
+- `C_Npc.wp` is not in the index and is not worth adding — it is an instance
+  field assignment rather than a call site, so it needs a second extraction
+  path for the 2 sites the corpus has.
+
+**What is left of W1 is the lookup, and both of its consumers are blocked.**
+The lookup exists to answer "where is this name in the world", which is the
+jump (W4, blocked on the mount-lifetime fix in `refactoring-targets.md` §8) and
+the dangling-waypoint rule (blocked on how world data reaches `ProjectView`).
+Nothing in the editor displays a script-side waypoint name today — the only
+waypoint UI is `WaypointPanel`, and the waypoint it describes is selected *in*
+the world, so it never needs to ask whether it is there. Building the lookup now
+would be an exported function with zero callers.
+
+**And the third answer is not implementable from what the app holds.** The
+measurement behind it compares 24 worlds; the editor has *one* world open and no
+index of the others, so it can distinguish "in this world" from "not in this
+world" and can never, on its own, say "no such waypoint anywhere". Whoever
+unblocks a consumer decides that: either the UI says only what it knows ("not in
+this world", never "missing"), or something has to index the other worlds' waynets.
+That is a design decision, not a measurement, so it is not taken here.
+
 ### 16.9 What is left of the ASCII writer — A6, and what `0048` left behind
 
 **A2 and A3 landed 2026-08-28** as patches `0045`, `0046` and `0047`, a chain:
