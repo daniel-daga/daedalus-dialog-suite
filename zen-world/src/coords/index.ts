@@ -275,6 +275,48 @@ export function eulerToZenRotation(euler: readonly number[]): Mat3 {
 }
 
 /**
+ * The world-space turn that takes the pose `from` to the pose `to` — the delta
+ * `rotateVobs` composes on the **left** of each selected VOB's own matrix.
+ *
+ * This is the whole of typed rotation for a multi-selection (level-editor.md
+ * §16.4): with N VOBs selected a typed angle turns each of them by that much
+ * from where it is, rather than snapping them all to one absolute pose, which is
+ * the rule the position fields already follow so a selection keeps its shape.
+ *
+ * **It takes two angle triples, not a stored matrix, and that is the point.**
+ * 30.2 % of retail VOBs store a matrix that is non-orthonormal by more than
+ * 1e-6, so a delta built as `R(to) * M^-1` from the anchor's stored `M` would
+ * carry that VOB's drift and apply it to every other VOB in the selection.
+ * Built from the angles the read already showed, the delta is exactly a
+ * rotation, and the anchor's drift stays where it was — nothing but the turn
+ * the user asked for reaches the other N-1.
+ *
+ * `R(from)` is orthonormal by construction, so its inverse is its transpose and
+ * there is no matrix inversion here to be ill-conditioned. The 3x3 product is
+ * written out rather than taken from `model/ops`' `multiplyRotation`: `coords`
+ * is the layer below the op model and does not import it.
+ */
+export function eulerDeltaRotation(
+  from: readonly number[], to: readonly number[],
+): Mat3 {
+  const a = eulerToZenRotation(to);
+  const b = eulerToZenRotation(from);
+
+  const out = new Array<number>(9);
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      // `b` transposed — column `col` of the inverse is row `col` of `b`.
+      out[row * 3 + col] = noNegativeZero(
+        a[row * 3] * b[col * 3]
+        + a[row * 3 + 1] * b[col * 3 + 1]
+        + a[row * 3 + 2] * b[col * 3 + 2],
+      );
+    }
+  }
+  return out as Mat3;
+}
+
+/**
  * The nearest rotation to a stored matrix — Gram-Schmidt over its columns, which
  * are the VOB's own axes in world space, so the first axis is kept exactly and
  * the others are squared up against it.

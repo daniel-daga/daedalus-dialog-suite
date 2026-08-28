@@ -10,7 +10,7 @@ every binding call is injected.
 
 | Module | What it owns |
 |---|---|
-| `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. Also **THE** matrix ↔ angle conversion — `zenRotationToEuler` / `eulerToZenRotation`. |
+| `coords/` | **THE** ZenGin ↔ Three.js conversion. One mirrored root transform; nothing else in the codebase flips an axis or reverses an index buffer. Also **THE** matrix ↔ angle conversion — `zenRotationToEuler` / `eulerToZenRotation`, and `eulerDeltaRotation` for the turn between two angle triples. |
 | `model/` | The VOB hierarchy over the columnar index — `buildVobTree`, `flattenVisible`, `createVobReader` — and the op model: `moveVob`, `translateVobs`, `rotateVob`, `rotateVobs`, `setVobProp`, `setVobProps`, `setVobClassProp`, `addVob`, `reparentVob`, `invertOp`, `isStructuralOp`, `renumbersPaths`, `commitOps`, `applyOps`. |
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |

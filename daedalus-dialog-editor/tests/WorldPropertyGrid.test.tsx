@@ -17,7 +17,10 @@
 
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { eulerToZenRotation, type ClassProps, type VobProps, type ZenRotation } from 'zen-world';
+import {
+  eulerDeltaRotation, eulerToZenRotation,
+  type ClassProps, type VobProps, type ZenRotation,
+} from 'zen-world';
 import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
 import WorldPropertyGrid from '../src/renderer/components/world/WorldPropertyGrid';
 
@@ -141,10 +144,17 @@ const onEditClass = (props: ClassProps) => { classEdits.push(props); };
 /** A typed coordinate arrives as a *delta*, which is the gizmo's own shape. */
 let moves: Array<[number, number, number]> = [];
 const onTranslate = (delta: [number, number, number]) => { moves.push(delta); };
-/** A typed angle arrives as an *absolute* rotation — `rotateVob`'s shape. */
+/** A typed angle arrives as an *absolute* rotation for a single selection —
+ *  `rotateVob`'s shape. */
 let rotates: Array<ZenRotation> = [];
 const onRotate = (to: ZenRotation) => { rotates.push(to); };
-beforeEach(() => { edits = []; classEdits = []; moves = []; rotates = []; });
+/** ...and as a *delta* for a multi-selection — `rotateVobs`' shape, the one a
+ *  gizmo drag arrives in. The two are separate spies because sending the wrong
+ *  one is the whole failure mode: an absolute matrix down the selection path
+ *  would stack N VOBs into one pose. */
+let turns: Array<ZenRotation> = [];
+const onRotateSelection = (delta: ZenRotation) => { turns.push(delta); };
+beforeEach(() => { edits = []; classEdits = []; moves = []; rotates = []; turns = []; });
 
 /** The wiring every render needs. `classProps` is null by default because that
  *  is what a VOB of an uncatalogued class gets — nothing is fetched for one —
@@ -155,6 +165,7 @@ const wiring = {
   classProps: null,
   onTranslate,
   onRotate,
+  onRotateSelection,
   /** Bumped by the shell in `commitOps`' catch when the main process refuses an
    *  edit — the tests that are about refusal hand it a bumped value themselves. */
   refusalGeneration: 0,
@@ -907,15 +918,94 @@ describe('WorldPropertyGrid, typed rotation', () => {
     expect(input('rotation-yaw').value).toBe('0');
   });
 
-  it('hides angle entry for a multi-selection, and shows the matrix instead', () => {
-    // Whether a typed angle should set every selected VOB to that absolute
-    // pose, or turn each by a delta, is an open UI decision (the board's card).
-    // Until it is taken there is nothing correct to commit, so there is nothing
-    // to type.
-    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+  it('offers angle entry for a multi-selection, showing the anchor VOB\'s own angles', () => {
+    // Decided 2026-08-28 (level-editor.md §16.4): a typed angle turns each
+    // selected VOB by that much from where it is, so the fields are offered for
+    // N VOBs and describe the anchor — the last VOB of the selection, the one
+    // every other row of this grid already describes.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 1]} {...wiring} />);
 
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('0');
+    expect(input('rotation-roll').value).toBe('0');
+  });
+
+  it('commits a delta for a multi-selection, not an absolute pose', () => {
+    // The whole decision, in one assertion: relative, like the position fields,
+    // so the selection keeps the relative orientation it had. An absolute
+    // matrix down this path would snap all N VOBs to one pose with nothing but
+    // undo to get back. Expected as a quarter-turn matrix written out, not as
+    // the implementation's own product.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 1]} {...wiring} />);
+
+    commitAngle('yaw', '180');
+
+    expect(rotates).toEqual([]);
+    expect(turns).toHaveLength(1);
+    // The anchor is at yaw 90; typing 180 is a further quarter turn about the
+    // vertical, which is Ry(90) = [0,0,1, 0,1,0, -1,0,0] in ZenGin row-major.
+    [0, 0, 1, 0, 1, 0, -1, 0, 0].forEach((entry, at) => {
+      expect(turns[0][at]).toBeCloseTo(entry, 10);
+    });
+  });
+
+  it('builds the delta from the angles on screen, not from the anchor\'s stored matrix', () => {
+    // The trap the read normalizes into: the anchor here is non-orthonormal by
+    // 2 %, and a delta built as `R(to) * M^-1` would carry that 2 % into every
+    // other VOB of the selection. Built from the displayed angles the delta is
+    // exactly a rotation, and the anchor's own drift stays on the anchor —
+    // where `rotateVob` composes it back in unchanged.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1, 2]} {...wiring} />);
+    expect(input('rotation-yaw').value).toBe('30');
+
+    commitAngle('yaw', '40');
+
+    // Close rather than exact, and that is itself the point twice over: the
+    // anchor's decomposed yaw is 30.000000x rather than the 30 on screen — the
+    // grid builds the delta from the full-precision angles, not from what the
+    // display rounded them to — and the drift the stored matrix carries is
+    // nowhere in the result.
+    expect(turns).toHaveLength(1);
+    eulerDeltaRotation([30, 0, 0], [40, 0, 0]).forEach((entry, at) => {
+      expect(turns[0][at]).toBeCloseTo(entry, 6);
+    });
+    // Orthonormal: no scale rode along. The middle entry of a pure Ry is 1, not
+    // the anchor's 1.02.
+    expect(turns[0][4]).toBeCloseTo(1, 12);
+  });
+
+  it('still refuses an angle equal to the one displayed for a multi-selection', () => {
+    // The per-angle equality refusal is not weakened by the delta: a zero turn
+    // for every VOB in the selection is N no-op ops on the undo stack.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 1]} {...wiring} />);
+
+    commitAngle('yaw', '90');
+    commitAngle('yaw', '90.0');
+    commitAngle('pitch', 'north');
+
+    expect(turns).toEqual([]);
+    expect(rotates).toEqual([]);
+  });
+
+  it('commits an absolute pose for a selection of one, on the single-selection path', () => {
+    // The asymmetry is deliberate and is the one the position fields already
+    // have: an absolute angle is what the grid can read off one VOB.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    commitAngle('yaw', '180');
+
+    expect(turns).toEqual([]);
+    expect(rotates).toHaveLength(1);
+  });
+
+  it('says a multi-selection anchored on a reflection has no angles', () => {
+    // The unavailable row is about the anchor's matrix, not about how many VOBs
+    // are selected — there is still no triple of angles to start a delta from.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 3]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
     expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
-    expect(field('rotation')).toHaveTextContent('1, 0, 0');
+    expect(field('rotation')).toHaveTextContent('-1, 0, 0');
   });
 
   it('says a reflection has no angles rather than crashing the grid', () => {

@@ -3,7 +3,7 @@ import {
   Box, Checkbox, Chip, FormControlLabel, Stack, TextField, Typography,
 } from '@mui/material';
 import {
-  classPropKeys, eulerToZenRotation, fieldOf, zenRotationToEuler,
+  classPropKeys, eulerDeltaRotation, eulerToZenRotation, fieldOf, zenRotationToEuler,
   type ClassPropValue, type ClassProps, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
 } from 'zen-world';
@@ -435,24 +435,37 @@ export interface WorldPropertyGridProps {
    */
   onTranslate: (delta: ZenPosition) => void;
   /**
-   * A typed angle, as the **absolute** rotation the described VOB should have —
-   * `rotateVob`'s shape, unlike the delta a gizmo drag or a typed coordinate
-   * leaves as.
+   * A typed angle for a **selection of one**, as the **absolute** rotation that
+   * VOB should have — `rotateVob`'s shape, unlike the delta a gizmo drag or a
+   * typed coordinate leaves as.
    *
-   * Absolute because the typed angles *are* the destination: the field shows
-   * the decomposed pose and the user replaced one angle of it. A delta would
-   * have to be computed against the stored matrix — which for the 30.2 % of
-   * retail VOBs that are non-orthonormal is not the matrix the angles came
-   * from, so composing back through it would smear the drift into the other
-   * axes. Only offered for a single selection; see the rotation row.
+   * Absolute because with one VOB the typed angles *are* the destination: the
+   * field shows the decomposed pose and the user replaced one angle of it, and
+   * an absolute angle is what the grid can read off a single VOB. The asymmetry
+   * with `onRotateSelection` below is the same one position already has between
+   * what it displays and what it sends, and is not a wart.
    */
   onRotate: (to: ZenRotation) => void;
+  /**
+   * A typed angle for a selection of **N**, as the **delta** every selected VOB
+   * turns by — `rotateVobs`' shape, and the gizmo's own handler.
+   *
+   * Relative rather than absolute (level-editor.md §16.4, decided 2026-08-28)
+   * for the reason the position fields are: a multi-selection moves together and
+   * keeps its spacing, and a rotation that snapped N VOBs to one pose would be
+   * the odd one out — it destroys their relative orientation with no way back
+   * but undo. Sending it this way also means there is no second op-building path
+   * beside `rotateVobs`, so typing and dragging cannot drift apart about what
+   * "turn 45 degrees" means.
+   */
+  onRotateSelection: (delta: ZenRotation) => void;
 }
 
 const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   {
     summary, selection, refusalGeneration,
-    onEditProps, classProps, onEditClassProps, itemInstances, onTranslate, onRotate,
+    onEditProps, classProps, onEditClassProps, itemInstances,
+    onTranslate, onRotate, onRotateSelection,
   },
 ) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
@@ -492,14 +505,13 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
       : undefined
   );
 
-  // The described VOB's rotation as angles — for a single selection only, and
-  // null when no angles describe it. `zenRotationToEuler` **throws** on a
-  // reflection or a collapsed matrix (correctly: no triple of angles is either),
-  // and this is a render path, where an uncaught throw is a blank panel for the
-  // whole VOB rather than one unavailable row. Retail has zero of both, but a
-  // world this editor writes is not retail.
+  // The described VOB's rotation as angles — the anchor's, whatever the size of
+  // the selection, and null when no angles describe it. `zenRotationToEuler`
+  // **throws** on a reflection or a collapsed matrix (correctly: no triple of
+  // angles is either), and this is a render path, where an uncaught throw is a
+  // blank panel for the whole VOB rather than one unavailable row. Retail has
+  // zero of both, but a world this editor writes is not retail.
   const euler = ((): ZenEulerDegrees | null => {
-    if (selection.length > 1) return null;
     try {
       return zenRotationToEuler(rotation);
     } catch {
@@ -605,15 +617,13 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
         </Stack>
       </Field>
       <Field label="Rotation" name="rotation">
-        {/* Typed angles for a single selection, through `zen-world/coords`'
-            one matrix↔Euler conversion (intrinsic Y-X-Z, degrees). For a
-            **multi-selection the fields are deliberately absent**: whether a
-            typed angle should set every selected VOB to that absolute pose, or
-            turn each by a delta (`multiplyRotation(target, invert(current))`),
-            is an open UI decision — the board's typed-rotation card — and
-            until it is taken there is nothing correct to commit. The matrix is
-            shown read-only instead, as the whole row was before angles. */}
-        {selection.length > 1 || euler === null
+        {/* Typed angles through `zen-world/coords`' one matrix↔Euler conversion
+            (intrinsic Y-X-Z, degrees), for a selection of any size: the fields
+            describe the anchor VOB, and what a commit *means* is what changes
+            with the count — absolute for one VOB, a delta every selected VOB
+            turns by for N (§16.4). The read-only matrix is what is left when no
+            angles describe the anchor at all. */}
+        {euler === null
           ? (
             <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-line' }}>
               {[0, 3, 6].map((at) => rotation.slice(at, at + 3).map(coordinate).join(', ')).join('\n')}
@@ -637,13 +647,23 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                     // the display rounded them to.
                     const typed = [...euler] as ZenEulerDegrees;
                     typed[at] = value;
-                    onRotate(eulerToZenRotation(typed) as ZenRotation);
+                    // One VOB gets the pose; N get the turn between the pose on
+                    // screen and the one typed. The delta is built from the two
+                    // angle triples and not from the stored matrix, so the
+                    // anchor's own drift — 30.2 % of retail VOBs are
+                    // non-orthonormal — stays on the anchor instead of being
+                    // applied to everything else in the selection.
+                    if (selection.length === 1) {
+                      onRotate(eulerToZenRotation(typed) as ZenRotation);
+                    } else {
+                      onRotateSelection(eulerDeltaRotation(euler, typed) as ZenRotation);
+                    }
                   }}
                 />
               ))}
             </Stack>
           )}
-        {selection.length === 1 && euler === null && (
+        {euler === null && (
           <Typography
             variant="caption"
             color="text.secondary"

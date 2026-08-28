@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import {
-  createVobReader, eulerToZenRotation, placeBounds,
+  createVobReader, eulerDeltaRotation, eulerToZenRotation, placeBounds,
   type VobIndex, type WorldOp, type ZenRotation,
 } from 'zen-world';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
@@ -470,10 +470,11 @@ describe('a coordinate typed into the property grid', () => {
 });
 
 // Typed rotation entry (level-editor.md §14.1 item 1.5, the rotation half).
-// The path is the point again — but unlike a coordinate, a typed angle leaves
-// as an **absolute** pose through `rotateVob`, not as a delta: the angles on
-// screen are the decomposed destination, and only a single selection offers
-// them (absolute-vs-delta for a multi-selection is an open UI decision).
+// The path is the point again, and which path it is depends on the count: with
+// one VOB selected a typed angle leaves as an **absolute** pose through
+// `rotateVob`, because the angles on screen are the decomposed destination;
+// with N it leaves as a **delta** through `rotateVobs`, the gizmo's own path,
+// so the selection keeps the relative orientation it had (§16.4).
 describe('an angle typed into the property grid', () => {
   const angle = (axis: string) => screen.getByTestId(
     `world-prop-rotation-${axis}-input`,
@@ -516,6 +517,39 @@ describe('an angle typed into the property grid', () => {
     fireEvent.blur(angle('yaw'));
 
     expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+  it('turns a whole selection by the delta, in one batch', async () => {
+    // The multi-selection half, and the reason it is a batch: `WorldService`
+    // records one call as one undo entry, so N VOBs turned together must arrive
+    // as one list — exactly as a multi-select gizmo drag does. The grid types
+    // into the anchor's angles and the shell sends `rotateVobs`, so there is no
+    // second op-building path to keep in step.
+    const summary = await openWorld();
+    act(() => useWorldStore.getState().toggleVob(0));
+    // The anchor is the last VOB of the selection — the one every row of the
+    // grid describes — and it is unturned, so 90 typed into its yaw is a
+    // quarter turn for everything selected.
+    expect(angle('yaw').value).toBe('0');
+
+    fireEvent.change(angle('yaw'), { target: { value: '90' } });
+    fireEvent.blur(angle('yaw'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const ops = api.applyWorldOps.mock.calls[0][0] as WorldOp[];
+    expect(ops.map((op) => [op.op, (op as { vob: number }).vob]))
+      .toEqual([['RotateVob', 1], ['RotateVob', 0]]);
+    // Each op carries its own VOB's pose as `from` — what makes the batch
+    // invertible — and `to` is that pose with the delta composed on the left.
+    const delta = eulerDeltaRotation([0, 0, 0], [90, 0, 0]);
+    for (const op of ops as Array<{ from: ZenRotation; to: ZenRotation }>) {
+      expect(op.from).toEqual(IDENTITY);
+      delta.forEach((entry, at) => expect(op.to[at]).toBeCloseTo(entry, 6));
+    }
+    // And the projection followed for both, not just the anchor.
+    const reader = createVobReader(summary.vobIndex);
+    for (const vob of [0, 1]) {
+      delta.forEach((entry, at) => expect(reader.rotation(vob)![at]).toBeCloseTo(entry, 6));
+    }
   });
 });
 

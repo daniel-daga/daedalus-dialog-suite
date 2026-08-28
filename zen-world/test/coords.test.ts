@@ -17,6 +17,7 @@ import {
   mirrorRotation,
   zenRotationToEuler,
   eulerToZenRotation,
+  eulerDeltaRotation,
   type Vec3,
   type Mat3,
   type ZenEulerDegrees,
@@ -552,5 +553,66 @@ describe('zen-world/coords — typed angles', () => {
     const identity: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
     expect(zenRotationToEuler(identity)).toEqual([0, 0, 0]);
     expect(eulerToZenRotation([0, 0, 0])).toEqual(identity);
+  });
+
+  // The multi-selection half of typed rotation (level-editor.md §16.4). A typed
+  // angle with N VOBs selected turns each of them by that much from where it
+  // is — the same shape the position fields already commit in, and the same
+  // shape a gizmo drag arrives in — so the conversion the UI needs is
+  // "two angle triples in, one world-space delta out".
+  describe('the delta between two angle triples', () => {
+    test('is the turn that takes the first pose to the second, applied on the left', () => {
+      // The defining property, and the one the gizmo path depends on:
+      // `rotateVobs` composes the delta on the left of each VOB's own matrix,
+      // so the delta has to satisfy `delta * R(from) = R(to)` and not the other
+      // product. Checked on a pose where the two orders differ.
+      const from: ZenEulerDegrees = [30, 40, 50];
+      const to: ZenEulerDegrees = [70, 40, 50];
+      const delta = eulerDeltaRotation(from, to);
+
+      expect(maxEntryError(mul(delta, eulerToZenRotation(from)), eulerToZenRotation(to)))
+        .toBeLessThan(1e-12);
+      // The other order is a different matrix here, so the test above is
+      // pinning the side rather than passing on symmetry.
+      expect(maxEntryError(mul(eulerToZenRotation(from), delta), eulerToZenRotation(to)))
+        .toBeGreaterThan(0.1);
+    });
+
+    test('a change on one axis alone is the quarter turn about that axis', () => {
+      // Written out rather than derived, so an implementation that composed the
+      // wrong way round could not agree with the expectation.
+      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [90, 0, 0]), quarterY)).toBeLessThan(1e-12);
+      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [0, 90, 0]), quarterX)).toBeLessThan(1e-12);
+      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [0, 0, 90]), quarterZ)).toBeLessThan(1e-12);
+    });
+
+    test('is the identity when nothing changed', () => {
+      const identity: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+      expect(maxEntryError(eulerDeltaRotation([30, 40, 50], [30, 40, 50]), identity))
+        .toBeLessThan(1e-12);
+    });
+
+    test('is a pure rotation even when the VOB it came from is not', () => {
+      // **The reason this takes angles and not the stored matrix.** 30.2 % of
+      // retail VOBs store a matrix that is non-orthonormal by more than 1e-6;
+      // a delta built as `R(to) * M^-1` from such an `M` carries that drift and
+      // smears it across the whole selection. Built from the angles, the delta
+      // is a rotation exactly, and the anchor's own drift stays on the anchor.
+      const delta = eulerDeltaRotation([30, 0, 0], [40, 0, 0]);
+      const ten = eulerToZenRotation([10, 0, 0]);
+
+      expect(maxEntryError(delta, ten)).toBeLessThan(1e-12);
+      // Orthonormal: its transpose is its inverse, and its determinant is +1.
+      const transpose = [delta[0], delta[3], delta[6], delta[1], delta[4], delta[7],
+        delta[2], delta[5], delta[8]];
+      expect(maxEntryError(mul(delta, transpose), [1, 0, 0, 0, 1, 0, 0, 0, 1]))
+        .toBeLessThan(1e-12);
+    });
+
+    test('never produces a negative zero, for the reason every matrix here does not', () => {
+      for (const entry of eulerDeltaRotation([0, 0, 0], [0, 0, 0])) {
+        expect(Object.is(entry, -0)).toBe(false);
+      }
+    });
   });
 });

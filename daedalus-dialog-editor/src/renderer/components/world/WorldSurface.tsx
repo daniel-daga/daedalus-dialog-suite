@@ -642,10 +642,10 @@ const WorldSurface: React.FC = () => {
 
   /**
    * A typed rotation from the property grid — the primary VOB alone, and an
-   * **absolute** pose rather than the delta a gizmo drag arrives as: the typed
-   * angles are the destination, and the grid only offers them for a single
-   * selection (absolute-vs-delta for a multi-selection is an undecided UI
-   * question, deliberately not answered here).
+   * **absolute** pose rather than the delta a gizmo drag arrives as: with one
+   * VOB selected the typed angles are the destination. A multi-selection types
+   * into the same fields but leaves as a delta (§16.4) and goes down
+   * `handleRotateSelection` above, which is the gizmo's own path.
    */
   const handleRotateVob = useCallback((to: ZenRotation) => {
     const { summary: current, selection: selected } = useWorldStore.getState();
@@ -1520,6 +1520,7 @@ const WorldSurface: React.FC = () => {
                     onEditProps={handleEditProps}
                     onTranslate={handleTranslateSelection}
                     onRotate={handleRotateVob}
+                    onRotateSelection={handleRotateSelection}
                     classProps={classProps?.vob === primary ? classProps.props : null}
                     onEditClassProps={handleEditClassProps}
                     itemInstances={itemInstances}

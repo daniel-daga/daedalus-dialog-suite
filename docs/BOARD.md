@@ -118,6 +118,7 @@ was true for so long nobody re-reads it.
 
 *(empty)*
 
+
 ## Next
 
 Each card is one line, an owner and a pointer. A bare `§` is a section of
@@ -126,9 +127,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Typed rotation for a multi-selection** — decided 2026-08-28: relative, as
-  the position fields already are. The angle fields stop being hidden for N
-  VOBs. Unowned. §16.4
 - **Copy/paste D5 — the subtree** — measured 2026-08-28: N appends in one
   batch, paths predictable, one undo entry. No tree format, no new op. §16.14
 - **VOB search and filter in the scene tree** — by name and class, over columns
@@ -208,6 +206,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Typed rotation for a multi-selection** — landed: the angle fields describe
+  the anchor for N VOBs and commit a delta through `rotateVobs`, the gizmo's own
+  path; the conversion is `eulerDeltaRotation`, from the two angle triples and
+  not the anchor's matrix. §16.4
 - **Waynet W4 — delete an arbitrary waypoint** — landed: `DeleteWaypoint` is a
   barrier op, `removeWaypoint` grew a `barrier` flag rather than a twin, and the
   edges go with the point. §16.7
