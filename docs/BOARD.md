@@ -121,8 +121,13 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **Copy / paste / duplicate a VOB** — the most-used Spacer verb after move;
-  §15 already answers the undo question. Start at the single-VOB duplicate.
+- **Copy/paste D1 — duplicate one VOB, base fields, in place** — needs no new
+  op: `addVob` exists and `AddVob` is its own inverse. Unowned. §16.14
+- **Copy/paste D2 — the fields `NewVob` drops** (class props, `physicsEnabled`)
+  as a follow-up op in the same batch. Unowned. §16.14
+- **Copy/paste D4 — a multi-selection duplicates as one batch**, one undo
+  entry. Unowned. §16.14
+- **Copy/paste D3 — copy and paste as verbs**, an in-process clipboard.
   Unowned. §16.14
 - **Waynet edge ops, add/delete/rename** — the index-addressing problem is the
   whole job and is untouched. Unowned. §16.7
@@ -139,6 +144,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 - **Typed rotation: absolute-or-delta for a multi-selection, and Spacer
   parity** — a UI decision and a Spacer measurement, no code. **Daniel.** §16.4
+- **Copy/paste D5 — the subtree** — one op carrying a serialized tree, or N ops
+  and no single undo step. The only part of §16.14 that adds a validator branch
+  and a binding change. **Daniel's call.** §16.14
 
 **Waynet, and the scripts that name it**
 

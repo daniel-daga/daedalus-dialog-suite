@@ -3580,23 +3580,56 @@ branch, one undo entry, and it is finishable in a session. Spacer pastes in
 place, so pasting in place is parity; a cursor-relative or offset paste is a
 preference nobody has asked for and should not be invented here.
 
-**The subtree is the second increment, and it is where the real decision is.**
-Copying a VOB with children can emit one op carrying a serialized subtree or N
-ops, and only the first survives a multi-select paste as a single undo step.
-That argues for the serialized subtree, but it puts a tree format in the op
-payload, which nothing else in the op set has. Do not settle it as a side
-effect of the first increment.
+**The headline, found while splitting this card on 2026-08-28: D1 needs no new
+op, no validator branch and no binding change.** `addVob(reader, spec, parent)`
+already exists in `zen-world/src/model/ops.ts:839`, and `AddVob`'s one-null-side
+shape is already its own inverse, so a duplicate is *existing ops assembled in
+the renderer*. That is what makes the first increment a single session. It also
+means the usual warning does not apply to D1 — there is no
+`assertApplyOpsRequest` branch to forget, because no new op reaches it. From D2
+on, the warning is back and is written on the increment that earns it.
 
-**A cross-world clipboard is a third increment and probably not wanted.** It is
-only worth it if part-to-part copying is a workflow someone actually has;
-otherwise an in-process clipboard avoids inventing a serialization format for
-one verb.
+**D1 — duplicate one selected VOB, base fields, in place.** Build a `NewVob`
+from the selection's own `vobIndex` row — `name`, `visual`, the five authorable
+flags, `position`, `rotation`, `bbox` — and commit one `AddVob` into the same
+parent. Undo comes free. Pasting in place is Spacer's behaviour and therefore
+parity; do not invent an offset. The test that matters is on the spec-building
+function (given a row, does the spec carry every field the row has), plus an
+E2E that duplicates and sees two VOBs.
 
-**The validator branch lands in the same change as the op.** `assertApplyOpsRequest`
-is the one layer every test mocks past — the renderer suite stubs the IPC, the
-op suite injects a fake binding, the binding suite calls C++ — so an op can be
-green everywhere and refused in the running app, which is exactly how
-`ReparentVob` shipped.
+**D2 — the fields the spec silently drops, and this is where the decision is.**
+`NewVob` is *not* the whole VOB. `NEW_VOB_FLAG_KEYS` is `VOB_FLAG_KEYS` minus
+`physicsEnabled` (`ipcValidation.ts:315`), and class properties are not in the
+spec at all — so D1's duplicate of an `oCMobDoor` comes back without its door
+fields. Two ways to close it, and **the cheap one is right**: emit a follow-up
+`SetVobClassProp` (and `SetVobProp` for `physicsEnabled`) into the *same op
+batch* as the `AddVob`, which needs no new op shape and no validator change,
+rather than widening `NewVob` and its validator branch. One batch is also one
+undo entry, which is the behaviour wanted anyway.
+**Do `physicsEnabled` last or not at all**: A6 (Deferred) says the packed `zCVob`
+writer drops it on every save, so restoring it in a duplicate is invisible until
+A6 lands. Say so in the increment rather than quietly skipping it.
+
+**D3 — copy and paste as verbs distinct from duplicate.** An in-process
+clipboard, `Ctrl+C` / `Ctrl+V`, paste into the current selection's parent. No
+cross-world clipboard: it is only worth a serialization format if part-to-part
+copying is a workflow someone actually has, and nobody has asked.
+
+**D4 — a multi-selection duplicates as one batch**, therefore one undo entry.
+Mostly a loop over D1/D2 plus the batch assembly, and it is the increment that
+proves the batch shape from D2 was right.
+
+**D5 — the subtree, and it does not start until a human takes the decision.**
+A VOB with children is either one op carrying a serialized subtree or N ops, and
+only the first survives as a single undo step. That argues for the serialized
+subtree — but it puts a tree format in an op payload, which nothing else in the
+op set has, and it is the one part of this card that adds a validator branch and
+a binding change. **Not actionable unattended.**
+
+**Sequence: D1 → D2 → D4 → D3, with D5 held back.** D3 is UI-shaped and
+independent, so it can move earlier if the clipboard is what is actually wanted;
+D4 before D3 only because it validates D2's batching while that reasoning is
+fresh.
 
 ### 16.15 Class-specific insertion (§14.1 1.3)
 
