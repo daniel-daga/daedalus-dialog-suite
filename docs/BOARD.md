@@ -143,9 +143,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **I4 — `oCMobInter` and the `oCMob*` subclasses become authorable** —
-  `Container`, `Door`, `Bed`, `Ladder`, `Switch`, `Wheel`, and `oCTouchDamage`.
-  I3's shape exactly, now landed and worth reading first. Unowned. §16.15
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
   singularity counts, not a Spacer match. Needs Spacer itself, and only two
   functions change if it differs. **Daniel.** §16.4
@@ -199,6 +196,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **I4 — the movable objects are authorable** — eight constructions on a family
+  that agrees with itself (1,424 retail VOBs); a container is authored *unlocked*
+  against retail's majority, and `oCMOB`/`oCMobFire` stay editable-only. §16.15
+
 - **I3 — the whole trigger family is authorable** — seven constructions on
   defaults measured over retail's own 294 VOBs; a placed trigger still has no
   reachable `target`, and three of the seven no catalogued field at all. §16.15
@@ -208,12 +209,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   biggest cluster in the corpus turned out to be `Wld_InsertNpc`'s `spawnPoint`,
   so the panel no longer calls every site a routine. §16.8
 
-- **The World surface keeps its geometry across a navigate-away** — mounted from
-  the first visit onwards behind a display toggle, `paused` stops the frame loop
-  outright while hidden, and the surface's and viewport's window shortcuts are
-  off with it. `docs/refactoring-targets.md` §8, now a landed record.
-
-Flushed 2026-08-28, all landed the same day and all routed: `zCVob` V1 and V2
+Flushed 2026-08-28, all landed the same day and all routed: the World surface's
+mount-once-and-pause (`refactoring-targets.md` §8 is now a landed record),
+`zCVob` V1 and V2
 (§16.17, which also closes §14.1 1.8 and says why `sleepMode` and `farClipScale`
 stay out), `resavedSize` (§16.10, closed), the scene tree's VOB search/filter and
 its per-class visibility toggles (§16.16), and earlier I1, I2, D2, W2, W3, the

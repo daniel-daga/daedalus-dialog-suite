@@ -2109,6 +2109,17 @@ enum class NewVobClass {
   kZCMover,
   kZCCodeMaster,
   kZCMessageFilter,
+  // The movable-object family (I4). `oCTouchDamage` is not one of them -- it
+  // derives straight from `zCVob` -- and is authored with them because it is
+  // the other volume a level designer places by hand.
+  kOCMobInter,
+  kOCMobBed,
+  kOCMobLadder,
+  kOCMobSwitch,
+  kOCMobWheel,
+  kOCMobDoor,
+  kOCMobContainer,
+  kOCTouchDamage,
 };
 
 NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
@@ -2129,6 +2140,14 @@ NewVobClass ParseNewVobClass(Napi::Env env, Napi::Value value) {
   if (str == "zCMover") return NewVobClass::kZCMover;
   if (str == "zCCodeMaster") return NewVobClass::kZCCodeMaster;
   if (str == "zCMessageFilter") return NewVobClass::kZCMessageFilter;
+  if (str == "oCMobInter") return NewVobClass::kOCMobInter;
+  if (str == "oCMobBed") return NewVobClass::kOCMobBed;
+  if (str == "oCMobLadder") return NewVobClass::kOCMobLadder;
+  if (str == "oCMobSwitch") return NewVobClass::kOCMobSwitch;
+  if (str == "oCMobWheel") return NewVobClass::kOCMobWheel;
+  if (str == "oCMobDoor") return NewVobClass::kOCMobDoor;
+  if (str == "oCMobContainer") return NewVobClass::kOCMobContainer;
+  if (str == "oCTouchDamage") return NewVobClass::kOCTouchDamage;
   throw Napi::Error::New(env, "opts.class: no construction is known for '" + str + "'");
 }
 
@@ -2201,6 +2220,57 @@ void AuthorTriggerFields(zenkit::VTrigger& trigger) {
   // the rule for a construction is that no field is left to the stack.
   trigger.flags = 0;
   trigger.filter_flags = 0;
+}
+
+// The half of a movable object every `oCMob*` class shares (I4) -- the eleven
+// fields `VMovableObject` declares, on retail's own majority over the 1,424
+// VOBs of these classes in NewWorld, OldWorld and AddonWorld (2026-08-28).
+//
+// **Unlike the trigger family, this one agrees with itself**, which is why the
+// shared half is genuinely shared: `hp` is 10 and `damage` 0 on every single
+// one of them, nothing is movable or takable outside five switches, and no
+// retail mob names a destroyed visual, an owner or a guild. So there is no
+// per-class flag to split out the way a trigger's four had to be.
+//
+// `name` -- the archive's `focusName` -- is empty for the reason a trigger's
+// `target` is: it names a localization constant this cannot invent, and it is
+// catalogued, so the grid is where a name comes from.
+void AuthorMovableObjectFields(zenkit::VMovableObject& mob) {
+  mob.name = "";
+  mob.hp = 10;
+  mob.damage = 0;
+  mob.movable = false;
+  mob.takable = false;
+  mob.focus_override = false;
+  // An enum, and so a field the catalogue holds none of -- what is chosen here
+  // is what a placed mob keeps, the same permanence a sound's `mode` has. WOOD
+  // is retail's majority (1,381 of 1,424) and also ZenKit's zero.
+  mob.material = zenkit::SoundMaterialType::WOOD;
+  mob.visual_destroyed = "";
+  mob.owner = "";
+  mob.owner_guild = "";
+  mob.destroyed = false;
+}
+
+// The six `VInteractiveObject` adds on top, shared by all six of I4's
+// interactive classes.
+//
+// `state_count` is 1 on 1,287 of the 1,290 interactive objects retail places --
+// the exceptions being two ladders at 0 and the single wheel at 16, neither a
+// shape to default to. `condition_function` and `on_state_change_function` are
+// empty for the reason `oCTriggerScript`'s `function` is: naming a Daedalus
+// function that may not exist is worse than calling nothing. `item` is the
+// same decision one layer over, and it is the reason **a placed interactive
+// object is usable by anyone**: the field naming the item required to use it is
+// held out of the catalogue with the family's other script cross-references.
+void AuthorInteractiveObjectFields(zenkit::VInteractiveObject& obj) {
+  AuthorMovableObjectFields(obj);
+  obj.state_count = 1;
+  obj.target = "";
+  obj.item = "";
+  obj.condition_function = "";
+  obj.on_state_change_function = "";
+  obj.rewind = false;
 }
 
 // insertVob(handle, parentPath | null, opts) — appends a VOB of the class
@@ -2519,6 +2589,89 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
     filter->on_trigger = zenkit::MessageFilterAction::TRIGGER;
     filter->on_untrigger = zenkit::MessageFilterAction::TRIGGER;
     vob = filter;
+  } else if (vob_class == NewVobClass::kOCMobInter || vob_class == NewVobClass::kOCMobBed
+             || vob_class == NewVobClass::kOCMobLadder || vob_class == NewVobClass::kOCMobSwitch
+             || vob_class == NewVobClass::kOCMobWheel) {
+    RefuseInstance();
+    // Four of these five declare not one field beyond `oCMobInter`, so there is
+    // nothing per class to author and nothing per class to measure -- what
+    // differs is the type tag alone. ZenKit gives each its own struct all the
+    // same, and the object has to *be* that struct: `setVobClassProp` switches
+    // on the type, so a bed that was really a bare `VInteractiveObject` would
+    // be a bed whose own type says it is something else.
+    std::shared_ptr<zenkit::VInteractiveObject> obj;
+    if (vob_class == NewVobClass::kOCMobBed) {
+      obj = std::make_shared<zenkit::VBed>();
+      obj->type = zenkit::VirtualObjectType::oCMobBed;
+    } else if (vob_class == NewVobClass::kOCMobLadder) {
+      obj = std::make_shared<zenkit::VLadder>();
+      obj->type = zenkit::VirtualObjectType::oCMobLadder;
+    } else if (vob_class == NewVobClass::kOCMobSwitch) {
+      obj = std::make_shared<zenkit::VSwitch>();
+      obj->type = zenkit::VirtualObjectType::oCMobSwitch;
+    } else if (vob_class == NewVobClass::kOCMobWheel) {
+      obj = std::make_shared<zenkit::VWheel>();
+      obj->type = zenkit::VirtualObjectType::oCMobWheel;
+    } else {
+      obj = std::make_shared<zenkit::VInteractiveObject>();
+      obj->type = zenkit::VirtualObjectType::oCMobInter;
+    }
+    AuthorInteractiveObjectFields(*obj);
+    vob = obj;
+  } else if (vob_class == NewVobClass::kOCMobDoor) {
+    RefuseInstance();
+    auto door = std::make_shared<zenkit::VDoor>();
+    door->type = zenkit::VirtualObjectType::oCMobDoor;
+    AuthorInteractiveObjectFields(*door);
+    // Retail's 248 doors: unlocked (217), and not one of them in any of the
+    // three worlds carries a pick combination. `locked` is catalogued, so it is
+    // the user's to change; `key` is not, being an item instance the catalogue
+    // holds no cross-reference for.
+    door->locked = false;
+    door->key = "";
+    door->pick_string = "";
+    vob = door;
+  } else if (vob_class == NewVobClass::kOCMobContainer) {
+    RefuseInstance();
+    auto container = std::make_shared<zenkit::VContainer>();
+    container->type = zenkit::VirtualObjectType::oCMobContainer;
+    AuthorInteractiveObjectFields(*container);
+    // **Authored against retail's own majority**, which is locked (199 of 294).
+    // Every locked retail chest carries a key or a pick combination, and this
+    // can author neither -- `key` is an item instance and `contents` a
+    // comma-separated list of them, both held out of the catalogue with the
+    // family's other script cross-references. So a locked one would be a
+    // container nothing in the game could ever open, and `locked` is
+    // catalogued: a user who wants one locked has the switch.
+    container->locked = false;
+    container->key = "";
+    container->pick_string = "";
+    container->contents = "";
+    vob = container;
+  } else if (vob_class == NewVobClass::kOCTouchDamage) {
+    RefuseInstance();
+    // Not a movable object at all -- `VTouchDamage` derives straight from
+    // `zCVob`, so none of the seventeen above applies to it. It is authored
+    // with them because it is the other volume a level designer places by hand,
+    // and it is one of the few classes that does its job the moment it is
+    // placed: retail's 51 agree about everything that matters.
+    auto touch = std::make_shared<zenkit::VTouchDamage>();
+    touch->type = zenkit::VirtualObjectType::oCTouchDamage;
+    touch->damage = 1000.0f;  // 49 of 51
+    touch->barrier = false;
+    touch->blunt = false;
+    touch->edge = false;
+    touch->fire = false;
+    touch->fly = false;
+    touch->magic = false;
+    touch->point = true;  // 48 of 51, and the only damage kind retail turns on
+    touch->fall = false;
+    touch->repeat_delay_sec = 2.0f;  // 42 of 51; ZenKit leaves it uninitialized
+    touch->volume_scale = 1.0f;      // every one of the 51
+    // An enum, so what is chosen here is what a placed volume keeps -- and BOX
+    // is what all 51 retail damage volumes use.
+    touch->collision = zenkit::TouchCollisionType::BOX;
+    vob = touch;
   } else {
     RefuseInstance();
     auto plain = std::make_shared<zenkit::VirtualObject>();

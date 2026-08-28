@@ -4386,6 +4386,57 @@ left indeterminate is the only one that can see a field the writer drops.
 retail's 150 movers against ZenKit's `true`, and unlike the sound and light
 disagreements this one is catalogued, so it is also the user's to change.
 
+**I4 — the movable objects, and the damage volume placed like one. Landed
+2026-08-28**: `oCMobInter`, the four subclasses that add nothing to it
+(`oCMobBed`, `oCMobLadder`, `oCMobSwitch`, `oCMobWheel`), `oCMobDoor`,
+`oCMobContainer` and `oCTouchDamage`. Eight constructions, eight names in
+`AUTHORABLE_VOB_CLASSES`, one retail sweep — and, exactly as I2 predicted and I3
+confirmed, no new op, no validator branch and no binding signature change.
+
+**This family agrees with itself, and that is what makes it cheaper than the
+triggers.** Measured over its 1,424 VOBs in NewWorld, OldWorld and AddonWorld
+(2026-08-28): `hp` is 10 and `damage` 0 on every single one, none is movable or
+takable outside five switches, and none names a destroyed visual, an owner or a
+guild. So `AuthorMovableObjectFields` and `AuthorInteractiveObjectFields` are
+genuinely shared — there is no per-class flag to split out the way a trigger's
+four had to be — and only the container decides anything of its own.
+
+**The container is authored unlocked against retail's own majority** (199 of 294
+chests are locked), and the reason is the same family as the mover's `lerpMode`
+approached from the other end: every locked retail chest carries a `key` or a
+`pickString`, both of which name script symbols the catalogue holds no
+cross-reference for and this cannot author, so a locked placed chest would be a
+container nothing in the game could ever open. `locked` *is* catalogued, so a
+user who wants one has the switch.
+
+**Four of the eight are a type tag and nothing else.** `VBed`, `VLadder`,
+`VSwitch` and `VWheel` declare not one field beyond `VInteractiveObject`, so the
+construction is the same one and only `make_shared` differs — but the object
+still has to *be* that struct, because `SetVobClassProp` switches on the type.
+
+**`oCTouchDamage` is the one class in the increment that works the moment it is
+placed.** Retail's 51 agree about everything: 1000 damage, point damage alone,
+a two-second tick, full volume scale and `BOX` collision. It is also the
+family's name trap — ZenKit's *own documentation* calls it `zCTouchDamage`, the
+archive calls it `oCTouchDamage`, and both suites now keep the spoken form in
+their bad-class list beside `zCTriggerScript`.
+
+**Two facts I4 leaves behind, neither carded.** First, `oCMOB` and `oCMobFire`
+are catalogued and editable and are *not* authorable: they are not in the card's
+list, and a fire is only ever a rigged model with a fire template on a named
+bone, which nothing in the placement path can supply. Second, `oCMobBed` and
+`oCTouchDamage` are the I3 state from the other side — placeable with no
+editable field at all. The bed's is a plain omission rather than a decision:
+its fields are exactly `oCMobInter`'s, and making it editable is a one-line
+`CLASS_FIELDS` entry **plus** a `case oCMobBed:` in `SetVobClassProp`'s switch,
+which today lists `oCMobInter`, `oCMobLadder`, `oCMobSwitch` and `oCMobWheel`
+and not the bed. Doing only the first would offer a grid the binding refuses.
+
+**A duplicate of a door is now a door**, which is the increment's one change to
+behaviour nobody asked for: `duplicateVobSpec` carries the class of any class
+the binding can construct, so the set it silently drops shrinks with every one
+of these increments. What a copy still drops is §16.14.
+
 **`oCItem` was first and was also the awkward one.** Its `instance` is the
 validation that cannot live in the main process at all: there is no semantic
 model there — `ProjectIndex` carries npcs, dialogs, routines and voice ids but

@@ -449,6 +449,28 @@ export const AUTHORABLE_VOB_CLASSES = [
   'zCMover',
   'zCCodeMaster',
   'zCMessageFilter',
+  // The movable-object family (I4), and `oCTouchDamage` with it -- not one of
+  // them (it derives straight from `zCVob`) but the other volume a designer
+  // places by hand, and carrying the same name trap the trigger family did:
+  // ZenKit's own documentation says `zCTouchDamage`, and a world says `oC`.
+  //
+  // Two classes of this family stay editable-only. `oCMOB` and `oCMobFire` are
+  // catalogued above and are not in I4's list; a fire is only ever a rigged
+  // model with a fire template on a named bone, none of which is authorable
+  // here. And two of the eight are the I3 state from the other side --
+  // `oCMobBed` and `oCTouchDamage` are placeable with no catalogued field,
+  // the bed because `CLASS_FIELDS` has no entry for it though its fields are
+  // exactly `oCMobInter`'s, the damage volume because it has never been
+  // catalogued. Both work unaided: a placed bed is a bed and a placed damage
+  // volume deals retail's own 1000 point damage.
+  'oCMobInter',
+  'oCMobBed',
+  'oCMobLadder',
+  'oCMobSwitch',
+  'oCMobWheel',
+  'oCMobDoor',
+  'oCMobContainer',
+  'oCTouchDamage',
 ] as const;
 
 

@@ -411,9 +411,13 @@ closed: `'zCVob'` (the default), `'oCItem'`, `'zCVobLight'`, `'zCVobSound'`,
 `'zCVobSoundDaytime'` and the trigger family — `'zCTrigger'`,
 `'zCTriggerList'`, `'oCTriggerScript'`, `'oCTriggerChangeLevel'`, `'zCMover'`,
 `'zCCodeMaster'` and `'zCMessageFilter'`, the last two deriving from `zCVob`
-rather than from `zCTrigger`. **Spell the two `oC*` names as the archive does**:
-`zCTriggerScript` and `zCTriggerChangeLevel` are what everyone says and neither
-is a class this authors. Each class needs its own field-complete construction —
+rather than from `zCTrigger`; then the movable objects — `'oCMobInter'` and the
+four that add nothing to it (`'oCMobBed'`, `'oCMobLadder'`, `'oCMobSwitch'`,
+`'oCMobWheel'`), `'oCMobDoor'`, `'oCMobContainer'` — and `'oCTouchDamage'`,
+which is not one of them at all but the other volume placed by hand.
+**Spell the `oC*` names as the archive does**: `zCTriggerScript`,
+`zCTriggerChangeLevel` and `zCTouchDamage` are what everyone says (the last is
+ZenKit's own documentation) and not one of the three is a class this authors. Each class needs its own field-complete construction —
 ZenKit's structs leave fields uninitialized — and `setVobClassProp` switches on
 the type the object really has, so nothing can turn a `zCVob` into an `oCItem`
 afterwards. A class with no construction is refused rather than authored as a
@@ -448,6 +452,24 @@ is; and `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` are configured
 only by lists and enums, which the catalogue holds none of, so a placed one has
 no editable field of its own at all. A mover is the member that does something
 unaided: it runs its visual's animation, needing neither a target nor keyframes.
+
+The movable-object family is measured over its own 1,424 retail VOBs, and
+**unlike the trigger family it agrees with itself**: `hp` is 10 and `damage` 0
+on every one of them, none is movable or takable outside five switches, and none
+names a destroyed visual, an owner or a guild — so the whole `oCMOB` and
+`oCMobInter` half is shared rather than split per class, and only the container
+decides anything of its own. `stateCount` is 1 (1,287 of the 1,290 interactive
+objects), and the two script hooks and `item` are empty for the reason a script
+trigger's `function` is. **A container is authored unlocked against retail's own
+majority** (199 of 294 chests are locked): a locked chest needs a key or a pick
+combination, neither of which this can author, so a locked one would be a
+container nothing in the game could open. A damage volume is the family's one
+member that does its job the moment it is placed — 1000 damage, point damage
+alone, a two-second tick and `BOX` collision, which is what all 51 retail ones
+use. Two of the eight are placeable with no editable field: `oCMobBed` has no
+`CLASS_FIELDS` entry (its fields are exactly `oCMobInter`'s) and `oCTouchDamage`
+has never been catalogued. `oCMOB` and `oCMobFire` go the other way — catalogued
+and editable, and not authorable.
 
 **One field is chosen against its own measurement, and the round trip is why.**
 A mover's `lerpMode` is authored `CURVE`, ZenKit's default, where retail's

@@ -1001,6 +1001,9 @@ describe('assertApplyOpsRequest', () => {
         'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
         'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
         'zCMover', 'zCCodeMaster', 'zCMessageFilter',
+        // The movable-object family and the damage volume (I4).
+        'oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
+        'oCMobDoor', 'oCMobContainer', 'oCTouchDamage',
       ]) {
         expect(() => assertApplyOpsRequest({
           ops: [{ ...add, to: { position: [0, 0, 0], class: className } }],
@@ -1009,10 +1012,12 @@ describe('assertApplyOpsRequest', () => {
           ops: [{ ...add, to: { position: [0, 0, 0], class: className, instance: 'ITFO_APPLE' } }],
         })).toThrow(/instance/);
       }
-      // `zCTriggerScript` is the pointed one since I3: that class *is*
-      // authorable and the archive spells it `oCTriggerScript`, so the spoken
-      // name is still one the binding has no construction for.
-      for (const bad of ['oCMobDoor', 'zCTriggerScript', 'ocitem', '', 7, null]) {
+      // `zCTriggerScript` is the pointed one since I3 and `zCTouchDamage` since
+      // I4: both classes *are* authorable and a world spells both with the `oC`
+      // prefix, so the spoken name is still one the binding refuses.
+      // `oCMobDoor` was in this list until I4 made it authorable; `oCMobFire`
+      // is the catalogued class of that family which I4 deliberately left out.
+      for (const bad of ['oCMobFire', 'zCTouchDamage', 'zCTriggerScript', 'ocitem', '', 7, null]) {
         expect(() => assertApplyOpsRequest({
           ops: [{ ...add, to: { position: [0, 0, 0], class: bad } }],
         })).toThrow(/class/);

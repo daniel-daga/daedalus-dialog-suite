@@ -1344,11 +1344,15 @@ describe('the spec a duplicate is built from', () => {
   });
 
   it('drops a class the binding cannot construct, rather than refusing the copy', () => {
-    // An `oCMobDoor` still duplicates as a `zCVob` with the door's name, pose
+    // An `oCMobFire` still duplicates as a `zCVob` with the fire's name, pose
     // and visual — lossy, exactly as it was before the class was carried at
     // all. Emitting the class would be refused by the IPC validator, which
     // turns a lossy duplicate into no duplicate.
-    const live = createVobReader(vobIndex([{ cls: 'oCMobDoor', name: 'DOOR' }]));
+    //
+    // This was `oCMobDoor` until I4 made the door authorable, which is what
+    // this assertion is for: the set shrinks with every increment, and a copy
+    // of a door now *is* a door.
+    const live = createVobReader(vobIndex([{ cls: 'oCMobFire', name: 'CAMPFIRE' }]));
 
     expect(duplicateVobSpec(live, 0)).not.toHaveProperty('class');
   });

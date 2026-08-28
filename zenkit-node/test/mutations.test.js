@@ -886,7 +886,12 @@ test('an oCItem throws on a bad parent path', () => {
 
 test('insertVob refuses a class it has no construction for', () => {
   const handle = load();
-  for (const bad of ['oCMobDoor', 'zCTriggerScript', 'oCitem', '', 7]) {
+  // `oCMobFire` and `oCMOB` are the pointed ones since I4: both are catalogued
+  // classes of the family it made authorable, and neither is in it. And
+  // `zCTouchDamage` is the family's own name trap - ZenKit's own documentation
+  // and everyday speech spell it `zC`, a world spells it `oC`, and only the
+  // archive's spelling is a class this can author.
+  for (const bad of ['oCMobFire', 'oCMOB', 'zCTouchDamage', 'zCTriggerScript', 'oCitem', '', 7]) {
     assert.throws(
       () => zenkit.insertVob(handle, null, { class: bad, position: [0, 0, 0] }),
       Error,
@@ -1169,6 +1174,142 @@ test('every authored trigger survives a save and reload', () => {
     const before = dumpOf(handle);
 
     const out = path.join(dir, 'triggers.zen');
+    zenkit.saveWorld(handle, out);
+    const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+
+    for (const [className, at] of placed) {
+      const was = vobAt(before, at);
+      const is = vobAt(reloaded, at);
+      assert.strictEqual(is.class, className);
+      assert.deepStrictEqual(is.props, was.props, className);
+      assert.deepStrictEqual(is.flags, was.flags, className);
+      assert.deepStrictEqual(is.position, was.position, className);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The movable-object family (level-editor.md §16.15, I4). Six of the eight
+// derive from `VInteractiveObject` and so from `VMovableObject`, sharing both
+// layers' fields; `oCTouchDamage` derives straight from `zCVob` and shares
+// nothing with them. Every default below is retail's own majority over
+// NewWorld/OldWorld/AddonWorld (2026-08-28), measured across the 1,424 VOBs of
+// these classes — and unlike the trigger family, this one *agrees with itself*:
+// hp is 10 and damage 0 on every single one, so the shared half is genuinely
+// shared and only the container's `locked` is decided per class.
+
+// The eleven `VMovableObject` declares. `focusName` is empty for the reason a
+// trigger's `target` is: it names a localization constant this cannot invent,
+// and it is catalogued, so the grid fills it.
+const MOB_BASE = {
+  focusName: '',
+  hp: 10,
+  damage: 0,
+  movable: false,
+  takable: false,
+  focusOverride: false,
+  soundMaterial: 0,
+  visualDestroyed: '',
+  owner: '',
+  ownerGuild: '',
+  destroyed: false,
+};
+
+// Plus the six `VInteractiveObject` adds. `stateCount` is 1 on 1,287 of the
+// 1,290 interactive objects retail places (the exceptions are two ladders at 0
+// and the one wheel at 16), and `onStateChangeFunction` is empty for the reason
+// `oCTriggerScript`'s `function` is — naming a Daedalus function that may not
+// exist is worse than calling nothing.
+const INTER_BASE = {
+  ...MOB_BASE,
+  stateCount: 1,
+  target: '',
+  item: '',
+  conditionFunction: '',
+  onStateChangeFunction: '',
+  rewind: false,
+};
+
+// class -> the props the construction is answerable for, base fields excluded.
+const I4_EXPECTED = {
+  oCMobInter: INTER_BASE,
+  // Ladder, switch, wheel and bed declare not one field beyond `oCMobInter`, so
+  // there is nothing per class to measure and nothing per class to author.
+  oCMobLadder: INTER_BASE,
+  oCMobSwitch: INTER_BASE,
+  oCMobWheel: INTER_BASE,
+  oCMobBed: INTER_BASE,
+  // Retail's 248 doors: unlocked (217), and no door in any of the three worlds
+  // carries a pick combination.
+  oCMobDoor: { ...INTER_BASE, locked: false, key: '', pickString: '' },
+  // **`locked` is authored against retail's own majority** (199 of 294 chests
+  // are locked): every locked retail chest carries a key or a pick string, and
+  // this can author neither, so a locked one would be a container nothing in
+  // the game can ever open. The same "a legal write the engine ignores" family
+  // of reasoning as the mover's `lerpMode`, from the other end.
+  oCMobContainer: { ...INTER_BASE, locked: false, key: '', pickString: '', contents: '' },
+  // Retail's 51 damage volumes, which agree about almost everything: 1000
+  // damage (49), point damage alone (48), a two-second tick (42), full volume
+  // scale (51) and BOX collision (51). `collision` is an enum the catalogue
+  // holds no field for, so BOX is what a placed one keeps.
+  oCTouchDamage: {
+    damage: 1000,
+    barrier: false, blunt: false, edge: false, fire: false,
+    fly: false, magic: false, point: true, fall: false,
+    repeatDelaySec: 2, volumeScale: 1, collision: 1,
+  },
+};
+
+for (const [className, expected] of Object.entries(I4_EXPECTED)) {
+  test(`insertVob authors a ${className} on retail's own majority`, () => {
+    const handle = load();
+    const at = zenkit.insertVob(handle, null, {
+      class: className, name: `PLACED_${className}`, position: [1, 2, 3],
+    });
+
+    const vob = vobAt(dumpOf(handle), at);
+    assert.strictEqual(vob.class, className);
+    assert.strictEqual(vob.name, `PLACED_${className}`);
+    for (const [key, value] of Object.entries(expected)) {
+      assert.deepStrictEqual(vob.props[key], value, `${className}.${key}`);
+    }
+    // Answerable for *every* field of the class, exactly as I3's table is: a key
+    // the dump reports and this table forgets is a field left to whatever the
+    // struct's memory happened to hold.
+    const unclaimed = Object.keys(vob.props)
+      .filter((key) => !(key in expected) && !BASE_PROP_KEYS.includes(key));
+    assert.deepStrictEqual(unclaimed, [], className);
+  });
+}
+
+test('no member of the movable-object family takes an instance', () => {
+  const handle = load();
+  for (const className of Object.keys(I4_EXPECTED)) {
+    assert.throws(
+      () => zenkit.insertVob(handle, null, {
+        class: className, instance: 'ITFO_APPLE', position: [0, 0, 0],
+      }),
+      /instance/,
+      className
+    );
+  }
+});
+
+test('every authored movable object survives a save and reload', () => {
+  // The writer is the half the dump cannot see, and this family has seventeen
+  // fields before its own class starts — one left indeterminate round-trips as
+  // whatever was on the stack.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zk-i4-'));
+  try {
+    const handle = load();
+    const placed = Object.keys(I4_EXPECTED).map((className) => [
+      className,
+      zenkit.insertVob(handle, null, { class: className, position: [1, 2, 3] }),
+    ]);
+    const before = dumpOf(handle);
+
+    const out = path.join(dir, 'mobs.zen');
     zenkit.saveWorld(handle, out);
     const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
 

@@ -272,9 +272,39 @@ describe('the per-class field catalogue', () => {
       'zCVob', 'oCItem', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
       'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
       'zCMover', 'zCCodeMaster', 'zCMessageFilter',
+      'oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
+      'oCMobDoor', 'oCMobContainer', 'oCTouchDamage',
     ]);
     expect(isAuthorableVobClass('zCTriggerScript')).toBe(false);
     expect(isAuthorableVobClass('zCTriggerChangeLevel')).toBe(false);
+  });
+
+  it('places the movable-object family, and not the two of it that are only editable', () => {
+    // I4 (level-editor.md §16.15). `oCTouchDamage` travels with them because it
+    // is the other volume a designer places by hand, and it carries the same
+    // name trap the trigger family had: ZenKit's own documentation says
+    // `zCTouchDamage` and a world says `oC`.
+    for (const className of [
+      'oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
+      'oCMobDoor', 'oCMobContainer', 'oCTouchDamage',
+    ]) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+    }
+    expect(isAuthorableVobClass('zCTouchDamage')).toBe(false);
+    // The two the family's catalogue holds that I4 did *not* make authorable,
+    // and they are editable-only on purpose rather than by oversight: neither
+    // is in the card's list, and an `oCMobFire` in particular is only ever a
+    // rigged model with a fire template on a bone, which nothing here can name.
+    expect(isAuthorableVobClass('oCMOB')).toBe(false);
+    expect(isAuthorableVobClass('oCMobFire')).toBe(false);
+    expect(classPropKeys('oCMobFire').length).toBeGreaterThan(0);
+    // And two more authorable-with-nothing-catalogued classes, the state I3
+    // established: a bed has exactly `oCMobInter`'s fields and is missing from
+    // `CLASS_FIELDS`, and a damage volume has never been catalogued at all.
+    // Both are placeable and both work unaided; making them editable is a
+    // catalogue entry *and* a `setVobClassProp` case, which is not this card.
+    expect(classPropKeys('oCMobBed')).toEqual([]);
+    expect(classPropKeys('oCTouchDamage')).toEqual([]);
   });
 
   it('refuses a class name that is a property of every object', () => {

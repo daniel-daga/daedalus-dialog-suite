@@ -232,7 +232,7 @@ export function setVobClassProp(
 export interface NewVob {
   /**
    * The class the new VOB *is* — its C++ type, not a field on it — defaulting to
-   * `zCVob` (level-editor.md §16.15, I1 to I3).
+   * `zCVob` (level-editor.md §16.15, I1 to I4).
    *
    * A closed set, because each class needs its own field-complete construction:
    * ZenKit's structs have uninitialized fields, and `setVobClassProp` switches
@@ -259,7 +259,18 @@ export interface NewVob {
     | 'oCTriggerChangeLevel'
     | 'zCMover'
     | 'zCCodeMaster'
-    | 'zCMessageFilter';
+    | 'zCMessageFilter'
+    // The movable-object family (I4), and the damage volume that is placed by
+    // hand like one. `oCTouchDamage` is the name to get right here: ZenKit's
+    // own documentation calls it `zCTouchDamage` and a world does not.
+    | 'oCMobInter'
+    | 'oCMobBed'
+    | 'oCMobLadder'
+    | 'oCMobSwitch'
+    | 'oCMobWheel'
+    | 'oCMobDoor'
+    | 'oCMobContainer'
+    | 'oCTouchDamage';
   /**
    * The script instance an `oCItem` spawns — required for one, and refused for
    * any other class, which has no such field. The name is not checked against
