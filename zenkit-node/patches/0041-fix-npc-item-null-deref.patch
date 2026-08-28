@@ -1,0 +1,43 @@
+VNpc: an item that does not resolve is a null dereference, not a missing item.
+
+`VNpc::load`'s item loop reads each item and immediately dereferences it:
+
+	this->items[i] = r.read_object<VItem>(version); // item0
+
+	if ((this->items[i]->s_flags & 0x200) != 0) {
+		(void) r.read_int(); // shortKey<n>
+	}
+
+`ReadArchive::read_object` returns **null** for three separate file-supplied
+conditions -- an unknown class name, an object marked empty (`%`), and a
+reference whose index is not in the object cache -- which is the same set patch
+0033 named at the waynet. The `s_flags` read is not optional: it decides whether
+a `shortKey<n>` int follows the item on the wire.
+
+This is not the count defect patch 0040 bounds and is not fixed by bounding it.
+Measured against `zenkit-node`'s `npc` fixture, which carries one item, with
+`itemCount` rewritten in place from 1 to **2** -- a value inside any byte-based
+bound -- the child dies with `0xC0000005` in 60 ms.
+
+Unlike a waynet edge endpoint, an item is written inline rather than by
+reference, so a missing one is not a case the format tolerates and refusing the
+world is the right answer rather than a new refusal.
+
+--- a/src/vobs/Misc.cc
++++ b/src/vobs/Misc.cc
+@@ -417,6 +417,15 @@
+ 		for (auto i = 0u; i < item_count; ++i) {
+ 			this->items[i] = r.read_object<VItem>(version); // item0
+ 
++			// `read_object` returns null for an object whose class the file does not
++			// name correctly, for one marked empty and for an unresolved reference --
++			// and the next line dereferences it to decide whether a `shortKey<n>` int
++			// follows. Unlike a waynet edge endpoint (patch 0033) an item is written
++			// inline, so a missing one is not a case the format tolerates.
++			if (this->items[i] == nullptr) {
++				throw ParserError {"VNpc", "item object failed to load"};
++			}
++
+ 			if ((this->items[i]->s_flags & 0x200) != 0) {
+ 				(void) r.read_int(); // shortKey<n> // TODO
+ 			}

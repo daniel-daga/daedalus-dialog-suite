@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0039`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0041`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,9 +136,9 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **The world reader is still not crash-safe** — eleven instances closed
-  (`0029`–`0039`) and the binding's own walks with them; what is left is the
-  `ReadMemory::seek` decision. Unowned. §16.11
+- **The world reader is still not crash-safe** — thirteen instances closed
+  (`0029`–`0041`); what is left is the `ReadMemory::seek` decision and
+  `zCCSCamera`'s two counts. Unowned. §16.11
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -157,6 +157,9 @@ card waits on live at its pointer — put new prose there, not here.
 
 ## Done
 
+- **The `oCNpc` reader is bounded, and the fixture was the hard part** —
+  patches `0040`/`0041`; a third fixture variant (`npc`) exists because the
+  `--counts` sweep can only reach fields its fixture carries. §16.11
 - **The binding's four vob walks are iterative, and no patch was involved** —
   `CountVobs`/`CollectVobNames` (`src/binding.cc`) and
   `CollectVobs`/`CollectVobColumns` (`src/normalize.cc`) are `zenkit-node`'s own

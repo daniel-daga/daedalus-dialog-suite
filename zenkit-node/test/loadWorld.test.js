@@ -682,6 +682,94 @@ ${result.stderr}`);
   }
 });
 
+// The `oCNpc` reader's element counts, and the one null the item loop cannot
+// survive. `minimal.g2.zen` carries no NPC, which is why
+// `tools/fuzz-world.js --counts` — a sweep of every INTEGER entry the fixture
+// happens to have — could never reach these five fields. The `npc` fixture
+// variant exists only for this file: a world with one `oCNpc` carrying one
+// overlay, one talent, one news entry, one item and one inventory slot, so
+// every loop after a count is entered at least once.
+const NPC_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-npc-'));
+const NPC_FIXTURE = path.join(NPC_DIR, 'npc.g2.zen');
+zenkit._authorFixtureWorld(NPC_FIXTURE, 'binsafe', 'g2', 'npc');
+test.after(() => fs.rmSync(NPC_DIR, { recursive: true, force: true }));
+
+// Rewrites one of the NPC's own INTEGER entries in place. Located by structure
+// — the innermost object on the entry's path is the `oCNpc` — so nothing here
+// depends on a byte offset, and the file's length does not change.
+function seedNpcCount(name, entryName, value) {
+  const buf = Buffer.from(fs.readFileSync(NPC_FIXTURE));
+
+  const entry = [...walk(buf)].find((ev) =>
+    ev.kind === 'entry' &&
+    ev.entryName === entryName &&
+    ev.entryType === 'INTEGER' &&
+    ev.path.length > 0 &&
+    ev.path[ev.path.length - 1].includes('oCNpc'));
+  assert.ok(entry, `the npc fixture must carry an oCNpc ${entryName} entry`);
+
+  buf.writeUInt32LE(value, entry.payloadOffset);
+
+  const file = path.join(NPC_DIR, name);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+// Only three of the NPC's five counts are here, and the two that are missing
+// were measured, not overlooked. `numOverlays` and `NumOfEntries` (news) drive
+// `push_back` loops of plain fields, and the first read past the end of the
+// entry stream is a type mismatch that throws in 66 ms — loud, like
+// `parse_vob_tree`'s `childs<N>`, so bounding them would be hardening a reader
+// that already fails correctly. The three below all `resize` from the file's
+// own count before a single object is read.
+const NPC_COUNT_CASES = [
+  // 4.3 GB of null talents, and the world still reports LOADED after 6.8 s:
+  // `read_object` past the end of the entry stream logs and returns null rather
+  // than throwing, and nothing dereferences a talent.
+  { entry: 'numTalents', id: 'talents', guard: /talent count/i },
+  // 2.1 GB before the null item guard fires.
+  { entry: 'itemCount', id: 'items', guard: /item count/i },
+  // 2.1 GB before the type mismatch on the slot's `used` flag.
+  { entry: 'numInvSlots', id: 'inventory slots', guard: /inventory slot count/i },
+];
+
+for (const testCase of NPC_COUNT_CASES) {
+  test(`an NPC declaring more ${testCase.id} than the archive holds bytes throws instead of committing gigabytes`,
+    () => {
+      // An *absurd* count is the harmless one, as everywhere else in this file
+      // — `resize` throws `bad_alloc` and the loop is never entered — so the
+      // value below is a merely large one a guard has to refuse, and the
+      // assertion names the guard's own wording rather than accepting any
+      // failure.
+      const corrupt = seedNpcCount(`bad-npc-${testCase.id.replace(/ /g, '-')}.zen`, testCase.entry, 0x0fffffff);
+
+      const result = loadInChild(corrupt, 60_000);
+      assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+      assert.strictEqual(result.status, 0,
+        `the child died (status ${result.status}): ${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /^THREW failed to load world: /);
+      assert.match(result.stdout, testCase.guard);
+    });
+}
+
+test('an NPC item that does not resolve throws instead of dereferencing null', () => {
+  // Not the same defect as the count above, and not fixed by bounding it: the
+  // item loop reads `items[i]->s_flags` to decide whether a `shortKey<n>` int
+  // follows, and `read_object` returns null for the same three file-supplied
+  // reasons patch 0033 named at the waynet — an unknown class, an object marked
+  // empty, an unresolved reference. An `itemCount` of 2 over a fixture holding
+  // one item is inside any byte-based bound and killed the child with
+  // 0xC0000005.
+  const corrupt = seedNpcCount('bad-npc-item-null.zen', 'itemCount', 2);
+
+  const result = loadInChild(corrupt, 60_000);
+  assert.strictEqual(result.timedOut, false, 'loadWorld did not return within 60 s');
+  assert.strictEqual(result.status, 0,
+    `the child died (status ${result.status}): ${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /^THREW failed to load world: /);
+  assert.match(result.stdout, /item object failed to load/i);
+});
+
 // A VOb tree that nests one child per level, located by structure: the
 // `VobTree` object opens with the root count (`childs0`), then each root VOb
 // followed by its own child count. The first root VOb and its count are found

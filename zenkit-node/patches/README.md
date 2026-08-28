@@ -31,6 +31,11 @@ These are not independent patches that happen to be numbered.
   This is why `build-zenkit.js:63` documents that per-patch reverse-checking
   misjudges them.
 
+- **0040 → 0041.** Not duplicates, and both in `VNpc::load`. `0040` bounds the
+  three counts that size a `resize`; `0041` then guards the null `read_object`
+  can hand the item loop *inside* any such bound. `0041`'s context lines sit
+  after the item-count guard `0040` adds.
+
 `0013` and `0018` both touch archive headers but different writers (Binary vs
 BinSafe/Ascii) in opposite directions, and do not conflict.
 
@@ -39,7 +44,7 @@ BinSafe/Ascii) in opposite directions, and do not conflict.
 Upstreamability only. Every one of these is required for our fidelity claims
 regardless of what upstream does with it.
 
-### Upstreamable as-is — plain ZenKit bugs any consumer wants (31)
+### Upstreamable as-is — plain ZenKit bugs any consumer wants (33)
 
 | Patch | What it fixes |
 |---|---|
@@ -74,10 +79,12 @@ regardless of what upstream does with it.
 | `0037` | `WayNet::load` sized `points.reserve` and `edges.reserve` from unvalidated file counts, and the edge loop cannot stop on its own: `read_object` past the end of the entry stream returns null, which a waynet endpoint is allowed to be. `numWays` of 0x0FFFFFFF builds 268 million edges and the world still reports as loaded, after 41 s. Bounded by the bytes left in the reader, like `0034` and `0036` |
 | `0038` | `parse_vob_tree` recursed once per child and its `skip` lambda once per nesting level, and the nesting depth is the file's own `childs<N>` counts. 60,000 nested VObs (9 MB) kill the process with an uncatchable `0xC00000FD`; 200,000 empty ones (5 MB) do it through the skip path. Both walks parse iteratively instead of being bounded, for `0035`'s reason — a valid tree's depth has no documented ceiling |
 | `0039` | The other half of `0038`: `VirtualObject`'s defaulted destructor tears a tree down by recursing once per level, so a world 60,000 VObs deep loads and *then* dies with `0xC00000FD`. The destructor moves each child's children out onto an explicit stack, leaving a child shared with another owner whole |
+| `0040` | `VNpc::load` sized `talents`, `items` and `slots` with `resize` from three unvalidated file counts. `numTalents` of 0x0FFFFFFF builds 268 million null talents, 4.3 GB, and the world still reports as loaded after 6.8 s; the other two commit 2.1 GB each before failing. Bounded by the bytes left in the reader, like `0034`, `0036` and `0037`. `numOverlays` and the news `NumOfEntries` are left alone on purpose — both already throw in 66 ms |
+| `0041` | `VNpc::load` dereferences each item it has just read (`items[i]->s_flags` decides whether a `shortKey<n>` int follows), and `read_object` returns null for the three file-supplied reasons `0033` named. An `itemCount` of 2 over a world holding one item — inside any byte-based bound — kills the process with `0xC0000005` |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
-`0027`, `0029`–`0039` are the same class of standalone
+`0027`, `0029`–`0041` are the same class of standalone
 fix — a hardening of the read path, reachable by any consumer that opens a
 file it did not write. `0029` is the strongest of the eight: the bug it stops is an
 out-of-bounds write, not a hang, a null deref or an out-of-bounds read.
@@ -113,7 +120,7 @@ from the `oCMOB` save sites; until someone writes that, this stays local.
 Independent, highest-value and least arguable first:
 
 1. `0020`, `0021`, `0022`, `0027`, `0029`, `0030`, `0031`, `0032`, `0033`, `0034`,
-   `0035`, `0036`, `0037`, `0038` (with `0039`) — one PR
+   `0035`, `0036`, `0037`, `0038` (with `0039`), `0040`, `0041` — one PR
    each.
 2. `0002`, `0003`, `0004`, `0005`, `0006`, `0028` — small self-evident writer bugs.
 3. `0018`, then `0013`.

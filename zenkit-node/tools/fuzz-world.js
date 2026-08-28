@@ -26,6 +26,13 @@
 // load that succeeds is therefore reported with its wall clock, and a slow
 // `LOADED` is a finding, not a pass.
 //
+// **Its limit is the fixture's field set, and that is not a small limit.** A
+// sweep only reaches the INTEGER entries the file it is given happens to carry,
+// so `minimal.g2.zen` -- which has no `oCNpc` -- hides all five of the NPC
+// reader's element counts, three of which were unbounded (patch `0040`). Point
+// `--file` at a world that carries the class, or author one: the `npc` fixture
+// variant exists for exactly that.
+//
 // Usage:
 //   node tools/fuzz-world.js [--seeds 40] [--bytes 20] [--whole] [--file <zen>]
 //   node tools/fuzz-world.js --seed 2 [--bytes 20] [--file <zen>]

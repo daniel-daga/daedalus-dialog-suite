@@ -460,6 +460,121 @@ std::shared_ptr<VirtualObject> BuildVobTree() {
   return root;
 }
 
+// A root tree carrying one `oCNpc`, authored only into the kNpc variant so the
+// golden fixture's VOBs stay exactly as they were. Its point is the five
+// element counts `VNpc::load` reads off the file — overlays, talents, news,
+// items and inventory slots — none of which exists anywhere in the golden
+// world, so nothing could seed them. Every list is given one entry, because a
+// count of zero is written and read without the loop after it ever running.
+std::shared_ptr<VirtualObject> BuildNpcVobTree() {
+  auto root = std::make_shared<VirtualObject>();
+  root->type = VirtualObjectType::zCVob;
+  root->vob_name = "FIXTURE_NPC_ROOT";
+  root->position = Vec3 {0.0f, 0.0f, 0.0f};
+  root->bbox = AxisAlignedBoundingBox {Vec3 {-10.0f, -10.0f, -10.0f}, Vec3 {10.0f, 10.0f, 10.0f}};
+
+  auto npc = std::make_shared<VNpc>();
+  npc->type = VirtualObjectType::oCNpc;
+  npc->vob_name = "FIXTURE_NPC";
+  npc->position = Vec3 {100.0f, 0.0f, 100.0f};
+  npc->bbox = AxisAlignedBoundingBox {Vec3 {99.0f, 0.0f, 99.0f}, Vec3 {101.0f, 2.0f, 101.0f}};
+
+  // None of VNpc's scalars is default-initialized in ZenKit; zero them all so
+  // the authored world is deterministic.
+  npc->npc_instance = "PC_HERO";
+  npc->model_scale = Vec3 {1.0f, 1.0f, 1.0f};
+  npc->model_fatness = 0.0f;
+  npc->overlays = {"HUMANS_RELAXED.MDS"};
+  npc->flags = 0;
+  npc->guild = 0;
+  npc->guild_true = 0;
+  npc->level = 1;
+  npc->xp = 0;
+  npc->xp_next_level = 0;
+  npc->lp = 0;
+
+  auto talent = std::make_shared<VNpc::Talent>();
+  talent->talent = 1;
+  talent->value = 2;
+  talent->skill = 3;
+  npc->talents = {talent};
+
+  npc->fight_tactic = 0;
+  npc->fight_mode = 0;
+  npc->wounded = false;
+  npc->mad = false;
+  npc->mad_time = 0;
+  npc->player = false;
+  for (auto i = 0u; i < VNpc::attribute_count; ++i) npc->attributes[i] = 0;
+  for (auto i = 0u; i < VNpc::hcs_count; ++i) npc->hit_chance[i] = 0;
+  for (auto i = 0u; i < VNpc::missions_count; ++i) npc->missions[i] = 0;
+  npc->start_ai_state = "";
+  for (auto i = 0u; i < VNpc::aivar_count; ++i) npc->aivar[i] = 0;
+  npc->script_waypoint = "WP_FIXTURE_01";
+  npc->attitude = 0;
+  npc->attitude_temp = 0;
+  npc->name_nr = 0;
+  npc->move_lock = false;
+  for (auto i = 0u; i < VNpc::packed_count; ++i) npc->packed[i] = "";
+
+  auto news = std::make_unique<VNpc::News>();
+  news->told = false;
+  news->spread_time = 0.0f;
+  news->spread_type = VNpc::NewsSpread::DONT_SPREAD;
+  news->news_id = VNpc::NewsId::THEFT;
+  news->gossip = false;
+  news->guild_victim = false;
+  news->witness_name = "WITNESS";
+  news->offender_name = "OFFENDER";
+  news->victim_name = "VICTIM";
+  npc->news.push_back(std::move(news));
+
+  auto carried = std::make_shared<VItem>();
+  carried->type = VirtualObjectType::oCItem;
+  carried->vob_name = "ITEM_NPC_SWORD";
+  carried->instance = "ITMW_1H_SWORD_01";
+  carried->position = Vec3 {100.0f, 0.0f, 100.0f};
+  carried->bbox = AxisAlignedBoundingBox {Vec3 {99.0f, 0.0f, 99.0f}, Vec3 {101.0f, 2.0f, 101.0f}};
+  // `s_flags` decides whether a `shortKey<n>` int follows the item on the wire;
+  // leave it clear so the item entry is the only thing the loop reads.
+  carried->s_flags = 0;
+  npc->items = {carried};
+
+  auto slot = std::make_unique<VNpc::Slot>();
+  // An unused slot writes only `used` and `name`; a used one writes a nested
+  // item object too, which is not what these counts are about.
+  slot->used = false;
+  slot->name = "ZS_RIGHTHAND";
+  slot->in_inventory = false;
+  npc->slots.push_back(std::move(slot));
+
+  npc->current_state_valid = false;
+  npc->current_state_name = "";
+  npc->current_state_index = 0;
+  npc->current_state_is_routine = false;
+  npc->next_state_valid = false;
+  npc->next_state_name = "";
+  npc->next_state_index = 0;
+  npc->next_state_is_routine = false;
+  npc->last_ai_state = 0;
+  npc->has_routine = false;
+  npc->routine_changed = false;
+  npc->routine_overlay = false;
+  npc->routine_overlay_count = 0;
+  npc->walkmode_routine = 0;
+  npc->weaponmode_routine = false;
+  npc->start_new_routine = false;
+  npc->ai_state_driven = 0;
+  npc->ai_state_pos = Vec3 {0.0f, 0.0f, 0.0f};
+  npc->current_routine = "";
+  npc->respawn = false;
+  npc->respawn_time = 0;
+  for (auto i = 0u; i < VNpc::protection_count; ++i) npc->protection[i] = 0;
+
+  root->children = {npc};
+  return root;
+}
+
 // A second root tree, authored only into the mesh-extraction variant so the
 // golden fixture's VOBs stay exactly as they were. BuildVobTree's VOBs carry no
 // visual and no flags at all, which is fine for a round-trip fixture and
@@ -890,6 +1005,9 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
   world->world_vobs.push_back(BuildVobTree());
   if (variant == FixtureVariant::kMeshExtraction) {
     world->world_vobs.push_back(BuildVisualVobTree());
+  }
+  if (variant == FixtureVariant::kNpc) {
+    world->world_vobs.push_back(BuildNpcVobTree());
   }
   world->way_net = BuildWayNet(variant);
 

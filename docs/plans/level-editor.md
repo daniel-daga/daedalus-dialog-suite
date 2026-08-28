@@ -3356,6 +3356,39 @@ loadable `.zen` under `Gothic II/_work/Data/Worlds` still load unchanged, and
 `--fixtures` is still `identical`. Covered by three child-process tests in
 `zenkit-node/test/loadWorld.test.js`.
 
+**The first VOB reader is bounded (2026-08-28, patches `0040` and `0041`), and
+getting at it needed a new fixture.** `VNpc::load` `resize`s `talents`, `items`
+and `slots` from three unvalidated file counts, and it dereferences each item it
+has just read — `items[i]->s_flags` decides whether a `shortKey<n>` int follows
+on the wire, and `read_object` returns null for the three reasons `0033` named.
+Both were measured, not inferred: `numTalents` at 0x0FFFFFFF builds 268 million
+null talents, 4.3 GB, and the world reports **`LOADED`** after 6.8 s (`itemCount`
+and `numInvSlots` commit 2.1 GB each before failing loudly, which is `0037`'s
+waypoint-count argument); and an `itemCount` of **2** over a world holding one
+item — a value inside any byte-based bound, so not the same defect — kills the
+child with `0xC0000005` in 60 ms.
+
+**Two of the five counts are deliberately left alone, and that is a measurement
+too.** `numOverlays` and the news `NumOfEntries` drive `push_back` loops over
+plain fields, and the first read past the end of the entry stream is a type
+mismatch that throws in 66 ms — loud, so bounding them would be
+`get_entry_key()` again.
+
+**What actually blocked this was the fixture, not the fix.** `minimal.g2.zen`
+carries no `oCNpc`, so the `--counts` sweep — whose limit this section already
+named — could never reach any of the five fields, and neither could any seed. A
+third fixture variant (`npc`, `src/fixture.cc`) authors a world with one NPC
+carrying one of each list, into a temp directory at test time; the golden
+fixture is untouched. **Read that as the general shape**: for a reader the
+sweep cannot reach, the work is authoring the data, and the patch is the small
+half. The remaining unbounded VOB counts are `zCCSCamera`'s `numPos`/`numTargets`
+(world-reachable, `push_back` of objects, unmeasured) and `oCMobContainer`'s
+`NumOfEntries` and `zCTrigger`'s `numTriggerEvents`, both savegame-only and so
+unreachable from a world.
+
+The 24 loadable retail `.zen` under `Gothic II/_work/Data/Worlds` all still load
+with identical VOB and waypoint counts.
+
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
 Both landed with numbers chosen by reasoning, and neither has a test that could

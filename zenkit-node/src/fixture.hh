@@ -18,6 +18,13 @@ enum class FixtureVariant {
   // test time, never checked in — it backs no fidelity claim, so it is free to
   // change with the extractor it exercises.
   kMeshExtraction,
+  // A world carrying one `oCNpc`. The golden fixture has none, which is why
+  // `tools/fuzz-world.js --counts` cannot sweep the NPC reader's five element
+  // counts (`numOverlays`, `numTalents`, `NumOfEntries`, `itemCount`,
+  // `numInvSlots`) — a sweep only reaches the fields its fixture carries.
+  // Authored into a temp directory at test time and never checked in; it backs
+  // no fidelity claim.
+  kNpc,
 };
 
 // Builds a tiny deterministic world with ZenKit's own writer and saves it to
