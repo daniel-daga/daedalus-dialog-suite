@@ -128,6 +128,96 @@ export function flattenVisible(tree: VobTree, expanded: ReadonlySet<number>): Vo
   return rows;
 }
 
+/**
+ * What a scene-tree filter asks for: a substring of the VOB's name, a set of
+ * class names, or both. An absent or blank half means "any".
+ *
+ * Spacer filters by exactly these two, and neither of them needs a per-VOB
+ * round trip: `names`/`nameIndex` and `classes`/`classIndex` are already in the
+ * summary, interned.
+ */
+export interface VobQuery {
+  /** Case-insensitive, matched anywhere in the name. */
+  text?: string;
+  /** Kept classes, matched exactly against the class dictionary. Empty is
+   *  "any class", not "no class". */
+  classes?: readonly string[];
+}
+
+/** Whether a query would keep every VOB, and so is not worth running. */
+export function isEmptyQuery(query: VobQuery): boolean {
+  return (query.text ?? '').trim() === '' && (query.classes ?? []).length === 0;
+}
+
+/**
+ * One byte per VOB: 1 when it matches, 0 when it does not.
+ *
+ * The query is answered against the **dictionaries** first — retail worlds name
+ * 2,654 names and 37 classes for 41,393 VOBs — and the sweep over the VOBs is
+ * then an integer lookup per row. Lowercasing per row instead would do fifteen
+ * times the string work for the same answer, on every keystroke.
+ */
+export function matchVobs(index: VobIndex, query: VobQuery): Uint8Array {
+  const matches = new Uint8Array(index.count);
+  if (isEmptyQuery(query)) {
+    matches.fill(1);
+    return matches;
+  }
+
+  const text = (query.text ?? '').trim().toLowerCase();
+  const classes = query.classes ?? [];
+  const nameHits = text === ''
+    ? null
+    : index.names.map((name) => (name.toLowerCase().includes(text) ? 1 : 0));
+  const classHits = classes.length === 0
+    ? null
+    : index.classes.map((cls) => (classes.includes(cls) ? 1 : 0));
+
+  const nameIndex = new Uint32Array(index.nameIndex);
+  const classIndex = new Uint32Array(index.classIndex);
+  for (let vob = 0; vob < index.count; vob++) {
+    if (nameHits !== null && nameHits[nameIndex[vob]] === 0) continue;
+    if (classHits !== null && classHits[classIndex[vob]] === 0) continue;
+    matches[vob] = 1;
+  }
+  return matches;
+}
+
+/**
+ * The rows a filtered scene tree draws: every match, and the ancestors that
+ * make it reachable, in pre-order.
+ *
+ * A match's own children are *not* kept unless they matched too — the point of
+ * the filter is that what is on screen is the answer, and a matched crate that
+ * unfolded into its forty unmatched contents would not be. That is why
+ * `hasChildren` is about the kept children and not the tree's: it is what a row
+ * can actually show.
+ *
+ * Expansion state is not consulted. A filter that also had to be unfolded by
+ * hand would hide the hit it just found.
+ */
+export function flattenMatching(tree: VobTree, matches: Uint8Array): VobRow[] {
+  const kept = new Uint8Array(matches);
+  for (let vob = 0; vob < kept.length; vob++) {
+    if (matches[vob] === 0) continue;
+    // Stops at the first already-kept ancestor: two matches under one parent
+    // walk the shared part of the path once between them.
+    for (let at = tree.parent(vob); at >= 0 && kept[at] === 0; at = tree.parent(at)) {
+      kept[at] = 1;
+    }
+  }
+
+  const rows: VobRow[] = [];
+  const walk = (vob: number, depth: number) => {
+    const children = tree.children(vob).filter((child) => kept[child] === 1);
+    rows.push({ vob, depth, hasChildren: children.length > 0 });
+    for (const child of children) walk(child, depth + 1);
+  };
+  for (const root of tree.roots) if (kept[root] === 1) walk(root, 0);
+
+  return rows;
+}
+
 export interface VobFlags {
   showVisual: boolean;
   vobStatic: boolean;

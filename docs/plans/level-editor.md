@@ -4250,6 +4250,28 @@ render, will be slower than no filter at all. Debounce, and derive.
 **Not in scope:** saving a filter, named filter sets, or a query language.
 Spacer has none of them.
 
+**Search and filter landed 2026-08-28.** `matchVobs`, `isEmptyQuery` and
+`flattenMatching` are in `zen-world/src/model/vobTree.ts`, beside
+`flattenVisible`: the query is answered against the dictionaries first and the
+sweep over the VOBs is an integer lookup per row, and `flattenMatching` keeps
+each match's ancestors so a hit deep in the tree is reachable without anyone
+expanding anything. The tree's own header carries the name field (debounced
+200 ms) and a multi-select over the class dictionary, and the count line reads
+"N of M VOBs" while a filter is up. Three decisions worth knowing before the
+visibility card builds on them:
+
+- **A match's unmatched children are not shown.** `hasChildren` on a filtered
+  row is about the *kept* children, so a matched crate does not unfold into its
+  forty unmatched contents. What is on screen is the answer to the query.
+- **A filtered tree ignores the expansion state and does not write to it.**
+  Chevrons follow the filtered rows and a toggle is a no-op while a filter is
+  up — so clearing the filter gives back the tree the user had, not 41,393 rows
+  left expanded by the filter.
+- **The predicate the visibility card wants is `matchVobs`**, which returns one
+  byte per VOB and is the natural input to a render-side "draw this VOB?" —
+  but the filter state lives in `WorldSceneTree` and would have to be lifted to
+  `WorldSurface` for the viewport to see it.
+
 ### 16.17 The rest of `zCVob` (§14.1 1.8)
 
 The base-class fields the property grid still does not expose, after the class

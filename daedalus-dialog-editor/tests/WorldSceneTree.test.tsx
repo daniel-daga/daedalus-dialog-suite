@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
 import WorldSceneTree from '../src/renderer/components/world/WorldSceneTree';
@@ -531,5 +531,98 @@ describe('WorldSceneTree', () => {
   it('says how many VOBs the world has, since the tree only ever shows a few', () => {
     render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
     expect(screen.getByTestId('world-tree-count')).toHaveTextContent('5');
+  });
+
+  // The filter (level-editor.md §16.16). Spacer narrows by name and by VOB
+  // type; a retail world is 41,393 VOBs, so a tree with no way to narrow it is
+  // a list nobody can find anything in.
+  describe('the filter', () => {
+    const typeName = async (user: ReturnType<typeof userEvent.setup>, value: string) => {
+      await user.clear(screen.getByTestId('world-tree-filter'));
+      if (value !== '') await user.type(screen.getByTestId('world-tree-filter'), value);
+    };
+
+    it('narrows the tree to the name matches, and to the path that reaches them', async () => {
+      const user = userEvent.setup();
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+      await typeName(user, 'TORCH');
+
+      // 3 matched; 0 and 2 are how it is reached, and they are shown without
+      // anyone having to expand them — a filter that had to be unfolded by
+      // hand would hide the hit it just found.
+      expect(await screen.findByTestId('world-vob-row-3')).toBeInTheDocument();
+      expect(row(0)).toBeInTheDocument();
+      expect(row(2)).toBeInTheDocument();
+      expect(row(1)).not.toBeInTheDocument();
+      expect(row(4)).not.toBeInTheDocument();
+    });
+
+    it('matches a name case-insensitively, anywhere in it', async () => {
+      const user = userEvent.setup();
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+      await typeName(user, 'ell');
+
+      await waitFor(() => expect(row(0)).not.toBeInTheDocument());
+      expect(row(4)).toBeInTheDocument();
+    });
+
+    it('narrows by VOB class, exactly, and combines the two halves', async () => {
+      const user = userEvent.setup();
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+      await user.click(screen.getByRole('combobox'));
+      await user.click(screen.getByRole('option', { name: 'zCVob' }));
+      await user.keyboard('{Escape}');
+
+      // Exactly `zCVob` — not `zCVobLight` or `zCVobLevelCompo`, which it
+      // prefixes, and which is why 2 is gone even though it is 3's parent.
+      expect(await screen.findByTestId('world-vob-row-4')).toBeInTheDocument();
+      expect(row(0)).toBeInTheDocument();
+      expect(row(2)).not.toBeInTheDocument();
+
+      await typeName(user, 'WELL');
+      await waitFor(() => expect(row(0)).not.toBeInTheDocument());
+      expect(row(4)).toBeInTheDocument();
+    });
+
+    it('says how many of the world’s VOBs the filter kept', async () => {
+      const user = userEvent.setup();
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+      expect(screen.getByTestId('world-tree-count')).toHaveTextContent('5 VOBs');
+
+      await typeName(user, 'TORCH');
+
+      // 1 of 5 — the match count, not the row count: 0 and 2 are on screen as
+      // the path to it and did not match anything.
+      await waitFor(() => expect(screen.getByTestId('world-tree-count'))
+        .toHaveTextContent('1 of 5'));
+    });
+
+    it('says so when nothing matches, rather than showing an empty tree', async () => {
+      const user = userEvent.setup();
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+      await typeName(user, 'NOTHING_IS_CALLED_THIS');
+
+      expect(await screen.findByTestId('world-tree-empty')).toBeInTheDocument();
+      expect(row(0)).not.toBeInTheDocument();
+    });
+
+    it('gives the collapsed tree back when the filter is cleared', async () => {
+      const user = userEvent.setup();
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+      await typeName(user, 'TORCH');
+      await screen.findByTestId('world-vob-row-3');
+      await typeName(user, '');
+
+      // Back to the roots, not to the expansion the filter drew: 41,393 VOBs
+      // left expanded is the layout the collapsed default exists to avoid.
+      await waitFor(() => expect(row(3)).not.toBeInTheDocument());
+      expect(row(4)).toBeInTheDocument();
+      expect(row(2)).not.toBeInTheDocument();
+    });
   });
 });

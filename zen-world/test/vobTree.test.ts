@@ -14,7 +14,9 @@
 import {
   buildVobTree,
   createVobReader,
+  flattenMatching,
   flattenVisible,
+  matchVobs,
   type VobIndex,
 } from '../src/model';
 
@@ -253,5 +255,108 @@ describe('createVobReader', () => {
     expect(reader.className(-1)).toBeNull();
     expect(reader.className(2)).toBeNull();
     expect(reader.position(2)).toBeNull();
+  });
+});
+
+// The scene-tree filter (level-editor.md §16.16).
+//
+// The whole design is the performance constraint: on a retail world this runs
+// over 41,393 VOBs, and both columns it reads are interned. So a query is
+// answered against the *dictionaries* — 37 classes, 2,654 names — and the sweep
+// over the VOBs is an integer lookup per row, never a string comparison.
+describe('matchVobs', () => {
+  const index = vobIndex([
+    { name: 'FIRE_01', cls: 'zCVobLight' },
+    { name: 'campfire', cls: 'zCVob' },
+    { name: '', cls: 'oCMobFire' },
+    { name: 'FIRE_02', cls: 'zCVobLight' },
+  ]);
+
+  it('matches a name case-insensitively, anywhere in it', () => {
+    expect(Array.from(matchVobs(index, { text: 'fire' }))).toEqual([1, 1, 0, 1]);
+    expect(Array.from(matchVobs(index, { text: 'FIRE_0' }))).toEqual([1, 0, 0, 1]);
+  });
+
+  it('matches a class by exact dictionary entry, not by substring', () => {
+    expect(Array.from(matchVobs(index, { classes: ['zCVobLight'] }))).toEqual([1, 0, 0, 1]);
+    // Or picking `zCVob` in the class list would drag in every class it
+    // prefixes, which is most of them.
+    expect(Array.from(matchVobs(index, { classes: ['zCVob'] }))).toEqual([0, 1, 0, 0]);
+    expect(Array.from(matchVobs(index, { classes: ['zCVob', 'oCMobFire'] })))
+      .toEqual([0, 1, 1, 0]);
+  });
+
+  it('requires both halves when both are given', () => {
+    expect(Array.from(matchVobs(index, { text: 'fire', classes: ['zCVobLight'] })))
+      .toEqual([1, 0, 0, 1]);
+  });
+
+  it('matches everything when the query is empty or only whitespace', () => {
+    expect(Array.from(matchVobs(index, {}))).toEqual([1, 1, 1, 1]);
+    expect(Array.from(matchVobs(index, { text: '  ', classes: [] }))).toEqual([1, 1, 1, 1]);
+  });
+
+  it('reads each dictionary entry once, not each VOB', () => {
+    // 20,000 VOBs sharing two names: a scan that lowercased per row would do
+    // 20,000 string operations for the two the dictionary actually holds.
+    const many = vobIndex(Array.from({ length: 20_000 }, (_, i) => ({
+      name: i % 2 === 0 ? 'Fire' : 'Torch',
+    })));
+    const lowered: string[] = [];
+    const names = many.names;
+    for (let i = 0; i < names.length; i++) {
+      const value = names[i];
+      Object.defineProperty(names, i, { get: () => { lowered.push(value); return value; } });
+    }
+
+    const matches = matchVobs(many, { text: 'fire' });
+
+    expect(matches.reduce((sum, hit) => sum + hit, 0)).toBe(10_000);
+    expect(lowered).toHaveLength(names.length);
+  });
+});
+
+describe('flattenMatching', () => {
+  //   0 root ──1 chest ──3 torch
+  //          └─2 barrel
+  //   4 root
+  const index = vobIndex([
+    { name: 'root' },
+    { parent: 0, childIndex: 0, name: 'chest' },
+    { parent: 0, childIndex: 1, name: 'barrel' },
+    { parent: 1, childIndex: 0, name: 'torch' },
+    { childIndex: 1, name: 'lamp' },
+  ]);
+  const tree = buildVobTree(index);
+
+  it('keeps the path to a match, so a hit deep in the tree is reachable', () => {
+    const rows = flattenMatching(tree, matchVobs(index, { text: 'torch' }));
+    expect(rows).toEqual([
+      { vob: 0, depth: 0, hasChildren: true },
+      { vob: 1, depth: 1, hasChildren: true },
+      { vob: 3, depth: 2, hasChildren: false },
+    ]);
+  });
+
+  it('drops a branch with no match in it', () => {
+    expect(flattenMatching(tree, matchVobs(index, { text: 'lamp' })).map((row) => row.vob))
+      .toEqual([4]);
+  });
+
+  it('does not show the children of a match that did not match themselves', () => {
+    // `chest` matched; `torch` under it did not, so the row for `chest` is a
+    // leaf here even though the tree says it has a child.
+    expect(flattenMatching(tree, matchVobs(index, { text: 'chest' })))
+      .toEqual([
+        { vob: 0, depth: 0, hasChildren: true },
+        { vob: 1, depth: 1, hasChildren: false },
+      ]);
+  });
+
+  it('keeps pre-order and real depth', () => {
+    const rows = flattenMatching(tree, matchVobs(index, { text: 'r' }));
+    // root, barrel and torch match; chest is only on the way to torch.
+    expect(rows.map((row) => row.vob)).toEqual([0, 1, 3, 2]);
+    expect(rows.map((row) => row.depth)).toEqual([0, 1, 2, 1]);
   });
 });

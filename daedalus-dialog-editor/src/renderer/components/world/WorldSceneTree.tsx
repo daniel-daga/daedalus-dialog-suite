@@ -1,11 +1,14 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, MenuItem, Select, TextField, Typography } from '@mui/material';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import { flattenVisible, type VobReader, type VobRow } from 'zen-world';
+import {
+  flattenMatching, flattenVisible, isEmptyQuery, matchVobs,
+  type VobQuery, type VobReader, type VobRow,
+} from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
 
@@ -26,6 +29,10 @@ import { vobModelOf } from '../../world/vobModel';
 // scrolling does not allocate a typed array per row per column.
 
 const ROW_HEIGHT = 28;
+/** How long the name field waits before the tree is re-filtered. A keystroke
+ *  costs a sweep over 41,393 VOBs and a re-flatten of what survived, and doing
+ *  that per character is slower than having no filter at all. */
+const FILTER_DEBOUNCE_MS = 200;
 const INDENT = 14;
 /** How much of a row belongs to the gap above or below it. A quarter: enough to
  *  hit deliberately, small enough that the row itself is still the easy target,
@@ -252,8 +259,48 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   // additive click.
   const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set<number>());
-  const rows = useMemo(() => flattenVisible(tree, expanded), [tree, expanded]);
   const listRef = useRef<List>(null);
+
+  // The filter (§16.16). Both columns it reads are already in the summary and
+  // interned, so neither half needs a per-VOB round trip — this is renderer
+  // work over data that crossed the boundary once.
+  const [text, setText] = useState('');
+  const [classes, setClasses] = useState<readonly string[]>([]);
+  const [debouncedText, setDebouncedText] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedText(text), FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [text]);
+
+  const query = useMemo<VobQuery>(() => ({ text: debouncedText, classes }), [debouncedText, classes]);
+  /** Null when nothing is being asked for — the unfiltered tree is not a filter
+   *  that happens to keep everything, and must not pay for one. */
+  const matches = useMemo(
+    () => (isEmptyQuery(query) ? null : matchVobs(summary.vobIndex, query)),
+    [summary.vobIndex, query],
+  );
+  const matchCount = useMemo(
+    () => (matches === null ? null : matches.reduce((sum, hit) => sum + hit, 0)),
+    [matches],
+  );
+
+  const rows = useMemo(
+    () => (matches === null ? flattenVisible(tree, expanded) : flattenMatching(tree, matches)),
+    [tree, expanded, matches],
+  );
+  /** A filtered tree draws every match's path, so its rows are expanded whatever
+   *  the expansion state says — and the chevrons have to agree with what is on
+   *  screen. The state itself is left alone, so clearing the filter gives back
+   *  the tree the user had rather than an unfolded one. */
+  const rowExpanded = useMemo(() => (
+    matches === null
+      ? expanded
+      : new Set(rows.filter((row) => row.hasChildren).map((row) => row.vob))
+  ), [matches, expanded, rows]);
+  const classOptions = useMemo(
+    () => [...summary.vobIndex.classes].sort((a, b) => a.localeCompare(b)),
+    [summary.vobIndex],
+  );
 
   // A VOB picked in the viewport is usually inside collapsed parents.
   useEffect(() => {
@@ -277,12 +324,15 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   }, [rows, selectedVob]);
 
   const onToggle = useCallback((vob: number) => {
+    // Nothing to fold while a filter is up: the rows are the answer to the
+    // query, not a place in the hierarchy the user chose to be.
+    if (matches !== null) return;
     setExpanded((current) => {
       const next = new Set(current);
       if (!next.delete(vob)) next.add(vob);
       return next;
     });
-  }, []);
+  }, [matches]);
 
   const [dragging, setDragging] = useState<number | null>(null);
   /** The one gap the insertion line is drawn in, while a drag is over it. */
@@ -375,7 +425,7 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
     () => ({
       rows,
       reader,
-      expanded,
+      expanded: rowExpanded,
       selected,
       onSelect,
       onToggle,
@@ -389,18 +439,60 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       onDropOn: onReparent === undefined ? undefined : onDropOn,
       onDropBetween: onReparent === undefined ? undefined : onDropBetween,
     }),
-    [rows, reader, expanded, selected, onSelect, onToggle, onFocus, canDropOn, onReparent,
+    [rows, reader, rowExpanded, selected, onSelect, onToggle, onFocus, canDropOn, onReparent,
       onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd],
   );
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Box sx={{ px: 1, py: 0.5, borderBottom: 1, borderColor: 'divider' }}>
+      <Box sx={{
+        px: 1, py: 0.5, borderBottom: 1, borderColor: 'divider',
+        display: 'flex', flexDirection: 'column', gap: 0.5,
+      }}>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <TextField
+            size="small"
+            variant="outlined"
+            placeholder="Filter by name"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            inputProps={{ 'data-testid': 'world-tree-filter', 'aria-label': 'Filter by name' }}
+            sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+          />
+          <Select
+            multiple
+            displayEmpty
+            size="small"
+            value={classes as string[]}
+            onChange={(event) => setClasses(
+              typeof event.target.value === 'string' ? [event.target.value] : event.target.value,
+            )}
+            renderValue={(picked) => (picked.length === 0 ? 'Any class' : picked.join(', '))}
+            aria-label="Filter by class"
+            sx={{ width: 110, flexShrink: 0, fontSize: 12, '& .MuiSelect-select': { py: 0.5 } }}
+          >
+            {classOptions.map((cls) => (
+              <MenuItem key={cls} value={cls} sx={{ fontSize: 12 }}>{cls}</MenuItem>
+            ))}
+          </Select>
+        </Box>
         <Typography variant="caption" color="text.secondary" data-testid="world-tree-count">
-          {summary.stats.vobCount.toLocaleString()} VOBs
+          {matchCount === null
+            ? `${summary.stats.vobCount.toLocaleString()} VOBs`
+            : `${matchCount.toLocaleString()} of ${summary.stats.vobCount.toLocaleString()} VOBs`}
         </Typography>
       </Box>
       <Box sx={{ flex: 1, minHeight: 0 }} role="tree" aria-label="World scene tree">
+        {rows.length === 0 ? (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="world-tree-empty"
+            sx={{ display: 'block', p: 1 }}
+          >
+            No VOB matches this filter.
+          </Typography>
+        ) : (
         <AutoSizer>
           {({ height, width }) => (
             <List
@@ -416,6 +508,7 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
             </List>
           )}
         </AutoSizer>
+        )}
       </Box>
     </Box>
   );

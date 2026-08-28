@@ -118,7 +118,6 @@ was true for so long nobody re-reads it.
 
 *(empty)*
 
-
 ## Next
 
 Each card is one line, an owner and a pointer. A bare `§` is a section of
@@ -127,8 +126,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Spacer parity — Phase 1b-2 (the priority)**
 
-- **VOB search and filter in the scene tree** — by name and class, over columns
-  already in the summary; 41,393 VOBs, so derive, don't rebuild. §16.16
 - **Per-class visibility toggles** — Spacer's VOB-type show/hide, on the
   filter's predicate. Unowned. §16.16
 - **`zCVob` V1 — preset name, `visualCamAlign`, bias** — catalogue idiom, no
@@ -204,6 +201,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **VOB search and filter in the scene tree** — landed: `matchVobs` /
+  `flattenMatching` in `zen-world` answer the query against the interned
+  dictionaries and keep each match's path; the tree's header filters by name
+  (debounced) and by class. §16.16
 - **Copy/paste D5 — the subtree** — landed: `duplicateVobSubtree` and
   `subtreeOps` in `zen-world`, paths computed forward; the clipboard holds
   subtrees, and both verbs prune the selection to its top-level VOBs. §16.14
