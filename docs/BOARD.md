@@ -84,7 +84,7 @@ was true for so long nobody re-reads it.
   draw (§16.1, Done). What a dispatch would still ship unproven is in Next:
   three ops with no engine verdict.
 - **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0043`, `src/fixture.cc`), the addon, `zen-world/dist`
+  `vendor/ZenKit` (patches `0029`–`0044`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed this session. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
@@ -136,10 +136,6 @@ card waits on live at its pointer — put new prose there, not here.
   editor's own BinSafe save path drops `physicsEnabled` too. Unowned. §16.9
 - **`resavedSize` breaks at a day or month boundary** — the fix is a
   report-shape decision. **Daniel.** §16.10
-- **`zCTrigger`'s `flags` byte loses bits 1 and 3–7 on every save** — patch
-  `0028` rebuilds it from the two bools `load` unpacks; the four retail BinSafe
-  worlds classify `semantic-drift` instead of `identical` because of it. The fix
-  is `0016`'s shape. Unowned. §16.13
 - **`.MMB` authoring has no ZenKit writer at all.** Unowned.
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
 
@@ -157,6 +153,12 @@ card waits on live at its pointer — put new prose there, not here.
 *(empty — both cards landed; see `git log`)*
 
 ## Done
+
+- **The four retail BinSafe worlds re-save `identical` again** — patch `0044`
+  keeps the bits of `zCTrigger`'s `flags`/`filterFlags` that `load` never
+  unpacks and merges them back into `0028`'s rebuild, on two new
+  zero-initialized members (`0016`'s shape). Corpus re-run over the retail
+  install: `4× identical [BIN_SAFE]`. §16.13
 
 - **The world reader's fifteenth instance is bounded, and the `ReadMemory::seek`
   decision is taken: leave it** — patch `0043` bounds the BinSafe container's own

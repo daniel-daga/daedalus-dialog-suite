@@ -14,10 +14,13 @@ apply in any order relative to each other, but they are numbered in the order
 they were found: `0026` is only *reachable* once `0024` lets a file load far
 enough to hit a byte entry.
 
-## Order matters in three places
+## Order matters in four places
 
 These are not independent patches that happen to be numbered.
 
+- **0028 → 0044.** Not duplicates. `0028` stops `save` echoing a stale byte;
+  `0044` gives back the bits of that byte `load` never unpacked, which `0028`'s
+  rebuild-from-bools drops. `0044`'s context lines contain `0028`'s code.
 - **0001 → 0016.** Not duplicates. `0001` fixes broken bitfield arithmetic (a
   paren bug, a wrong mask, a wrong shift); `0016` then preserves the undefined
   bit 15. `0016`'s context lines contain `0001`'s corrected code.
@@ -83,6 +86,7 @@ regardless of what upstream does with it.
 | `0041` | `VNpc::load` dereferences each item it has just read (`items[i]->s_flags` decides whether a `shortKey<n>` int follows), and `read_object` returns null for the three file-supplied reasons `0033` named. An `itemCount` of 2 over a world holding one item — inside any byte-based bound — kills the process with `0xC0000005` |
 | `0042` | `VCutsceneCamera::load` reads `numPos` and `numTargets` off the file and `push_back`s one keyframe object per iteration into a vector it never reserves — so there is not even a `bad_alloc` to stop an absurd count, and every value is a merely large one. 0x0FFFFFFF builds 268 million null keyframes, 4.33 GB, and the world still reports as loaded after 15.8 s; a negative count loads a camera with no keyframes at all |
 | `0043` | `ReadArchiveBinsafe::read_header` sizes the hash table entry vector from the file's own `hash_table_size` with no check, and the loop after it cannot stop: every read past the end of the file returns zero, so a zero key length and a zero insertion index pass `0029`'s bound. 0x0FFFFFFF is a 20.5 GB peak working set and a world that still reports as loaded, after 35 s. `0029`'s own chunk — it bounded the count that *indexes* this vector, not the one that *sizes* it |
+| `0044` | `0028`'s own chunk. `VTrigger::load` unpacks bits 0 and 2 of `flags` and bits 0-5 of `filterFlags` into bools, and `0028` made `save` rebuild both bytes from exactly those bools — so bits 1 and 3-7 of `flags` (and 6-7 of `filterFlags`), which retail sets, are written as zero. It cost the four retail BinSafe worlds their `identical` verdict: 121 differing events, all of them this one field. Keeps the unmapped bits on two new zero-initialized members and merges them back in when writing |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
@@ -96,7 +100,7 @@ ASCII output, with no API change and a one-line diff. Together with `0025` they
 took a retail G2 install's ASCII worlds from 20 crashed to 20 measured
 (`../docs/engine-acceptance-2026-08-25.md` §10.4).
 
-### Upstreamable with work — each adds public API purely to preserve original bytes (7)
+### Upstreamable with work — each adds public API purely to preserve original bytes (8)
 
 | Patch | Why it needs work |
 |---|---|
@@ -106,6 +110,7 @@ took a retail G2 install's ASCII worlds from 20 crashed to 20 measured
 | `0011` | Answers upstream's own `TODO(lmichaelis)` — `BspTree` discarded the `0xC000` header word and hard-coded 2 where retail G2 carries 3. Adds a public `version` field, falling back to 3 for G2 and 2 for G1 when a tree was never loaded; wants the value's semantics identified, not just preserved |
 | `0012` | Adds public `Date::padding` so a trailing alignment word — uninitialised engine memory — survives. Sound and tiny, but it exposes a meaningless field in a public struct |
 | `0016` | Adds public `packed_reserved_bit` for bit 15, which ZenGin never assigns (49 VObjects in NewWorld have it set from stale memory). Same class as `0012` |
+| `0044` | Adds public `reserved_flags`/`reserved_filter_flags` so the bits of `zCTrigger`'s two deprecated bytes that `load` does not unpack survive a save. Same class as `0016`, and not independently applicable — it is the correction to `0028` |
 | `0019` | The fidelity half of `0015`. Adds public `Mesh::shared_lightmap_textures`; not independently applicable |
 
 ### Ours forever (1)
@@ -130,7 +135,8 @@ Independent, highest-value and least arguable first:
 4. `0001`, then `0010`.
 5. `0014`, `0015`, `0023`.
 6. The API-adding fidelity patches, each needing a written rationale and a
-   fixture: `0011`, `0019` (after `0015`), `0016` (after `0001`), `0012`, then
+   fixture: `0011`, `0019` (after `0015`), `0016` (after `0001`),
+   `0044` (after `0028`), `0012`, then
    `0008` reshaped to keep the counter internal, then `0009`.
 7. `0017` — do not send as written.
 

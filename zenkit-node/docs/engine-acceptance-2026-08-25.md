@@ -639,13 +639,16 @@ after   28 .zen found; 24 measured,  0 crashed,    0 unreadable, 4 skipped
 VERDICTS: 4× identical [BIN_SAFE], 4× not-a-world [ASCII], 20× semantic-drift [ASCII]
 ```
 
-> **Dated 2026-08-27, and the BinSafe half no longer reproduces.** The same
-> command on 2026-08-28 reports `4× semantic-drift [BIN_SAFE]`, all of it one
-> field: patch `0028` rebuilds `zCTrigger`'s deprecated `flags` byte from the two
-> bools `load` unpacks and drops the bits that have no bool — retail carries
-> `0b00010010`, so bits 1 and 4 are lost on every trigger-family VOB. Diagnosis,
-> the fix's shape and the process lesson: `docs/plans/level-editor.md` §16.13.
-> The ASCII half of this table is unchanged.
+> **The numbers above are dated 2026-08-27, and the BinSafe half broke and was
+> repaired in between.** Patch `0028` rebuilt `zCTrigger`'s deprecated `flags`
+> byte from the two bools `load` unpacks and so dropped the bits that have no
+> bool — retail carries `0b00010010`, so bits 1 and 4 were lost on every
+> trigger-family VOB, and the same command on 2026-08-28 reported
+> `4× semantic-drift [BIN_SAFE]`. Patch `0044` keeps those bits and merges them
+> back in when writing; re-run on 2026-08-28 after it, the same command over the
+> same install reports `4× identical [BIN_SAFE]` again, i.e. exactly the line
+> above. Diagnosis and the process lesson: `docs/plans/level-editor.md` §16.13.
+> The ASCII half of this table never changed.
 
 
 | Patch | Defect | Result |
@@ -673,7 +676,7 @@ them exactly, across all 20 worlds:
 
 | Finding | Count | Diagnosis |
 |---|---|---|
-| `vobs[].flags.physicsEnabled` true → false | 396 | **A6**, new. `VirtualObject.cc:251` writes packed bit 6 as `physics_enabled && rigid_body` on G2, but `rigid_body` is only ever populated inside `if (r.is_save_game())` (`:210`). In a world, `rigid_body` is always empty, so every `physicsEnabled` flag is dropped on save. The `&& rigid_body` guard belongs at `:325`, where the rigid body is actually written, and it is already there. **Not ASCII-specific — it is the packed `zCVob` writer, so the BinSafe path the editor saves through has it too.** It changes no retail byte today: measured 0 `physicsEnabled` VOBs across NewWorld, OldWorld and AddonWorld (41,393 VOBs), which is why those three still classified `identical` when this was written (they classify `semantic-drift` since patch `0028`, for an unrelated reason — the note above §10.4's table). A user-edited or modded world is another matter |
+| `vobs[].flags.physicsEnabled` true → false | 396 | **A6**, new. `VirtualObject.cc:251` writes packed bit 6 as `physics_enabled && rigid_body` on G2, but `rigid_body` is only ever populated inside `if (r.is_save_game())` (`:210`). In a world, `rigid_body` is always empty, so every `physicsEnabled` flag is dropped on save. The `&& rigid_body` guard belongs at `:325`, where the rigid body is actually written, and it is already there. **Not ASCII-specific — it is the packed `zCVob` writer, so the BinSafe path the editor saves through has it too.** It changes no retail byte today: measured 0 `physicsEnabled` VOBs across NewWorld, OldWorld and AddonWorld (41,393 VOBs), which is why those three still classified `identical` when this was written (they classified `semantic-drift` between patches `0028` and `0044`, for an unrelated reason — the note above §10.4's table, now closed). A user-edited or modded world is another matter |
 | `vobs[].flags.animMode` | 4 | Undiagnosed. Four VOBs in the whole corpus |
 
 A2 and A3 remain open and are unchanged by all of this: both live on the

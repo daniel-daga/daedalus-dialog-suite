@@ -914,7 +914,8 @@ byte-for-byte over every archive event:
 - the hash table is byte-identical; the stream ends exactly at `hashTableOffset`
 - saving twice is byte-identical (the writer was nondeterministic before)
 - `classifyDumps`: **`identical`, 0 findings** on all three (measured 2026-08-25;
-  patch `0028` has since cost all four BinSafe worlds that verdict — §16.13)
+  patch `0028` cost all four BinSafe worlds that verdict for a day; `0044`
+  gave it back — §16.13)
 - the only byte residual is `zCVobLight.colorAniList` (4/2/16 entries): the
   original writes ZenGin's greyscale shorthand `255 `, ZenKit expands it to
   `(255 255 255)`. Semantically identical, ZenGin's parser wrote and accepts both
@@ -2744,7 +2745,8 @@ writer/reader asymmetry, patched as `0028`: `VTrigger::save` wrote the
 deprecated raw `flags`/`filterFlags` bytes `load()` unpacks into those eight
 bools, verbatim, rather than reconstructing them from the bools — so setting
 any of the eight and saving silently reverted to whatever the archive held at
-load. `zCMover` and `oCTriggerChangeLevel` both derive from `VTrigger` and
+load. (`0028` dropped the bits of those bytes `load()` does not unpack;
+`0044` keeps them — §16.13.) `zCMover` and `oCTriggerChangeLevel` both derive from `VTrigger` and
 inherit these twelve once their own case is added. `zCTrigger` was appended to
 `BuildVisualVobTree`'s mesh-extraction-only fixture (path `1/12`), so the
 checked-in golden fixture is unaffected.
@@ -3484,45 +3486,36 @@ reads on alpha-tested foliage and on blended VOB materials, which get the term
 uniformly by design (a face-on billboard is untouched; an edge-on one dims
 slightly).
 
-### 16.13 The four retail BinSafe worlds no longer re-save `identical`, and patch `0028` is why
+### 16.13 The four retail BinSafe worlds re-save `identical` again — patch `0044`
 
-**Found 2026-08-28 while re-running the corpus for `0043`, not looked for.** The
-acceptance record's headline BinSafe result — `4× identical [BIN_SAFE]`, measured
-2026-08-27 — no longer reproduces. The same command over the same install now
-reports `4× semantic-drift [BIN_SAFE]`: NewWorld 108 differing events, OldWorld
-13, and every finding on all four worlds is the same field.
+**Closed 2026-08-28 (patch `0044`).** For one day the headline BinSafe result —
+`4× identical [BIN_SAFE]`, measured 2026-08-27 — did not reproduce: the same
+command over the same install reported `4× semantic-drift [BIN_SAFE]`, NewWorld
+108 differing events and OldWorld 13, every one of them the `flags` field of a
+`zCTrigger` subclass and nothing else.
 
-```
-container.payloads.raw.zCTrigger:zCVob/flags
-container.payloads.raw.zCMover:zCTrigger:zCVob/flags
-container.payloads.raw.oCTriggerScript:zCTrigger:zCVob/flags
-container.payloads.raw.oCTriggerChangeLevel:zCTrigger:zCVob/flags
-container.payloads.raw.zCTriggerList:zCTrigger:zCVob/flags
-```
+**It was patch `0028`.** `VTrigger::load` unpacks exactly two bits of the
+deprecated `flags` byte — `startEnabled` (bit 0) and `sendUntrigger` (bit 2) —
+and `0028` made `VTrigger::save` rebuild the byte from those two bools instead
+of echoing the byte it read. Bits 1 and 3–7 have no bool to be rebuilt from, so
+they were dropped; retail carries them (the four bytes sampled in OldWorld are
+all `0b00010010`, bits 1 *and* 4). `filterFlags` had the same hole in bits 6–7
+and was safe only by luck: `load` unpacks all six bits ZenGin uses.
 
-NewWorld's 108 differing events are all of them and nothing else — 56 `zCMover`,
-19 `oCTriggerScript`, 19 `zCTriggerList`, 10 `zCTrigger`, 4 `oCTriggerChangeLevel`
-— so the drift is one field in one save method, not a spread.
+**Reverting `0028` was never the answer** — the asymmetry it fixes is real and
+is on the editor's own path. `0044` is `0016`'s shape applied here: the bits
+nothing maps to are kept on two new zero-initialized members
+(`reserved_flags`, `reserved_filter_flags`) and merged back into the rebuilt
+bytes when writing. The deprecated `flags`/`filter_flags` members could not
+serve for this — they have no initializer at all, so a freshly constructed
+`VTrigger` would have merged in indeterminate bits. Covered by
+`test/saveWorld.test.js`, which seeds the unmapped bits into an authored world
+by structure and asserts every flag byte survives a load and a save; the retail
+corpus was re-run and reports `4× identical [BIN_SAFE]` again.
 
-**It is patch `0028`, and the arithmetic settles it.** `VTrigger::load` unpacks
-exactly two bits of the deprecated `flags` byte — `startEnabled` (bit 0) and
-`sendUntrigger` (bit 2) — and `0028` makes `VTrigger::save` rebuild the byte from
-those two bools instead of echoing the byte it read. Bits 1 and 3–7 have no bool
-to be rebuilt from, so they are dropped. Retail carries them: the four differing
-bytes sampled in OldWorld are all `0b00010010`, i.e. bits 1 *and* 4 set, and both
-are lost. `filterFlags` is safe by luck — `load` unpacks all six bits it uses.
-
-**It is not a reason to revert `0028`.** The defect that patch fixes is real and
-is on the editor's own path: before it, a caller that set `start_enabled` and
-saved got back whatever byte the archive held at load time. The fix is `0016`'s,
-applied here — keep the bits nothing maps to, `flags = rebuilt | (original & ~0b101)`
-— which needs the original byte kept on the object, i.e. a public field, i.e. the
-"upstreamable with work" bucket in `zenkit-node/patches/README.md`.
-
-**The forward fact that matters more than the patch:** a save-path patch landed
+**The forward fact, and it outlives the patch:** a save-path patch landed
 without the retail corpus being re-run, and the claim it invalidated is the
 loudest one this project makes. `zenkit-node.yml` cannot catch it — the corpus
 needs a retail install and CI has none — so the check is a person running
 `node scripts/zen-roundtrip.js --root "<install>/_work/Data/Worlds"` after any
-patch that touches a `save`. The 2026-08-27 numbers in
-`zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.4 are now dated, and say so.
+patch that touches a `save`.

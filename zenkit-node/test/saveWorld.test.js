@@ -11,6 +11,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const zenkit = require('..');
+const { walk } = require('../lib/container.js');
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'minimal.g2.zen');
 const GOLDEN = path.join(__dirname, 'fixtures', 'minimal.g2.golden.json');
@@ -448,5 +449,42 @@ test('saveWorld saves a non-BinSafe world when explicitly allowed', () => {
     const out = path.join(dir, 'out.zen');
     zenkit.saveWorld(handle, out, { allowNonBinSafe: true });
     assert.ok(fs.statSync(out).size > 0);
+  });
+});
+
+// Patch 0044. `VTrigger::load` unpacks bits 0 and 2 of `flags` and bits 0-5 of
+// `filterFlags` into bools; 0028 made `save` rebuild both bytes from those
+// bools, which drops every bit with no bool behind it — bits 1 and 3-7 of
+// `flags`. Retail carries them (the four bytes sampled in OldWorld are
+// 0b00010010, bits 1 and 4), which is why the four retail BinSafe worlds went
+// from `identical` to `semantic-drift` on the `flags` field alone
+// (docs/plans/level-editor.md §16.13). Seeding the unmapped bits into an
+// authored world and re-saving must give every flag byte back unchanged.
+test('saveWorld preserves the trigger flag bits load() never unpacks', () => {
+  const UNMAPPED = { flags: 0b11111010, filterFlags: 0b11000000 };
+
+  // In walk order, so the seeded file and the re-saved file line up positionally.
+  const flagBytes = (buffer) =>
+    [...walk(buffer)]
+      .filter((ev) => ev.kind === 'entry' && ev.entryName in UNMAPPED)
+      .map((ev) => ({ name: ev.entryName, offset: ev.payloadOffset, byte: buffer.readUInt8(ev.payloadOffset) }));
+
+  withTmpDir((dir) => {
+    const authored = path.join(dir, 'authored.zen');
+    zenkit._authorFixtureWorld(authored, 'binsafe', 'g2', 'mesh-extraction');
+
+    const seeded = Buffer.from(fs.readFileSync(authored));
+    const found = flagBytes(seeded);
+    assert.ok(found.length >= 4, `expected trigger flag bytes in the fixture, found ${found.length}`);
+    for (const entry of found) seeded.writeUInt8(entry.byte | UNMAPPED[entry.name], entry.offset);
+
+    const seededFile = path.join(dir, 'seeded.zen');
+    fs.writeFileSync(seededFile, seeded);
+    const out = path.join(dir, 'resaved.zen');
+    zenkit.saveWorld(zenkit.loadWorld(seededFile, 'g2'), out);
+
+    const expected = flagBytes(seeded).map((entry) => [entry.name, entry.byte]);
+    const actual = flagBytes(fs.readFileSync(out)).map((entry) => [entry.name, entry.byte]);
+    assert.deepStrictEqual(actual, expected);
   });
 });
