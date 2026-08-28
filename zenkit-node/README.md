@@ -471,10 +471,11 @@ combination, neither of which this can author, so a locked one would be a
 container nothing in the game could open. A damage volume is the family's one
 member that does its job the moment it is placed — 1000 damage, point damage
 alone, a two-second tick and `BOX` collision, which is what all 51 retail ones
-use. Two of the eight are placeable with no editable field: `oCMobBed` has no
-`CLASS_FIELDS` entry (its fields are exactly `oCMobInter`'s) and `oCTouchDamage`
-has never been catalogued. `oCMOB` and `oCMobFire` go the other way — catalogued
-and editable, and not authorable.
+use. One of the eight is placeable with no editable field: `oCTouchDamage`
+has never been catalogued. (`oCMobBed` was the other until it took
+`oCMobInter`'s fields, in the catalogue and in `setVobClassProp`'s switch both.)
+`oCMOB` and `oCMobFire` go the other way — catalogued and editable, and not
+authorable.
 
 The zones, the markers and the two effect classes are measured the same way, and
 they are where the measurement runs out: retail places 59 `oCZoneMusic` but only

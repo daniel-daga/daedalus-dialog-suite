@@ -32,7 +32,7 @@ describe('the per-class field catalogue', () => {
     // any layer below it. The `…Default` zone variants are the pointed absence —
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
-      'oCItem', 'oCMOB', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
+      'oCItem', 'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
       'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTriggerChangeLevel', 'oCTriggerScript',
       'oCZoneMusic', 'zCMover', 'zCPFXController', 'zCTrigger', 'zCTriggerWorldStart',
       'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane',
@@ -182,14 +182,14 @@ describe('the per-class field catalogue', () => {
     // `oCMobInter` — the base nine plus its own four; `target` (a cross-
     // reference, held out with the rest of the family's target strings) and
     // `item` (a script item-instance name, a decision point of its own) stay
-    // out. `oCMobLadder`/`Switch`/`Wheel` add nothing beyond `oCMobInter`, so
-    // they share the same key set.
+    // out. `oCMobBed`/`Ladder`/`Switch`/`Wheel` add nothing beyond `oCMobInter`,
+    // so they share the same key set.
     const OC_MOB_INTER_KEYS = [
       'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
       'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
       'stateCount', 'conditionFunction', 'onStateChangeFunction', 'rewind',
     ];
-    for (const className of ['oCMobInter', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel']) {
+    for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel']) {
       expect(classPropKeys(className)).toEqual(OC_MOB_INTER_KEYS);
     }
     expect(fieldOf('oCMobInter', 'stateCount')).toEqual({ key: 'stateCount', kind: 'int' });
@@ -300,12 +300,11 @@ describe('the per-class field catalogue', () => {
     expect(isAuthorableVobClass('oCMOB')).toBe(false);
     expect(isAuthorableVobClass('oCMobFire')).toBe(false);
     expect(classPropKeys('oCMobFire').length).toBeGreaterThan(0);
-    // And two more authorable-with-nothing-catalogued classes, the state I3
-    // established: a bed has exactly `oCMobInter`'s fields and is missing from
-    // `CLASS_FIELDS`, and a damage volume has never been catalogued at all.
-    // Both are placeable and both work unaided; making them editable is a
-    // catalogue entry *and* a `setVobClassProp` case, which is not this card.
-    expect(classPropKeys('oCMobBed')).toEqual([]);
+    // The bed was the third authorable-with-nothing-catalogued class and is not
+    // one any more: its fields are exactly `oCMobInter`'s, and it now carries
+    // them here and a `case oCMobBed:` in the binding's `setVobClassProp`
+    // switch. `oCTouchDamage` is still that state — it has never been
+    // catalogued — and it works unaided, dealing retail's own 1000 point damage.
     expect(classPropKeys('oCTouchDamage')).toEqual([]);
   });
 

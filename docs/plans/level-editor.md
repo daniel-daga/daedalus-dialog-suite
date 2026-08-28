@@ -4431,11 +4431,25 @@ are catalogued and editable and are *not* authorable: they are not in the card's
 list, and a fire is only ever a rigged model with a fire template on a named
 bone, which nothing in the placement path can supply. Second, `oCMobBed` and
 `oCTouchDamage` are the I3 state from the other side — placeable with no
-editable field at all. The bed's is a plain omission rather than a decision:
-its fields are exactly `oCMobInter`'s, and making it editable is a one-line
-`CLASS_FIELDS` entry **plus** a `case oCMobBed:` in `SetVobClassProp`'s switch,
-which today lists `oCMobInter`, `oCMobLadder`, `oCMobSwitch` and `oCMobWheel`
-and not the bed. Doing only the first would offer a grid the binding refuses.
+editable field at all.
+
+**The bed is editable since 2026-08-28**, and it cost exactly the two halves the
+card named: `oCMobBed: OC_MOB_INTER_FIELDS` in `CLASS_FIELDS` and a
+`case oCMobBed:` on the `oCMobInter`/`Ladder`/`Switch`/`Wheel` group in
+`SetVobClassProp`'s switch. Nothing else moved — the property grid is entirely
+catalogue-driven (no editor source names a single one of these fourteen keys),
+`getVobProps` had listed the bed with its siblings since the reader landed, and
+the op needed no new validator branch. Doing only the catalogue half would have
+offered a grid the binding refuses, which is why the card insisted on both.
+
+The bed had no fixture VOB to write to — the authored world's class-property
+round-trip table runs `1/3`…`1/19` and holds no bed — so its three tests
+*place* one with `insertVob` and write to that, which is also the only way a
+user reaches a bed the editor made. **`oCTouchDamage` is now the only
+authorable-with-nothing-catalogued class in this family**, and unlike the bed's
+that is not a plain omission to reverse: what configures a damage volume past
+its eleven catalogued-shaped scalars is `collision`, an enum, and the catalogue
+holds no enum by design.
 
 **A duplicate of a door is now a door**, which is the increment's one change to
 behaviour nobody asked for: `duplicateVobSpec` carries the class of any class

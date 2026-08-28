@@ -327,8 +327,9 @@ const OC_MOB_FIELDS = [
  *  with the rest of the family's cross-reference strings; `item` (a script
  *  item-instance name) is a decision point of its own — the editor's
  *  `oCItem.instance` index check does not currently extend to it. Nothing else
- *  is a list or save-game-only. `oCMobLadder`, `oCMobSwitch` and `oCMobWheel`
- *  add nothing of their own beyond `oCMobInter`, so they share this array. */
+ *  is a list or save-game-only. `oCMobBed`, `oCMobLadder`, `oCMobSwitch` and
+ *  `oCMobWheel` add nothing of their own beyond `oCMobInter`, so they share
+ *  this array. */
 const OC_MOB_INTER_FIELDS = [
   ...OC_MOB_FIELDS,
   { key: 'stateCount', kind: 'int' },
@@ -391,6 +392,7 @@ export const CLASS_FIELDS = {
   zCMover: ZC_MOVER_FIELDS,
   oCMOB: OC_MOB_FIELDS,
   oCMobInter: OC_MOB_INTER_FIELDS,
+  oCMobBed: OC_MOB_INTER_FIELDS,
   oCMobLadder: OC_MOB_INTER_FIELDS,
   oCMobSwitch: OC_MOB_INTER_FIELDS,
   oCMobWheel: OC_MOB_INTER_FIELDS,
@@ -457,12 +459,12 @@ export const AUTHORABLE_VOB_CLASSES = [
   // Two classes of this family stay editable-only. `oCMOB` and `oCMobFire` are
   // catalogued above and are not in I4's list; a fire is only ever a rigged
   // model with a fire template on a named bone, none of which is authorable
-  // here. And two of the eight are the I3 state from the other side --
-  // `oCMobBed` and `oCTouchDamage` are placeable with no catalogued field,
-  // the bed because `CLASS_FIELDS` has no entry for it though its fields are
-  // exactly `oCMobInter`'s, the damage volume because it has never been
-  // catalogued. Both work unaided: a placed bed is a bed and a placed damage
-  // volume deals retail's own 1000 point damage.
+  // here. And one of the eight is still the I3 state from the other side:
+  // `oCTouchDamage` is placeable with no catalogued field, because it has never
+  // been catalogued -- and it works unaided, dealing retail's own 1000 point
+  // damage. `oCMobBed` was the other and is not any more: its fields are
+  // exactly `oCMobInter`'s, so it shares that array above and the binding's
+  // `setVobClassProp` switch has a case for it.
   'oCMobInter',
   'oCMobBed',
   'oCMobLadder',
@@ -504,7 +506,7 @@ export function isAuthorableVobClass(value: unknown): value is AuthorableVobClas
 }
 
 /** A class the catalogue knows. Not every class in a world is one — a world has
- *  37 and this has eighteen, which is the point of asking through `fieldOf`. The
+ *  37 and this has fewer, which is the point of asking through `fieldOf`. The
  *  `…Default` zone variants are deliberately absent: `zCZoneZFogDefault` and its
  *  two siblings are a world's fallback settings rather than placed zones. */
 export type ClassName = keyof typeof CLASS_FIELDS;

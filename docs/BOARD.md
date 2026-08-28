@@ -98,7 +98,7 @@ was true for so long nobody re-reads it.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed on 2026-08-28, and the addon again with
-  I5's seven constructions. The recipe
+  I5's seven constructions and the bed's `setVobClassProp` case. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
   `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
@@ -144,10 +144,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1b-2 — VOB editing**
 
-- **`oCMobBed` is placeable with nothing editable** — a `CLASS_FIELDS` entry (its
-  fields are exactly `oCMobInter`'s) *and* a `case oCMobBed:` in
-  `SetVobClassProp`'s switch, which names Inter, Ladder, Switch and Wheel and
-  skips the bed. Both halves or neither. Unowned. §16.15
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
   singularity counts, not a Spacer match. Needs Spacer itself, and only two
   functions change if it differs. **Daniel.** §16.4
@@ -212,6 +208,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 - **I5 — the zones, the markers and the two effect classes are authorable** —
   all seven landed; §14.1 1.3 is closed. board-loop. §16.15
+- **`oCMobBed` is editable** — both halves; `oCTouchDamage` is now the family's
+  only authorable-with-nothing-catalogued class. board-loop. §16.15
 
 **Everything landed on 2026-08-28 was flushed that day**, and each card's
 substance is at its pointer rather than restated here: class insertion I1–I4 and

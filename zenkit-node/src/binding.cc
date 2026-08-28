@@ -1855,6 +1855,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       break;
     }
     case zenkit::VirtualObjectType::oCMobInter:
+    case zenkit::VirtualObjectType::oCMobBed:
     case zenkit::VirtualObjectType::oCMobLadder:
     case zenkit::VirtualObjectType::oCMobSwitch:
     case zenkit::VirtualObjectType::oCMobWheel: {

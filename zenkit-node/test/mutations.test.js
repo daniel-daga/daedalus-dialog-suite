@@ -1966,6 +1966,69 @@ test('setVobClassProp leaves every other field of these classes alone', () => {
   }
 });
 
+// The bed is the one member of the movable-object family the catalogue skipped:
+// it declares not one field beyond `oCMobInter`, and until this landed
+// `SetVobClassProp`'s switch named Inter, Ladder, Switch and Wheel and fell
+// through to `default:` on the bed — so it was placeable with nothing editable.
+// The fixture world has no bed to load, so this places one, which is what the
+// grid does too. Every value below differs from the construction's own default,
+// so a case that wrote nothing at all would read back the default and pass.
+test('setVobClassProp writes every oCMobInter field on a placed oCMobBed', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, null, { class: 'oCMobBed', position: [1, 2, 3] });
+
+  const props = {
+    focusName: 'FOCUS_OTHER_BED_ÄÖÜ', hp: 33, damage: 2, movable: true, takable: true,
+    focusOverride: true, visualDestroyed: 'BED_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 3,
+    conditionFunction: 'OTHER_CONDITION', onStateChangeFunction: 'OTHER_ON_STATE_CHANGE',
+    rewind: true,
+  };
+  zenkit.setVobClassProp(handle, at, props);
+
+  const read = zenkit.getVobProps(handle, at);
+  assert.strictEqual(read.class, 'oCMobBed');
+  for (const [key, value] of Object.entries(props)) {
+    assert.deepStrictEqual(read[key], value, `oCMobBed.${key}`);
+  }
+  // And the fields of the class this op deliberately cannot reach: an enum and
+  // the two cross-reference strings held out of the catalogue. A case that
+  // assigned a whole struct rather than member by member would reset them.
+  assert.strictEqual(read.soundMaterial, 0);
+  assert.strictEqual(read.target, '');
+  assert.strictEqual(read.item, '');
+});
+
+test('setVobClassProp refuses a foreign key on an oCMobBed, naming the bed', () => {
+  const handle = load();
+  const at = zenkit.insertVob(handle, null, { class: 'oCMobBed', position: [0, 0, 0] });
+
+  // A door's, a fire's and a light's — the bed takes the interactive fourteen
+  // and nothing beside them.
+  assert.throws(() => zenkit.setVobClassProp(handle, at, { locked: false }), /oCMobBed/);
+  assert.throws(() => zenkit.setVobClassProp(handle, at, { slot: 'X' }), /oCMobBed/);
+  assert.throws(() => zenkit.setVobClassProp(handle, at, { range: 500 }), /oCMobBed/);
+});
+
+test('class props written on an oCMobBed survive a save and reload', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zk-bed-'));
+  try {
+    const handle = load();
+    const at = zenkit.insertVob(handle, null, { class: 'oCMobBed', position: [1, 2, 3] });
+    zenkit.setVobClassProp(handle, at, { focusName: 'BED_ÄÖÜ', hp: 33, stateCount: 3 });
+    const before = zenkit.getVobProps(handle, at);
+
+    const out = path.join(dir, 'bed.zen');
+    zenkit.saveWorld(handle, out);
+    const read = zenkit.getVobProps(zenkit.loadWorld(out, 'g2'), at);
+
+    assert.strictEqual(read.class, 'oCMobBed');
+    assert.deepStrictEqual(read, before);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('setVobClassProp writes one key of these classes without touching its siblings', () => {
   const handle = zenkit.loadWorld(authored(), 'g2');
   const before = zenkit.getVobProps(handle, '1/6');
