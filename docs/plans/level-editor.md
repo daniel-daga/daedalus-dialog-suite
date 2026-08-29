@@ -5020,7 +5020,12 @@ carded here; the rest stays a phase and is deliberately not on the board.
 `normalizeWorld` sets `materials` (the mesh's material names, in the order
 polygons index them) and `sectorNames` (from `bsp.sectors`, sorted — sector
 order is referenced by index nowhere). Both are ordinary data on the world
-summary.
+summary — **`normalizeWorld`'s summary, which is the fidelity dump and not
+anything the editor reads.** Corrected 2026-08-29 while triaging §16.20 slice 3:
+the editor's `WorldSummary` carries `stats.materials` as a *count* and no sector
+names at all, the dump costs 877–933 ms and was replaced at open by `vobIndex`,
+and `getPortals` emits indices into these two lists without emitting the lists.
+Feeding a name check needs a binding change.
 
 **Slice 1 — the material-name checks — landed 2026-08-28** as
 `checkPortalMaterials` in `zen-world/src/validate/`, a pure function over
@@ -5315,6 +5320,44 @@ and argued that a fifth checker would only deepen the debt.
 3. **`checkPortalMaterials` gets its consumer.** It has been built and tested
    against all three retail worlds since 2026-08-28 with nothing calling it
    (§16.18 slice 1). Its two findings are world-locus by polygon.
+
+   **Triaged 2026-08-29: this is not one card, and the reason is that its input
+   does not exist on the editor's side of the binding.** §16.18 recorded that
+   "`normalizeWorld` sets `materials` and `sectorNames`… both are ordinary data
+   on the world summary", and that is true of the *fidelity dump* and of nothing
+   the editor reads. The editor's summary carries `stats.materials` — a **count**
+   — and `WorldSummary` has no material names and no sector names at all. The
+   worker's twelve ops (`open`…`close`) include no portal op. `getPortals`
+   emits `materialIndices` and `sectorIndices`, i.e. **indices into two name
+   lists it does not emit**, so it cannot feed a name check either. And
+   `extractWorldMesh`'s chunks do carry a material `name`, but `mergeChunks`
+   drops it by design (a `DrawGroup` is `Pick<MeshChunk, MergeKeyField>` plus
+   geometry), and sector names have no non-`normalizeWorld` path in any case.
+   The dump is not an option at open: it was measured at 877–933 ms on NewWorld
+   and was replaced by `vobIndex` for exactly that reason.
+
+   So the slice decomposes into parts that each want their own build and their
+   own test run, in three workspaces:
+
+   - **`zenkit-node`** — `getPortals` (or a new readout) gains the two name
+     lists. A C++ change, so `build-zenkit.js` + `node-gyp rebuild` + the
+     Smart App Control wait, and its suite is not in `all-tests.yml`.
+   - **the editor's main process** — a thirteenth worker op, its
+     `WorldWorkerRequest`/response shapes, `WorldService`, the IPC channel and
+     preload, a `worldStore` field, and the `storeSync` re-scan trigger. That
+     is the whole of the waynet card's plumbing again, and it earned its own
+     card then.
+   - **`problems/domain`** — two new `ProblemRuleId`s, the rule, `runRules`, and
+     `ProjectView`'s new input.
+
+   And one part is not just big but **unspecified**: slice 2 assigned polygon
+   *framing* to this slice ("framing one needs the mesh"), and nothing says what
+   framing a polygon means. The renderer holds merged draw groups with no
+   polygon mapping, so it would be a `_drillMesh` window per finding or a new
+   readout — a design decision, not an implementation of one. Without it the
+   findings are listed and not clickable, which `worldFocusOf` already does
+   correctly for a polygon locus; whether that is an acceptable slice 3 is a
+   human's call, not a run's.
 
 **What this does *not* unblock, and must not be smuggled in.** The portal
 *pairing* check is still blocked on its own measurement — whether a missing

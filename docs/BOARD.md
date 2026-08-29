@@ -205,7 +205,12 @@ the series absorbed most of a night's run by the time `0048` landed.
 itself — no new cards, no filing its own splits. Too big means: one line here,
 the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
-*(empty)*
+- **`checkPortalMaterials` still has no consumer** — its input is not on the
+  editor's side of the binding at all (§16.18's "ordinary data on the world
+  summary" meant `normalizeWorld`'s 877 ms dump), so the slice is a
+  `zenkit-node` name-list readout, a thirteenth worker op with its whole IPC
+  chain, and the rule — three workspaces, three test runs — plus an
+  unspecified fourth: what framing a polygon means. §16.20 slice 3
 
 ## Done
 
