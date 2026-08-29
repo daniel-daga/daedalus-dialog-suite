@@ -268,7 +268,12 @@ handlers → `WorldService` → `zenkit.worker` → `commitOps`/`writeOp` →
 `commitOps`/`applied`, and the tests.
 
 1. **A worker crash bricks `WorldService` for the life of the process, and the
-   error message tells the user to do the one thing the code prevents.**
+   error message tells the user to do the one thing the code prevents.** —
+   **FIXED 2026-08-29**: `handleWorkerDeath` now nulls `this.worker` too, so the
+   next `openWorld` starts a fresh one and clears `failure` — the same drop the
+   timeout path already did, which is what its "same policy as a crash" comment
+   had been claiming. Held by *"a crashed worker is replaced by the next open,
+   not kept forever"* (`WorldService.test.ts`).
    `WorldService.ts:359-366` — `handleWorkerDeath` sets `this.failure` and nulls
    `worldPath` but, unlike `handleTimeout` (:345) and `close()` (:282), never
    sets `this.worker = null`. `openWorld` (:84) starts a worker only when

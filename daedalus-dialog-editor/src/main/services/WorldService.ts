@@ -363,6 +363,11 @@ export class WorldService {
     );
     this.rejectAll(this.failure);
     this.worldPath = null;
+    // Dropped like the timeout path drops it: the banner tells the user to
+    // reopen the world, and `openWorld` starts a worker only when this is null.
+    // Holding on to the dead one made that instruction impossible to follow,
+    // since `startWorker` is also the only place `failure` is cleared.
+    this.worker = null;
   }
 
   private rejectAll(error: WorkerRequestError): void {

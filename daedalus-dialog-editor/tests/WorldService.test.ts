@@ -164,6 +164,34 @@ describe('WorldService', () => {
     service.close();
   });
 
+  test('a crashed worker is replaced by the next open, not kept forever', async () => {
+    // The crash banner says "reopen the world", so reopening has to work. The
+    // service used to keep the dead worker on the field: `openWorld` starts one
+    // only when `worker === null`, and `startWorker` is the only place `failure`
+    // is cleared, so every later request short-circuited on the stale crash for
+    // the life of the process — with no escape hatch, since the renderer never
+    // calls `closeWorld`.
+    const workers: FakeWorker[] = [];
+    const service = new WorldService({
+      createWorker: () => { const worker = new FakeWorker(); workers.push(worker); return worker; },
+    });
+
+    const opened = service.openWorld(OPEN);
+    workers[0].reply('open', SUMMARY);
+    await opened;
+
+    workers[0].emit('error', new Error('addon segfaulted'));
+    await expect(service.getWorldMesh()).rejects.toThrow(WorkerRequestError);
+
+    const reopened = service.openWorld(OPEN);
+    expect(workers).toHaveLength(2);
+    expect(workers[1].sent.map((m) => m.op)).toEqual(['open']);
+
+    workers[1].reply('open', SUMMARY);
+    await expect(reopened).resolves.toEqual(SUMMARY);
+    service.close();
+  });
+
   test('a request that outlives its timeout rejects and does not resolve later', async () => {
     jest.useFakeTimers();
     try {

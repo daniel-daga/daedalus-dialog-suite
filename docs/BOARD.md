@@ -138,9 +138,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **A dead world worker cannot be revived** — `handleWorkerDeath` never nulls
-  `this.worker`, so the banner tells the user to do what the code prevents.
-  Any run. *ops/main* 1
 - **An undo during a world open lands in the new world** — `openWorld` is
   outside the `serialized` queue, so A's inverse paths are written into B.
   Any run. *ops/main* 2
@@ -220,10 +217,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(flushed 2026-08-29 — board-loop-4's cards had all reached their pointers, and
-the review above is what the last session produced. `git log` is the record.)*
+*(flushed 2026-08-29 — the post-commit-refusal card's substance is in commit
+58f8289 and marked FIXED at its pointer; `git log` is the record.)*
 
-- **A failure after the commit is reported as a refusal** — both `try`s stop at
-  the commit point: a post-commit failure now says the edit was applied and the
-  view is stale, and a failed waynet read leaves the open world standing.
-  board-loop. *renderer* 1 and *first pass* 1, both marked FIXED
+- **A dead world worker cannot be revived** — `handleWorkerDeath` now nulls
+  `this.worker`, so the next open starts a fresh one and the crash banner's
+  "reopen the world" is followable. board-loop. *ops/main* 1, marked FIXED
