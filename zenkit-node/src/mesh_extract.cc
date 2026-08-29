@@ -156,9 +156,20 @@ Napi::Object ExtractMesh(Napi::Env env, Mesh const& mesh, bool is_g2) {
     auto a = std::size_t {1};
     for (auto b = std::size_t {2}; b < polygon.index_count; ++b) {
       for (auto corner : {root, root + a, root + b}) {
-        chunk.indices.push_back(chunk.Corner(mesh,
-                                             mesh.polygon_vertex_indices[corner],
-                                             mesh.polygon_feature_indices[corner]));
+        // The vertex and feature indices come off the stream unchecked
+        // (Mesh.cc pushes them straight from the reader), so a truncated or
+        // hostile `.zen` can name a vertex the mesh does not have — and this
+        // runs in-process in the editor's zenkit.worker. The visuals path
+        // below refuses the same thing for a wedge. `corner` itself needs no
+        // check: the loader fills the index arrays polygon by polygon, so
+        // `index_offset + i` is inside them by construction.
+        auto const vertex = mesh.polygon_vertex_indices[corner];
+        auto const feature = mesh.polygon_feature_indices[corner];
+        if (vertex >= mesh.vertices.size() || feature >= mesh.features.size()) {
+          throw Napi::Error::New(env,
+                                 "world mesh polygon corner points outside the vertex list");
+        }
+        chunk.indices.push_back(chunk.Corner(mesh, vertex, feature));
       }
       chunk.flags.push_back(bits);
       a = b;

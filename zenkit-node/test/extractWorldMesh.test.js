@@ -214,3 +214,20 @@ test('extractWorldMesh leaves positions in ZenGin space', () => {
   assert.deepStrictEqual([Math.min(...ys), Math.max(...ys)], [0, 0]);
   assert.deepStrictEqual([Math.min(...zs), Math.max(...zs)], [0, 10]);
 });
+
+// binding review 2026-08-29, finding 5: `Chunk::Corner` indexed
+// `mesh.vertices[vertex]` and `mesh.features[feature]` verbatim from the
+// polygon index arrays, which ZenKit fills straight from the stream. A
+// truncated, corrupt or hostile `.zen` therefore gave an out-of-bounds read —
+// in-process, in the editor's zenkit.worker. The visuals path in the same file
+// has always refused an out-of-range wedge.
+test('extractWorldMesh refuses a polygon corner pointing outside the vertex list', () => {
+  const corrupt = path.join(dir, 'corrupt-mesh.g2.zen');
+  zenkit._authorFixtureWorld(corrupt, 'binsafe', 'g2', 'corrupt-mesh');
+
+  const handle = zenkit.loadWorld(corrupt, 'g2');
+  assert.throws(
+    () => zenkit.extractWorldMesh(handle),
+    /polygon corner points outside the vertex list/,
+  );
+});

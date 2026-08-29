@@ -419,3 +419,18 @@ test('decodeTexture refuses a mipmap level the texture does not have', () => {
 test('decodeTexture returns null for a name nothing maps to', () => {
   assert.strictEqual(zenkit.decodeTexture(vfs(), 'EX_MISSING.TGA'), null);
 });
+
+// binding review 2026-08-29, finding 6: only `requested < 0` was tested before
+// the cast to uint32_t, so NaN and 1e20 both narrowed to 0 and returned mipmap
+// 0 reporting success — the level the caller asked for was never decoded and
+// nothing said so. The neighbouring OptionalInt32/OptionalWholeInt refuse
+// non-integral and out-of-range doubles for exactly this reason.
+test('decodeTexture refuses a mipmap level that is not a whole number in range', () => {
+  for (const level of [NaN, Infinity, 1e20, 0.5]) {
+    assert.throws(
+      () => zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', level),
+      /mipmap level must be a whole number/,
+      `level ${level} was accepted`,
+    );
+  }
+});

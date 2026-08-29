@@ -174,9 +174,14 @@ function compareEdges(a, b, findings) {
 // is order-sensitive so nothing is ever `reordered`. The only benign values
 // are the header `date`/`user` writer stamps.
 function compareContainer(a, b, findings) {
-  if (a === undefined && b === undefined) return;
-  if (a === undefined || b === undefined) {
-    addFinding(findings, 'semantic-drift', 'container', a === undefined ? 'only in re-saved dump' : 'only in original dump');
+  // `null` is the value normalizeWorld emits for a handle that has been
+  // mutated — the container facts belong to the file on disk and this handle is
+  // no longer it — so it means the same as an absent key here, and `strip`
+  // below would throw on it. `covers()` reads it the same way.
+  const absent = (container) => container === undefined || container === null;
+  if (absent(a) && absent(b)) return;
+  if (absent(a) || absent(b)) {
+    addFinding(findings, 'semantic-drift', 'container', absent(a) ? 'only in re-saved dump' : 'only in original dump');
     return;
   }
   const strip = ({ header: { date: _date, user: _user, ...header }, ...rest }) => ({ ...rest, header });

@@ -168,6 +168,11 @@ padded.
    `vobNames`, and all four fixture waypoints are ASCII.
 
 3. **`std::stoull` can escape the N-API callback and kill the process.**
+   — **FIXED 2026-08-29**: `ParseIndexPath` catches `std::out_of_range` and
+   refuses the segment as `invalid <label>` — the same refusal a segment of
+   letters gets, since no index that long can name a vob. Held by *"an index
+   path segment too large to be an index is refused, not fatal"*
+   (`mutations.test.js`), which also asserts the handle still resolves after it.
    `src/binding.cc:461` — `ParseIndexPath`'s segment validator rejects non-digits
    but not magnitude, so a long all-digit segment reaches `stoull` and can throw
    `std::out_of_range`. `binding.gyp` defines `NAPI_CPP_EXCEPTIONS` but not
@@ -178,7 +183,11 @@ padded.
    `assertApplyOpsRequest` validates op shape, not segment magnitude.
 
 4. **`compareContainer` throws on the one "no container" value the library
-   produces.** `lib/classify.js:182` — the early return tests `=== undefined`,
+   produces.** — **FIXED 2026-08-29**: `null` and `undefined` both read as "no
+   container" in `compareContainer`, the way `covers()` already read them — so a
+   mutated handle classifies, with `containerCoverage: false` and the one-sided
+   case still `semantic-drift`. Two tests in `classify.test.js`.
+   `lib/classify.js:182` — the early return tests `=== undefined`,
    but `strip` destructures its argument, so `container: null` throws
    `Cannot destructure property 'header' of 'null'`. `covers()` four lines below
    handles `null` explicitly — the same file anticipates it on one path and not
@@ -187,6 +196,15 @@ padded.
    missing-key case.
 
 5. **`extractWorldMesh` uses file-supplied indices with no bounds check.**
+   — **FIXED 2026-08-29**: every corner's vertex and feature index is checked
+   against `mesh.vertices` / `mesh.features` before it is dereferenced, and a
+   world that fails it is refused the way an out-of-range wedge already was.
+   `corner` itself is *not* checked and does not need to be: `Mesh::load` pushes
+   exactly `index_count` corners per polygon, so `index_offset + i` is inside the
+   index arrays by construction — the vertex and feature indices *inside* them
+   are the only part a file controls. Held by *"extractWorldMesh refuses a
+   polygon corner pointing outside the vertex list"* against a new
+   `corrupt-mesh` fixture variant (`src/fixture.cc CorruptMeshIndices`).
    `src/mesh_extract.cc:65-82, 159-161` — `Chunk::Corner` indexes
    `mesh.vertices[vertex]` / `mesh.features[feature]` verbatim from the polygon
    index arrays, which are themselves read at `polygon.index_offset + b` with no
@@ -198,6 +216,10 @@ padded.
    this runs in-process in the editor's `zenkit.worker`.
 
 6. **`decodeTexture` narrows the mipmap level before range-checking it.**
+   — **FIXED 2026-08-29**: the level is checked for finiteness, integrality and
+   the `uint32_t` range *before* the cast, so `NaN`, `1e20` and `0.5` are refused
+   instead of silently returning mipmap 0. Held by *"decodeTexture refuses a
+   mipmap level that is not a whole number in range"* (`assets.test.js`).
    `src/assets.cc:268-273` — only `requested < 0` is tested before the cast to
    `uint32_t`; the `level >= texture.mipmaps()` check then runs on the narrowed
    value. `NaN` and `1e20` both cast to 0 and return mipmap 0 reporting success,
@@ -245,7 +267,15 @@ as already covered above.
    save. Same shape as finding 1 of the first pass: a `try` that spans past the
    commit point.
 
-2. **A renamed VOB keeps its old label in the scene tree indefinitely.**
+2. **A renamed VOB keeps its old label in the scene tree indefinitely.** —
+   **FIXED 2026-08-29**: the tree takes the applied ops as a prop, and they are
+   a dependency of both the `itemData` the memoised rows compare and the
+   `matches` the filter is memoised on. Held by *"re-labels the row of a VOB
+   that was renamed"* and *"re-runs an active filter, so a rename adds and drops
+   rows"* (`WorldSceneTree.test.tsx`), plus *"re-labels the scene tree row when
+   the name is committed"* (`WorldSurface.editing.test.tsx`) for the wiring —
+   which is the half a component test cannot see, and which fails without the
+   prop being passed.
    `WorldSceneTree.tsx:424-444` with `:129-211` — `applyOps`
    (`zen-world/src/model/ops.ts:1977`) writes `SetVobProp`'s name/visual into the
    summary's columns in place, deliberately preserving `summary` identity. `Row`
@@ -257,7 +287,16 @@ as already covered above.
    `[summary.vobIndex, query]`, so a rename never adds or drops a row.
 
 3. **The scene tree's `expanded` set holds flat VOB indices and survives a
-   renumber.** `WorldSceneTree.tsx:261` — `WorldSurface` renders the tree without
+   renumber.** — **FIXED 2026-08-29**: the same prop carries it. The set is
+   dropped when the applied ops renumber *and* the summary's identity changed —
+   only a committed structural op replaces the summary (`indexRefreshed`), so a
+   refused one no longer collapses a tree over an edit that did not happen.
+   Dropped rather than remapped, for the reason the selection is. Held by
+   *"forgets which VOBs were expanded when an op renumbers them"*
+   (`WorldSceneTree.test.tsx`), which deletes a two-VOB subtree so the stale
+   index lands on a *different* root with children — the case where keeping it
+   opens a row nobody touched.
+   `WorldSceneTree.tsx:261` — `WorldSurface` renders the tree without
    a `key` (`:1580`) and a structural op keeps `summary` truthy, so the component
    is not remounted; only `tree` and `reader` are rebuilt. `applied` clears the
    *selection* on `renumbersPaths`, but nothing touches `expanded`. Expand VOB

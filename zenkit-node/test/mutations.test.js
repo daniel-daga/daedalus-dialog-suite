@@ -2212,3 +2212,21 @@ test('setVobClassProp refuses a sound name that is not a string', () => {
   }
   assert.throws(() => zenkit.setVobClassProp(handle, '1/4', { soundName2: 42 }), /soundName2/);
 });
+
+// binding review 2026-08-29, finding 3: ParseIndexPath's segment validator
+// rejected non-digits but not magnitude, so an all-digit segment past
+// 2^64 reached std::stoull, which threw std::out_of_range out of the N-API
+// callback — node-addon-api's WrapCallback catches `const Napi::Error&` only,
+// so the process holding the world died instead of the op being refused.
+test('an index path segment too large to be an index is refused, not fatal', () => {
+  const handle = load();
+  for (const path of ['99999999999999999999999', '0/99999999999999999999999']) {
+    assert.throws(
+      () => zenkit.setVobPosition(handle, path, [0, 0, 0]),
+      /invalid indexPath/,
+      path,
+    );
+  }
+  // The handle is still usable, which is the whole point of not terminating.
+  assert.strictEqual(vobAt(dumpOf(handle), '0/1').path, '0/1');
+});

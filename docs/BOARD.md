@@ -74,8 +74,8 @@ was true for so long nobody re-reads it.
 - `master` is where work lands and is **pushed to `origin/master`**;
   `feature/level-editor` was merged and is no longer where work happens.
   `board-loop-3` was fast-forwarded into master on 2026-08-28 (35 commits) and
-  is **spent** — as `board-loop` was before it. `board-loop-4` is the branch in
-  use, cut from a `master` that is level with `origin/master`. A push is not a
+  is **spent** — as `board-loop` was before it, and as `board-loop-4` now is:
+  `master` contains it. `board-loop-5` is the branch in use. A push is not a
   release — see the merge note below.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
@@ -100,7 +100,9 @@ was true for so long nobody re-reads it.
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed on 2026-08-28, and the addon again with
   I5's seven constructions, the bed's `setVobClassProp` case and `getPortals`, and
-  again on 2026-08-29 for the waypoint names' windows-1252 arguments. The recipe
+  again on 2026-08-29 for the waypoint names' windows-1252 arguments and for the
+  binding-hardening refusals (`ParseIndexPath`, `decodeTexture`,
+  `extractWorldMesh`) plus the `corrupt-mesh` fixture variant their tests author. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
   `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
@@ -139,12 +141,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **The scene tree does not follow the world** — a rename re-renders neither
-  the row nor the filter, and `expanded` holds indices a renumber invalidates.
-  Any run. *renderer* 2-3
-- **Binding hardening, four of them** — `stoull` can `std::terminate`, mesh
-  indices are unbounded in-process, `decodeTexture` narrows before it
-  range-checks, `compareContainer` throws on `null`. Any run. *binding* 3-6
 - **Five cleanups, doc first** — `problems-panel.md` still claims five rules
   and one scan input; a Problems click on an unopened file is a no-op; the
   free-point flag bit has three private copies; `problemsStore` rebuilds a
@@ -198,6 +194,15 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **Binding hardening, four of them** — all four refuse now: an over-long index
+  path segment, an out-of-range mipmap level, a polygon corner past the vertex
+  list, and a `null` container that classifies instead of throwing. board-loop.
+  *binding* 3-6, all four FIXED
+
+- **The scene tree does not follow the world** — the applied ops reach it as a
+  prop: the row and the filter re-read on a rename, and `expanded` is dropped on
+  a *committed* renumber. board-loop. *renderer* 2-3, both FIXED
 
 - **The waypoint rule's problem ids collide** — the rule dedupes by emitted id,
   so a routine naming the same missing waypoint twice is one problem.

@@ -25,6 +25,7 @@
 #include <initializer_list>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -458,7 +459,18 @@ std::vector<std::size_t> ParseIndexPath(Napi::Env env, Napi::Value value, char c
     if (segment.empty() || segment.find_first_not_of("0123456789") != std::string::npos) {
       throw Napi::Error::New(env, std::string {"invalid "} + label + ": '" + str + "'");
     }
-    indices.push_back(static_cast<std::size_t>(std::stoull(segment)));
+    // Magnitude, not just the digits: `stoull` throws std::out_of_range past
+    // 2^64, and that exception would unwind straight out of the N-API callback
+    // — node-addon-api's WrapCallback catches `const Napi::Error&` only — and
+    // terminate the process holding the world. No index this long can name a
+    // vob anyway, so it is the same refusal as a segment full of letters.
+    std::size_t index = 0;
+    try {
+      index = static_cast<std::size_t>(std::stoull(segment));
+    } catch (std::out_of_range const&) {
+      throw Napi::Error::New(env, std::string {"invalid "} + label + ": '" + str + "'");
+    }
+    indices.push_back(index);
     if (end == std::string::npos) break;
     start = end + 1;
   }
@@ -3008,15 +3020,18 @@ zenkit_node::FixtureVariant ParseFixtureVariant(Napi::Env env, Napi::Value value
   if (value.IsUndefined() || value.IsNull()) return zenkit_node::FixtureVariant::kMinimal;
   if (!value.IsString()) {
     throw Napi::TypeError::New(
-        env, "variant must be 'minimal', 'mesh-extraction', 'npc' or 'camera'");
+        env, "variant must be 'minimal', 'mesh-extraction', 'npc', 'camera' or 'corrupt-mesh'");
   }
   std::string const str = value.As<Napi::String>().Utf8Value();
   if (str == "minimal") return zenkit_node::FixtureVariant::kMinimal;
   if (str == "mesh-extraction") return zenkit_node::FixtureVariant::kMeshExtraction;
   if (str == "npc") return zenkit_node::FixtureVariant::kNpc;
   if (str == "camera") return zenkit_node::FixtureVariant::kCamera;
+  if (str == "corrupt-mesh") return zenkit_node::FixtureVariant::kCorruptMesh;
   throw Napi::TypeError::New(
-      env, "variant must be 'minimal', 'mesh-extraction', 'npc' or 'camera', got '" + str + "'");
+      env,
+      "variant must be 'minimal', 'mesh-extraction', 'npc', 'camera' or 'corrupt-mesh', got '" +
+          str + "'");
 }
 
 // Internal: authors a fixture world. The 'minimal' variant is the checked-in

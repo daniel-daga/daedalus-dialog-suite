@@ -231,6 +231,28 @@ void BuildMeshExtractionMesh(Mesh& mesh) {
   // never writes it, so the fixture leaves it empty.
 }
 
+// One more polygon on the mesh-extraction mesh, its last corner naming a vertex
+// and a feature that do not exist. This is the only out-of-bounds a `.zen` can
+// carry into ExtractMesh: `Mesh::load` pushes exactly `index_count` corners per
+// polygon, so `index_offset + i` is always inside the index arrays, but the
+// vertex and feature indices inside them come straight off the stream.
+void CorruptMeshIndices(Mesh& mesh) {
+  Polygon poly {};
+  poly.material = 0;
+  poly.lightmap = -1;
+  poly.flags = PolygonFlagSet {};
+  poly.plane_normal = Vec3 {0.0f, 1.0f, 0.0f};
+  poly.plane_distance = 0.0f;
+  poly.index_count = 3;
+  poly.index_offset = mesh.polygon_vertex_indices.size();
+  mesh.geometry.push_back(poly);
+
+  for (std::uint32_t index : {0u, 1u, 999u}) {
+    mesh.polygon_vertex_indices.push_back(index);
+    mesh.polygon_feature_indices.push_back(index);
+  }
+}
+
 // A proto mesh built to exercise what ExtractProtoMesh claims: one chunk per
 // sub-mesh, wedges as ready-made render vertices, triangle indices in stored
 // order, a sub-mesh with no triangles skipped entirely, and a bounding box
@@ -1065,8 +1087,9 @@ void AuthorFixtureWorld(std::filesystem::path const& path,
                         bool packed_vobs) {
   auto world = std::make_shared<World>();
 
-  if (variant == FixtureVariant::kMeshExtraction) {
+  if (variant == FixtureVariant::kMeshExtraction || variant == FixtureVariant::kCorruptMesh) {
     BuildMeshExtractionMesh(world->world_mesh);
+    if (variant == FixtureVariant::kCorruptMesh) CorruptMeshIndices(world->world_mesh);
   } else {
     BuildMesh(world->world_mesh);
   }

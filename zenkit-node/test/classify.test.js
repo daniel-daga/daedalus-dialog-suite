@@ -370,3 +370,30 @@ test('a waypoint missing from one dump is semantic-drift naming the waypoint', (
   assert.ok(finding.path.startsWith('waynet.waypoints'));
   assert.ok(finding.detail.includes('WP_B'));
 });
+
+// binding review 2026-08-29, finding 4: `null` is the one "no container" value
+// the library produces — normalizeWorld emits it for a handle that has been
+// mutated — and compareContainer's early return tested `=== undefined` only, so
+// `strip`'s destructuring threw `Cannot destructure property 'header' of null`.
+// `covers()` four lines below already handled null explicitly.
+test('a null container is no container, not a crash', () => {
+  const a = makeDumpWithContainer();
+  const b = makeDumpWithContainer();
+  a.container = null;
+  b.container = null;
+
+  const result = classifyDumps(a, b);
+  assert.strictEqual(result.classification, 'identical');
+  assert.deepStrictEqual(result.findings, []);
+  assert.strictEqual(result.containerCoverage, false);
+});
+
+test('a container present on one side and null on the other is semantic-drift', () => {
+  const withNull = makeDumpWithContainer();
+  withNull.container = null;
+
+  const result = classifyDumps(withNull, makeDumpWithContainer());
+  assert.strictEqual(result.classification, 'semantic-drift');
+  assert.strictEqual(result.findings[0].path, 'container');
+  assert.strictEqual(result.containerCoverage, false);
+});

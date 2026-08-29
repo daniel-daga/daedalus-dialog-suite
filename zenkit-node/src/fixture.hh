@@ -31,6 +31,13 @@ enum class FixtureVariant {
   // element counts (`numPos`, `numTargets`). Authored into a temp directory at
   // test time and never checked in; it backs no fidelity claim.
   kCamera,
+  // The mesh-extraction world with one extra polygon whose corner names a
+  // vertex and a feature the mesh does not have — the one out-of-bounds a
+  // `.zen` can actually carry, since the loader fills the per-polygon index
+  // arrays itself. Authored into a temp directory at test time and never
+  // checked in; it exists only so the extractor's bounds check has a world to
+  // refuse.
+  kCorruptMesh,
 };
 
 // Builds a tiny deterministic world with ZenKit's own writer and saves it to

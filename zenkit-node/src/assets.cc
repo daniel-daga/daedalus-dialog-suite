@@ -10,6 +10,7 @@
 #include <zenkit/Texture.hh>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -267,8 +268,16 @@ Napi::Value DecodeTexture(Napi::CallbackInfo const& info) {
 
   std::uint32_t level = 0;
   if (info[2].IsNumber()) {
+    // Range-check before the cast, not after: NaN and 1e20 both narrow to 0,
+    // so the check below would pass and mipmap 0 come back reporting success
+    // for a level the caller never asked for. Same reason OptionalInt32 and
+    // OptionalWholeInt refuse a non-integral or out-of-range double.
     auto const requested = info[2].As<Napi::Number>().DoubleValue();
     if (requested < 0) throw Napi::TypeError::New(env, "mipmap level must not be negative");
+    if (!std::isfinite(requested) || requested != std::floor(requested) ||
+        requested > 4294967295.0) {
+      throw Napi::TypeError::New(env, "mipmap level must be a whole number");
+    }
     level = static_cast<std::uint32_t>(requested);
   }
 
