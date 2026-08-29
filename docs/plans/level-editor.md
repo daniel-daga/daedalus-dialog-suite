@@ -5164,6 +5164,20 @@ function name and file for every site naming the selected waypoint, and cannot
 distinguish "three NPCs are inserted here" from "a routine passes through". With
 slice 1 it can, and the panel is the surface that already exists.
 
+**Landed 2026-08-29.** `WaypointPanel` takes a `spawns` prop — the flat
+`spawnSiteIndex` scanned for `spawnPoint === name.toUpperCase()`, the same
+uppercase key every other by-name waypoint lookup on the surface uses — and
+lists the instance above *"spawned in <function> — <file>"*.
+
+**The one thing it had to decide is that the two indexes overlap.**
+`extractWaypointSites` visits `Wld_InsertNpc` and `Wld_InsertItem` as well, so
+every spawn is already a row in the site list; shown in both, the new section
+says nothing the old list was not already saying wrongly. So a spawn now cancels
+one site row in its own file and function — a **count**, not a filter, because a
+function may genuinely name the waypoint *and* spawn into it and that mention is
+still worth listing. The site list is `world-waypoint-sites`; *"No script in
+this project names it"* now requires both lists empty.
+
 **Slice 4 — spawn markers in the viewport.** A marker layer at the resolved
 world position of each static spawn: the first thing in 1c a person *sees*.
 Scoped to markers on purpose — see below.

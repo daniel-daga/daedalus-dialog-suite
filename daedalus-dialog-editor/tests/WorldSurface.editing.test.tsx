@@ -2007,6 +2007,61 @@ describe('a waypoint dragged in the viewport', () => {
     expect(await screen.findByTestId('world-waypoint-panel')).toHaveTextContent(/no script in this project/i);
   });
 
+  it('names the instances spawned at the selected waypoint', async () => {
+    // §16.19 slice 3: without this the panel lists sites, so three NPCs
+    // inserted at a point read exactly like a routine passing through.
+    useProjectStore.setState({
+      spawnSiteIndex: [
+        {
+          instance: 'GRD_200_XARDAS', spawnPoint: 'WP_MIDDLE',
+          filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
+        },
+        {
+          instance: 'BAU_961_GAAN', spawnPoint: 'WP_MIDDLE',
+          filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 13,
+        },
+        {
+          instance: 'MIL_350_MARTIN', spawnPoint: 'WP_ELSEWHERE',
+          filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 14,
+        },
+      ],
+    } as never);
+    await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+
+    const spawns = await screen.findByTestId('world-waypoint-spawns');
+    expect(spawns).toHaveTextContent('GRD_200_XARDAS');
+    expect(spawns).toHaveTextContent('BAU_961_GAAN');
+    expect(spawns).not.toHaveTextContent('MIL_350_MARTIN');
+  });
+
+  it('does not also list a spawn as a routine passing through', async () => {
+    // `extractWaypointSites` visits `Wld_InsertNpc` too, so the same call is in
+    // both indexes: listed twice, the spawn section says nothing the site list
+    // did not already say wrongly.
+    useProjectStore.setState({
+      waypointSiteIndex: {
+        WP_MIDDLE: [
+          { filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD' },
+          { filePath: 'C:/Story/TA_Baker.d', functionName: 'TA_Baker_Day' },
+        ],
+      },
+      spawnSiteIndex: [{
+        instance: 'GRD_200_XARDAS', spawnPoint: 'WP_MIDDLE',
+        filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
+      }],
+    } as never);
+    await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+
+    await screen.findByTestId('world-waypoint-panel');
+    expect(screen.getByTestId('world-waypoint-spawns')).toHaveTextContent('STARTUP_NEWWORLD');
+    expect(screen.getByTestId('world-waypoint-sites')).toHaveTextContent('TA_Baker_Day');
+    expect(screen.getByTestId('world-waypoint-sites')).not.toHaveTextContent('STARTUP_NEWWORLD');
+  });
+
   describe('renamed in that panel', () => {
     // W1 (§16.7). The panel is the only UI a waypoint has, so it is where the
     // one waynet edit that is not a drag lives.

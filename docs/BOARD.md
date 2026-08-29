@@ -146,9 +146,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1c — Daedalus overlay**
 
-- **The waypoint panel cannot say who spawns there** — it lists sites, so three
-  NPCs inserted at a point read like a routine passing through. Any run.
-  §16.19 slice 3
 - **No spawn is in any frame** — a marker layer at each static spawn's resolved
   position. Markers, not NPC visuals: §16.19 says why the meshes are not
   reachable. Any run. §16.19 slice 4
@@ -198,6 +195,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **The waypoint panel now names who spawns there** — landed: a `spawns`
+  section from `spawnSiteIndex`, and a spawn cancels its own row in the site
+  list so it is not counted twice as a routine passing through. §16.19 slice 3
 
 - **An NPC spawned at two points is nobody's finding** — landed as
   `duplicate-spawn`, the seventh Problems rule. Fires only for NPCs the project

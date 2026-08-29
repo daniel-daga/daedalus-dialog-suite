@@ -81,6 +81,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const selection = useWorldStore((s) => s.selection);
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
   const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
+  const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
   const {
     beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
@@ -1087,6 +1088,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [waynet, selectedWaypoint]);
 
   /**
+   * The spawns at the selected waypoint (§16.19 slice 3). The index is flat and
+   * uppercase, so this is a scan keyed the same way every other by-name
+   * waypoint lookup here is — the payload's own casing is display only.
+   */
+  const waypointSpawns = useMemo(() => {
+    if (waynet === null || selectedWaypoint === null) return [];
+    const point = waynet.names[selectedWaypoint].toUpperCase();
+    return spawnSiteIndex.filter((site) => site.spawnPoint === point);
+  }, [waynet, selectedWaypoint, spawnSiteIndex]);
+
+  /**
    * The waypoint a typed name would join the selection to, or null when there
    * is none to join.
    *
@@ -1682,6 +1694,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   <WaypointPanel
                     name={waynet.names[selectedWaypoint]}
                     routines={waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || []}
+                    spawns={waypointSpawns}
                     onRename={(to) => renameWaypointTo(selectedWaypoint, to)}
                     neighbours={waypointEdges}
                     resolveWaypoint={resolveWaypointToJoin}

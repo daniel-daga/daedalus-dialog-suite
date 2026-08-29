@@ -15,6 +15,11 @@ import {
  * `waypointSiteIndex`, keyed uppercase because Daedalus is case-insensitive;
  * the name shown is the waypoint's own casing from the waynet payload.
  *
+ * `spawns` is §16.19 slice 3: without it the panel lists sites and three NPCs
+ * inserted here read like a routine passing through. The two indexes overlap —
+ * `extractWaypointSites` visits `Wld_InsertNpc` too — so a site a spawn already
+ * accounts for is dropped from the routine list rather than shown twice.
+ *
  * The edges are §16.7's W3 and live here for W1's reason — this is the only UI
  * a waypoint has. A neighbour is named rather than picked in the viewport
  * because an edge needs a *second* selection and the surface has one; the name
@@ -27,6 +32,9 @@ import {
 const WaypointPanel: React.FC<{
   name: string;
   routines: Array<{ filePath: string; functionName: string }>;
+  /** The statically resolvable spawns at this waypoint. Instance names are
+   *  uppercase: that is what the index holds, and the script has no other. */
+  spawns: Array<{ instance: string; filePath: string; functionName: string }>;
   onRename: (to: string) => void;
   /** The other end of every edge this waypoint is in. */
   neighbours: Array<{ waypoint: number; name: string }>;
@@ -40,7 +48,8 @@ const WaypointPanel: React.FC<{
    *  warning that has to precede it is the surface's. */
   onDelete: () => void;
 }> = ({
-  name, routines, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect, onDelete,
+  name, routines, spawns, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect,
+  onDelete,
 }) => {
   const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
@@ -69,6 +78,23 @@ const WaypointPanel: React.FC<{
   // The field empties on a join the surface accepted, and the neighbour list it
   // hands back is what says the edge is there — the same shape the name field
   // has, where the payload is the answer and this component never assumes one.
+  // One routine row per spawn is the same call seen through the other index, so
+  // each spawn cancels exactly one site in its own file and function — a count,
+  // not a filter: a function may genuinely name the waypoint as well as spawn
+  // into it, and that mention is still worth listing.
+  const spawnedIn = new Map<string, number>();
+  for (const spawn of spawns) {
+    const key = `${spawn.filePath}:${spawn.functionName}`;
+    spawnedIn.set(key, (spawnedIn.get(key) || 0) + 1);
+  }
+  const otherSites = routines.filter((routine) => {
+    const key = `${routine.filePath}:${routine.functionName}`;
+    const left = spawnedIn.get(key) || 0;
+    if (left === 0) return true;
+    spawnedIn.set(key, left - 1);
+    return false;
+  });
+
   const join = (waypoint: number): void => {
     setJoinDraft('');
     onConnect(waypoint);
@@ -92,13 +118,27 @@ const WaypointPanel: React.FC<{
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1 }}>
         Waypoint
       </Typography>
-      {routines.length === 0 ? (
+      {spawns.length > 0 && (
+        <List dense disablePadding data-testid="world-waypoint-spawns">
+          {spawns.map((spawn, index) => (
+            <ListItem key={`${spawn.filePath}:${spawn.functionName}:${spawn.instance}:${index}`} disablePadding sx={{ py: 0.25 }}>
+              <ListItemText
+                primary={spawn.instance}
+                secondary={`spawned in ${spawn.functionName} — ${baseName(spawn.filePath)}`}
+                primaryTypographyProps={{ variant: 'body2' }}
+                secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
+      {otherSites.length === 0 && spawns.length === 0 ? (
         <Typography variant="caption" color="text.secondary">
           No script in this project names it.
         </Typography>
       ) : (
-        <List dense disablePadding>
-          {routines.map((routine, index) => (
+        <List dense disablePadding data-testid="world-waypoint-sites">
+          {otherSites.map((routine, index) => (
             <ListItem key={`${routine.filePath}:${routine.functionName}:${index}`} disablePadding sx={{ py: 0.25 }}>
               <ListItemText
                 primary={routine.functionName}
