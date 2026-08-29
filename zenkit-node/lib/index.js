@@ -72,9 +72,21 @@ function reparentVob(handle, ...rest) {
   return result;
 }
 
+// The waynet mutators need the same wrapper and nothing else, so they are
+// wrapped by name rather than hand-written six more times.
+const waynetMutators = Object.fromEntries(
+  ['setWaypointPosition', 'setWaypointName', 'addWaypoint', 'removeWaypoint',
+    'addWaypointEdge', 'removeWaypointEdge'].map((name) => [name, (handle, ...rest) => {
+    const result = addon[name](handle, ...rest);
+    markMutated(handle);
+    return result;
+  }])
+);
+
 module.exports = {
   ...addon,
   loadWorld, normalizeWorld,
   setVobPosition, setVobRotation, setVobProp, setVobClassProp,
   insertVob, deleteVob, reparentVob,
+  ...waynetMutators,
 };

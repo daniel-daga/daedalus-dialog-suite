@@ -138,9 +138,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **The waynet mutators never mark the handle mutated** — so `container`
-  reports the pre-edit file's digests as this handle's facts. Any run.
-  *binding* 1
 - **Waypoint names cross the binding as UTF-8** — everything else there is
   cp1252: refused ops, mojibake, and a duplicate check that misses collisions.
   Any run. *binding* 2
@@ -211,6 +208,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 *(flushed 2026-08-29 — the two `ops/main` fixes before this one are in commits
 7298fe6 and f587b74 and marked FIXED at their pointer; `git log` is the record.)*
+
+- **The waynet mutators mark the handle mutated** — the six waynet ops go
+  through `markMutated` like the VOB ops, so a mutated handle's `container` is
+  null instead of the pre-edit file's digests. board-loop. *binding* 1, FIXED
 
 - **`applyOps` bounds-checks `op.vob`** — an op naming a VOB the projection
   does not have is a `RangeError`, not a silent typed-array no-op reported as

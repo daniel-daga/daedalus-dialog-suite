@@ -652,3 +652,25 @@ test('a barrier removal keeps the index+name guard, and the flag is required', (
   assert.throws(() => zenkit.removeWaypoint(handle, 0, 'FP_FIXTURE_FREE'), /barrier/);
   assert.strictEqual(zenkit.getWaynet(handle).count, count);
 });
+
+test('every waynet mutator marks the handle mutated, so container is null', () => {
+  // `container` is computed from the archive BYTES the handle was loaded from,
+  // so any mutation must clear it — a waynet op no less than a VOB op. Reporting
+  // the pre-edit file's hash table beside a waypoint list that no longer matches
+  // it is the lie `classifyDumps` would then attribute to the writer.
+  const cases = [
+    ['setWaypointPosition', (h) => zenkit.setWaypointPosition(h, indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', [1, 2, 3])],
+    ['setWaypointName', (h) => zenkit.setWaypointName(h, indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', 'WP_RENAMED')],
+    ['addWaypoint', (h) => zenkit.addWaypoint(h, 'FP_ADDED', [1, 2, 3])],
+    ['removeWaypoint', (h) => zenkit.removeWaypoint(h, zenkit.addWaypoint(h, 'FP_ADDED', [1, 2, 3]), 'FP_ADDED', false)],
+    ['addWaypointEdge', (h) => zenkit.addWaypointEdge(h, indexOf(h, 'FP_FIXTURE_FREE'), 'FP_FIXTURE_FREE', indexOf(h, 'WP_FIXTURE_A'), 'WP_FIXTURE_A')],
+    ['removeWaypointEdge', (h) => zenkit.removeWaypointEdge(h, indexOf(h, 'WP_FIXTURE_A'), 'WP_FIXTURE_A', indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B')],
+  ];
+
+  for (const [name, mutate] of cases) {
+    const handle = load();
+    assert.notStrictEqual(zenkit.normalizeWorld(handle).container, null, `${name}: fixture has a container`);
+    mutate(handle);
+    assert.strictEqual(zenkit.normalizeWorld(handle).container, null, `${name} left the source path attached`);
+  }
+});

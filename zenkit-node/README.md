@@ -731,9 +731,10 @@ stamp values, which are benign (a missing or added stamp line is still
 drift). Golden fixtures carry the section too; regenerate
 only the JSON with `node scripts/fixtures-regen.js --golden-only`.
 
-It is `null` for a handle that has been mutated: the section describes the
+It is `null` for a handle that has been mutated by **any** mutator — the VOB
+ops and the six waynet ops alike: the section describes the
 bytes the handle was loaded from, and after `setVobPosition` /
-`insertVob` those bytes no longer describe the handle. Save the world and
+`insertVob` / `removeWaypoint` those bytes no longer describe the handle. Save the world and
 load the result to get a container section back.
 
 `containerFromBuffer` dispatches on the archive format. ASCII

@@ -119,7 +119,9 @@ padded.
    as byte-level truth, so drift is attributed to the writer and a before/after
    comparison of the same handle reports the container unchanged. The README's
    invariant ("`null` for a handle that has been mutated") holds for VOB ops
-   only. `markMutated` has no test at all.
+   only. `markMutated` has no test at all. — **FIXED 2026-08-29**: `lib/index.js`
+   now wraps the six waynet mutators with `markMutated` too, and
+   `waynetMutation.test.js` asserts a null `container` after each of the six.
 
 2. **Waypoint names cross the boundary as UTF-8 while everything else is
    windows-1252.** `src/binding.cc:569, 612-613, 671, 746, 837` all use
