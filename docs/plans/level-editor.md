@@ -1995,7 +1995,7 @@ for the upload. `WaynetOverlay.test.ts` pins the view-not-a-copy, because a copy
 would fail silently — the file would save the move and the overlay would go on
 drawing the old position until the world was reopened.
 
-Translate only. The waynet's other op is the panel's rename (§16.7, W1), which
+Translate only. The waynet's other op is the panel's rename (§7, W1), which
 no gizmo produces; a waypoint does carry a direction, but nothing writes one, so
 a rotate ring would turn something the world would never be told about.
 
@@ -2162,7 +2162,7 @@ carrying the animation vectors in `from`. **Enums** (`lightType`, sound `mode`,
 `lerpMode`) were out for the same shape of reason — retail data contains
 out-of-range values, `zCMover.lerpMode` is 120 on three VOBs, and a dropdown that
 cannot represent junk destroys it on write — and **came in on 2026-08-29**, eight
-of them, once the decision above separated offering from coercing (§16.21). Only
+of them, once the decision above separated offering from coercing (§7). Only
 `lerpMode` and `speedMode` are still out, and by `zCMover.speed`'s rule rather
 than this one. **List fields**
 (`colorAnimationList`, trigger targets, mover keyframes), the first unbounded
@@ -2266,7 +2266,7 @@ Not a class at all. Two kinds, and the nine fields the five classes of increment
   `overrideColor` just fixed for fog, and closing them means a `mode` control,
   which means enums.
 - **Two enums stayed out for the reason the catalogue already gives** (sound
-  `mode`, `volumeType`) — until §16.21 took both on 2026-08-29.
+  `mode`, `volumeType`) — until §7 took both on 2026-08-29.
   `randomDelay`/`randomDelayVar` stayed out for a third reason that is neither:
   the engine reads them only when `mode` is RANDOM, and the grid commits one
   field at a time, so a delay set beside a mode change is a write with no
@@ -2419,7 +2419,7 @@ Problems panel, which grows a **locus discriminated union**: a script locus
 carries the file and its navigation keys, a world locus carries the waypoint,
 VOB or polygon it stands on, and the panel's click branches — open the file, or
 select and frame in the viewport. The earlier assumption that the answer was a
-separate World-side surface (§16.8) is **superseded**, and Phase 1c is what
+separate World-side surface (§7) is **superseded**, and Phase 1c is what
 changed it: a duplicate spawn is script-locus and an occupancy overlap is
 *both*, so two panels would split siblings apart and make one mod's problems two
 places to look. Long form and what it unblocks: §16.20.
@@ -2429,7 +2429,7 @@ places to look. Long form and what it unblocks: §16.20.
 out-of-range values a dropdown would destroy — is an argument against *coercion*,
 not against offering the known values. The field offers them, and an
 unrecognised value is preserved verbatim and marked rather than snapped to the
-nearest legal one. Long form: §16.21.
+nearest legal one. Long form: §7.
 
 #### Filtering the tree, and hiding a class (2026-08-28)
 
@@ -2463,6 +2463,147 @@ Four behaviours anything touching this must preserve:
   onto the proxy as the same object; without that a hidden VOB stays clickable.
   `WorldViewport` re-applies it on `mesh`/`visuals` like exposure, because a
   structural op rebuilds the scene and a fresh `WorldScene` draws everything.
+
+#### What a waypoint op owes, and how one addresses a waypoint (2026-08-28)
+
+All five waynet ops are in — the move's gizmo, W1's rename, W2's append, W3's
+edge ops and W4's delete. The constraints they were built under bind anything
+added beside them:
+
+- **A waypoint is addressed by its index into `getWaynet`'s list, checked
+  against its name** — and that address is only sound for an op that inserts,
+  deletes and reorders nothing, which is why the move, the rename, the append
+  and the edge ops could all take it and W4 could not. **Names are not unique in
+  the format**: the binding matches edge endpoints by pointer identity for that
+  reason, and retail's 24 worlds hold 12,341 waypoints with 0 collisions — a
+  fact about the shipped data, not a guarantee. So an op that *persists* an
+  address may not key on a name; a read-only jump may. The alternative stays on
+  record: a stable synthetic id every op carries, which is what a future
+  capability needing undo across a delete would have to buy.
+- **W4 renumbers, so it is a barrier** (§15) — it clears both undo stacks
+  instead of buying that id. `isBarrierOp` is true for exactly `DeleteVob` and
+  `DeleteWaypoint`, a barrier travels alone in its batch, and `barrier` is
+  **never defaulted**: a caller that did not say must not get either.
+- **`WayNet::save` writes only free points plus edge endpoints**, and
+  `free_point` is not a stored field — so a non-free waypoint in no edge is
+  **dropped at save**. Any op that can leave a waypoint edgeless owes it the
+  promotion to free point. The promotion is **not symmetric**: the add direction
+  does not demote, so deleting an edge and undoing that leaves the waypoint in
+  the points section where it was not before. Carrying the flag on the op is the
+  fix if a world ZenGin did not write ever needs it.
+- **The overlay payload cannot be patched after a structural waynet op.**
+  `positions` is a typed array the point cloud and the edge lines draw
+  *through*, and a typed array cannot grow — so the op re-reads rather than
+  patches.
+- **`normalizeWorld` emits waypoints sorted by name.** A test comparing two
+  dumps positionally reads that as a *moved* waypoint. Compare by name.
+- **Coverage is Jest against the mocked IPC, structurally.** The browser harness
+  has no world to open, so there is no Playwright reach into any of this; and
+  `verify-world-edit.js` / `verify-world-pipeline.js` were deliberately **not**
+  extended, because an unrun addition to a verification script is worse than
+  none.
+
+#### What a duplicate carries, and what it cannot (2026-08-28)
+
+Copy, paste, duplicate and the subtree are all ordinary `AddVob` batches — no
+new op. What a copy **drops** is the part worth knowing, and each drop is a
+constraint rather than an omission:
+
+- **`physicsEnabled`**, because `NewVob` has no place for it: restoring it means
+  a `SetVobProp` beside the add, and `commitOps`' batch exception is deliberately
+  *"all adds"* so that the inverse batch is the same sentence — undo replays back
+  to front. Widening it must keep that. Deferred anyway: A6 (§16.9) says the
+  packed `zCVob` writer drops `physicsEnabled` on every save, so restoring it in
+  a duplicate is invisible until A6 lands.
+- **Class properties**, because `InsertVob` hard-codes `type = zCVob` and
+  `SetVobClassProp` refuses a `zCVob`. A duplicated light has the binding's range
+  and colour, not the original's.
+- **`oCItem`'s class**, and this one is a shape constraint: `instance` is a class
+  property behind `getVobProps`, so carrying it is the one case where the copy
+  path would have to become asynchronous and issue an IPC read per selected VOB.
+- **A class outside `AUTHORABLE_VOB_CLASSES`** is dropped rather than carried,
+  because carrying it would be *refused* by the validator — turning today's lossy
+  duplicate of an `oCMobDoor` into no duplicate at all.
+
+Two smaller things anything here must respect: the flat `vob` index on each op is
+an approximation — one low for a copy whose parent is an ancestor of another
+copy's — and is safe only because nothing reads it; and none of this is reachable
+from Playwright, since the browser harness has no native addon and therefore no
+open world. Unmeasured: a subtree deep or wide enough to matter for performance,
+and what a paste of a subtree does about name collisions.
+
+#### The base `zCVob` fields, and why their bounds are the packed layout's (2026-08-28)
+
+`presetName`, `visualCamAlign`, `bias`, `dynamicShadows` and a decal visual's
+seven fields are writable; two fields are out, each for a fact rather than for
+time.
+
+- **`sleepMode` cannot be written at all.** `VirtualObject::load` and `::save`
+  touch it only inside `if (r.is_save_game())`, so a value set on a world archive
+  never reaches the file — the same guard covers `nextOnTimer` and the rigid
+  body. The measurement alone would have read this as "retail never uses it"
+  rather than as "this cannot be written", which is the reason to keep the
+  distinction written down. **`farClipScale`** is out because retail ships
+  uninitialised junk in it (§14.1 1.8).
+- **The bounds are the packed layout's bit fields, not the C++ type's and not the
+  documented enum's** — `bias` has no sign bit, `visualCamAlign` and
+  `dynamicShadows` are two bits each. Both sides of a `SetVobProp` are validated,
+  so a tighter bound would make an edit on a VOB already holding an out-of-range
+  value **un-undoable**.
+- **A base edit is the described VOB's alone.** `from` must come from
+  `getVobProps`, so a multi-VOB batch of base fields is refused: a defaulted
+  origin is an inverse that writes a value the VOB never had.
+- **`BASE_FIELDS` stays outside `CLASS_FIELDS`.** Folding them in would make
+  `classPropKeys` answer non-empty for every string, which is the check
+  `SetVobClassProp` refuses an unknown class by.
+- **The decal keys stay flat and prefixed**, so the IPC assertion remains a flat
+  key walk and `decalSubKey` is the single tie to the nested read. The refusal is
+  made three times at different strengths on purpose: the main process holds no
+  world, so it cannot know whether a VOB has a decal.
+
+The committed `minimal.g2.zen` predates the decal visual, so the decal tests
+author their own world; regenerating that fixture is the reviewed act its regen
+script reserves.
+
+#### Jumping between a script reference and the place it names (2026-08-29)
+
+The waypoint-name index, the panel that shows who names a waypoint, the
+`waypoint-not-in-world` rule and the jump button are all in. Four constraints
+hold them up and none is visible from the code that depends on them:
+
+- **The index may not be built off `mergedSemanticModel`.** That is capped at
+  `PARSED_FILES_CAP = 512`, and *which* files are in it depends on the selected
+  NPC — so an index built there is wrong by construction and non-deterministically
+  so. It is built main-side, over the project.
+- **The waynet is read at world open, not lazily.** Left lazy, the rule would say
+  nothing until somebody happened to show the overlay — silently. A future
+  performance change that defers the waynet read breaks the rule and the jump
+  button together, and neither would fail a test.
+- **The rule's inputs change on exactly four ops** — `AddWaypoint`,
+  `DeleteWaypoint`, `RenameWaypoint`, and `SetWaypointEdge` by way of its
+  free-point promotion — enforced by `waynetLoaded` object identity in
+  `storeSync`. A new waynet op that can change a name must be added there.
+- **The editor holds one world and no index of the others**, so it can say "not
+  in *this* world" and can never, on its own, say "no such waypoint anywhere".
+  The third answer stays reserved: either it keeps saying only what it knows, or
+  somebody indexes the other worlds. 84.3 % of literal sites resolve against the
+  three main worlds, 98.0 % against all 24.
+
+Deliberately not references, each for a reason: `C_Npc.wp` (an instance-field
+assignment rather than a call site — a second extraction path for the 2 sites the
+corpus has), the reverse direction (a waypoint no script names is not a finding;
+it would flag most of a retail waynet), `AI_GotoFP` / `Wld_IsFPAvailable` /
+`AI_UseMob` / `Wld_AssignRoomTo*` (different namespaces), and
+`Npc_GetNearestWP` / `Npc_GetNextWP` (they return a name rather than take one).
+
+**A bound taken from ZenKit's documentation rather than from a `normalizeWorld`
+sweep is a live refusal risk, not a cautious default.** `zCVobSound.volume`
+shipped `max: 100` on ZenKit's "percent (0-100)" wording while retail NewWorld
+holds 130 and 150 — an edit refused on a value the corpus contains. Every bound
+in the catalogue is now measured or derived from the packed layout; the next one
+added owes the same sweep. `coneAngle`'s 0-360 is the exception that proves it:
+retail holds 0 on all 1,237 sound VOBs, so nothing tests the ceiling and nothing
+refutes it either.
 
 ---
 
@@ -2630,13 +2771,13 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | # | Missing | Status | Note |
 |---|---|---|---|
 | 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
-| 1.2 | **Copy / paste / duplicate**, incl. subtree | **done, less `physicsEnabled`** (§16.14) | The most-used Spacer verb after move. D1 (duplicate one VOB in place), D4 (a selection as one batch, one undo) and D3 (copy and paste as verbs) all landed 2026-08-28, as ordinary `AddVob`s with no new op. D2's class half landed 2026-08-28 on top of I1/I2 — a copy carries its **class** for the classes `insertVob` can construct, and drops it for the rest (and for `oCItem`, whose instance is not in the index) rather than have the op refused. What a copy still drops is the class *properties* and `physicsEnabled`. D5 (the subtree) landed 2026-08-28 as N appends in one batch. What is left is `physicsEnabled`; a cross-world clipboard only if part-to-part copying is wanted. |
+| 1.2 | **Copy / paste / duplicate**, incl. subtree | **done, less `physicsEnabled`** (§7) | The most-used Spacer verb after move. D1 (duplicate one VOB in place), D4 (a selection as one batch, one undo) and D3 (copy and paste as verbs) all landed 2026-08-28, as ordinary `AddVob`s with no new op. D2's class half landed 2026-08-28 on top of I1/I2 — a copy carries its **class** for the classes `insertVob` can construct, and drops it for the rest (and for `oCItem`, whose instance is not in the index) rather than have the op refused. What a copy still drops is the class *properties* and `physicsEnabled`. D5 (the subtree) landed 2026-08-28 as N appends in one batch. What is left is `physicsEnabled`; a cross-world clipboard only if part-to-part copying is wanted. |
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
-| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
+| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are complete — the enums that were the last of it landed 2026-08-29 as eight keys over thirteen classes, a fourth table (`CLASS_ENUM_FIELDS`) the validator reads generically so no per-key list can drift, and a field that offers the known values without coercing to them: an unrecognised value is kept, shown as such, and committed by nothing. No engine has seen any of the eight written (§16.2). **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
 | 1.5 | **Numeric transform entry** | **landed** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half landed too (2026-08-28).** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` with the round-trip tolerance test the old wording asked for, and `WorldPropertyGrid` now has three angle fields on top of it. Unlike position, a committed angle leaves as an **absolute** pose (`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute angle is the thing the grid can now read off a VOB; the equality refusal below is therefore applied **per angle**, and it compares the typed number against the *displayed* rounded value as well as the exact decomposed one — `coordinate()` rounds to 2 dp, so a field reading "30" can be 30.000000000000004 underneath and retyping what is on screen would otherwise re-orthonormalize the matrix. `zenRotationToEuler`'s throw is caught and the row renders as unavailable rather than blanking the grid. **A multi-selection landed 2026-08-28** and is the one asymmetry: the fields describe the anchor VOB as always, but with N selected a committed angle leaves as a **delta** through the gizmo's own `onRotateSelection` → `rotateVobs`, so the selection turns together and keeps the relative orientation it had — the rule the position fields already have, and the one that keeps typing and dragging on one op-building path. The delta is `eulerDeltaRotation(displayed, typed)` (`zen-world/coords`), built from the two angle triples rather than from the anchor's stored matrix: a `R(to) * M^-1` would carry the anchor's own non-orthonormality into every other VOB of the selection. See §16.4. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
 | 1.6 | **Snapping** | **landed** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal landed 2026-08-28**, as the per-VOB answer the shared-delta commit path could not give: `zen-world`'s `dropVobsToGround`/`alignVobsToNormal` take per-VOB hits and batch to one `MoveVob`/`RotateVob` per VOB, one undo entry, exactly as `translateVobs`/`rotateVobs` do for a shared delta. Align turns local **+Y** onto the hit normal — the engine is Y-up, with no per-visual-class exception (the "which axis is up for this visual" question that keeps a placed VOB at `IDENTITY` is not reopened) — and composes on the left, so whatever rotation the VOB had about that axis survives. The raycast is `WorldViewportHandle.raycastDown`, synchronous against the existing BVH; a VOB whose ray misses (over the sky, off the mesh) is left where it was rather than refusing the batch. A *typed* coordinate still does not snap — a typed number is an explicit destination. |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
-| 1.8 | **The rest of `zCVob`** | **landed** (§16.17) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 landed the same day: `dynamicShadows` on the same two bits, and all seven fields of a decal visual, flat and prefixed. Two fields stay out and both by a fact rather than by time — `farClipScale`, because retail ships uninitialised junk in it (§7), and **`sleepMode`, because `VirtualObject` reads and writes it only under `is_save_game()`**, so a value set on a world archive never reaches the file. |
+| 1.8 | **The rest of `zCVob`** | **landed** (§7) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 landed the same day: `dynamicShadows` on the same two bits, and all seven fields of a decal visual, flat and prefixed. Two fields stay out and both by a fact rather than by time — `farClipScale`, because retail ships uninitialised junk in it (§7), and **`sleepMode`, because `VirtualObject` reads and writes it only under `is_save_game()`**, so a value set on a world archive never reaches the file. |
 
 **Not a gap: scale.** `zCVob` has no scale field, so the two-mode gizmo is
 correct and a third mode would author a representation ZenGin does not have.
@@ -2661,7 +2802,7 @@ inserts, deletes and reorders nothing — and W1, W2 and W3 all earned that same
 address, because a rename, an append and an edge renumber nothing either. W4 was the
 one op that renumbers, and it is answered by §15's barrier rather than by an
 identity scheme: it clears the undo history instead of buying an address that
-would survive it (§16.7).
+would survive it (§7).
 
 ### 14.3 World-level
 
@@ -2744,7 +2885,7 @@ observational half open.
 **Closed.** Every op that had no verdict — `DeleteVob` on a six-VOB subtree,
 `AddWaypoint`, `RenameWaypoint`, `MoveWaypoint`, `RemoveWaypoint` with its
 2,895-waypoint renumber, `SetWaypointEdge`, `SetVobClassProp` — plus
-`SetVobProp`'s ten keys from V1/V2 (§16.17) and `AddVob` authoring 27 classes,
+`SetVobProp`'s ten keys from V1/V2 (§7) and `AddVob` authoring 27 classes,
 produces a world the engine **loads and plays**. `zCVobLight` and
 `zCPFXController` were seen to *render* what the editor authored, which is the
 first in-engine witness of `AddVob` building a class. The `oCItem.instance`
@@ -2768,7 +2909,12 @@ box, a VOB standing at the spawn's Y over ground 50 units lower, and an empty
 routines surviving the 2,895-waypoint renumber) have never been run in a cleared
 frame and are "loads and plays" only — **the candidates for them exist as of
 2026-08-29 and have not been played**, see the `07` paragraph below. The seven decal fields are in no
-candidate. `oCZoneMusic.volume` is dropped by decision, below. And five of the
+candidate. **Nor is any of the eight enum writes** - Gate 2b proved
+`SetVobClassProp` reaches the file and the engine plays it, but for *scalar*
+fields, and `verify-world-pipeline.js` writes no enum either.
+`zCVobLight.lightType` is the sharpest case: retail places SPOT nowhere (0 on
+all 4,649 lights), so nothing in the corpus says what it looks like.
+`oCZoneMusic.volume` is dropped by decision, below. And five of the
 27 authorable classes have been seen in an engine.
 
 **Why, and the candidate that answers it — `06-minimal-frame`, built
@@ -2911,7 +3057,7 @@ path `1/13`. `oCMob*` is the remaining work.
 thirteen of its own fourteen — two delay/damage floats (`touchBlockerDamage`,
 `stayOpenTimeSec`), three bools (`locked`, `autoLink`, `autoRotate`) and eight
 sound names. `behavior`, `lerpMode` and `speedMode` were enums and stayed out
-with the rest of the catalogue's enums; `behavior` joined in §16.21 and the
+with the rest of the catalogue's enums; `behavior` joined when the enums landed (§7) and the
 other two did not, held out by `speed`'s rule below instead. `keyframes` is an
 unbounded list. `speed` is
 held out for a reason none of the family's other held-out fields share:
@@ -2925,7 +3071,7 @@ keyframes (most of them), a `speed` write is silently dropped on save, the same
 `oCMOB` landed 2026-08-28: `VMovableObject`'s own nine plain scalars — the base
 every `oCMob*` class inherits, and a class in its own right for a plain,
 non-interactive movable object. `soundMaterial` is the one enum on the class and
-stayed out with the rest of the catalogue's enums until §16.21 took it, which
+stayed out with the rest of the catalogue's enums until they landed (§7), which
 makes this class's ten fields complete; nothing else on it is a list or
 save-game-only. Appended to
 `BuildVisualVobTree` at path `1/15`.
@@ -2957,7 +3103,7 @@ reason `keyframes` is held out by. `VDoor` adds the same `locked` and
 to `BuildVisualVobTree` at paths `1/17`-`1/19`.
 
 Held out by decision rather than by time, and **enums were the whole of it until
-§16.21 closed them on 2026-08-29**: eight of them — `zCVobLight.lightType` and
+§7 closed them on 2026-08-29**: eight of them — `zCVobLight.lightType` and
 `.quality`, the sound family's `mode` and `volumeType`, `zCMover.behavior` and
 `soundMaterial` on all nine `oCMob*` — are catalogued, writable and drawn as a
 dropdown that offers without coercing. `zCMover.lerpMode`/`speedMode` are the
@@ -3044,545 +3190,6 @@ One thing users will see and may report as a bug: displayed angles are canonical
 — yaw/roll in (−180, 180], pitch in [−90, 90] — so a field committed at 190°
 remounts as −170°, and a pole pose remounts with roll 0. Both correct, both look
 like the editor changing their number.
-
-### 16.6 Every remaining catalogue bound rests on documentation, and one was wrong
-
-The two unmeasured bounds are closed, but the way they closed is the finding:
-the sweep that settled them also found `zCVobSound.volume` shipping `max: 100`
-on ZenKit's "percent (0-100)" wording while retail NewWorld holds 130 and 150 —
-the grid, the validator and the binding were all refusing values the game itself
-ships.
-
-**So a bound taken from ZenKit's docs rather than from a `normalizeWorld` sweep
-is a live refusal risk, not a cautious default.** `coneAngle` 0–360 and the two
-daytime hours 0–24 were the ones still standing on documentation alone; swept
-2026-08-28 over the same three worlds, both are confirmed rather than
-falsified. `coneAngle` is `0` on all 1,237 `zCVobSound`/`zCVobSoundDaytime`
-VOBs in the corpus — retail never uses a directional cone, so nothing tests the
-upper bound, but nothing refutes it either. The 84 `zCVobSoundDaytime` VOBs
-hold `startTime` in [5, 8] and `endTime` in [12, 23], comfortably inside 0–24.
-Every catalogue bound has now been swept at least once; none remain
-documentation-only.
-
-### 16.7 Waynet editing — the edge ops, and add/delete/rename
-
-All four have landed, plus the move's gizmo: W1's rename, W2's append, W3's
-edge ops and W4's delete.
-
-**The addressing problem was the whole job and W4 was the last of it.**
-`MoveWaypoint` addresses a waypoint by its index into the list `getWaynet`
-emits, and that is safe only because a move inserts, deletes and reorders
-nothing. W1, W2 and W3 all earned that same address — a rename, an append and an
-edge renumber nothing either — so the rest of the problem was W4's, and names could
-not be the fix there either — nothing in the format promises they are unique, which is
-why the binding matches edge endpoints by pointer identity. **Retail happens to
-have no duplicate** — 24 worlds, 12,341 waypoints, 0 collisions even
-case-insensitively — but that is a fact about the shipped data,
-not a guarantee about a world somebody edits, and an *op* that persists an
-address needs the guarantee. The jump (§16.8) can key on names precisely because
-a jump is read-only.
-
-The edge ops' hazard was real and is closed: `free_point` is not a stored field,
-and `WayNet::save` writes only free points plus edge endpoints, so a non-free
-waypoint in no edge is dropped at save — removing a waypoint's last edge would
-delete the waypoint. W3 answers it in the binding by promoting such an endpoint
-to a free point, so an edge op *is* invertible as an edge op (see W3 below).
-Waypoint delete has a bounded version of the arbitrary-VOB-delete trap — a
-`WayPoint` is five scalar fields, so what an op cannot describe for free is its
-edge memberships, and those are an enumerable list.
-
-**Split into increments 2026-08-28.** The addressing problem is real but it is
-not evenly distributed: it bites only the ops that *renumber*, and two of the
-four do not — W1 and W2 both landed on the shipped index+name pair, which is the
-split holding.
-
-**The idiom the safe increments reuse is already shipped.**
-`setWaypointPosition` addresses a waypoint by index *and* carries its name as a
-checked pair — the binding refuses the call when the name at that index is not
-the one the op named (`zenkit-node/src/binding.cc:559-564`), so a stale index
-fails loudly instead of moving the wrong waypoint. Any op that does not
-renumber can stand on exactly that, and needs no new addressing scheme.
-
-Unlike §16.14's D1, **none of these is free**: each wants a binding function, an
-op, a validator branch in `assertApplyOpsRequest`, and its cases — in one change,
-per the rule that `ReparentVob` broke.
-
-**W1 — rename a waypoint. Landed 2026-08-28**, exactly as sized: `RenameWaypoint`
-→ `setWaypointName`, the shipped index+name pair unchanged, edges untouched
-because the binding matches endpoints by pointer identity. The op carries no
-separate `name` field — `from` *is* the guard, which is what makes the inverse
-the plain swap, and what makes the *unwind* address the waypoint by the name the
-op just wrote rather than the one it replaced (`writeOp` takes the guard from
-the other side; the zen-world suite pins it). The UI is the waypoint panel's
-name field, the only waynet edit that is not a gizmo drag. **A rename can still
-orphan a script that names the waypoint as a literal, and nothing warns** —
-that is §16.8's Problems rule — decided 2026-08-28, unbuilt.
-
-`verify-world-pipeline.js` was **not** extended: it drives a real Gothic install
-and its waypoint section proves the renderer's index and the binding's are the
-same number, which a rename re-proves nothing about. An unrun addition to a
-verification script is worse than none.
-
-Two refusals were added that a move has none of, both in the binding because it
-is the only layer that can see the whole point list: an **empty** name (the
-index+name pair would have nothing to check) and one **another waypoint already
-carries** (every by-name lookup, the panel's routine index above all, becomes
-ambiguous). Neither is forbidden by the format; retail has neither.
-
-**Two things found on the way, neither fixed:**
-
-- `normalizeWorld` emits the waypoints **sorted by name**, so a rename reorders
-  its dump. A test comparing two dumps positionally reads that as a *moved*
-  waypoint. Compare by name.
-- `lib/index.js` wraps every VOB mutation in `markMutated` and **neither waynet
-  mutation** — so after a `setWaypointPosition` or a `setWaypointName`,
-  `normalizeWorld` still reports the container section computed from the bytes
-  the handle was loaded from. `setWaypointName` was left matching its sibling
-  rather than diverging from it; the pair is wrong together or right together,
-  and which it should be is a fidelity-harness question, not this card's.
-
-**W2 — add a free waypoint, appended. Landed 2026-08-28**, exactly as sized.
-`AddWaypoint` → `addWaypoint`/`removeWaypoint`, the shipped index+name pair
-unchanged because an append leaves every existing index naming the waypoint it
-named before. The op's two sides are *nullable positions* and its name sits at
-the top level: null means "not in the waynet", so `invertOp` is the plain swap
-and the removal needs no op of its own, and the name describes the waypoint on
-the side that exists and guards the index on the side that does not. The UI is a
-second button on the terrain-point bar, offered only while the overlay is on —
-nothing else draws a waypoint, so one added without it would be invisible and
-unpickable the moment it landed.
-
-The free-point flag is the load-bearing part and it is pinned by a test that
-fails without it: sabotaged to `free_point = false`, the save-and-reload case
-reports the appended waypoint missing from the reloaded world, because
-`WayNet::save` writes free points plus edge endpoints and this one is in no
-edge. Everything but the name and the position is fixed by the binding —
-direction (0, 0, 1), depth 0, not underwater — so a name and a position describe
-the waypoint completely, which is what lets redo reproduce it exactly.
-
-`removeWaypoint`'s non-barrier direction is **the tail only**, and refuses a
-waypoint any edge names.
-Both refusals are the card's scope holding: a removal in the middle renumbers
-and is W4's, and removing an edge endpoint would leave an edge into a waypoint
-the point list does not have — which `WayNet::save` would then write straight
-back in. W4 generalised this call rather than adding a second one.
-
-Three things worth knowing next:
-
-- **The overlay payload is re-read whole after an add**, which is the waynet's
-  version of what a structural VOB op does to the columnar index. It cannot be
-  patched: `positions` is a typed array the point cloud and the edge lines draw
-  *through*, and a typed array cannot grow.
-- **`applyWaypointPositions` and `applyWaypointNames` have no counterpart here**,
-  deliberately. They exist because a move and a rename can be written into the
-  payload in place; an append cannot, so it takes the re-read instead.
-- `verify-world-edit.js` was **not** extended, for W1's reason: it needs a
-  Gothic install and a GPU, and an unrun addition to a verification script is
-  worse than none. Nothing about an added waypoint had an engine verdict when
-  this landed — it joined the queue in §16.2, and Gate 2b served it on
-  2026-08-28: the world loads and plays.
-
-**W3 — edge add and delete. Landed 2026-08-28**, and neither of the two answers
-the card offered was needed: **the hazard is fixed in the binding, not carried by
-the op**, so the pair is ordinarily invertible and no barrier was spent.
-
-`SetWaypointEdge` is one op for both directions — two endpoints, each the
-shipped index+name pair, and two *boolean* sides saying whether the edge is
-there. `invertOp` is the plain swap and the endpoints do not swap with it: an
-edge op is about one pair whichever way it runs. It earns the shipped address
-for W1 and W2's reason — an edge inserts, deletes and reorders no waypoint.
-
-**The hazard, and what actually answers it.** `WayNet::save` writes free points
-plus edge endpoints and nothing else, so a waypoint that is not a free point and
-is in no edge is not written: taking its last edge would delete it at the next
-save, silently, and renumber everything after it on the reload.
-`removeWaypointEdge` **promotes such an endpoint to a free point** instead,
-which is the shape a waypoint has in every world ZenGin itself wrote —
-`WayNet::load` marks every point in the points section free, so all 12,341
-retail waypoints already are one and **no retail world can reach this path at
-all**. The fixture can, and does: `WP_FIXTURE_A` is an edge-only endpoint, and
-the test that takes both of its edges and reloads is the one that fails without
-the promotion.
-
-**The one thing that is not exact, stated because it is invisible:** the add
-direction does not demote. Undo restores the *graph* and leaves a rescued
-endpoint free, so a world where an edge was deleted and the delete undone has
-that waypoint in its points section where it was not before. Nothing tells an
-add which of its endpoints a removal had to rescue, and the asymmetry runs the
-safe way — a waypoint wrongly left free is written where it was written before,
-where one wrongly demoted is gone. Carrying the flag on the op is the fix if a
-world ZenGin did not write ever needs it.
-
-Three refusals, all in the binding because it is the only layer that sees the
-edge list: a waypoint joined to itself, an edge already there **in either
-orientation** (an edge is undirected — a second copy would be written twice and
-drawn twice), and a removal of an edge that is not there. The renderer refuses
-the first two again before the round trip, because it is holding the list the
-user is reading.
-
-**The UI is the waypoint panel, not the viewport**, and that is the one real
-decision the card left open: an edge needs a *second* waypoint and the surface
-has a single selection, so the far end is **named** in a field beside the
-neighbour list rather than picked. Resolution is case-insensitive, like every
-other by-name waypoint lookup, and the Connect button is dead — rather than the
-round trip refused — for a name the waynet has not got, for the selection
-itself, and for a waypoint it is already joined to. The neighbour list is
-derived from the edge buffer the overlay is already drawing, in both
-orientations, so it cannot disagree with the lines on screen.
-
-The overlay payload is **re-read whole** after an edge op, W2's reason plus one
-of its own: the edge buffer is a typed array that cannot gain or lose a pair in
-place, and a removal can promote an endpoint, which is a `flags` column nothing
-else would rewrite. The selection is kept — an edge renumbers nothing.
-
-`verify-world-edit.js` and `verify-world-pipeline.js` were **not** extended, for
-W1 and W2's reason: they need a Gothic install and an unrun addition to a
-verification script is worse than none. Nothing about an added or deleted edge
-had an engine verdict when this landed; it joined the queue in §16.2, served by
-Gate 2b on 2026-08-28 — the world loads and plays. There is no Playwright spec
-either, and that is the standing shape of the World surface rather than a gap
-this card opened — the browser harness has no world to open, so every waynet
-edit is covered by Jest against the mocked IPC.
-
-**W4 — delete an arbitrary waypoint. Landed 2026-08-28**, on the decision the
-card had already taken: **(b), §15's barrier.** `DeleteWaypoint` carries the
-index+name pair and nothing else, `isBarrierOp` is true for it, `WorldService`
-clears both stacks once the worker confirms, and the panel's Delete button goes
-through a warning first. (a) — a stable synthetic id every op would carry —
-stays on record as the alternative if a future capability needs undo across a
-waypoint delete specifically; nothing does today, and **(b) is the closer Spacer
-parity anyway: Spacer has no undo at all (§15)**, so a barrier with a warning is
-strictly more than it gives back.
-
-**It is one binding call, not two.** `removeWaypoint` grew a fourth argument,
-`barrier`, which names the *reason* the second removal may do more rather than
-one of the two things it does — and the one difference decides both: where it
-may take a waypoint from (the tail only, against any index) and what it does
-about the edges (refuse, against take them with it). Never defaulted, because a
-caller that did not say must not get either. The append's inverse passes
-`false`, W4 passes `true`, and the binding's own tests pin both directions.
-
-**The edges are what an inverse could not have carried**, and that is the whole
-of why this op is a barrier rather than an `AddWaypoint` with a null side: a
-waypoint is five scalar fields and could be described, but the edges naming it
-are a list, and a restored point with no edges is an undo that looks like it
-worked. Deleting them is not optional either — an edge holds its endpoints by
-pointer and `WayNet::save` writes edge endpoints, so an edge left naming a
-removed point would put the point straight back at the next save.
-
-`RemoveWaypointEdge`'s **promotion is owed here too**, for its exact reason:
-a neighbour the delete leaves in no edge and that is not a free point is not
-written at all, so a delete would silently take a *second* waypoint with it. The
-test that pins it deletes two of the fixture's three chained waypoints and
-reloads: without the promotion the third is gone from the reloaded world.
-
-Three things worth knowing next:
-
-- **A barrier is now alone in its batch by a rule of its own.** `commitOps` used
-  to keep `DeleteVob` alone through `renumbersPaths`, which is about index
-  *paths* — and a waypoint delete moves no path. The new sentence is the general
-  one: a barrier cannot be unwound, so a later op failing beside it would leave
-  the world edited with no history entry describing it.
-- **`renumbersPaths` is deliberately false for it**, which is what keeps the VOB
-  selection standing: the renderer clears the *waypoint* selection and re-reads
-  the overlay payload, and asks for no fresh VOB index at all.
-- **A script that names the deleted waypoint is orphaned and nothing warns** —
-  W1's caveat, unchanged and now reachable by a second verb. The dialog says so
-  in prose, which is all this side can do; the rule is §16.8's — decided
-2026-08-28, unbuilt.
-
-`verify-world-edit.js` and `verify-world-pipeline.js` were **not** extended, for
-W1, W2 and W3's reason: they need a Gothic install, and an unrun addition to a
-verification script is worse than none. Nothing about a deleted waypoint had an
-engine verdict when this landed; it joined the queue in §16.2 as the first op in
-it that *removes* from the waynet. Gate 2b ran it on 2026-08-28 — a leaf no
-script names, renumbering the 2,895 waypoints after it, and the world loads and
-plays. Whether the NPC routines that ride on those numbers still hold was the
-run's own assertion and **went unobserved** (§16.2).
-
-**Sequence: W1 → W2 → W3 → W4.** All four landed 2026-08-28, and §16.7 is
-closed but for what it always pointed elsewhere for: the dangling-reference rule
-(§16.8) and the engine verdict (§16.2).
-
-### 16.8 Jumping between a script reference and the place it names
-
-Daniel's idea, sized 2026-08-28. The core claim survived: **nothing in the
-parser records a waypoint-name string literal as a reference**, and that index,
-not the camera, is the job. `cross-references.ts` knows exactly two reference
-kinds and returns no file, line or column at all — it exists to serve
-rename/remove, so it is the right *shape* and the wrong *payload*. The camera is
-nearly free: `frameVobs` takes `bounds: null` for "a point rather than a thing
-with a size", and waynet positions are already ZenGin centimetres.
-
-**Four details the first sizing got wrong, and the fourth changes what to
-build.** The jump is at `WorldSurface.tsx:193-198`, not `:158`. `start_aiwp`
-does not exist in the G2 MDK — the field is `C_Npc.wp` (plus `spawnPoint`),
-literal-assigned in 2 places in the whole corpus. There is **one** request prop,
-not two: `frameSelection` is a closure inside the scene effect, so a waypoint
-jump is the *second* prop — exactly the trigger the imperative-handle note names.
-And the three carriers first listed were the least-used: measured over the MDK's
-1,725 `.d` files, `AI_GotoWP` has **6** literal waypoint sites against the `TA_*`
-daily routines' **6,223**. The routines are the feature; the interesting question
-a level editor answers is where an NPC stands at 08:00.
-
-**The extractor should not hardcode a call list.** 58 `TA_*` functions declare a
-parameter literally named `var string waypoint`, so the rule is derived from the
-project being edited — map a function to the index of such a parameter, then read
-the literal at that position. Only the engine externals (`AI_GotoWP`,
-`Npc_GetDistToWP` and ~4 more) need a seed table, and that set is closed.
-
-**Correction, 2026-08-28: function parameters were already exposed** —
-`DialogFunction.parameters` (`daedalus-parser/src/semantic/semantic-model.ts`)
-has existed since commit `a5270a3`, generic across every `function_declaration`,
-not a stale claim worth re-checking again. What was actually missing, and has
-now landed, is the call-site half: `DialogFunction.callSites` captures every
-`call_expression` in a function body (not gated behind the hardcoded
-action-name switch `action-parsers.ts` uses) with its arguments
-(`ParsedArg[]`, reusing `parseArgumentsDetailed`) and a 1-based
-`{startLine, startColumn, endLine, endColumn}` — the "line/column must survive
-a path that today keeps only `node.text`" trap W1 names below. Joining a call
-site's args against the callee's `parameters` to find the `waypoint` index is
-now pure application logic over the model; no more parser work is needed for
-either W1 or W2.
-
-**The duplicate-name decision is answered by measurement: don't design for it.**
-24 worlds, 12,341 waypoints, **0 duplicate names**, not one even
-case-insensitively. Build the lookup multi-valued anyway (it costs nothing), jump
-to the first, and spend the effort on the real residue instead: 98.0 % of the
-6,529 literal sites resolve against all 24 worlds but only 84.3 % against the
-three main ones, so the UI must distinguish "no such waypoint" from **"not in
-*this* world"** or it will lie about the largest cluster of references in the
-corpus.
-
-**W1 is now application logic, not parser work — carded 2026-08-28.** The
-correction above is the whole reason: `parameters` already existed and
-`callSites` landed with `ParsedArg[]` and 1-based line/column, so joining a call
-site's arguments against its callee's parameters to find the `waypoint` index
-needs nothing further from `daedalus-parser`. What W1 builds is the index and
-the lookup over it:
-
-- **Derive the rule, do not hardcode a call list.** Map a function to the
-  position of a parameter literally named `var string waypoint` (58 `TA_*`
-  functions declare one), then read the literal argument at that position. Only
-  the engine externals need a seed table — `AI_GotoWP`, `Npc_GetDistToWP` and
-  about four more — and that set is closed because the engine's is.
-- **The `TA_*` routines are the feature**, 6,223 literal sites against
-  `AI_GotoWP`'s 6. A card that ships only the externals ships 0.1 % of the
-  corpus and should be read as not having shipped W1.
-- **The residue is the design work, not the extraction.** 98.0 % of the 6,529
-  literal sites resolve against all 24 worlds but only 84.3 % against the three
-  main ones, so the lookup has three answers and not two: found here, **not in
-  this world**, and no such waypoint anywhere. Collapsing the middle one into
-  "missing" misreports the largest cluster in the corpus.
-- **Multi-valued, and do not design for duplicates**: 0 collisions across 12,341
-  waypoints, so build the lookup multi-valued because it is free, jump to the
-  first, and spend nothing else on it.
-
-**Phasing, and the half worth doing first is the back-direction.** W1 the index
-(medium, and the parser prerequisite it named is now landed); **W2 world →
-scripts (small-medium, and the one that landed first)**: click a waypoint, see the routines that name it. It needs neither
-inherited decision, no viewport refactor and no new navigation model, and it
-delivers a Problems rule — 128 dangling waypoint sites — for free. W3 the
-imperative handle **landed 2026-08-28** — not before W4, its named caller, but
-after snapping's `raycastDown` created the handle and left the frame the only
-command still on a prop (`refactoring-targets.md` §9). W4 script → world is **large**, and not
-for the camera: it needs the mount-lifetime fix in `refactoring-targets.md`.
-
-Note a selected waypoint has **no UI at all** today, so W2 builds a panel from
-nothing rather than extending one.
-
-**The trap that would make W1 silently wrong**: an index built off
-`mergedSemanticModel` is capped at `PARSED_FILES_CAP = 512` against the MDK's
-1,725 files, and *which* files depends on the selected NPC — wrong by
-construction and non-deterministically so. It has to ride `buildProjectIndex`'s
-worker-pool pass, exactly as `voiceIds` does. Also: free points (`WP_STAND`,
-`WP_PICK`, …) are prefix-matched by the engine, so a strict exact-match Problems
-rule invents ~60 false findings.
-
-**W2 landed, 2026-08-28, minus the Problems rule.** `ProjectIndex.waypointSites`
-(`ProjectService.buildProjectIndex`) rides the worker-pool pass exactly as
-`voiceIds` does — `extractWaypointSites`/`buildWaypointParamIndex`
-(`semanticMetadataUtils.ts`) join every call site's `callSites` against a
-global map of "which argument index holds the waypoint": a small seed table
-for engine externals (`AI_GotoWP`, `Npc_GetDistToWP` — only the two the plan
-confirmed; the "~4 more" are still unverified and not guessed at) plus every
-project-declared function whose own parameter is literally named `waypoint`
-typed `string`, derived per-project rather than hardcoded. `WaypointPanel`
-(new) is mounted in `WorldSurface`'s right panel when `selectedWaypoint` is
-set — the panel a waypoint never had — listing the routines the index found,
-read-only (no jump-to-source; that is W4's mount-lifetime-gated territory,
-not this).
-
-**The Problems rule turned out not to be free.** `ProjectView`
-(`problems/domain/types.ts`) is built purely from parsed per-file
-`SemanticModel`s — it carries no world/waypoint data at all, so a
-"dangling waypoint" rule has no way to know which waypoint names exist in the
-currently open world. Closing this needs either a new input the Problems
-pipeline threads through (from `worldStore`, only meaningful with a world
-open) or folding the free-point prefix-match exception in above into whatever
-shape that takes — a small design decision, not a measurement, so it stays
-open rather than being guessed at here. **Answered later the same day**, and
-the answer is the first of those two shapes: see *"The Problems-pipeline
-question is answered"* below.
-
-**W1, picked up 2026-08-28: three of its four bullets were already in the tree,
-and the fourth has no consumer.** W2 could not list a waypoint's routines
-without the index, so it built it — `extractWaypointSites` /
-`buildWaypointParamIndex` are the derivation bullet, the `TA_*` bullet and the
-multi-valued bullet, all three. What this session added is the coverage that
-was missing and the defect it exposed:
-
-- The dominant corpus shape was **untested**. The only tests were a helper
-  taking the waypoint as its sole parameter; nothing covered a `TA_*` wrapper
-  declaring it as the *last* of five, called from an `Rtn_*` function in another
-  file — the shape 6,223 of the 6,229 project-declared sites have. It works, and
-  it is now tested (`ProjectService.test.ts`), so the "ships 0.1 % of the corpus"
-  failure mode is ruled out rather than assumed against.
-- **The parameter name was matched case-sensitively** — `param.name ===
-  'waypoint'` — so a declaration spelling it `WayPoint` or `WAYPOINT` dropped
-  every site calling it, silently and with no way to notice from the UI, since a
-  waypoint with no routines looks exactly like a waypoint no routine names.
-  Daedalus is case-insensitive; the compare now is too, on both halves. Fixed
-  and tested.
-- Still **two of the "~6" engine externals**, unchanged: the plan forbids
-  guessing the rest and nothing measured them this session.
-- `C_Npc.wp` is not in the index and is not worth adding — it is an instance
-  field assignment rather than a call site, so it needs a second extraction
-  path for the 2 sites the corpus has.
-
-**What is left of W1 is the lookup, and it still has no consumer that is
-both unblocked and built.** The lookup exists to answer "where is this name in
-the world", which is the jump (W4) and the dangling-waypoint rule (how world
-data reaches `ProjectView` was answered later the same day, below — decided,
-unbuilt). W4's own blocker is gone —
-the mount-lifetime fix landed on 2026-08-28, `refactoring-targets.md` §8 — but
-W4 itself is unbuilt, so the lookup would still be an exported function with no
-caller until somebody does it.
-Nothing in the editor displays a script-side waypoint name today — the only
-waypoint UI is `WaypointPanel`, and the waypoint it describes is selected *in*
-the world, so it never needs to ask whether it is there. Building the lookup now
-would be an exported function with zero callers.
-**Overtaken 2026-08-29 (§16.23): W4 landed, and the consumer it built reads
-`worldStore.waynetNames` — the rule's own reference data — so the standalone
-lookup was never needed and is not going to be written.**
-
-**And the third answer is not implementable from what the app holds.** The
-measurement behind it compares 24 worlds; the editor has *one* world open and no
-index of the others, so it can distinguish "in this world" from "not in this
-world" and can never, on its own, say "no such waypoint anywhere". Whoever
-unblocks a consumer decides that: either the UI says only what it knows ("not in
-this world", never "missing"), or something has to index the other worlds' waynets.
-That is a design decision, not a measurement, so it is not taken here.
-
-**W5 landed 2026-08-28: the seed table is measured and closed.** The "~6" was
-an estimate; the measurement is the G2 MDK's own
-`Content/AI/AI_Intern/Externals.d`, read for every external whose string
-parameter names a place, with retail literal-call-site counts beside it:
-
-| External | waypoint arg | retail literal sites |
-|---|---|---|
-| `AI_GotoWP` | 1 | 6 |
-| `Npc_GetDistToWP` | 1 | 300 |
-| `AI_Teleport` | 1 | 60 |
-| `AI_StartState` | 3 | 104 |
-| `TA` | 4 | 0 |
-| `TA_Min` | 6 | 0 |
-| `Wld_InsertNpc` | 1 | 3,722 |
-| `Wld_InsertItem` | 1 | 363 |
-
-Three things the measurement settled that the estimate could not. **`TA` and
-`TA_Min` have no literal site in retail at all** — every one of the 6,223 goes
-through a `TA_*` wrapper passing its own `waypoint` variable, which the
-derivation rule already catches; they are seeded so the index does not silently
-depend on whether the project being edited parses `Externals.d`. **The largest
-cluster is not a routine**: `Wld_InsertNpc` alone has more literal sites than
-every other external together, and its parameter is `spawnPoint`, a waypoint
-*or* a free point — 3,018 of its 3,722 literals are waypoint names (NW_, ADW_,
-OW_, WP_ and the named ones), the FP_ remainder keys entries that simply never
-match a selected waypoint. `Wld_InsertItem` is the same parameter and inverts
-the ratio (303 of 363 are free points). Both are in, because both measurably
-carry waypoint names; the cost of the remainder is index size, not a wrong
-answer. **`WaypointPanel`'s empty state stopped being true** and now says "No
-*script* in this project names it" — a spawn is not a routine, and it was the
-one place the panel asserted what the index holds.
-
-Excluded and measured, not overlooked: `AI_GotoFP`, `AI_GotoNextFP`,
-`Wld_IsFPAvailable`, `Wld_IsNextFPAvailable` and `Npc_IsOnFP` take a *free
-point* name, which is a different namespace the engine prefix-matches (the trap
-above); `AI_UseMob`/`Wld_IsMobAvailable`/`Wld_GetMobState` take a mob scheme,
-`Wld_AssignRoomToGuild`/`Wld_AssignRoomToNpc` a room. `Npc_GetNearestWP` and
-`Npc_GetNextWP` *return* a waypoint name and take none.
-
-**The Problems-pipeline question is answered, 2026-08-28 (Daniel), and it turned
-out to be two questions with different answers.** What blocked the rule also
-blocked W1's lookup and both portal slices, so it was worth separating.
-
-**The dangling-waypoint rule fits the panel as it is.** Its problem lives in a
-`.d` file, at a script site naming a waypoint that does not exist; `filePath`,
-`dialogName` and `functionName` are exactly the navigation it wants, and the
-world is only *reference data* — a set of names. That is what `knownNpcNames`
-already is: a non-file input threaded from a different store through
-`ProjectScanInput` into `ProjectView`. So `world` joins it as an optional field,
-read in `problemsStore.runScan` from `worldStore` the way the NPC names are read
-from `projectStore`, and **an absent world means the rule returns nothing** —
-the `oCItem.instance` rule again, where an empty index means "nothing is known"
-and never "nothing is legal".
-
-**The re-scan trigger is the part that needed deciding rather than deriving.** A
-full project scan per gizmo drag would be intolerable, and it is also
-unnecessary: the *name set* changes only on `AddWaypoint`, `DeleteWaypoint` and
-`RenameWaypoint`. A `MoveWaypoint`, every VOB op and every property write cannot
-affect it. So the scan re-runs on world open/close and on those three ops, and
-on nothing else — plus the one op that changes what the rule reads without
-changing a name: `SetWaypointEdge` removing an edge can promote an endpoint to a
-free point, and the free-point subset is the rule's other input, so
-`waynetLoaded` compares it alongside the names (review *first pass* 4).
-
-**The portal findings did not fit the panel, and the panel was widened instead
-of the check being dropped.** A malformed `P:OWCAVE01_` material is in a world
-mesh: there is no file, no dialog and no function. That was left open here
-rather than paid for one consumer; §7's locus decision answered it once four
-checks were waiting, and §16.20 slice 1 landed the union on 2026-08-29 —
-`Problem.locus` is `{ kind: 'script'; filePath; … } | { kind: 'world'; … }` and
-every rule in this file emits `kind: 'script'`. See §16.18 and §16.20.
-
-**The dangling-waypoint rule landed 2026-08-29, and W1's lookup landed with
-it** — the two were one card because the rule is the only consumer the lookup
-has. All three parts of the decision above are in, and the rule is
-`waypoint-not-in-world` (a warning, `problems/domain/rules/`).
-
-- **The world input is `worldStore.waynetNames`** — every point's name
-  uppercased, plus the free-point subset, and `null` while none has been read.
-  `WorldSurface` publishes it from a single effect over the waynet payload
-  rather than beside each `setWaynet` call, so a fourth call site cannot forget.
-  `problemsStore.runScan` reads it exactly as it reads `knownNpcNames` from
-  `projectStore`, and `null` means the rule returns nothing.
-- **The waynet is now read at world open**, after the mesh and the visuals,
-  instead of when the overlay is first switched on. Left lazy the rule would
-  have said nothing until somebody happened to show the overlay — silently,
-  because a world with no findings looks exactly like a world with nothing to
-  find. The cost is one extra IPC per open, and it is the cheap payload: a
-  waynet is thousands of points, not the tens of thousands of VOBs with visuals
-  behind them that the laziness was actually protecting.
-- **The sites are the project index's `waypointSites`, threaded whole** into
-  `ProjectScanInput`/`ProjectView` beside the world. Not rebuilt from the
-  renderer's parsed models — that is the `PARSED_FILES_CAP` trap above, and it
-  would make the rule wrong by construction and non-deterministically so.
-- **The re-scan trigger is a `worldStore` subscription in `storeSync`**, and it
-  is exactly the three ops the decision names without naming them: `waynetLoaded`
-  keeps the object identity when a re-read changed no name, so a
-  `SetWaypointEdge` and a `MoveWaypoint` — both of which re-read or rewrite the
-  payload — do not reach it, while `AddWaypoint`, `DeleteWaypoint` and
-  `RenameWaypoint` do. World open and close come through the same field.
-- **The third answer is now enacted, not only decided.** The message is
-  *"Waypoint "X" is not in the open world. It may belong to another world."*, and
-  a test asserts it never says missing, no such, or does not exist. Free points
-  are prefix-matched, so `"FP_ROAM"` against `FP_ROAM_CITY_01` raises nothing.
-
-What this does **not** do, and nobody asked it to: the reverse direction. A
-waypoint in the world that no script names is not a finding — `WaypointPanel`
-already shows that, one waypoint at a time, and a project-wide rule for it would
-flag most of a retail waynet.
 
 ### 16.9 What is left of the ASCII writer — A6, and what `0048` left behind
 
@@ -4091,259 +3698,6 @@ reads on alpha-tested foliage and on blended VOB materials, which get the term
 uniformly by design (a face-on billboard is untouched; an edge-on one dims
 slightly).
 
-### 16.14 Copy / paste / duplicate a VOB (§14.1 1.2)
-
-**The most-used Spacer verb after move**, and the one parity gap with no new
-format questions attached. §15 already settled the undo question this card used
-to wait on: an op that cannot describe its own inverse may ship anyway, so long
-as the user knows the stack was cleared. A duplicate does not even need that —
-it is `AddVob`-shaped and therefore invertible for free.
-
-**Start at the single-VOB duplicate, in place.** That is one op, one validator
-branch, one undo entry, and it is finishable in a session. Spacer pastes in
-place, so pasting in place is parity; a cursor-relative or offset paste is a
-preference nobody has asked for and should not be invented here.
-
-**The headline, found while splitting this card on 2026-08-28: D1 needs no new
-op, no validator branch and no binding change.** `addVob(reader, spec, parent)`
-already exists in `zen-world/src/model/ops.ts:839`, and `AddVob`'s one-null-side
-shape is already its own inverse, so a duplicate is *existing ops assembled in
-the renderer*. That is what makes the first increment a single session. It also
-means the usual warning does not apply to D1 — there is no
-`assertApplyOpsRequest` branch to forget, because no new op reaches it. From D2
-on, the warning is back and is written on the increment that earns it.
-
-**D1 — duplicate one selected VOB, base fields, in place. Landed 2026-08-28**
-as `duplicateVobSpec` in `zen-world/src/model/ops.ts` and a *Duplicate VOB*
-button beside the delete, and it went exactly as the paragraph above predicted:
-no new op, no validator branch, no binding change. The spec carries `name`,
-`visual`, `position`, `rotation` and all five authorable flags — the false ones
-too, because an omitted flag is authored as the binding's default rather than
-the row's value — and the op goes into the original's parent, in place.
-
-**The one field that is not in the row is `bbox`: `vobIndex` has no bbox
-column.** So the spec takes the visual's own bounds as an argument and fits them
-through the row's pose with `placeBounds`, which is what a rotation already
-does; the surface hands it `boundsOf(vob)`, so no IPC and no async. A VOB with
-no visual instance gets no box and the binding's default, exactly as a placement
-does.
-
-Verified by Jest on both sides — the spec function in `zen-world/test/ops.test.ts`
-and the surface in `tests/WorldSurface.editing.test.tsx` — and **not** by an
-E2E: the browser harness has no native addon and therefore no open world, which
-is why every other world edit is tested the same way.
-
-**D2 — the fields the spec drops, and this is where the decision is.** They are
-not dropped silently any more: `duplicateVobSpec`'s tests assert the absence, so
-this increment has a test that changes. `NewVob` is *not* the whole VOB. `NEW_VOB_FLAG_KEYS` is `VOB_FLAG_KEYS` minus
-`physicsEnabled` (`ipcValidation.ts:315`), and class properties are not in the
-spec at all — so D1's duplicate of an `oCMobDoor` comes back without its door
-fields. Two ways to close it, and **the cheap one is right**: emit a follow-up
-`SetVobClassProp` (and `SetVobProp` for `physicsEnabled`) into the *same op
-batch* as the `AddVob`, which needs no new op shape and no validator change,
-rather than widening `NewVob` and its validator branch. One batch is also one
-undo entry, which is the behaviour wanted anyway.
-**Do `physicsEnabled` last or not at all**: A6 (Deferred) says the packed `zCVob`
-writer drops it on every save, so restoring it in a duplicate is invisible until
-A6 lands. Say so in the increment rather than quietly skipping it.
-
-**Blocked, 2026-08-28 — the class-property half rests on a premise that is
-false, and the true statement is worse than the one above.** A duplicate does
-not come back "without its door fields": it comes back **not an `oCMobDoor` at
-all**. `AddVob` reaches the world through `binding.insertVob`, which hard-codes
-`vob->type = zenkit::VirtualObjectType::zCVob` (`zenkit-node/src/binding.cc`,
-`InsertVob`) — the same sentence §16.15 opens with, met from the other end. So
-the follow-up op cannot land: `SetVobClassProp` switches on the VOB's *actual*
-type and its `default:` throws `no class properties are known for a zCVob`. Both
-of the two ways above fail for the one reason, widening `NewVob` included — the
-class is not a field the spec is missing, it is the object's C++ type.
-
-Two consequences, and neither is this card's to take.
-**§16.15 is now D2's prerequisite**, not a card beside it: a duplicate can only
-carry class properties once the editor can *author* a VOB of that class, and the
-binding already has the first half of that in `insertItemVob` (an `oCItem`
-insert, exported and reachable, with no `OpBinding` member and no op yet).
-**I1 landed on 2026-08-28 and unblocks exactly as much as it authors**: `NewVob`
-now carries a `class`, so a duplicate of an `oCItem` *can* be one — but
-`duplicateVobSpec` still emits no class, and every class I1 does not construct
-(the `oCMobDoor` this paragraph is about, above all) is still refused by
-`insertVob`. So D2's class half is now two questions, not one: read the class
-out of the index and carry it, which is this card's, and construct the classes,
-which is I2's.
-**And D1 is lossier than its own comments say** — `ops.ts`' `duplicateVobSpec`
-and `WorldSurface`'s `duplicateVob` both claim the copy loses the class
-*fields*; they now say it loses the class. That correction is the whole of this
-session's diff.
-
-**The class half landed 2026-08-28**, and it is the reading the paragraph above
-sized it as: `duplicateVobSpec` takes `reader.className(vob)` and puts it in the
-spec, so a duplicated — or copied and pasted — `zCVobLight` is a light rather
-than a `zCVob` wearing its name. No new op, no validator branch and no binding
-change, for D1's reason; `duplicateVobs` and `pasteVobs` carry it for free
-because both are that one spec.
-
-**Two classes are dropped rather than carried, and dropping is the whole
-decision.** A spec naming a class outside `AUTHORABLE_VOB_CLASSES` is *refused*
-by `assertApplyOpsRequest` — so carrying it would turn today's lossy duplicate
-of an `oCMobDoor` into no duplicate at all, which is a regression against D1,
-D3 and D4 alike. The other is **`oCItem`, which the binding can construct but
-only from the instance it spawns** — and that instance is a class property
-behind `getVobProps`, not a column in `vobIndex`. `duplicateVobSpec` reads the
-index synchronously (it is called from a `Ctrl+C` handler, per copy), so an
-`oCItem` duplicate is the one place where carrying the class means making the
-copy path asynchronous and issuing an IPC read per selected VOB. That is not a
-line of code, it is a shape change to two verbs, and it was left. **A plain
-`zCVob` is omitted** rather than stated, unlike the five flags beside it: there
-the binding's default differs from the row's value, here it is the row's value.
-
-So D2's remainder is now three things, all of them named and none of them
-carried: the **class properties** (a duplicated light has the binding's range
-and colour), **`oCItem`'s instance**, and **`physicsEnabled`**. The first and
-the last need the same batch-guard relaxation, which is the paragraph below.
-
-What is left of D2 beyond the class is `physicsEnabled`, and it was **not**
-landed: it is one `SetVobProp` follow-up (`from: false` is exact — `InsertVob`
-assigns `physics_enabled = false`), but it needs `commitOps`' batch guard
-relaxed further than D4 relaxed it. D4 took the guard from "a parented add is
-alone" to "a batch may be all adds", on the ground that an append moves no index
-path; a `SetVobProp` beside the add is a *different* op and is still refused.
-That second relaxation is small and defensible — a batch may hold a renumbering
-`AddVob` plus ops addressing only the VOB it added, which is the shape both the
-forward batch and `replay`'s reversed inverse take — but buying it for a field
-A6 says no save preserves, and doing it first when the increment says do it
-last, is a sequencing call for a human rather than for the run that found it.
-
-**D3 — copy and paste as verbs distinct from duplicate. Landed 2026-08-28** as
-`pasteVobs` in `zen-world/src/model/ops.ts` and a `clipboard` ref in
-`WorldSurface`, on `Ctrl+C` / `Ctrl+V`. No cross-world clipboard: it is only
-worth a serialization format if part-to-part copying is a workflow someone
-actually has, and nobody has asked — so the clipboard holds `NewVob` values in
-process and nothing is serialized at all.
-
-**The seam that makes them two verbs is *when* the row is read.**
-`duplicateVobs` reads a VOB and appends it in one step, so a copy can only ever
-land beside its original; D3 splits that — `duplicateVobSpec` at the copy,
-`pasteVobs` at the paste — and the clipboard is therefore a value that outlives
-the selection that filled it and outlives the VOBs being deleted. It loses
-exactly what a duplicate loses, `physicsEnabled` and the class, because it is
-the same spec.
-
-Two decisions worth having written down. **A paste goes into the selection's
-parent, not into the selection**: a copy lands where the thing it was copied
-from lives, and the other reading has no way to ask for a root, every VOB being
-somewhere's child. **And the clipboard is not consumed** — pasting twice is two
-copies.
-
-`pasteVobs` needed no new op and no validator branch, for D1's reason: it is
-`addVob` N times into one list, with `duplicateVobs`' slot correction, which is
-now `appendedAfter` and shared by both. The batch is all adds, so `commitOps`
-takes it as it stands and it is one undo entry.
-
-**D4 — a multi-selection duplicates as one batch. Landed 2026-08-28** as
-`duplicateVobs` in `zen-world/src/model/ops.ts`, with the *Duplicate VOB* button
-taken off `selection.length !== 1` and labelled with the count. It was a loop
-over D1 plus two things the loop does not give:
-
-- **the slot.** `addVob` resolves the slot a copy lands in against the world as
-  it was, so two copies of the same parent both claim its last slot and
-  `writeOp` refuses the second — the list it was appended to has changed since.
-  `duplicateVobs` counts the copies it has already appended per parent path,
-  roots being one such list like any other, and advances the slot by that.
-- **the batch guard**, which refused this outright: a parented `AddVob`
-  renumbers. The reason it can be relaxed is that an op is addressed by an index
-  *path* and an append never changes an existing one — a new last child takes a
-  new slot and moves none of its siblings. What an append renumbers is flat
-  indices, which no op is addressed by. So `commitOps` now takes a batch whose
-  ops are **all** `AddVob`, and refuses one holding anything else exactly as
-  before. Written as "all adds" rather than "no delete and no reparent" so the
-  inverse batch is the same sentence: undo replays these back to front as
-  removals of precisely the slots they appended, which is the one order that
-  leaves the remaining paths standing.
-
-The flat `vob` each op carries is advanced by the same per-parent count, which
-is exact for a selection under one parent and one low for a copy whose parent is
-an ancestor of another copy's — the approximation a single `addVob` already
-carries into any batch, and nothing reads it, because a structural op cannot be
-applied to the projection at all and the renderer re-reads the index whole.
-
-Verified by Jest on both sides, as D1 was and for the same reason — the browser
-harness has no native addon and therefore no open world.
-
-**D5 — the subtree. The decision it was held for is void: measured 2026-08-28,
-N appends do everything the serialized tree was wanted for.**
-
-The card used to say a subtree is either one op carrying a serialized tree or N
-ops, and that only the first survives as a single undo step. **That stopped
-being true when D4 landed**, three increments before anyone needed it:
-`commitOps` takes a batch whose ops are all `AddVob` and unwinds it back to
-front, and a batch is one atomic undo entry. So the property that justified
-paying for a tree format is already available from ordinary appends.
-
-**Measured against the binding, not reasoned about** — the fixture world, paths
-predicted before any insert ran, which is what op-building in a batch has to do:
-
-```
-ROOT        predicted 1       got 1       OK
-CHILD_A     predicted 1/0     got 1/0     OK
-CHILD_B     predicted 1/1     got 1/1     OK
-GRANDCHILD  predicted 1/1/0   got 1/1/0   OK
-```
-
-Multiple siblings and depth greater than one both hold; the tree comes out
-genuinely nested rather than flattened; it survives a save and a reload at the
-same paths; and **deleting back to front returns the world to its exact starting
-VOB count**, which is the order `commitOps` already unwinds in. An append into a
-parent created earlier in the same batch works because `commitOps` applies ops
-sequentially through `writeOp` — by the time the child's add runs, its parent is
-in the world.
-
-**So D5 is an ordinary card**: no tree format in an op payload, no validator
-branch, no binding change, unattended-safe like D1 and D4. The one implementation
-note is that `addVob(reader, spec, parent)` resolves its parent against the
-pre-batch world, so a subtree's ops want constructing with forward-computed
-paths rather than through that helper.
-
-**Landed 2026-08-28**, exactly as the note above sized it. `duplicateVobSubtree`
-in `zen-world/src/model/ops.ts` reads a VOB and its descendants as a `VobSubtree`
-— D1's spec at every node, so each loses what a single copy loses and each is
-fitted its *own* visual bounds — and `subtreeOps` turns one of those into the
-root's `AddVob` followed by one per descendant, at slots `0, 1, 2 …` under the
-path its own parent's op names. Nothing is resolved against the world for a
-descendant, because a copy is appended to an empty list of children. Both verbs
-carry it for free: `duplicateVobs` flat-maps it, and the clipboard now holds
-subtrees rather than specs, so `pasteVobs` takes `VobSubtree[]`.
-
-**The one thing the card did not name, and it is not cosmetic: the selection has
-to be pruned.** A parent and its own child both selected would give the child a
-copy inside the parent's copy *and* another beside itself. `topLevelVobs` drops
-any VOB an ancestor of which is also selected, and both the duplicate and the
-copy go through it. A VOB not in the index is kept rather than dropped, so the
-refusal it earns is still `duplicateVobSpec`'s, naming it.
-
-The per-list slot count in `duplicateVobs` counts **copies, not ops** — a
-subtree appends exactly one VOB to its root's list however many descendants it
-brings — and the flat `vob` runs on from the root's, which is exact for one
-appended subtree and carries the same approximation D4 already documented where
-a batch holds several. Nothing reads it either way.
-
-Verified by Jest on both sides, as D1, D3 and D4 were: `zen-world/test/ops.test.ts`
-predicts the paths of a two-deep subtree before any insert runs and commits the
-batch against a fake binding that appends the way the real one does, unwinding
-it back to front to the world's exact starting set; `tests/WorldSurface.editing.test.tsx`
-duplicates and pastes a parent with a child. **The two things §16.14 listed as
-unmeasured are still unmeasured** — a subtree deep or wide enough to matter for
-performance, and what a paste does about name collisions — and neither was in
-this card's scope.
-
-**What was not measured:** a subtree deep or wide enough to matter for
-performance, and what a *paste* of a subtree does about name collisions. Neither
-blocks the card.
-
-**Sequence: D1 → D4 → D3 → D5, with D2 blocked on §16.15.** D4, D3 and D5 were
-all taken ahead of D2, which needs class-specific insertion first; none needed
-anything from D2 but the batch, and D4 is what built it. What is left of this
-card is D2's `physicsEnabled` half — a sequencing call, above.
-
 ### 16.15 Class-specific insertion (§14.1 1.3)
 
 **What the engine taught this card, 2026-08-29.** Gate 2b's second pass put an
@@ -4632,7 +3986,7 @@ holds no enum by design.
 **A duplicate of a door is now a door**, which is the increment's one change to
 behaviour nobody asked for: `duplicateVobSpec` carries the class of any class
 the binding can construct, so the set it silently drops shrinks with every one
-of these increments. What a copy still drops is §16.14.
+of these increments. What a copy still drops, and why, is in §7.
 
 **`oCItem` was first and was also the awkward one.** Its `instance` is the
 validation that cannot live in the main process at all: there is no semantic
@@ -4713,140 +4067,6 @@ catalogued so the grid supplies it; the visual comes from the placement dialog.
 
 **No engine verdict covers any of this**, like every op since candidate `03`.
 
-### 16.17 The rest of `zCVob` (§14.1 1.8)
-
-The base-class fields the property grid still does not expose, after the class
-catalogue closed `oCMob*`, the trigger family, `zCMover`, `zCPFXController` and
-`zCVobAnimate`. Same idiom as those increments — the catalogue, its bounds, and
-the refusal-counter field behaviour the grid already has — so the risk here is
-low and the value is that a modder stops needing Spacer for the last few fields.
-
-**All five fields exist and none is exposed.** In `VirtualObject.hh`:
-`preset_name:476`, `bias:424` (`int32`), `dynamic_shadows:402` (`ShadowType`),
-`sleep_mode:499` (`uint8`), and the camera alignment is `SpriteAlignment:55`.
-What ships today is narrower than the class catalogue suggests: `SetVobProp`
-accepts `name`, `visual` and the six flags and nothing else
-(`ipcValidation.ts:311`). **So V1 and V2 widen `SetVobProp`'s key set** — the
-base-field analogue of what `SetVobClassProp` did per class, and the same
-validator-branch-in-the-same-change rule applies.
-
-**V1 — preset name, camera alignment, bias.** No hazards known. `presetName` is
-a string the ASCII writer already round-trips; the alignment is an enum and
-wants the catalogue's bound, not a free integer; `bias` is a signed depth bias,
-so its bound is not "non-negative".
-
-**V2 — `dynamicShadows`, `sleepMode`, and the decal parameters.** The decals are
-the awkward part and are the reason V2 is separate: a decal is not a mesh but a
-textured quad, `DECAL` resolves 0 of 23 in the visual inventory (§5), and A5's
-lesson was learned on `decalAlphaWeight` — the one `write_byte` field reachable
-outside a savegame, invisible to CI until the fixture grew a `VisualDecal`. So
-**a decal field added here needs the fixture to carry it**, or the round-trip
-proves nothing.
-
-**The measurement to take before writing either card's test:** how many retail
-VOBs carry a non-default value for each field. The class increments took that
-over NewWorld/OldWorld/AddonWorld's 41,393 VOBs and it repeatedly changed what
-the bound should be.
-
-**V1 landed 2026-08-28.** `SetVobProp` takes `presetName`, `visualCamAlign` and
-`bias` end to end: the binding's `kKnownKeys`, `assertApplyOpsRequest`, the op
-builder and the grid. Four things it settled that V2 inherits.
-
-**The bounds are the packed layout's, and the measurement is why.** Swept over
-the three retail worlds on 2026-08-28: 5,660 of 41,393 VOBs carry a preset name
-(122 distinct), `bias` is only ever 0, 1 or 2, and `visualCamAlign` is 0-3. The
-enum has three named values and retail holds the fourth on 7 VOBs — so the bound
-is `VirtualObject.cc`'s two bits and not `SpriteAlignment`, because both sides of
-a `SetVobProp` are validated and a tighter bound would make an edit on one of
-those 7 un-undoable. `bias` is 0-31 for the same reason from the other side: the
-packed writer masks it to five bits, so 32 is written as 0 and reported as
-written, in a field that is invisible in the viewport. The bound is not the C++
-member's, and "signed depth bias" (above) was the wrong prior — the layout has
-no sign bit for it at all.
-
-**They are not class fields and not columns, so they are a third thing.**
-`BASE_FIELDS` in `zen-world/src/model/vobClasses.ts`, deliberately outside
-`CLASS_FIELDS`: folding them in would make `classPropKeys` answer non-empty for
-every string, which is the check `SetVobClassProp` refuses an unknown class by.
-They are descriptors rather than a key list so the grid parses against the same
-bounds the validator refuses by.
-
-**The `from` side comes from `getVobProps`, which is `setVobClassProp`'s
-constraint reached from the other side.** The columnar index carries the name,
-the visual and the six flags and nothing else of `zCVob`, so `setVobProp` takes a
-`current` and refuses outright without it — a defaulted origin is an inverse that
-writes a value the VOB never had. That makes a base edit **the described VOB's
-alone**, like a class field and unlike a flag, and it is a separate handler
-(`onEditBaseProps`) for exactly that reason.
-
-**The per-VOB read is now unconditional.** It used to be skipped for a class the
-catalogue has no fields for — 35 of a retail world's 37 — and cannot be: every
-VOB has these three. One `getVobProps` round trip per selection change, which is
-the cheap half of the dump (the whole dump is 933 ms on NewWorld; this is one
-VOB).
-
-**V2 landed 2026-08-28** — `dynamicShadows` and the decals, end to end through
-the same five layers V1 went through. Four things it settled.
-
-**`sleepMode` is not a `zCVob` world field and never was.** `VirtualObject::load`
-and `::save` touch it only inside `if (r.is_save_game())`, so a value set on a
-world archive is dropped on write and reads back as 0 — which is exactly what all
-41,393 retail VOBs hold, and why the measurement alone would have read as "retail
-never uses it" rather than as "this cannot be written". It is out of `BASE_FIELDS`
-and out of `kKnownKeys`, and the test that says so is in `vobClasses.test.ts`
-rather than a comment, because the next person to read §14.1's V2 list will
-otherwise re-add it. The same `is_save_game()` guard covers `nextOnTimer` and the
-rigid body, so nothing else in that block is authorable either.
-
-**`dynamicShadows` took V1's bound rule unchanged**: `(bit0 & 0b11000000) >> 6`,
-so 0-3 and not `ShadowType`'s NONE and BLOB. Retail holds only those two (41,260
-and 133 of 41,393, swept 2026-08-28), so unlike `visualCamAlign` there is no
-corpus value the enum's own bound would have refused — the wider bound is the
-*layout* rule holding, not a measurement forcing it. `normalizeWorld` gained
-`props.dynamicShadows` beside `flags.shadowType`, for `visualCamAlign`'s reason:
-the flags object is the classifier's shape and the props object is the only thing
-the grid can read a writable field's current value from.
-
-**The decals are a third table, not more base fields.** `DECAL_FIELDS`, beside
-`BASE_FIELDS` and `CLASS_FIELDS`, because they are legal only on a VOB whose
-visual *is* a decal — a per-VOB condition, and no class predicts it: all 1,932
-decals in the three retail worlds sit on a plain `zCVob`. The keys are flat and
-prefixed (`decalTwoSided`, not a nested `decal.twoSided`) so the IPC assertion
-stays the flat walk over keys the catalogue's header promises, and `decalSubKey`
-is the one place the flat op and the nested `getVobProps` read are tied together.
-The refusal is made three times over, deliberately and at different strengths:
-the op builder cannot find a `from` when the read answered `decal: null`, the IPC
-validator checks shape and bounds only — the main process holds no world, so it
-cannot know whether *this* VOB has a decal — and the binding makes the real
-per-VOB refusal against `get_object_type()`. That is `oCItem.instance`'s split
-reached from the other side.
-
-**The bounds, measured 2026-08-28 over the same three worlds.** Dimensions run
-10-550 and every one of the 1,932 offsets is [0, 0]; a size cannot be negative
-and an offset is a direction, so only `decalDimension` is floored at 0 and
-`decalOffset` has no bound at all. `alphaFunc` is 1, 2, 3 or — once — 6, all
-inside `AlphaFunction`'s seven values, which is why this enum is bounded by the
-enum where `zCMover.lerpMode` could not be. `alphaWeight` runs 80-255 and is
-bounded 0-255 by being the byte `write_byte` puts in the archive; `textureAnimFps`
-is frames per *minute* and runs 0-10, floored at 0 and otherwise free.
-
-**A new value kind came with them.** `vec2` — two finite floats, fixed arity for
-`color`'s reason (the binding reads them positionally) — through the descriptor,
-the grid's `parse`, and `assertClassPropValue`. The grid's colour branch and this
-one are now one branch with an arity and a wholeness taken off the kind.
-
-**A5's lesson held.** The fixture already carried a `VisualDecal` (`fixture.cc`,
-the container at `0/2`), which is what makes the round-trip test real — but the
-*committed* `minimal.g2.zen` predates it, so the decal tests author a world
-rather than loading that file. Regenerating the `.zen` is the reviewed act the
-regen script reserves; only the golden JSON was regenerated here, with
-`--golden-only`, and its whole diff is five `dynamicShadows: 0` lines.
-
-**In the engine's verdict since Gate 2b.** `dynamicShadows`, `presetName` and
-`bias` were written into candidate `03` on 2026-08-28 and the world loads and
-plays — which was the whole claim for keys with nothing specific to look at. The
-decal fields were not in that candidate and are still unwitnessed (§16.2).
-
 ### 16.18 Portals and sectors — the first two slices (§14.3 3.4, §11 Phase 2)
 
 Portal/sector work is a **phase**, not a card: §11 puts it in Phase 2 behind its
@@ -4872,7 +4092,7 @@ Feeding a name check needs a binding change.
 `{ materials, sectorNames }` returning `portal-material-malformed` and
 `portal-material-unknown-sector`. It has **no consumer yet**: the Problems
 pipeline takes script rules over a semantic model, and how world data reaches it
-is the same undecided question that blocks §16.8's waypoint rule. Nothing was
+is the same undecided question that blocks §7's waypoint rule. Nothing was
 plumbed, deliberately.
 
 What the retail measurement fixed, taken with the addon rather than assumed
@@ -4915,7 +4135,7 @@ a boolean), `sectorFlags`, and `bspPortalPolygons`.
 Two things it deliberately does not do. **It is not plumbed** — no worker
 message, no `zen-world` consumer — for the same reason slice 1 was not: how
 world data reaches the Problems pipeline is still the undecided question at
-§16.8. And **it carries no vertices and no plane**: a row's `polygonIndices`
+§7. And **it carries no vertices and no plane**: a row's `polygonIndices`
 entry is the join key into `_drillMesh`, which already emits the plane and the
 corner indices per polygon, so planarity and orientation can be written without
 touching C++ again.
@@ -4933,7 +4153,7 @@ the editor validates portal metadata and never recompiles a world.
 Both functions are correct, tested and have no consumer, and that is a real cost
 rather than a tidy pause — `checkPortalMaterials` and `getPortals` are the second
 and third things now waiting on a decision about world-shaped findings. The
-Problems panel is **not** the answer (§16.8 says why: a portal finding has no
+Problems panel is **not** the answer (§7 says why: a portal finding has no
 file, dialog or function, which is the panel's entire navigation model), so the
 answer is a surface on the World side, and nobody has designed one. Until then
 neither slice is plumbed, and a third portal check would only deepen the debt --
@@ -4951,7 +4171,7 @@ Four slices are carded here; the rest stays a phase and is deliberately not on
 the board, for reasons named at the bottom.
 
 **What already exists, read out of the code 2026-08-29 rather than assumed.**
-§16.8's waypoint work landed more of 1c than its own section claims:
+§7's waypoint work landed more of 1c than its own section claims:
 
 - `extractWaypointSites` in `src/main/utils/semanticMetadataUtils.ts` already
   visits **every** `Wld_InsertNpc` and `Wld_InsertItem` call site — both are in
@@ -4971,7 +4191,7 @@ which is precisely the half a spawn needs and a routine does not.
 instance, spawn point, file and line, built in the same worker-pool pass as
 `waypointSites` and following the same pattern `voiceIds` established. It is
 deliberately a second field rather than a widening of `waypointSites`: a spawn
-is not a routine (§16.8 measured `Wld_InsertNpc` at 3,722 literal sites against
+is not a routine (§7 measured `Wld_InsertNpc` at 3,722 literal sites against
 the daily routines' 6,223, and the two answer different questions about the same
 waypoint). `InsertNpcAction.spawnPointIsExpression` already exists in the parser
 and is the carrier for statically unresolvable sites — loops, `Hlp_Random`,
@@ -5120,14 +4340,14 @@ difference between no project open and no spawn here.
   instances and feeds autocomplete; the `TA_*` windows §8 asks for are a
   different extraction that nothing does.
 - **Occupancy, gap and overlap checks are world-locus findings** and used to hit
-  the wall §16.8 and §16.18 stood behind. The wall is down on the type side —
+  the wall §7 and §16.18 stood behind. The wall is down on the type side —
   §16.20 slices 1 and 2 both landed, so the panel navigates a world locus too.
   What is left is not a wall but a specification: these stay uncarded because
   nobody has said what the rule should be, either way.
-- **W4, script→world go-to-definition, was called large at §16.8** on the
+- **W4, script→world go-to-definition, was called large when it was sized** on the
   premise that nothing displayed a script-side waypoint name to click. That
   expired — `InsertNpcActionRenderer` displays one and §16.20 slice 2 built the
-  navigation — and W4 landed 2026-08-29. See §16.23.
+  navigation — and W4 landed 2026-08-29. See §7.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
@@ -5144,7 +4364,7 @@ The decision is in §7; this is what it costs and what it frees.
 **Why it was stuck.** `Problem` (`renderer/problems/domain/types.ts`) requires
 `filePath` and carries `npc`, `dialogName`, `functionName` — the panel's entire
 navigation model is "open this file and go to this declaration". A portal with a
-malformed material name has no file, no dialog and no function. §16.8 recorded
+malformed material name has no file, no dialog and no function. §7 recorded
 the gap and left it open; §16.18 added two more behind it; §16.19 added a fourth
 and argued that a fifth checker would only deepen the debt.
 
@@ -5241,89 +4461,6 @@ their own Gate 3. Occupancy and overlap checks become *possible* here and stay
 uncarded: §16.19 lists them under Phase 1c and they want the spawn index they
 now have plus a rule nobody has specified.
 
-### 16.21 Enum properties (§7 decision, §14.1 1.4)
-
-§16.3 closed `oCMob*` with "enums are now the whole of it", held by one real
-observation: retail worlds carry values outside the documented sets, and a
-dropdown that snapped them to a legal value would corrupt a world on open.
-
-**The resolution is to stop conflating offering with coercing.** The field
-offers the known values and writes one when picked; a value not in the set is
-kept exactly as it was read, displayed as itself, and marked unknown. It is
-never rewritten by the act of being looked at — which is the property the
-objection was actually protecting, and the same principle `SetVobProp` already
-holds to everywhere else.
-
-**Sequence.** The enum *sets* come first and are their own card: which fields on
-which classes are enums, and their values, read out of ZenKit's headers rather
-than guessed — a wrong set is worse than no set, because it marks a legal retail
-value as unknown. The field component follows.
-
-**The sets landed 2026-08-29** as `CLASS_ENUM_FIELDS` and `enumValuesOf` in
-`zen-world/src/model/vobClasses.ts` — a *fourth* table beside the class, base and
-decal ones, deliberately not a `kind` on the first, so a reader that only knows
-how to write a bounded scalar goes on seeing no enum at all. Eight fields over
-thirteen classes: `zCVobLight.lightType`/`.quality`, `zCVobSound(.Daytime)`'s
-`mode`/`volumeType`, `zCMover.behavior`, and `soundMaterial` on all nine
-`oCMob*`. Labels are ZenKit's enumerators verbatim (`SLOW_START_END`), because a
-prose label is a second claim the header cannot check.
-
-Two things the sweep that backs them settled — 41,393 VOBs over retail
-NewWorld/OldWorld/AddonWorld, every stored value of every field:
-
-- **Every value of every set above is inside its set.** The risk the card named
-  — a set that marks a legal retail value unknown — is not realised by any of
-  the eight, and `zCVobLight.lightType` is 0 on all 4,649 lights (retail places
-  no spotlight).
-- **`zCMover.lerpMode` and `.speedMode` are held out**, and `lerpMode` is why
-  the objection existed: against a set of {0, 1} it holds 120 three times and
-  **132198264 once** — a whole word of garbage, which only "keep exactly what
-  was read" survives. §16.3 knew of the 120s; the second value is new. But the
-  reason they are out is the *other* one: `VMover::save` writes `posLerpType`
-  and `speedType` only `if (!keyframes.empty())`, and the catalogue cannot
-  author keyframes — the same silent-drop that keeps `speed` out.
-
-**The field component landed 2026-08-29, and with it the whole path.** FIXED
-across three workspaces in one change, because the key had to become legal at
-every layer at once:
-
-- `zen-world` — the eight keys are now `CLASS_FIELDS` entries of a seventh kind,
-  `enum`, carrying **no `min` and no `max`**. That absence is the mechanism, not
-  an omission: it is what lets a value outside the set cross the validator, the
-  binding and an undo unchanged. The fourth table is unchanged and is now read by
-  exactly one layer.
-- `ipcValidation` — an `enum` branch that checks whole and non-negative and
-  nothing else. Whole because the archive member is a `uint32_t` and 2.5
-  truncates on the cast reporting success; nothing else because a validator that
-  knew the set would refuse the undo restoring a value the world already held.
-- `zenkit-node` — `OptionalEnum<E>`, and the key in the `RequireClassKeys` list
-  and the assign of all five affected cases (light, the sound pair, mover, and
-  the five `oCMob*` blocks). `static_cast` onto the member is well defined for
-  any value: every one of these enums is `: uint32_t`.
-- The grid — a native `<select>`. A value the set does not name is an option of
-  its own, selected, labelled `<value> — unknown`, and written by nothing.
-
-Two things the change found rather than planned:
-
-- **A class field the read does not answer used to blank the whole panel.** The
-  base fields had guarded against it since §16.17 ("a build running against an
-  older native addon"); the class fields had not, because until now every
-  catalogued key was one `getVobProps` answered. Eight new keys made the
-  divergence reachable, and the same filter now covers both.
-- **`randomDelay`/`randomDelayVar` do not follow `mode` in.** The argument for
-  holding them out was "`mode` is an enum this catalogue cannot set", and that
-  clause is now false — but the conclusion survives on the other one: the grid
-  commits one field at a time, so a delay written on a sound that is not yet
-  RANDOM is still a write the engine ignores.
-
-What is *not* witnessed: no engine has seen any of these eight written. Gate 2b
-proved `SetVobClassProp` reaches the file and the engine plays it, but for scalar
-fields; an enum write is the same code path with a different member, and
-`zCVobLight.lightType` in particular is a value retail places nowhere (0 on all
-4,649 lights), so nothing in the corpus says what SPOT looks like.
-
----
-
 ### 16.22 The measurement tranche (§11 Phase 2, decided 2026-08-29)
 
 **Every remaining portal check is blocked on a number nobody has measured, not
@@ -5338,7 +4475,7 @@ crowd.
 This is how this project has settled every contested question: the scale gizmo
 died on 41,393 measured transforms (§7), the Euler order was picked on retail
 singularity counts (§16.4), the waypoint-externals table is closed *because* it
-is measured (§16.8). The precedent for the instrument is `check-vob-bbox.js`
+is measured (§7). The precedent for the instrument is `check-vob-bbox.js`
 and `check-visual-winding.js` in `zenkit-node/scripts/`.
 
 **The shape is one script per question, then one check per answer.** A
@@ -5469,47 +4606,6 @@ where the index it qualifies is described.
 **The corpus is `mdk/Content`, which is not retail-equivalent** — it carries an
 extra `BAU_902_Gunnar_2.d` and is missing at least one dialog
 (`environment-hazards.md`). Its 3,722 literal `Wld_InsertNpc` calls match the
-number §16.8 and §16.19 measured, so it is the same corpus those used; it is
+number §7 and §16.19 measured, so it is the same corpus those used; it is
 not the shipped `.DAT`.
 
-### 16.23 W4 gets its affordance (§16.8, decided 2026-08-29)
-
-§16.8 called W4 large on a premise that has since expired: "nothing in the
-editor currently displays a script-side waypoint name to click". Two things
-changed it. `InsertNpcActionRenderer` renders the spawn point of every
-`Wld_InsertNpc` action in the dialog editor, and §16.20 slice 2 builds the
-world-locus navigation — select and frame — that a jump needs.
-
-So W4 is now a control on that renderer, not a Monaco feature. It is disabled
-with its reason when no world is open or when the point is not in the open one,
-which is the same three-answer problem §16.8 reserved: found here, not in this
-world, or nowhere at all. The third answer stays reserved — the editor holds one
-world and has no index of the others.
-
-**W4 landed 2026-08-29, and it needed nothing new.** A `Place` icon button in
-`InsertNpcActionRenderer`, beside the Spawn Point field: it sets
-`worldStore.requestFocus({ kind: 'waypoint', name })` and switches the active
-view to `world`, which is exactly what the Problems panel's world-locus branch
-already does. `WorldSurface`'s `focusRequest` effect does the rest — the
-case-insensitive name lookup, the waynet overlay it switches on, `framePoint`.
-No store field, no IPC, no viewport change.
-
-**The lookup is `worldStore.waynetNames`, the same reference data the
-dangling-waypoint rule reads**, so W1's "an exported function with zero callers"
-never had to be written: `pointNameKeys` is already the uppercased name set, and
-`waynetLoaded` is called on world open rather than when the overlay is first
-shown (§16.8), so the control is right before anyone touches the waynet toggle.
-The reasons are the two answers the editor can give — *"No world is open"* and
-*"<name> is not in the open world"* — plus the trivial third, an action naming
-no point at all. **The disabled reason never says missing**, which is the
-residue §16.8 measured: 84.3 % of literal sites resolve against the three main
-worlds and 98.0 % against all 24, so "not in this world" is the largest cluster
-and calling it missing would be a lie.
-
-Two things it deliberately does not do. **A free point is matched exactly**, not
-by prefix, so `FP_ROAM` reaching `FP_ROAM_CITY_01` reads as "not in the open
-world" — the same narrowness the *first pass* 6 card owns, and widening it here
-would fork the guard. And **there is no Playwright spec**, for slice 2's reason:
-the browser harness refuses `openWorld` by design, so the only reachable end of
-this flow is the disabled button. The seam is pinned in Jest
-(`InsertNpcActionRenderer.worldJump`), as `ProblemsPanel.navigation` is.

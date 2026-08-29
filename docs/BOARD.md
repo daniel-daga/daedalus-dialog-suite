@@ -215,6 +215,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Twelve closed sections flushed out of the plan, which is 1,900 lines
+  lighter** — seven of them (the waynet ops, the script-to-world jump, copy /
+  paste, the rest of `zCVob`, the enums, the catalogue bounds) were verified
+  against the tree rather than against their own prose first; their constraints
+  are now four subsections of §7. Two claims did not survive that check: the
+  free-point card above, and §14.1 1.4's "complete but for enums".
 - **The board's two flush rules are enforced, not trusted** — `tools/check-board.js`
   (`npm run board:check`, and the `zen-world-tests` CI job) fails the card budget
   and any §16 subsection declaring itself closed/landed - on the heading or
@@ -226,4 +232,4 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(flushed 2026-08-29, twice. Six rounds' twenty-six cards went first; then the
 five of round 7-9 — portal pairing, waypoint occupancy, W4, the spawn-index
 fix, and the waynet card that outlived its own fix. Every forward fact they
-carried is at §16.19, §16.22 and §16.23; the rest is in `git log`.)*
+carried is at §16.19, §16.22 and §7; the rest is in `git log`.)*
