@@ -31,7 +31,7 @@ interface RegistryEntry {
 export const CONDITION_REGISTRY: Record<string, RegistryEntry> = {
   NpcKnowsInfoCondition: {
     icon: <InfoIcon fontSize="small" />,
-    label: () => 'NPC Knows Dialog',
+    label: (c) => ('negated' in c && (c as { negated?: boolean }).negated) ? 'NPC Does Not Know Dialog' : 'NPC Knows Dialog',
     Fields: NpcKnowsInfoFields,
   },
   VariableCondition: {

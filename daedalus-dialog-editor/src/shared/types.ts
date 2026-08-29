@@ -300,6 +300,8 @@ export interface NpcKnowsInfoCondition {
   type: 'NpcKnowsInfoCondition';
   npc: string;
   dialogRef: string;
+  /** `!Npc_KnowsInfo(...)` — the "has not heard this yet" chain gate. */
+  negated?: boolean;
 }
 
 export interface VariableCondition {

@@ -162,7 +162,8 @@ export const evaluateCondition = (
 
   if (condition.type === 'NpcKnowsInfoCondition') {
     const known = state.knownInfos.has(canonicalizeIdentifier(condition.dialogRef));
-    return known ? TRUE : FALSE;
+    const holds = condition.negated ? !known : known;
+    return holds ? TRUE : FALSE;
   }
 
   if (condition.type === 'Condition' || (!condition.type && typeof condition.condition === 'string')) {

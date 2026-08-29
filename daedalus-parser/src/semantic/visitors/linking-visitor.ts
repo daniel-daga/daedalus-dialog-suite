@@ -809,7 +809,11 @@ export class LinkingVisitor {
 
   private isNegatedCallHandledByUnaryCondition(node: TreeSitterNode, functionName: string): boolean {
     const dispatchKey = functionName.toLowerCase();
-    if (dispatchKey !== 'npc_isdead' && dispatchKey !== 'npc_isinstate') {
+    if (
+      dispatchKey !== 'npc_isdead' &&
+      dispatchKey !== 'npc_isinstate' &&
+      dispatchKey !== 'npc_knowsinfo'
+    ) {
       return false;
     }
 

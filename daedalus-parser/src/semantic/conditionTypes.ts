@@ -15,18 +15,23 @@ export class NpcKnowsInfoCondition implements CodeGeneratable {
   public readonly type = 'NpcKnowsInfoCondition';
   public npc: string;
   public dialogRef: string;
+  public negated: boolean;
 
-  constructor(npc: string, dialogRef: string) {
+  constructor(npc: string, dialogRef: string, negated: boolean = false) {
     this.npc = npc;
     this.dialogRef = dialogRef;
+    this.negated = negated;
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Npc_KnowsInfo(${this.npc}, ${this.dialogRef})`;
+    const call = `Npc_KnowsInfo(${this.npc}, ${this.dialogRef})`;
+    return this.negated ? `!${call}` : call;
   }
 
   toDisplayString(): string {
-    return `[NpcKnowsInfo: ${this.npc} knows ${this.dialogRef}]`;
+    return this.negated
+      ? `[Not NpcKnowsInfo: ${this.npc} knows ${this.dialogRef}]`
+      : `[NpcKnowsInfo: ${this.npc} knows ${this.dialogRef}]`;
   }
 
   getTypeName(): string {

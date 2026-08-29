@@ -194,6 +194,13 @@ export class ConditionParsers {
         parsed.negated = true;
         return parsed;
       }
+
+      if (dispatchKey === 'npc_knowsinfo') {
+        const parsed = ConditionParsers.parseNpcKnowsInfoCall(operand);
+        if (!parsed) return null;
+        parsed.negated = true;
+        return parsed;
+      }
     }
 
     return null;

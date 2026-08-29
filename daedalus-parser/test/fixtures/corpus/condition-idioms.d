@@ -18,3 +18,12 @@ func int DIA_Bar_Condition()
 	};
 	return ok;
 };
+
+func int DIA_Baz_Condition()
+{
+	// the chain gate: the topic has not been heard yet
+	if (!Npc_KnowsInfo (other, DIA_Foo))
+	{
+		return TRUE;
+	};
+};

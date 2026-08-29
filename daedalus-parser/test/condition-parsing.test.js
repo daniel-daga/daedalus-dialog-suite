@@ -814,3 +814,51 @@ func void DIA_Test_Mixed_Info()
     'Mixed AND/OR should either fall back to raw mode or produce at most 1 generic condition'
   );
 });
+
+test('Should parse !Npc_KnowsInfo as a negated condition and round-trip it', () => {
+  const source = `
+instance DIA_Test_NegatedKnowsInfo(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_NegatedKnowsInfo_Condition;
+	information	= DIA_Test_NegatedKnowsInfo_Info;
+	description = "Test";
+};
+
+func int DIA_Test_NegatedKnowsInfo_Condition()
+{
+	if (!Npc_KnowsInfo(other, DIA_Test_Prereq))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_NegatedKnowsInfo_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_NegatedKnowsInfo'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 1, 'Should parse exactly one condition');
+  const condition = conditionFunc.conditions[0];
+  assert.ok(condition instanceof NpcKnowsInfoCondition, 'Condition should be NpcKnowsInfoCondition');
+  assert.strictEqual(condition.npc, 'other');
+  assert.strictEqual(condition.dialogRef, 'DIA_Test_Prereq');
+  assert.strictEqual(condition.negated, true, 'Unary negation should be preserved');
+
+  const generated = new SemanticCodeGenerator().generateSemanticModel(model);
+  assert.ok(generated.includes('!Npc_KnowsInfo(other, DIA_Test_Prereq)'),
+    'Generated code should keep the negation');
+
+  const reparsed = parseAndBuildModel(generated)
+    .dialogs['DIA_Test_NegatedKnowsInfo'].properties.condition.conditions[0];
+  assert.strictEqual(reparsed.negated, true, 'Negation should survive a round-trip');
+});
+
+test('Should display a negated Npc_KnowsInfo condition', () => {
+  const condition = new NpcKnowsInfoCondition('other', 'DIA_Farim_Hallo', true);
+
+  assert.strictEqual(condition.generateCode({}), '!Npc_KnowsInfo(other, DIA_Farim_Hallo)');
+  assert.strictEqual(condition.toDisplayString(), '[Not NpcKnowsInfo: other knows DIA_Farim_Hallo]');
+});

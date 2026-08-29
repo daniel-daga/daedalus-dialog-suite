@@ -122,6 +122,17 @@ describe('simulator condition evaluator', () => {
     }, simulationState, model())).toMatchObject({ value: 'unknown' });
   });
 
+  it('inverts a negated known-info check', () => {
+    const simulationState = state({ knownInfos: new Set(['dia_met_guard']) });
+
+    expect(evaluateCondition({
+      type: 'NpcKnowsInfoCondition', npc: 'self', dialogRef: 'DIA_MET_GUARD', negated: true
+    }, simulationState, model()).value).toBe('false');
+    expect(evaluateCondition({
+      type: 'NpcKnowsInfoCondition', npc: 'self', dialogRef: 'DIA_UNHEARD', negated: true
+    }, simulationState, model()).value).toBe('true');
+  });
+
   it('evaluates codec-structured raw expressions but preserves malformed and generic expressions as unknown', () => {
     const simulationState = state({
       misVars: new Map([['mis_test', 1]]),

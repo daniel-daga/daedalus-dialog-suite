@@ -71,7 +71,23 @@ is trusted to be complete.
 
 ### H2. `!Npc_KnowsInfo(...)` is extracted as a positive condition — availability is inverted
 
-**Status:** Open (parser defect surfaced by the simulator)
+**Status:** FIXED 2026-08-29 — `NpcKnowsInfoCondition` carries `negated`
+(constructor, `generateCode`, `toDisplayString`), `parseUnaryExpression` and
+`isNegatedCallHandledByUnaryCondition` both dispatch on `npc_knowsinfo`, and the
+simulator's `evaluateCondition` inverts on it. `condition-idioms.d` gained a
+`!Npc_KnowsInfo` chain gate and stays GREEN in the roundtrip ratchet, so a
+dropped `!` is now token drift. The editor's condition card labels the negated
+form "NPC Does Not Know Dialog".
+
+Two adjacent shapes are deliberately **not** covered and still land as generic
+or unknown rather than inverted: `Npc_KnowsInfo(...) == FALSE` (the
+`parseBoolLikeComparisonAsNegation` path handles only `npc_isdead` and
+`npc_isinstate`), and `!Npc_KnowsInfo(...)` inside a raw condition string, where
+`conditionExpressionCodec.parseSimpleClause`'s knows-info regex accepts no
+leading `!` (its `Npc_IsDead` twin does). Neither inverts availability; both
+report unknown.
+
+Original finding:
 
 In a condition function, `parseUnaryExpression` handles `!identifier`,
 `!Npc_IsDead`, and `!Npc_IsInState`, but returns `null` for `!Npc_KnowsInfo`

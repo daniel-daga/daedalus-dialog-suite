@@ -226,3 +226,16 @@ describe('ConditionCard Data Loss Fix', () => {
  * This fix ensures that no matter how quickly a user navigates away,
  * their condition changes are always preserved.
  */
+
+import { CONDITION_REGISTRY } from '../src/renderer/components/conditions/conditionRegistry';
+
+describe('condition registry labels', () => {
+  test('a negated Npc_KnowsInfo condition is labelled as not known', () => {
+    const entry = CONDITION_REGISTRY['NpcKnowsInfoCondition'];
+
+    expect(entry.label({ type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Foo' }))
+      .toBe('NPC Knows Dialog');
+    expect(entry.label({ type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Foo', negated: true }))
+      .toBe('NPC Does Not Know Dialog');
+  });
+});

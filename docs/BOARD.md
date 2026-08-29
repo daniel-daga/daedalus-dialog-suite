@@ -150,8 +150,6 @@ card waits on live at its pointer — put new prose there, not here.
 only the level editor, so "no actionable cards" never meant "no work". Each
 pointer is a finding id in the file the routing table names.
 
-- **`!Npc_KnowsInfo` parses un-negated, so availability inverts** — `negated`
-  goes through type, parser, codegen and corpus. Any run. *simulator* H2
 - **The simulator's six smaller findings** — Any run. *simulator* M1, M3, L1-L4
 - **Three gaps the production review left uncarded** — the save-error advice,
   the unread updater settings, the error boundary. Any run. *production* §2 gaps
@@ -204,6 +202,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **`!Npc_KnowsInfo` no longer parses un-negated** — landed: `negated` through
+  type, parser, codegen and a GREEN corpus gate, and the simulator inverts on
+  it. Two adjacent shapes stay unknown by decision. *simulator* H2
+
 - **A condition the simulator cannot read is now unknown** — landed: raw mode's
   empty `conditions` plus a non-empty body is the signature, and availability
   reports it unknown with a reason instead of trivially true. *simulator* H1
@@ -217,13 +219,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   section from `spawnSiteIndex`, and a spawn cancels its own row in the site
   list so it is not counted twice as a routine passing through. §16.19 slice 3
 
-- **An NPC spawned at two points is nobody's finding** — landed as
-  `duplicate-spawn`, the seventh Problems rule. Fires only for NPCs the project
-  holds dialog for: unconditioned it is 103 findings on retail, almost all
-  monster templates; with dialog it is 4. §16.19 slice 2
-- **The spawn index keeps the waypoint and drops the NPC** — landed:
-  `ProjectIndex.spawnSites` (instance, spawn point, file, function, line;
-  dynamic sites excluded) and `projectStore.spawnSiteIndex`. §16.19 slice 1
+*(the two oldest §16.19 spawn-index cards were dropped 2026-08-29 to stay under
+the budget; their substance is in `git log` and neither pointed forward.)*
 
 *(flushed 2026-08-29 after the board-loop run that closed the 2026-08-29 review:
 twelve cards, each marked FIXED at its pointer, reasoning in `git log`. Nothing
