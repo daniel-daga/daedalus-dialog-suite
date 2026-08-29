@@ -5132,6 +5132,33 @@ script-locus finding, so it has a `filePath` and fits the panel's navigation
 model as it stands — which is what makes it the cross-validation slice worth
 taking first, ahead of any finding whose locus is the world.
 
+**Landed 2026-08-29** as `duplicateSpawnRule` in
+`problems/domain/rules/duplicateSpawn.ts`, the seventh Problems rule, with
+`ProjectView.spawnSites` and `ProjectView.dialogNpcKeys` as its two new inputs
+(both threaded from the project index through `problemsStore`, the route
+`waypointSites` established — the index sees every file, `parsedFiles` is
+capped). One warning per site, keyed on file + function + instance + point.
+
+**The one design decision it needed was measured, not assumed, and it is the
+whole rule.** Unconditioned, "same NPC at two distinct points" fires 103 times
+on retail Gothic II's 3,722 literal `Wld_InsertNpc` sites, and nearly every one
+is a monster template — `Draconian` at 186 points, `ORCWARRIOR_ROAM` at 167,
+`Wolf` at 49 — which is how the game is built, not a defect. Nothing in
+`ProjectIndex` separates a character from a template by instance alone: monsters
+are `C_NPC` instances too, so all 961 spawned instances are in `npcs`. **Dialog
+is the discriminator the editor already holds**, and it takes the same corpus
+from 103 findings to **4**: `BAU_4300_ADDON_CAVALORN`, `BAU_961_GAAN`,
+`MIL_350_ADDON_MARTIN`, `SLD_805_CORD` — all four story relocations, all four
+worth seeing. Note `dialogsByNpc` keys *every* C_NPC instance with an empty
+array, so the array's length is the test, never the key's presence.
+
+Two things this leaves for whoever wants them, neither carded: a modder's new
+unique NPC with no dialog yet is invisible to the rule (accepted — the same
+empty-index-means-nothing-is-known rule the world input follows), and **the same
+NPC inserted twice at the *same* point is a different finding** that this rule
+deliberately does not make — 598 retail site pairs do it on purpose (nine
+blattcrawlers on one waypoint), so it needs its own discriminator, not this one.
+
 **Slice 3 — the waypoint panel names who spawns there.** The panel lists
 function name and file for every site naming the selected waypoint, and cannot
 distinguish "three NPCs are inserted here" from "a routine passes through". With

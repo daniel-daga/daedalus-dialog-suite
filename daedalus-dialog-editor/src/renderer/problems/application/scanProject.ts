@@ -1,4 +1,4 @@
-import type { SemanticModel } from '../../../shared/types';
+import type { SemanticModel, SpawnSite } from '../../../shared/types';
 import type {
   FileFacts,
   FileModel,
@@ -26,6 +26,10 @@ export interface ProjectScanInput {
   factsCache?: WeakMap<SemanticModel, FileFacts>;
   /** The project index's waypoint sites, for the `waypoint-not-in-world` rule. */
   waypointSites?: WaypointSites;
+  /** The project index's static spawn sites, for the `duplicate-spawn` rule. */
+  spawnSites?: readonly SpawnSite[];
+  /** Names of NPCs the project index holds dialog for; the same rule reads them. */
+  npcsWithDialogs?: readonly string[];
   /**
    * The waynet of the world currently open. Absent when there is none, and the
    * rule that reads it then returns nothing rather than calling every site
@@ -46,6 +50,8 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
     knownNpcNames: input.knownNpcNames,
     factsCache: input.factsCache,
     waypointSites: input.waypointSites,
+    spawnSites: input.spawnSites,
+    npcsWithDialogs: input.npcsWithDialogs,
     world: input.world
   });
   return { problems: runRules(view), scannedFileCount: input.files.length };

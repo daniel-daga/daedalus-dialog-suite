@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand';
-import type { SemanticModel } from '../../shared/types';
+import type { DialogMetadata, SemanticModel } from '../../shared/types';
 import type { FileFacts, FileModel, Problem } from '../problems/domain/types';
 import { scanProject } from '../problems/application/scanProject';
 import { useProjectStore } from './projectStore';
@@ -21,6 +21,21 @@ import { useWorldStore } from './worldStore';
  * bump. Manual rescans bypass it via `runScan`.
  */
 const SCAN_DEBOUNCE_MS = 300;
+
+/**
+ * Names of the NPCs the project index holds at least one dialog for, which is
+ * what `duplicate-spawn` uses to tell a character from a monster template.
+ * `dialogsByNpc` has a key for *every* C_NPC instance — with an empty array
+ * when it has no dialog — so the array's length is the discriminator, not the
+ * key's presence.
+ */
+const npcsWithDialogs = (dialogIndex: Map<string, DialogMetadata[]>): string[] => {
+  const names: string[] = [];
+  for (const [npc, dialogs] of dialogIndex) {
+    if (dialogs.length > 0) names.push(npc);
+  }
+  return names;
+};
 
 interface ProblemsState {
   problems: Problem[];
@@ -99,6 +114,8 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
         knownNpcNames,
         factsCache,
         waypointSites: project.waypointSiteIndex,
+        spawnSites: project.spawnSiteIndex,
+        npcsWithDialogs: npcsWithDialogs(project.dialogIndex),
         world
       });
 

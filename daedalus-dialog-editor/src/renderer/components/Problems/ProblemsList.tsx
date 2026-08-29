@@ -10,7 +10,8 @@ const RULE_LABEL: Record<ProblemRuleId, string> = {
   'orphaned-function': 'Orphaned function',
   'voice-id-duplicate': 'Duplicate voice ID',
   'voice-id-malformed': 'Malformed voice ID',
-  'waypoint-not-in-world': 'Waypoint not in world'
+  'waypoint-not-in-world': 'Waypoint not in world',
+  'duplicate-spawn': 'NPC spawned twice'
 };
 
 const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;

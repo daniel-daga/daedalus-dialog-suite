@@ -5,6 +5,7 @@ import { choiceNoClearChoicesRule } from './rules/choiceNoClearChoices';
 import { orphanedFunctionRule } from './rules/orphanedFunction';
 import { voiceIdRule } from './rules/voiceId';
 import { waypointNotInWorldRule } from './rules/waypointNotInWorld';
+import { duplicateSpawnRule } from './rules/duplicateSpawn';
 
 /** Every lint rule the Problems panel runs, in declaration order. */
 export const ALL_RULES: readonly LintRule[] = [
@@ -13,7 +14,8 @@ export const ALL_RULES: readonly LintRule[] = [
   choiceNoClearChoicesRule,
   orphanedFunctionRule,
   voiceIdRule,
-  waypointNotInWorldRule
+  waypointNotInWorldRule,
+  duplicateSpawnRule
 ];
 
 const SEVERITY_ORDER: Record<Problem['severity'], number> = { error: 0, warning: 1 };

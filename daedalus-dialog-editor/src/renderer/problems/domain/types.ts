@@ -1,4 +1,4 @@
-import type { SemanticModel } from '../../../shared/types';
+import type { SemanticModel, SpawnSite } from '../../../shared/types';
 
 /**
  * Domain types for the project-wide Problems panel.
@@ -17,7 +17,8 @@ export type ProblemRuleId =
   | 'orphaned-function'
   | 'voice-id-duplicate'
   | 'voice-id-malformed'
-  | 'waypoint-not-in-world';
+  | 'waypoint-not-in-world'
+  | 'duplicate-spawn';
 
 export interface Problem {
   /** Stable key for React lists and cross-scan dedupe. */
@@ -115,6 +116,15 @@ export interface ProjectView {
   functionsByKey: ReadonlyMap<string, FunctionEntry>;
   /** Script sites naming a waypoint; empty when the project index has none. */
   waypointSites: WaypointSites;
+  /** Static spawn sites from the project index; empty when it has none. */
+  spawnSites: readonly SpawnSite[];
+  /**
+   * UPPERCASED names of every NPC the project index holds at least one dialog
+   * for. Dialog is what separates a character from a monster template — both
+   * are `C_NPC` instances — and `duplicate-spawn` fires only for characters.
+   * Empty means nothing is known, never that nothing is legal.
+   */
+  dialogNpcKeys: ReadonlySet<string>;
   /** The open world's waynet names, or undefined when no world is open. */
   world?: WorldWaynetView;
 }

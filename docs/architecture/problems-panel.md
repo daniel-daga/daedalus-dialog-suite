@@ -43,7 +43,7 @@ mid-ingestion window.
 
 ## Rules
 
-All six read only structured, typed data:
+All seven read only structured, typed data:
 
 | Rule | Severity | Detection |
 |---|---|---|
@@ -53,14 +53,23 @@ All six read only structured, typed data:
 | `orphaned-function` | warning | function referenced by no dialog property, choice target, or `calls` entry |
 | `voice-id-duplicate` / `voice-id-malformed` | warning | a voice id used cross-file, or not matching `…_<n>_<n>` |
 | `waypoint-not-in-world` | warning | a script site names a waypoint the open world's waynet has no point for; silent when no world is open, and free points are matched by prefix because the engine matches them that way |
+| `duplicate-spawn` | warning | one NPC is statically inserted at two different spawn points, so both sites running puts two copies in the world |
 
-Two decisions worth keeping:
+Three decisions worth keeping:
 
 - **Reachability, not per-function, for choices.** The standard Daedalus pattern
   adds a choice in the info function but clears it in the *target* function. The
   rule follows `Choice.targetFunction` transitively and only flags a function
   when no reachable target clears — avoiding a false positive on every normal
   choice menu.
+- **`duplicate-spawn` fires only for NPCs the project holds dialog for.**
+  Measured over retail Gothic II's 3,722 literal `Wld_InsertNpc` sites: 103
+  instances are spawned at more than one distinct point, and nearly all are
+  monster templates (`Draconian` at 186 points, `Wolf` at 49) — the normal shape
+  of the game. The index's NPC set cannot separate them, because monsters are
+  `C_NPC` instances too; dialog can, and it takes the same corpus to **4**
+  findings. Same NPC at the *same* point twice is not this rule (598 retail site
+  pairs do it deliberately, a pack on one waypoint).
 - **Defensive optional arrays.** A project-wide scan consumes many models,
   including partial/error models and the browser-harness mock, which may omit
   arrays the native parser always sets. Rules treat `conditions`/`calls`/
@@ -74,8 +83,8 @@ dialog via `useNavigation().navigateToDialog(dialogName, functionName)`. A
 problem with only a standalone function falls back to `navigateToSymbol`.
 
 Both navigators search the merged semantic model, which only covers files that
-have been opened — and `waypoint-not-in-world` is the first rule whose sites
-come from the whole-project index pass, so its function routinely lives in a
+have been opened — and `waypoint-not-in-world` and `duplicate-spawn` take their sites
+from the whole-project index pass, so its function routinely lives in a
 file no model was ever built for. When neither navigator resolves, the click
 falls back to `problem.filePath`, the one thing every problem carries: the
 panel opens that file, selects the function and switches to the dialog view.

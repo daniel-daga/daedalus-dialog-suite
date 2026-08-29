@@ -146,9 +146,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1c — Daedalus overlay**
 
-- **An NPC spawned at two points is nobody's finding** — the duplicate-spawn
-  check §8 names and nothing implements. Script-locus, so it fits the panel as
-  it stands. Any run. §16.19 slice 2
 - **The waypoint panel cannot say who spawns there** — it lists sites, so three
   NPCs inserted at a point read like a routine passing through. Any run.
   §16.19 slice 3
@@ -202,6 +199,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **An NPC spawned at two points is nobody's finding** — landed as
+  `duplicate-spawn`, the seventh Problems rule. Fires only for NPCs the project
+  holds dialog for: unconditioned it is 103 findings on retail, almost all
+  monster templates; with dialog it is 4. §16.19 slice 2
 - **The spawn index keeps the waypoint and drops the NPC** — landed:
   `ProjectIndex.spawnSites` (instance, spawn point, file, function, line;
   dynamic sites excluded) and `projectStore.spawnSiteIndex`. §16.19 slice 1
