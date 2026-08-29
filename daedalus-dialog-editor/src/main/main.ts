@@ -2,24 +2,14 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { gothicAssetSources } from 'zen-world';
-import { FileService } from './services/FileService';
-import { LogService } from './services/LogService';
-import { ParserService } from './services/ParserService';
-import { CodeGeneratorService } from './services/CodeGeneratorService';
-import { ValidationService } from './services/ValidationService';
-import ProjectService from './services/ProjectService';
-import { PathValidationService, PathValidationError } from './services/PathValidationService';
-import { SettingsService } from './services/SettingsService';
-import { FileWatcherService } from './services/FileWatcherService';
-import { UpdaterService } from './services/UpdaterService';
-import { WorldService } from './services/WorldService';
+import { PathValidationError } from './services/PathValidationService';
+import { getServiceRegistry } from './services/serviceRegistry';
+import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
 import { runOpenWorldSmoke } from './openWorldSmoke';
 import { applyWindowSecurity } from './windowSecurity';
 import {
   assertModelShape,
   assertDialogName,
-  assertSaveFileSettings,
-  assertSaveFileOptions,
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVobPropsRequest,
@@ -42,20 +32,22 @@ let mainWindow: BrowserWindow | null = null;
 // only lets the window go once the renderer approves (or fails to ACK in time).
 let closeApproved = false;
 let closeGuardAckTimer: ReturnType<typeof setTimeout> | null = null;
-const fileService = new FileService();
-const parserService = new ParserService();
-const codeGeneratorService = new CodeGeneratorService();
-const validationService = new ValidationService(parserService, codeGeneratorService);
-const projectService = new ProjectService();
-const settingsService = new SettingsService();
-const fileWatcherService = new FileWatcherService();
-const updaterService = new UpdaterService(settingsService);
-// Constructed eagerly, but it does not spawn its worker — and therefore does
-// not load the native addon — until a world is actually opened (§6).
-const worldService = new WorldService();
-const logService = new LogService(app.getPath('userData'), app.getVersion());
-// Path validator starts empty - paths are added when user opens files/projects via dialogs
-const pathValidator = new PathValidationService([]);
+// Every service is constructed by the composition root, which must be taken
+// *after* the userData redirect above: SettingsService and LogService resolve
+// that path in their constructors.
+const {
+  fileService,
+  parserService,
+  codeGeneratorService,
+  validationService,
+  projectService,
+  settingsService,
+  fileWatcherService,
+  updaterService,
+  worldService,
+  logService,
+  pathValidator,
+} = getServiceRegistry();
 
 // Crash visibility (fix-08 §5). Wire the process/app crash handlers before
 // `app.whenReady()` so failures during startup are still captured. Deliberately
@@ -242,83 +234,14 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean; existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>> }) => {
-    const expectUnchanged = !options?.overwriteExternal;
-    // Force-on-errors overwrites drop content the parser could not read, so
-    // FileService first snapshots the on-disk file to `<name>.d.bak`.
-    const backupBeforeWrite = options?.forceOnErrors === true;
-    try {
-      // Validate payload shapes before touching services
-      assertModelShape(model);
-      assertSaveFileSettings(settings);
-      assertSaveFileOptions(options);
-
-      // Validate path before saving (symlink-resolved, write mode)
-      await pathValidator.validatePathResolved(filePath, { write: true });
-
-      // Validate model unless explicitly skipped
-      if (!options?.skipValidation) {
-        const validationResult = await validationService.validate(model, settings, {
-          existingVoiceIds: options?.existingVoiceIds
-        });
-
-        // If validation failed and not forcing save, return validation result
-        if (!validationResult.isValid && !options?.forceOnErrors) {
-          console.warn(`[IPC] generator:saveFile - Validation failed for ${filePath}, skipping save.`);
-          return {
-            success: false,
-            validationResult
-          };
-        }
-
-        // Use pre-generated code from validation if available
-        if (validationResult.generatedCode) {
-          const writeResult = await fileService.writeFile(filePath, validationResult.generatedCode, { expectUnchanged, backupBeforeWrite });
-          // Arm self-write suppression only after an actual write succeeds
-          fileWatcherService.notifySelfWrite(filePath);
-          return {
-            ...writeResult,
-            validationResult
-          };
-        }
-      }
-
-      // Fallback: generate code directly (only if validation skipped or didn't provide code)
-      const code = codeGeneratorService.generateCode(model, settings, { allowPartialModel: options?.forceOnErrors === true });
-
-      // Final sanity check for generated code - ALWAYS run this if we are falling back
-      const syntaxResult = await parserService.parseSource(code);
-      if (syntaxResult.hasErrors && !options?.forceOnErrors) {
-          return {
-              success: false,
-              validationResult: {
-                  isValid: false,
-                  errors: syntaxResult.errors?.map((e: any) => ({
-                      type: 'syntax_error' as const,
-                      message: e.message || 'Syntax error',
-                      position: e.position
-                  })) || [{
-                      type: 'syntax_error' as const,
-                      message: 'Syntax error detected (sanity check)',
-                  }],
-                  warnings: []
-              }
-          };
-      }
-
-      const writeResult = await fileService.writeFile(filePath, code, { expectUnchanged, backupBeforeWrite });
-      // Arm self-write suppression only after an actual write succeeds
-      fileWatcherService.notifySelfWrite(filePath);
-      return writeResult;
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] generator:saveFile - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] generator:saveFile error:', error);
-      throw new Error(`Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: SaveFileFlowOptions) =>
+    saveFileFlow(
+      { pathValidator, validationService, codeGeneratorService, parserService, fileService, fileWatcherService },
+      filePath,
+      model,
+      settings,
+      options
+    ));
 
   // File I/O handlers
   ipcMain.handle('file:read', async (_event, filePath: string) => {

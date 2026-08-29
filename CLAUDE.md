@@ -287,7 +287,7 @@ The code-review remediation effort is complete — all code landed and CI-green.
 
 Production-hardening work that only matters at first release (code signing, strict update verifier, release-dispatch QA, manual desktop passes) is parked in `docs/release-checklist.md`.
 
-**Proposed plan:** [`docs/plans/mcp-server.md`](docs/plans/mcp-server.md) — built-in MCP server so AI clients can verify, create, and control dialog/quest content through the editor's validated pipelines (no code landed yet).
+**Proposed plan:** [`docs/plans/mcp-server.md`](docs/plans/mcp-server.md) — built-in MCP server so AI clients can verify, create, and control dialog/quest content through the editor's validated pipelines. No server code exists; only its Phase 0 prerequisite has landed — main-process service construction is now `src/main/services/serviceRegistry.ts` and the `generator:saveFile` body is `src/main/services/SaveFileFlow.ts`.
 
 **Active plan:** [`docs/plans/level-editor.md`](docs/plans/level-editor.md) — ZenGin level editor as new monorepo subprojects (`zenkit-node` N-API binding + `zen-world` domain + a World surface in the editor); architecture answering [`docs/plans/level-editor-design-brief.md`](docs/plans/level-editor-design-brief.md), with Phase 0 broken down in [`docs/plans/level-editor-phase-0.md`](docs/plans/level-editor-phase-0.md).
 

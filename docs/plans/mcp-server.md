@@ -1,6 +1,7 @@
 # Plan: Built-in MCP Server (AI content control, verification, creation)
 
-Status: **proposed** — no code landed. This plan describes an MCP (Model
+Status: **proposed**, except for the Phase 0 prerequisite refactor in §2,
+which landed 2026-08-29. No MCP server code exists. This plan describes an MCP (Model
 Context Protocol) server embedded in the dialog editor so AI clients
 (Claude Code, Claude Desktop, other MCP clients) can inspect a project,
 verify content, and create/modify dialog and quest content through the same
@@ -58,13 +59,24 @@ needed for *verify* and *create* already exists main-side:
 | Path containment | `PathValidationService.validatePathResolved` |
 | Payload asserts | `src/main/ipcValidation.ts` (`assertModelShape`, `assertDialogName`, `assertSaveFileSettings`, `assertSaveFileOptions`) |
 
-**Prerequisite refactor (Phase 0).** `main.ts` constructs all services at
-module scope and exports nothing. Extract construction into a small
-composition root (e.g. `src/main/services/serviceRegistry.ts`) that
-`main.ts` and `McpServerService` both consume, and lift the body of the
-`generator:saveFile` handler into a reusable `SaveFileFlow` function so IPC
-and MCP share one save pipeline instead of duplicating it. Pure move — no
-behavior change, existing tests stay green.
+**Prerequisite refactor (Phase 0) — LANDED 2026-08-29.** `main.ts` used to
+construct all services at module scope and export nothing. Construction now
+lives in `src/main/services/serviceRegistry.ts`, a memoized composition root
+that `main.ts` and any later main-side consumer both take, and the body of
+the `generator:saveFile` handler is `src/main/services/SaveFileFlow.ts` —
+`saveFileFlow(deps, filePath, model, settings, options)`, taking its six
+services as an injected `SaveFileDeps`, so IPC and MCP share one save
+pipeline instead of duplicating it. Pure move; no behavior change.
+
+Two constraints the refactor had to respect, and which a later change must
+keep: the registry **constructs on first call, never at import**, because
+`main.ts` redirects `app.getPath('userData')` for the E2E harness before it
+takes the registry and `SettingsService`/`LogService` resolve that path in
+their constructors; and `saveFileFlow` keeps the handler's split return
+convention — a refusal comes back as `{ success: false, validationResult }`,
+a failure is thrown. Both are asserted in `tests/serviceRegistry.test.ts`
+and `tests/saveFileFlow.test.ts` (the save pipeline had no unit coverage at
+all before: it was reachable only through `ipcMain.handle`).
 
 ### Transport: Streamable HTTP on loopback
 

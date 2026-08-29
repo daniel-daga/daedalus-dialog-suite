@@ -150,9 +150,6 @@ card waits on live at its pointer — put new prose there, not here.
 only the level editor, so "no actionable cards" never meant "no work". Each
 pointer is a finding id in the file the routing table names.
 
-- **The MCP server's Phase 0, which decides nothing** — a pure move; tests stay
-  green. Any run. `docs/plans/mcp-server.md` §2
-
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -199,26 +196,18 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Three gaps the production review left uncarded** — landed: the updater now
-  reads `autoCheckOnStartup` and `dismissedVersion` (the button that promised a
-  re-prompt is "Skip This Version" and writes the setting), and an outer
-  `ErrorBoundary` covers the chrome while `componentDidCatch` reaches the log
-  file. The save-error advice needed no change — it was already fixed.
-  *production* §2 gaps, §2.6
+- **The MCP server's Phase 0** — landed: `serviceRegistry.ts` is the memoized
+  composition root (constructed on first call, never at import, so the E2E
+  userData redirect still lands first) and `SaveFileFlow.ts` is the
+  `generator:saveFile` body, taking its services injected. Pure move; the save
+  pipeline had no unit coverage before and now has seven cases.
+  `docs/plans/mcp-server.md` §2
 
-- **The simulator's six smaller findings** — landed: the projection is gated on
-  the modal being open, a refused launch says why and disables the entry it
-  would refuse, `/=` truncates toward zero, a permanent C_INFO is never taught,
-  the clone/constant/built-in helpers are one `domain/values.ts`, and a bare
-  `MIS_X` clause evaluates. M2 stays open. *simulator* M1, M3, L1-L4
-
-- **`!Npc_KnowsInfo` no longer parses un-negated** — landed: `negated` through
-  type, parser, codegen and a GREEN corpus gate, and the simulator inverts on
-  it. Two adjacent shapes stay unknown by decision. *simulator* H2
-
-- **A condition the simulator cannot read is now unknown** — landed: raw mode's
-  empty `conditions` plus a non-empty body is the signature, and availability
-  reports it unknown with a reason instead of trivially true. *simulator* H1
+*(flushed 2026-08-29: the four cards that closed the production-review gaps
+and the dialog-simulator findings. Everything forward in them is already at its
+pointer — M2 and the two shapes `!Npc_KnowsInfo` deliberately leaves generic are
+marked open in `dialog-simulator-review-findings.md`; the reasoning is in
+`git log`.)*
 
 *(the §16.19 spawn-index cards, the last of them the *Spawns are in the frame*
 overlay, were dropped 2026-08-29 to stay under the budget; their substance is in
