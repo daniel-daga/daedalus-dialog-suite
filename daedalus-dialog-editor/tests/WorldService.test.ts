@@ -538,6 +538,28 @@ describe('the op log', () => {
     service.close();
   });
 
+  test('an undo while a world is opening is refused, not written into the new world', async () => {
+    // A world open is a multi-second load, and Ctrl+Z is bound the whole time.
+    // The stacks belong to the world that was open, so replaying one now sends
+    // A's inverse paths into whatever the worker holds when they arrive —
+    // silently mutating whatever sits at `0/4` in B. Nothing records it either:
+    // the entry comes off A's stack and the open then clears both.
+    const { worker, service } = await openedService();
+    await applied(service, worker, [A]);
+
+    const reopening = service.openWorld({ ...OPEN, worldPath: 'C:/Gothic/OldWorld.zen' });
+    const undone = service.undo();
+    await tick();
+
+    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(1);
+    await expect(undone).resolves.toBeNull();
+
+    worker.replyLast('open', SUMMARY);
+    await reopening;
+    await expect(service.undo()).resolves.toBeNull();
+    service.close();
+  });
+
   test('an edit the worker refused is not in the log', async () => {
     // Otherwise undo sends the inverse of something that never happened, which
     // moves a VOB that was never moved.

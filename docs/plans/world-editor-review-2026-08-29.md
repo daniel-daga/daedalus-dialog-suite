@@ -287,7 +287,16 @@ handlers → `WorldService` → `zenkit.worker` → `commitOps`/`writeOp` →
    rejection and never attempt a reopen.
 
 2. **An undo during a world open is applied to the new world using the old
-   world's index paths.** `WorldService.ts:83-90, 301-308` — `openWorld` is
+   world's index paths.** — **FIXED 2026-08-29**: `openWorld` now drops
+   `worldPath` and both stacks *before* it awaits the open, so a replay pressed
+   mid-open finds nothing to replay and every other request is refused by
+   `requestOnOpenWorld`'s existing "refused rather than queued" check. The open
+   stays outside the `serialized` queue deliberately — it is not an edit and
+   must not wait behind one. A failed open now leaves no world open, which is
+   what a partial load in the worker actually leaves behind, and matches the
+   renderer's `openFailed` reset. Held by *"an undo while a world is opening is
+   refused, not written into the new world"* (`WorldService.test.ts`).
+   `WorldService.ts:83-90, 301-308` — `openWorld` is
    outside the `serialized` edit queue; `worldPath` is reassigned and the undo/
    redo stacks cleared only *after* `await this.request('open', …)`. So
    `undo()` → `serialized` → `replayOne` → `requestOnOpenWorld` sees the previous

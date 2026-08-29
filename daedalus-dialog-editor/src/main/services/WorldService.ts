@@ -80,12 +80,31 @@ export class WorldService {
       ?? (() => new Worker(resolveWorkerPath(options.workerPath)));
   }
 
+  /**
+   * Load a world into the worker, and start an empty history over it.
+   *
+   * The history and `worldPath` are dropped **before** the request rather than
+   * after it. An open is a multi-second `loadWorld`, Ctrl+Z is bound the whole
+   * time, and this is deliberately not `serialized` — it is not an edit and it
+   * must not wait behind one. So an undo pressed mid-open would otherwise find
+   * the previous world's non-null `worldPath` and push A's inverse batch into
+   * the worker's FIFO behind the open, writing A's index paths into B and then
+   * losing the evidence when the open cleared the stacks. Cleared first, the
+   * replay finds nothing to replay and every other request is refused by
+   * `requestOnOpenWorld` — the same "refused rather than queued" rule that
+   * covers the moment before the first world opens.
+   *
+   * That leaves a failed open with no world open, which is what it is: the
+   * failure can be anywhere in the worker's load, so the world it holds is not
+   * knowably the old one, and the renderer's `openFailed` resets the surface.
+   */
   async openWorld(request: OpenWorldRequest): Promise<WorldSummary> {
     if (this.worker === null) this.startWorker();
-    const summary = await this.request<WorldSummary>('open', request);
-    this.worldPath = request.worldPath;
+    this.worldPath = null;
     this.undoStack = [];
     this.redoStack = [];
+    const summary = await this.request<WorldSummary>('open', request);
+    this.worldPath = request.worldPath;
     return summary;
   }
 
