@@ -945,8 +945,8 @@ aborting the process when their own re-save was loaded back**
 (`STATUS_STACK_BUFFER_OVERRUN`, `0xC0000409`), traced to four named writer
 defects A1–A4.
 
-**Three of those are now fixed** (patches `0024`–`0026`, 2026-08-27, §10.4 of the
-acceptance record): A1 the corrupt hex, A4 the header padding, and A5 — a fifth
+**Three of those are now fixed** (patches `0024`–`0026`, 2026-08-27, acceptance record
+§10.4): A1 the corrupt hex, A4 the header padding, and A5 — a fifth
 defect the corpus only exposed once A1 let a file load far enough to reach it,
 `write_byte`/`write_word` emitting type tokens the reader rejects. The same
 command over the same install now reports **24 of 28 measured, 0 crashed, 0
@@ -2667,7 +2667,7 @@ would survive it (§16.7).
 
 | # | Missing | Status | Note |
 |---|---|---|---|
-| 3.1 | **ASCII / BINARY ZEN save** | measured, deferred (§5) | Not an oversight, and half-closed since. T8 found all 20 ASCII worlds aborting the process when their own re-save was loaded back; patches `0024`–`0026` fixed A1, A4 and A5, and all 20 now load, save and re-load (§10.4). Patches `0045`–`0047` then closed A2 and A3, and a re-save now keeps each VObject's original packed/unpacked layout: OldCamp's container diff goes from `whole-file` to `event-aligned`, gap 0. They still classify `semantic-drift` — A6, `animMode`, and ASCII float text precision — and none has an engine verdict, so `saveWorld` stays BinSafe-only. BINARY has had no fidelity work at all. Only 4 of 28 retail `.zen` files are BinSafe, and Blender/KrxImpExp exports are not among them. |
+| 3.1 | **ASCII / BINARY ZEN save** | measured, deferred (§5) | Not an oversight, and half-closed since. T8 found all 20 ASCII worlds aborting the process when their own re-save was loaded back; patches `0024`–`0026` fixed A1, A4 and A5, and all 20 now load, save and re-load (acceptance record §10.4). Patches `0045`–`0047` then closed A2 and A3, and a re-save now keeps each VObject's original packed/unpacked layout: OldCamp's container diff goes from `whole-file` to `event-aligned`, gap 0. They still classify `semantic-drift` — A6, `animMode`, and ASCII float text precision — and none has an engine verdict, so `saveWorld` stays BinSafe-only. BINARY has had no fidelity work at all. Only 4 of 28 retail `.zen` files are BinSafe, and Blender/KrxImpExp exports are not among them. |
 | 3.2 | **Static light recompute** | warning planned (§11) | Spacer re-bakes vertex lighting; we do not, so moving geometry or a light leaves stale lightmaps. Phase 1b promises the warning. The bake stays out. |
 | 3.3 | **Merge/import another ZEN, export a selection** | planned (Phase 3) | Spacer's part workflow depends on it. |
 | 3.4 | **Portal / sector work** | planned (Phase 2) | Face selection, material assignment, leak detection. |
