@@ -580,6 +580,14 @@ export function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle('updater:dismissVersion', async (_event, version: string) => {
+    try {
+      await settingsService.setUpdaterDismissedVersion(typeof version === 'string' ? version : null);
+    } catch (error) {
+      console.error('[IPC] updater:dismissVersion error:', error);
+    }
+  });
+
   ipcMain.handle('updater:installUpdate', (_event, installerPath: string) => {
     try {
       updaterService.installUpdate(installerPath);

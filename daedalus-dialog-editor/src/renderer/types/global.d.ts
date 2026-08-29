@@ -201,6 +201,7 @@ export interface EditorAPI {
   checkForUpdate: () => Promise<UpdateCheckResult>;
   downloadUpdate: (url: string) => Promise<string>;
   installUpdate: (installerPath: string) => Promise<void>;
+  dismissUpdateVersion: (version: string) => Promise<void>;
   onDownloadProgress: (callback: (percent: number) => void) => () => void;
 }
 

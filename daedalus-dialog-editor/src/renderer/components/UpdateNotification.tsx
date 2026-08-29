@@ -96,6 +96,18 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ triggerCheck })
     setState({ kind: 'idle' });
   };
 
+  /**
+   * Persist the offered version so the startup check stops offering it. Without
+   * this the settings' `dismissedVersion` is written by nobody and the same
+   * build is offered on every launch (production review §2).
+   */
+  const handleSkipVersion = () => {
+    if (state.kind === 'update-available') {
+      void window.editorAPI.dismissUpdateVersion(state.result.latestVersion ?? '');
+    }
+    handleDismiss();
+  };
+
   // Only show chip when an update is available or we're in a post-check state
   const showChip =
     state.kind === 'update-available' ||
@@ -199,7 +211,7 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ triggerCheck })
         <DialogActions>
           {state.kind === 'update-available' && (
             <>
-              <Button onClick={handleDismiss}>Remind Me Later</Button>
+              <Button onClick={handleSkipVersion}>Skip This Version</Button>
               <Button variant="contained" onClick={() => void handleDownloadAndInstall()}>
                 Download &amp; Install
               </Button>

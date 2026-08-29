@@ -280,9 +280,16 @@ any later date; nothing in B forecloses C.
    `onHeadersReceived` was never a viable delivery mechanism here — it does not
    fire for `file://`, which is how production loads the renderer.
 
-   Still open: the single React error boundary wraps only `MainLayout`/welcome
+   ~~Still open: the single React error boundary wraps only `MainLayout`/welcome
    (`App.tsx`); AppBar, close guard, conflict/update dialogs are outside it, and
-   `ErrorBoundary.componentDidCatch` never writes to the log file.
+   `ErrorBoundary.componentDidCatch` never writes to the log file.~~ **FIXED
+   2026-08-29** — `App` is now an outer `ErrorBoundary` around `AppContent`, so a
+   throw in the chrome shows the fallback instead of blanking the window (the
+   inner boundary still keeps the chrome alive when only `MainLayout` fails), and
+   `componentDidCatch` forwards message + error stack + component stack through
+   `logRendererError` — the only path that reaches the log file, since a boundary
+   swallows the error before `window.onerror` sees it. Guarded by
+   `tests/App.errorBoundary.test.tsx` and `tests/ErrorBoundary.logging.test.tsx`.
 
 ### Solid (verified against `docs/architecture/security-model.md` — claims true)
 
@@ -321,16 +328,31 @@ any later date; nothing in B forecloses C.
   readable error here; the index path fails silently before
   `PathValidationService` ever runs.
 - **Updater loose ends:** "View release notes" is a no-op
-  (`UpdateNotification.tsx:160`; no `shell.openExternal` channel);
-  `autoCheckOnStartup`/`dismissedVersion` are persisted but never read — the
-  startup check is an unconditional 5s timer (`App.tsx:127-130`) and "Remind
-  Me Later" re-prompts every launch.
+  (`UpdateNotification.tsx:160`; no `shell.openExternal` channel) — **still
+  open**. ~~`autoCheckOnStartup`/`dismissedVersion` are persisted but never read
+  — the startup check is an unconditional 5s timer (`App.tsx:127-130`) and
+  "Remind Me Later" re-prompts every launch.~~ **FIXED 2026-08-29** — both are
+  read in `UpdaterService.checkForUpdate` (the startup timer is its only
+  caller, so the settings stay a main-process fact and need no getter channel):
+  `autoCheckOnStartup: false` returns before the first HTTPS call, and a
+  `latestVersion` equal to `dismissedVersion` is not offered while a newer build
+  still is. The button that was "Remind Me Later" is now "Skip This Version" and
+  writes the setting through the new `updater:dismissVersion` channel — the old
+  label promised a re-prompt the persisted setting cannot express. Guarded by
+  `tests/services/UpdaterService.test.ts` and
+  `tests/UpdateNotification.dismiss.test.tsx`; documented in
+  `docs/architecture/security-model.md`.
 - **Observability:** main-process fatal errors are log-only by design (no
   dialog/exit, `main.ts:50-59`); no crash reporter (stated privacy choice);
-  hand-rolled 1 MiB log rotation. Save-error copy bug: the encoding failure
+  hand-rolled 1 MiB log rotation. ~~Save-error copy bug: the encoding failure
   message advises converting to UTF-8 (`saveError.ts:51`) while the pipeline
   deliberately writes windows-1252 (`FileService.ts:236`) — wrong advice for
-  this toolchain.
+  this toolchain.~~ **NOT REPRODUCIBLE 2026-08-29** — the copy bug was already
+  gone when the card was picked up: `describeSaveError`'s `'encoding'` case
+  names windows-1252 as the format Gothic tooling requires and advises removing
+  or replacing the offending characters, and no "UTF-8" advice survives anywhere
+  in `src/`. The finding was written against an older revision; no code changed
+  for it.
 - **Distribution:** no macOS target; Linux AppImage declared but never built
   (only `build-windows.yml` exists, dispatch-only); `GITHUB_RUN_NUMBER`-based
   versioning resets if the workflow file is renamed.

@@ -202,6 +202,46 @@ describe('UpdaterService.checkForUpdate', () => {
     expect(result.updateAvailable).toBe(false);
   });
 
+  it('does not check when autoCheckOnStartup is disabled', async () => {
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(
+      makeDefaultUpdaterSettings({ autoCheckOnStartup: false })
+    );
+
+    const result = await service.checkForUpdate();
+
+    expect(result.updateAvailable).toBe(false);
+    expect(https.get).not.toHaveBeenCalled();
+    expect(mockSetUpdaterLastCheckTimestamp).not.toHaveBeenCalled();
+  });
+
+  it('reports no update for a version the user already dismissed', async () => {
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(
+      makeDefaultUpdaterSettings({ dismissedVersion: '0.1.0-build.20' })
+    );
+
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20);
+    setupHttpsMock([{ body: release }, { body: meta }]);
+
+    const result = await service.checkForUpdate();
+    expect(result.updateAvailable).toBe(false);
+  });
+
+  it('still reports an update newer than the dismissed version', async () => {
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(
+      makeDefaultUpdaterSettings({ dismissedVersion: '0.1.0-build.20' })
+    );
+
+    const { meta, release } = buildMockRelease('0.1.0-build.21', 21);
+    setupHttpsMock([{ body: release }, { body: meta }]);
+
+    const result = await service.checkForUpdate();
+    expect(result.updateAvailable).toBe(true);
+    expect(result.latestVersion).toBe('0.1.0-build.21');
+  });
+
   it('handles missing assets in release gracefully', async () => {
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());

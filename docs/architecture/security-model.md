@@ -133,6 +133,14 @@ network access (the updater) is unaffected — see *Update integrity* below.
 - **re-hashes the file on disk immediately before `spawn`** — closing the
   temp-file-swap window between download and install.
 
+**When a check happens.** The renderer's startup timer is the only caller of
+`updater:checkForUpdate`, so the persisted updater settings are honoured in
+`UpdaterService.checkForUpdate` rather than in the renderer: `autoCheckOnStartup:
+false` returns "no update" before any network call, and a `latestVersion` equal
+to `dismissedVersion` is not offered. "Skip This Version" in the update dialog is
+what writes `dismissedVersion`, through `updater:dismissVersion`; a build newer
+than the dismissed one is offered again, because the comparison is exact.
+
 **Tolerant (R1) phase:** a missing `sha256` warns and proceeds. Flipping this to a
 hard requirement is the **strict (R2)** step, gated on the R1→R2 sequencing rule
 in the [release checklist](../release-checklist.md#1-update-chain).

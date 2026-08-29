@@ -150,8 +150,6 @@ card waits on live at its pointer — put new prose there, not here.
 only the level editor, so "no actionable cards" never meant "no work". Each
 pointer is a finding id in the file the routing table names.
 
-- **Three gaps the production review left uncarded** — the save-error advice,
-  the unread updater settings, the error boundary. Any run. *production* §2 gaps
 - **The MCP server's Phase 0, which decides nothing** — a pure move; tests stay
   green. Any run. `docs/plans/mcp-server.md` §2
 
@@ -201,6 +199,13 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Three gaps the production review left uncarded** — landed: the updater now
+  reads `autoCheckOnStartup` and `dismissedVersion` (the button that promised a
+  re-prompt is "Skip This Version" and writes the setting), and an outer
+  `ErrorBoundary` covers the chrome while `componentDidCatch` reaches the log
+  file. The save-error advice needed no change — it was already fixed.
+  *production* §2 gaps, §2.6
+
 - **The simulator's six smaller findings** — landed: the projection is gated on
   the modal being open, a refused launch says why and disables the entry it
   would refuse, `/=` truncates toward zero, a permanent C_INFO is never taught,
@@ -215,13 +220,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   empty `conditions` plus a non-empty body is the signature, and availability
   reports it unknown with a reason instead of trivially true. *simulator* H1
 
-- **Spawns are in the frame** — landed as `SpawnOverlay` behind its own
-  *Spawns* toggle: one marker per point, an unresolved point dropped rather
-  than drawn at the origin, and a `refresh()` beside the waynet's because the
-  markers copy the positions instead of drawing the payload. §16.19 slice 4
-
-*(the three oldest §16.19 spawn-index cards were dropped 2026-08-29 to stay
-under the budget; their substance is in `git log` and none pointed forward.)*
+*(the §16.19 spawn-index cards, the last of them the *Spawns are in the frame*
+overlay, were dropped 2026-08-29 to stay under the budget; their substance is in
+`git log` and none pointed forward.)*
 
 *(flushed 2026-08-29 after the board-loop run that closed the 2026-08-29 review:
 twelve cards, each marked FIXED at its pointer, reasoning in `git log`. Nothing

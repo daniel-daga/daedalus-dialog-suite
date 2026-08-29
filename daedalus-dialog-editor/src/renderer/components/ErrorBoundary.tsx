@@ -36,6 +36,12 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
+    // A render error a boundary handles never reaches window.onerror, so this
+    // is the only path that puts it in the log file the app can show.
+    window.editorAPI?.logRendererError?.({
+      message: error.message,
+      stack: `${error.stack ?? ''}\nComponent stack:${errorInfo.componentStack}`,
+    });
     this.props.onError?.(error, errorInfo);
   }
 

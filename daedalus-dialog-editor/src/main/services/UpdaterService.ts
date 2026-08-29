@@ -134,8 +134,15 @@ export class UpdaterService {
       return { updateAvailable: false, currentVersion };
     }
 
-    // Rate-limit: skip if checked within the last hour
+    // The only caller is the renderer's startup check (App.tsx's timer), so
+    // the persisted opt-out is honoured here rather than in the renderer — the
+    // setting stays a main-process fact and needs no channel of its own.
     const updaterSettings = await this.settingsService.getUpdaterSettings();
+    if (!updaterSettings.autoCheckOnStartup) {
+      return { updateAvailable: false, currentVersion };
+    }
+
+    // Rate-limit: skip if checked within the last hour
     const now = Date.now();
     if (
       updaterSettings.lastCheckTimestamp !== null &&
@@ -174,7 +181,11 @@ export class UpdaterService {
       return { updateAvailable: false, currentVersion };
     }
 
-    const updateAvailable = isNewerVersion(meta.version, currentVersion);
+    // A version the user dismissed is not offered again; a version newer than
+    // the dismissed one is, because the exact-match comparison stops applying.
+    const updateAvailable =
+      isNewerVersion(meta.version, currentVersion) &&
+      meta.version !== updaterSettings.dismissedVersion;
 
     // Pin the installer URL and the whole metadata so downloadUpdate can only
     // fetch what we offered and verify against the digest/size we saw here.

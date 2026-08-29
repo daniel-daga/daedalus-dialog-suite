@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   checkForUpdate: () => ipcRenderer.invoke('updater:checkForUpdate'),
   downloadUpdate: (url: string) => ipcRenderer.invoke('updater:downloadUpdate', url),
   installUpdate: (installerPath: string) => ipcRenderer.invoke('updater:installUpdate', installerPath),
+  dismissUpdateVersion: (version: string) => ipcRenderer.invoke('updater:dismissVersion', version),
   onDownloadProgress: (callback: (percent: number) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, percent: number) => callback(percent);
     ipcRenderer.on('updater:downloadProgress', listener);

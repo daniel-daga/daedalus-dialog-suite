@@ -53,7 +53,7 @@ const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }
   { value: 'gothic', label: 'Gothic', icon: <AutoAwesomeIcon fontSize="small" /> },
 ];
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const { openFile, activeFile, resetEditorSession } = useEditorStore((state) => ({
     openFile: state.openFile,
     activeFile: state.activeFile,
@@ -573,6 +573,18 @@ const App: React.FC = () => {
     </Box>
   );
 };
+
+/**
+ * The chrome — AppBar, close guard, conflict and update dialogs — lives outside
+ * the boundary that wraps MainLayout, so a crash there used to take the whole
+ * window down with it (production review §2). This outer boundary catches those;
+ * the inner one still keeps the chrome alive when only MainLayout fails.
+ */
+const App: React.FC = () => (
+  <ErrorBoundary>
+    <AppContent />
+  </ErrorBoundary>
+);
 
 export default App;
 
