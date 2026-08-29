@@ -303,6 +303,14 @@ When a plan is complete, extract durable decisions into canonical docs and delet
 
 ---
 
+## Talking to Daniel
+
+Write replies short and plain. Lead with the answer, then only what changes a
+decision. No status theatre, no restating what the diff already says, no
+paragraph where a sentence does. Prose, not nested bullet trees. Long form goes
+in the plan or the board, which is what they are for — a reply that has to be
+skimmed is too long.
+
 ## General Conventions
 
 - **TDD everywhere**: failing test → minimal implementation → green. Tests must genuinely exercise the feature — a test that passes without the feature being correctly implemented is not acceptable. For Playwright E2E tests, manually verify the test interacts with the real UI behavior, not just that it passes.
