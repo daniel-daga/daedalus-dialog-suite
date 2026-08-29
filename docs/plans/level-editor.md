@@ -5073,3 +5073,88 @@ file, dialog or function, which is the panel's entire navigation model), so the
 answer is a surface on the World side, and nobody has designed one. Until then
 neither slice is plumbed, and a third portal check would only deepen the debt --
 prefer designing the surface over adding checks.
+
+---
+
+### 16.19 The Daedalus overlay — the first slices (§11 Phase 1c)
+
+Phase 1c is a **phase**, not a card. §11 gives it five deliverables — NPC/item
+rendering from static spawns, a time slider, occupancy/gap/overlap checks,
+cross-validation in the problems panel, and go-to-definition both directions —
+and only some of that is reachable with the data the project actually has.
+Four slices are carded here; the rest stays a phase and is deliberately not on
+the board, for reasons named at the bottom.
+
+**What already exists, read out of the code 2026-08-29 rather than assumed.**
+§16.8's waypoint work landed more of 1c than its own section claims:
+
+- `extractWaypointSites` in `src/main/utils/semanticMetadataUtils.ts` already
+  visits **every** `Wld_InsertNpc` and `Wld_InsertItem` call site — both are in
+  the measured `ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX` table at argument 1 — and
+  keeps the waypoint name. It rides the `MetadataWorkerPool` pass inside
+  `buildProjectIndex`, so it is not subject to the renderer's
+  `PARSED_FILES_CAP = 512`.
+- `WaypointPanel.tsx` answers the world→script direction for a selected
+  waypoint, and `waypointNotInWorld` is the one Problems rule of six that
+  cross-checks script against world.
+
+So the overlay is not starting from nothing. **The gap is that the index keeps
+argument 1 and discards argument 0** — the NPC or item instance being spawned —
+which is precisely the half a spawn needs and a routine does not.
+
+**Slice 1 — the spawn index.** A `spawnSites` field on `ProjectIndex` carrying
+instance, spawn point, file and line, built in the same worker-pool pass as
+`waypointSites` and following the same pattern `voiceIds` established. It is
+deliberately a second field rather than a widening of `waypointSites`: a spawn
+is not a routine (§16.8 measured `Wld_InsertNpc` at 3,722 literal sites against
+the daily routines' 6,223, and the two answer different questions about the same
+waypoint). `InsertNpcAction.spawnPointIsExpression` already exists in the parser
+and is the carrier for statically unresolvable sites — loops, `Hlp_Random`,
+guild conditions — which are **marked dynamic and excluded, never guessed**
+(§8, brief §5.1, a hard rule).
+
+**Slice 2 — the duplicate-spawn rule.** §8 names "duplicate NPC IDs" as
+cross-validation and nothing implements it. Over slice 1's index this is a
+script-locus finding, so it has a `filePath` and fits the panel's navigation
+model as it stands — which is what makes it the cross-validation slice worth
+taking first, ahead of any finding whose locus is the world.
+
+**Slice 3 — the waypoint panel names who spawns there.** The panel lists
+function name and file for every site naming the selected waypoint, and cannot
+distinguish "three NPCs are inserted here" from "a routine passes through". With
+slice 1 it can, and the panel is the surface that already exists.
+
+**Slice 4 — spawn markers in the viewport.** A marker layer at the resolved
+world position of each static spawn: the first thing in 1c a person *sees*.
+Scoped to markers on purpose — see below.
+
+**What is deliberately not carded, and why:**
+
+- **NPC and item *visuals* are not reachable.** §11's "NPC/item rendering"
+  reads as drawing the actual mesh, and the data for it does not exist:
+  `ProjectIndex` carries `npcs` and `npcPrototypes` as **name strings only**, no
+  instance bodies and no property values, so the `B_SetNpcVisual` chain that
+  resolves an instance to a mesh has nothing to walk. Closing that means either
+  a fifth extraction pass over instance bodies or a semantic model in main,
+  which `CLAUDE.md` records the main process deliberately not having. Slice 4
+  draws markers because a marker needs only the position slice 1 already yields.
+- **The time slider needs the routine *windows*, not the routine names.**
+  `ProjectIndex.routines` is the set of `dailyRoutine` name strings off NPC
+  instances and feeds autocomplete; the `TA_*` windows §8 asks for are a
+  different extraction that nothing does.
+- **Occupancy, gap and overlap checks are world-locus findings** and hit the
+  same wall §16.8 and §16.18 already stand behind: `Problem.filePath` is
+  non-optional and the panel's navigation model is file/dialog/function. This is
+  now the fourth thing waiting on a designed surface for world-shaped findings.
+  **Prefer designing that surface over adding a fourth checker with no
+  consumer.**
+- **W4, script→world go-to-definition, is called large at §16.8** and stays
+  that way: nothing in the editor currently displays a script-side waypoint name
+  to click, so the card would be a UI affordance plus a lookup plus a camera
+  call, and it decomposes.
+
+**Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
+— but what remains of it on the board (Euler order against Spacer) needs Spacer
+itself and a person, as do the Gate 2b `07` rows. These slices were carded by
+Daniel on 2026-08-29 with that ordering understood: they are the work an
+unattended run *can* take while the 1b-2 remainder waits on hardware.

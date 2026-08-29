@@ -144,6 +144,21 @@ card waits on live at its pointer — put new prose there, not here.
 - **The free-point guard may be too narrow** — `startsWith` where ZenGin looks
   to match by substring. Needs the engine. **Daniel.** *first pass* 6
 
+**Phase 1c — Daedalus overlay**
+
+- **The spawn index keeps the waypoint and drops the NPC** — every
+  `Wld_InsertNpc`/`Wld_InsertItem` site is already visited; a `spawnSites` field
+  carries the instance too, dynamic sites excluded. Any run. §16.19 slice 1
+- **An NPC spawned at two points is nobody's finding** — the duplicate-spawn
+  check §8 names and nothing implements. Script-locus, so it fits the panel as
+  it stands. Any run. §16.19 slice 2
+- **The waypoint panel cannot say who spawns there** — it lists sites, so three
+  NPCs inserted at a point read like a routine passing through. Any run.
+  §16.19 slice 3
+- **No spawn is in any frame** — a marker layer at each static spawn's resolved
+  position. Markers, not NPC visuals: §16.19 says why the meshes are not
+  reachable. Any run. §16.19 slice 4
+
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -190,30 +205,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Five cleanups, doc first** — all five landed: `problems-panel.md` has its
-  sixth rule and both new scan inputs, a Problems click falls back to the
-  problem's file, the free-point bit is one exported constant, the scan is
-  handed the stored waynet view, and `BvhBuilder.dispose` settles its pending
-  builds. board-loop. *first pass* 7-10 and *renderer* 4, all five FIXED
-
-- **Binding hardening, four of them** — all four refuse now: an over-long index
-  path segment, an out-of-range mipmap level, a polygon corner past the vertex
-  list, and a `null` container that classifies instead of throwing. board-loop.
-  *binding* 3-6, all four FIXED
-
-- **The scene tree does not follow the world** — the applied ops reach it as a
-  prop: the row and the filter re-read on a rename, and `expanded` is dropped on
-  a *committed* renumber. board-loop. *renderer* 2-3, both FIXED
-
-- **The waypoint rule's problem ids collide** — the rule dedupes by emitted id,
-  so a routine naming the same missing waypoint twice is one problem.
-  board-loop. *first pass* 5, FIXED
-
-- **The waynet store's three defects** — an empty payload is stored as "nothing
-  known", `openWorld` clears the previous world's waynet, and the identity guard
-  compares the free points as well as the names. board-loop. *first pass* 2-4,
-  all three FIXED
-
-*(flushed 2026-08-29 — the four cards before these ones — the two `ops/main`
-fixes and the two binding fixes — are marked FIXED at their pointers and their
-reasoning is in `git log`.)*
+*(flushed 2026-08-29 after the board-loop run that closed the 2026-08-29 review:
+twelve cards, each marked FIXED at its pointer, reasoning in `git log`. Nothing
+in them pointed forward.)*
