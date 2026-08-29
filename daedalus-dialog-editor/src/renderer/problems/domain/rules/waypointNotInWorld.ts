@@ -32,9 +32,17 @@ export const waypointNotInWorldRule: LintRule = (view): Problem[] => {
     if (world.pointNameKeys.has(upper)) continue;
     if (world.freePointNames.some((freePoint) => freePoint.startsWith(upper))) continue;
 
+    // One problem per *site*, and a site is a file and a function: a routine
+    // naming the same place twice is the normal Gothic shape, and the two
+    // entries would carry one id, which is what `ProblemsList` keys on.
+    const seen = new Set<string>();
     for (const site of sites) {
+      const id = `waypoint-not-in-world:${site.filePath}:${site.functionName}:${upper}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+
       problems.push({
-        id: `waypoint-not-in-world:${site.filePath}:${site.functionName}:${upper}`,
+        id,
         rule: 'waypoint-not-in-world',
         severity: 'warning',
         message: `Waypoint "${name}" is not in the open world. It may belong to another world.`,

@@ -139,8 +139,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **The waypoint rule's problem ids collide** — one function naming the same
-  missing waypoint twice yields two identical ids. Any run. *first pass* 5
 - **The scene tree does not follow the world** — a rename re-renders neither
   the row nor the filter, and `expanded` holds indices a renumber invalidates.
   Any run. *renderer* 2-3
@@ -201,26 +199,15 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The waypoint rule's problem ids collide** — the rule dedupes by emitted id,
+  so a routine naming the same missing waypoint twice is one problem.
+  board-loop. *first pass* 5, FIXED
+
 - **The waynet store's three defects** — an empty payload is stored as "nothing
   known", `openWorld` clears the previous world's waynet, and the identity guard
   compares the free points as well as the names. board-loop. *first pass* 2-4,
   all three FIXED
 
-*(flushed 2026-08-29 — the two `ops/main` fixes before this one are in commits
-7298fe6 and f587b74 and marked FIXED at their pointer; `git log` is the record.)*
-
-- **Waypoint names cross the binding as windows-1252** — the five name
-  arguments go through `RequiredCp1252Arg`, and a message quoting a stored name
-  decodes it back. board-loop. *binding* 2, FIXED
-
-- **The waynet mutators mark the handle mutated** — the six waynet ops go
-  through `markMutated` like the VOB ops, so a mutated handle's `container` is
-  null instead of the pre-edit file's digests. board-loop. *binding* 1, FIXED
-
-- **`applyOps` bounds-checks `op.vob`** — an op naming a VOB the projection
-  does not have is a `RangeError`, not a silent typed-array no-op reported as
-  success. board-loop. *ops/main* 3, marked FIXED
-
-- **An `AddVob` with a null `to` is refused at the IPC boundary** — the delete
-  direction is `invertOp`'s, built in main off the undo stack, and is no longer
-  a request the renderer can send. board-loop. *ops/main* 4, marked FIXED
+*(flushed 2026-08-29 — the four cards before these ones — the two `ops/main`
+fixes and the two binding fixes — are marked FIXED at their pointers and their
+reasoning is in `git log`.)*

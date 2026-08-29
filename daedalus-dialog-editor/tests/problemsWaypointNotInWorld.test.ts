@@ -50,6 +50,19 @@ describe('waypointNotInWorldRule', () => {
     expect(new Set(problems.map((problem) => problem.id)).size).toBe(2);
   });
 
+  it('emits one problem for a function naming the same waypoint twice', () => {
+    // The normal Gothic routine shape: `Rtn_Start_Diego` walks to the same
+    // place twice. Two sites, one id — and `ProblemsList` keys on the id.
+    const view = viewOf(
+      { OW_PATH_42: [site('Rtn.d', 'Rtn_Start_Diego'), site('Rtn.d', 'Rtn_Start_Diego')] },
+      world(['NW_CITY_01'])
+    );
+
+    const problems = waypointNotInWorldRule(view);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatchObject({ filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego' });
+  });
+
   it('matches waypoint names case-insensitively', () => {
     const view = viewOf(
       { nw_city_01: [site('Rtn.d', 'Rtn_Start_Diego')] },

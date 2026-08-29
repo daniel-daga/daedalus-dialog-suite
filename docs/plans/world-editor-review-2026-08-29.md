@@ -69,7 +69,11 @@ the test that holds it; everything unmarked is still open.
    `freePoints` stays stale and a site naming the promoted point keeps a false
    warning until an unrelated name change churns the set.
 
-5. **Duplicate `Problem.id`s.** `waypointNotInWorld.ts:43` — the id is
+5. **Duplicate `Problem.id`s.** — **FIXED 2026-08-29**: the rule dedupes by the
+   id it is about to emit, so a function naming the same missing waypoint twice
+   is one problem. Held by *"emits one problem for a function naming the same
+   waypoint twice"* (`problemsWaypointNotInWorld.test.ts`).
+   `waypointNotInWorld.ts:43` — the id is
    `…:${filePath}:${functionName}:${NAME}`, but `extractWaypointSites` pushes one
    entry per call site with no dedupe (`semanticMetadataUtils.ts:185`). One
    `Rtn_` function naming the same missing waypoint twice — the normal Gothic
