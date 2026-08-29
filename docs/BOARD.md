@@ -158,6 +158,24 @@ pointer is a finding id in the file the routing table names.
 - **`checkPortalMaterials` still has no consumer** — built and retail-tested
   2026-08-28, called by nothing. Any run. §16.20 slice 3
 
+**Phase 2 — the measurement tranche** (§7 decision, §16.22). One script per
+question, then one check per answer, and the two are never the same commit.
+A measurement is allowed to kill its own check.
+
+- **Portal pairing is unmeasured** — does every `P:A_B` have its `P:B_A` across
+  the three retail worlds? Any run. §16.22 q1
+- **The planarity tolerance is unmeasured** — the worst retail coplanarity
+  deviation is the tolerance. Any run. §16.22 q2
+- **Portal orientation is unmeasured** — do normals point consistently with
+  respect to their two sectors? Any run. §16.22 q3
+- **Waypoint occupancy is unmeasured** — how many NPCs retail spawns on one
+  waypoint, over the spawn index. Any run. §16.22 q4
+
+**Phase 1c — W4** (§16.23)
+
+- **A script's spawn point does not go to the world** — the renderer already
+  shows it and slice 2 built the framing; W4 is a control on it. Any run. §16.23
+
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -209,21 +227,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **An enum field is a dropdown** — the eight keys are `CLASS_FIELDS` entries of
-  a new `enum` kind with no bounds, so an out-of-set value crosses every layer
-  and an undo restores it; binding case, IPC branch and grid `<select>` in one
-  change. No engine has seen one written. §16.21
-- **The enum sets are written down** — `CLASS_ENUM_FIELDS`/`enumValuesOf`, eight
-  fields over thirteen classes; a retail sweep found every value inside its set,
-  and the two mover enums a save drops are held out. §16.21
-- **World findings navigate** — the panel requests a focus, `WorldSurface`
-  consumes it once, `framePoint` frames a waypoint. §16.20 slice 2
-- **The locus union landed** — `Problem.locus` is script-or-world, the eight
-  rules and the panel migrated with no new rule in the commit. §16.20 slice 1
-
-*(flushed 2026-08-29. Twenty-two cards across five board-loop rounds: the
-world-editor review, Phase 1c's spawn slices, the dialog-simulator findings, the
-production-review gaps and the MCP composition root. Each is FIXED at its
-pointer and reasoned in `git log`; what stayed open — the simulator's M2, the
-two shapes `!Npc_KnowsInfo` leaves generic — is marked open in
-`dialog-simulator-review-findings.md` rather than here.)*
+*(flushed 2026-08-29. Twenty-six cards across six rounds. The four enum/locus
+cards' forward facts are at §16.21 — the two held-out mover enums, and that no
+engine has witnessed any of the eight written.)*

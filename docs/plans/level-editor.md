@@ -5458,3 +5458,60 @@ proved `SetVobClassProp` reaches the file and the engine plays it, but for scala
 fields; an enum write is the same code path with a different member, and
 `zCVobLight.lightType` in particular is a value retail places nowhere (0 on all
 4,649 lights), so nothing in the corpus says what SPOT looks like.
+
+---
+
+### 16.22 The measurement tranche (§11 Phase 2, decided 2026-08-29)
+
+**Every remaining portal check is blocked on a number nobody has measured, not
+on code.** §16.18 shipped the material checks *because* their rules came out of
+counting retail (`P:` names and sector counts across all three worlds) and left
+the pairing check unwritten for exactly the missing measurement: whether a
+`P:A_B` without its `P:B_A` is an error or a convention. Planarity and
+orientation are in the same position, and so is Phase 1c's occupancy check —
+a threshold invented rather than measured would flag half of Khorinis as a
+crowd.
+
+This is how this project has settled every contested question: the scale gizmo
+died on 41,393 measured transforms (§7), the Euler order was picked on retail
+singularity counts (§16.4), the waypoint-externals table is closed *because* it
+is measured (§16.8). The precedent for the instrument is `check-vob-bbox.js`
+and `check-visual-winding.js` in `zenkit-node/scripts/`.
+
+**The shape is one script per question, then one check per answer.** A
+measurement card writes a script that reports against the three retail worlds
+and records what it found *in this section*; the check card that follows takes
+its threshold from that record. The two are separate cards deliberately — a
+measurement that lands in the same commit as the rule it justifies cannot be
+read as evidence for it.
+
+The four questions:
+
+1. **Portal pairing.** Does every `P:A_B` have a `P:B_A`? §16.18 believes retail
+   has both directions but never counted. If it is 100%, the check is a warning;
+   if retail itself has one-sided portals, it is not a check at all.
+2. **Planarity.** The worst coplanarity deviation across retail portal polygons
+   *is* the tolerance — anything tighter flags shipped geometry.
+3. **Orientation.** Whether portal normals point consistently with respect to
+   their two sectors, and if so in which direction. Both slices ride
+   `getPortals`, which §16.20 slice 3 gives a consumer path.
+4. **Waypoint occupancy.** How many NPCs retail spawns on one waypoint, over
+   the spawn index §16.19 built. The distribution's tail is the threshold.
+
+**A measurement is allowed to kill its own check.** If retail carries one-sided
+portals, or spawns nine NPCs on a waypoint routinely, the honest outcome is to
+write that down here and card nothing — the same outcome the scale gizmo got.
+
+### 16.23 W4 gets its affordance (§16.8, decided 2026-08-29)
+
+§16.8 called W4 large on a premise that has since expired: "nothing in the
+editor currently displays a script-side waypoint name to click". Two things
+changed it. `InsertNpcActionRenderer` renders the spawn point of every
+`Wld_InsertNpc` action in the dialog editor, and §16.20 slice 2 builds the
+world-locus navigation — select and frame — that a jump needs.
+
+So W4 is now a control on that renderer, not a Monaco feature. It is disabled
+with its reason when no world is open or when the point is not in the open one,
+which is the same three-answer problem §16.8 reserved: found here, not in this
+world, or nowhere at all. The third answer stays reserved — the editor holds one
+world and has no index of the others.
