@@ -137,8 +137,9 @@ card waits on live at its pointer — put new prose there, not here.
 - **`07` is built and has not been played** — `07a`/`07b` (the torch subtree,
   its own A/B in a cleared frame) and `07c` (the renumber with nothing else in
   the file) are the last of Gate 2b's unwitnessed rows. Needs the engine, so it
-  needs a person. **Daniel.** §16.2, run sheet §07 — and the install has to be
-  restored first, see the planarity card
+  needs a person. **Daniel.** §16.2, run sheet §07 — candidates are built in
+  `zenkit-node/tools/cand`; `engine-batch.ps1 -Dir tools/cand -Only 00,07 -Full`
+  runs them through GMBT, and that script has been parsed, never played
 
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
@@ -162,14 +163,9 @@ routing table's review files.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **The planarity tolerance is unmeasured** — blocked: the script and its tests
-  landed, but **the MDK extraction is gone from this machine** and every
-  `--world` script has lost its corpus. Needs a re-extract, so it needs a
-  person. §16.22 q2, `environment-hazards.md`
-- **Portal orientation is unmeasured** — blocked on the same missing corpus as
-  the planarity card: it rides `getPortals` over the retail worlds and there is
-  no `.zen` left on this machine. Needs the re-extract, so it needs a person.
-  §16.22 q3, `environment-hazards.md`
+- **Portal orientation is unmeasured** — unblocked: the corpus is
+  `node scripts/extract-worlds.js` away and `getPortals` is the walk; the
+  sector-facing half is what the planarity script does not measure. §16.22 q3
 
 **Phase 1b-2 — VOB editing**
 
@@ -224,6 +220,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The retail install is stock and stays so** — the corpus is
+  `scripts/extract-worlds.js` reading the VDFs through the new `vfsRead`, the
+  candidates ship as a GMBT mod, `engine-batch.ps1` drives `gmbt test` and
+  writes nothing into the install. Planarity (§16.22 q2) measured on the way:
+  tolerance ≥ 12.1 units. `environment-hazards.md`, *"Gothic II, as the engine
+  oracle"*.
 - **The board's rules are enforced, not trusted** — `npm run board:check` (root,
   and the `zen-world-tests` CI job) fails the card budget, a §16 subsection still
   declaring itself closed, a pointer resolving to no heading, and a section

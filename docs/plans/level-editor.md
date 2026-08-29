@@ -1933,15 +1933,36 @@ apart rather than reported unpaired (they have no mirror to look for). It rides
 the same undecided consumer question as slice 1 — the check is writable, its
 locus is not, and it is a card for a person to file, not for a run to invent.
 
-**q2 is written and unrun, 2026-08-29: the instrument landed, the corpus did
-not.** `check-portal-planarity.js` in `zenkit-node/scripts/` is complete and
-tested (`test/portalPlanarity.test.js`, 8 cases), and it reports nothing,
-because the retail worlds are no longer on this machine — the whole MDK
-extraction under `_work\Data` is empty and the six VDFs are back under their
-real names (`environment-hazards.md`, *"the MDK extraction is gone"*). So q2's
-number is blocked on a re-extract, and so is any rerun of q1, the winding
-measurement or the bbox check: all four take a `.zen` path, and the binding
-cannot read a world out of an archive.
+**q2 answered, 2026-08-29: retail portal polygons sit up to 12.1 units off
+their own plane, and the stored plane is `n·p = d`.** `check-portal-planarity.js`
+in `zenkit-node/scripts/` (`test/portalPlanarity.test.js`, 8 cases) ran over
+the three worlds the same day the corpus came back — not from a re-extract into
+the install but from `scripts/extract-worlds.js`, which reads the `.ZEN`s out of
+`Worlds.vdf` + `Worlds_Addon.vdf` through the binding's own VFS (`vfsRead`) and
+leaves the install stock; the "binding cannot read a world out of an archive"
+blocker this paragraph used to name is gone, and so is the one on q1's rerun,
+the winding measurement and the bbox check.
+
+| world | portal polygons | unjoined / flag mismatches | spread max | p99 | median | `\|n·p + d\|` closer |
+|---|---|---|---|---|---|---|
+| OldWorld | 400 | 0 / 0 | **12.10** | 1.33 | 3e-5 | 0 |
+| NewWorld | 1,933 | 0 / 0 | 6.92 | 1.21 | 6e-6 | 0 |
+| AddonWorld | 1,662 | 0 / 0 | 5.03 | 1.44 | 5e-6 | 0 |
+
+The join held on all 3,995 polygons, every stored normal is unit-length, and
+`|n·p − d|` is the closer form in 100% of them — so `plane_distance` is the
+signed distance with the normal pointing *away* from the origin side, never
+`n·p + d = 0`. 3,135 of the polygons are triangles, which are flat by
+construction; the spread lives in the quads and up (OldWorld has 7-gons,
+AddonWorld 12-gons), where 1% of retail is more than ~1.2–1.4 units off flat
+and the worst shipped polygon is 12.1. **So the tolerance is ≥ 12.1 units** —
+anything tighter flags OldWorld as shipped — and a check at that width catches
+only a polygon folded outright, which is the honest thing it can do.
+
+**q3 is unblocked and unrun.** It rides the same `getPortals` walk over the
+same corpus; the sector-facing half — which of a portal's two sectors its
+normal points into — is not what the planarity script measures, and it is a
+card for a person to file.
 
 What the script does, so the next run does not re-derive it. Two numbers per
 portal polygon: **spread**, `max(n·p) - min(n·p)` over the corners with the
