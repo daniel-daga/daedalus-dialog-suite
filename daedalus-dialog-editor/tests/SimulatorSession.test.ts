@@ -150,6 +150,66 @@ describe('SimulatorSession', () => {
     }));
   });
 
+  it('never teaches a permanent C_INFO: the engine does not register those as known', () => {
+    const base = model();
+    const source = model({
+      dialogs: [{ ...base.dialogs[0], permanent: true }]
+    });
+    const session = new SimulatorSession(source);
+
+    expect(session.startDialog('DIA_Intro')).toBe(true);
+    expect(session.getState().knownInfos).toEqual(new Set());
+    expect(session.getAvailableDialogs('npc_guard')).toMatchObject([{ entry: { name: 'DIA_Intro' } }]);
+  });
+
+  it('names the reason an entry cannot be launched instead of refusing silently', () => {
+    const base = model();
+    const source = model({
+      functions: new Map([
+        ...base.functions,
+        ['dia_false_cond', fn('DIA_False_Cond', [], [
+          { type: 'VariableCondition', variableName: 'MIS_PATH', operator: '==', value: 7, negated: false }
+        ])],
+        ['dia_unknown_cond', fn('DIA_Unknown_Cond', [], [
+          { type: 'NpcIsDeadCondition', npc: 'Guard', negated: false }
+        ])]
+      ]),
+      dialogs: [
+        ...base.dialogs,
+        {
+          name: 'DIA_Broken', npc: 'NPC_Guard', nr: 20, sourceOrder: 1,
+          conditionFunction: 'DIA_Intro_Cond', informationFunction: 'DIA_Missing_Info',
+          important: false, permanent: false
+        },
+        {
+          name: 'DIA_False', npc: 'NPC_Guard', nr: 30, sourceOrder: 2,
+          conditionFunction: 'DIA_False_Cond', informationFunction: 'DIA_Intro_Info',
+          important: false, permanent: false
+        },
+        {
+          name: 'DIA_Unknown', npc: 'NPC_Guard', nr: 40, sourceOrder: 3,
+          conditionFunction: 'DIA_Unknown_Cond', informationFunction: 'DIA_Intro_Info',
+          important: false, permanent: false
+        }
+      ]
+    });
+    const session = new SimulatorSession(source);
+
+    expect(session.canStartDialog('DIA_Intro')).toEqual({ ok: true });
+    expect(session.canStartDialog('DIA_Nowhere')).toMatchObject({ ok: false });
+    expect((session.canStartDialog('DIA_Nowhere') as { reason: string }).reason).toContain('DIA_Nowhere');
+    expect((session.canStartDialog('DIA_Broken') as { reason: string }).reason).toContain('DIA_Missing_Info');
+    expect((session.canStartDialog('DIA_False') as { reason: string }).reason).toMatch(/false/i);
+    expect((session.canStartDialog('DIA_Unknown') as { reason: string }).reason).toMatch(/unknown/i);
+
+    // The refusal and the launch agree, and the policy switch lifts the unknown one.
+    expect(session.startDialog('DIA_Broken')).toBe(false);
+    expect(session.startDialog('DIA_Unknown')).toBe(false);
+    session.setAssumeUnknown(true);
+    expect(session.canStartDialog('DIA_Unknown')).toEqual({ ok: true });
+    expect(session.startDialog('DIA_Unknown')).toBe(true);
+  });
+
   it('does not teach an entry when its action budget aborts execution', () => {
     const source = model({
       functions: new Map([

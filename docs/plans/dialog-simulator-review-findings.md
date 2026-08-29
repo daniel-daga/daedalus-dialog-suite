@@ -7,7 +7,7 @@ application), `src/renderer/components/Simulator/SimulatorDialog.tsx`, the
 `DialogDetailsEditor` integration, the Jest/Playwright suites, and
 `docs/architecture/dialog-simulator.md`.
 
-Status legend: **Open** — no fix landed yet.
+Status legend: **Open** — no fix landed yet. Only M2 is still open.
 
 ---
 
@@ -124,7 +124,10 @@ simulator's `evaluateCondition`.
 
 ### M1. `SimulatorDialog` does work while closed, against the repo's render-performance rule
 
-**Status:** Open
+**Status:** FIXED 2026-08-29 — the `createSimulatorModel` projection is gated
+on `open` (`SimulatorDialog.tsx`), so a closed simulator does no work when the
+semantic model changes. `tests/simulatorDialog.test.tsx` spies on the projection
+across a closed re-render with a new model identity.
 
 `DialogDetailsEditor.tsx` mounts `SimulatorDialog` whenever
 `semanticModel && dialog` — not gated on `simulatorOpen`. Inside,
@@ -147,7 +150,11 @@ affordance.
 
 ### M3. Silent launch failures
 
-**Status:** Open
+**Status:** FIXED 2026-08-29 — `SimulatorSession.canStartDialog` returns the
+refusal `startDialog` would give, with its reason (missing/unknown dialog,
+missing information function, false gate, unknown gate under the current
+policy). The modal shows that reason in an `Alert` when the edited dialog does
+not launch, and disables an availability entry the session would refuse.
 
 `startDialog`'s return value is ignored in the mount effect
 (`SimulatorDialog.tsx:51`). If the edited dialog's condition is false at the
@@ -164,14 +171,17 @@ unlaunchable entries.
 
 ### L1. Integer-division fidelity
 
-**Status:** Open
+**Status:** FIXED 2026-08-29 — `/=` truncates toward zero (`5 / 2 -> 2`,
+`-5 / 2 -> -2`), covered in `tests/simulatorEngine.test.ts`.
 
 `/=` produces fractional results (`engine.ts:123`; e.g. `5 / 2 -> 2.5`) where
 Daedalus performs integer arithmetic. Truncate toward zero to match the engine.
 
 ### L2. Permanent entries get marked known
 
-**Status:** Open
+**Status:** FIXED 2026-08-29 — `runEntry` skips the `knownInfos` add for a
+`permanent` entry, so an `Npc_KnowsInfo` gate on one no longer diverges from the
+engine.
 
 `SimulatorSession.runEntry` adds every completed entry to `knownInfos`
 (`SimulatorSession.ts:170-172`). In the game, permanent C_INFOs never register
@@ -180,7 +190,12 @@ engine behavior. Skip the `knownInfos` add for `permanent` entries.
 
 ### L3. Duplication across simulator modules
 
-**Status:** Open
+**Status:** FIXED 2026-08-29 — `simulator/domain/values.ts` now owns the single
+`cloneSimState`, `cloneValue`, `isUnknownValue`, `builtInNumber` and
+`findConstant`; the engine, the evaluator and the session import them. The
+constant lookup is the direct canonical `get` — `createSimulatorModel`
+canonicalizes the keys, so the scan was dead weight (the evaluator's test
+fixture now canonicalizes like the projection does).
 
 - `cloneState` is implemented twice (`engine.ts:28-36`,
   `SimulatorSession.ts:27-35`).
@@ -194,7 +209,10 @@ Consolidate into shared domain helpers.
 
 ### L4. Bare-variable branches inside information functions land as unknown
 
-**Status:** Open
+**Status:** FIXED 2026-08-29 — `parseSimpleClause` accepts a bare `IDENT` and
+`!IDENT` clause as an operator-less `VariableCondition`, and `serializeClause`
+renders it back, so the quest codec still round-trips strictly. `MIS_A && !MIS_B`
+now evaluates instead of landing unknown.
 
 `if (MIS_X)` inside an information function goes through the quest
 condition-expression codec, whose clause regex requires a comparison operator
@@ -215,7 +233,8 @@ clause) so bare `MIS_*`/`!MIS_*` identifiers evaluate.
   source through `daedalus-parser` and assert availability (a raw-mode
   condition function must not evaluate crisply true; a negated knows-info gate
   must not invert).
-- No test covers the failed-launch UI path (M3).
+- The failed-launch UI path is covered as of 2026-08-29
+  (`tests/simulatorDialog.test.tsx`).
 
 ## Positives
 

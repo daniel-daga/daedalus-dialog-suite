@@ -150,7 +150,6 @@ card waits on live at its pointer — put new prose there, not here.
 only the level editor, so "no actionable cards" never meant "no work". Each
 pointer is a finding id in the file the routing table names.
 
-- **The simulator's six smaller findings** — Any run. *simulator* M1, M3, L1-L4
 - **Three gaps the production review left uncarded** — the save-error advice,
   the unread updater settings, the error boundary. Any run. *production* §2 gaps
 - **The MCP server's Phase 0, which decides nothing** — a pure move; tests stay
@@ -202,6 +201,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The simulator's six smaller findings** — landed: the projection is gated on
+  the modal being open, a refused launch says why and disables the entry it
+  would refuse, `/=` truncates toward zero, a permanent C_INFO is never taught,
+  the clone/constant/built-in helpers are one `domain/values.ts`, and a bare
+  `MIS_X` clause evaluates. M2 stays open. *simulator* M1, M3, L1-L4
+
 - **`!Npc_KnowsInfo` no longer parses un-negated** — landed: `negated` through
   type, parser, codegen and a GREEN corpus gate, and the simulator inverts on
   it. Two adjacent shapes stay unknown by decision. *simulator* H2
@@ -215,12 +220,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   than drawn at the origin, and a `refresh()` beside the waynet's because the
   markers copy the positions instead of drawing the payload. §16.19 slice 4
 
-- **The waypoint panel now names who spawns there** — landed: a `spawns`
-  section from `spawnSiteIndex`, and a spawn cancels its own row in the site
-  list so it is not counted twice as a routine passing through. §16.19 slice 3
-
-*(the two oldest §16.19 spawn-index cards were dropped 2026-08-29 to stay under
-the budget; their substance is in `git log` and neither pointed forward.)*
+*(the three oldest §16.19 spawn-index cards were dropped 2026-08-29 to stay
+under the budget; their substance is in `git log` and none pointed forward.)*
 
 *(flushed 2026-08-29 after the board-loop run that closed the 2026-08-29 review:
 twelve cards, each marked FIXED at its pointer, reasoning in `git log`. Nothing

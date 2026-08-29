@@ -18,11 +18,14 @@ const state = (overrides: Partial<SimState> = {}): SimState => ({
   ...overrides
 });
 
+// `createSimulatorModel` canonicalizes constant keys before the evaluator ever
+// sees them, so the fixture does the same rather than testing a map shape that
+// cannot reach production.
 const model = (constants: ReadonlyMap<string, string | number | boolean> = new Map()): SimulatorModel => ({
   functions: new Map(),
   dialogs: [],
   declaredMisVariables: new Set(),
-  constants
+  constants: new Map(Array.from(constants, ([name, value]) => [name.trim().toLowerCase(), value]))
 });
 
 describe('simulator condition evaluator', () => {
@@ -149,5 +152,15 @@ describe('simulator condition evaluator', () => {
   it('evaluates raw generic Condition entries exactly once', () => {
     const condition: DialogCondition = { type: 'Condition', condition: 'MIS_TEST != LOG_FAILED' };
     expect(evaluateCondition(condition, state({ misVars: new Map([['mis_test', 1]]) }), model()).value).toBe('true');
+  });
+
+  it('evaluates a bare MIS identifier clause, negated or not', () => {
+    const simulationState = state({ misVars: new Map([['mis_on', 1], ['mis_off', 0]]) });
+
+    expect(evaluateRawCondition('MIS_ON', simulationState, model()).value).toBe('true');
+    expect(evaluateRawCondition('!MIS_ON', simulationState, model()).value).toBe('false');
+    expect(evaluateRawCondition('MIS_OFF && !MIS_ON', simulationState, model()).value).toBe('false');
+    expect(evaluateRawCondition('MIS_ON && MIS_OFF == 0', simulationState, model()).value).toBe('true');
+    expect(evaluateRawCondition('MIS_ABSENT', simulationState, model())).toMatchObject({ value: 'unknown' });
   });
 });

@@ -18,8 +18,9 @@ Imports flow in one direction:
    availability, condition evaluation, and action interpretation. It has no
    React, MUI, Electron, or store dependency.
 
-The UI projects the selected full `SemanticModel` once with
-`createSimulatorModel`. Project mode and single-file mode therefore use the
+The UI projects the selected full `SemanticModel` with `createSimulatorModel`,
+and only while the modal is open — the projection walks every function, constant
+and dialog, and the model identity changes on every reparse. Project mode and single-file mode therefore use the
 same simulator behavior, and the lightweight project dialog index is never
 used as an execution source.
 
@@ -40,7 +41,8 @@ mutated.
 Every declared `MIS_*` variable starts at an explicit assumed value of zero.
 Assignments remove the assumed marker. The interpreter supports numeric
 `=`, `+=`, `-=`, `*=`, and `/=` operators, built-in Boolean and `LOG_*` values,
-and case-insensitive constants. Unresolved operands, invalid operators, and
+and case-insensitive constants. `/=` truncates toward zero, because Daedalus
+divides integers. Unresolved operands, invalid operators, and
 division by zero become visible unknown values rather than guessed results.
 
 Choice menus persist across a selected target. Only an executed
@@ -79,14 +81,16 @@ the transcript records the assumption and reason.
 ## Availability and history
 
 Available dialogs are filtered by NPC, ordered by `nr` with source order as the
-tie-breaker, and reevaluated against current scratch state. Known non-permanent
-entries are excluded; known permanent entries remain eligible. False entries
+tie-breaker, and reevaluated against current scratch state. Known entries are
+excluded — which only ever removes a non-permanent one, since a permanent
+C_INFO is never recorded as known. False entries
 are hidden, while unknown entries remain visible with their reason and current
 policy.
 
 The selected C_INFO becomes known only after its initial information function
-completes normally or explicitly stops processing. Choice target functions do
-not teach additional C_INFO entries.
+completes normally or explicitly stops processing, and only when it is not
+`permanent` — the engine does not register a permanent C_INFO as known. Choice
+target functions do not teach additional C_INFO entries.
 
 Before entry launch/switch, choice selection, or an assumption-policy change,
 the session stores a complete deep snapshot. Back restores exactly one snapshot
@@ -98,7 +102,9 @@ from its prelaunch scratch-state baseline and clears branch history.
 `DialogDetailsEditor` supplies the current full semantic model and selected
 dialog to a modal simulator. The modal renders speaker-attributed transcript
 lines, persistent choices, visible condition assumptions, available entries,
-and a scratch-state inspector. It does not save or dispatch editor history.
+and a scratch-state inspector. A launch that cannot start says why
+(`SimulatorSession.canStartDialog`) instead of showing an empty transcript, and
+the same check disables an entry the session would refuse. It does not save or dispatch editor history.
 
 Jest suites cover projection, execution, choices, condition truth tables,
 availability, and session snapshots. The browser Playwright fixture uses the

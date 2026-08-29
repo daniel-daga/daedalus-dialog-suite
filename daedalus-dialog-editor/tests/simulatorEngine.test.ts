@@ -51,6 +51,22 @@ describe('simulator engine', () => {
     expect(result.status).toBe('ended');
   });
 
+  test('divides like the Daedalus VM: integer result truncated toward zero', () => {
+    const model = simulatorModel([
+      func('Target', [
+        { type: 'SetVariableAction', variableName: 'MIS_A', operator: '=', value: 5 },
+        { type: 'SetVariableAction', variableName: 'MIS_A', operator: '/=', value: 2 },
+        { type: 'SetVariableAction', variableName: 'MIS_B', operator: '=', value: -5 },
+        { type: 'SetVariableAction', variableName: 'MIS_B', operator: '/=', value: 2 }
+      ])
+    ], ['MIS_A', 'MIS_B']);
+
+    const result = executeFunction(model, createSimState(model), 'Target');
+
+    expect(result.misVars.get('mis_a')).toBe(2);
+    expect(result.misVars.get('mis_b')).toBe(-2);
+  });
+
   test.each([
     ['unresolved symbol', '=', 'UNKNOWN_CONST'],
     ['unsupported operator', '%=', 2],

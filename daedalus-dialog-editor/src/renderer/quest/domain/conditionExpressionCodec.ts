@@ -117,6 +117,18 @@ const parseSimpleClause = (clause: string): DialogCondition | null => {
     };
   }
 
+  // A bare identifier is Daedalus' "non-zero" test; `!` inverts it. The evaluator
+  // supports an operator-less variable condition, so keep the clause structured
+  // instead of degrading the whole expression to a generic one.
+  const bareMatch = normalizedClause.match(/^(!)?\s*([A-Za-z_][A-Za-z0-9_]*)$/);
+  if (bareMatch) {
+    return {
+      type: 'VariableCondition',
+      variableName: bareMatch[2].trim(),
+      negated: Boolean(bareMatch[1])
+    };
+  }
+
   const variableMatch = normalizedClause.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|<=|>=|<|>)\s*(.+)$/);
   if (variableMatch) {
     return {
@@ -206,8 +218,13 @@ const serializeClause = (
     return { ok: true, text: `${negated ? '!' : ''}Npc_IsDead(${condition.npc})` };
   }
   if (condition.type === 'VariableCondition' && 'variableName' in condition) {
-    if ((condition as { negated?: boolean }).negated) return { ok: false };
+    const hasOperator = Boolean((condition as { operator?: string }).operator);
+    if (hasOperator && (condition as { negated?: boolean }).negated) return { ok: false };
     const operator = (condition as { operator?: string }).operator;
+    if (!operator && (condition as { value?: unknown }).value === undefined) {
+      const negated = Boolean((condition as { negated?: boolean }).negated);
+      return { ok: true, text: `${negated ? '!' : ''}${condition.variableName}` };
+    }
     if (!operator || !SUPPORTED_VARIABLE_OPERATORS.has(operator)) return { ok: false };
     const literal = serializeLiteral((condition as { value?: string | number | boolean }).value);
     if (!literal.ok) return { ok: false };

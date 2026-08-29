@@ -37,18 +37,27 @@ const SimulatorDialog: React.FC<SimulatorDialogProps> = ({
   npcName,
   onClose
 }) => {
-  const model = useMemo(() => createSimulatorModel(semanticModel), [semanticModel]);
+  // Projecting the semantic model is the expensive part, and the model identity
+  // changes on every reparse — so a closed simulator does none of it.
+  const model = useMemo(
+    () => (open ? createSimulatorModel(semanticModel) : null),
+    [open, semanticModel]
+  );
   const [session, setSession] = useState<SimulatorSession | null>(null);
+  const [launchFailure, setLaunchFailure] = useState<string | undefined>(undefined);
   const [, setRevision] = useState(0);
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !model) {
       setSession(null);
+      setLaunchFailure(undefined);
       return;
     }
 
     const nextSession = new SimulatorSession(model);
-    nextSession.startDialog(dialogName);
+    const check = nextSession.canStartDialog(dialogName);
+    if (check.ok) nextSession.startDialog(dialogName);
+    setLaunchFailure(check.ok ? undefined : check.reason);
     setSession(nextSession);
   }, [dialogName, model, open]);
 
@@ -70,6 +79,12 @@ const SimulatorDialog: React.FC<SimulatorDialogProps> = ({
           <Typography color="text.secondary">Preparing simulation…</Typography>
         ) : (
           <Stack spacing={2}>
+            {launchFailure && (
+              <Alert severity="info" data-testid="simulator-launch-failure">
+                {`${dialogName} was not started: ${launchFailure}`}
+              </Alert>
+            )}
+
             <Box>
               <Typography variant="subtitle2" gutterBottom>Transcript</Typography>
               <Stack spacing={0.75}>
@@ -133,14 +148,17 @@ const SimulatorDialog: React.FC<SimulatorDialogProps> = ({
               <Typography variant="subtitle2" gutterBottom>Available dialogs</Typography>
               <Stack data-testid="simulator-available-dialogs" spacing={0.75}>
                 {availability.filter((item) => item.visible).map((item) => {
-                  const selectable = item.value === 'true' || item.assumedAvailable;
+                  const check = session.canStartDialog(item.entry.name);
                   return (
                     <Stack key={item.entry.name} direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                       <Button
                         size="small"
-                        disabled={!selectable}
+                        disabled={!check.ok}
                         onClick={() => {
-                          if (session.startDialog(item.entry.name)) refresh();
+                          if (session.startDialog(item.entry.name)) {
+                            setLaunchFailure(undefined);
+                            refresh();
+                          }
                         }}
                       >
                         {item.entry.name}
@@ -151,6 +169,9 @@ const SimulatorDialog: React.FC<SimulatorDialogProps> = ({
                           Condition unknown (assumed {item.assumedAvailable ? 'true' : 'false'})
                           {item.reason ? `: ${item.reason}` : ''}
                         </Typography>
+                      )}
+                      {!check.ok && item.value !== 'unknown' && (
+                        <Typography variant="caption" color="text.secondary">{check.reason}</Typography>
                       )}
                     </Stack>
                   );

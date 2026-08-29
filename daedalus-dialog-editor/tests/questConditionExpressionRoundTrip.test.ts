@@ -113,6 +113,18 @@ describe('serializeConditionsToExpression is a strict inverse of the condition c
     expect(parsed.conditions).toEqual(conditions);
   });
 
+  it('round-trips bare and negated identifier clauses (no comparison operator)', () => {
+    const conditions: DialogCondition[] = [
+      { type: 'VariableCondition', variableName: 'MIS_A', negated: false },
+      { type: 'VariableCondition', variableName: 'MIS_B', negated: true }
+    ] as DialogCondition[];
+    const serialized = serializeConditionsToExpression(conditions);
+    expect(serialized).toEqual({ ok: true, expression: 'MIS_A && !MIS_B' });
+    const parsed = roundTrips(conditions);
+    expect(parsed.mode).toBe('structured');
+    expect(parsed.conditions).toEqual(conditions);
+  });
+
   it('serializes an empty condition list to an empty string', () => {
     expect(serializeConditionsToExpression([], undefined)).toEqual({ ok: true, expression: '' });
     expect(serializeConditionsToExpression(undefined, undefined)).toEqual({ ok: true, expression: '' });

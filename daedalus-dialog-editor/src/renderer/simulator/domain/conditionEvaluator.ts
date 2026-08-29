@@ -2,6 +2,7 @@ import type { DialogCondition } from '../../../shared/types';
 import { parseConditionExpressionToConditions } from '../../quest/domain/conditionExpressionCodec';
 import { canonicalizeIdentifier } from './identifier';
 import type { SimState, SimulatorModel, UnknownValue } from './types';
+import { builtInNumber, findConstant, isUnknownValue } from './values';
 
 export type TruthValue = 'true' | 'false' | 'unknown';
 
@@ -17,33 +18,9 @@ const FALSE: ConditionEvaluation = { value: 'false' };
 
 const unknown = (reason: string): ConditionEvaluation => ({ value: 'unknown', reason });
 
-const isUnknownValue = (value: number | UnknownValue): value is UnknownValue =>
-  typeof value === 'object' && value !== null && value.kind === 'unknown';
-
 const normalizeMisIdentifier = (value: string): string => {
   const canonical = canonicalizeIdentifier(value);
   return canonical.startsWith('topic_') ? `mis_${canonical.slice('topic_'.length)}` : canonical;
-};
-
-const statusValue = (value: string): number | undefined => {
-  switch (canonicalizeIdentifier(value).toUpperCase()) {
-    case 'LOG_RUNNING': return 1;
-    case 'LOG_SUCCESS': return 2;
-    case 'LOG_FAILED': return 3;
-    case 'LOG_OBSOLETE': return 4;
-    default: return undefined;
-  }
-};
-
-const findConstant = (
-  constants: ReadonlyMap<string, string | number | boolean>,
-  name: string
-): string | number | boolean | undefined => {
-  const canonicalName = canonicalizeIdentifier(name);
-  for (const [key, value] of constants) {
-    if (canonicalizeIdentifier(key) === canonicalName) return value;
-  }
-  return undefined;
 };
 
 const resolveComparable = (
@@ -55,20 +32,18 @@ const resolveComparable = (
   if (typeof raw !== 'string' || !raw.trim()) return unknown('Condition comparison has no value.');
 
   const trimmed = raw.trim();
-  const status = statusValue(trimmed);
-  if (status !== undefined) return status;
+  const builtIn = builtInNumber(trimmed);
+  if (builtIn !== undefined) return builtIn;
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-  if (/^(true|false)$/i.test(trimmed)) return /^true$/i.test(trimmed) ? 1 : 0;
 
-  const constant = findConstant(model.constants, trimmed);
+  const constant = findConstant(model, trimmed);
   if (constant === undefined) return unknown(`Cannot resolve constant "${trimmed}".`);
   if (typeof constant === 'number') return constant;
   if (typeof constant === 'boolean') return constant ? 1 : 0;
 
-  const constantStatus = statusValue(constant);
-  if (constantStatus !== undefined) return constantStatus;
+  const constantBuiltIn = builtInNumber(constant);
+  if (constantBuiltIn !== undefined) return constantBuiltIn;
   if (/^-?\d+(\.\d+)?$/.test(constant.trim())) return Number(constant);
-  if (/^(true|false)$/i.test(constant.trim())) return /^true$/i.test(constant) ? 1 : 0;
   return unknown(`Constant "${trimmed}" is not a supported scalar value.`);
 };
 
