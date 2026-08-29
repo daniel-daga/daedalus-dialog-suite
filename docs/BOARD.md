@@ -139,8 +139,10 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **The free-point guard may be too narrow** — `startsWith` where ZenGin looks
-  to match by substring. Needs the engine. **Daniel.** *first pass* 6
+- **The free-point guard may be too narrow, and the two surfaces disagree** —
+  the Problems rule prefix-matches, the jump button matches exactly, so one
+  suppresses what the other calls missing. The engine settles which is right;
+  both then take the same answer. **Daniel.** *first pass* 6
 
 **Editor-side backlogs — nothing carded, which is not the same as nothing
 open.** Still unfixed and unowned: the simulator's M2 (a background reparse

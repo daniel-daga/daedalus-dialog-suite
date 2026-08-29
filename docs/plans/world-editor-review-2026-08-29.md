@@ -89,6 +89,17 @@ the test that holds it; everything unmarked is still open.
    would absorb infix misses, so it does not distinguish the two. `includes()` is
    the conservative form.
 
+   **Widened 2026-08-29, while verifying §16.23 for the flush: the two surfaces
+   reading `waynetNames` do not agree with each other.** The rule prefix-matches
+   free points; `InsertNpcActionRenderer`'s jump button matches **exactly**. So a
+   site naming `FP_ROAM` where the world holds `FP_ROAM_CITY_01` raises no
+   Problem — the rule suppresses it — while the button beside it is disabled
+   saying *"`FP_ROAM` is not in the open world"*. Whichever way the engine
+   question above is settled, both surfaces have to take the same answer, and the
+   card is not done until they do. §16.23 justified the button's exactness as
+   parity with this rule, which was never true in the tree. No test pins the
+   free-point case on the button side — the fixture sets `freePointNames: []`.
+
 7. **Clicking a waypoint problem is usually a no-op.** — **FIXED 2026-08-29**:
    when neither navigator resolves, the click falls back to `problem.filePath`
    — the one thing every problem carries — opening that file, selecting the
