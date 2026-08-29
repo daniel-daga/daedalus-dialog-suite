@@ -8,6 +8,16 @@ after extracting durable outcomes into `docs/architecture/` (per docs hygiene ru
 Conventions for every item: failing test first (Jest for logic/stores, Playwright for UI flows),
 minimal fix, then workspace-level `npm test` + `npm run lint` + typecheck before marking done.
 
+**Untriaged, and unreferenced until 2026-08-29.** No board card, no routing-table
+entry and no `CLAUDE.md` line pointed at this file, so its 37 unchecked items
+were invisible work — the failure the board exists to prevent, one directory
+over. They are not uniformly stale: the note below retires the quest-flow items,
+while 2.1's write-only `loadError` was still true in `projectStore.ts` seven
+weeks after it was written. Nothing distinguishes the two without walking each
+item against the tree, which is the triage the board now carries a card for.
+Delete what has landed or died, card what survives, delete this file when it is
+empty.
+
 **2026-08-23 note:** the quest Flow view was removed (production-readiness review §1
 Option B), which makes the quest-flow items here obsolete: 4.4, 4.7–4.10, the quest
 parts of 5.2 and 5.7, and 6.1's quest-model history aliases. Do not act on them.

@@ -20,6 +20,7 @@ handovers cost an hour a session:
 | a 2026-08-29 review finding | `docs/plans/world-editor-review-2026-08-29.md` |
 | a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
 | a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
+| a 2026-07 code-review item | `docs/plans/code-review-2026-07-remediation.md` |
 
 **Rules.** A card is one line, an owner, and a pointer to where its long form
 lives — §16 for a level-editor card, otherwise the file the routing table names.
@@ -146,6 +147,9 @@ card waits on live at its pointer — put new prose there, not here.
   the Problems rule prefix-matches, the jump button matches exactly, so one
   suppresses what the other calls missing. The engine settles which is right;
   both then take the same answer. **Daniel.** *first pass* 6
+
+- **The 2026-07 remediation plan is untriaged** — 37 unchecked items nothing
+  pointed at, of unknown freshness. `code-review-2026-07-remediation.md`
 
 **Editor-side backlogs — nothing carded, which is not the same as nothing
 open.** Still unfixed and unowned: the simulator's M2 (a background reparse
