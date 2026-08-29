@@ -4,7 +4,7 @@
 # (auto-dumped, engine killed), and asks you for the verdict either way. Run in
 # YOUR OWN PowerShell window (it needs the keyboard):
 #   powershell -ExecutionPolicy Bypass -File engine-batch.ps1 -Only 00,07 -Full
-# Optional: -Dir cand      candidates directory (tools/mutate.js output)
+# Optional: -Dir tools/cand  candidates directory, relative to your shell (default tools/cand)
 # Optional: -Only 00,07    run only those candidate numbers
 # Optional: -Latest        run ONLY the most recently written *.zen in -Dir
 # Optional: -Full          gmbt --full: REQUIRED on the first run, and after any
@@ -24,7 +24,7 @@
 # A/B is against a control run EARLIER rather than in the same session - fine
 # for a row whose result is unmistakable on its own (a red screen), not fine for
 # one you would have to compare side by side.
-param([string[]]$Only = @(), [string]$Dir = 'cand',
+param([string[]]$Only = @(), [string]$Dir = '',
       [switch]$Latest, [switch]$Full, [switch]$Windowed, [switch]$NoAudio)
 
 $ErrorActionPreference = 'Stop'
@@ -35,7 +35,12 @@ $Compiled  = Join-Path $GmbtDir 'mdk\Scripts\_compiled\GOTHIC.DAT'
 # name the engine has run under, and never Spacer's - `gmbt spacer` is not this
 # script's job.
 $Watch     = @('Gothic2', 'GothicMod')
-$CandDir   = if ([System.IO.Path]::IsPathRooted($Dir)) { $Dir } else { Join-Path $PSScriptRoot $Dir }
+# A relative -Dir is relative to where you ran this from, not to the script;
+# no -Dir means tools/cand, which is where mutate.js is told to build.
+$CandDir   = if ($Dir -eq '') { Join-Path $PSScriptRoot 'cand' }
+             elseif ([System.IO.Path]::IsPathRooted($Dir)) { $Dir }
+             else { Join-Path (Get-Location).Path $Dir }
+if (-not (Test-Path $CandDir)) { throw "candidate directory not found: $CandDir (run node tools/mutate.js tools/cand first)" }
 $Log       = Join-Path $CandDir 'results.log'
 
 $GmbtCmd = Get-Command gmbt -ErrorAction SilentlyContinue
