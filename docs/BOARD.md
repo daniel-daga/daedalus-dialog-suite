@@ -17,6 +17,8 @@ handovers cost an hour a session:
 | a known wart nobody is fixing yet | `docs/refactoring-targets.md` |
 | the Gate 2 checklist | `zenkit-node/docs/engine-acceptance-2026-08-25.md` §8 |
 | a 2026-08-29 review finding | `docs/plans/world-editor-review-2026-08-29.md` |
+| a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
+| a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
 
 **Rules.** A card is one line, an owner, and a pointer to where its long form
 lives — §16 for a level-editor card, otherwise the file the routing table names.
@@ -143,6 +145,20 @@ card waits on live at its pointer — put new prose there, not here.
 
 - **The free-point guard may be too narrow** — `startsWith` where ZenGin looks
   to match by substring. Needs the engine. **Daniel.** *first pass* 6
+
+**Editor-side backlogs.** Never carded until 2026-08-29 — the board carried
+only the level editor, so "no actionable cards" never meant "no work". Each
+pointer is a finding id in the file the routing table names.
+
+- **A condition the simulator cannot read is reported as true** — raw mode's
+  empty `conditions` reads as available; it is unknown. Any run. *simulator* H1
+- **`!Npc_KnowsInfo` parses un-negated, so availability inverts** — `negated`
+  goes through type, parser, codegen and corpus. Any run. *simulator* H2
+- **The simulator's six smaller findings** — Any run. *simulator* M1, M3, L1-L4
+- **Three gaps the production review left uncarded** — the save-error advice,
+  the unread updater settings, the error boundary. Any run. *production* §2 gaps
+- **The MCP server's Phase 0, which decides nothing** — a pure move; tests stay
+  green. Any run. `docs/plans/mcp-server.md` §2
 
 **Phase 1b-2 — VOB editing**
 
