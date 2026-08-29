@@ -6,7 +6,7 @@ Branch: `feature/level-editor-phase-0`. Nothing pushed to master.
 
 **Status: T6.5 PASSED, T7 and T8 landed. Verdict: Plan A, scoped to the
 BinSafe path** (decision matrix cell *clean diff / engine OK*; written up in
-`../../docs/plans/level-editor.md` §5).
+`../../docs/architecture/level-editor.md` §5).
 
 A single-variable engine bisect (§3.3) localised the failure to the `MeshAndBsp`
 blob, chunk-level isolation (§3.4) named the two fatal defects, and after ten

@@ -4,7 +4,8 @@
 **Zweck:** Vorgabe für die Architekturausarbeitung. Dieses Dokument legt Ziele, Scope und bekannte Constraints fest — nicht die konkrete technische Architektur.
 
 > Repo note: this is the original (German) design brief, checked in verbatim as
-> the source input for [`level-editor.md`](level-editor.md), which contains the
+> the source input for [`level-editor.md`](level-editor.md) and
+> [`../architecture/level-editor.md`](../architecture/level-editor.md), which contain the
 > viability analysis and the proposed architecture answering the open questions
 > in section 10.
 

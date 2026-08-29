@@ -56,7 +56,7 @@ above the binding:
 
 - **No coordinate conversion.** Positions stay in ZenGin space (cm, ZenGin
   handedness); the single conversion module is `zen-world/coords`
-  (`../docs/plans/level-editor.md` §7).
+  (`../docs/architecture/level-editor.md` §7).
 - **No light decoding.** `lights` is the raw `zCOLOR` word. The channel order
   is a rendering question and is emitted undecoded rather than guessed.
 - **No polygon filtering.** It reads the complete `Mesh::geometry` list and
@@ -79,7 +79,7 @@ deliberately wrong box so the difference is visible in a test.
 Chunks are per *material*, but a renderer should merge chunks sharing a
 texture — NewWorld has 1400 materials and only 330 unique textures, and one
 draw call per material would exceed the whole viewport budget on its own
-(`../docs/plans/level-editor.md` §3). Two materials on one texture may only
+(`../docs/architecture/level-editor.md` §3). Two materials on one texture may only
 merge if they also agree on the render state above; measured on NewWorld that
 merge key gives 352 groups where texture alone gives 330, and the 22 it keeps
 apart are real differences in blend mode, UV scroll, env-map strength and
@@ -655,7 +655,7 @@ whatever bug just landed.
 
 ## The viewport spike — retired
 
-`spike/viewport/` was the Phase 1a gate from `../docs/plans/level-editor.md` §3:
+`spike/viewport/` was the Phase 1a gate from `../docs/architecture/level-editor.md` §3:
 a throwaway Three.js scene over retail NewWorld, to answer framerate and pick
 latency on measured data rather than arithmetic. It has been **deleted**, because
 the thing it was the reference for has now been measured — the app's own

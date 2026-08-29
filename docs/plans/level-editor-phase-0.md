@@ -1,6 +1,7 @@
 # Phase 0 Work Breakdown — `zenkit-node` + Round-Trip Fidelity Harness
 
-Companion to [`level-editor.md`](level-editor.md) (architecture) and
+Companion to [`../architecture/level-editor.md`](../architecture/level-editor.md)
+(architecture), [`level-editor.md`](level-editor.md) (the live plan) and
 [`level-editor-design-brief.md`](level-editor-design-brief.md) (source brief).
 
 Status: **T1–T10 all landed**, including both engine gates — **T6.5 (E-early)
@@ -85,9 +86,9 @@ and op system would already be built on an unproven assumption.
    argument for why the unrun rows are acceptable on a bit-identical re-save
    but *not* for Phase 1b, are in acceptance record §8 and Environment.
 5. A written **Plan A / Plan B verdict** (whole-world re-serialization vs.
-   chunk splice — `level-editor.md` §5) supported by *both* the harness report
+   chunk splice — `../architecture/level-editor.md` §5) supported by *both* the harness report
    and the engine result, per the decision matrix in §5.
-   — ✅ **Plan A, scoped to BinSafe** (`level-editor.md` §5).
+   — ✅ **Plan A, scoped to BinSafe** (`../architecture/level-editor.md` §5).
 
 ---
 
@@ -95,7 +96,7 @@ and op system would already be built on an unproven assumption.
 
 ### The problem I previously waved past
 
-`level-editor.md` §5 says CI runs against "tiny synthetic ZEN fixtures we
+`../architecture/level-editor.md` §5 says CI runs against "tiny synthetic ZEN fixtures we
 author ourselves". That is circular: the only available ZEN *writer* is
 ZenKit, which is the component under test. A fixture written by ZenKit and
 then read back by ZenKit will agree with itself even if both directions share
@@ -387,7 +388,7 @@ works — this is the build-integration risk, resolved first and alone.
 **T2 — load a world.** `loadWorld(path, gameVersion) → WorldHandle`.
 *Test:* loading a checked-in G2 golden fixture yields the expected VOB count,
 waypoint count, and mesh vertex count. *Also:* a wrong `gameVersion` **fails
-loudly** rather than mis-parsing (`level-editor.md` §9 — version is never
+loudly** rather than mis-parsing (`../architecture/level-editor.md` §9 — version is never
 guessed).
 
 **T3 — windows-1252 at the edge.** *Test:* a fixture whose VOB name contains
@@ -436,7 +437,7 @@ install (28 `.zen`), **and scoped down deliberately**: the 4 BinSafe worlds are
 ASCII worlds **crash the process when their own re-save is loaded back**, and
 four ASCII writer defects are named with evidence. G1 is not installed, so G1
 coverage is unavailable rather than clean. Report and reasoning:
-acceptance record §10; the scope decision is in `level-editor.md` §5.
+acceptance record §10; the scope decision is in `../architecture/level-editor.md` §5.
 
 **T9 — CI wiring.** Path-filtered job running T1–T7 on the three OSes.
 (T6.5, T8 and T10 are manual/local by nature and never gate a PR.)

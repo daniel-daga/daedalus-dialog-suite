@@ -11,7 +11,8 @@ handovers cost an hour a session:
 |---|---|
 | what landed, and why | `git log` — the commit messages carry the reasoning |
 | **the long form of an open card** | `docs/plans/level-editor.md` **§16** |
-| a decision or a measurement | `docs/plans/level-editor.md` §7 |
+| the settled architecture | `docs/architecture/level-editor.md` §3-§10, §13 |
+| a decision or a measurement | `docs/architecture/level-editor.md` §7 |
 | build and test commands | `CLAUDE.md`, and each workspace's `README.md` |
 | machine and toolchain hazards | `docs/reference/environment-hazards.md` |
 | a known wart nobody is fixing yet | `docs/refactoring-targets.md` |
@@ -124,8 +125,10 @@ was true for so long nobody re-reads it.
 
 ## Next
 
-Each card is one line, an owner and a pointer. A bare `§` is a section of
-`docs/plans/level-editor.md`. The diagnosis, the measurement and the decision a
+Each card is one line, an owner and a pointer. A bare `§` is a section of the
+level-editor pair — §16 and the plan's own, or §3-§10 and §13 in
+`docs/architecture/level-editor.md`; the numbers are disjoint, so a bare one is
+never ambiguous. The diagnosis, the measurement and the decision a
 card waits on live at its pointer — put new prose there, not here.
 
 **Release gates**
@@ -215,21 +218,15 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Twelve closed sections flushed out of the plan, which is 1,900 lines
-  lighter** — seven of them (the waynet ops, the script-to-world jump, copy /
-  paste, the rest of `zCVob`, the enums, the catalogue bounds) were verified
-  against the tree rather than against their own prose first; their constraints
-  are now four subsections of §7. Two claims did not survive that check: the
-  free-point card above, and §14.1 1.4's "complete but for enums".
-- **The board's two flush rules are enforced, not trusted** — `tools/check-board.js`
-  (`npm run board:check`, and the `zen-world-tests` CI job) fails the card budget
-  and any §16 subsection declaring itself closed/landed - on the heading or
-  opening its first paragraph. Five flushed to make it green (five sections), forward facts routed to §7, §14.1 1.6, CLAUDE.md's CI notes and
-  `environment-hazards.md`. What it cannot judge is a subsection whose halves
-  landed separately, so the convention is to mark the heading when the last
-  half lands.
-
-*(flushed 2026-08-29, twice. Six rounds' twenty-six cards went first; then the
-five of round 7-9 — portal pairing, waypoint occupancy, W4, the spawn-index
-fix, and the waynet card that outlived its own fix. Every forward fact they
-carried is at §16.19, §16.22 and §7; the rest is in `git log`.)*
+- **The level-editor docs are two files now.** The settled architecture (§3-§10,
+  §13) is `docs/architecture/level-editor.md`; the plan keeps the verdict, the
+  phasing, the parity backlog and §16. Numbers stay disjoint and are never
+  reused, so old pointers still resolve.
+- **Twelve closed sections flushed from §16**, seven of them verified against the
+  tree first rather than against their own prose; their constraints are now four
+  subsections of §7. Two claims did not survive the check — the free-point card
+  above, and §14.1 1.4's "complete but for enums".
+- **The flush rules are enforced** by `npm run board:check` (root, and the
+  `zen-world-tests` CI job): the card budget, a §16 subsection still declaring
+  itself closed, a pointer that resolves to no heading, and a section number
+  claimed by both files.

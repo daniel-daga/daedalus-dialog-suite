@@ -1,7 +1,7 @@
 # zen-world
 
 Pure TypeScript domain for the ZenGin level editor — Phase 1a of
-[`docs/plans/level-editor.md`](../docs/plans/level-editor.md) (§6, §7).
+[`docs/architecture/level-editor.md`](../docs/architecture/level-editor.md) (§6, §7).
 
 **No React, MUI, Electron, Three.js or native imports.** Everything here is
 plain data and plain functions, which is what lets the decisions in it be tested
