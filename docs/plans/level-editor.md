@@ -2730,7 +2730,9 @@ diagnosis, the measurement and the decision each one is waiting on. A card that
 closes takes its subsection with it — the commit is then the record. Numbers
 are never reused, so a flushed subsection leaves its gap and old pointers stay
 unambiguous. This is checked: `npm run board:check` (root, and CI) fails while
-a subsection's heading still ends in *closed* or *landed*.
+a subsection declares itself *closed* or *landed*, either on its heading or
+opening its first paragraph. It cannot judge a subsection whose halves landed
+separately — mark the heading when the last half lands.
 
 ### 16.2 The ops' engine verdict — Gate 2b ran, and it is half a verdict
 

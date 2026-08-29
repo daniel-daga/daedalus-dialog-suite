@@ -40,8 +40,9 @@ is read at the start of every session, and a board nobody re-reads is a handover
 again. The fix is never to compress a card's prose — it is to move that prose to
 its home and leave the pointer. The budget is checked, not trusted:
 `npm run board:check` (root, and CI) fails this file over 80 card lines, and
-fails the plan while a §16 heading still ends in *closed* or *landed* — a
-closed card takes its subsection with it there too.
+fails the plan while a §16 subsection still declares itself *closed* or
+*landed*, on its heading or opening its first paragraph — a closed card takes
+its subsection with it there too.
 
 **Done is emptied whenever it has served its purpose, not only at a phase
 boundary.** It exists so one session sees what the last one landed; `git log` is
