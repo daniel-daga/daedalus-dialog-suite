@@ -155,13 +155,6 @@ pointer is a finding id in the file the routing table names.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **`checkPortalMaterials` still has no consumer** — built and retail-tested
-  2026-08-28, called by nothing. Any run. §16.20 slice 3
-
-**Phase 2 — the measurement tranche** (§7 decision, §16.22). One script per
-question, then one check per answer, and the two are never the same commit.
-A measurement is allowed to kill its own check.
-
 - **Portal pairing is unmeasured** — does every `P:A_B` have its `P:B_A` across
   the three retail worlds? Any run. §16.22 q1
 - **The planarity tolerance is unmeasured** — the worst retail coplanarity
@@ -209,6 +202,13 @@ the series absorbed most of a night's run by the time `0048` landed.
 - **Half-way float rounding** — UCRT ties-to-even against MSVC 6's away-from-
   zero. The other 5 findings.
 
+- **`checkPortalMaterials`' consumer — deferred 2026-08-29** (Daniel). Not a
+  card: its input is not on the editor's side of the binding, so the slice is a
+  `zenkit-node` readout, a thirteenth worker op with its IPC chain and the rule
+  — three workspaces — plus an undefined part, what framing a polygon means.
+  Belongs with the Phase 2 geometric checks the measurement tranche leads into,
+  not ahead of them. §16.20 slice 3
+
 - **`.MMB` authoring has no ZenKit writer at all** — `MorphMesh` has `load` and
   no `save`: new upstream code, not a patch. Deferred 2026-08-28.
 
@@ -218,12 +218,7 @@ the series absorbed most of a night's run by the time `0048` landed.
 itself — no new cards, no filing its own splits. Too big means: one line here,
 the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
-- **`checkPortalMaterials` still has no consumer** — its input is not on the
-  editor's side of the binding at all (§16.18's "ordinary data on the world
-  summary" meant `normalizeWorld`'s 877 ms dump), so the slice is a
-  `zenkit-node` name-list readout, a thirteenth worker op with its whole IPC
-  chain, and the rule — three workspaces, three test runs — plus an
-  unspecified fourth: what framing a polygon means. §16.20 slice 3
+*(empty)*
 
 ## Done
 
