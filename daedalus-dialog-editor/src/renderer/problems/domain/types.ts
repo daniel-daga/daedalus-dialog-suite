@@ -174,15 +174,49 @@ export type WaypointSites = Record<string, Array<{ filePath: string; functionNam
  * nothing is known, never that nothing is legal.
  */
 export interface WorldWaynetView {
-  /** Uppercased names of every point in the waynet, waypoints and free points alike. */
+  /** Uppercased names of every waypoint in the waynet. */
   pointNameKeys: ReadonlySet<string>;
   /**
-   * Uppercased free-point names only. The engine matches a free point by
-   * prefix (`"FP_ROAM"` reaches `FP_ROAM_CITY_01`), so an exact-match rule
-   * over these would invent findings.
+   * Uppercased names of the world's free points — its **`zCVobSpot` VOBs**,
+   * which is where a world keeps them. Disjoint from `pointNameKeys`: retail
+   * NewWorld has 2,254 of these and not one waypoint named `FP_*`.
+   *
+   * Not the waynet's stored `free_point` flag, which this used to read. That
+   * flag marks a waypoint standing in no edge so `WayNet::save` keeps it — a
+   * storage fact, true of 1 waypoint in NewWorld (`TOT`) and of none that a
+   * script names. Reading it left this set unable to answer for any of the 874
+   * `FP_` sites in the retail scripts.
    */
   freePointNames: readonly string[];
 }
+
+/**
+ * Does the open world have a place by this name? **The one answer both
+ * surfaces take** — the Problems rule and the spawn-point jump button — so
+ * that a name cannot be missing in one and present in the other, which is
+ * exactly what they used to disagree about.
+ *
+ * Waypoints match exactly. Free points match by **substring**, because the
+ * engine's free-point search does: `Wld_IsFPAvailable(self, "ROAM")` reaches
+ * `FP_ROAM_CITY_01`, and since every free point starts `FP_` a script fragment
+ * is almost never a prefix of one. Prefix-matching therefore invented a finding
+ * for legal code, which is the failure the free-point branch exists to prevent.
+ * Measured against the retail scripts, the looser form changes nothing else:
+ * 867 of their 874 `FP_` sites name a free point in full, one names a prefix
+ * (`FP_ROAM_OW_SNAPPER_OW_ORC` for `…_ORC6/7/8`), and none needs the infix
+ * case — which reaches the rule only through a project's own helper declaring
+ * a `var string waypoint` parameter.
+ */
+export const worldHasPoint = (world: WorldWaynetView, name: string): boolean => {
+  const upper = name.toUpperCase();
+  // The empty name is in no world. Said here rather than left to the callers:
+  // every string contains `''`, so a substring match would answer *true* for
+  // any world holding one free point — and the next caller is a text field
+  // being typed into, where the empty name is the normal state.
+  if (!upper) return false;
+  return world.pointNameKeys.has(upper)
+    || world.freePointNames.some((freePoint) => freePoint.includes(upper));
+};
 
 /** A pure lint rule: inspects the project view and returns any problems. */
 export type LintRule = (view: ProjectView) => Problem[];

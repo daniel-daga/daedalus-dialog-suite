@@ -207,6 +207,9 @@ function vobIndex(
   // paste does, because "into the selection's parent" is only distinguishable
   // from "into the roots" when the selection has one.
   parents: readonly number[] = positions.map(() => -1),
+  // One name per VOB. Every VOB is `BARREL` unless a test names them, which
+  // the free-point jump does: a free point is found by *its own name*.
+  vobNames: readonly string[] = positions.map(() => 'BARREL'),
 ): VobIndex {
   const count = positions.length;
   const columns = new Float32Array(count * 3);
@@ -240,7 +243,8 @@ function vobIndex(
     rotations: rotations.buffer,
     flags: new Uint32Array(count).buffer,
     classes, classIndex: classIndex.buffer,
-    names: ['BARREL'], nameIndex: new Uint32Array(count).buffer,
+    names: [...new Set(vobNames)],
+    nameIndex: Uint32Array.from(vobNames.map((n) => [...new Set(vobNames)].indexOf(n))).buffer,
     visuals: ['BARREL.3DS'], visualIndex: new Uint32Array(count).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
   };
@@ -315,8 +319,12 @@ const api = {
  *  different prop — `hidden`, which nothing else here varies. */
 let lastRender: ReturnType<typeof render>;
 
-async function openWorld(cls?: string | readonly string[], parents?: readonly number[]) {
-  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], cls, parents) };
+async function openWorld(
+  cls?: string | readonly string[], parents?: readonly number[], vobNames?: readonly string[],
+) {
+  const summary = {
+    ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], cls, parents, vobNames),
+  };
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
@@ -3017,6 +3025,47 @@ describe('a focus request from outside the surface', () => {
 
     expect(useWorldStore.getState().selectedWaypoint).toBeNull();
     expect(mockFramePoint).not.toHaveBeenCalled();
+    expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  /**
+   * A free point is a `zCVobSpot` VOB and not a waypoint, so a name the waynet
+   * does not have may still be a place — and the jump has to land on the VOB.
+   * Without this the button that offers the jump is enabled and does nothing,
+   * which is a worse answer than the disabled one it used to give.
+   */
+  it('selects and frames the free-point VOB a name reaches', async () => {
+    await openWorld('zCVobSpot', undefined, ['FP_ROAM_CITY_00', 'FP_ROAM_CITY_01']);
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'waypoint', name: 'fp_roam_city_01' });
+    });
+
+    expect(useWorldStore.getState().selection).toEqual([1]);
+    expect(mockFrameVob).toHaveBeenCalledWith(1);
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+    expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  it('reaches a free point by a fragment, the way the engine does', async () => {
+    await openWorld('zCVobSpot', undefined, ['BARREL', 'FP_ROAM_CITY_01']);
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'waypoint', name: 'ROAM' });
+    });
+
+    expect(mockFrameVob).toHaveBeenCalledWith(1);
+  });
+
+  it('does not take a VOB of another class for a free point', async () => {
+    // The class is what makes a free point; the `FP_` name is a convention.
+    await openWorld('zCVob', undefined, ['BARREL', 'FP_ROAM_CITY_01']);
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'waypoint', name: 'FP_ROAM_CITY_01' });
+    });
+
+    expect(mockFrameVob).not.toHaveBeenCalled();
     expect(useWorldStore.getState().focusRequest).toBeNull();
   });
 });

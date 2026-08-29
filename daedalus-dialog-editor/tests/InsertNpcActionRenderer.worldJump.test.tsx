@@ -37,12 +37,16 @@ const action = (spawnPoint: string) => ({
   spawnPoint
 });
 
-/** A world open with the names below in its waynet. */
-const openWorldWith = (names: string[]): void => {
+/**
+ * A world open with these waypoints in its waynet and these free points among
+ * its VOBs. The two are disjoint, as they are in a world: a free point is a
+ * `zCVobSpot`, never a waypoint.
+ */
+const openWorldWith = (names: string[], freePointNames: string[] = []): void => {
   act(() => {
     useWorldStore.setState({
       status: 'ready',
-      waynetNames: { pointNameKeys: new Set(names), freePointNames: [] }
+      waynetNames: { pointNameKeys: new Set(names), freePointNames }
     });
   });
 };
@@ -76,6 +80,28 @@ describe('the spawn point jumps to the world', () => {
     expect(useWorldStore.getState().focusRequest)
       .toEqual({ kind: 'waypoint', name: 'nw_city_entrance_01' });
     expect(useUISelectionStore.getState().activeView).toBe('world');
+  });
+
+  it('jumps to a free point, which is a spawn point too and is no waypoint', () => {
+    // 704 of the retail scripts' 3,722 `Wld_InsertNpc` literals name a free
+    // point, and a free point is a `zCVobSpot` — so a button that reads only
+    // the waynet calls every one of them missing. Both surfaces answer this
+    // with `worldHasPoint`, which is the point of it being one function.
+    openWorldWith(['NW_CITY_ENTRANCE_01'], ['FP_ROAM_CITY_01']);
+    render(<InsertNpcActionRenderer {...baseProps} action={action('fp_roam_city_01')} />);
+
+    expect(jumpButton()).not.toBeDisabled();
+    fireEvent.click(jumpButton());
+
+    expect(useWorldStore.getState().focusRequest)
+      .toEqual({ kind: 'waypoint', name: 'fp_roam_city_01' });
+  });
+
+  it('jumps for a free-point fragment, which the engine resolves by substring', () => {
+    openWorldWith(['NW_CITY_ENTRANCE_01'], ['FP_ROAM_CITY_01']);
+    render(<InsertNpcActionRenderer {...baseProps} action={action('ROAM')} />);
+
+    expect(jumpButton()).not.toBeDisabled();
   });
 
   it('is disabled with its reason when no world is open', async () => {

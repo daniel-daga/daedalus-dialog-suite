@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
-import { WAYNET_FLAG_FREE_POINT, type WaynetPayload, type WorldOp, type WorldSummary } from '../../shared/worldTypes';
+import type { WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTypes';
 import type { WorldLocus, WorldWaynetView } from '../problems/domain/types';
 
 /**
@@ -146,6 +146,69 @@ const EMPTY = {
   focusRequest: null as WorldFocus | null,
 };
 
+/**
+ * The class a free point is. Not a name convention — `FP_` is one, and it is
+ * carried by VOBs of other classes too — so the class is what this selects on.
+ */
+const FREE_POINT_CLASS = 'zCVobSpot';
+
+/**
+ * The world's free-point names, uppercased and in index order.
+ *
+ * **From the VOBs, because that is where a world keeps them.** Retail NewWorld
+ * holds 2,254 `zCVobSpot`s named `FP_*`; its waynet holds one waypoint with the
+ * stored `free_point` flag, `TOT`, which no script mentions. This used to read
+ * that flag, so the Problems rule's free-point branch could suppress nothing
+ * and every one of the 874 `FP_` sites in the retail scripts raised a warning.
+ *
+ * One pass over the interned columns, on a world open or an index refresh —
+ * never per scan and never per render.
+ */
+const freePointsOf = (summary: WorldSummary | null): string[] => {
+  if (summary === null) return [];
+  const { vobIndex } = summary;
+  const spotClass = vobIndex.classes.indexOf(FREE_POINT_CLASS);
+  if (spotClass < 0) return [];
+
+  const classIndex = new Uint32Array(vobIndex.classIndex);
+  const nameIndex = new Uint32Array(vobIndex.nameIndex);
+  const names = new Set<string>();
+  for (let vob = 0; vob < vobIndex.count; vob += 1) {
+    if (classIndex[vob] !== spotClass) continue;
+    const name = vobIndex.names[nameIndex[vob]];
+    // An unnamed spot is a place nothing can name, so it answers for nothing.
+    if (name) names.add(name.toUpperCase());
+  }
+  return [...names];
+};
+
+/**
+ * The free point a script name reaches, as a VOB index — `worldHasPoint`'s
+ * answer made concrete, so the jump it enables lands on something.
+ *
+ * Exact first, then the first spot whose name contains the fragment: the
+ * engine's own order, and the resolver's.
+ */
+export const findFreePointVob = (summary: WorldSummary | null, name: string): number | null => {
+  if (summary === null) return null;
+  const { vobIndex } = summary;
+  const spotClass = vobIndex.classes.indexOf(FREE_POINT_CLASS);
+  if (spotClass < 0) return null;
+
+  const upper = name.toUpperCase();
+  const classIndex = new Uint32Array(vobIndex.classIndex);
+  const nameIndex = new Uint32Array(vobIndex.nameIndex);
+  let fragment: number | null = null;
+  for (let vob = 0; vob < vobIndex.count; vob += 1) {
+    if (classIndex[vob] !== spotClass) continue;
+    const spot = vobIndex.names[nameIndex[vob]]?.toUpperCase();
+    if (!spot) continue;
+    if (spot === upper) return vob;
+    if (fragment === null && spot.includes(upper)) fragment = vob;
+  }
+  return fragment;
+};
+
 /** The VOB the panels describe and the gizmo sits on: the last one selected. */
 export const primaryVob = (selection: readonly number[]): number | null =>
   (selection.length === 0 ? null : selection[selection.length - 1]);
@@ -185,16 +248,15 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
       return;
     }
 
-    const all = payload.names.map((name) => name.toUpperCase());
-    const flags = new Uint32Array(payload.flags);
-    const freePointNames = all.filter((_, i) => (flags[i] & WAYNET_FLAG_FREE_POINT) !== 0);
-    const pointNameKeys = new Set(all);
+    const pointNameKeys = new Set(payload.names.map((name) => name.toUpperCase()));
+    // The free points are the summary's, not this payload's: they are VOBs.
+    // The summary is already stored when a waynet arrives — `openSucceeded`
+    // runs first and the surface reads the waynet after it.
+    const freePointNames = freePointsOf(get().summary);
 
-    // Both columns, because both are stored. `removeWaypointEdge` can promote
-    // an endpoint to a free point without touching a single name, and that
-    // re-read is precisely what a names-only guard would early-return over,
-    // leaving `freePoints` stale and a false warning standing on the promoted
-    // point until some unrelated edit churned the name set.
+    // Both sets, because a re-read can change either: an edge op leaves every
+    // name alone, and a scan that early-returned on names would leave a stale
+    // free-point set standing behind a false warning.
     const current = get().waynetNames;
     if (current !== null
       && sameKeys(current.pointNameKeys, pointNameKeys)
@@ -242,7 +304,26 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   // every index after them, and the World surface clears the selection before
   // it gets here (`renumbersPaths`). Clearing it unconditionally would drop a
   // selection an ordinary placement leaves perfectly valid.
-  indexRefreshed: (summary) => set({ summary, editError: null }),
+  // A structural edit can add or delete a free point without touching the
+  // waynet — `AddVob` of a `zCVobSpot` refreshes the index and fires no waynet
+  // read at all — so this is the only place that change can be seen. The view
+  // object is kept when the set did not move: its identity is what makes the
+  // Problems scan re-run, and a drag must not cost a project-wide re-scan.
+  indexRefreshed: (summary) => {
+    const current = get().waynetNames;
+    if (current === null) { set({ summary, editError: null }); return; }
+
+    const freePointNames = freePointsOf(summary);
+    if (sameNames(current.freePointNames, freePointNames)) {
+      set({ summary, editError: null });
+      return;
+    }
+    set({
+      summary,
+      editError: null,
+      waynetNames: { pointNameKeys: current.pointNameKeys, freePointNames },
+    });
+  },
 
   editFailed: (editError) => set({ editError }),
 

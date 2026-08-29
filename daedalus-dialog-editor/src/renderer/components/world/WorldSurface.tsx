@@ -22,7 +22,7 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
-import { primaryVob, useWorldStore } from '../../store/worldStore';
+import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE, MAX_EXPOSURE, MIN_EXPOSURE } from '../../world/WorldScene';
@@ -345,21 +345,31 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     // The name comes out of a script, where Daedalus is case-insensitive, and
     // the waynet is the world's own spelling.
-    if (waynet === null) return;
     const wanted = focusRequest.name.toUpperCase();
-    const waypoint = waynet.names.findIndex((name) => name.toUpperCase() === wanted);
-    if (waypoint < 0) return;
+    const waypoint = waynet === null
+      ? -1
+      : waynet.names.findIndex((name) => name.toUpperCase() === wanted);
 
-    // The overlay is switched on rather than assumed: with it off the gizmo
-    // would stand where there is no dot to see, which is the same objection
-    // `toggleWaynet` answers in the other direction.
-    setShowWaynet(true);
-    selectWaypoint(waypoint);
-    const positions = new Float32Array(waynet.positions);
-    viewportRef.current?.framePoint([
-      positions[waypoint * 3], positions[waypoint * 3 + 1], positions[waypoint * 3 + 2],
-    ]);
-  }, [focusRequest, waynet, focusVob, selectWaypoint]);
+    if (waynet !== null && waypoint >= 0) {
+      // The overlay is switched on rather than assumed: with it off the gizmo
+      // would stand where there is no dot to see, which is the same objection
+      // `toggleWaynet` answers in the other direction.
+      setShowWaynet(true);
+      selectWaypoint(waypoint);
+      const positions = new Float32Array(waynet.positions);
+      viewportRef.current?.framePoint([
+        positions[waypoint * 3], positions[waypoint * 3 + 1], positions[waypoint * 3 + 2],
+      ]);
+      return;
+    }
+
+    // Not a waypoint, so it may still be a free point — those are `zCVobSpot`
+    // VOBs, and the button that offers this jump enables itself for them
+    // (`worldHasPoint`). Without this the jump would land nowhere at all, which
+    // is a worse answer than the disabled one that button used to give.
+    const spot = findFreePointVob(summary, wanted);
+    if (spot !== null) focusVob(spot);
+  }, [focusRequest, waynet, summary, focusVob, selectWaypoint]);
 
   const handlePick = useCallback((
     vob: number | null, point: [number, number, number] | null, additive: boolean,

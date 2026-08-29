@@ -139,15 +139,27 @@ writes, the classes beyond five), none of it carded.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **The free-point guard may be too narrow, and the two surfaces disagree** —
-  the Problems rule prefix-matches, the jump button matches exactly, so one
-  suppresses what the other calls missing. The engine settles which is right;
-  both then take the same answer. **Daniel.** *first pass* 6
-
 - **28 live defects nobody was tracking** — the 2026-07 plan, triaged against
   the tree 2026-08-29: 28 of its 37 items still reproduce, 4 had landed, 5 died
   with the Flow view. Start at 2.5, which deletes an action on Escape-then-Enter.
   `code-review-2026-07-remediation.md`
+
+**World surface, from Daniel's own sessions 2026-08-30.** All three are §16.24;
+none needs the engine, and the order here is a guess at his — move it.
+
+- **A VOB can be picked through the world mesh** — the pick pass draws only the
+  VOB proxies, so nothing writes depth and a VOB behind a wall wins the pixel.
+  Diagnosed, and the fix is a depth-only occluder in that scene. §16.24 3
+- **A selection is invisible unless its gizmo is** — wants an outline on the
+  selected VOBs. Overturns the silhouette shader's *"never a selection state"*;
+  the cheap form is a per-instance attribute, as hiding already is. §16.24 1
+- **Paste lands the copy inside the original and leaves it unselected** — wants
+  an offset and the copy selected. The "jerk" is the structural re-read, which
+  is a bigger and separate question. §16.24 4
+- **The multi-select gizmo sits on the last VOB picked, not the centre** —
+  wants the centre. **Decide rotation first**: `rotateVobs` turns each VOB about
+  its own origin, so a centroid gizmo would show a pivot the op does not use.
+  §16.24 2
 
 **Editor-side backlogs — nothing carded, which is not the same as nothing
 open.** Still unfixed and unowned: the simulator's M2 (a background reparse
@@ -219,18 +231,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   torch subtree wholly gone, the renumber with routines intact. The engine
   harness stages `NEWWORLD.ZEN`, verifies the staged hash and prints each
   candidate's sheet. Acceptance record, *"Gate 2b, third pass"*.
-- **The retail install is stock and stays so** — the corpus is
-  `scripts/extract-worlds.js` reading the VDFs through the new `vfsRead`, the
-  candidates ship as a GMBT mod, `engine-batch.ps1` drives `gmbt test` and
-  writes nothing into the install. Planarity (§16.22 q2) measured on the way:
-  tolerance ≥ 12.1 units. `environment-hazards.md`, *"Gothic II, as the engine
-  oracle"*.
-- **The board's rules are enforced, not trusted** — `npm run board:check` (root,
-  and the `zen-world-tests` CI job) fails the card budget, a §16 subsection still
-  declaring itself closed, a pointer resolving to no heading, and a section
-  number claimed by both level-editor files.
-- **The level-editor docs are two files** — settled architecture (§3-§10, §13) in
-  `docs/architecture/level-editor.md`, the plan keeps the rest. Numbers are
-  disjoint and never reused, so old pointers still resolve. Twelve closed §16
-  sections flushed on the way, seven verified against the tree first; their
-  constraints are four subsections of §7.
+- **The free-point guard is fixed, and the finding was the smaller half** —
+  free points are `zCVobSpot` VOBs, not waynet points; the editor was reading
+  the waynet's storage flag, so all 874 retail `FP_` sites warned and the jump
+  button called every free point missing. Both surfaces now call one
+  `worldHasPoint`. *first pass* 6.

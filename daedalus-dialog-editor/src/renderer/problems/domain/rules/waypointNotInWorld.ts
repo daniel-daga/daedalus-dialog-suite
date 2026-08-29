@@ -1,3 +1,4 @@
+import { worldHasPoint } from '../types';
 import type { LintRule, Problem } from '../types';
 
 /**
@@ -17,9 +18,10 @@ import type { LintRule, Problem } from '../types';
  * one world and no index of the others, so it says "not in this world" and can
  * never say "no such waypoint" (level-editor.md §16.8).
  *
- * Free points are prefix-matched because the engine matches them that way:
- * `"FP_ROAM"` reaches `FP_ROAM_CITY_01`. Exact matching would invent a finding
- * for every one of them.
+ * Whether a name is a place at all is `worldHasPoint`'s answer, not this
+ * rule's: the spawn-point jump button asks the same question about the same
+ * name, and two spellings of it is how a site came to raise no Problem while
+ * the button beside it called the point missing.
  */
 export const waypointNotInWorldRule: LintRule = (view): Problem[] => {
   const { world } = view;
@@ -29,8 +31,7 @@ export const waypointNotInWorldRule: LintRule = (view): Problem[] => {
 
   for (const [name, sites] of Object.entries(view.waypointSites)) {
     const upper = name.toUpperCase();
-    if (world.pointNameKeys.has(upper)) continue;
-    if (world.freePointNames.some((freePoint) => freePoint.startsWith(upper))) continue;
+    if (worldHasPoint(world, upper)) continue;
 
     // One problem per *site*, and a site is a file and a function: a routine
     // naming the same place twice is the normal Gothic shape, and the two

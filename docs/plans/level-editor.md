@@ -2053,3 +2053,53 @@ extra `BAU_902_Gunnar_2.d` and is missing at least one dialog
 (`environment-hazards.md`). Its 3,722 literal `Wld_InsertNpc` calls match the
 number §7 and §16.19 measured, so it is the same corpus those used; it is
 not the shipped `.DAT`.
+
+### 16.24 World-surface feedback from the first real sessions (2026-08-30)
+
+Daniel's, from using the surface rather than from a review. Three, and the
+third is a defect with a diagnosis; the first two are decisions being revisited
+and each contradicts something the tree deliberately does.
+
+**1. A selection is invisible unless the gizmo is.** The only VOB emphasis
+that exists is `WorldScene`'s silhouette darkening, and its own doc says it is
+*"deliberately faint and never a selection state — selection is the gizmo"*.
+That was the right call for legibility and is the wrong one for selection: a
+VOB whose gizmo is off-screen, or one of several selected, reads as unselected.
+Wanted: an outline or another visible effect on the selected VOBs themselves.
+The constraint that shaped the darkening still holds — an outline *pass* is a
+second `InstancedMesh` per visual, 724 more draw calls (§3, render-performance)
+— so the cheap form is the same one: a per-instance attribute the VOB shader
+already carries, switched on for the selection, exactly as `HIDDEN_ATTRIBUTE`
+is written today.
+
+**2. The multi-selection gizmo sits on the last VOB picked, not in the middle.**
+`WorldScene.anchorOf` walks the selection backwards and takes the first VOB
+that is drawn; `worldStore.toggleVob` appends for that reason. Wanted: the
+centre of the selected items. **The trap is rotation.** `rotateVobs` turns each
+VOB about *its own* origin, deliberately (§16.4 and its own doc: turning about
+a pivot moves the VOBs as well, which is a different feature) — so a gizmo
+standing at the centroid would show a pivot the op does not use, and the first
+multi-VOB rotate would look broken. Either the anchor moves for translate only,
+or rotate-about-pivot lands with it. Decide that before writing the anchor.
+
+**3. A VOB can be picked through the world mesh.** Reported on a Khorinis
+tower: click the wall and a VOB behind it is selected. **The pick pass draws
+only the VOB proxies** — `VobPicker`'s scene holds the instanced proxies and
+nothing else, so no world geometry ever writes depth into the 1×1 pick target
+and occlusion cannot happen. The fix is to draw the world mesh into that scene
+as a depth-only occluder (`colorWrite: false`, or black, which the pass already
+reads as "nothing was hit"); it costs one more draw into a one-pixel view
+offset. Watch the two knowns while there: the pass ignores alpha-tested
+cut-outs (documented in `VobPicker`), and `HIDDEN_ATTRIBUTE` must keep meaning
+"not clickable" — a hidden VOB behind a wall must not become pickable, and a
+*hidden* world mesh must not occlude.
+
+**4. Paste lands the copy inside the original, and leaves it unselected.**
+`duplicateVobSpec` copies the position verbatim, so a pasted VOB is exactly
+where its source is — invisible, and only findable in the scene tree. Nothing
+selects the new VOBs either: `pasteClipboard` commits the ops and the selection
+still holds the *source*. Wanted: the copy offset a little from the original
+and selected, so it can be dragged straight away. The "jerking" reported with
+it is the structural-op re-read — a paste is `isStructuralOp`, so the whole
+projection is rebuilt — which is a separate and larger question from where the
+copy lands.

@@ -80,8 +80,41 @@ the test that holds it; everything unmarked is still open.
    routine shape — yields two identical ids; `ProblemsList` keys on it. The
    existing "one problem per site" test only covers sites in *different* files.
 
-6. **Free-point suppression may be too narrow** (PLAUSIBLE — engine semantics not
-   provable from this repo). `waypointNotInWorld.ts:39` uses `startsWith`, but
+6. **Free-point suppression may be too narrow** — **FIXED 2026-08-30, and the
+   finding was the smaller half of the defect.** The engine question below never
+   had to be answered: **both surfaces were reading a set that cannot hold a
+   free point at all.** A free point is a `zCVobSpot` VOB — retail NewWorld has
+   2,254 named `FP_*` and **no waypoint named `FP_*`** — while `worldStore` was
+   deriving `freePointNames` from the waynet's stored `free_point` flag, the bit
+   that keeps a waypoint standing in no edge (`removeWaypointEdge` sets it). It
+   marks one waypoint in NewWorld, `TOT`, which no script names. So the
+   suppression branch suppressed nothing and **874 of the retail scripts' 874
+   `FP_` sites raised a warning**, in each of the four worlds; 867 of them name
+   a `zCVobSpot` exactly. The jump button was worse — matching `pointNameKeys`
+   exactly, it called every free point missing.
+   Free points now come from the summary's `zCVobSpot` VOBs (`freePointsOf`,
+   re-derived on an index refresh so an added spot is seen), both surfaces call
+   one `worldHasPoint`, and `WorldSurface` falls back to `findFreePointVob` so
+   the jump the button offers lands on the spot instead of nowhere.
+   `includes()` was taken as this finding asked, though **it changes no retail
+   site**: the site index reads `Wld_InsertNpc`/`Wld_InsertItem` and the routine
+   externals, never the fragment-taking `Wld_IsFPAvailable`/`AI_GotoFP`, so the
+   sites are full names — 867 exact, one prefix (`FP_ROAM_OW_SNAPPER_OW_ORC` for
+   `…_ORC6/7/8`), none infix. It is the conservative form for a project helper
+   declaring its own `var string waypoint` parameter.
+   **Forward:** whether `Wld_IsFPAvailable`/`AI_GotoFP` (33 and 35 retail sites)
+   should reach the index at all is a widening of `extractWaypointSites`, not of
+   this rule, and nobody owns it.
+   Held by six tests: *"accepts a free point by its own full name"*, *"accepts a
+   free-point prefix"*, *"accepts a free-point fragment from the middle"* and
+   *"still flags a free-point name no free point contains"*
+   (`problemsWaypointNotInWorld.test.ts`), *"takes the free points from the
+   world's zCVobSpot VOBs"* and *"re-derives the free points when an edit adds a
+   spot"* (`problemsWaypointWorldInput.test.ts`), plus the button's *"jumps to a
+   free point"* and the surface's *"selects and frames the free-point VOB"*.
+
+   The original finding, kept because it is what the fix took as its rule:
+   `waypointNotInWorld.ts:39` used `startsWith`, but
    ZenGin's free-point search matches by substring, and retail scripts pass infix
    fragments (`Wld_IsFPAvailable(self, 'ROAM')` → `FP_ROAM_…`). Every free point
    starts with `FP_`, so a non-prefix fragment fails the guard and the rule emits
