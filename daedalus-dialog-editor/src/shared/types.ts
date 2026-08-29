@@ -12,6 +12,16 @@ export interface DialogMetadata {
   filePath: string;
 }
 
+
+/** One statically resolvable spawn: names are UPPERCASED, line is 1-based. */
+export interface SpawnSite {
+  instance: string;
+  spawnPoint: string;
+  filePath: string;
+  functionName: string;
+  line: number;
+}
+
 export interface ProjectIndex {
   npcs: string[];
   dialogsByNpc: Map<string, DialogMetadata[]>;
@@ -36,6 +46,12 @@ export interface ProjectIndex {
    * load/reindex time, same as voiceIds.
    */
   waypointSites: Record<string, Array<{ filePath: string; functionName: string }>>;
+  /**
+   * Static NPC/item spawns: every `Wld_InsertNpc`/`Wld_InsertItem` call whose
+   * instance and spawn point are both literals. Dynamic sites are excluded
+   * rather than guessed. Built at project load/reindex time, same as voiceIds.
+   */
+  spawnSites: SpawnSite[];
   /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
   metadataFailures: Array<{ filePath: string; error: string }>;
 }

@@ -11,6 +11,7 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
+import type { SpawnSite } from '../../shared/types';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
 import { escapeRegExp } from '../utils/pathAndIdentifierUtils';
@@ -65,6 +66,9 @@ interface ProjectState {
   // Waypoint name literals across the project, keyed by UPPERCASED name (built
   // at project load/reindex time, same lifecycle as voiceIdIndex)
   waypointSiteIndex: Record<string, Array<{ filePath: string; functionName: string }>>;
+  // Static NPC/item spawn sites across the project, same lifecycle as
+  // waypointSiteIndex; dynamic sites are excluded rather than guessed
+  spawnSiteIndex: SpawnSite[];
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
 
@@ -364,6 +368,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   npcPrototypes: [],
   voiceIdIndex: {},
   waypointSiteIndex: {},
+  spawnSiteIndex: [],
   metadataFailures: [],
   parsedFiles: new Map(),
   parseGeneration: 0,
@@ -408,6 +413,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         npcPrototypes: rawIndex.npcPrototypes || [],
         voiceIdIndex: rawIndex.voiceIds || {},
         waypointSiteIndex: rawIndex.waypointSites || {},
+        spawnSiteIndex: rawIndex.spawnSites || [],
         metadataFailures: rawIndex.metadataFailures || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
@@ -572,6 +578,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       npcPrototypes: [],
       voiceIdIndex: {},
       waypointSiteIndex: {},
+      spawnSiteIndex: [],
       metadataFailures: [],
       parsedFiles: new Map(),
       parseGeneration: get().parseGeneration + 1,

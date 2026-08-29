@@ -14,7 +14,7 @@ import type { DialogMetadata, ProjectIndex, SemanticModel } from '../../shared/t
 // Re-export types for consumers of this service
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
-import { extractFileMetadataFromSource, extractWaypointSites } from '../utils/semanticMetadataUtils';
+import { extractFileMetadataFromSource, extractSpawnSites, extractWaypointSites } from '../utils/semanticMetadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
 
@@ -123,7 +123,7 @@ class ProjectService {
     const allRoutines = new Set<string>();
     const voiceIds: Record<string, Array<{ filePath: string; functionName: string }>> = {};
     const metadataFailures: Array<{ filePath: string; error: string }> = [];
-    const fileModelsForWaypointSites: Array<{ filePath: string; semanticModel: SemanticModel }> = [];
+    const fileModelsForSiteIndexes: Array<{ filePath: string; semanticModel: SemanticModel }> = [];
     let npcPrototypes: string[] = [];
 
     // Use worker pool to process files in parallel
@@ -185,7 +185,7 @@ class ProjectService {
           this.primeParsedModel(filePath, result.mtimeMs, result.semanticModel);
         }
         if (result.semanticModel) {
-          fileModelsForWaypointSites.push({ filePath, semanticModel: result.semanticModel });
+          fileModelsForSiteIndexes.push({ filePath, semanticModel: result.semanticModel });
         }
 
         // Track NPC instances from dialogs and prototype inheritance chains.
@@ -244,7 +244,8 @@ class ProjectService {
       routines: Array.from(allRoutines).sort(),
       npcPrototypes,
       voiceIds,
-      waypointSites: extractWaypointSites(fileModelsForWaypointSites),
+      waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
+      spawnSites: extractSpawnSites(fileModelsForSiteIndexes),
       metadataFailures
     };
   }

@@ -581,6 +581,31 @@ FUNC VOID TA_Guard_Day()
         { filePath: fileB, functionName: 'TA_Guard_Day' }
       ]);
     });
+
+    it('collects static spawn sites with the instance, the spawn point and the line', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      const startup = path.join(storyDir, 'Startup.d');
+      fs.writeFileSync(startup, `FUNC VOID Startup_NewWorld()
+{
+	Wld_InsertNpc (Grd_200_Gardist, "WP_SPAWN_NPC");
+	Wld_InsertNpc (Grd_201_Gardist, spawnPoint);
+};`);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.spawnSites).toEqual([
+        {
+          instance: 'GRD_200_GARDIST',
+          spawnPoint: 'WP_SPAWN_NPC',
+          filePath: startup,
+          functionName: 'Startup_NewWorld',
+          line: 3
+        }
+      ]);
+    });
   });
 
   describe('waypoint site extraction (semanticMetadataUtils)', () => {
@@ -756,6 +781,96 @@ FUNC VOID Rtn_Mixed()
       ]);
 
       expect(Object.keys(sites)).toEqual(['WP_ONLY']);
+    });
+  });
+
+  describe('spawn site extraction (semanticMetadataUtils)', () => {
+    // Slice 1 of the Daedalus overlay (level-editor.md §16.19): the waypoint
+    // index keeps argument 1 and drops argument 0, which is exactly the half a
+    // spawn needs. A spawn site keeps both, plus the line, so a later slice can
+    // navigate to the call.
+    it('records the spawned instance, the spawn point and the call location', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Startup_NewWorld()
+{
+	Wld_InsertNpc (Grd_200_Gardist, "WP_SPAWN_NPC");
+	Wld_InsertItem (ItMi_Gold, "wp_spawn_item");
+};`,
+        '/test/Startup.d'
+      );
+
+      const sites = extractSpawnSites([
+        { filePath: '/test/Startup.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites).toEqual([
+        {
+          instance: 'GRD_200_GARDIST',
+          spawnPoint: 'WP_SPAWN_NPC',
+          filePath: '/test/Startup.d',
+          functionName: 'Startup_NewWorld',
+          line: 3
+        },
+        {
+          instance: 'ITMI_GOLD',
+          spawnPoint: 'WP_SPAWN_ITEM',
+          filePath: '/test/Startup.d',
+          functionName: 'Startup_NewWorld',
+          line: 4
+        }
+      ]);
+    });
+
+    // §8 and the design brief §5.1 make this a hard rule: a site whose instance
+    // or spawn point is not statically resolvable is excluded, never guessed.
+    it('excludes sites whose instance or spawn point is not a literal', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Startup_Dynamic()
+{
+	Wld_InsertNpc (Grd_200_Gardist, spawnPoint);
+	Wld_InsertNpc (Hlp_Random(3), "WP_DYNAMIC");
+	Wld_InsertItem (ItMi_Gold, ConcatStrings("WP_", suffix));
+	Wld_InsertNpc (Grd_201_Gardist, "WP_STATIC");
+};`,
+        '/test/Dynamic.d'
+      );
+
+      const sites = extractSpawnSites([
+        { filePath: '/test/Dynamic.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites.map((site) => site.instance)).toEqual(['GRD_201_GARDIST']);
+      expect(sites[0].spawnPoint).toBe('WP_STATIC');
+    });
+
+    // The two spawn externals are the only ones that carry an instance: every
+    // other waypoint external takes `self`, so widening the seed table would
+    // index a mover as a spawn.
+    it('takes only the two spawn externals, not every waypoint external', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Mixed()
+{
+	AI_Teleport (self, "WP_ONLY");
+	TA_Min (self, 8, 0, 22, 0, ZS_Stand, "WP_TA_MIN");
+};`,
+        '/test/Mixed.d'
+      );
+
+      expect(
+        extractSpawnSites([{ filePath: '/test/Mixed.d', semanticModel: file.semanticModel! }])
+      ).toEqual([]);
     });
   });
 

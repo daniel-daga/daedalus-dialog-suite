@@ -146,9 +146,6 @@ card waits on live at its pointer — put new prose there, not here.
 
 **Phase 1c — Daedalus overlay**
 
-- **The spawn index keeps the waypoint and drops the NPC** — every
-  `Wld_InsertNpc`/`Wld_InsertItem` site is already visited; a `spawnSites` field
-  carries the instance too, dynamic sites excluded. Any run. §16.19 slice 1
 - **An NPC spawned at two points is nobody's finding** — the duplicate-spawn
   check §8 names and nothing implements. Script-locus, so it fits the panel as
   it stands. Any run. §16.19 slice 2
@@ -204,6 +201,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **The spawn index keeps the waypoint and drops the NPC** — landed:
+  `ProjectIndex.spawnSites` (instance, spawn point, file, function, line;
+  dynamic sites excluded) and `projectStore.spawnSiteIndex`. §16.19 slice 1
 
 *(flushed 2026-08-29 after the board-loop run that closed the 2026-08-29 review:
 twelve cards, each marked FIXED at its pointer, reasoning in `git log`. Nothing

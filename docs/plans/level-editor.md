@@ -5113,6 +5113,19 @@ and is the carrier for statically unresolvable sites — loops, `Hlp_Random`,
 guild conditions — which are **marked dynamic and excluded, never guessed**
 (§8, brief §5.1, a hard rule).
 
+**Landed 2026-08-29.** `extractSpawnSites` in `semanticMetadataUtils.ts` rides
+the same worker-pool pass as `extractWaypointSites` (both now read
+`fileModelsForSiteIndexes`), and `ProjectIndex.spawnSites` is a flat
+`SpawnSite[]` — instance, spawn point, file, function, 1-based line, both names
+UPPERCASED — reaching the renderer as `projectStore.spawnSiteIndex`. Deliberately
+flat rather than keyed: slice 2 groups by instance and slice 3 by spawn point,
+so neither key is the natural one. A site is kept only when argument 0 is a bare
+identifier *and* argument 1 is a string literal; the two spawn externals are read
+from their own set, not from `ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX`, because every
+other entry there acts on `self` and would index a mover as a spawn. What it
+still cannot tell apart is an instance name from a `var` holding one — that is a
+symbol question, and the main process holds no semantic model of the project.
+
 **Slice 2 — the duplicate-spawn rule.** §8 names "duplicate NPC IDs" as
 cross-validation and nothing implements it. Over slice 1's index this is a
 script-locus finding, so it has a `filePath` and fits the panel's navigation

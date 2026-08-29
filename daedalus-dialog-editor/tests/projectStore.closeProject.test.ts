@@ -18,6 +18,7 @@ describe('ProjectStore - closeProject', () => {
       questFiles: ['/some/project/Topics.d'],
       npcPrototypes: ['NPC_DEFAULT'],
       voiceIdIndex: { X: [{ filePath: '/some/project/x.d', functionName: 'f' }] },
+      spawnSiteIndex: [{ instance: 'GRD_200', spawnPoint: 'WP', filePath: '/some/project/x.d', functionName: 'f', line: 3 }],
       metadataFailures: [{ filePath: '/some/project/bad.d', error: 'boom' }],
       selectedNpc: 'NPC_1',
       loadError: 'old error',
@@ -35,6 +36,7 @@ describe('ProjectStore - closeProject', () => {
     expect(state.questFiles).toEqual([]);
     expect(state.npcPrototypes).toEqual([]);
     expect(state.voiceIdIndex).toEqual({});
+    expect(state.spawnSiteIndex).toEqual([]);
     expect(state.metadataFailures).toEqual([]);
     expect(state.parsedFiles.size).toBe(0);
     expect(state.selectedNpc).toBeNull();

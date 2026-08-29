@@ -1,4 +1,4 @@
-import type { DialogMetadata, SemanticModel } from '../../shared/types';
+import type { DialogMetadata, SemanticModel, SpawnSite } from '../../shared/types';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
 import DaedalusParser from 'daedalus-parser';
@@ -183,6 +183,57 @@ export function extractWaypointSites(
           sites[key] = [];
         }
         sites[key].push({ filePath, functionName });
+      }
+    }
+  }
+
+  return sites;
+}
+
+// The two engine externals that spawn an instance at a place. They are the
+// only waypoint externals carrying an instance at argument 0 — every other one
+// in ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX acts on `self` — so a spawn is read
+// from this pair alone, never from the waypoint table.
+const SPAWN_EXTERNAL_NAMES = new Set(['wld_insertnpc', 'wld_insertitem']);
+
+/** A bare Daedalus identifier: anything else at argument 0 is an expression. */
+const BARE_IDENTIFIER = /^[A-Za-z_]\w*$/;
+
+/**
+ * Static spawn sites: every `Wld_InsertNpc`/`Wld_InsertItem` call whose
+ * instance *and* spawn point are both statically resolvable, with the call's
+ * own file, function and 1-based line. Names are UPPERCASED because Daedalus
+ * is case-insensitive.
+ *
+ * A site that is not statically resolvable — an expression instance
+ * (`Hlp_Random`, an array index, a variable holding a loop's pick) or a
+ * non-literal spawn point — is **excluded, never guessed** (level-editor.md §8,
+ * design brief §5.1). This is deliberately a second index rather than a
+ * widening of `extractWaypointSites`: a spawn and a routine answer different
+ * questions about the same waypoint.
+ */
+export function extractSpawnSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+): SpawnSite[] {
+  const sites: SpawnSite[] = [];
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        if (!SPAWN_EXTERNAL_NAMES.has(call.functionName.toLowerCase())) continue;
+
+        const instanceArg = call.args?.[0];
+        const spawnPointArg = call.args?.[1];
+        if (!instanceArg || instanceArg.isString || !BARE_IDENTIFIER.test(instanceArg.raw)) continue;
+        if (!spawnPointArg || !spawnPointArg.isString || !spawnPointArg.value) continue;
+
+        sites.push({
+          instance: instanceArg.raw.toUpperCase(),
+          spawnPoint: spawnPointArg.value.toUpperCase(),
+          filePath,
+          functionName,
+          line: call.position.startLine
+        });
       }
     }
   }
