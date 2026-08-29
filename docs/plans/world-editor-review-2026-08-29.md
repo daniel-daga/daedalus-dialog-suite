@@ -11,11 +11,18 @@ surface around it. A second pass over `zenkit-node` (`src/*.cc`, `lib/`,
 scene/picking/undo surface was launched and died to a session limit before any
 finder reported. **That scope is unreviewed, not clean.**
 
-Nothing below is fixed. Ranked most severe first.
+Ranked most severe first. Each finding is marked **FIXED** as it lands, with
+the test that holds it; everything unmarked is still open.
 
 ## Correctness
 
-1. **A waynet fetch failure discards a fully loaded world.**
+1. **A waynet fetch failure discards a fully loaded world.** — **FIXED
+   2026-08-29**, with renderer finding 1 below: the two are one shape. The
+   waynet read moved out of the open's `try` into one of its own, and reports
+   through `editFailed` — the warning over a world that is still open — leaving
+   `waynet` null, which is already read as "nothing is known". Held by
+   *"keeps the opened world when the waynet read fails"*
+   (`WorldSurface.editing.test.tsx`).
    `WorldSurface.tsx:222` — the waynet await now sits inside the same `try` as
    `openSucceeded` (line 209, already `status: 'ready'`), so the catch at 223–225
    routes to `openFailed`, which resets to `{...EMPTY, status: 'error'}`. A
@@ -188,7 +195,12 @@ asset preview/browser) and `worldStore` — the waynet overlay and fetch exclude
 as already covered above.
 
 1. **A post-commit projection failure is misreported as a refusal, and three
-   layers end up disagreeing.** `WorldSurface.tsx:522-556` — `await applied(ops)`
+   layers end up disagreeing.** — **FIXED 2026-08-29**: `applied(ops)` is in its
+   own `try` after the commit, and a failure there says the edit *was* applied
+   and the view is stale — no `invertOp`, no re-key, nothing put back. Held by
+   *"says the placement was applied when the index re-read fails, and leaves it
+   drawn"* (`WorldSurface.editing.test.tsx`).
+   `WorldSurface.tsx:522-556` — `await applied(ops)`
    sits inside the same `try` as `await applyWorldOps(ops)`, but `applied` runs
    four fallible steps *after* the main process has committed: `applyEdit`,
    `applyWaypointPositions`, and three IPC calls (`getWorldWaynet`,

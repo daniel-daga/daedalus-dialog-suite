@@ -67,8 +67,10 @@ interface WorldStore {
    * dangling.
    */
   waynetNames: WaynetNames | null;
-  /** A refused edit. Deliberately not `error`/`status: 'error'`, which replaces
-   *  the whole surface: the world is still open and still correct. */
+  /** A refused edit, or one the *view* could not follow — a failure past the
+   *  commit point, which says so rather than claiming a refusal. Deliberately
+   *  not `error`/`status: 'error'`, which replaces the whole surface: the world
+   *  is still open, and in the refusal case still correct. */
   editError: string | null;
 
   beginOpen: () => void;

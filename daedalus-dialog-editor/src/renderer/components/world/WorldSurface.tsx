@@ -212,16 +212,34 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // on screen while 31 MB of geometry crosses.
       setMesh(await window.editorAPI.getWorldMesh());
       setVisuals(await window.editorAPI.getWorldVisuals());
-
-      // The waynet is read here rather than when the overlay is first shown,
-      // because it is not only the overlay's any more: the Problems scan reads
-      // its names to answer whether a script names a place this world has
-      // (level-editor.md §16.8). Left lazy, the rule would say nothing at all
-      // until somebody happened to switch the overlay on — silently, since a
-      // world with no findings looks exactly like one with nothing to find.
-      setWaynet(await window.editorAPI.getWorldWaynet());
     } catch (failure) {
       openFailed(failure instanceof Error ? failure.message : String(failure));
+      return;
+    }
+
+    // **Outside the try above, and that is the whole point.** The waynet is read
+    // here rather than when the overlay is first shown, because it is not only
+    // the overlay's any more: the Problems scan reads its names to answer
+    // whether a script names a place this world has (level-editor.md §16.8).
+    // Left lazy, the rule would say nothing at all until somebody happened to
+    // switch the overlay on — silently, since a world with no findings looks
+    // exactly like one with nothing to find.
+    //
+    // But by the time it runs the world is *open*: `openSucceeded` has
+    // published a `ready` summary and 31 MB of mesh and visuals are on screen.
+    // Routed to `openFailed` — which resets the whole surface — a transient
+    // worker or IPC error would throw all of that away over a payload only two
+    // things read, and re-paying the open is the only way back, while the main
+    // process still holds the world. So it is reported the way a refused edit
+    // is: a warning over a world that is still open and still correct, leaving
+    // `waynet` null, which the store and the waypoint rule already read as
+    // "nothing is known".
+    try {
+      setWaynet(await window.editorAPI.getWorldWaynet());
+    } catch (failure) {
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
     }
   }, [beginOpen, openSucceeded, openFailed]);
 
@@ -523,7 +541,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const { editFailed } = useWorldStore.getState();
     try {
       await window.editorAPI.applyWorldOps(ops);
-      await applied(ops);
     } catch (failure) {
       editFailed(failure instanceof Error ? failure.message : String(failure));
       // **Let go of the class fields here, and not only in the re-read effect.**
@@ -554,6 +571,28 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // what this puts back is the viewport's *optimistic* draw of a gizmo drag,
       // and a delete is never drawn before the main process has taken it.
       setAppliedOps(ops.filter((op) => !isBarrierOp(op)).map(invertOp));
+      return;
+    }
+
+    // **Past the commit point, and in its own try for that reason.** Everything
+    // `applied` does is the renderer catching up with a world that has already
+    // changed, and four of its steps can fail after the fact — `applyEdit`,
+    // `applyWaypointPositions` and three IPC calls of its own. Inside the catch
+    // above, any of them was reported as a refusal: the banner said the edit did
+    // not happen, the viewport was handed `ops.map(invertOp)` and visibly undid
+    // it, and the class fields were re-keyed — while the columns `applyEdit`
+    // had already written stayed written and the main process went on holding
+    // the op, on the undo stack and written on save. Three layers disagreeing
+    // over an edit that did happen.
+    //
+    // So a failure here says exactly that, and puts nothing back. What is stale
+    // is the *view*, and the way out of a stale view is to re-open the world —
+    // not to pretend the world does not hold the edit.
+    try {
+      await applied(ops);
+    } catch (failure) {
+      const reason = failure instanceof Error ? failure.message : String(failure);
+      editFailed(`The edit was applied, but the view could not be brought up to date: ${reason}. Re-open the world to resync.`);
     }
   }, [applied]);
 
@@ -1411,8 +1450,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         <Alert severity="error" square data-testid="world-error">{error}</Alert>
       )}
 
-      {/* A refused edit, deliberately not `status: 'error'` — that replaces the
-          whole surface, and the world is still open and still correct. */}
+      {/* A refused edit — or one the view could not follow, or a waynet read
+          that failed over an open world. Deliberately not `status: 'error'`:
+          that replaces the whole surface, and the world is still open. */}
       {editError !== null && (
         <Alert severity="warning" square data-testid="world-edit-error">{editError}</Alert>
       )}

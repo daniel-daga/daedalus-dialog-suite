@@ -2730,3 +2730,69 @@ describe('align to normal', () => {
     expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 });
+
+describe('a failure after the world has already taken the edit', () => {
+  // One shape in two places: a `try` that spans past the commit point. What
+  // runs after it is the renderer catching up with a world that has changed,
+  // and a failure there is a stale *view* — never a refusal. Reported as one it
+  // is worse than nothing: the banner says the edit did not happen, the
+  // viewport is handed the inverse and visibly undoes it, and the main process
+  // still holds the op — on the undo stack, and written on save.
+
+  /** Pick terrain, open the placement dialog and confirm it. */
+  async function place(visual: string) {
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    act(() => useWorldStore.getState().selectVob(null));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: visual } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+  }
+
+  it('says the placement was applied when the index re-read fails, and leaves it drawn', async () => {
+    await openWorld();
+    // The re-read is one of four fallible steps `applied` runs *after*
+    // `applyWorldOps` resolved — a restarted worker rejects it.
+    api.refreshWorldIndex.mockRejectedValueOnce(new Error('world worker exited') as never);
+
+    await place('NW_CRATE.3DS');
+
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
+    const banner = await screen.findByTestId('world-edit-error');
+    expect(banner).toHaveTextContent(/world worker exited/);
+    expect(banner).toHaveTextContent(/applied/i);
+    // The viewport keeps the forward op. The inverse of this one is an `AddVob`
+    // with `to: null` — undrawing a VOB the world still has.
+    expect(mockAppliedOps).toHaveLength(1);
+    expect(mockAppliedOps![0]).toMatchObject({ op: 'AddVob', vob: 2 });
+    expect((mockAppliedOps![0] as { to: unknown }).to).not.toBeNull();
+  });
+
+  it('keeps the opened world when the waynet read fails', async () => {
+    // The waynet is read at the end of the open, after `openSucceeded` has
+    // already published a `ready` world. Routed to `openFailed` it throws away
+    // the summary, the ~31 MB mesh and the visuals over a payload nothing but
+    // the overlay and the Problems scan needs — while the main process goes on
+    // holding the world.
+    const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+    api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
+    api.openWorld.mockResolvedValueOnce(summary as never);
+    api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+    api.getWorldWaynet.mockRejectedValueOnce(new Error('worker exited') as never);
+
+    render(<WorldSurface />);
+    fireEvent.click(screen.getByTestId('world-open'));
+
+    await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('world-edit-error')).toHaveTextContent(
+      /worker exited/,
+    ));
+    expect(useWorldStore.getState().status).toBe('ready');
+    expect(useWorldStore.getState().summary).toBe(summary);
+    // Null is "nothing is known", which is the contract the waypoint rule
+    // already reads — never "no waypoint is legal".
+    expect(useWorldStore.getState().waynetNames).toBeNull();
+    expect(screen.queryByTestId('world-error')).not.toBeInTheDocument();
+    expect(screen.getByTestId('world-viewport-stub')).toBeInTheDocument();
+  });
+});
