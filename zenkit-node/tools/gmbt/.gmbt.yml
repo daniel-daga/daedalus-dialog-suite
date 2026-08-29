@@ -1,19 +1,21 @@
-# GMBT project for playing a candidate world without touching a retail asset.
+# GMBT project for playing a candidate world in the engine.
 #
-# engine-batch.ps1 installs a candidate by OVERWRITING
-# _work/Data/Worlds/NewWorld/NewWorld.zen and restoring a backup afterwards, so
-# a crash between the two leaves a retail world replaced. GMBT builds a .mod
-# instead and takes the world by name, so nothing under _work is rewritten.
+#   node ../mutate.js mod/Worlds     # stage candidates as flat *.zen
+#   gmbt test --world=07A.ZEN --windowed --noaudio --nomenu -D --noupdatesubtitles
 #
-#   node ../mutate.js mod/Worlds          # stage the candidates
-#   gmbt test --world=07A.ZEN --windowed --noaudio --nomenu -D
+# THE ASSET DIRS MUST SUPPLY A COMPLETE SCRIPT TREE. GMBT moves the install's
+# _work/Data aside, backs up only the directories it does not manage (Music,
+# Presets, Video) and rebuilds the rest FROM THESE DIRS — so a `mod` that holds
+# only Worlds produces a _work with no Scripts, the compile dies on
+# `SYSTEM\MUSIC.SRC not found`, and the retail extraction is gone. That is why
+# `mdk` carries the whole MDK script tree and is listed first, exactly as the
+# beppo project does it. Learned the hard way on 2026-08-29; the recovery is in
+# environment-hazards.md.
 #
-# The FIRST run, and any run after this file changes, must add --full: GMBT
-# refuses with "requires full test or full compilation" otherwise, and the
-# message does not say that editing the config is what re-armed it.
+# --noupdatesubtitles is required: GMBT 0.22 throws a KeyNotFoundException in
+# UpdateDialogs() on this script set.
 #
-# gothicRoot is hardcoded to this machine's install, as engine-batch.ps1's
-# $Gothic already is. environment-hazards.md is where a second machine goes.
+# The FIRST run, and any run after this file changes, must add --full.
 
 projectName: DDS World Candidates
 
@@ -21,15 +23,14 @@ gothicRoot: C:\Program Files (x86)\Steam\steamapps\common\Gothic II
 
 modFiles:
   assets:
-    - mod
-  # Only a world is ever staged here, so the retail scripts are what compile.
-  # A minimal script set is a separate, unsized question - level-editor.md 16.2.
-  defaultWorld: NEWWORLD\NEWWORLD.ZEN
+    - mdk      # the retail script tree; without it nothing compiles
+    - mod      # the candidate worlds, overriding mdk
+  defaultWorld: NEWWORLD.ZEN
 
 modVdf:
   output:  C:\Program Files (x86)\Steam\steamapps\common\Gothic II\Data\ModVDF\DDS-CAND.mod
   comment: Daedalus Dialog Suite - engine candidates
 
 gothicIniOverrides:
-  # The logo videos are two unskippable clips in front of every single run.
+  # Two unskippable clips in front of every run.
   - 'GAME.playLogoVideos' : '0'

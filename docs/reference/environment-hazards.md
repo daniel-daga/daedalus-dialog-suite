@@ -227,6 +227,47 @@ anything does.
   in a `finally`. **Gone with the extraction on 2026-08-29** — the size and hash
   are kept here so the re-extracted copy can be checked against them.
 
+## GMBT empties `_work`, and how `_work` is rebuilt
+
+**`gmbt` rebuilds `_work/Data` from its asset dirs and backs up only what it
+does not manage.** On 2026-08-29 a `gmbt compile --full` whose one asset dir
+held nothing but `Worlds/` moved `_work/Data` aside, copied only `Music`,
+`Presets` and `Video` into `_work/DataOriginal`, emptied `Scripts`, `Worlds`,
+`Anims`, `Meshes`, `Sound` and `Textures`, and then crashed before restoring —
+so the retail extraction was gone and every measurement card lost its corpus.
+**The asset dirs must supply a complete tree**, which is why the beppo project
+carries a whole `mdk/`; that is load-bearing, not tidiness.
+
+The game itself was never at risk: it runs from `Data/*.vdf`, and `_work` is
+only the extracted modding tree.
+
+**Rebuilding `_work` needs no installer and no UAC.** Every source is already on
+the machine, and `VdfsSharp.dll` ships inside GMBT:
+
+1. **Assets and worlds** — extract the `Worlds/Meshes/Anims/Textures/Sounds`
+   `.vdf` volumes with `VdfsSharp.VdfsExtractor` and `ExtractOption.Hierarchy`
+   to the Gothic root; they carry full `_WORK\DATA\...` paths. **Base volumes
+   first, `*_Addon.vdf` last** — this is NotR, and `Worlds.vdf` alone yields a
+   *pre-addon* NewWorld with a different hash. The addon volume reproduces
+   `engine-batch.ps1`'s recorded `b4dac867...` byte for byte, which is the check
+   worth running after any rebuild.
+2. **Compiled scripts** — `Data/ModVDF/GothicGame.mod` is a VDF too and carries
+   `_WORK\DATA\SCRIPTS\_COMPILED\*.DAT`, `GOTHIC.DAT` included.
+3. **Script sources** — `Downloads/g2mdk-2.6_small.exe` is NSIS; **7-Zip
+   extracts it without running it**, so no elevation is needed. But 7-Zip
+   **flattens NSIS's directory structure**: `Scripts/System` comes out as one
+   flat directory while its `.src` files expect `_intern\`, `menu\`, `music\`,
+   `pfx\`, `sfx\` and `visualfx\`. The `.src` files are the map — each line is
+   `dir\file.d` — and reconstructing from them places all 27 exactly.
+
+**The repo's gitignored `mdk/` is not retail-equivalent.** It carries
+`Story/NPC/BAU_902_Gunnar_2.d`, which redefines `Rtn_Start_902` and so cannot
+compile under `Gothic.src`'s `STORY\NPC\*.d` glob, and it is missing at least
+whatever defines `DIA_Addon_Cavalorn_MeetingIsRunning_OneTime`. Do not assume it
+compiles — `tools/gmbt/mdk` is a separate copy for exactly that reason, and the
+harness runs `--noreparse` against shipped retail `.DAT`s rather than building
+them.
+
 ## ZenKit and the world format
 
 - **`Vfs::mount_host` memory-maps every file eagerly** and skips zero-size files.

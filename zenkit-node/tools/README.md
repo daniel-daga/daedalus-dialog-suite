@@ -123,25 +123,36 @@ nothing checks at all. The walkers themselves are covered by
 ## Playing a candidate
 
 - `gmbt/` — a [GMBT](https://github.com/Szmyk/gmbt) project that plays a
-  candidate world **without overwriting a retail asset**. `engine-batch.ps1`
-  installs a candidate by replacing
-  `_work/Data/Worlds/NewWorld/NewWorld.zen` and restoring a backup afterwards,
-  so a crash between the two leaves a retail world replaced; GMBT builds a
-  `.mod` and selects the world by name, so nothing under `_work` is rewritten.
+  candidate world. It builds a `.mod` and selects the world by name, so testing
+  a candidate needs no edit to a retail asset.
 
   ```
   node mutate.js gmbt/mod/Worlds
-  cd gmbt && gmbt test --world=07A.ZEN --windowed --noaudio --nomenu -D
+  cd gmbt && gmbt test --world=07A.ZEN --noreparse --windowed --noaudio                        --nomenu -D --noupdatesubtitles
   ```
 
   `--nomenu` starts the game directly, `GAME.playLogoVideos: 0` in the config
-  drops the two unskippable intro clips, and `--windowed` keeps the engine off
-  the whole screen. The first run after the config changes needs `--full`.
+  drops two unskippable clips, `--windowed` keeps the engine off the whole
+  screen, and `--noaudio` silences it.
+
+  **`--noreparse` is the shape, not an optimisation.** The harness ships the
+  retail `.DAT`s in `mdk/Scripts/_compiled` and never rebuilds them: we want to
+  load worlds, not compile scripts, and the repo's `mdk/` does not compile
+  anyway (environment-hazards.md says why). `--noupdatesubtitles` is required —
+  GMBT 0.22 throws a `KeyNotFoundException` in `UpdateDialogs()` here.
+
+  **Read environment-hazards.md, *"GMBT empties `_work`"*, before changing the
+  asset dirs.** GMBT rebuilds `_work/Data` from them and backs up only what it
+  does not manage; an incomplete asset set destroys the retail extraction. That
+  is why `mdk/` carries a whole script tree.
 
   It does **not** replace `engine-batch.ps1`: that script's window-watching is
   what auto-dumps an assertion dialog and caught Gate 2b's dialog-camera crash,
   and GMBT has no equivalent. GMBT launches; `engine-batch.ps1` reads a verdict.
 
-  The tool is a NSIS installer that unpacks to `bin/GMBT.exe` plus a `lang/` and
-  `tools/` it expects in `%APPDATA%\GMBT`; .NET Framework 4.7+ is required and
-  this machine has 4.8.
+  `mdk/` is gitignored — it is licensed Piranha Bytes content, rebuilt by the
+  procedure in environment-hazards.md.
+
+  Status 2026-08-29: the engine launches and runs a staged world (process alive,
+  400 s CPU). **Nobody has yet seen a frame** — the workstation was locked — so
+  "it loads and plays" is unproven and the run sheet's rows still need a person.
