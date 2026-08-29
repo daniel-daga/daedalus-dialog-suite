@@ -135,17 +135,29 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   selectWaypoint: (selectedWaypoint) => set({ selectedWaypoint, selection: [] }),
 
   waynetLoaded: (payload) => {
-    if (payload === null) {
+    // A payload with no points is stored as *no knowledge*, not as a world
+    // whose every waypoint site is wrong: `normalize.cc` answers a world with
+    // no waynet chunk with an empty point list rather than throwing, and null
+    // is what both readers already take for "nothing is known".
+    if (payload === null || payload.names.length === 0) {
       if (get().waynetNames !== null) set({ waynetNames: null });
       return;
     }
 
     const all = payload.names.map((name) => name.toUpperCase());
-    const current = get().waynetNames;
-    if (current !== null && sameNames(current.all, all)) return;
-
     const flags = new Uint32Array(payload.flags);
     const freePoints = all.filter((_, i) => (flags[i] & FREE_POINT_FLAG) !== 0);
+
+    // Both columns, because both are stored. `removeWaypointEdge` can promote
+    // an endpoint to a free point without touching a single name, and that
+    // re-read is precisely what a names-only guard would early-return over,
+    // leaving `freePoints` stale and a false warning standing on the promoted
+    // point until some unrelated edit churned the name set.
+    const current = get().waynetNames;
+    if (current !== null
+      && sameNames(current.all, all)
+      && sameNames(current.freePoints, freePoints)) return;
+
     set({ waynetNames: { all, freePoints } });
   },
 

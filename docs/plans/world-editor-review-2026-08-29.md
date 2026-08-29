@@ -30,7 +30,14 @@ the test that holds it; everything unmarked is still open.
    visuals; recovery is re-paying the whole open, while the main process still
    holds the world. Before the diff the lazy waynet fetch could not do this.
 
-2. **Stale waynet renders and is pickable over the next world.**
+2. **Stale waynet renders and is pickable over the next world.** — **FIXED
+   2026-08-29**: `openWorld` now calls `setWaynet(null)` beside the mesh,
+   visuals and terrain-point resets, so the overlay draws nothing until the new
+   payload lands and a failed open leaves nothing behind. Held by *"drops the
+   previous world's waynet when the next world opens"*
+   (`WorldSurface.editing.test.tsx`), which asserts the payload the viewport is
+   given, not the store — the store is reset by `beginOpen` either way, and the
+   disagreement between the two was the defect.
    `WorldSurface.tsx:196` — `openWorld` resets mesh/visuals/terrainPoint but not
    the local `waynet` state, and the viewport mounts on `mesh && visuals &&
    summary` alone. With the overlay on, world A's waypoints draw over world B
@@ -39,7 +46,10 @@ the test that holds it; everything unmarked is still open.
    name-guard refusal the user cannot explain. A failed open leaves A's payload
    in place forever. Fix: `setWaynet(null)` beside the line-194 resets.
 
-3. **An empty waynet is treated as full knowledge.**
+3. **An empty waynet is treated as full knowledge.** — **FIXED 2026-08-29**:
+   `waynetLoaded` stores null for a 0-name payload, on the same branch as a
+   null one. Held by *"reads an empty waynet as nothing known, not as an empty
+   world"* (`problemsWaypointWorldInput.test.ts`).
    `worldStore.ts:145` — a 0-name payload stores `{all: [], freePoints: []}`
    rather than `null`, so the rule's `if (!world) return []` guard does not fire
    and every waypoint site in the project is flagged. Reachable: `normalize.cc`
@@ -47,7 +57,11 @@ the test that holds it; everything unmarked is still open.
    waynet chunk instead of throwing. The rule's "absent means nothing is known"
    contract has no equivalent for open-but-empty.
 
-4. **`waynetLoaded`'s identity guard ignores the flags column.**
+4. **`waynetLoaded`'s identity guard ignores the flags column.** — **FIXED
+   2026-08-29**: `freePoints` is derived before the guard and compared with the
+   names, so an edge removal that promotes an endpoint is a real change. Held by
+   *"re-derives the free points when a re-read changed only the flags"*
+   (`problemsWaypointWorldInput.test.ts`).
    `worldStore.ts:143` — it compares names only (`sameNames`), but the stored
    object also derives `freePoints` from flags. `removeWaypointEdge` promoting an
    endpoint to a free point (documented at `lib/index.d.ts:468`) is exactly the

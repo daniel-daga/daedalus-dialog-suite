@@ -3512,7 +3512,10 @@ full project scan per gizmo drag would be intolerable, and it is also
 unnecessary: the *name set* changes only on `AddWaypoint`, `DeleteWaypoint` and
 `RenameWaypoint`. A `MoveWaypoint`, every VOB op and every property write cannot
 affect it. So the scan re-runs on world open/close and on those three ops, and
-on nothing else.
+on nothing else — plus the one op that changes what the rule reads without
+changing a name: `SetWaypointEdge` removing an edge can promote an endpoint to a
+free point, and the free-point subset is the rule's other input, so
+`waynetLoaded` compares it alongside the names (review *first pass* 4).
 
 **The portal findings do not fit the panel, and are not being made to.** A
 malformed `P:OWCAVE01_` material is in a world mesh: there is no file, no dialog

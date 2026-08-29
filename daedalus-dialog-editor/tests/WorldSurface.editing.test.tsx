@@ -37,6 +37,9 @@ let mockTerrainPoint: [number, number, number] | null | undefined;
 let mockExposure: number | undefined;
 /** Which VOBs the viewport is told not to draw — one byte per VOB, or null. */
 let mockHiddenVobs: Uint8Array | null | undefined;
+/** The payload the overlay draws, and the one a committed waypoint drag builds
+ *  its op out of. */
+let mockWaynet: WaynetPayload | null | undefined;
 /** The steps the viewport is told to quantise a drag to. */
 let mockSnapGrid: number | undefined;
 let mockSnapAngle: number | undefined;
@@ -82,6 +85,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     hiddenVobs: Uint8Array | null;
     snapGrid: number;
     snapAngle: number;
+    waynet: WaynetPayload | null;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -100,6 +104,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockHiddenVobs = props.hiddenVobs;
     mockSnapGrid = props.snapGrid;
     mockSnapAngle = props.snapAngle;
+    mockWaynet = props.waynet;
     // The imperative surface drop-to-ground, align-to-normal and the scene
     // tree's camera jump call directly — see `WorldViewportHandle`'s doc —
     // stood in by jest.fns so the shell side can be tested without a WebGL
@@ -338,6 +343,7 @@ beforeEach(() => {
   mockHiddenVobs = undefined;
   mockSnapGrid = undefined;
   mockSnapAngle = undefined;
+  mockWaynet = undefined;
   mockVobProps = { class: 'zCVob', ...BASE_PROPS };
   mockRaycastDown.mockReset();
   mockFrameVob.mockReset();
@@ -2765,6 +2771,31 @@ describe('a failure after the world has already taken the edit', () => {
     expect(mockAppliedOps).toHaveLength(1);
     expect(mockAppliedOps![0]).toMatchObject({ op: 'AddVob', vob: 2 });
     expect((mockAppliedOps![0] as { to: unknown }).to).not.toBeNull();
+  });
+
+  it("drops the previous world's waynet when the next world opens", async () => {
+    await openWorld();
+    expect(mockWaynet?.names).toEqual(['WP_START', 'WP_MIDDLE', 'WP_END']);
+
+    // World B, whose waynet never arrives — a transient worker error, which is
+    // reported over a world that stays open. World A's payload must not be what
+    // the overlay goes on drawing and a drag goes on building ops from: the
+    // names would be A's, checked against B's waynet by the binding's name
+    // guard, and refused for a reason nobody could read off the screen.
+    const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+    api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/OldWorld.zen' as never);
+    api.openWorld.mockResolvedValueOnce(summary as never);
+    api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+    api.getWorldWaynet.mockRejectedValueOnce(new Error('worker exited') as never);
+
+    fireEvent.click(screen.getByTestId('world-open'));
+
+    await waitFor(() => expect(screen.getByTestId('world-edit-error')).toHaveTextContent(
+      /worker exited/,
+    ));
+    expect(mockWaynet).toBeNull();
+    expect(useWorldStore.getState().waynetNames).toBeNull();
   });
 
   it('keeps the opened world when the waynet read fails', async () => {

@@ -73,6 +73,29 @@ describe('worldStore.waynetLoaded', () => {
     expect(useWorldStore.getState().waynetNames).not.toBe(first);
   });
 
+  it('reads an empty waynet as nothing known, not as an empty world', () => {
+    // `normalize.cc` answers a world with no waynet chunk with an empty point
+    // list rather than throwing, so this is reachable. Stored as
+    // `{all: [], freePoints: []}` the rule's `if (!world) return []` guard does
+    // not fire and every waypoint site in the project is flagged.
+    useWorldStore.getState().waynetLoaded(waynet([]));
+
+    expect(useWorldStore.getState().waynetNames).toBeNull();
+  });
+
+  it('re-derives the free points when a re-read changed only the flags', () => {
+    const { waynetLoaded } = useWorldStore.getState();
+    waynetLoaded(waynet(['NW_CITY_01', 'FP_ROAM_1']));
+    expect(useWorldStore.getState().waynetNames?.freePoints).toEqual([]);
+
+    // What `removeWaypointEdge` does: it can promote an endpoint to a free
+    // point, which changes the flags column and not one name. That is exactly
+    // the re-read the surface issues after an edge op.
+    waynetLoaded(waynet(['NW_CITY_01', 'FP_ROAM_1'], ['FP_ROAM_1']));
+
+    expect(useWorldStore.getState().waynetNames?.freePoints).toEqual(['FP_ROAM_1']);
+  });
+
   it('is cleared when a world opens or the surface resets', () => {
     useWorldStore.getState().waynetLoaded(waynet(['NW_CITY_01']));
     useWorldStore.getState().beginOpen();

@@ -139,9 +139,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **The waynet store's three defects** — an empty waynet reads as full
-  knowledge, the payload survives into the next world, and the identity guard
-  is blind to the flags column. Any run. *first pass* 2-4
 - **The waypoint rule's problem ids collide** — one function naming the same
   missing waypoint twice yields two identical ids. Any run. *first pass* 5
 - **The scene tree does not follow the world** — a rename re-renders neither
@@ -203,6 +200,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **The waynet store's three defects** — an empty payload is stored as "nothing
+  known", `openWorld` clears the previous world's waynet, and the identity guard
+  compares the free points as well as the names. board-loop. *first pass* 2-4,
+  all three FIXED
 
 *(flushed 2026-08-29 — the two `ops/main` fixes before this one are in commits
 7298fe6 and f587b74 and marked FIXED at their pointer; `git log` is the record.)*

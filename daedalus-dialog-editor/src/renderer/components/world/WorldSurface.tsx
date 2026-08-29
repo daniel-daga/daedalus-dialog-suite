@@ -194,6 +194,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setMesh(null);
     setVisuals(null);
     setTerrainPoint(null);
+    // The waynet goes too, and it is the one reset that is not obvious: the
+    // viewport mounts on `mesh && visuals && summary`, so a payload left
+    // standing here draws the *previous* world's waypoints over the new one
+    // until the read at the end of this open lands — and a drag committed in
+    // that window builds its op from the old names, which the binding's name
+    // guard refuses with a message about a waynet that changed. A failed open
+    // would leave it standing for good.
+    setWaynet(null);
 
     try {
       // An empty asset list asks main to derive the sources from the
