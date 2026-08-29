@@ -170,8 +170,7 @@ nothing checks at all. The walkers themselves are covered by
   procedure in environment-hazards.md. `gmbt` itself is installed to
   `%APPDATA%\GMBT\bin` (on the user PATH; the script falls back to that path).
 
-  Status 2026-08-29, late: `engine-batch.ps1` has driven a full `-Only 00,07`
-  batch through GMBT — four worlds launched, played and closed, verdicts
-  logged. The verdicts themselves are void (worlds staged under their own
-  names, so no NPCs; see above) and the script now stages `NEWWORLD.ZEN`,
-  which has been parsed, not played.
+  Status 2026-08-30: `engine-batch.ps1` in this shape — one candidate at a
+  time as `NEWWORLD.ZEN`, staged hash verified, sheet printed — has driven
+  `-Only 00,07` through GMBT and all three candidates passed (acceptance
+  record, *"Gate 2b, third pass"*).

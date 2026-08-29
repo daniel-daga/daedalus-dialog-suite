@@ -312,11 +312,15 @@ other three were the candidate's: a 10 cm bbox against an engine that culls by
 box, a VOB standing at the spawn's Y over ground 50 units lower, and an empty
 `focusName`, which is what the crosshair finds a mob by.
 
-**What is still unwitnessed** — say this rather than "Gate 2b passed":
-`05`'s own two observation rows (the torch subtree *wholly* gone, and NPC
-routines surviving the 2,895-waypoint renumber) have never been run in a cleared
-frame and are "loads and plays" only — **the candidates for them exist as of
-2026-08-29 and have not been played**, see the `07` paragraph below. The seven decal fields are in no
+**Closed by the third pass — `07`, 2026-08-30.** `05`'s two observation rows,
+each in a frame that showed it alone: the torch subtree *wholly* gone, and the
+tower's routines running across the 2,895-waypoint renumber (acceptance
+record, *"Gate 2b, third pass"*; the `07` paragraph below is how the
+instrument got there). Every op the editor ships has now been seen doing its
+work in the engine.
+
+**What is still unwitnessed** — say this rather than "Gate 2b passed": the
+seven decal fields are in no
 candidate. **Nor is any of the eight enum writes** - Gate 2b proved
 `SetVobClassProp` reaches the file and the engine plays it, but for *scalar*
 fields, and `verify-world-pipeline.js` writes no enum either.
@@ -359,9 +363,9 @@ behave and a failure still localizes. Run sheet §06;
 `-Only 00,06` is the whole second pass, and `-Latest` runs the newest candidate
 alone for a re-run where the control has already been seen.
 
-**`07` was built 2026-08-29, and it is an instrument and not a verdict.** Three
-candidates in `06`'s shape, run sheet §07. **Played once that night through
-GMBT, and the pass is void twice over**: the batch staged each world under its
+**`07` was built 2026-08-29 and passed 2026-08-30.** Three candidates in
+`06`'s shape, run sheet §07. **Played once the night before, and that pass was
+void twice over**: the batch staged each world under its
 own file name, and the engine spawns NPCs from `STARTUP_<worldfile>`, so there
 were none (`environment-hazards.md`, *GMBT*); and the clearing took only the
 lights, so 22 other torches' flames burned on around the one under test and
@@ -369,7 +373,7 @@ the verdict was "way darker, many torches visible". The `07c: ok` logged at 23:3
 is a routine row observed on a world with no NPC. Both fixed the same night —
 the script stages every candidate as `NEWWORLD.ZEN` and prints each
 candidate's `<name>.txt` run sheet before and after the run; `07a`/`07b` take
-the other 22 torches with them — and the rebuilt three have not been played:
+the other 22 torches with them — and the rebuilt three passed the next morning:
 
 - **`07a` and `07b` are an A/B of one difference.** Both clear every light,
   sound and effect within 6,000 units of START **except the torch subtree**,

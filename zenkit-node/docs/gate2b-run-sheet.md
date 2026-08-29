@@ -18,16 +18,13 @@ here is claimed until it is run.
 > **`06` answered it on 2026-08-29 and every row of it passed** — red fog, the
 > carried sound radius, and an authored chest the player opens.
 >
-> **`07a`/`07b`/`07c` were built 2026-08-29, played once that night, and the
-> pass is void** — twice over. The batch staged each world under its own name,
-> and the engine spawns NPCs from `STARTUP_<worldfile>`, so there were none;
-> and the torch clearing took only the lights, leaving 22 other torches' flames
-> burning around the one under test (Environment, *GMBT*). Both are fixed —
-> the script stages every candidate as `NEWWORLD.ZEN` and `07a`/`07b` clear
-> the other torches too — and the rebuilt three have **NOT been run**. They
-> are `05`'s own two observation rows in `06`'s frame — the last thing this
-> sheet leaves unwitnessed. Until somebody plays them, `05` is still "loads
-> and plays" and nothing more.
+> **`07a`/`07b`/`07c` passed on 2026-08-30** — acceptance record, *"Gate 2b,
+> third pass"*. A first attempt the night before was void twice over: the
+> batch staged each world under its own name, and the engine spawns NPCs from
+> `STARTUP_<worldfile>`, so there were none; and the torch clearing took only
+> the lights, leaving 22 other torches' flames burning around the one under
+> test (Environment, *GMBT*). Both fixed before the pass that counted. With
+> it, every row on this sheet has been run.
 
 ## Running it
 

@@ -1056,22 +1056,32 @@ unopenable chest without saying so is the gap it leaves.
 **What is still not witnessed, after both passes.** Say this, not "Gate 2b
 passed":
 
-- **`05`'s two observation rows were never run in a cleared frame** — that the
-  deleted torch subtree is *wholly* gone (a partial removal is the interesting
-  failure), and that NPC routines still work across the 2,895-waypoint
-  renumber. Both are "loads and plays" only. **The candidates exist and were
-  played once, 2026-08-29 23:33, and that pass is void**: staged under their
-  own file names, so no `STARTUP_` script ran and no NPC existed, and with the
-  other 22 wall torches still burning around the one under test (run sheet
-  §07, environment-hazards.md *GMBT*). Rebuilt the same night and not played
-  since: `07a`/`07b` are the frame cleared around the torch — of lights and of
-  every other torch — with and without it, an A/B of one difference, and `07c`
-  is the renumber with no other edit in the file. Until they are played this
-  row is unchanged — building an instrument is not a verdict.
+- **`05`'s two observation rows** — closed by the third pass, below.
 - **`SetVobProp`'s seven decal fields** — not in any candidate.
 - **`oCZoneMusic.volume`** — dropped deliberately (§16.2): no ear can rank two
   music volumes in a live world, so it is unclaimed rather than tested badly.
 - **The 20-odd other authorable classes** — five have been seen in an engine.
+
+### Gate 2b, third pass — 2026-08-30, `07`, the last two observation rows
+
+`05`'s two rows, each in a frame built to show it and nothing else (run sheet
+§07). Through GMBT, staged as `NEWWORLD.ZEN`, with the control in-session and
+every candidate's staged hash confirmed in `results.log` before its verdict.
+A first attempt the night before was void — the worlds ran under their own
+file names, so no `STARTUP_` script spawned an NPC, and the lights-only
+clearing left 22 other torches burning (environment-hazards.md, *GMBT*).
+
+| Row | Result |
+|---|---|
+| `00` control | OK. Access violation only after quitting — the known shutdown crash |
+| **`07a` — one torch, alone** | **PASS.** The frame cleared of 231 light/sound/effect VOBs and of 22 other wall-torch subtrees; the test torch stands, burning, the only lit thing. 22 subtree deletes witnessed as bare brackets |
+| **`07b` — no torch** | **PASS.** The same frame and one `DeleteVob` on the torch's six-VOB subtree: post, flame, sparks, flare and lights all gone, nothing left floating. **The subtree delete is witnessed wholly, not partially** |
+| **`07c` — the renumber alone** | **PASS.** `NW_XARDAS_TOWER_IN1_32` removed, 2,895 waypoints renumbered, no VOB touched; the tower's routines run on their waypoints |
+
+With this, every op the editor ships has been seen doing its work in the
+engine, not only loading. What is unwitnessed is the list above this section:
+the decal fields, the enum writes, `oCZoneMusic.volume` by decision, and the
+authorable classes beyond the five seen.
 
 ### Building the candidates
 

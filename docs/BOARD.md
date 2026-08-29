@@ -100,9 +100,9 @@ was true for so long nobody re-reads it.
   not this one. The release-gate gaps that used to be named here are **all
   closed** — the addon is asserted present and unpacked, the packaged app now
   opens a world in CI, and a real-Electron spec now watches the World surface
-  draw (`world-render.spec.ts`). What a dispatch would still ship unproven is now narrow
-  and is in Next: the subtree delete and the waypoint renumber have loaded in an
-  engine but have never been *looked at* in a frame where they could be seen.
+  draw (`world-render.spec.ts`). **Gate 2b closed 2026-08-30**: every op has
+  been seen doing its work in the engine; the unwitnessed remainder is the
+  acceptance record's list under *"What is still not witnessed"*.
 - **This machine is fully built; every other machine and CI must rebuild** —
   the addon has changed in nearly every recent session, and `git log` says what
   and when. The recipe and every trap in it — `build-zenkit.js` before
@@ -132,14 +132,9 @@ level-editor pair — §16 and the plan's own, or §3-§10 and §13 in
 never ambiguous. The diagnosis, the measurement and the decision a
 card waits on live at its pointer — put new prose there, not here.
 
-**Release gates**
-
-- **`07` is rebuilt and has not been played** — the 23:33 pass on 2026-08-29
-  is void: staged under their own names, so no `STARTUP_` ran and no NPC
-  spawned, and 22 other torches burned on. `07a`/`07b`/`07c` are the last of
-  Gate 2b's unwitnessed rows and need a person at the engine. **Daniel.**
-  §16.2, run sheet §07 — `engine-batch.ps1 -Only 00,07` now stages
-  `NEWWORLD.ZEN` and prints each candidate's sheet; parsed, never played
+**Release gates** — none open. Gate 2b closed 2026-08-30; what a dispatch
+would ship unproven is the acceptance record's short list (decal fields, enum
+writes, the classes beyond five), none of it carded.
 
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
@@ -220,6 +215,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Gate 2b closed** — `07a`/`07b`/`07c` passed 2026-08-30 through GMBT: the
+  torch subtree wholly gone, the renumber with routines intact. The engine
+  harness stages `NEWWORLD.ZEN`, verifies the staged hash and prints each
+  candidate's sheet. Acceptance record, *"Gate 2b, third pass"*.
 - **The retail install is stock and stays so** — the corpus is
   `scripts/extract-worlds.js` reading the VDFs through the new `vfsRead`, the
   candidates ship as a GMBT mod, `engine-batch.ps1` drives `gmbt test` and
