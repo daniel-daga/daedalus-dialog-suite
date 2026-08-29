@@ -569,15 +569,26 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
         && (typeof op.parentPath !== 'string' || !INDEX_PATH.test(op.parentPath))) {
         throw new Error('Invalid op: parentPath must be slot indices separated by "/", or null');
       }
-      // Exactly one side is null. Both null is an op that does nothing; neither
-      // null is an add and a delete at once, and `writeOp` would read it as an
-      // insert in one direction and an insert in the other — so the VOB would
-      // never come back off an undo.
-      const nulls = ['from', 'to'].filter((side) => op[side] === null).length;
-      if (nulls !== 1) {
-        throw new Error('Invalid op: an AddVob has exactly one null side — it adds or it removes');
+      // **It crosses this boundary as an add, never as its own inverse.** The
+      // delete direction is a real direction — `writeOp` reads a null side as
+      // `deleteVob` — but it is built by `invertOp` off the undo stack in the
+      // main process and is not a request. Arriving here it is a subtree delete
+      // wearing an add's name: none of `DeleteVob`'s guards apply (§16 has the
+      // reasons they exist), `isBarrierOp` is false so `applyOps` records it as
+      // invertible, and its inverse inserts a bare `zCVob` where a retail
+      // `oCMobInter` and its children stood — the "undo that looks like it
+      // worked" the `DeleteVob` doc comment says must never happen.
+      //
+      // So `from` is null and `to` is the spec, always. Both null is an op that
+      // does nothing; neither null is an add and a delete at once, which
+      // `writeOp` would read as an insert in both directions.
+      if (op.to === null) {
+        throw new Error('Invalid op: an AddVob with a null to is a delete — send a DeleteVob');
       }
-      const spec = op.from === null ? op.to : op.from;
+      if (op.from !== null) {
+        throw new Error('Invalid op: an AddVob adds — from must be null');
+      }
+      const spec = op.to;
       if (!isPlainObject(spec)) throw new Error('Invalid op: the vob to add must be an object');
       for (const [key, value] of Object.entries(spec)) {
         if (key === 'class') {

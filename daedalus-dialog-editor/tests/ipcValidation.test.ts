@@ -940,12 +940,17 @@ describe('assertApplyOpsRequest', () => {
       }
     });
 
-    it('is accepted in either direction', () => {
+    it('crosses this boundary only as an add', () => {
       expect(() => assertApplyOpsRequest({ ops: [add] })).not.toThrow();
-      // Its inverse: the same op with the sides swapped, which is a delete.
+      // Its inverse — the sides swapped, which is a delete — is built by
+      // `invertOp` in the main process off the undo stack and never sent. As a
+      // request it is a subtree delete wearing an add's name: it skips every
+      // `DeleteVob` guard, `isBarrierOp` is false so the history records it as
+      // invertible, and undoing it inserts a bare `zCVob` where a retail
+      // `oCMobContainer` and its children stood.
       expect(() => assertApplyOpsRequest({
         ops: [{ ...add, from: add.to, to: null }],
-      })).not.toThrow();
+      })).toThrow(/DeleteVob/);
     });
 
     it('rejects an op that is neither an add nor a delete', () => {
@@ -954,10 +959,10 @@ describe('assertApplyOpsRequest', () => {
       // the VOB would never come back off an undo.
       expect(() => assertApplyOpsRequest({
         ops: [{ ...add, from: null, to: null }],
-      })).toThrow(/one null side/);
+      })).toThrow(/DeleteVob/);
       expect(() => assertApplyOpsRequest({
         ops: [{ ...add, from: add.to, to: add.to }],
-      })).toThrow(/one null side/);
+      })).toThrow(/from must be null/);
     });
 
     it('requires a position, in three finite numbers', () => {

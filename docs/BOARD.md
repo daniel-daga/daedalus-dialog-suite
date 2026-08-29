@@ -138,9 +138,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **`AddVob` with `to: null` is a delete nobody guards** — bypasses every
-  `DeleteVob` guard and rides the undo stack as if invertible. Any run.
-  *ops/main* 4
 - **`applyOps` trusts `op.vob`** — no bounds check, and it runs after the
   commit; both of its waynet siblings do check. Any run. *ops/main* 3
 - **The waynet mutators never mark the handle mutated** — so `container`
@@ -214,13 +211,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(flushed 2026-08-29 — the post-commit-refusal card's substance is in commit
-58f8289 and marked FIXED at its pointer; `git log` is the record.)*
+*(flushed 2026-08-29 — the two `ops/main` fixes before this one are in commits
+7298fe6 and f587b74 and marked FIXED at their pointer; `git log` is the record.)*
 
-- **An undo during a world open lands in the new world** — `openWorld` now
-  clears `worldPath` and both stacks before it awaits the open, so a mid-open
-  replay is refused instead of written into the next world. board-loop.
-  *ops/main* 2, marked FIXED
-- **A dead world worker cannot be revived** — `handleWorkerDeath` now nulls
-  `this.worker`, so the next open starts a fresh one and the crash banner's
-  "reopen the world" is followable. board-loop. *ops/main* 1, marked FIXED
+- **An `AddVob` with a null `to` is refused at the IPC boundary** — the delete
+  direction is `invertOp`'s, built in main off the undo stack, and is no longer
+  a request the renderer can send. board-loop. *ops/main* 4, marked FIXED

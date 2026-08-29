@@ -327,8 +327,15 @@ handlers → `WorldService` → `zenkit.worker` → `commitOps`/`writeOp` →
    `zen-world/test/ops.test.ts` has no out-of-range case.
 
 4. **`AddVob` with `to: null` is an unguarded subtree delete that bypasses every
-   `DeleteVob` guard and is recorded as invertible.** `ipcValidation.ts:563-627`
-   deliberately accepts either null side (tested at `ipcValidation.test.ts:943`)
+   `DeleteVob` guard and is recorded as invertible.** — **FIXED 2026-08-29**:
+   `assertApplyOpsRequest` now takes an `AddVob` only in the add direction —
+   `to` null is refused as "send a `DeleteVob`", `from` non-null as "an AddVob
+   adds". The delete direction stays a real direction in `writeOp`, because it
+   is what `invertOp` builds off the undo stack *inside* the main process; what
+   it is not is a request. Held by *"crosses this boundary only as an add"*
+   (`ipcValidation.test.ts`).
+   `ipcValidation.ts:563-627` originally
+   accepted either null side (tested at `ipcValidation.test.ts:943`)
    and never cross-checks `path` against `parentPath` or the `from` spec. In
    `writeOp` (`ops.ts:1727-1743`) the insert direction is guarded (`landed !==
    op.path` → rollback and throw) while the delete direction is a bare
