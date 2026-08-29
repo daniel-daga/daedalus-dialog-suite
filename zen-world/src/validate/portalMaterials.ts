@@ -5,7 +5,7 @@
 //
 // Measured over the retail G2 worlds on 2026-08-28, which is what fixes the
 // shapes this accepts: OldWorld 100 `P:` materials against 38 sectors, NewWorld
-// 318 against 154, AddonWorld 154 against 154. All uppercase `P:`, all with
+// 318 against 154, AddonWorld 154 against 74. All uppercase `P:`, all with
 // exactly one underscore, no sector name containing one, and every named side
 // present in `sectorNames`. An empty side is normal and common — `P:OWCAVE01_`
 // and `P:_OWCAVE01` are 44 of OldWorld's 100 — so only a name with *both* sides

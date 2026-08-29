@@ -155,8 +155,6 @@ pointer is a finding id in the file the routing table names.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **Portal pairing is unmeasured** — does every `P:A_B` have its `P:B_A` across
-  the three retail worlds? Any run. §16.22 q1
 - **The planarity tolerance is unmeasured** — the worst retail coplanarity
   deviation is the tolerance. Any run. §16.22 q2
 - **Portal orientation is unmeasured** — do normals point consistently with
@@ -221,6 +219,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **Portal pairing is measured** — retail is 100% paired: 572 `P:` names, 286
+  pairs, zero unpaired, zero malformed, zero repeats. So the check is a warning
+  and it is writable; filing that card is a person's call. §16.22 q1 has the
+  table, and corrects §16.18's AddonWorld sector count (74, not 154).
+  board-loop
 
 *(flushed 2026-08-29. Twenty-six cards across six rounds. The four enum/locus
 cards' forward facts are at §16.21 — the two held-out mover enums, and that no

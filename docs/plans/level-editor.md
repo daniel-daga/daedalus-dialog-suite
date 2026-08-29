@@ -5048,7 +5048,8 @@ plumbed, deliberately.
 
 What the retail measurement fixed, taken with the addon rather than assumed
 (OldWorld 100 `P:` materials / 38 sectors, NewWorld 318 / 154, AddonWorld
-154 / 154):
+154 / 74 — the sector count corrected 2026-08-29 by §16.22 q1, which recorded
+154 here for both columns):
 
 - **A one-sided name is legal, not half-written.** `P:OWCAVE01_` and
   `P:_OWCAVE01` are 44 of OldWorld's 100 — a portal whose other side is
@@ -5501,6 +5502,34 @@ The four questions:
 **A measurement is allowed to kill its own check.** If retail carries one-sided
 portals, or spawns nine NPCs on a waypoint routinely, the honest outcome is to
 write that down here and card nothing — the same outcome the scale gizmo got.
+
+**q1 answered, 2026-08-29: retail is 100% paired.** `check-portal-pairing.js`
+in `zenkit-node/scripts/` counts `P:` material names against their mirrors and
+was run over all three G2 worlds:
+
+| world | sectors | `P:` materials | two-way pairs | no mirror | malformed |
+|---|---|---|---|---|---|
+| OldWorld | 38 | 100 | 50 | 0 | 0 |
+| NewWorld | 154 | 318 | 159 | 0 | 0 |
+| AddonWorld | 74 | 154 | 77 | 0 | 0 |
+
+572 names, 286 pairs, **not one unpaired name and not one repeat** — every
+distinct name occurs exactly once, and the count is exactly twice the pair
+count in each world. No symmetric `P:A_A` exists either, so a sector never
+portals to itself. The one-sided names §16.18 measured pair the same way: the
+mirror of `P:OWCAVE01_` is `P:_OWCAVE01`, and both are always there.
+
+So the rule q1 asked for exists and the check is a **warning**, in
+§16.18 slice 1's shape: a pure function over `mesh.materials`, mirror lookup
+case-insensitive as `checkPortalMaterials` already is, malformed names counted
+apart rather than reported unpaired (they have no mirror to look for). It rides
+the same undecided consumer question as slice 1 — the check is writable, its
+locus is not, and it is a card for a person to file, not for a run to invent.
+
+**A number in §16.18 was wrong and is corrected here and there:** AddonWorld has
+**74** sectors, not 154. 154 is its `P:` material count, copied one column
+across on 2026-08-28. Nothing was built on it — `checkPortalMaterials` reads the
+list, never its length.
 
 ### 16.23 W4 gets its affordance (§16.8, decided 2026-08-29)
 
