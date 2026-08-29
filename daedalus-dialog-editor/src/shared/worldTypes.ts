@@ -55,6 +55,15 @@ export interface InstancedPayload {
 }
 
 /**
+ * The bits packed into {@link WaynetPayload.flags}, defined once beside the
+ * field they describe. The overlay colours a point from them and the Problems
+ * scan derives the free-point set from them; a private copy in either that
+ * drifts from `getWaynet` is a silent misclassification, not a failure.
+ */
+export const WAYNET_FLAG_FREE_POINT = 0b01;
+export const WAYNET_FLAG_UNDER_WATER = 0b10;
+
+/**
  * The waynet as a drawable graph (zenkit-node's `getWaynet`). Stored order,
  * ZenGin space, edges as index pairs — an overlay builds a line buffer from
  * indices, and the single coordinate conversion stays at the scene root.
@@ -65,7 +74,7 @@ export interface WaynetPayload {
   positions: ArrayBuffer;
   directions: ArrayBuffer;
   waterDepths: ArrayBuffer;
-  /** bit 0 freePoint, bit 1 underWater. */
+  /** {@link WAYNET_FLAG_FREE_POINT} and {@link WAYNET_FLAG_UNDER_WATER}. */
   flags: ArrayBuffer;
   edgeCount: number;
   edges: ArrayBuffer;

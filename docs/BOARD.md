@@ -141,11 +141,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **Five cleanups, doc first** — `problems-panel.md` still claims five rules
-  and one scan input; a Problems click on an unopened file is a no-op; the
-  free-point flag bit has three private copies; `problemsStore` rebuilds a
-  ~3,000-entry Set per scan; `bvhReady` never settles. *first pass* 7-10,
-  *renderer* 4
 - **The free-point guard may be too narrow** — `startsWith` where ZenGin looks
   to match by substring. Needs the engine. **Daniel.** *first pass* 6
 
@@ -194,6 +189,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **Five cleanups, doc first** — all five landed: `problems-panel.md` has its
+  sixth rule and both new scan inputs, a Problems click falls back to the
+  problem's file, the free-point bit is one exported constant, the scan is
+  handed the stored waynet view, and `BvhBuilder.dispose` settles its pending
+  builds. board-loop. *first pass* 7-10 and *renderer* 4, all five FIXED
 
 - **Binding hardening, four of them** — all four refuse now: an over-long index
   path segment, an out-of-range mipmap level, a polygon corner past the vertex

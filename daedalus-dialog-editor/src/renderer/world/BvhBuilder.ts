@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
+import { createBvhWorker } from './bvhWorker';
 
 // Main-thread half of the off-thread BVH build (see bvh.worker.ts).
 //
@@ -20,7 +21,7 @@ export class BvhBuilder {
   private nextId = 1;
 
   constructor() {
-    this.worker = new Worker(new URL('./bvh.worker.ts', import.meta.url), { type: 'module' });
+    this.worker = createBvhWorker();
     this.worker.onmessage = (event: MessageEvent<{ id: number; serialized: never }>) => {
       const entry = this.pending.get(event.data.id);
       if (!entry) return;
@@ -52,6 +53,13 @@ export class BvhBuilder {
 
   dispose(): void {
     this.worker.terminate();
+    // Settle what the terminated worker will never answer. The scene effect
+    // disposes the builder on every rebuild, and `renderFrom`/`benchmark` are
+    // inside `await Promise.all([bvhReady, texturesReady])` while it happens:
+    // a promise left pending hangs them instead of letting them find a
+    // geometry with no tree. Resolved, not rejected — the caller's scene is
+    // being torn down, which is not an error it can act on.
+    for (const entry of this.pending.values()) entry.resolve();
     this.pending.clear();
   }
 }

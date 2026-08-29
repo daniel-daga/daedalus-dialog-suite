@@ -92,11 +92,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
       // The world is reference data, exactly like the NPC names above, and
       // read from its own store for the same reason. No world open means the
       // rule that needs it returns nothing (level-editor.md §16.8).
-      const waynetNames = useWorldStore.getState().waynetNames;
-      const world = waynetNames === null ? undefined : {
-        pointNameKeys: new Set(waynetNames.all),
-        freePointNames: waynetNames.freePoints
-      };
+      const world = useWorldStore.getState().waynetNames ?? undefined;
 
       const { problems, scannedFileCount } = scanProject({
         files,

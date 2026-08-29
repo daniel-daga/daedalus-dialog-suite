@@ -89,7 +89,14 @@ the test that holds it; everything unmarked is still open.
    would absorb infix misses, so it does not distinguish the two. `includes()` is
    the conservative form.
 
-7. **Clicking a waypoint problem is usually a no-op.**
+7. **Clicking a waypoint problem is usually a no-op.** — **FIXED 2026-08-29**:
+   when neither navigator resolves, the click falls back to `problem.filePath`
+   — the one thing every problem carries — opening that file, selecting the
+   function and switching to the dialog view, because Problems is the whole
+   main area and a click that resolves to nothing shows nothing. Held by two
+   tests in `ProblemsPanel.navigation.test.tsx`: *"opens the file the problem
+   names when the symbol is not in the merged model"* and *"leaves a resolved
+   navigation alone — no second jump"*.
    `ProblemsPanel.tsx:50` — `handleSelect` routes `functionName` through
    `navigateToSymbol`, which searches only the merged semantic model, and drops
    its `false` return with no fallback to `problem.filePath`. This rule is the
@@ -100,18 +107,34 @@ the test that holds it; everything unmarked is still open.
 
 ## Conventions and cleanup
 
-8. **`docs/architecture/problems-panel.md` is stale** — it still says "All five
+8. **`docs/architecture/problems-panel.md` is stale** — **FIXED 2026-08-29**:
+   the rule table has its sixth row, the scan-input section names
+   `waypointSiteIndex` and `worldStore.waynetNames` and what their absence
+   means, and Navigation records the `filePath` fallback of finding 7. It still says "All five
    read only structured, typed data" (line 41) and "The single scan input is
    `projectStore.parsedFiles`" (line 29). There are six rules and two new scan
    inputs. Same-change doc hygiene is a hard rule in `CLAUDE.md`.
 
-9. **The waynet free-point flag bit exists in three private copies** —
+9. **The waynet free-point flag bit exists in three private copies** — **FIXED
+   2026-08-29**: `WAYNET_FLAG_FREE_POINT` and `WAYNET_FLAG_UNDER_WATER` are
+   exported from `shared/worldTypes.ts` beside the `flags` field they describe,
+   and the store, the overlay and both tests read them. Nothing asserts the
+   packing beyond the existing classification tests, which is the point: they
+   now fail together rather than one silently disagreeing.
+   Was:
    `worldStore.ts:33`, `WaynetOverlay.ts:21`, and the new test; the packing is
    documented only as a comment on `WaynetPayload.flags`
    (`shared/worldTypes.ts:68`). A packing change fails silently as
    misclassification. Export one constant beside the field.
 
-10. **`problemsStore.ts:97` rebuilds a ~3,000-entry Set per scan** — i.e. on every
+10. **`problemsStore.ts:97` rebuilds a ~3,000-entry Set per scan** — **FIXED
+    2026-08-29**: `waynetLoaded` stores the `WorldWaynetView` itself
+    (`pointNameKeys` + `freePointNames`), the scan passes it straight through,
+    and `WaynetNames` is gone. The identity guard compares the key set and the
+    free-point list, so a re-read that changed nothing still early-returns.
+    Held by *"hands the scan the stored view instead of rebuilding it per
+    scan"* (`problemsWaypointWorldInput.test.ts`), which asserts the object the
+    scan is given is the one in the store. Was: — i.e. on every
     debounced keystroke re-parse — to convert `WaynetNames` into the near-twin
     `WorldWaynetView`. `waynetLoaded` already runs only on a real change; build
     `pointNameKeys` there and pass the stored object through, deleting the
@@ -305,7 +328,15 @@ as already covered above.
    `ReparentVob` and for `AddVob` under a parent. Opening a different world is
    safe — `beginOpen` nulls `summary`, unmounting the panel.
 
-4. **`bvhReady` never settles after a scene rebuild.**
+4. **`bvhReady` never settles after a scene rebuild.** — **FIXED 2026-08-29**:
+   `dispose()` resolves every outstanding build before clearing the map —
+   resolved, not rejected, because the caller's scene is being torn down and
+   that is not an error it can act on; it finds a geometry with no tree, which
+   is the truth. The worker's construction moved to `bvhWorker.ts` so
+   `BvhBuilder` is importable by a test at all: `new Worker(new URL(…,
+   import.meta.url))` is Vite's worker form and the CommonJS Jest transform
+   cannot parse `import.meta`. Held by *"settles the builds it will never
+   finish, so an awaiting caller does not hang"* (`bvhBuilderDispose.test.ts`).
    `WorldViewport.tsx:1183-1187` — `BvhBuilder.dispose()` (`BvhBuilder.ts:261`)
    terminates the worker and calls `this.pending.clear()` without resolving the
    outstanding promises, and the scene effect's cleanup calls it on every

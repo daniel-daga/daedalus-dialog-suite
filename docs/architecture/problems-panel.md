@@ -26,8 +26,13 @@ quest-editor boundaries:
 ## Scan input and aggregation
 
 The parser emits one `SemanticModel` per file, so cross-file lints aggregate in
-the renderer. The single scan input is `projectStore.parsedFiles` — the full
-per-file models already cached by background ingestion. `buildProjectView`
+the renderer. The scan's main input is `projectStore.parsedFiles` — the full
+per-file models already cached by background ingestion — joined by two pieces of
+reference data the rules read but never walk: `projectStore.waypointSiteIndex`,
+the whole-project index pass's record of which script sites name a waypoint
+(so it sees every file, not only the ones opened), and `worldStore.waynetNames`,
+the open world's point names. Both are absent-means-nothing-is-known, never
+absent-means-nothing-is-legal. `buildProjectView`
 folds them into case-insensitive lookup sets (`dialogNameKeys`, `npcNameKeys`)
 and a `functionsByKey` map. Known NPCs come from the project index
 (`npcList ∪ npcPrototypes`, which already resolve prototype/instance chains to
@@ -36,9 +41,9 @@ C_NPC) plus any file-local C_NPC instance. The panel re-scans whenever
 advances; a manual **Rescan** button and scanned/total counts cover the
 mid-ingestion window.
 
-## Rules (first cut)
+## Rules
 
-All five read only structured, typed data:
+All six read only structured, typed data:
 
 | Rule | Severity | Detection |
 |---|---|---|
@@ -47,6 +52,7 @@ All five read only structured, typed data:
 | `choice-no-clearchoices` | warning | an `Info_AddChoice` with no `Info_ClearChoices` reachable via the choice-target chain |
 | `orphaned-function` | warning | function referenced by no dialog property, choice target, or `calls` entry |
 | `voice-id-duplicate` / `voice-id-malformed` | warning | a voice id used cross-file, or not matching `…_<n>_<n>` |
+| `waypoint-not-in-world` | warning | a script site names a waypoint the open world's waynet has no point for; silent when no world is open, and free points are matched by prefix because the engine matches them that way |
 
 Two decisions worth keeping:
 
@@ -66,6 +72,14 @@ Two decisions worth keeping:
 `information`/`condition` function, so clicking any problem navigates to a
 dialog via `useNavigation().navigateToDialog(dialogName, functionName)`. A
 problem with only a standalone function falls back to `navigateToSymbol`.
+
+Both navigators search the merged semantic model, which only covers files that
+have been opened — and `waypoint-not-in-world` is the first rule whose sites
+come from the whole-project index pass, so its function routinely lives in a
+file no model was ever built for. When neither navigator resolves, the click
+falls back to `problem.filePath`, the one thing every problem carries: the
+panel opens that file, selects the function and switches to the dialog view.
+Without it the click is a no-op on a view that occupies the whole main area.
 
 ## Position limitation
 

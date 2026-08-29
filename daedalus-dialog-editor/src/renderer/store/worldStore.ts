@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
-import type { WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTypes';
+import { WAYNET_FLAG_FREE_POINT, type WaynetPayload, type WorldOp, type WorldSummary } from '../../shared/worldTypes';
+import type { WorldWaynetView } from '../problems/domain/types';
 
 /**
  * World-surface state (level-editor.md §7).
@@ -17,24 +18,22 @@ import type { WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTyp
 
 export type WorldStatus = 'idle' | 'opening' | 'ready' | 'error';
 
-/**
- * The waynet reduced to what a *name* question needs, uppercased once because
- * Daedalus is case-insensitive. The overlay's payload — positions, edges,
- * flags — stays where it is drawn; this is the reference data the Problems
- * scan reads, the way it reads `knownNpcNames` from `projectStore`.
- */
-export interface WaynetNames {
-  /** Every point's name: waypoints and free points alike. */
-  all: readonly string[];
-  /** The free-point subset, which the engine matches by prefix. */
-  freePoints: readonly string[];
-}
-
-const FREE_POINT_FLAG = 1;
+// The waynet reduced to what a *name* question needs, uppercased once because
+// Daedalus is case-insensitive. The overlay's payload — positions, edges,
+// flags — stays where it is drawn; this is the reference data the Problems
+// scan reads, the way it reads `knownNpcNames` from `projectStore`.
+//
+// Stored as the `WorldWaynetView` the rule takes, not as a near-twin the scan
+// converts: the key set is ~3,000 entries on a retail world and a scan runs on
+// every debounced keystroke re-parse, while this runs only on a real change.
 
 /** Whether two name lists hold the same names in the same order. */
 const sameNames = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((name, i) => name === b[i]);
+
+/** Whether two key sets hold the same names. Order is not a name question. */
+const sameKeys = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
+  a.size === b.size && [...b].every((name) => a.has(name));
 
 interface WorldStore {
   status: WorldStatus;
@@ -66,7 +65,7 @@ interface WorldStore {
    * reads it returns no findings rather than calling every script site
    * dangling.
    */
-  waynetNames: WaynetNames | null;
+  waynetNames: WorldWaynetView | null;
   /** A refused edit, or one the *view* could not follow — a failure past the
    *  commit point, which says so rather than claiming a refusal. Deliberately
    *  not `error`/`status: 'error'`, which replaces the whole surface: the world
@@ -106,7 +105,7 @@ const EMPTY = {
   error: null,
   selection: [] as readonly number[],
   selectedWaypoint: null as number | null,
-  waynetNames: null as WaynetNames | null,
+  waynetNames: null as WorldWaynetView | null,
   editError: null,
 };
 
@@ -146,7 +145,8 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
 
     const all = payload.names.map((name) => name.toUpperCase());
     const flags = new Uint32Array(payload.flags);
-    const freePoints = all.filter((_, i) => (flags[i] & FREE_POINT_FLAG) !== 0);
+    const freePointNames = all.filter((_, i) => (flags[i] & WAYNET_FLAG_FREE_POINT) !== 0);
+    const pointNameKeys = new Set(all);
 
     // Both columns, because both are stored. `removeWaypointEdge` can promote
     // an endpoint to a free point without touching a single name, and that
@@ -155,10 +155,10 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     // point until some unrelated edit churned the name set.
     const current = get().waynetNames;
     if (current !== null
-      && sameNames(current.all, all)
-      && sameNames(current.freePoints, freePoints)) return;
+      && sameKeys(current.pointNameKeys, pointNameKeys)
+      && sameNames(current.freePointNames, freePointNames)) return;
 
-    set({ waynetNames: { all, freePoints } });
+    set({ waynetNames: { pointNameKeys, freePointNames } });
   },
 
   applyEdit: (ops) => {

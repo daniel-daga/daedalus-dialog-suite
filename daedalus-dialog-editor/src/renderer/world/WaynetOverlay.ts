@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import type { WaynetPayload } from '../../shared/worldTypes';
+import {
+  WAYNET_FLAG_FREE_POINT,
+  WAYNET_FLAG_UNDER_WATER,
+  type WaynetPayload,
+} from '../../shared/worldTypes';
 
 // The waynet, drawn over the world (level-editor.md §6).
 //
@@ -16,10 +20,6 @@ import type { WaynetPayload } from '../../shared/worldTypes';
 // It draws with `depthTest: false` on purpose: a waynet inside a building is
 // exactly the one worth looking at, and an overlay that terrain hides is an
 // overlay that answers nothing.
-
-/** bit 0 freePoint, bit 1 underWater — the packing `getWaynet` documents. */
-const FREE_POINT = 0b01;
-const UNDER_WATER = 0b10;
 
 // Distinct enough to tell apart at a glance and at a distance: a free point is
 // somewhere an NPC stands rather than routes through, and an underwater point
@@ -63,8 +63,8 @@ export class WaynetOverlay {
       const flag = flags[point];
       // Underwater wins over free: a free point that is also underwater is a
       // swimming node, and that is the more surprising fact about it.
-      const color = (flag & UNDER_WATER) !== 0 ? UNDERWATER
-        : (flag & FREE_POINT) !== 0 ? FREE
+      const color = (flag & WAYNET_FLAG_UNDER_WATER) !== 0 ? UNDERWATER
+        : (flag & WAYNET_FLAG_FREE_POINT) !== 0 ? FREE
           : ORDINARY;
       colors[point * 3] = color.r;
       colors[point * 3 + 1] = color.g;

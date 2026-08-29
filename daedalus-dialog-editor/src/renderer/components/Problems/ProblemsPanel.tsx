@@ -9,6 +9,8 @@ import {
 } from '../common/searchablePaneStyles';
 import { useProblemsStore } from '../../store/problemsStore';
 import { useProjectStore } from '../../store/projectStore';
+import { useEditorStore } from '../../store/editorStore';
+import { useUISelectionStore } from '../../store/uiSelectionStore';
 import { useNavigation } from '../../hooks/useNavigation';
 import type { Problem } from '../../problems/domain/types';
 import ProblemsList from './ProblemsList';
@@ -48,11 +50,23 @@ const ProblemsPanel: React.FC = () => {
   }, [problems]);
 
   const handleSelect = async (problem: Problem): Promise<void> => {
-    if (problem.dialogName) {
-      await navigateToDialog(problem.dialogName, problem.functionName);
-    } else if (problem.functionName) {
-      await navigateToSymbol(problem.functionName);
-    }
+    const navigated = problem.dialogName
+      ? await navigateToDialog(problem.dialogName, problem.functionName)
+      : problem.functionName
+        ? await navigateToSymbol(problem.functionName)
+        : false;
+    if (navigated) return;
+
+    // Both navigators search the merged semantic model, which only covers the
+    // files that have been opened. The waypoint rule's sites come from the
+    // project index's whole-project pass, so a warning in a routines file
+    // nobody opened resolves to nothing — and Problems is the whole main area,
+    // so a click that goes nowhere also says nothing. Fall back to the one
+    // thing every problem carries: the file that owns the declaration.
+    await useEditorStore.getState().openFile(problem.filePath);
+    const { setSelectedFunctionName, setActiveView } = useUISelectionStore.getState();
+    if (problem.functionName) setSelectedFunctionName(problem.functionName);
+    setActiveView('dialog');
   };
 
   const ingestionIncomplete = totalFileCount > scannedFileCount;

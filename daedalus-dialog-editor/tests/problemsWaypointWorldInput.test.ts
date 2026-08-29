@@ -14,15 +14,14 @@ import { useWorldStore } from '../src/renderer/store/worldStore';
 import { useProblemsStore } from '../src/renderer/store/problemsStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { initStoreSync } from '../src/renderer/store/storeSync';
-import type { WaynetPayload } from '../src/shared/worldTypes';
-
-const FREE_POINT = 1;
+import * as scanProjectModule from '../src/renderer/problems/application/scanProject';
+import { WAYNET_FLAG_FREE_POINT, type WaynetPayload } from '../src/shared/worldTypes';
 
 /** A waynet payload with `names[i]` flagged as a free point when listed. */
 const waynet = (names: string[], freePoints: string[] = []): WaynetPayload => {
   const flags = new Uint32Array(names.length);
   names.forEach((name, i) => {
-    if (freePoints.includes(name)) flags[i] = FREE_POINT;
+    if (freePoints.includes(name)) flags[i] = WAYNET_FLAG_FREE_POINT;
   });
   return {
     count: names.length,
@@ -50,12 +49,12 @@ const seedSites = (sites: Record<string, Array<{ filePath: string; functionName:
 describe('worldStore.waynetLoaded', () => {
   beforeEach(() => useWorldStore.getState().reset());
 
-  it('holds the uppercased names and the free-point subset', () => {
+  it('holds the uppercased names and the free-point subset, in the shape the rule reads', () => {
     useWorldStore.getState().waynetLoaded(waynet(['NW_City_01', 'FP_Roam_1'], ['FP_Roam_1']));
 
     expect(useWorldStore.getState().waynetNames).toEqual({
-      all: ['NW_CITY_01', 'FP_ROAM_1'],
-      freePoints: ['FP_ROAM_1'],
+      pointNameKeys: new Set(['NW_CITY_01', 'FP_ROAM_1']),
+      freePointNames: ['FP_ROAM_1'],
     });
   });
 
@@ -76,7 +75,7 @@ describe('worldStore.waynetLoaded', () => {
   it('reads an empty waynet as nothing known, not as an empty world', () => {
     // `normalize.cc` answers a world with no waynet chunk with an empty point
     // list rather than throwing, so this is reachable. Stored as
-    // `{all: [], freePoints: []}` the rule's `if (!world) return []` guard does
+    // `{pointNameKeys: empty, freePointNames: []}` the rule's `if (!world) return []` guard does
     // not fire and every waypoint site in the project is flagged.
     useWorldStore.getState().waynetLoaded(waynet([]));
 
@@ -86,14 +85,14 @@ describe('worldStore.waynetLoaded', () => {
   it('re-derives the free points when a re-read changed only the flags', () => {
     const { waynetLoaded } = useWorldStore.getState();
     waynetLoaded(waynet(['NW_CITY_01', 'FP_ROAM_1']));
-    expect(useWorldStore.getState().waynetNames?.freePoints).toEqual([]);
+    expect(useWorldStore.getState().waynetNames?.freePointNames).toEqual([]);
 
     // What `removeWaypointEdge` does: it can promote an endpoint to a free
     // point, which changes the flags column and not one name. That is exactly
     // the re-read the surface issues after an edge op.
     waynetLoaded(waynet(['NW_CITY_01', 'FP_ROAM_1'], ['FP_ROAM_1']));
 
-    expect(useWorldStore.getState().waynetNames?.freePoints).toEqual(['FP_ROAM_1']);
+    expect(useWorldStore.getState().waynetNames?.freePointNames).toEqual(['FP_ROAM_1']);
   });
 
   it('is cleared when a world opens or the surface resets', () => {
@@ -122,6 +121,23 @@ describe('the Problems scan over an open world', () => {
     const found = useProblemsStore.getState().problems.filter((p) => p.rule === 'waypoint-not-in-world');
     expect(found).toHaveLength(1);
     expect(found[0].filePath).toBe('Rtn.d');
+  });
+
+  it('hands the scan the stored view instead of rebuilding it per scan', () => {
+    // The names set is ~3,000 entries on a retail world and a scan runs on
+    // every debounced keystroke re-parse, while `waynetLoaded` runs only on a
+    // real change: the store builds it once and the scan passes it through.
+    seedSites({ OW_PATH_42: [{ filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego' }] });
+    useWorldStore.getState().waynetLoaded(waynet(['NW_CITY_01']));
+    const stored = useWorldStore.getState().waynetNames;
+    const scanSpy = jest.spyOn(scanProjectModule, 'scanProject');
+
+    useProblemsStore.getState().runScan();
+    useProblemsStore.getState().runScan();
+
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+    for (const [input] of scanSpy.mock.calls) expect(input.world).toBe(stored);
+    scanSpy.mockRestore();
   });
 
   it('says nothing about the same site when no world is open', () => {

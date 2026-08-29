@@ -20,7 +20,11 @@
  */
 
 import * as THREE from 'three';
-import type { WaynetPayload } from '../src/shared/worldTypes';
+import {
+  WAYNET_FLAG_FREE_POINT,
+  WAYNET_FLAG_UNDER_WATER,
+  type WaynetPayload,
+} from '../src/shared/worldTypes';
 import { WaynetOverlay } from '../src/renderer/world/WaynetOverlay';
 
 /** Four waypoints in ZenGin centimetres, three edges. */
@@ -36,8 +40,7 @@ function waynet(overrides: Partial<WaynetPayload> = {}): WaynetPayload {
     ]).buffer,
     directions: new Float32Array(4 * 3).buffer,
     waterDepths: new Int32Array([0, 0, 0, 250]).buffer,
-    // bit 0 freePoint, bit 1 underWater
-    flags: new Uint32Array([1, 0, 0, 2]).buffer,
+    flags: new Uint32Array([WAYNET_FLAG_FREE_POINT, 0, 0, WAYNET_FLAG_UNDER_WATER]).buffer,
     edgeCount: 3,
     edges: new Uint32Array([1, 2, 2, 3, 3, 1]).buffer,
     danglingEdges: 0,
