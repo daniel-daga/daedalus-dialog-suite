@@ -102,4 +102,38 @@ describe('getDialogAvailability', () => {
     }));
     expect(availability.reason).toMatch(/not found/i);
   });
+  test('reports a raw-mode condition function as unknown instead of trivially available', () => {
+    const entry = dialog('DIA_RawMode');
+    const rawMode: DialogFunction = {
+      name: 'DIA_RawMode_Condition',
+      returnType: 'INT',
+      calls: [],
+      conditions: [],
+      actions: [{ type: 'Action', action: 'if (Npc_KnowsInfo (other, DIA_Foo)) { return TRUE; };' }]
+    };
+
+    const assumedFalse = getDialogAvailability(model([entry], [rawMode]), emptyState(), 'npc_test', false);
+    const assumedTrue = getDialogAvailability(model([entry], [rawMode]), emptyState(), 'npc_test', true);
+
+    expect(assumedFalse[0]).toEqual(expect.objectContaining({
+      value: 'unknown', visible: true, assumedAvailable: false
+    }));
+    expect(assumedFalse[0].reason).toMatch(/not structurally analyzable/i);
+    expect(assumedTrue[0].assumedAvailable).toBe(true);
+  });
+
+  test('keeps a condition function with no conditions and no body crisply available', () => {
+    const entry = dialog('DIA_EmptyCondition');
+    const empty: DialogFunction = {
+      name: 'DIA_EmptyCondition_Condition',
+      returnType: 'INT',
+      calls: [],
+      conditions: [],
+      actions: []
+    };
+
+    const [availability] = getDialogAvailability(model([entry], [empty]), emptyState(), 'npc_test', false);
+
+    expect(availability.value).toBe('true');
+  });
 });

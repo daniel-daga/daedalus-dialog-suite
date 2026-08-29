@@ -150,8 +150,6 @@ card waits on live at its pointer — put new prose there, not here.
 only the level editor, so "no actionable cards" never meant "no work". Each
 pointer is a finding id in the file the routing table names.
 
-- **A condition the simulator cannot read is reported as true** — raw mode's
-  empty `conditions` reads as available; it is unknown. Any run. *simulator* H1
 - **`!Npc_KnowsInfo` parses un-negated, so availability inverts** — `negated`
   goes through type, parser, codegen and corpus. Any run. *simulator* H2
 - **The simulator's six smaller findings** — Any run. *simulator* M1, M3, L1-L4
@@ -205,6 +203,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **A condition the simulator cannot read is now unknown** — landed: raw mode's
+  empty `conditions` plus a non-empty body is the signature, and availability
+  reports it unknown with a reason instead of trivially true. *simulator* H1
 
 - **Spawns are in the frame** — landed as `SpawnOverlay` behind its own
   *Spawns* toggle: one marker per point, an unresolved point dropped rather

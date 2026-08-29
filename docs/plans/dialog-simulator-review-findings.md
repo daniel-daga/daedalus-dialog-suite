@@ -32,7 +32,12 @@ scripts.
 
 ### H1. Raw-mode condition functions evaluate as crisply "available" — silently wrong, not unknown
 
-**Status:** Open
+**Status:** FIXED 2026-08-29 — `dialogAvailability.ts` now reports a condition
+function with no conditions and a non-empty `actions` body as unknown
+("is not structurally analyzable"), which is the raw-mode signature. It is the
+only place the simulator trusts `conditionFunction.conditions`. An empty
+condition function with an empty body stays crisply available; both cases are
+covered in `tests/simulatorDialogAvailability.test.ts`.
 
 The parser's linking visitor bails to "raw mode" for any condition function
 containing a non-trivial top-level `return`, a local `var` declaration, or an

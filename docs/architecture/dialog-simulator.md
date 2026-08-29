@@ -67,6 +67,11 @@ expressions first pass through the quest condition-expression codec; only its
 structured result is evaluated. Codec failures and generic fallbacks retain a
 reason for display.
 
+A condition function the parser could not extract structurally — raw mode,
+which clears its conditions and leaves the whole body behind as actions — is
+unknown, not available. An empty condition list is only trusted as "no gate"
+when the function has no actions either.
+
 Unknowns are never silently coerced by the evaluator. The session owns the
 explicit assume-unknown policy. When an unknown C_INFO gate or branch is taken,
 the transcript records the assumption and reason.

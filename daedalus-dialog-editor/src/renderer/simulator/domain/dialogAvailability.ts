@@ -61,6 +61,20 @@ export const getDialogAvailability = (
       continue;
     }
 
+    // The parser falls back to raw mode for a condition body it cannot extract
+    // (a non-trivial `return`, a local `var`, an `if/else`): it clears the
+    // conditions and leaves the whole body behind as actions. An extracted
+    // condition function has no actions, so the two states are distinguishable
+    // — and an empty condition list that came from raw mode is unknown, not true.
+    if (conditionFunction.conditions.length === 0 && conditionFunction.actions.length > 0) {
+      availability.push(unknown(
+        entry,
+        `Condition function "${entry.conditionFunction}" is not structurally analyzable.`,
+        assumeUnknownTrue
+      ));
+      continue;
+    }
+
     const evaluation = evaluateConditions(
       conditionFunction.conditions,
       conditionFunction.conditionOperator,
