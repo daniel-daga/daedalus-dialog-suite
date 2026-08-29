@@ -2407,6 +2407,26 @@ representation ZenGin's own tools never wrote and whose acceptance nothing can
 be checked against. It is **out**, and the handoff item asking for "rotate and
 scale on the same gizmo" is answered by this measurement rather than by code.
 
+**A finding's locus is part of the finding, and there is one panel**
+(2026-08-29, Daniel). `Problem` required a `filePath` and navigated by NPC,
+dialog and function, which a portal or an overlap has none of — so four checks
+sat built or blocked behind "where do world findings go". They go in the
+Problems panel, which grows a **locus discriminated union**: a script locus
+carries the file and its navigation keys, a world locus carries the waypoint,
+VOB or polygon it stands on, and the panel's click branches — open the file, or
+select and frame in the viewport. The earlier assumption that the answer was a
+separate World-side surface (§16.8) is **superseded**, and Phase 1c is what
+changed it: a duplicate spawn is script-locus and an occupancy overlap is
+*both*, so two panels would split siblings apart and make one mod's problems two
+places to look. Long form and what it unblocks: §16.20.
+
+**An enum property is an editable combobox, never a plain dropdown**
+(2026-08-29, Daniel). The objection that held §14.1 1.4 shut — retail carries
+out-of-range values a dropdown would destroy — is an argument against *coercion*,
+not against offering the known values. The field offers them, and an
+unrecognised value is preserved verbatim and marked rather than snapped to the
+nearest legal one. Long form: §16.21.
+
 ---
 
 ## 8. Daedalus integration — open question 4
@@ -5237,3 +5257,61 @@ difference between no project open and no spawn here.
 itself and a person, as do the Gate 2b `07` rows. These slices were carded by
 Daniel on 2026-08-29 with that ordering understood: they are the work an
 unattended run *can* take while the 1b-2 remainder waits on hardware.
+
+---
+
+### 16.20 World findings get a locus, and a panel (§7 decision, 2026-08-29)
+
+The decision is in §7; this is what it costs and what it frees.
+
+**Why it was stuck.** `Problem` (`renderer/problems/domain/types.ts`) requires
+`filePath` and carries `npc`, `dialogName`, `functionName` — the panel's entire
+navigation model is "open this file and go to this declaration". A portal with a
+malformed material name has no file, no dialog and no function. §16.8 recorded
+the gap and left it open; §16.18 added two more behind it; §16.19 added a fourth
+and argued that a fifth checker would only deepen the debt.
+
+**What lands, in order — each slice is a card.**
+
+1. **The locus union.** `Problem.filePath` becomes
+   `locus: { kind: 'script'; filePath; npc?; dialogName?; functionName? }
+   | { kind: 'world'; waypoint?; vob?; polygon? }`. The eight existing rule ids
+   all emit `kind: 'script'` and their behaviour does not change; the panel
+   reads `locus.filePath` where it read `filePath`. This is a mechanical change
+   across six rule files and their tests, and it is deliberately its own commit
+   with **no new rule in it** — a type migration and a new check in one change
+   is how a regression in the eight working rules would hide.
+2. **World findings navigate.** The panel's click handler branches: a script
+   locus opens the file as today, a world locus selects the thing and frames it,
+   through the imperative handle `frameVobs` (§16.8 W3) that already exists. A
+   world finding while no world is open is shown and not clickable — the editor
+   holds one world at a time and the finding may belong to another.
+3. **`checkPortalMaterials` gets its consumer.** It has been built and tested
+   against all three retail worlds since 2026-08-28 with nothing calling it
+   (§16.18 slice 1). Its two findings are world-locus by polygon.
+
+**What this does *not* unblock, and must not be smuggled in.** The portal
+*pairing* check is still blocked on its own measurement — whether a missing
+reverse `P:B_A` is an error or a convention was never measured (§16.18) — and
+`getPortals`' geometric checks (orientation, planarity, leaks) are Phase 2 with
+their own Gate 3. Occupancy and overlap checks become *possible* here and stay
+uncarded: §16.19 lists them under Phase 1c and they want the spawn index they
+now have plus a rule nobody has specified.
+
+### 16.21 Enum properties (§7 decision, §14.1 1.4)
+
+§16.3 closed `oCMob*` with "enums are now the whole of it", held by one real
+observation: retail worlds carry values outside the documented sets, and a
+dropdown that snapped them to a legal value would corrupt a world on open.
+
+**The resolution is to stop conflating offering with coercing.** The field
+offers the known values and writes one when picked; a value not in the set is
+kept exactly as it was read, displayed as itself, and marked unknown. It is
+never rewritten by the act of being looked at — which is the property the
+objection was actually protecting, and the same principle `SetVobProp` already
+holds to everywhere else.
+
+**Sequence.** The enum *sets* come first and are their own card: which fields on
+which classes are enums, and their values, read out of ZenKit's headers rather
+than guessed — a wrong set is worse than no set, because it marks a legal retail
+value as unknown. The field component follows.
