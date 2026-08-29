@@ -108,6 +108,7 @@ blocked=0
 limit_waits=0
 for ((i = 1; i <= MAX; i++)); do
   log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-$i.log"
+  head_before="$(git rev-parse HEAD)"
   echo "=== iteration $i/$MAX  (log: $log)"
 
   args=(-p "$PROMPT" --output-format text)
@@ -118,6 +119,27 @@ for ((i = 1; i <= MAX; i++)); do
   fi
 
   sentinel="$(grep -E '^BOARD_LOOP: ' "$log" | tail -n 1 || true)"
+
+  # A sentinel is a claim; the commit is the evidence. Both CARD and BLOCKED are
+  # supposed to commit, so a clean tree is what makes either claim true --- and
+  # an iteration that reports a card and leaves the work uncommitted would have
+  # it swept into the NEXT card's commit by `git add -A`, which is how a
+  # regression rides into a commit that does not describe it. Stop instead, and
+  # leave the tree for a person: the work may be finished, or may never have run
+  # a test, and only reading it can tell.
+  # The one legitimate dirty exit is a usage-limit kill, which is retried below.
+  if ! { [[ -z "$sentinel" ]] && grep -qiE "$LIMIT_PATTERN" "$log"; }; then
+    if [[ -n "$(git status --porcelain -- . ':!zenkit-node/vendor/ZenKit')" ]]; then
+      echo "=== iteration $i left work in the tree; stopping before the next one sweeps it." >&2
+      git status --short -- . ':!zenkit-node/vendor/ZenKit' >&2
+      exit 1
+    fi
+    if [[ "$sentinel" == "BOARD_LOOP: CARD "* ]] &&        [[ "$(git rev-parse HEAD)" == "$head_before" ]]; then
+      echo "=== iteration $i reported a card but committed nothing; stopping." >&2
+      exit 1
+    fi
+  fi
+
   case "$sentinel" in
     "BOARD_LOOP: DONE")
       echo "=== board has no actionable cards left; stopping."
