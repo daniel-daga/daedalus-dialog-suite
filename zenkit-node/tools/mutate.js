@@ -20,7 +20,14 @@
 //                             were observed hardly at all
 //   07a/07b/07c.zen           `05`'s own two observation rows, in `06`'s shape
 //                             — built 2026-08-29, the last thing that sheet
-//                             leaves unwitnessed (§16.2)
+//                             leaves unwitnessed (§16.2). Rebuilt the same
+//                             night: the first shape left 22 other wall torches
+//                             burning in the frame and the row was unreadable
+//
+// Next to every `<name>.zen` goes a `<name>.txt` — what to look for in that
+// candidate, with the measured numbers filled in. `engine-batch.ps1` prints it
+// before the launch and again before it asks for the verdict, so the person at
+// the keyboard never has to hold the run sheet in their head.
 //
 // Each of 03–05 is built from the pristine source, not from the one before it:
 // a candidate that stacked would report the first failure and hide the rest.
@@ -56,16 +63,31 @@ const sha = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).
 
 fs.mkdirSync(outDir, { recursive: true });
 const stage = (name) => path.join(outDir, `${name}.zen`);
+// The run-sheet sidecar engine-batch.ps1 shows for a candidate. Sentences, not
+// a table: it is read off a console next to a game window.
+const sheet = (name, text) => fs.writeFileSync(path.join(outDir, `${name}.txt`), `${text.trim()}
+`);
 
 console.log(`source: ${src}\n        ${sha(src)}`);
 
 const control = stage('00-control-original');
 fs.copyFileSync(src, control);
+sheet('00-control-original', `
+The pristine retail world - the control every other row is read against.
+Nothing to test; NOTE what the spawn looks like, because 07 is an A/B against it:
+  - NPCs are there. Xardas reads at his bookstand, Lester sleeps in the tower.
+    No NPC anywhere means no STARTUP_NEWWORLD ran - the world was not staged as
+    NEWWORLD.ZEN, and every row of this batch is void (environment-hazards.md).
+  - The wall torches near the spawn are all lit: 21 of the same model within
+    2,000 units, each with a flame, sparks and a flare.
+`);
 
 const resave = stage('01-resave');
 zk.saveWorld(zk.loadWorld(src, 'g2'), resave);
+sheet('01-resave', 'Load -> save, nothing edited. Must be indistinguishable from 00. Checklist rows 2-9, acceptance record §8.');
 
 const edited = stage('02-minimal-edit');
+sheet('02-minimal-edit', 'The two Phase-0 mutations: a peasant table hanging 300 units in the air near the spawn, and an apple at your feet. Row 10 of the checklist, acceptance record §8.');
 {
   const handle = zk.loadWorld(src, 'g2');
   const before = zk.normalizeWorld(handle);
@@ -116,6 +138,7 @@ const at = (dump, p) => {
 };
 
 const classProps = stage('03-class-props');
+sheet('03-class-props', 'Load-safety only - the observable version of these edits is 06. Loads and plays is the whole row. Run sheet §03.');
 {
   const handle = zk.loadWorld(src, 'g2');
   const before = zk.normalizeWorld(handle);
@@ -150,6 +173,7 @@ const classProps = stage('03-class-props');
 }
 
 const authored = stage('04-authored-classes');
+sheet('04-authored-classes', 'Load-safety only - the observable version is 06. Loads and plays is the whole row. Run sheet §04.');
 {
   const handle = zk.loadWorld(src, 'g2');
   const before = zk.normalizeWorld(handle);
@@ -206,6 +230,7 @@ const authored = stage('04-authored-classes');
 }
 
 const deletes = stage('05-deletes-waynet');
+sheet('05-deletes-waynet', 'Load-safety only - 07a/07b/07c are its two observation rows in a frame they can be seen in. Loads and plays is the whole row. Run sheet §05.');
 {
   const handle = zk.loadWorld(src, 'g2');
   const before = zk.normalizeWorld(handle);
@@ -337,6 +362,12 @@ const byPathDesc = (a, b) => {
 };
 
 const minimal = stage('06-minimal-frame');
+sheet('06-minimal-frame', `
+The frame around the spawn cleared of every light and sound, with three authored edits in it. Run sheet §06.
+  - The sky and everything past ~30 m is RED: an authored fog zone with overrideColor. Grey is the fail.
+  - Stand still: a torch crackles from 3,000 units away, in a frame where nothing else sounds.
+  - A chest 250 units straight ahead of the spawn, on the ground, that you can open.
+`);
 {
   const handle = zk.loadWorld(src, 'g2');
   const before = zk.normalizeWorld(handle);
@@ -479,23 +510,39 @@ const minimal = stage('06-minimal-frame');
 // Three files, because the rows want different experiments:
 //
 //   07a  the frame cleared of every light, sound and effect within 6,000 units
-//        of START **except the torch subtree** — which leaves exactly one lit,
-//        crackling thing in an otherwise dead clearing. Nothing is deleted.
-//        This is row A's control, and `00` cannot be it: in retail the torch is
-//        one of two hundred lights and picking it out is the whole problem.
-//   07b  the same clearing, and then `DeleteVob` on the torch. The one op under
-//        test, against a frame where its effect is the only thing that can have
-//        changed. **A partial removal is the interesting failure** — a flame
-//        with no post, a glow with no flame — and it is only interesting if
-//        there is nothing else glowing.
+//        of START, **and of every other wall torch** — the same model as the
+//        one under test, 22 of them, each deleted as a subtree — keeping only
+//        the test torch. What is left is exactly one torch on the walls of an
+//        otherwise dark, bare clearing. This is row A's control, and `00`
+//        cannot be it: in retail the torch is one of 23 and picking it out is
+//        the whole problem — the first build of this candidate cleared the
+//        lights and left the 22 other torches' flames burning, and the person
+//        at the keyboard saw "many torches, darker" and could not name the one.
+//   07b  the same clearing, and then `DeleteVob` on the test torch. The one op
+//        under test, against a frame where its effect is the only thing that
+//        can have changed: NO torch on any wall near the spawn. **A partial
+//        removal is the interesting failure** — a flame with no post, a glow
+//        with no flame — and it is only interesting if there is nothing else
+//        glowing.
 //   07c  the 2,895-waypoint renumber and *nothing else*. `05` bundled it with a
 //        subtree delete and four other waynet ops, so a broken routine there
 //        would have implicated six edits; here it can only be the renumber.
+//
+// The 22 other torches go in *both* files, so the pair is still an A/B of one
+// difference — and `07a` witnesses 22 subtree deletes of its own on the way:
+// a bare wall bracket where a torch was is the op working, a flame or a flare
+// floating where its post was is the op failing partially.
 //
 // Fog is deliberately left alone: NewWorld's ambient range is 16,000 units and
 // the torch is 318 away, so no fog zone can hide this row, and clearing them
 // would be a second difference from `00` for nothing.
 // ---------------------------------------------------------------------------
+
+/** Inside the frame `06`/`07` clear: within QUIET_RADIUS of `start`, in 3D. */
+const withinFrame = (start) => {
+  const [sx, sy, sz] = start.position;
+  return (v) => Math.hypot(v.position[0] - sx, v.position[1] - sy, v.position[2] - sz) <= QUIET_RADIUS;
+};
 
 /**
  * Clear the noise out of the spawn's frame, keeping anything under `keep`.
@@ -510,8 +557,7 @@ const minimal = stage('06-minimal-frame');
  * add and the order the two are deleted in is what keeps every path valid.
  */
 const frameNoiseKeeping = (before, start, keep) => {
-  const [sx, sy, sz] = start.position;
-  const near = (v) => Math.hypot(v.position[0] - sx, v.position[1] - sy, v.position[2] - sz) <= QUIET_RADIUS;
+  const near = withinFrame(start);
   const kept = (v) => v.path === keep || v.path.startsWith(`${keep}/`);
   const doomed = before.vobs
     .filter((v) => NOISE_CLASSES.has(v.class) && near(v) && !kept(v))
@@ -521,11 +567,7 @@ const frameNoiseKeeping = (before, start, keep) => {
 };
 
 /** Light/sound/effect VOBs still standing inside the frame. */
-const noiseLeft = (dump, start) => {
-  const [sx, sy, sz] = start.position;
-  return dump.vobs.filter((v) => NOISE_CLASSES.has(v.class)
-    && Math.hypot(v.position[0] - sx, v.position[1] - sy, v.position[2] - sz) <= QUIET_RADIUS);
-};
+const noiseLeft = (dump, start) => dump.vobs.filter((v) => NOISE_CLASSES.has(v.class) && withinFrame(start)(v));
 
 const torchKept = stage('07a-frame-torch');
 const torchGone = stage('07b-frame-torch-deleted');
@@ -535,6 +577,10 @@ const torchGone = stage('07b-frame-torch-deleted');
   const probe = zk.normalizeWorld(zk.loadWorld(src, 'g2'));
   const startWp = probe.waynet.waypoints.find((w) => w.name === 'START');
   if (!startWp) throw new Error('no START waypoint');
+  // Where the hero actually appears is the engine's call — the `START` waypoint
+  // or the `zCVobStartpoint` 611 units from it — so the sheet gives both.
+  const startVob = probe.vobs.find((v) => v.class === 'zCVobStartpoint');
+  if (!startVob) throw new Error('no zCVobStartpoint');
   const torch = at(probe, TORCH_SUBTREE);
   const children = probe.vobs.filter((v) => v.path.startsWith(`${TORCH_SUBTREE}/`));
   if (children.length !== 5) throw new Error(`${TORCH_SUBTREE} has ${children.length} children, expected 5`);
@@ -543,30 +589,28 @@ const torchGone = stage('07b-frame-torch-deleted');
   // build of this candidate expected five VOBs of the classes the frame-clearer
   // knows about and found two, because **a torch's flame is not a
   // `zCPFXController`**. It is why `06` leaves the frame's other fires burning,
-  // and why the test torch's two lights are what make it the only *lit* thing
-  // in the clearing rather than the only visible one.
+  // and why clearing the lights alone left 22 torches visibly burning here.
   const sig = (v) => `${v.class}|${v.visual}`;
   const subtreeSigs = new Set([torch, ...children].map(sig));
-  /**
-   * Everything at the torch's spot that looks like a piece of the torch.
-   *
-   * **Full 3D distance, and that is the point.** `2/76` is the same wall torch
-   * model 102 units away in XZ and 884 units *below* — a second storey of the
-   * same wall. An XZ-only test found ten pieces where six were expected, and
-   * the same confusion is available to the eye: the run sheet has to say which
-   * of the two torches this row is about, or a lower torch still burning reads
-   * as a delete that did not happen.
-   */
+  // Every other torch of the same model inside the frame, root paths only —
+  // each goes as a subtree, children and all. `2/76` is among them: the same
+  // model 102 units away in plan and 884 units *below*, which an XZ-only
+  // proximity test once mistook for the test torch's own pieces.
+  const otherTorches = probe.vobs
+    .filter((v) => v.visual === torch.visual && v.path !== TORCH_SUBTREE && withinFrame(startWp)(v))
+    .map((v) => v.path);
+  if (otherTorches.length < 10) throw new Error(`only ${otherTorches.length} other torches in the frame — re-measure`);
+  const torchesStanding = (dump) => dump.vobs.filter((v) => v.visual === torch.visual && withinFrame(startWp)(v));
+  /** Everything at the test torch's spot that looks like a piece of it, in full 3D. */
   const atTorch = (dump) => dump.vobs.filter((v) => subtreeSigs.has(sig(v)) && Math.hypot(
     v.position[0] - torch.position[0],
     v.position[1] - torch.position[1],
     v.position[2] - torch.position[2],
   ) < 200);
-  const away = Math.hypot(
-    torch.position[0] - startWp.position[0],
-    torch.position[1] - startWp.position[1],
-    torch.position[2] - startWp.position[2],
-  );
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  const away = dist(torch.position, startWp.position);
+  const awayVob = dist(torch.position, startVob.position);
+  const up = torch.position[1] - startWp.position[1];
   if (away > QUIET_RADIUS) throw new Error(`the torch is ${away.toFixed(0)} from START — outside the frame this clears`);
 
   for (const [file, deleteTorch] of [[torchKept, false], [torchGone, true]]) {
@@ -574,12 +618,11 @@ const torchGone = stage('07b-frame-torch-deleted');
     const handle = zk.loadWorld(src, 'g2');
     const before = zk.normalizeWorld(handle);
     const doomed = frameNoiseKeeping(before, startWp, TORCH_SUBTREE);
-    // The torch's own root joins the list rather than being deleted before or
-    // after it: sorted descending, every path is still valid when its turn
-    // comes, and the root goes with its five children still under it — which is
-    // the subtree delete this row exists to witness, not five deletes and a
-    // sixth.
-    const order = (deleteTorch ? [...doomed, TORCH_SUBTREE] : doomed).sort(byPathDesc);
+    // The torch roots join the list rather than being deleted before or after
+    // it: sorted descending, every path is still valid when its turn comes, and
+    // a root goes with its children still under it — which is the subtree
+    // delete this row exists to witness, not five deletes and a sixth.
+    const order = [...doomed, ...otherTorches, ...(deleteTorch ? [TORCH_SUBTREE] : [])].sort(byPathDesc);
     for (const p of order) zk.deleteVob(handle, p);
     zk.saveWorld(handle, file);
 
@@ -593,6 +636,11 @@ const torchGone = stage('07b-frame-torch-deleted');
     if (standing.length !== owedStanding) {
       throw new Error(`${label}: ${standing.length} pieces of the torch left, expected ${owedStanding}`
         + ` (${standing.map(sig).join(', ')})`);
+    }
+    // And no other torch anywhere in the frame — one model on the walls, or none.
+    const torches = torchesStanding(after);
+    if (torches.length !== (deleteTorch ? 0 : 1)) {
+      throw new Error(`${label}: ${torches.length} wall torches in the frame, e.g. ${torches[0]?.path}`);
     }
     // And the frame around it is dead either way: every light in `07a` belongs
     // to the torch, and `07b` leaves none at all.
@@ -609,10 +657,32 @@ const torchGone = stage('07b-frame-torch-deleted');
     const owed = before.vobs.filter((v) => order.some((p) => v.path === p || v.path.startsWith(`${p}/`))).length;
     if (went !== owed) throw new Error(`${label}: ${went} VOBs went, expected ${owed}`);
 
-    console.log(`\n${label}  cleared ${doomed.length} within ${QUIET_RADIUS} of START, torch ${deleteTorch ? 'DELETED with its 5 children' : 'kept'}`);
+    const where = `${away.toFixed(0)} units from the START waypoint (${awayVob.toFixed(0)} from the START_GOTHIC2 start point), ${(up / 100).toFixed(1)} m above it on the wall`;
+    sheet(label, deleteTorch ? `
+The subtree delete, seen: 07a's clearing and then ONE DeleteVob on the test torch.
+Same frame as 07a - dark, bare walls, no lit torch - so the only thing that can differ is the torch.
+  - There is NO wall torch anywhere near the spawn. Not the post, not the flame, not the sparks,
+    not the flare, not the glow on the wall. The spot is ${where}.
+  - A partial removal is THE failure this row exists for: a flame with no post, a flare or a glow
+    with no flame. Say which piece survived.
+  - Floor fires (fireplaces, candles) are not torches and still burn. NPCs are still there.
+` : `
+The subtree delete's control: the frame cleared of every light, sound and effect within 6,000
+units of the spawn AND of the ${otherTorches.length} other wall torches (each one a subtree delete), keeping ONE.
+  - Exactly ONE wall torch on the walls near the spawn, burning, and it is the only light:
+    post, flame, sparks, flare, the wall lit around it. It is ${where}.
+  - Every other torch bracket on the walls is BARE - no post, no flame, no flare left floating.
+    A flame or a flare hanging where a post was is a partial subtree delete: say which and where.
+  - If the walls still carry many burning torches, the engine did not load this file
+    (the mod's NEWWORLD.ZEN lost to the retail one) - the batch log's mod check says which.
+  - Floor fires (fireplaces, candles) are not torches and still burn. NPCs are still there:
+    no NPC at all means no STARTUP_NEWWORLD ran and the row is void.
+`);
+
+    console.log(`\n${label}  cleared ${doomed.length} within ${QUIET_RADIUS} of START + ${otherTorches.length} other torches, torch ${deleteTorch ? 'DELETED with its 5 children' : 'kept'}`);
     console.log(`    torch ${TORCH_SUBTREE} "${torch.visual}" ${away.toFixed(0)} units from START`);
     console.log(`    vobs ${before.vobs.length} -> ${after.vobs.length} (${order.length} paths, ${owed} VOBs with their children)`);
-    console.log(`    torch pieces standing ${standing.length}, lights/sounds/effects left in frame ${left.length}`);
+    console.log(`    torch pieces standing ${standing.length}, wall torches in frame ${torches.length}, lights/sounds/effects left ${left.length}`);
   }
 }
 
@@ -655,6 +725,15 @@ const renumber = stage('07c-renumber-only');
     throw new Error(`${before.vobs.length - after.vobs.length} VOBs changed in a waynet-only candidate`);
   }
 
+  sheet('07c-renumber-only', `
+The 2,895-waypoint renumber and nothing else: ${DELETE_WP.name} removed, every waypoint after it renumbered, no VOB touched.
+Needs NPCs - this is the one row that is about routines, so it must be watched where they are.
+  - Go into Xardas's tower. Xardas still walks to his bookstand and reads (${WATCHED[0]}).
+    Lester still sleeps (${WATCHED[1]}).
+  - Wait for a routine change (marvin: F2, "set time 8 0" then "set time 22 0") and watch them move
+    between waypoints without stalling, running in place or standing at the wrong spot.
+  - No NPC anywhere = the world did not run STARTUP_NEWWORLD and this row is void, not "ok".
+`);
   console.log(`\n07c  removed waypoint ${DELETE_WP.index} ${DELETE_WP.name}, renumbering ${wpBefore - DELETE_WP.index - 1}`);
   console.log(`    waypoints ${wpBefore} -> ${after.waynet.waypoints.length}, dangling ${dangling}, vobs unchanged at ${after.vobs.length}`);
   console.log(`    watched routine waypoints still present: ${WATCHED.join(', ')}`);

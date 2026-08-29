@@ -1,7 +1,12 @@
 # GMBT project for playing a candidate world in the engine.
 #
-#   node ../mutate.js mod/Worlds     # stage candidates as flat *.zen
-#   gmbt test --world=07A.ZEN --windowed --noaudio --nomenu -D --noupdatesubtitles
+#   node ../mutate.js ../cand        # build the candidates
+#   copy ..\cand\07a-frame-torch.zen mod\Worlds\NEWWORLD.ZEN
+#   gmbt test --world=NEWWORLD.ZEN --windowed --noaudio --nomenu -D --noupdatesubtitles
+#
+# THE WORLD MUST BE NAMED NEWWORLD.ZEN. The engine spawns its NPCs from
+# STARTUP_<worldfile>; a candidate played as 07A.ZEN loads with no NPC at all.
+# engine-batch.ps1 stages one candidate at a time under that name.
 #
 # THE ASSET DIRS MUST SUPPLY A COMPLETE SCRIPT TREE. GMBT moves the install's
 # _work/Data aside, backs up only the directories it does not manage (Music,
@@ -20,6 +25,10 @@
 # miss surfaces as "Unknown error: KeyNotFoundException ... in
 # DetectIfWorldIsNotExists" (its file-not-found message key is itself missing),
 # not as a message naming the world. engine-batch.ps1 stages them that way.
+#
+# `gmbt test` merges the asset dirs into <gothicRoot>\_work\Data and plays the
+# loose files there; modVdf.output is what `gmbt build` would write, and
+# nothing here builds it.
 #
 # Never --full: GMBT refuses it without a script reparse ("Full test requires
 # scripts reparse"), and this harness never reparses. A plain `gmbt test` merges

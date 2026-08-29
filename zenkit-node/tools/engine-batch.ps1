@@ -1,8 +1,9 @@
-# Engine pass over candidate worlds, through GMBT: stages the selected
-# candidates into the harness mod (tools/gmbt), launches the game on each by
-# name, watches the engine's top-level windows for an assertion/error dialog
-# (auto-dumped, engine killed), and asks you for the verdict either way. Run in
-# YOUR OWN PowerShell window (it needs the keyboard):
+﻿# Engine pass over candidate worlds, through GMBT: stages each selected
+# candidate into the harness mod (tools/gmbt) AS NEWWORLD.ZEN, launches the
+# game on it, prints what to look for (the candidate's <name>.txt, written by
+# mutate.js next to the .zen), watches the engine's top-level windows for an
+# assertion/error dialog (auto-dumped, engine killed), and asks you for the
+# verdict either way. Run in YOUR OWN PowerShell window (it needs the keyboard):
 #   powershell -ExecutionPolicy Bypass -File engine-batch.ps1 -Only 00,07
 # Optional: -Dir tools/cand  candidates directory, relative to your shell (default tools/cand)
 # Optional: -Only 00,07    run only those candidate numbers
@@ -13,12 +14,21 @@
 # Optional: -Windowed      gmbt --windowed (crashes on this machine - hazards)
 # Optional: -NoAudio       gmbt --noaudio
 #
-# Nothing in the install is written by this script. The candidates ship inside
-# Data\ModVDF\DDS-CAND.mod, which GMBT builds from tools/gmbt/{mdk,mod} and
-# selects the world by name; the retail Worlds*.vdf are never touched, so a
+# Nothing in the install is written by this script. `gmbt test` merges
+# tools/gmbt/{mdk,mod} into the install's _work\Data on every run and plays the
+# loose files there (the .mod named in .gmbt.yml is what `gmbt build` would
+# make, and nothing builds it); the retail Worlds*.vdf are never touched, so a
 # Steam "verify integrity" cannot void a verdict and there is no backup to
 # restore. Read environment-hazards.md, "GMBT empties _work", before changing
 # the asset dirs: mdk/ must be a complete script tree.
+#
+# ONE candidate at a time, and always under the name NEWWORLD.ZEN. The engine
+# spawns every NPC from a script function named after the world FILE -
+# STARTUP_NEWWORLD - so a world played as 07A-FRAME-TORCH.ZEN has no NPCs at
+# all, and a routine row "passes" on an empty world. The 2026-08-29 batch was
+# run that way and every one of its rows is void (environment-hazards.md,
+# GMBT). Which bytes the engine really gets is checked once GMBT has merged:
+# _work\Data\Worlds\NEWWORLD.ZEN is hashed against the candidate.
 #
 # -Latest is for the second pass over a candidate you have just rebuilt, when
 # playing the rest of the batch again buys nothing. It skips the control, so the
@@ -31,6 +41,11 @@ param([string[]]$Only = @(), [string]$Dir = '',
 $ErrorActionPreference = 'Stop'
 $GmbtDir   = Join-Path $PSScriptRoot 'gmbt'
 $ModWorlds = Join-Path $GmbtDir 'mod\Worlds'
+$Staged    = Join-Path $ModWorlds 'NEWWORLD.ZEN'
+# Where GMBT merges the candidate to and the engine reads it from; the install
+# path comes from the project file, the one place it lives.
+$GothicRoot = (Select-String -Path (Join-Path $GmbtDir '.gmbt.yml') -Pattern '^\s*gothicRoot:\s*(.+?)\s*$').Matches[0].Groups[1].Value
+$Played    = Join-Path $GothicRoot '_work\Data\Worlds\NEWWORLD.ZEN'
 $Compiled  = Join-Path $GmbtDir 'mdk\Scripts\_compiled\GOTHIC.DAT'
 # GMBT launches Gothic2.exe (or GothicMod.exe under some setups); watch every
 # name the engine has run under, and never Spacer's - `gmbt spacer` is not this
@@ -75,6 +90,10 @@ function DumpEngineWindows {
   [W]::Run($pids); return @([W]::Lines)
 }
 function EngineRunning { [bool](Get-Process -Name $Watch -ErrorAction SilentlyContinue) }
+function Sheet($c) {
+  $f = [System.IO.Path]::ChangeExtension($c.FullName, '.txt')
+  if (Test-Path $f) { Get-Content $f -Encoding utf8 } else { @("(no $([System.IO.Path]::GetFileName($f)) next to the candidate - rebuild with mutate.js to get the run sheet here)") }
+}
 
 # --- preconditions
 if (-not (Test-Path $Gmbt)) { throw "gmbt not found (not on PATH, not at $Gmbt) - install GMBT, https://github.com/Szmyk/gmbt" }
@@ -82,6 +101,7 @@ if (-not (Test-Path $Compiled)) {
   throw "$Compiled missing: tools/gmbt/mdk must carry the whole script tree, or GMBT empties the install's _work (environment-hazards.md)"
 }
 if (EngineRunning) { throw "an engine process ($($Watch -join '/')) is already running; close it first" }
+if (-not (Test-Path (Split-Path $Played))) { throw "$(Split-Path $Played) missing: gothicRoot in .gmbt.yml does not point at an install GMBT has set up" }
 
 # `powershell -File x.ps1 -Only 00,07` delivers ONE string "00,07", not an
 # array - and a PowerShell caller parses 00,07 as the integers 0 and 7. Split
@@ -98,25 +118,27 @@ if ($cands.Count -eq 0) { throw "no candidates selected in $CandDir" }
 Log "=== engine batch start via $Gmbt"
 if ($Latest) { Log "-Latest: $($cands[0].Name) only, written $($cands[0].LastWriteTime.ToString('s')) - NO control in this session" }
 
-# --- stage: the mod carries exactly the selected candidates, nothing stale.
-# Every *.zen here is packed into the .mod, and a world is 75 MB.
-# UPPER-CASE on disk, or GMBT cannot find the world: it upper-cases --world and
-# compares it case-SENSITIVELY against the asset dir's on-disk names, and then
-# dies with a KeyNotFoundException in DetectIfWorldIsNotExists because its own
-# "file not found" message key is missing (environment-hazards.md, GMBT).
-Get-ChildItem $ModWorlds -Filter '*.zen' -ErrorAction SilentlyContinue | Remove-Item -Force
-foreach ($c in $cands) {
-  Copy-Item $c.FullName (Join-Path $ModWorlds $c.Name.ToUpper()) -Force
-  Log "staged $($c.Name.ToUpper()) size=$($c.Length) sha=$((Sha $c.FullName).Substring(0,16))"
-}
+Log "selected: $(($cands | ForEach-Object { $_.Name }) -join ', ')"
 
 $first = $true
 foreach ($c in $cands) {
+  # --- stage: the mod carries exactly this candidate, as NEWWORLD.ZEN, and
+  # nothing stale - every *.zen in mod/Worlds is packed, and a world is 75 MB.
+  # UPPER-CASE on disk, or GMBT cannot find the world: it upper-cases --world
+  # and compares it case-SENSITIVELY against the asset dir's on-disk names, and
+  # then dies with a KeyNotFoundException in DetectIfWorldIsNotExists because
+  # its own "file not found" message key is missing (environment-hazards.md).
+  Get-ChildItem $ModWorlds -Filter '*.zen' -ErrorAction SilentlyContinue | Remove-Item -Force
+  Copy-Item $c.FullName $Staged -Force
+  $candSha = Sha $c.FullName
+  Log "staged $($c.Name) as NEWWORLD.ZEN size=$($c.Length) sha=$($candSha.Substring(0,16))"
+
   Write-Host ""
   Write-Host "================================================================" -ForegroundColor Cyan
   Write-Host " CANDIDATE $($c.Name)  ($($c.Length) bytes)" -ForegroundColor Cyan
   Write-Host "================================================================" -ForegroundColor Cyan
-  Write-Host " In the game: run the checklist rows for this candidate." -ForegroundColor Yellow
+  foreach ($l in (Sheet $c)) { Write-Host " $l" -ForegroundColor White }
+  Write-Host ""
   Write-Host " If it crashes, do nothing - the dialog is captured automatically." -ForegroundColor Yellow
   Write-Host " When you are done, just CLOSE the engine and answer the prompt." -ForegroundColor Yellow
 
@@ -126,7 +148,7 @@ foreach ($c in $cands) {
   # marvin mode on. A plain `gmbt test` merges the asset dirs every run; --full
   # is refused ("Full test requires scripts reparse"), so -Reinstall is the
   # strongest thing offered, once per batch.
-  $gmbtArgs = @('test', "--world=$($c.Name.ToUpper())", '--noreparse', '--nomenu', '-D', '--noupdatesubtitles')
+  $gmbtArgs = @('test', '--world=NEWWORLD.ZEN', '--noreparse', '--nomenu', '-D', '--noupdatesubtitles')
   if ($Reinstall -and $first) { $gmbtArgs += '--reinstall' }
   if ($Windowed) { $gmbtArgs += '--windowed' }
   if ($NoAudio) { $gmbtArgs += '--noaudio' }
@@ -135,8 +157,18 @@ foreach ($c in $cands) {
 
   $proc = Start-Process -FilePath $Gmbt -ArgumentList $gmbtArgs -WorkingDirectory $GmbtDir -PassThru -NoNewWindow
   $dialog = $false
+  $checked = $false
   while ($true) {
     Start-Sleep -Seconds 2
+    # Once the engine is up GMBT has merged, so hash what it merged: a verdict
+    # on bytes the engine never got is not a verdict. Logged loud either way,
+    # while the game is still loading.
+    if (-not $checked -and (EngineRunning)) {
+      $checked = $true
+      $playedSha = if (Test-Path $Played) { Sha $Played } else { '(missing)' }
+      if ($playedSha -eq $candSha) { Log "staged check: $Played sha=$($playedSha.Substring(0,16)) = $($c.Name)" }
+      else { Log "STAGED MISMATCH: $Played is $playedSha, candidate is $candSha - the engine is NOT playing $($c.Name); this verdict is void. Re-run with -Reinstall" }
+    }
     # gmbt blocks while the game runs, so its exit is the session's end - but
     # the engine is checked too, in case gmbt is killed out from under it.
     if ($proc.HasExited -and -not (EngineRunning)) { break }
@@ -155,6 +187,13 @@ foreach ($c in $cands) {
     }
   }
   if ($proc.HasExited -and $proc.ExitCode -ne 0) { Log "gmbt exited with $($proc.ExitCode) - read its output above before trusting this row" }
+  if (-not $checked) { Log "staged check skipped: the engine was never seen running - read gmbt's output above" }
+
+  # The sheet again: the game has been on screen for minutes and the banner is
+  # off the top of the console.
+  Write-Host ""
+  Write-Host " What $($c.Name) was supposed to show:" -ForegroundColor Cyan
+  foreach ($l in (Sheet $c)) { Write-Host " $l" -ForegroundColor White }
 
   # A captured dialog is not by itself a failure: ZenGin raises an access
   # violation in its own exit path (zCRayTurboAdmin / zCMeshOctreeNode) after a

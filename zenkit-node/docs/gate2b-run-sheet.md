@@ -18,10 +18,16 @@ here is claimed until it is run.
 > **`06` answered it on 2026-08-29 and every row of it passed** — red fog, the
 > carried sound radius, and an authored chest the player opens.
 >
-> **`07a`/`07b`/`07c` were built 2026-08-29 and have NOT been run.** They are
-> `05`'s own two observation rows in `06`'s frame — the last thing this sheet
-> leaves unwitnessed. Until somebody plays them, `05` is still "loads and
-> plays" and nothing more.
+> **`07a`/`07b`/`07c` were built 2026-08-29, played once that night, and the
+> pass is void** — twice over. The batch staged each world under its own name,
+> and the engine spawns NPCs from `STARTUP_<worldfile>`, so there were none;
+> and the torch clearing took only the lights, leaving 22 other torches' flames
+> burning around the one under test (Environment, *GMBT*). Both are fixed —
+> the script stages every candidate as `NEWWORLD.ZEN` and `07a`/`07b` clear
+> the other torches too — and the rebuilt three have **NOT been run**. They
+> are `05`'s own two observation rows in `06`'s frame — the last thing this
+> sheet leaves unwitnessed. Until somebody plays them, `05` is still "loads
+> and plays" and nothing more.
 
 ## Running it
 
@@ -31,12 +37,17 @@ node tools/mutate.js tools/cand
 powershell -ExecutionPolicy Bypass -File tools/engine-batch.ps1 -Dir tools/cand -Only 00,07
 ```
 
-Fullscreen — windowed crashes on this machine (Environment). The script stages
-the selected `*.zen` into the GMBT harness mod (`tools/gmbt`), launches the game
-on each by name, and watches for a dialog. Nothing in the install is written or
-restored: the retail archives stay stock and the candidate lives in
-`Data\ModVDF\DDS-CAND.mod`. Never `--full`: GMBT refuses it without a script
-reparse, and the harness never reparses.
+Fullscreen — windowed crashes on this machine (Environment). The script takes
+the selected `*.zen` one at a time, stages each into the GMBT harness project
+(`tools/gmbt`) **as `NEWWORLD.ZEN`** — the engine runs `STARTUP_<worldfile>`,
+so under any other name no NPC exists — launches the game on it, hashes what
+GMBT merged into the install's `_work\Data\Worlds` against the candidate, and
+watches for a dialog. **It prints what to look for**: `mutate.js` writes a
+`<name>.txt` next to every `<name>.zen`, and the script shows it before the
+launch and again before the verdict prompt, so this sheet's tables are the long
+form and the console carries the row. Nothing in the install is written by us:
+the retail archives stay stock, and GMBT owns `_work\Data`. Never `--full`:
+GMBT refuses it without a script reparse, and the harness never reparses.
 
 **`00` runs first and must pass, in the same session.** A control that was not
 run is not a control, and every row below is an A/B against it. `-Only 00,03`
@@ -159,28 +170,29 @@ out is the whole problem.
 
 **What they clear:** every `zCVobLight`, `zCVobSound`, `zCVobSoundDaytime` and
 `zCPFXController` within 6,000 units of START **except the torch subtree** —
-230 paths, 231 VOBs with their children. Fog is deliberately left alone: the
-ambient range is 16,000 units and the torch is 318 away, so no zone can hide
-this row, and clearing them would be a second difference from `00` for nothing.
+230 paths, 231 VOBs with their children — **and every other wall torch of the
+same model in that radius, 22 of them, each as a subtree.** The first build
+cleared only the lights, and the person at the keyboard saw "way darker, but
+many torches visible": a torch's flame, sparks and flare are plain `zCVob`s
+carrying `FIRE_MEDIUM.pfx`, `FIRE_SPARKS.pfx` and `ZFLARE6.TGA`, not
+`zCPFXController`s, so 22 unlit torches went on burning around the one under
+test and nobody could name it. Now there is one torch on the walls, or none.
+Fog is deliberately left alone: the ambient range is 16,000 units and the torch
+is 318 away, so no zone can hide this row, and clearing them would be a second
+difference from `00` for nothing.
 
-| Candidate | What you should see at the wall, 318 units from the spawn |
+| Candidate | What you should see on the walls near the spawn |
 |---|---|
-| `07a` | **One torch, burning, alone.** Post, flame, sparks, flare, and the only two lights left in the frame. Everything else that lit or sounded near the spawn is gone |
-| `07b` | **Nothing there.** No post, no flame, no sparks, no flare, no glow. **A partial removal is the interesting failure** — a flame with no post, a glow with no flame — and this frame is what makes one visible |
+| `07a` | **One torch, burning, alone — and every other torch bracket bare.** Post, flame, sparks, flare, and the only two lights left in the frame; 318 units from the START waypoint (764 from the `START_GOTHIC2` start point, whichever the engine spawns you at), 2.1 m up the wall. A flame or a flare floating where another torch's post was is one of the 22 subtree deletes failing partially. Many torches still burning means the engine did not get this file — the batch log's *staged check* line says so |
+| `07b` | **No torch on any wall.** No post, no flame, no sparks, no flare, no glow. **A partial removal is the interesting failure** — a flame with no post, a glow with no flame — and this frame is what makes one visible |
 
-**Look at the right torch.** `2/76` is the same wall-torch model 102 units away
-in plan and **884 units lower** — a second storey of the same wall. It keeps its
-post, flame and flare in both candidates (its two lights are cleared with the
-rest of the frame), so a torch still burning *below* the one under test is the
-control working, not the delete failing. This trap found the assertion before it
-found a person: an XZ-only proximity check counted ten pieces of torch where
-six were expected.
+Floor fires — fireplaces, candles — are not torches and still burn in both.
+The `2/76` trap (the same model 102 units away in plan and 884 lower, which an
+XZ-only check once counted as pieces of the test torch) is gone with the other
+21; the assertion that caught it stays.
 
-**The frame's other fires still show a flame.** A torch's flame and sparks are
-plain `zCVob`s carrying `FIRE_MEDIUM.pfx` and `FIRE_SPARKS.pfx` visuals, not
-`zCPFXController`s, so the clearing does not take them. What makes the test
-torch the only *lit* thing in the frame is its two `zCVobLight` children — the
-same reason `06` leaves fires burning.
+**NPCs are in both frames**, and have to be: no NPC at all means the world did
+not run `STARTUP_NEWWORLD` and the row is void, not dark.
 
 ### 07c — the renumber, and nothing else
 

@@ -191,14 +191,25 @@ anything does.
     `--world` script (`check-portal-pairing.js`, `check-portal-planarity.js`,
     `check-visual-winding.js`, `check-vob-bbox.js`), `tools/mutate.js` and
     `zen-roundtrip --root` take. Re-running the script is the whole re-extract.
-  - **Candidates ship as a mod.** `tools/engine-batch.ps1` stages them into
-    the GMBT project and `gmbt test --world=<name>` builds
-    `Data\ModVDF\DDS-CAND.mod`; the retail `Worlds*.vdf` are never shadowed
-    and never renamed. The old layout — six VDFs parked as `.disabled` so a
-    world copied into `_work` would win, a pristine backup restored in a
-    `finally` — is retired with it, and so is the way a Steam "verify
-    integrity" used to void a verdict. The MDK *script* tree GMBT needs is
-    `tools/gmbt/mdk/` (gitignored, rebuilt as described below), not `_work`.
+  - **Candidates go through GMBT.** `tools/engine-batch.ps1` stages one at a
+    time into the GMBT project as `NEWWORLD.ZEN`, and `gmbt test
+    --world=NEWWORLD.ZEN` merges the project's asset dirs into `_work\Data`
+    and plays the loose file there (the `.mod` named in `.gmbt.yml` is what
+    `gmbt build` would write; nothing builds it). The retail `Worlds*.vdf`
+    are never shadowed and never renamed. The old layout — six VDFs parked as
+    `.disabled` so a world copied into `_work` would win, a pristine backup
+    restored in a `finally` — is retired with it, and so is the way a Steam
+    "verify integrity" used to void a verdict. The MDK *script* tree GMBT
+    needs is `tools/gmbt/mdk/` (gitignored, rebuilt as described below).
+  - **A candidate is only a game under the name `NEWWORLD.ZEN`.** The engine
+    spawns every NPC from a script function named after the world *file* —
+    `STARTUP_NEWWORLD`, `STARTUP_DRAGONISLAND`, `INIT_…` likewise — so a world
+    played as `07A-FRAME-TORCH.ZEN` loads, renders and has **no NPC in it**,
+    and a routine row "passes" on an empty world. The 2026-08-29 23:33 batch
+    was run that way; its four `ok` rows are void. `engine-batch.ps1` now
+    stages under that one name and hashes what GMBT merged
+    (`_work\Data\Worlds\NEWWORLD.ZEN`) against the candidate — the *staged
+    check* line in `results.log`.
   `zenkit-node/tools/startup-probe.ps1` is still the unattended "does the
   engine itself start" check, before blaming a candidate.
 - **The oracle is not stock**, and every verdict has to say so: Gothic II 2.6
@@ -257,9 +268,10 @@ stages upper-case for this reason. (The same exception in `UpdateDialogs()` is
 the different, known one that `--noupdatesubtitles` sidesteps.)
 
 The game itself was never at risk: it runs from `Data/*.vdf`, and `_work` is
-only the modding tree. **Since 2026-08-29 nothing of ours lives there**: the
+only the modding tree. **Since 2026-08-29 nothing of ours is kept there**: the
 world corpus is `scripts/extract-worlds.js`'s output in the repo, and GMBT owns
-`_work/Data` outright. What has to exist is `tools/gmbt/mdk/` — the complete
+`_work/Data` outright — it copies the candidate in as `NEWWORLD.ZEN` on every
+`gmbt test`, and that copy is the one the engine plays. What has to exist is `tools/gmbt/mdk/` — the complete
 script tree GMBT merges in — and rebuilding *that* needs no installer and no
 UAC; every source is already on the machine:
 

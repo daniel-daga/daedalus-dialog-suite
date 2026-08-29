@@ -360,14 +360,26 @@ behave and a failure still localizes. Run sheet §06;
 alone for a re-run where the control has already been seen.
 
 **`07` was built 2026-08-29, and it is an instrument and not a verdict.** Three
-candidates in `06`'s shape, run sheet §07, none of them played yet:
+candidates in `06`'s shape, run sheet §07. **Played once that night through
+GMBT, and the pass is void twice over**: the batch staged each world under its
+own file name, and the engine spawns NPCs from `STARTUP_<worldfile>`, so there
+were none (`environment-hazards.md`, *GMBT*); and the clearing took only the
+lights, so 22 other torches' flames burned on around the one under test and
+the verdict was "way darker, many torches visible". The `07c: ok` logged at 23:37
+is a routine row observed on a world with no NPC. Both fixed the same night —
+the script stages every candidate as `NEWWORLD.ZEN` and prints each
+candidate's `<name>.txt` run sheet before and after the run; `07a`/`07b` take
+the other 22 torches with them — and the rebuilt three have not been played:
 
 - **`07a` and `07b` are an A/B of one difference.** Both clear every light,
-  sound and effect within 6,000 units of START **except the torch subtree**;
-  `07b` then deletes that subtree with one `DeleteVob`. `00` cannot be the
-  control for this row — in retail the torch is one light among ~196 and
-  picking it out is the whole problem — so `07a` is, and the only difference
-  between the two files is the op under test.
+  sound and effect within 6,000 units of START **except the torch subtree**,
+  and every other wall torch of the same model in that radius as a subtree —
+  22 of them, so the frame has one torch on its walls or none; `07b` then
+  deletes the test torch with one `DeleteVob`. `00` cannot be the control for
+  this row — in retail the torch is one of 23 and picking it out is the whole
+  problem — so `07a` is, and the only difference between the two files is the
+  op under test. `07a` also witnesses 22 subtree deletes of its own: a flame
+  or a flare floating where a post was is a partial delete.
 - **`07c` is the renumber alone.** `05` bundled it with a subtree delete and
   four other waynet ops; a broken routine there would have implicated six
   edits. Here nothing else in the file changes, which is asserted rather than
@@ -382,10 +394,10 @@ ops' fault and all three able to have faked a result:**
   flame — which is also why `06`'s fires still burn — and what makes the test
   torch the only *lit* thing in the frame is its two lights, not its visual.
 - **There are two identical wall torches on that wall**, `2/76` sitting 102
-  units away in plan and **884 units below**. It keeps its post, flame and
-  flare in both candidates. An XZ-only proximity check counted ten pieces of
-  torch where six were expected, and the same confusion is available to the eye
-  — the run sheet now says which torch the row is about.
+  units away in plan and **884 units below** — and 21 more of the same model
+  inside the frame. An XZ-only proximity check counted ten pieces of torch
+  where six were expected, and the same confusion was available to the eye,
+  which is why the rebuilt candidates delete all 22 others.
 - **A cleared VOB can have a child**: 230 paths take 231 VOBs with them, so a
   count that assumes one row per path is off by one. `06` never noticed because
   it only counted what was left, not what went.

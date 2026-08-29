@@ -78,19 +78,29 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   field — patch `0030` was found this way, minimized to a single byte.
 - `engine-batch.ps1 [-Dir tools/cand] [-Only 00,07] [-Reinstall] [-Latest] [-Windowed] [-NoAudio]`
   — the manual engine pass, automated as far as it can be, **through GMBT**
-  (below). Stages the selected candidates into `gmbt/mod/Worlds`, runs
-  `gmbt test --world=<name>` on each, polls the engine's top-level windows and
-  auto-captures any assertion dialog (killing the engine), and asks for a
-  verdict either way. **It writes nothing into the install**: the candidate
-  ships in `Data\ModVDF\DDS-CAND.mod` and is selected by name, so there is no
-  backup, no restore and no `finally`. A plain `gmbt test` merges the asset
-  dirs every run; `-Reinstall` (GMBT's `--reinstall`) is for after a change to
-  `.gmbt.yml` or the asset dirs. **Never `--full`** — GMBT refuses it without
-  a script reparse, and the harness never reparses. `-Windowed` is GMBT's own
-  switch — it crashes on this machine (environment-hazards.md).
+  (below). Takes the selected candidates one at a time: stages each into
+  `gmbt/mod/Worlds` **as `NEWWORLD.ZEN`**, prints its `<name>.txt` (what to
+  look for — `mutate.js` writes one next to every candidate), runs
+  `gmbt test --world=NEWWORLD.ZEN`, hashes what GMBT merged into the install's
+  `_work\Data\Worlds\NEWWORLD.ZEN` against the candidate (logged as *staged
+  check*; a mismatch is logged as void), polls the engine's top-level windows
+  and auto-captures any assertion dialog (killing the engine), prints the sheet
+  again and asks for a verdict either way. **Always `NEWWORLD.ZEN`**: the
+  engine spawns its NPCs from `STARTUP_<worldfile>`, so a candidate played
+  under its own name is an empty world and a routine row "passes" on nothing —
+  the 2026-08-29 batch did exactly that. **It writes nothing into the
+  install** itself: GMBT merges the asset dirs into `_work\Data` on every
+  `gmbt test` and owns that tree, so there is no backup, no restore and no
+  `finally`. `-Reinstall` (GMBT's `--reinstall`) is for after a change to
+  `.gmbt.yml` or the asset dirs, or after a *staged check* mismatch. **Never
+  `--full`** — GMBT refuses it without a script reparse, and the harness never
+  reparses. `-Windowed` is GMBT's own switch — it crashes on this machine
+  (environment-hazards.md).
 - `mutate.js <outDir> [<NewWorld.zen>]` — builds every candidate as a flat
   `*.zen` for `engine-batch.ps1`, `00-control-original` (the pristine world —
   **the control, never skip it**) through `07c`; the file's header lists them.
+  Next to each goes a `<name>.txt` — what to look for in that candidate, with
+  the measured numbers filled in — which `engine-batch.ps1` prints.
   The source defaults to `../worlds/NEWWORLD.ZEN`, which
   `scripts/extract-worlds.js` pulls out of the retail archives — never a file
   inside the install — and the source hash is printed so a wrong world cannot
@@ -125,9 +135,17 @@ nothing checks at all. The walkers themselves are covered by
   a candidate needs no edit to a retail asset.
 
   ```
-  node mutate.js gmbt/mod/Worlds
-  cd gmbt && gmbt test --world=07A.ZEN --noreparse --windowed --noaudio                        --nomenu -D --noupdatesubtitles
+  node mutate.js cand
+  copy cand\07a-frame-torch.zen gmbt\mod\Worlds\NEWWORLD.ZEN
+  cd gmbt && gmbt test --world=NEWWORLD.ZEN --noreparse --windowed --noaudio                        --nomenu -D --noupdatesubtitles
   ```
+
+  **The world must be `NEWWORLD.ZEN`.** The engine spawns every NPC from a
+  script function named after the world file — `STARTUP_NEWWORLD`,
+  `STARTUP_DRAGONISLAND` — and a candidate played as `07A.ZEN` has no such
+  function, so it loads as an empty world. `gmbt test` merges `mdk` then `mod`
+  into the install's `_work\Data` and plays the loose files there; the `.mod`
+  in `.gmbt.yml` is what `gmbt build` would produce and nothing builds it.
 
   `--nomenu` starts the game directly, `GAME.playLogoVideos: 0` in the config
   drops two unskippable clips, `--windowed` keeps the engine off the whole
@@ -152,7 +170,8 @@ nothing checks at all. The walkers themselves are covered by
   procedure in environment-hazards.md. `gmbt` itself is installed to
   `%APPDATA%\GMBT\bin` (on the user PATH; the script falls back to that path).
 
-  Status 2026-08-29: the engine launches and runs a staged world (process alive,
-  400 s CPU). **Nobody has yet seen a frame** — the workstation was locked — so
-  "it loads and plays" is unproven and the run sheet's rows still need a person.
-  The `engine-batch.ps1` rewrite that drives GMBT has been parsed, not played.
+  Status 2026-08-29, late: `engine-batch.ps1` has driven a full `-Only 00,07`
+  batch through GMBT — four worlds launched, played and closed, verdicts
+  logged. The verdicts themselves are void (worlds staged under their own
+  names, so no NPCs; see above) and the script now stages `NEWWORLD.ZEN`,
+  which has been parsed, not played.
