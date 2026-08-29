@@ -150,6 +150,23 @@ card waits on live at its pointer — put new prose there, not here.
 only the level editor, so "no actionable cards" never meant "no work". Each
 pointer is a finding id in the file the routing table names.
 
+**Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
+
+- **A world finding has no file, and `Problem` demands one** — the locus union,
+  and deliberately no new rule in the same commit. Any run. §16.20 slice 1
+- **A world finding does not navigate** — the panel's click branches; a world
+  locus frames through the handle W3 already built. Any run. §16.20 slice 2
+- **`checkPortalMaterials` still has no consumer** — built and retail-tested
+  2026-08-28, called by nothing. Any run. §16.20 slice 3
+
+**Phase 1b-2 — enum properties** (§7 decision, §16.21)
+
+- **The enum sets are not written down** — which fields on which classes, read
+  out of ZenKit's headers; a wrong set marks a legal retail value unknown, which
+  is worse than no set. Any run. §16.21
+- **An enum field is free text** — the combobox that offers without coercing,
+  once the sets exist. Any run. §16.21
+
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -196,23 +213,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The MCP server's Phase 0** — landed: `serviceRegistry.ts` is the memoized
-  composition root (constructed on first call, never at import, so the E2E
-  userData redirect still lands first) and `SaveFileFlow.ts` is the
-  `generator:saveFile` body, taking its services injected. Pure move; the save
-  pipeline had no unit coverage before and now has seven cases.
-  `docs/plans/mcp-server.md` §2
-
-*(flushed 2026-08-29: the four cards that closed the production-review gaps
-and the dialog-simulator findings. Everything forward in them is already at its
-pointer — M2 and the two shapes `!Npc_KnowsInfo` deliberately leaves generic are
-marked open in `dialog-simulator-review-findings.md`; the reasoning is in
-`git log`.)*
-
-*(the §16.19 spawn-index cards, the last of them the *Spawns are in the frame*
-overlay, were dropped 2026-08-29 to stay under the budget; their substance is in
-`git log` and none pointed forward.)*
-
-*(flushed 2026-08-29 after the board-loop run that closed the 2026-08-29 review:
-twelve cards, each marked FIXED at its pointer, reasoning in `git log`. Nothing
-in them pointed forward.)*
+*(flushed 2026-08-29. Twenty-two cards across five board-loop rounds: the
+world-editor review, Phase 1c's spawn slices, the dialog-simulator findings, the
+production-review gaps and the MCP composition root. Each is FIXED at its
+pointer and reasoned in `git log`; what stayed open — the simulator's M2, the
+two shapes `!Npc_KnowsInfo` leaves generic — is marked open in
+`dialog-simulator-review-findings.md` rather than here.)*
