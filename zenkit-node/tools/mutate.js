@@ -668,4 +668,4 @@ for (const [name, file] of [
 ]) {
   console.log(`\n${name}  ${fs.statSync(file).size} B  ${sha(file)}`);
 }
-console.log(`\nrun: pwsh tools/engine-batch.ps1 -Dir "${path.resolve(outDir)}" -Only 00,07 -Full`);
+console.log(`\nrun: pwsh tools/engine-batch.ps1 -Dir "${path.resolve(outDir)}" -Only 00,07`);

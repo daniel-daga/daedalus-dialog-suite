@@ -28,14 +28,15 @@ here is claimed until it is run.
 ```
 node scripts/extract-worlds.js            # once: the retail worlds, out of the VDFs
 node tools/mutate.js tools/cand
-powershell -ExecutionPolicy Bypass -File tools/engine-batch.ps1 -Dir tools/cand -Only 00,07 -Full
+powershell -ExecutionPolicy Bypass -File tools/engine-batch.ps1 -Dir tools/cand -Only 00,07
 ```
 
 Fullscreen — windowed crashes on this machine (Environment). The script stages
 the selected `*.zen` into the GMBT harness mod (`tools/gmbt`), launches the game
 on each by name, and watches for a dialog. Nothing in the install is written or
 restored: the retail archives stay stock and the candidate lives in
-`Data\ModVDF\DDS-CAND.mod`. `-Full` is required on the first run.
+`Data\ModVDF\DDS-CAND.mod`. Never `--full`: GMBT refuses it without a script
+reparse, and the harness never reparses.
 
 **`00` runs first and must pass, in the same session.** A control that was not
 run is not a control, and every row below is an A/B against it. `-Only 00,03`

@@ -138,7 +138,7 @@ card waits on live at its pointer — put new prose there, not here.
   its own A/B in a cleared frame) and `07c` (the renumber with nothing else in
   the file) are the last of Gate 2b's unwitnessed rows. Needs the engine, so it
   needs a person. **Daniel.** §16.2, run sheet §07 — candidates are built in
-  `zenkit-node/tools/cand`; `engine-batch.ps1 -Dir tools/cand -Only 00,07 -Full`
+  `zenkit-node/tools/cand`; `engine-batch.ps1 -Dir tools/cand -Only 00,07`
   runs them through GMBT, and that script has been parsed, never played
 
 **Review findings, 2026-08-29.** Each pointer is a section and number in

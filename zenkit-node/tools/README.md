@@ -76,16 +76,18 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   `--seed <n>` replays one seed and then delta-debugs it down to the smallest
   set of mutations that still fails, which is what turns a crash into a named
   field — patch `0030` was found this way, minimized to a single byte.
-- `engine-batch.ps1 [-Dir cand] [-Only 00,07] [-Full] [-Latest] [-Windowed] [-NoAudio]`
+- `engine-batch.ps1 [-Dir tools/cand] [-Only 00,07] [-Reinstall] [-Latest] [-Windowed] [-NoAudio]`
   — the manual engine pass, automated as far as it can be, **through GMBT**
   (below). Stages the selected candidates into `gmbt/mod/Worlds`, runs
   `gmbt test --world=<name>` on each, polls the engine's top-level windows and
   auto-captures any assertion dialog (killing the engine), and asks for a
   verdict either way. **It writes nothing into the install**: the candidate
   ships in `Data\ModVDF\DDS-CAND.mod` and is selected by name, so there is no
-  backup, no restore and no `finally`. `-Full` is required on the first run
-  and after any change to `.gmbt.yml` or the asset dirs. `-Windowed` is GMBT's
-  own switch — it crashes on this machine (environment-hazards.md).
+  backup, no restore and no `finally`. A plain `gmbt test` merges the asset
+  dirs every run; `-Reinstall` (GMBT's `--reinstall`) is for after a change to
+  `.gmbt.yml` or the asset dirs. **Never `--full`** — GMBT refuses it without
+  a script reparse, and the harness never reparses. `-Windowed` is GMBT's own
+  switch — it crashes on this machine (environment-hazards.md).
 - `mutate.js <outDir> [<NewWorld.zen>]` — builds every candidate as a flat
   `*.zen` for `engine-batch.ps1`, `00-control-original` (the pristine world —
   **the control, never skip it**) through `07c`; the file's header lists them.

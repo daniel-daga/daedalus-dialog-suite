@@ -3,12 +3,13 @@
 # name, watches the engine's top-level windows for an assertion/error dialog
 # (auto-dumped, engine killed), and asks you for the verdict either way. Run in
 # YOUR OWN PowerShell window (it needs the keyboard):
-#   powershell -ExecutionPolicy Bypass -File engine-batch.ps1 -Only 00,07 -Full
+#   powershell -ExecutionPolicy Bypass -File engine-batch.ps1 -Only 00,07
 # Optional: -Dir tools/cand  candidates directory, relative to your shell (default tools/cand)
 # Optional: -Only 00,07    run only those candidate numbers
 # Optional: -Latest        run ONLY the most recently written *.zen in -Dir
-# Optional: -Full          gmbt --full: REQUIRED on the first run, and after any
-#                          change to .gmbt.yml or to the asset dirs
+# Optional: -Reinstall     gmbt --reinstall, after a change to .gmbt.yml or the
+#                          asset dirs. Never --full: GMBT refuses it without a
+#                          script reparse, and this harness never reparses.
 # Optional: -Windowed      gmbt --windowed (crashes on this machine - hazards)
 # Optional: -NoAudio       gmbt --noaudio
 #
@@ -25,7 +26,7 @@
 # for a row whose result is unmistakable on its own (a red screen), not fine for
 # one you would have to compare side by side.
 param([string[]]$Only = @(), [string]$Dir = '',
-      [switch]$Latest, [switch]$Full, [switch]$Windowed, [switch]$NoAudio)
+      [switch]$Latest, [switch]$Reinstall, [switch]$Windowed, [switch]$NoAudio)
 
 $ErrorActionPreference = 'Stop'
 $GmbtDir   = Join-Path $PSScriptRoot 'gmbt'
@@ -118,9 +119,11 @@ foreach ($c in $cands) {
   # --noreparse: the harness loads worlds against the shipped retail .DATs and
   # never compiles scripts. --noupdatesubtitles: GMBT 0.22 throws in
   # UpdateDialogs() on this script set. --nomenu -D: straight into a new game,
-  # marvin mode on. --full only once per batch: the first run installs the mod.
+  # marvin mode on. A plain `gmbt test` merges the asset dirs every run; --full
+  # is refused ("Full test requires scripts reparse"), so -Reinstall is the
+  # strongest thing offered, once per batch.
   $gmbtArgs = @('test', "--world=$($c.Name)", '--noreparse', '--nomenu', '-D', '--noupdatesubtitles')
-  if ($Full -and $first) { $gmbtArgs += '--full' }
+  if ($Reinstall -and $first) { $gmbtArgs += '--reinstall' }
   if ($Windowed) { $gmbtArgs += '--windowed' }
   if ($NoAudio) { $gmbtArgs += '--noaudio' }
   $first = $false

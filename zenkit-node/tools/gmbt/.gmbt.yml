@@ -15,7 +15,9 @@
 # --noupdatesubtitles is required: GMBT 0.22 throws a KeyNotFoundException in
 # UpdateDialogs() on this script set.
 #
-# The FIRST run, and any run after this file changes, must add --full.
+# Never --full: GMBT refuses it without a script reparse ("Full test requires
+# scripts reparse"), and this harness never reparses. A plain `gmbt test` merges
+# the asset dirs every run; --reinstall is for after this file changes.
 
 projectName: DDS World Candidates
 
