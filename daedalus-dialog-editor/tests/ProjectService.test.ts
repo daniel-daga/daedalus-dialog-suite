@@ -825,6 +825,41 @@ FUNC VOID Rtn_Mixed()
       ]);
     });
 
+    // §16.19: `callSites` used to carry only a body's top-level calls, so the
+    // chapter-entry files — one `if` after another — yielded zero spawn sites
+    // and the index lost 1,178 of retail's 4,087 spawn calls.
+    it('records a spawn written inside a chapter block, not only a top-level one', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID B_Enter_NewWorld()
+{
+	Wld_InsertNpc (Grd_200_Gardist, "WP_ALWAYS");
+	if (Kapitel == 1)
+	{
+		Wld_InsertNpc (Grd_201_Gardist, "WP_CHAPTER_ONE");
+	}
+	else
+	{
+		Wld_InsertItem (ItMi_Gold, "WP_OTHERWISE");
+	};
+};`,
+        '/test/B_Enter_NewWorld.d'
+      );
+
+      const sites = extractSpawnSites([
+        { filePath: '/test/B_Enter_NewWorld.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites.map((site) => [site.instance, site.spawnPoint, site.line])).toEqual([
+        ['GRD_200_GARDIST', 'WP_ALWAYS', 3],
+        ['GRD_201_GARDIST', 'WP_CHAPTER_ONE', 6],
+        ['ITMI_GOLD', 'WP_OTHERWISE', 10]
+      ]);
+    });
+
     // §8 and the design brief §5.1 make this a hard rule: a site whose instance
     // or spawn point is not statically resolvable is excluded, never guessed.
     it('excludes sites whose instance or spawn point is not a literal', async () => {

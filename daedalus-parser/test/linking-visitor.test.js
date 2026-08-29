@@ -202,3 +202,44 @@ test('extracts conditions when the condition function precedes its instance', ()
   assert.strictEqual(cond.conditions[0].type, 'NpcKnowsInfoCondition');
   assert.strictEqual(cond.actions.length, 0, 'body must not be misparsed as actions');
 });
+
+test('records call sites nested in if/else bodies, not only a body\'s top-level calls', () => {
+  // A chapter-entry function is one `if` after another, so a spawn written
+  // inside one used to be invisible to every callSites consumer.
+  const source = `
+    func void B_Enter_NewWorld() {
+      Wld_InsertNpc(VLK_400_Addon_Bauer, "WP1");
+      if (Kapitel == 1) {
+        Wld_InsertNpc(VLK_401_Addon_Bauer, "WP2");
+      } else {
+        Wld_InsertItem(ItMi_Gold, "WP3");
+      };
+      if (Kapitel == 2) {
+        if (SC_KnowsAbout == TRUE) {
+          Wld_InsertNpc(VLK_402_Addon_Bauer, "WP4");
+        };
+      };
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.B_Enter_NewWorld;
+  assert.ok(func);
+
+  const spawns = func.callSites.filter((c) => c.functionName.startsWith('Wld_Insert'));
+  assert.deepStrictEqual(
+    spawns.map((c) => [c.functionName, c.args[0].value, c.args[1].value]),
+    [
+      ['Wld_InsertNpc', 'VLK_400_Addon_Bauer', 'WP1'],
+      ['Wld_InsertNpc', 'VLK_401_Addon_Bauer', 'WP2'],
+      ['Wld_InsertItem', 'ItMi_Gold', 'WP3'],
+      ['Wld_InsertNpc', 'VLK_402_Addon_Bauer', 'WP4']
+    ],
+    'every spawn call reaches callSites in source order, however deeply nested'
+  );
+  // The nested calls carry their own position, not the enclosing if's.
+  assert.strictEqual(spawns[1].position.startLine, 5);
+  assert.strictEqual(spawns[3].position.startLine, 11);
+  // `calls` follows callSites, so an orphaned-function check sees them too.
+  assert.ok(func.calls.includes('Wld_InsertItem'));
+});

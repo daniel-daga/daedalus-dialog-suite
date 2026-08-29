@@ -266,10 +266,12 @@ export class LinkingVisitor {
         } else {
           this.preserveUnsupportedStatement(node);
         }
+        this.recordCallSitesInSkippedSubtree(node);
         return true;
       }
 
       this.preserveUnsupportedStatement(node);
+      this.recordCallSitesInSkippedSubtree(node);
       return true;
     }
 
@@ -528,25 +530,10 @@ export class LinkingVisitor {
    * Process function calls in function bodies
    */
   private processFunctionCall(node: TreeSitterNode): void {
-    const funcToCallNode = node.childForFieldName('function');
-    if (!funcToCallNode || !this.currentFunction) {
+    const functionName = this.recordCallSite(node);
+    if (functionName === null || !this.currentFunction) {
       return;
     }
-
-    const functionName = funcToCallNode.text;
-    this.currentFunction.calls.push(functionName);
-
-    const argsNode = node.childForFieldName('arguments');
-    this.currentFunction.callSites.push({
-      functionName,
-      args: argsNode ? parseArgumentsDetailed(argsNode) : [],
-      position: {
-        startLine: node.startPosition.row + 1,
-        startColumn: node.startPosition.column + 1,
-        endLine: node.endPosition.row + 1,
-        endColumn: node.endPosition.column + 1
-      }
-    });
 
     if (this.isCurrentConditionFunction()) {
       if (this.conditionRawMode.has(this.currentFunction.name)) {
@@ -585,6 +572,50 @@ export class LinkingVisitor {
           this.consumedCommentRanges.add(`${commentNode.startIndex}:${commentNode.endIndex}`);
         }
       }
+    }
+  }
+
+  /**
+   * Record a call in `calls` and `callSites`, and answer the name recorded
+   * (null when there is no current function or no callee node). This is the
+   * whole of what a skipped subtree contributes: no action, no condition.
+   */
+  private recordCallSite(node: TreeSitterNode): string | null {
+    const funcToCallNode = node.childForFieldName('function');
+    if (!funcToCallNode || !this.currentFunction) {
+      return null;
+    }
+
+    const functionName = funcToCallNode.text;
+    this.currentFunction.calls.push(functionName);
+
+    const argsNode = node.childForFieldName('arguments');
+    this.currentFunction.callSites.push({
+      functionName,
+      args: argsNode ? parseArgumentsDetailed(argsNode) : [],
+      position: {
+        startLine: node.startPosition.row + 1,
+        startColumn: node.startPosition.column + 1,
+        endLine: node.endPosition.row + 1,
+        endColumn: node.endPosition.column + 1
+      }
+    });
+
+    return functionName;
+  }
+
+  /**
+   * Sweep a statement whose children the traversal is about to skip for the
+   * calls inside it. `callSites` is the project index's only view of a call,
+   * and a chapter-entry function is one `if` after another, so without this
+   * every `Wld_InsertNpc` written in a conditional block is invisible to it.
+   */
+  private recordCallSitesInSkippedSubtree(node: TreeSitterNode): void {
+    for (const child of node.namedChildren) {
+      if (child.type === 'call_expression') {
+        this.recordCallSite(child);
+      }
+      this.recordCallSitesInSkippedSubtree(child);
     }
   }
 

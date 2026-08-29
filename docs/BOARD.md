@@ -164,17 +164,6 @@ pointer is a finding id in the file the routing table names.
   no `.zen` left on this machine. Needs the re-extract, so it needs a person.
   §16.22 q3, `environment-hazards.md`
 
-**Level editor — two defects with their diagnosis already written**
-
-- **The six waynet mutators never mark the handle mutated**, so `container` is
-  a lie: `zenkit-node/lib/index.js` wraps only the VOB ops with `markMutated`.
-  Any run. `world-editor-review-2026-08-29.md`, *Conventions and cleanup* 1
-- **The spawn index loses 1,178 of 4,087 spawn calls**, so the world's spawn
-  overlay under-draws and the duplicate rule cannot see a chapter-block
-  relocation. `callSites` keeps only a body's top-level calls
-  (`linking-visitor.ts`, `processFunctionCall`). Any run. §16.19
-
-
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -228,6 +217,13 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The spawn index no longer stops at a body's top level** — a skipped `if`
+  or `return` subtree is swept for calls before it is skipped, so a chapter
+  block's `Wld_InsertNpc` reaches `callSites`. Actions and fidelity untouched;
+  the 71% is not re-measured. §16.19. board-loop
+- **The six waynet mutators card was already fixed** — `markMutated` wraps all
+  six in `lib/index.js` and `waynetMutation.test.js` asserts the null
+  `container`; landed in `9bb7258`, the card just outlived it. board-loop
 - **A script's spawn point goes to the world** — W4 is a button in
   `InsertNpcActionRenderer` leaving the panel's own `focusRequest`; it reads
   `waynetNames`, so W1's lookup is not going to be written. §16.23. board-loop

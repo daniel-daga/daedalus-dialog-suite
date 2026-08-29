@@ -5180,6 +5180,24 @@ under-reports who spawns at a point, and the overlay under-draws — and it is a
 parser-side fact (`linking-visitor.ts`, `processFunctionCall`), not an
 `extractSpawnSites` one. Nobody owns it; it is written here rather than carded.
 
+**Fixed 2026-08-29.** `shouldSkipChildren` still skips the subtree of an `if` or
+a `return` — the action model and the round-trip fidelity that hangs off it are
+untouched — but it now sweeps that subtree for `call_expression` nodes first and
+records each one through a `recordCallSite` extracted from
+`processFunctionCall`. Only the call record is taken: no action, no condition,
+so a `ConditionalAction` is still the one thing built from the `if`. `calls`
+follows `callSites`, so the orphaned-function rule and `questLogFiles`'
+`B_CloseTopic` probe gain the same nested calls. Held by *"records call sites
+nested in if/else bodies, not only a body's top-level calls"*
+(`linking-visitor.test.js`, which is the one-line repro above grown an `else`
+and a second nesting level) and, at the consumer, *"records a spawn written
+inside a chapter block, not only a top-level one"* (`ProjectService.test.ts`).
+The default-root corpus scan is unchanged against the same run before the fix —
+143 drift files, 314 Tier-1, both pre-existing — and `--root
+test/fixtures/corpus --strict` is clean. **The 71% was never re-measured after
+the fix**: the count above is what the corpus scan said on the old parser, and
+nothing has re-run q4's script against the new one.
+
 **Slice 2 — the duplicate-spawn rule.** §8 names "duplicate NPC IDs" as
 cross-validation and nothing implements it. Over slice 1's index this is a
 script-locus finding, so it has a `filePath` and fits the panel's navigation
