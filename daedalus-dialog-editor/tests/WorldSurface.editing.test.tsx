@@ -2501,6 +2501,23 @@ describe('a class property edited in the grid', () => {
     }]));
   });
 
+  it('re-labels the scene tree row when the name is committed', async () => {
+    // The wiring for the tree's half of the same write: `applyEdit` puts the
+    // new name in the summary's columns without changing one identity React
+    // compares, so the row is only re-read because the applied ops reach the
+    // tree as a prop. A green tree test with nothing handing it the ops is the
+    // failure this catches.
+    await openWorld();
+    expect(screen.getByTestId('world-vob-row-1')).toHaveTextContent('BARREL');
+
+    const nameInput = screen.getByTestId('world-prop-name-input') as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'CRATE' } });
+    fireEvent.blur(nameInput);
+
+    await waitFor(() => expect(screen.getByTestId('world-vob-row-1'))
+      .toHaveTextContent('CRATE'));
+  });
+
   it('reads the base fields again when the edit is refused', async () => {
     // Nothing to invert: the world holds the value it always held, and the grid
     // is showing a number that only ever existed in an input.

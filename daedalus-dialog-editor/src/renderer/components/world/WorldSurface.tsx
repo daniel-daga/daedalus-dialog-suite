@@ -1628,6 +1628,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               <WorldSceneTree
                 summary={summary}
                 selection={selection}
+                appliedOps={appliedOps}
                 onSelect={handleSelect}
                 onFocus={focusVob}
                 onReparent={reparent}

@@ -16,6 +16,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { applyOps, createVobReader, setVobProp, type WorldOp } from 'zen-world';
 import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
 import WorldSceneTree from '../src/renderer/components/world/WorldSceneTree';
 
@@ -623,6 +624,103 @@ describe('WorldSceneTree', () => {
       await waitFor(() => expect(row(3)).not.toBeInTheDocument());
       expect(row(4)).toBeInTheDocument();
       expect(row(2)).not.toBeInTheDocument();
+    });
+  });
+  // `applyOps` writes a name or a visual straight into the summary's columns
+  // and deliberately leaves `summary`'s identity alone (worldStore's
+  // `applyEdit`), so nothing React compares changes on a property edit. The
+  // ops that were applied are what the tree is told, and they are the only
+  // thing that can tell it — a label read inside a memoised row, a filter
+  // memoised on the index, and an expansion set of flat indices a renumber
+  // moves.
+  describe('an edit written into the summary in place', () => {
+    const twoRoots = () => summaryOf(vobIndex([
+      { name: 'CASTLE', cls: 'zCVob' },
+      { parent: 0, childIndex: 0, name: 'GATE', cls: 'oCMobDoor' },
+      { childIndex: 1, name: 'WELL', cls: 'zCVob' },
+    ]));
+
+    /** Exactly what the store does: build the op off the index, then project it
+     *  back onto the same buffers. */
+    const renameInPlace = (summary: WorldSummary, vob: number, name: string) => {
+      const reader = createVobReader(summary.vobIndex);
+      const ops = [setVobProp(reader, vob, { name })];
+      applyOps(reader, ops);
+      return ops;
+    };
+
+    it('re-labels the row of a VOB that was renamed', () => {
+      const summary = twoRoots();
+      const props = { summary, selection: [], onSelect: jest.fn() };
+      const { rerender } = render(<WorldSceneTree {...props} />);
+      expect(row(0)).toHaveTextContent('CASTLE');
+
+      const ops = renameInPlace(summary, 0, 'KEEP');
+      rerender(<WorldSceneTree {...props} appliedOps={ops} />);
+
+      expect(row(0)).toHaveTextContent('KEEP');
+      expect(row(0)).not.toHaveTextContent('CASTLE');
+    });
+
+    it('re-runs an active filter, so a rename adds and drops rows', async () => {
+      const user = userEvent.setup();
+      const summary = twoRoots();
+      const props = { summary, selection: [], onSelect: jest.fn() };
+      const { rerender } = render(<WorldSceneTree {...props} />);
+
+      await user.type(screen.getByTestId('world-tree-filter'), 'WELL');
+      await waitFor(() => expect(row(0)).not.toBeInTheDocument());
+      expect(row(2)).toBeInTheDocument();
+
+      // The match is renamed out of the query and the other root into it.
+      const ops = [
+        ...renameInPlace(summary, 2, 'SPRING'),
+        ...renameInPlace(summary, 0, 'WELLHOUSE'),
+      ];
+      rerender(<WorldSceneTree {...props} appliedOps={ops} />);
+
+      await waitFor(() => expect(row(0)).toBeInTheDocument());
+      expect(row(2)).not.toBeInTheDocument();
+    });
+
+    // Expansion is a set of flat indices, and a renumbering op leaves every one
+    // of them naming a different VOB — the same reason the World surface clears
+    // the selection rather than following it.
+    it('forgets which VOBs were expanded when an op renumbers them', async () => {
+      const user = userEvent.setup();
+      //  0 SHED ── 1 PLANK      2 TOWER ── 3 GATE      4 KEEP ── 5 DOOR
+      const before = summaryOf(vobIndex([
+        { name: 'SHED' },
+        { parent: 0, childIndex: 0, name: 'PLANK' },
+        { childIndex: 1, name: 'TOWER' },
+        { parent: 2, childIndex: 0, name: 'GATE' },
+        { childIndex: 2, name: 'KEEP' },
+        { parent: 4, childIndex: 0, name: 'DOOR' },
+      ]));
+      const props = { summary: before, selection: [], onSelect: jest.fn() };
+      const { rerender } = render(<WorldSceneTree {...props} />);
+
+      await user.click(screen.getByTestId('world-vob-toggle-2'));
+      expect(row(3)).toBeInTheDocument();
+
+      // SHED's two-VOB subtree deleted, so everything after it comes down by
+      // two: TOWER is 0 and KEEP — which the user never opened — is 2.
+      const after = summaryOf(vobIndex([
+        { name: 'TOWER' },
+        { parent: 0, childIndex: 0, name: 'GATE' },
+        { childIndex: 1, name: 'KEEP' },
+        { parent: 2, childIndex: 0, name: 'DOOR' },
+      ]));
+      const deletion: WorldOp = { op: 'DeleteVob', vob: 0, path: '0' };
+      rerender(<WorldSceneTree {...props} summary={after} appliedOps={[deletion]} />);
+
+      // Both roots collapsed. Keeping the stale index would open KEEP, which
+      // nobody touched, and leave TOWER — the row the user actually opened —
+      // shut.
+      expect(row(0)).toBeInTheDocument();
+      expect(row(2)).toBeInTheDocument();
+      expect(row(3)).not.toBeInTheDocument();
+      expect(row(1)).not.toBeInTheDocument();
     });
   });
 });

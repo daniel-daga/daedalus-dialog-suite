@@ -6,8 +6,8 @@ import MyLocationIcon from '@mui/icons-material/MyLocation';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {
-  flattenMatching, flattenVisible, isEmptyQuery, matchVobs,
-  type VobQuery, type VobReader, type VobRow,
+  flattenMatching, flattenVisible, isEmptyQuery, matchVobs, renumbersPaths,
+  type VobQuery, type VobReader, type VobRow, type WorldOp,
 } from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
@@ -247,10 +247,28 @@ export interface WorldSceneTreeProps {
    * list".
    */
   onReparent?: (vob: number, toParent: number | null, slot: number) => void;
+  /**
+   * The ops last applied to the world — the tree's only news that anything
+   * changed.
+   *
+   * `applyOps` writes a name or a visual straight into the summary's columns
+   * and deliberately leaves `summary`'s identity alone (`worldStore.applyEdit`
+   * says why), so a property edit changes nothing React compares: the label is
+   * read inside a memoised row, and the filter is memoised on the index. A new
+   * array here is what re-reads both.
+   *
+   * It is also what says the expansion set has to go: `expanded` holds flat
+   * indices, and after a renumbering op every one of them names a different
+   * VOB. Only a *committed* renumber counts, which is why the summary's
+   * identity is checked beside it — a refused one leaves the index exactly as
+   * it was, and collapsing the tree over an edit that did not happen is the
+   * same lie in the other direction.
+   */
+  appliedOps?: readonly WorldOp[] | null;
 }
 
 const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
-  summary, selection, onSelect, onFocus, onReparent,
+  summary, selection, onSelect, onFocus, onReparent, appliedOps = null,
 }) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selected = useMemo(() => new Set(selection), [selection]);
@@ -277,7 +295,11 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
    *  that happens to keep everything, and must not pay for one. */
   const matches = useMemo(
     () => (isEmptyQuery(query) ? null : matchVobs(summary.vobIndex, query)),
-    [summary.vobIndex, query],
+    // `appliedOps` is a dependency for the reason it is a prop at all: a rename
+    // is written into the very columns this reads, without changing one
+    // identity React can see, and a filter that never re-ran would keep a row
+    // it no longer matches and hide one it now does.
+    [summary.vobIndex, query, appliedOps],
   );
   const matchCount = useMemo(
     () => (matches === null ? null : matches.reduce((sum, hit) => sum + hit, 0)),
@@ -301,6 +323,21 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
     () => [...summary.vobIndex.classes].sort((a, b) => a.localeCompare(b)),
     [summary.vobIndex],
   );
+
+  /** The summary the last renumber check was made against — a structural op is
+   *  the only thing that replaces it (`indexRefreshed`), so a change here is
+   *  what tells a committed op apart from a refused one. */
+  const indexedAs = useRef(summary);
+  useEffect(() => {
+    if (indexedAs.current === summary) return;
+    indexedAs.current = summary;
+    if (appliedOps === null || !appliedOps.some(renumbersPaths)) return;
+    // Dropped rather than remapped, exactly as the World surface drops the
+    // selection: the VOB the user opened is recoverable from its path, but the
+    // others in the set are not, and a tree that opened rows nobody touched is
+    // worse than one that is shut.
+    setExpanded((current) => (current.size === 0 ? current : new Set<number>()));
+  }, [summary, appliedOps]);
 
   // A VOB picked in the viewport is usually inside collapsed parents.
   useEffect(() => {
@@ -439,8 +476,11 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       onDropOn: onReparent === undefined ? undefined : onDropOn,
       onDropBetween: onReparent === undefined ? undefined : onDropBetween,
     }),
+    // `appliedOps` again, and here for the label: `Row` is memoised and reads
+    // the name through `reader`, so without it a renamed VOB keeps its old
+    // label until an unrelated change breaks this object's identity.
     [rows, reader, rowExpanded, selected, onSelect, onToggle, onFocus, canDropOn, onReparent,
-      onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd],
+      onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd, appliedOps],
   );
 
   return (

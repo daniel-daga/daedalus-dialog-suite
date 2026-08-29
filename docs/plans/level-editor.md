@@ -1349,7 +1349,10 @@ back through undo, forward through redo, and back again.
 - **The projection is written in place.** An op lands in the index's own
   `ArrayBuffer` columns, so no cached reader is invalidated — which also means
   React sees nothing change, and what re-renders the panels is the World
-  surface's `appliedOps` state.
+  surface's `appliedOps` state. It is a *prop* on the scene tree for the same
+  reason: the row is memoised and reads its label through the reader, the filter
+  is memoised on the index, and the expansion set holds flat indices a renumber
+  moves — none of which any identity React compares would report.
 - **Ctrl+Z in the World view is the world's undo, not the dialog editor's.** The
   layout's shortcut is a *window* listener that only checks a file is open —
   which it is, since the World surface lives inside a project like every other
