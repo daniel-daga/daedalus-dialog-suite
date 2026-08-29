@@ -153,9 +153,13 @@ Extends the fix-03 contract (see
 | `encoding`          | `ENCODING_LOSS:`         | FileService write refusal |
 | `external-conflict` | `EXTERNAL_MODIFICATION:` | FileService mtime guard   |
 
-Both `saveFile`'s catch and auto-save's per-file catch populate
-`FileState.saveError`; a failed save never clears `isDirty`. The App-bar
-indicator renders `describeSaveError` (actionable copy per kind).
+`fileStore.saveFile`'s catch is the one place that classifies a rejection:
+`external-conflict` routes to `markExternalConflict` (the conflict dialog),
+every other kind populates `FileState.saveError`, and a failed save never
+clears `isDirty`. Auto-save has no write path of its own — it calls
+`saveFile` (2026-07 3.1) and only adds `autoSaveError` for a validation
+refusal. The App-bar indicator renders `describeSaveError` (actionable copy
+per kind).
 
 ## Mid-save race guards
 

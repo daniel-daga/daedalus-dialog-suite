@@ -73,10 +73,12 @@ describe('Auto-save Performance', () => {
     // We expect 5 calls to saveFile
     expect(mockSaveFile).toHaveBeenCalledTimes(5);
 
-    // Expect significant reduction in state updates
-    // Ideally 1 update for all files.
-    // Note: The counter might be higher if setIsAutoSaving triggers updates to store,
-    // but setIsAutoSaving uses useState so it doesn't affect useEditorStore.
-    expect(updateCount).toBe(1);
+    // One store update per saved file, and not one more: since 2026-07 3.1 the
+    // hook routes its write through `fileStore.saveFile`, which commits each
+    // file's result itself, so the single batched commit this test used to
+    // assert is no longer possible — the hook adds no commit of its own on the
+    // all-successful path. What it still pins is that nothing per-file is
+    // written twice (setIsAutoSaving is useState, not the store).
+    expect(updateCount).toBe(filePaths.length);
   });
 });

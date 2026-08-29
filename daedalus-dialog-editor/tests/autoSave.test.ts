@@ -144,6 +144,7 @@ describe('useAutoSave hook', () => {
           TestDialog: { properties: { npc: 'UpdatedNPC' } },
         }),
       }),
+      expect.any(Object),
       expect.any(Object)
     );
   });
@@ -207,6 +208,7 @@ describe('useAutoSave hook', () => {
           TestDialog: { properties: { npc: 'Change3' } },
         }),
       }),
+      expect.any(Object),
       expect.any(Object)
     );
   });
@@ -546,6 +548,7 @@ describe('useAutoSave hook', () => {
             TestDialog: { properties: { npc: 'FLUSHED' } },
           }),
         }),
+        expect.any(Object),
         expect.any(Object)
       );
     } finally {

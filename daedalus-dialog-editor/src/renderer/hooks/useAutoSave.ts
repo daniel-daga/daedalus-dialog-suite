@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore, type FileState } from '../store/editorStore';
-import { classifySaveError, type SaveError } from '../utils/saveError';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 
 interface AutoSaveStatus {
@@ -58,110 +57,55 @@ export function useAutoSave(): AutoSaveStatus {
     setIsAutoSaving(true);
 
     try {
-      // Save all dirty files; remember which model reference was written so
-      // edits that land while a save is in flight are not marked clean
-      const successfulSaves = new Map<string, unknown>();
+      // The write itself is `fileStore.saveFile` (3.1): it is the only place
+      // that knows the mid-flight-edit rule, the parse-state invariant and how
+      // an EXTERNAL_MODIFICATION rejection becomes `externalConflict` rather
+      // than a generic save-error chip. This hook keeps only candidacy,
+      // scheduling and the auto-save-specific `autoSaveError`.
       const failedSaves = new Map<string, any>();
-      const rejectedSaves = new Map<string, SaveError>();
       const errors: unknown[] = [];
+      let anySucceeded = false;
 
       await Promise.all(
         filesToSave.map(async (filePath) => {
-          const fileState = state.openFiles.get(filePath);
-          if (fileState) {
-            const savedModel = fileState.semanticModel;
-            try {
-              // The main process arms file-watcher self-write suppression
-              // after the actual write succeeds.
-              const result = await window.editorAPI.saveFile(
-                filePath,
-                savedModel,
-                state.codeSettings
-              );
-
-              if (result.success) {
-                successfulSaves.set(filePath, savedModel);
-              } else if (result.validationResult) {
-                failedSaves.set(filePath, result.validationResult);
-              }
-            } catch (err) {
-              // Classifiable worker failures (timeout / crash) surface on the
-              // file instead of being swallowed; the file stays dirty.
-              const saveError = classifySaveError(err);
-              if (saveError) {
-                rejectedSaves.set(filePath, saveError);
-              }
-              errors.push(err);
+          try {
+            const result = await useEditorStore.getState().saveFile(filePath);
+            if (result.success) {
+              anySucceeded = true;
+            } else if (result.validationResult) {
+              failedSaves.set(filePath, result.validationResult);
             }
+          } catch (err) {
+            // `saveFile` has already recorded the classifiable failure on the
+            // file (saveError, or externalConflict for a mid-save external
+            // change) and left it dirty.
+            errors.push(err);
           }
         })
       );
 
-      // Only files whose model reference is unchanged may be marked clean —
-      // edits that landed while the save was in flight are not on disk yet.
-      // (Compared outside setState: the immer middleware hands the updater
-      // draft proxies, which would never be reference-equal.)
-      const latestFiles = useEditorStore.getState().openFiles;
-      const cleanableFiles = new Set<string>();
-      successfulSaves.forEach((savedModel, filePath) => {
-        if (latestFiles.get(filePath)?.semanticModel === savedModel) {
-          cleanableFiles.add(filePath);
-        }
-      });
-
-      // Update store with results
-      useEditorStore.setState((currentState) => {
-        const newOpenFiles = new Map(currentState.openFiles);
-        const now = new Date();
-
-        // Mark successful saves as clean
-        cleanableFiles.forEach((filePath) => {
-          const currentFileState = newOpenFiles.get(filePath);
-          if (currentFileState) {
-            newOpenFiles.set(filePath, {
-              ...currentFileState,
-              isDirty: false,
-              lastSaved: now,
-              hasErrors: false,
-              errors: [],
-              lastValidationResult: undefined,
-              saveError: undefined,
-            });
-          }
+      // Mark failed saves with their validation errors. N6: a validation
+      // failure is NOT a parse error — it must not touch the parse-state
+      // mirror (hasErrors/errors). It sets only autoSaveError, which the gate
+      // honours and the next mutation clears.
+      if (failedSaves.size > 0) {
+        useEditorStore.setState((currentState) => {
+          const newOpenFiles = new Map(currentState.openFiles);
+          failedSaves.forEach((validationResult, filePath) => {
+            const currentFileState = newOpenFiles.get(filePath);
+            if (currentFileState) {
+              newOpenFiles.set(filePath, {
+                ...currentFileState,
+                isDirty: true, // Keep it dirty so work is not lost
+                autoSaveError: validationResult,
+              });
+            }
+          });
+          return { openFiles: newOpenFiles };
         });
+      }
 
-        // Mark rejected saves (worker timeout / crash) — keep the file dirty so
-        // work is not lost; the error surfaces via the app-bar indicator.
-        rejectedSaves.forEach((saveError, filePath) => {
-          const currentFileState = newOpenFiles.get(filePath);
-          if (currentFileState) {
-            newOpenFiles.set(filePath, {
-              ...currentFileState,
-              isDirty: true,
-              saveError,
-            });
-          }
-        });
-
-        // Mark failed saves with their validation errors. N6: a validation
-        // failure is NOT a parse error — it must not touch the parse-state
-        // mirror (hasErrors/errors). It sets only autoSaveError, which the gate
-        // honours and the next mutation clears.
-        failedSaves.forEach((validationResult, filePath) => {
-          const currentFileState = newOpenFiles.get(filePath);
-          if (currentFileState) {
-            newOpenFiles.set(filePath, {
-              ...currentFileState,
-              isDirty: true, // Keep it dirty so work is not lost
-              autoSaveError: validationResult,
-            });
-          }
-        });
-
-        return { openFiles: newOpenFiles };
-      });
-
-      if (successfulSaves.size > 0) {
+      if (anySucceeded) {
         setLastAutoSaveTime(new Date());
       }
 

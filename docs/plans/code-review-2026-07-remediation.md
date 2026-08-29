@@ -66,7 +66,7 @@ undo prompt and nothing to reveal that deletion was armed.
 
 ## P3 — Divergent duplicate implementations (stops the P0/P2 classes from recurring)
 
-- [ ] **3.1 Auto-save must call `fileStore.saveFile`**
+- [x] **3.1 Auto-save must call `fileStore.saveFile`** — **landed 2026-08-30.** `performAutoSave` keeps candidacy, scheduling and `autoSaveError`; the write is `fileStore.saveFile`, so an `EXTERNAL_MODIFICATION:` rejection routes through `markExternalConflict` and the success path no longer touches `hasErrors`/`errors`. Cost: each file commits its own `set()`, so a multi-file tick is N store updates, not one.
   `hooks/useAutoSave.ts:73-95, 88-92, 125-126, 135-144` vs `store/fileStore.ts:766-792`
   The hook still calls `window.editorAPI.saveFile` directly and both divergences persist: an
   `EXTERNAL_MODIFICATION` rejection becomes a plain `saveError` with `isDirty: true` instead of

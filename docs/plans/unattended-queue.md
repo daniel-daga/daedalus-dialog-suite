@@ -35,7 +35,7 @@ or cross-workspace change.
 | # | Item | Where the diagnosis is | Accept | Size |
 |---|---|---|---|---|
 | ~~1~~ | ~~`getSemanticModel` writes a stale model over a fresh one~~ — **landed 2026-08-30**, per-file staleness stamp; the residual (an open file evicted by the 512 cap re-parses from disk) is recorded at 2026-07 **4.1** and is not a row | 2026-07 **4.1** | `projectStore.staleCacheWrite` green | M |
-| 2 | Auto-save calls `editorAPI.saveFile` directly, so an external-modification conflict is never routed and a success wrongly clears `hasErrors`/`errors` | 2026-07 **3.1**, `useAutoSave.ts:76` | `useAutoSave.conflictRouting` › a rejected autosave sets `externalConflict` | M |
+| ~~2~~ | ~~Auto-save calls `editorAPI.saveFile` directly~~ — **landed 2026-08-30**, the hook now calls `fileStore.saveFile`; the one cost is that the five-file autosave tick commits per file instead of once (`autoSavePerformance` pins the new count) | 2026-07 **3.1** | `useAutoSave.conflictRouting` green | M |
 | 3 | A background reparse discards a running simulator session | simulator **M2**, `SimulatorDialog.tsx:50` | `simulatorDialog` › a model change while open keeps the session | S |
 | 4 | `clearSearch` does not cancel the in-flight search, which then repopulates the cleared results | 2026-07 **4.3**, `searchStore.ts:95` | `searchStore` › clearSearch cancels an in-flight search | S |
 | 5 | Comments inside a call become arguments — the argument split filters only `,` `(` `)` | 2026-07 **4.16**, `argument-parsing.ts:10`, `:38`, `condition-parsers.ts:297` | parser › `AI_Output(self, other, /* n */ "X")` has 3 arguments | S |
