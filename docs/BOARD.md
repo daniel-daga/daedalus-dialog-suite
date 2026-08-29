@@ -148,8 +148,10 @@ card waits on live at its pointer — put new prose there, not here.
   suppresses what the other calls missing. The engine settles which is right;
   both then take the same answer. **Daniel.** *first pass* 6
 
-- **The 2026-07 remediation plan is untriaged** — 37 unchecked items nothing
-  pointed at, of unknown freshness. `code-review-2026-07-remediation.md`
+- **28 live defects nobody was tracking** — the 2026-07 plan, triaged against
+  the tree 2026-08-29: 28 of its 37 items still reproduce, 4 had landed, 5 died
+  with the Flow view. Start at 2.5, which deletes an action on Escape-then-Enter.
+  `code-review-2026-07-remediation.md`
 
 **Editor-side backlogs — nothing carded, which is not the same as nothing
 open.** Still unfixed and unowned: the simulator's M2 (a background reparse
@@ -222,15 +224,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The level-editor docs are two files now.** The settled architecture (§3-§10,
-  §13) is `docs/architecture/level-editor.md`; the plan keeps the verdict, the
-  phasing, the parity backlog and §16. Numbers stay disjoint and are never
-  reused, so old pointers still resolve.
-- **Twelve closed sections flushed from §16**, seven of them verified against the
-  tree first rather than against their own prose; their constraints are now four
-  subsections of §7. Two claims did not survive the check — the free-point card
-  above, and §14.1 1.4's "complete but for enums".
-- **The flush rules are enforced** by `npm run board:check` (root, and the
-  `zen-world-tests` CI job): the card budget, a §16 subsection still declaring
-  itself closed, a pointer that resolves to no heading, and a section number
-  claimed by both files.
+- **The board's rules are enforced, not trusted** — `npm run board:check` (root,
+  and the `zen-world-tests` CI job) fails the card budget, a §16 subsection still
+  declaring itself closed, a pointer resolving to no heading, and a section
+  number claimed by both level-editor files.
+- **The level-editor docs are two files** — settled architecture (§3-§10, §13) in
+  `docs/architecture/level-editor.md`, the plan keeps the rest. Numbers are
+  disjoint and never reused, so old pointers still resolve. Twelve closed §16
+  sections flushed on the way, seven verified against the tree first; their
+  constraints are four subsections of §7.
