@@ -40,6 +40,9 @@ let mockHiddenVobs: Uint8Array | null | undefined;
 /** The payload the overlay draws, and the one a committed waypoint drag builds
  *  its op out of. */
 let mockWaynet: WaynetPayload | null | undefined;
+/** The spawn markers the viewport is told to draw, and whether to show them. */
+let mockSpawns: readonly unknown[] | undefined;
+let mockShowSpawns: boolean | undefined;
 /** The steps the viewport is told to quantise a drag to. */
 let mockSnapGrid: number | undefined;
 let mockSnapAngle: number | undefined;
@@ -86,6 +89,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     snapGrid: number;
     snapAngle: number;
     waynet: WaynetPayload | null;
+    spawns: readonly unknown[];
+    showSpawns: boolean;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -105,6 +110,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockSnapGrid = props.snapGrid;
     mockSnapAngle = props.snapAngle;
     mockWaynet = props.waynet;
+    mockSpawns = props.spawns;
+    mockShowSpawns = props.showSpawns;
     // The imperative surface drop-to-ground, align-to-normal and the scene
     // tree's camera jump call directly — see `WorldViewportHandle`'s doc —
     // stood in by jest.fns so the shell side can be tested without a WebGL
@@ -2060,6 +2067,58 @@ describe('a waypoint dragged in the viewport', () => {
     expect(screen.getByTestId('world-waypoint-spawns')).toHaveTextContent('STARTUP_NEWWORLD');
     expect(screen.getByTestId('world-waypoint-sites')).toHaveTextContent('TA_Baker_Day');
     expect(screen.getByTestId('world-waypoint-sites')).not.toHaveTextContent('STARTUP_NEWWORLD');
+  });
+
+  describe('drawn as markers in the viewport', () => {
+    // §16.19 slice 4 — the first thing in Phase 1c a person sees. The markers
+    // stand on the waypoints the spawns name, so the layer needs the waynet
+    // payload for its positions even when the waynet itself is not on screen.
+    const SPAWNS = [{
+      instance: 'GRD_200_XARDAS', spawnPoint: 'WP_MIDDLE',
+      filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
+    }];
+
+    it('hands the project index down and shows the layer when it is switched on', async () => {
+      useProjectStore.setState({ spawnSiteIndex: SPAWNS } as never);
+      await openWorld();
+      expect(mockShowSpawns).toBe(false);
+
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+
+      await waitFor(() => expect(mockShowSpawns).toBe(true));
+      expect(mockSpawns).toEqual(SPAWNS);
+    });
+
+    it('asks for the waynet the markers stand on when the open did not land it', async () => {
+      // The positions are the waypoints', and the open's own read is allowed to
+      // fail over a world that stays open — it leaves `waynet` null, which the
+      // rest of the surface reads as "nothing is known". Switched on against
+      // that, the layer would draw nothing at all and look like a project that
+      // spawns nobody here, so it asks the way the waynet toggle does.
+      useProjectStore.setState({ spawnSiteIndex: SPAWNS } as never);
+      api.getWorldWaynet.mockRejectedValueOnce(new Error('worker died'));
+      await openWorld();
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(1));
+      api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
+
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+
+      await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(mockWaynet).not.toBeNull());
+    });
+
+    it('switches back off without touching the waynet overlay', async () => {
+      // Two independent layers: the waynet is a graph and the markers are the
+      // script's opinion of it, and turning one off must not take the other.
+      await openWithWaynet();
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+      await waitFor(() => expect(mockShowSpawns).toBe(true));
+
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+
+      await waitFor(() => expect(mockShowSpawns).toBe(false));
+      expect(mockWaynet).not.toBeNull();
+    });
   });
 
   describe('renamed in that panel', () => {

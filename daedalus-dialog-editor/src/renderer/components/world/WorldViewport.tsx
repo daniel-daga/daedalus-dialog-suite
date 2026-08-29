@@ -10,8 +10,10 @@ import {
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
+import type { SpawnSite } from '../../../shared/types';
 import { DampedTransformControls } from '../../world/DampedTransformControls';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
+import { SpawnOverlay } from '../../world/SpawnOverlay';
 import { TerrainMarker } from '../../world/TerrainMarker';
 import { WorldScene, textureCacheFor, type TextureCache } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
@@ -104,6 +106,16 @@ export interface WorldViewportProps {
    *  separate IPC call and an overlay nobody turned on costs nothing. */
   waynet: WaynetPayload | null;
   showWaynet: boolean;
+  /**
+   * The project's statically resolvable spawns (§16.19 slice 4). Empty when no
+   * script project is open — which means "nothing is known", never "nobody is
+   * spawned here".
+   *
+   * Drawn as markers on the waypoints they name, so the layer needs `waynet`
+   * for the positions and shows nothing without it.
+   */
+  spawns: readonly SpawnSite[];
+  showSpawns: boolean;
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
   /**
    * A click's result: the VOB that was hit, or the point on the world mesh in
@@ -269,7 +281,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 }
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
-  mesh, visuals, bbox, waynet, showWaynet, loadTexture, onPick,
+  mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
   onSelectWaypoint, onMoveWaypoint, paused = false,
@@ -309,6 +321,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   }), []);
 
   const overlayRef = useRef<WaynetOverlay | null>(null);
+  const spawnOverlayRef = useRef<SpawnOverlay | null>(null);
   const gizmoRef = useRef<Gizmo | null>(null);
   const onTranslateRef = useRef(onTranslateSelection);
   onTranslateRef.current = onTranslateSelection;
@@ -1103,6 +1116,31 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     overlayRef.current?.setVisible(showWaynet);
   }, [showWaynet, waynet, mesh, visuals]);
 
+  // The spawn markers, built and torn down exactly like the waynet above and
+  // for the same reasons — including `visuals`, or a structural op leaves them
+  // on a root that has been disposed. `spawns` is a dependency because the
+  // markers are resolved once, at construction: the project index arrives after
+  // the world on a cold start, and an overlay built against the empty index
+  // would stay empty.
+  useEffect(() => {
+    const world = sceneRef.current;
+    if (world === null || waynet === null) return;
+
+    const overlay = new SpawnOverlay(waynet, spawns);
+    spawnOverlayRef.current = overlay;
+    world.root.add(overlay.root);
+
+    return () => {
+      world.root.remove(overlay.root);
+      overlay.dispose();
+      spawnOverlayRef.current = null;
+    };
+  }, [waynet, spawns, mesh, visuals]);
+
+  useEffect(() => {
+    spawnOverlayRef.current?.setVisible(showSpawns);
+  }, [showSpawns, waynet, spawns, mesh, visuals]);
+
   // The marker for the picked point, built and torn down exactly like the
   // overlay above — under the scene's converted root, so it needs no conversion
   // of its own. `mesh` and `visuals` are dependencies because a structural op
@@ -1177,6 +1215,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // waypoint used to be.
     if (appliedOps.some(isWaynetOp)) {
       overlayRef.current?.refresh();
+      // The markers copy the waypoint positions rather than drawing the payload
+      // itself, so a moved waypoint leaves them behind without this.
+      spawnOverlayRef.current?.refresh();
       if (selectedWaypoint !== null) gizmoRef.current?.attachWaypoint(selectedWaypoint);
     }
 

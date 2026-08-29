@@ -116,6 +116,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // the cold open.
   const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
+  /** The spawn markers (§16.19 slice 4), beside `showWaynet` because they are
+   *  the same kind of thing: a layer over the world, off until asked for. Two
+   *  toggles rather than one — the waynet is the world's graph and the markers
+   *  are the script's opinion of it, and reading one against the other is
+   *  exactly the comparison a story author is making. */
+  const [showSpawns, setShowSpawns] = useState(false);
   /** The name being typed into the add-waypoint dialog, or null when it is
    *  closed. A name is the whole of what a placed waypoint has to be told —
    *  the position is the terrain point and everything else the binding fixes —
@@ -270,6 +276,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (!next) selectWaypoint(null);
     if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
   }, [showWaynet, waynet, selectWaypoint]);
+
+  // The markers stand on waypoints, so the layer needs the payload the waynet
+  // overlay needs. The open reads it already; this covers the case where that
+  // read failed over a world that stayed open, which leaves it null.
+  const toggleSpawns = useCallback(async () => {
+    const next = !showSpawns;
+    setShowSpawns(next);
+    if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
+  }, [showSpawns, waynet]);
 
   const listAssets = useCallback(
     (assetPath: string) => window.editorAPI.listWorldAssets(assetPath),
@@ -1284,6 +1299,22 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               Waynet
             </Button>
           )}
+          {/* The project's spawns, drawn where the script puts them. Offered
+              beside the waynet because it is the same kind of layer, and
+              deliberately not hidden when the index is empty: an empty index
+              means no script project is open, which is a different fact from
+              "nobody is spawned in this world" and is not one a missing button
+              could tell anybody. */}
+          {summary && (
+            <Button
+              size="small"
+              variant={showSpawns ? 'contained' : 'outlined'}
+              onClick={toggleSpawns}
+              data-testid="world-spawns-toggle"
+            >
+              Spawns
+            </Button>
+          )}
           {/* Brightness, beside the other view toggles and deliberately not
               near anything that edits: ZenGin's lighting is baked into the
               vertex colours, so an interior is dark in the file and there is no
@@ -1665,6 +1696,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               bbox={summary.bbox}
               waynet={waynet}
               showWaynet={showWaynet}
+              spawns={spawnSiteIndex}
+              showSpawns={showSpawns}
               loadTexture={loadTexture}
               onPick={handlePick}
               selection={selection}

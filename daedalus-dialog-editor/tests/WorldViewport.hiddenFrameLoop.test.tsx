@@ -68,6 +68,8 @@ function props(paused: boolean) {
     bbox: BBOX,
     waynet: null,
     showWaynet: false,
+    spawns: [],
+    showSpawns: false,
     loadTexture: async () => null,
     onPick: () => {},
     selection: [] as readonly number[],

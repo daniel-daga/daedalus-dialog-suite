@@ -144,12 +144,6 @@ card waits on live at its pointer — put new prose there, not here.
 - **The free-point guard may be too narrow** — `startsWith` where ZenGin looks
   to match by substring. Needs the engine. **Daniel.** *first pass* 6
 
-**Phase 1c — Daedalus overlay**
-
-- **No spawn is in any frame** — a marker layer at each static spawn's resolved
-  position. Markers, not NPC visuals: §16.19 says why the meshes are not
-  reachable. Any run. §16.19 slice 4
-
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -195,6 +189,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **Spawns are in the frame** — landed as `SpawnOverlay` behind its own
+  *Spawns* toggle: one marker per point, an unresolved point dropped rather
+  than drawn at the origin, and a `refresh()` beside the waynet's because the
+  markers copy the positions instead of drawing the payload. §16.19 slice 4
 
 - **The waypoint panel now names who spawns there** — landed: a `spawns`
   section from `spawnSiteIndex`, and a spawn cancels its own row in the site

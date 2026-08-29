@@ -93,6 +93,8 @@ function props(overrides: Record<string, unknown> = {}) {
     bbox: BBOX,
     waynet: null,
     showWaynet: false,
+    spawns: [],
+    showSpawns: false,
     loadTexture: async () => null,
     onPick: () => {},
     selection: [7] as readonly number[],

@@ -103,6 +103,8 @@ function props() {
     bbox: [0, 0, 0, 100, 100, 100],
     waynet: null,
     showWaynet: false,
+    spawns: [],
+    showSpawns: false,
     loadTexture: async () => null,
     onPick: () => {},
     selection: [] as readonly number[],

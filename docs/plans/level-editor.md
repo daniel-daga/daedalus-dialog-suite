@@ -5182,6 +5182,31 @@ this project names it"* now requires both lists empty.
 world position of each static spawn: the first thing in 1c a person *sees*.
 Scoped to markers on purpose — see below.
 
+**Landed 2026-08-29.** `SpawnOverlay` in `src/renderer/world/`, built and torn
+down beside `WaynetOverlay` under the scene's converted root, behind its own
+*Spawns* toolbar toggle (`world-spawns-toggle`) — a second toggle rather than a
+widening of the waynet's, because the waynet is the world's graph and the
+markers are the script's opinion of it, and reading one against the other is the
+comparison being made.
+
+**Three things it had to decide.** It draws **one marker per point, not per
+site**: nine NPCs on one waypoint are nine vertices in the same place, and who
+they are is slice 3's answer in the panel. A spawn point the world has not got
+is **dropped**, because an unresolved name drawn anyway is a marker at the world
+origin — a spawn in the corner of the map, where the honest report is
+`waypointNotInWorld`'s. And unlike the waynet overlay it **cannot draw the
+payload buffer itself**: the markers are a subset, so it copies the positions
+and keeps the waypoint each one stands on. That is why it has a `refresh()` and
+why the viewport calls it beside the waynet's on every applied waynet op — a
+committed waypoint move otherwise leaves the marker where the waypoint was, and
+the two overlays disagree on screen with nothing to explain it.
+
+The layer needs the waynet payload for its positions, so the toggle asks for it
+when it is null — the case where the open's own read failed over a world that
+stayed open. The spawn index reaching it empty stays "nothing is known": the
+button is offered anyway, because a missing button cannot tell anybody the
+difference between no project open and no spawn here.
+
 **What is deliberately not carded, and why:**
 
 - **NPC and item *visuals* are not reachable.** §11's "NPC/item rendering"

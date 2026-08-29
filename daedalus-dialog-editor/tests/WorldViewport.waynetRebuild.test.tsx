@@ -71,6 +71,20 @@ jest.mock('../src/renderer/world/WaynetOverlay', () => {
   };
 });
 
+const mockSpawnOverlays: Array<{ root: THREE.Object3D }> = [];
+jest.mock('../src/renderer/world/SpawnOverlay', () => {
+  const actual = jest.requireActual('../src/renderer/world/SpawnOverlay');
+  return {
+    ...actual,
+    SpawnOverlay: class extends actual.SpawnOverlay {
+      constructor(...args: unknown[]) {
+        super(...args);
+        mockSpawnOverlays.push(this as unknown as { root: THREE.Object3D });
+      }
+    },
+  };
+});
+
 // Below the mocks, which jest hoists above it anyway.
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
 
@@ -106,6 +120,12 @@ function waynet(): WaynetPayload {
   };
 }
 
+/** One spawn, on the fixture waynet's second waypoint. */
+const SPAWNS = [{
+  instance: 'GRD_200_XARDAS', spawnPoint: 'B',
+  filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
+}];
+
 function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: boolean) {
   return {
     mesh: MESH,
@@ -113,6 +133,8 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
     bbox: BBOX,
     waynet: payload,
     showWaynet,
+    spawns: SPAWNS,
+    showSpawns: true,
     loadTexture: async () => null,
     onPick: () => {},
     selection: [] as readonly number[],
@@ -133,6 +155,7 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
   beforeEach(() => {
     mockScenes.length = 0;
     mockOverlays.length = 0;
+    mockSpawnOverlays.length = 0;
     (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -184,6 +207,30 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
     // — re-attached but never shown is the same vanished waynet.
     expect(mockOverlays).toHaveLength(2);
     const overlay = mockOverlays[mockOverlays.length - 1];
+    expect(overlay.root.visible).toBe(true);
+
+    unmount();
+  });
+
+  it('re-attaches the spawn markers to that root too, and leaves them shown', () => {
+    // §16.19 slice 4. The markers hang off the same root and their effect takes
+    // `visuals` for the same reason the waynet's does — attached to the disposed
+    // root, or rebuilt hidden, the layer silently vanishes and reads exactly
+    // like a project that spawns nobody in this world.
+    const payload = waynet();
+    const { rerender, unmount } = render(
+      <WorldViewport {...props(instancedPayload(), payload, false)} />,
+    );
+    expect(mockSpawnOverlays).toHaveLength(1);
+    expect(mockSpawnOverlays[0].root.visible).toBe(true);
+
+    act(() => {
+      rerender(<WorldViewport {...props(instancedPayload(), payload, false)} />);
+    });
+
+    expect(mockSpawnOverlays).toHaveLength(2);
+    const overlay = mockSpawnOverlays[mockSpawnOverlays.length - 1];
+    expect(overlay.root.parent).toBe(mockScenes[1].root);
     expect(overlay.root.visible).toBe(true);
 
     unmount();
