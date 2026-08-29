@@ -119,3 +119,29 @@ These are developer tools and not part of the addon or its test suite, but they
 `lib/` walkers, and a consumer that is neither linted nor tested is a consumer
 nothing checks at all. The walkers themselves are covered by
 `test/container.test.js`.
+
+## Playing a candidate
+
+- `gmbt/` — a [GMBT](https://github.com/Szmyk/gmbt) project that plays a
+  candidate world **without overwriting a retail asset**. `engine-batch.ps1`
+  installs a candidate by replacing
+  `_work/Data/Worlds/NewWorld/NewWorld.zen` and restoring a backup afterwards,
+  so a crash between the two leaves a retail world replaced; GMBT builds a
+  `.mod` and selects the world by name, so nothing under `_work` is rewritten.
+
+  ```
+  node mutate.js gmbt/mod/Worlds
+  cd gmbt && gmbt test --world=07A.ZEN --windowed --noaudio --nomenu -D
+  ```
+
+  `--nomenu` starts the game directly, `GAME.playLogoVideos: 0` in the config
+  drops the two unskippable intro clips, and `--windowed` keeps the engine off
+  the whole screen. The first run after the config changes needs `--full`.
+
+  It does **not** replace `engine-batch.ps1`: that script's window-watching is
+  what auto-dumps an assertion dialog and caught Gate 2b's dialog-camera crash,
+  and GMBT has no equivalent. GMBT launches; `engine-batch.ps1` reads a verdict.
+
+  The tool is a NSIS installer that unpacks to `bin/GMBT.exe` plus a `lang/` and
+  `tools/` it expects in `%APPDATA%\GMBT`; .NET Framework 4.7+ is required and
+  this machine has 4.8.
