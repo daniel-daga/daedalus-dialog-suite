@@ -166,8 +166,6 @@ pointer is a finding id in the file the routing table names.
 
 **Phase 1c — W4** (§16.23)
 
-- **A script's spawn point does not go to the world** — the renderer already
-  shows it and slice 2 built the framing; W4 is a control on it. Any run. §16.23
 
 **Phase 1b-2 — VOB editing**
 
@@ -222,6 +220,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **A script's spawn point goes to the world** — W4 is a button in
+  `InsertNpcActionRenderer` leaving the panel's own `focusRequest`; it reads
+  `waynetNames`, so W1's lookup is not going to be written. §16.23. board-loop
 - **Waypoint occupancy is measured, and it kills its own check** — 1,357 of
   retail's 1,375 NPC spawn points hold 4 NPCs or fewer and the other 18 are
   design (`NW_CITY_ENTRANCE_01` holds 173), so no count is a threshold and

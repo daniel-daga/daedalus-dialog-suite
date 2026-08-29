@@ -3478,6 +3478,9 @@ Nothing in the editor displays a script-side waypoint name today — the only
 waypoint UI is `WaypointPanel`, and the waypoint it describes is selected *in*
 the world, so it never needs to ask whether it is there. Building the lookup now
 would be an exported function with zero callers.
+**Overtaken 2026-08-29 (§16.23): W4 landed, and the consumer it built reads
+`worldStore.waynetNames` — the rule's own reference data — so the standalone
+lookup was never needed and is not going to be written.**
 
 **And the third answer is not implementable from what the app holds.** The
 measurement behind it compares 24 worlds; the editor has *one* world open and no
@@ -5638,3 +5641,31 @@ with its reason when no world is open or when the point is not in the open one,
 which is the same three-answer problem §16.8 reserved: found here, not in this
 world, or nowhere at all. The third answer stays reserved — the editor holds one
 world and has no index of the others.
+
+**W4 landed 2026-08-29, and it needed nothing new.** A `Place` icon button in
+`InsertNpcActionRenderer`, beside the Spawn Point field: it sets
+`worldStore.requestFocus({ kind: 'waypoint', name })` and switches the active
+view to `world`, which is exactly what the Problems panel's world-locus branch
+already does. `WorldSurface`'s `focusRequest` effect does the rest — the
+case-insensitive name lookup, the waynet overlay it switches on, `framePoint`.
+No store field, no IPC, no viewport change.
+
+**The lookup is `worldStore.waynetNames`, the same reference data the
+dangling-waypoint rule reads**, so W1's "an exported function with zero callers"
+never had to be written: `pointNameKeys` is already the uppercased name set, and
+`waynetLoaded` is called on world open rather than when the overlay is first
+shown (§16.8), so the control is right before anyone touches the waynet toggle.
+The reasons are the two answers the editor can give — *"No world is open"* and
+*"<name> is not in the open world"* — plus the trivial third, an action naming
+no point at all. **The disabled reason never says missing**, which is the
+residue §16.8 measured: 84.3 % of literal sites resolve against the three main
+worlds and 98.0 % against all 24, so "not in this world" is the largest cluster
+and calling it missing would be a lie.
+
+Two things it deliberately does not do. **A free point is matched exactly**, not
+by prefix, so `FP_ROAM` reaching `FP_ROAM_CITY_01` reads as "not in the open
+world" — the same narrowness the *first pass* 6 card owns, and widening it here
+would fork the guard. And **there is no Playwright spec**, for slice 2's reason:
+the browser harness refuses `openWorld` by design, so the only reachable end of
+this flow is the disabled button. The seam is pinned in Jest
+(`InsertNpcActionRenderer.worldJump`), as `ProblemsPanel.navigation` is.
