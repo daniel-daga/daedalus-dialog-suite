@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Chip, List, ListItem, ListItemButton, ListItemText, Typography } from '@mui/material';
 import { searchablePaneRowButtonSx } from '../common/searchablePaneStyles';
 import type { Problem, ProblemRuleId } from '../../problems/domain/types';
+import { worldFocusOf } from '../../store/worldStore';
 
 const RULE_LABEL: Record<ProblemRuleId, string> = {
   'npc-not-found': 'Missing NPC',
@@ -29,22 +30,38 @@ const secondaryText = ({ locus }: Problem): string => {
   return parts.join(' · ');
 };
 
+/**
+ * Whether clicking the row leads anywhere. A script problem always does. A
+ * world problem needs the world open — the editor holds one at a time — and an
+ * address the World surface can jump to; a polygon locus has neither a row in
+ * the VOB index nor a name in the waynet, and is listed without a jump until
+ * §16.20 slice 3 gives it one.
+ */
+const isNavigable = (problem: Problem, worldOpen: boolean): boolean => (
+  problem.locus.kind !== 'world'
+    ? true
+    : worldOpen && worldFocusOf(problem.locus) !== null
+);
+
 interface ProblemsListProps {
   problems: Problem[];
   onSelect: (problem: Problem) => void;
+  /** Whether a world is open, which is half of what makes a world row clickable. */
+  worldOpen?: boolean;
 }
 
 /**
  * Presentational list of project-wide lint problems. Each row is navigable via
  * `onSelect`; severity is shown as a color-coded chip.
  */
-const ProblemsList: React.FC<ProblemsListProps> = ({ problems, onSelect }) => (
+const ProblemsList: React.FC<ProblemsListProps> = ({ problems, onSelect, worldOpen = false }) => (
   <List dense disablePadding data-testid="problems-list" sx={{ height: '100%', overflowY: 'auto' }}>
     {problems.map((problem, index) => (
       <ListItem key={problem.id} disablePadding>
         <ListItemButton
           sx={searchablePaneRowButtonSx}
           onClick={() => onSelect(problem)}
+          disabled={!isNavigable(problem, worldOpen)}
           data-testid={`problem-row-${index}`}
         >
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%', minWidth: 0 }}>

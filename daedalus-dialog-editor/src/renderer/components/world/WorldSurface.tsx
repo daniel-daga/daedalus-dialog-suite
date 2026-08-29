@@ -327,6 +327,40 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     viewportRef.current?.frameVob(vob);
   }, [handleSelect]);
 
+  /**
+   * A jump asked for from outside the surface — the Problems panel's click on a
+   * world finding (§16.20 slice 2). The panel cannot call the viewport: it is
+   * another view, and while it is on screen this one may not even be mounted.
+   * So it leaves a request in the store and this consumes it.
+   *
+   * Taken exactly once, whether or not it lands: a request left standing would
+   * fire again on the next waynet re-read, long after the click that made it.
+   */
+  const focusRequest = useWorldStore((s) => s.focusRequest);
+  useEffect(() => {
+    if (focusRequest === null) return;
+    useWorldStore.getState().focusHandled();
+
+    if (focusRequest.kind === 'vob') { focusVob(focusRequest.vob); return; }
+
+    // The name comes out of a script, where Daedalus is case-insensitive, and
+    // the waynet is the world's own spelling.
+    if (waynet === null) return;
+    const wanted = focusRequest.name.toUpperCase();
+    const waypoint = waynet.names.findIndex((name) => name.toUpperCase() === wanted);
+    if (waypoint < 0) return;
+
+    // The overlay is switched on rather than assumed: with it off the gizmo
+    // would stand where there is no dot to see, which is the same objection
+    // `toggleWaynet` answers in the other direction.
+    setShowWaynet(true);
+    selectWaypoint(waypoint);
+    const positions = new Float32Array(waynet.positions);
+    viewportRef.current?.framePoint([
+      positions[waypoint * 3], positions[waypoint * 3 + 1], positions[waypoint * 3 + 2],
+    ]);
+  }, [focusRequest, waynet, focusVob, selectWaypoint]);
+
   const handlePick = useCallback((
     vob: number | null, point: [number, number, number] | null, additive: boolean,
   ) => {

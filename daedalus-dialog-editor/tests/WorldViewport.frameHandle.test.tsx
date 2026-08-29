@@ -196,3 +196,49 @@ describe('WorldViewport — framing a VOB through the handle', () => {
     unmount();
   });
 });
+
+describe('WorldViewport — framing a bare point through the handle', () => {
+  // A waypoint is not a VOB — it has no row in the columnar index and no
+  // bounds — so the Problems panel's jump to one (§16.20 slice 2) carries the
+  // position itself. `frameVobs` already takes `bounds: null` for "a point
+  // rather than a thing with a size"; this is the command that reaches it.
+  beforeEach(() => {
+    mockFramed.mockClear();
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    };
+  });
+
+  it('frames the point it is handed, with no bounds', () => {
+    const ref = React.createRef<WorldViewportHandle>();
+    const { unmount } = render(<WorldViewport ref={ref} {...props()} />);
+
+    ref.current!.framePoint([1000, 40, -2000]);
+
+    expect(mockFramed).toHaveBeenCalledTimes(1);
+    expect(mockFramed.mock.calls[0][2]).toEqual([{ at: [1000, 40, -2000], bounds: null }]);
+    unmount();
+  });
+
+  it('is a no-op while the scene is being rebuilt', () => {
+    const seen: { threw: unknown } = { threw: null };
+    function Parent() {
+      const ref = React.useRef<WorldViewportHandle>(null);
+      React.useLayoutEffect(() => {
+        try {
+          ref.current!.framePoint([1000, 40, -2000]);
+        } catch (error) {
+          seen.threw = error;
+        }
+      }, []);
+      return <WorldViewport ref={ref} {...props()} />;
+    }
+
+    const { unmount } = render(<Parent />);
+
+    expect(seen.threw).toBeNull();
+    expect(mockFramed).not.toHaveBeenCalled();
+    unmount();
+  });
+});

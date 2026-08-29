@@ -259,6 +259,13 @@ export interface WorldViewportHandle {
    * effect is between a teardown and its rebuild: both are no-ops.
    */
   frameVob: (vob: number) => void;
+  /**
+   * The same jump onto a bare position in ZenGin space — a waypoint, which has
+   * no row in the VOB index and no bounds (§16.20 slice 2). A no-op while the
+   * scene effect is between a teardown and its rebuild, exactly as
+   * {@link frameVob} is.
+   */
+  framePoint: (at: ZenPosition) => void;
 }
 
 /** What the selection and edit effects need of the imperative viewport, so
@@ -318,6 +325,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       };
     },
     frameVob: (vob) => { frameVobRef.current?.(vob); },
+    framePoint: (at) => { framePointRef.current?.(at); },
   }), []);
 
   const overlayRef = useRef<WaynetOverlay | null>(null);
@@ -353,6 +361,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // it, and cleared by its teardown — which is why the handle's `frameVob`
   // calls it through the ref rather than closing over it.
   const frameVobRef = useRef<((vob: number) => void) | null>(null);
+  const framePointRef = useRef<((at: ZenPosition) => void) | null>(null);
   // Read by the draw loop, which lives outside React's render path: going off
   // screen must not tear the scene down and rebuild 31 MB of buffers — that
   // would be the geometry loss the mount exists to prevent, once per tab
@@ -820,13 +829,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // pivot starts at the centre of a 600 m island, so without a way to move it
     // onto what you are looking at, every orbit up close swings the camera
     // through half the world.
-    const frameThese = (vobs: readonly number[]) => {
-      // A VOB that is not drawn has no position to frame — a decal, a sound
-      // VOB — and a selection can be nothing but those.
-      const framable = vobs
-        .map((vob) => ({ at: world.positionOf(vob), bounds: world.boundsOf(vob) }))
-        .filter((vob): vob is { at: [number, number, number]; bounds: readonly number[] | null } => vob.at !== null);
-
+    const frameFramables = (
+      framable: Array<{ at: [number, number, number]; bounds: readonly number[] | null }>,
+    ) => {
       const center = frameVobs(camera, controls.target, framable);
       // The pivot `frameVobs` left on them is `controls.target`; this is the
       // other one — the fallback a drag begun over the sky uses. Without it the
@@ -835,8 +840,21 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       if (center !== null) rememberPick(center);
     };
 
+    const frameThese = (vobs: readonly number[]) => {
+      // A VOB that is not drawn has no position to frame — a decal, a sound
+      // VOB — and a selection can be nothing but those.
+      const framable = vobs
+        .map((vob) => ({ at: world.positionOf(vob), bounds: world.boundsOf(vob) }))
+        .filter((vob): vob is { at: [number, number, number]; bounds: readonly number[] | null } => vob.at !== null);
+
+      frameFramables(framable);
+    };
+
     const frameSelection = () => frameThese(selectionRef.current);
     frameVobRef.current = (vob: number) => frameThese([vob]);
+    // A waypoint carries its own position and has no size: `bounds: null` is
+    // what `frameVobs` already reads as "a point".
+    framePointRef.current = (at: ZenPosition) => frameFramables([{ at, bounds: null }]);
 
     const frameAll = () => {
       frameOn(
@@ -1056,6 +1074,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       sceneRef.current = null;
       gizmoRef.current = null;
       frameVobRef.current = null;
+      framePointRef.current = null;
       delete window.__worldViewport;
       drawLoopRef.current = null;
       stopDraw();

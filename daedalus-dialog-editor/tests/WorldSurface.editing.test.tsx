@@ -40,6 +40,8 @@ let mockHiddenVobs: Uint8Array | null | undefined;
 /** The payload the overlay draws, and the one a committed waypoint drag builds
  *  its op out of. */
 let mockWaynet: WaynetPayload | null | undefined;
+/** Whether the viewport is told to draw the waynet overlay. */
+let mockShowWaynet: boolean | undefined;
 /** The spawn markers the viewport is told to draw, and whether to show them. */
 let mockSpawns: readonly unknown[] | undefined;
 let mockShowSpawns: boolean | undefined;
@@ -56,6 +58,9 @@ const mockRaycastDown = jest.fn() as jest.Mock<
 /** The viewport's other imperative command: the camera jump the scene tree's
  *  double-click asks for. */
 const mockFrameVob = jest.fn() as jest.Mock<void, [number]>;
+/** And the same jump onto a bare position — what a waypoint gets, having no
+ *  row in the VOB index (§16.20 slice 2). */
+const mockFramePoint = jest.fn() as jest.Mock<void, [[number, number, number]]>;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 /** The pose every VOB in the fixture index has. */
@@ -89,6 +94,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     snapGrid: number;
     snapAngle: number;
     waynet: WaynetPayload | null;
+    showWaynet: boolean;
     spawns: readonly unknown[];
     showSpawns: boolean;
     onSelectWaypoint: (waypoint: number | null) => void;
@@ -99,6 +105,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     ) => void;
   }, ref: React.Ref<{
     raycastDown: typeof mockRaycastDown; frameVob: typeof mockFrameVob;
+    framePoint: typeof mockFramePoint;
   }>) => {
     mockAppliedOps = props.appliedOps;
     mockSelection = props.selection;
@@ -110,6 +117,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockSnapGrid = props.snapGrid;
     mockSnapAngle = props.snapAngle;
     mockWaynet = props.waynet;
+    mockShowWaynet = props.showWaynet;
     mockSpawns = props.spawns;
     mockShowSpawns = props.showSpawns;
     // The imperative surface drop-to-ground, align-to-normal and the scene
@@ -117,7 +125,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     // stood in by jest.fns so the shell side can be tested without a WebGL
     // raycast or a real camera.
     ReactActual.useImperativeHandle(ref, () => ({
-      raycastDown: mockRaycastDown, frameVob: mockFrameVob,
+      raycastDown: mockRaycastDown, frameVob: mockFrameVob, framePoint: mockFramePoint,
     }));
     return (
       <div data-testid="world-viewport-stub">
@@ -351,6 +359,8 @@ beforeEach(() => {
   mockSnapGrid = undefined;
   mockSnapAngle = undefined;
   mockWaynet = undefined;
+  mockShowWaynet = undefined;
+  mockFramePoint.mockReset();
   mockVobProps = { class: 'zCVob', ...BASE_PROPS };
   mockRaycastDown.mockReset();
   mockFrameVob.mockReset();
@@ -2956,5 +2966,56 @@ describe('a failure after the world has already taken the edit', () => {
     expect(useWorldStore.getState().waynetNames).toBeNull();
     expect(screen.queryByTestId('world-error')).not.toBeInTheDocument();
     expect(screen.getByTestId('world-viewport-stub')).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * A world finding clicked in the Problems panel (§16.20 slice 2). The panel
+ * cannot reach the viewport — it is not even mounted while another view is on
+ * screen — so it leaves a request in the store and this is the half that takes
+ * it: select the thing, jump the camera, clear the request.
+ */
+describe('a focus request from outside the surface', () => {
+  it('selects and frames the VOB it names', async () => {
+    await openWorld();
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'vob', vob: 1 });
+    });
+
+    expect(useWorldStore.getState().selection).toEqual([1]);
+    expect(mockFrameVob).toHaveBeenCalledWith(1);
+    // Consumed, so the next click on the same finding is a second jump.
+    expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  it('selects the waypoint it names, shows the overlay and frames the point', async () => {
+    await openWorld();
+
+    // Lowercase on purpose: Daedalus is case-insensitive and the name comes
+    // out of a script, not out of the waynet.
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'waypoint', name: 'wp_middle' });
+    });
+
+    expect(useWorldStore.getState().selectedWaypoint).toBe(1);
+    expect(mockFramePoint).toHaveBeenCalledWith(WAYPOINT_WAS);
+    // Without the overlay the gizmo would stand where there is no dot to see —
+    // the same reason switching it off clears the selected waypoint.
+    expect(mockShowWaynet).toBe(true);
+    expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  it('takes the request and jumps nowhere for a name this waynet has not', async () => {
+    await openWorld();
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'waypoint', name: 'WP_NOWHERE' });
+    });
+
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+    expect(mockFramePoint).not.toHaveBeenCalled();
+    expect(useWorldStore.getState().focusRequest).toBeNull();
   });
 });

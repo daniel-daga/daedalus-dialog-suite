@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
 import { WAYNET_FLAG_FREE_POINT, type WaynetPayload, type WorldOp, type WorldSummary } from '../../shared/worldTypes';
-import type { WorldWaynetView } from '../problems/domain/types';
+import type { WorldLocus, WorldWaynetView } from '../problems/domain/types';
 
 /**
  * World-surface state (level-editor.md §7).
@@ -17,6 +17,30 @@ import type { WorldWaynetView } from '../problems/domain/types';
  */
 
 export type WorldStatus = 'idle' | 'opening' | 'ready' | 'error';
+
+/**
+ * A place in the open world something outside the World surface wants looked
+ * at — today the Problems panel's click on a world finding (level-editor.md
+ * §16.20 slice 2).
+ *
+ * Only what the surface can actually address: a VOB has a row in the columnar
+ * index, a waypoint has a name in the waynet. A polygon has neither and is
+ * deliberately absent — framing one is slice 3's, with the mesh it needs.
+ */
+export type WorldFocus =
+  | { kind: 'vob'; vob: number }
+  | { kind: 'waypoint'; name: string };
+
+/**
+ * The focus a world locus asks for, or null when the locus names nothing the
+ * surface can jump to. The panel uses it twice — to decide whether the row is
+ * clickable at all, and to build the request the click sends.
+ */
+export const worldFocusOf = (locus: WorldLocus): WorldFocus | null => {
+  if (locus.vob !== undefined) return { kind: 'vob', vob: locus.vob };
+  if (locus.waypoint !== undefined) return { kind: 'waypoint', name: locus.waypoint };
+  return null;
+};
 
 // The waynet reduced to what a *name* question needs, uppercased once because
 // Daedalus is case-insensitive. The overlay's payload — positions, edges,
@@ -71,6 +95,14 @@ interface WorldStore {
    *  not `error`/`status: 'error'`, which replaces the whole surface: the world
    *  is still open, and in the refusal case still correct. */
   editError: string | null;
+  /**
+   * A jump the World surface has been asked for and has not made yet, or null.
+   *
+   * A command rather than a state, and consumed exactly once: the same finding
+   * is clicked twice precisely after the camera has been flown away from it,
+   * so a request that stood would make the second click do nothing.
+   */
+  focusRequest: WorldFocus | null;
 
   beginOpen: () => void;
   openSucceeded: (summary: WorldSummary) => void;
@@ -89,6 +121,10 @@ interface WorldStore {
   /** Put the gizmo on a waypoint instead — the waynet overlay's own pick.
    *  `null` clears it. */
   selectWaypoint: (waypoint: number | null) => void;
+  /** Ask the World surface to select and frame a place in the open world. */
+  requestFocus: (focus: WorldFocus) => void;
+  /** The surface took the request — clear it, so the next one is a new jump. */
+  focusHandled: () => void;
   /** Apply ops the main process has already applied to the authoritative world. */
   applyEdit: (ops: readonly WorldOp[]) => void;
   /** A re-read of the VOB enumeration after a structural edit. The columns are
@@ -107,6 +143,7 @@ const EMPTY = {
   selectedWaypoint: null as number | null,
   waynetNames: null as WorldWaynetView | null,
   editError: null,
+  focusRequest: null as WorldFocus | null,
 };
 
 /** The VOB the panels describe and the gizmo sits on: the last one selected. */
@@ -132,6 +169,11 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   })),
 
   selectWaypoint: (selectedWaypoint) => set({ selectedWaypoint, selection: [] }),
+
+  // A fresh object every time, which is what makes two clicks on one finding
+  // two jumps: the surface consumes it by identity.
+  requestFocus: (focus) => set({ focusRequest: focus }),
+  focusHandled: () => set({ focusRequest: null }),
 
   waynetLoaded: (payload) => {
     // A payload with no points is stored as *no knowledge*, not as a world

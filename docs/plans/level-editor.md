@@ -5284,11 +5284,34 @@ and argued that a fifth checker would only deepen the debt.
    across six rule files and their tests, and it is deliberately its own commit
    with **no new rule in it** — a type migration and a new check in one change
    is how a regression in the eight working rules would hide.
-2. **World findings navigate.** The panel's click handler branches: a script
-   locus opens the file as today, a world locus selects the thing and frames it,
-   through the imperative handle `frameVobs` (§16.8 W3) that already exists. A
-   world finding while no world is open is shown and not clickable — the editor
-   holds one world at a time and the finding may belong to another.
+2. **World findings navigate — LANDED 2026-08-29.** The panel's click handler
+   branches: a script locus opens the file as today, a world locus becomes a
+   `WorldFocus` in `worldStore` and switches to the World view, which consumes
+   it. A world finding while no world is open is shown and not clickable — the
+   editor holds one world at a time and the finding may belong to another.
+   What the shape of it turned out to be:
+   - **The panel cannot call the viewport**, so the jump is a *request*, not a
+     call: `worldStore.focusRequest` is set by the panel and consumed exactly
+     once by `WorldSurface` (`focusHandled`), which is what makes two clicks on
+     one finding two jumps — the second is asked for precisely after the camera
+     has been flown away. A request left standing would fire again on the next
+     unrelated waynet re-read.
+   - **`worldFocusOf` is the one predicate**, and both halves read it: the list
+     to disable a row, the panel to build the request. A locus it answers `null`
+     for is listed and not clickable, which is the honest state for a polygon —
+     framing one needs the mesh and is slice 3's, with the rule that emits it.
+   - **A waypoint is not a VOB**, so the handle grew `framePoint(at)` beside
+     `frameVob`: no row in the columnar index, no bounds, and `frameVobs`
+     already reads `bounds: null` as "a point". The lookup is by name and
+     case-insensitive (the name comes out of a script), and the jump switches
+     the waynet overlay on — with it off the gizmo would stand where there is no
+     dot to see, which is the objection `toggleWaynet` already answers in the
+     other direction.
+   - **No Playwright spec covers it, and cannot yet.** The browser harness has
+     no world — `openWorld` is refused there by design — and no rule emits a
+     world locus, so the flow has no reachable end to end. The seams are pinned
+     in Jest instead (`ProblemsPanel.navigation`, `WorldSurface.editing`,
+     `WorldViewport.frameHandle`). Slice 3 is what makes an E2E possible.
 3. **`checkPortalMaterials` gets its consumer.** It has been built and tested
    against all three retail worlds since 2026-08-28 with nothing calling it
    (§16.18 slice 1). Its two findings are world-locus by polygon.

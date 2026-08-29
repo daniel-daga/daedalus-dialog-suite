@@ -152,8 +152,6 @@ pointer is a finding id in the file the routing table names.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **A world finding does not navigate** — the panel's click branches; a world
-  locus frames through the handle W3 already built. Any run. §16.20 slice 2
 - **`checkPortalMaterials` still has no consumer** — built and retail-tested
   2026-08-28, called by nothing. Any run. §16.20 slice 3
 
@@ -211,6 +209,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **World findings navigate** — the panel requests a focus, `WorldSurface`
+  consumes it once, `framePoint` frames a waypoint. §16.20 slice 2
 - **The locus union landed** — `Problem.locus` is script-or-world, the eight
   rules and the panel migrated with no new rule in the commit. §16.20 slice 1
 

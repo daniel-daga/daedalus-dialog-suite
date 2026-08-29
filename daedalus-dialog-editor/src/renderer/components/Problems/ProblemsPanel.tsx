@@ -11,6 +11,7 @@ import { useProblemsStore } from '../../store/problemsStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useUISelectionStore } from '../../store/uiSelectionStore';
+import { useWorldStore, worldFocusOf } from '../../store/worldStore';
 import { useNavigation } from '../../hooks/useNavigation';
 import type { Problem } from '../../problems/domain/types';
 import ProblemsList from './ProblemsList';
@@ -34,6 +35,10 @@ const ProblemsPanel: React.FC = () => {
   const parseGeneration = useProjectStore((s) => s.parseGeneration);
   const isIngesting = useProjectStore((s) => s.isIngesting);
   const { navigateToDialog, navigateToSymbol } = useNavigation();
+  // A world finding is only navigable while the world it addresses is the one
+  // that is open — the editor holds one at a time, and the finding may belong
+  // to another.
+  const worldOpen = useWorldStore((s) => s.status === 'ready');
 
   useEffect(() => {
     requestScan();
@@ -50,10 +55,18 @@ const ProblemsPanel: React.FC = () => {
   }, [problems]);
 
   const handleSelect = async (problem: Problem): Promise<void> => {
-    // A world locus has no file to open. Slice 2 of §16.20 gives it its own
-    // branch; until then it is listed and clicking it does nothing.
     const locus = problem.locus;
-    if (locus.kind !== 'script') return;
+    // A world locus has no file to open: it is an address into the open world,
+    // and the jump is the World surface's to make (§16.20 slice 2). The row is
+    // disabled when this would find nothing, so both guards are belt and
+    // braces for a click that arrives as the world is closing.
+    if (locus.kind === 'world') {
+      const focus = worldFocusOf(locus);
+      if (focus === null || useWorldStore.getState().status !== 'ready') return;
+      useWorldStore.getState().requestFocus(focus);
+      useUISelectionStore.getState().setActiveView('world');
+      return;
+    }
 
     const navigated = locus.dialogName
       ? await navigateToDialog(locus.dialogName, locus.functionName)
@@ -102,7 +115,7 @@ const ProblemsPanel: React.FC = () => {
         </Typography>
       </Box>
       <Box sx={searchablePaneContentSx}>
-        <ProblemsList problems={problems} onSelect={handleSelect} />
+        <ProblemsList problems={problems} onSelect={handleSelect} worldOpen={worldOpen} />
       </Box>
     </Box>
   );
