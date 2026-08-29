@@ -190,6 +190,35 @@ Napi::Value VfsList(Napi::CallbackInfo const& info) {
   return entries;
 }
 
+Napi::Value VfsRead(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto name = StringArg(env, info[1], "name");
+
+  // Vfs::find is a by-name lookup over the whole tree, and ZenKit stores names
+  // as the archive spells them (upper case in every retail VDF) — the same
+  // normalisation VisualCandidates and TextureCandidates apply.
+  auto const* node = handle->vfs.find(Upper(name));
+  if (node == nullptr || node->type() != VfsNodeType::FILE) return env.Null();
+
+  try {
+    auto reader = node->open_read();
+    reader->seek(0, Whence::END);
+    auto const size = reader->tell();
+    reader->seek(0, Whence::BEG);
+
+    auto buffer = Napi::Buffer<std::uint8_t>::New(env, size);
+    if (size > 0 && reader->read(buffer.Data(), size) != size) {
+      throw Napi::Error::New(env, "short read from VFS entry: " + name);
+    }
+    return buffer;
+  } catch (Napi::Error const&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"cannot read VFS entry "} + name + ": " + e.what());
+  }
+}
+
 Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);

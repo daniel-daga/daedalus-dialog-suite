@@ -434,3 +434,57 @@ test('decodeTexture refuses a mipmap level that is not a whole number in range',
     );
   }
 });
+
+// --- vfsRead ---------------------------------------------------------------
+
+// A world lives inside the retail Worlds.vdf, and the measurement scripts take
+// a .zen path — so the corpus used to be an extraction into the install's
+// _work tree. vfsRead is what lets scripts/extract-worlds.js pull the bytes
+// out of the archive instead, leaving the install stock.
+const crypto = require('node:crypto');
+const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
+
+const NESTED = Buffer.from(Array.from({ length: 4096 }, (_, i) => (i * 7) & 0xff));
+const WORLDS = path.join(root, 'worlds');
+fs.mkdirSync(path.join(WORLDS, 'Worlds', 'Nested'), { recursive: true });
+fs.writeFileSync(path.join(WORLDS, 'Worlds', 'Nested', 'EX_WORLD.ZEN'), NESTED);
+
+test('vfsRead returns a file\'s bytes found by name anywhere in the tree', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  const bytes = zenkit.vfsRead(handle, 'EX_WORLD.ZEN');
+  assert.ok(Buffer.isBuffer(bytes));
+  assert.strictEqual(bytes.length, NESTED.length);
+  assert.strictEqual(sha256(bytes), sha256(NESTED));
+});
+
+test('vfsRead is case-insensitive on the name, as the engine is', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  assert.strictEqual(sha256(zenkit.vfsRead(handle, 'ex_world.zen')), sha256(NESTED));
+});
+
+test('vfsRead returns null for a name that is not there, or names a directory', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  assert.strictEqual(zenkit.vfsRead(handle, 'NO_SUCH.ZEN'), null);
+  assert.strictEqual(zenkit.vfsRead(handle, 'Nested'), null);
+});
+
+test('vfsRead rejects a non-string name', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  assert.throws(() => zenkit.vfsRead(handle, 7), /name must be a string/);
+});
+
+// The retail check: the addon NewWorld read straight out of Worlds.vdf +
+// Worlds_Addon.vdf is the exact file the engine harness has always hashed
+// (environment-hazards.md, the pristine backup). Skipped where no install is.
+const G2_ROOT = process.env.ZENKIT_G2_ROOT
+  || 'C:/Program Files (x86)/Steam/steamapps/common/Gothic II';
+const RETAIL_VDFS = ['Worlds.vdf', 'Worlds_Addon.vdf'].map((n) => path.join(G2_ROOT, 'Data', n));
+const NEWWORLD_SHA256 = 'b4dac8674be44820d63e5bdaf63525b8e7ca1a0ad50d62a2e3e1fe905cb8d4b5';
+
+test('vfsRead reads the addon NewWorld out of the retail archives, byte for byte',
+  { skip: RETAIL_VDFS.every(fs.existsSync) ? false : 'no Gothic II install' }, () => {
+    const handle = zenkit.openVfs(RETAIL_VDFS);
+    const bytes = zenkit.vfsRead(handle, 'NEWWORLD.ZEN');
+    assert.strictEqual(bytes.length, 75387729);
+    assert.strictEqual(sha256(bytes), NEWWORLD_SHA256);
+  });

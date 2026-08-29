@@ -40,16 +40,12 @@ const crypto = require('node:crypto');
 
 const zk = require('..');
 
-const WORLDS = process.env.ZENKIT_G2_WORLDS
-  || 'C:/Program Files (x86)/Steam/steamapps/common/Gothic II/_work/Data/Worlds';
-
+// The pristine source is the corpus `scripts/extract-worlds.js` pulls out of
+// the retail archives — never a file inside the install, which the GMBT
+// harness leaves stock.
 const outDir = process.argv[2];
 if (!outDir) throw new Error('usage: node tools/mutate.js <outDir> [<NewWorld.zen>]');
-const source = process.argv[3] || `${WORLDS}/NewWorld/NewWorld.zen`;
-
-// Prefer the pristine backup when one exists — the install may be mid-experiment.
-const backup = `${source}.original-backup`;
-const src = fs.existsSync(backup) ? backup : source;
+const src = process.argv[3] || path.join(__dirname, '..', 'worlds', 'NEWWORLD.ZEN');
 
 // The two Phase-0 mutations, exactly as §8 records them.
 const MOVED_VOB = '2/962';   // NW_CITY_TABLE_PEASANT_01.3DS, nearest visual VOB to START
@@ -672,4 +668,4 @@ for (const [name, file] of [
 ]) {
   console.log(`\n${name}  ${fs.statSync(file).size} B  ${sha(file)}`);
 }
-console.log(`\nrun: pwsh tools/engine-batch.ps1 -Exe Gothic2 -Dir "${path.resolve(outDir)}"`);
+console.log(`\nrun: pwsh tools/engine-batch.ps1 -Dir "${path.resolve(outDir)}" -Only 00,07 -Full`);

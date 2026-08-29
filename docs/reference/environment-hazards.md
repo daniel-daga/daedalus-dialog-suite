@@ -41,8 +41,8 @@ doc, not here. This file is only for the ground the code stands on.
 - `node-gyp rebuild` **deletes `build/`**, which is why the CMake output lives in
   `vendor-build/` deliberately. Do not tidy it back.
 - **A patch touching any `save` path needs the retail corpus re-run, by hand.**
-  `node scripts/zen-roundtrip.js --root "<install>/_work/Data/Worlds"` — the
-  corpus needs a retail install, so `zenkit-node.yml` has none and CI cannot
+  `node scripts/zen-roundtrip.js --root worlds` (after `extract-worlds.js`) —
+  the corpus needs a retail install, so `zenkit-node.yml` has none and CI cannot
   catch this. It has already happened once: `0028` made `VTrigger::save` rebuild
   the deprecated `flags` byte from the two bools `load` unpacks, dropping the
   bits nothing maps to, and the headline `4× identical [BIN_SAFE]` silently
@@ -181,32 +181,26 @@ anything does.
 ## Gothic II, as the engine oracle
 
 - Installed at `C:\Program Files (x86)\Steam\steamapps\common\Gothic II`,
-  extracted MDK-style into `_work\Data\{Meshes,Textures,Scripts,Worlds}`.
-- **The MDK extraction is gone as of 2026-08-29 and has to be redone before any
-  world work.** `_work\Data\{Worlds,Meshes,Textures,Scripts,Anims,Sound}` are
-  all empty — zero files, not thinned — and all six VDFs below are back in
-  `Data\` under their real names with no `.disabled` beside them. That is
-  exactly the reinstall / "verify integrity" state the next bullet describes,
-  in its complete form. What it costs, beyond the engine:
-  - **Every measurement and check script has lost its corpus.** They take
-    `--world <a .zen on disk>` (`check-portal-pairing.js`,
-    `check-portal-planarity.js`, `check-visual-winding.js`, `check-vob-bbox.js`)
-    and there is no world file left in the install — only the archives, and the
-    binding cannot read a world out of a VFS: `loadWorld` takes a path, and
-    nothing exports an entry's bytes. So a retail measurement is blocked on
-    re-extracting, not on code.
-  - **The pristine backup named at the bottom of this section is gone with it**,
-    so `engine-batch.ps1` fails its hash check before it starts anything.
-  - Nothing in the repo did this and nothing in the repo can undo it: restoring
-    the layout is a manual re-extract plus renaming the six VDFs `.disabled`
-    again, and it is a person's job on a person's install.
-- **The MDK layout depends on six VDFs staying renamed `.disabled`** — `Worlds`,
-  `Worlds_Addon`, `Meshes`, `Meshes_Addon`, `Textures`, `Textures_Addon`. A
-  Steam reinstall or "verify integrity" restores all six and silently breaks it
-  two ways: `Worlds.vdf` carries its own `NewWorld.zen`, so **any engine verdict
-  taken in that state is void**, pass or fail; and it crashes the game a few
-  seconds after launch. Check this *before* blaming a candidate.
-  `zenkit-node/tools/startup-probe.ps1` is the unattended check.
+  **and it is stock** — as of 2026-08-29 nothing on the repo's side needs a
+  file in the install renamed, extracted or written:
+  - **The world corpus comes out of the archives, not out of `_work`.**
+    `node scripts/extract-worlds.js` (zenkit-node) mounts `Data\Worlds.vdf`
+    then `Worlds_Addon.vdf` read-only through the binding's own VFS and writes
+    every `.ZEN` flat into the gitignored `zenkit-node/worlds/` — 8 worlds,
+    `NEWWORLD.ZEN` at the recorded `b4dac867…`. That directory is what every
+    `--world` script (`check-portal-pairing.js`, `check-portal-planarity.js`,
+    `check-visual-winding.js`, `check-vob-bbox.js`), `tools/mutate.js` and
+    `zen-roundtrip --root` take. Re-running the script is the whole re-extract.
+  - **Candidates ship as a mod.** `tools/engine-batch.ps1` stages them into
+    the GMBT project and `gmbt test --world=<name>` builds
+    `Data\ModVDF\DDS-CAND.mod`; the retail `Worlds*.vdf` are never shadowed
+    and never renamed. The old layout — six VDFs parked as `.disabled` so a
+    world copied into `_work` would win, a pristine backup restored in a
+    `finally` — is retired with it, and so is the way a Steam "verify
+    integrity" used to void a verdict. The MDK *script* tree GMBT needs is
+    `tools/gmbt/mdk/` (gitignored, rebuilt as described below), not `_work`.
+  `zenkit-node/tools/startup-probe.ps1` is still the unattended "does the
+  engine itself start" check, before blaming a candidate.
 - **The oracle is not stock**, and every verdict has to say so: Gothic II 2.6
   (fix) + SystemPack + GD3D11 (kirides fork, `51efd73`, as `System\ddraw.dll`).
   Stock never rendered on this machine — black screen with working audio in
@@ -236,11 +230,10 @@ anything does.
   original too.
 - **Never OpenGothic.** It is built on ZenKit and shares the code under test.
 - Gothic 1 is not installed, so G1 coverage is *unavailable*, not clean.
-- Pristine backup: `_work\Data\Worlds\NewWorld\NewWorld.zen.original-backup`,
-  75,387,729 B, sha256 `b4dac867…`. Never write into the Gothic directory
-  without one; `engine-batch.ps1` verifies the hash before it starts and restores
-  in a `finally`. **Gone with the extraction on 2026-08-29** — the size and hash
-  are kept here so the re-extracted copy can be checked against them.
+- The pristine addon NewWorld is 75,387,729 B, sha256 `b4dac867…`.
+  `scripts/extract-worlds.js` reports whether the one it wrote matches, and
+  `test/assets.test.js` asserts it against the archives on any machine that has
+  them. There is no backup any more because nothing writes into the install.
 
 ## GMBT empties `_work`, and how `_work` is rebuilt
 
@@ -254,26 +247,26 @@ so the retail extraction was gone and every measurement card lost its corpus.
 carries a whole `mdk/`; that is load-bearing, not tidiness.
 
 The game itself was never at risk: it runs from `Data/*.vdf`, and `_work` is
-only the extracted modding tree.
+only the modding tree. **Since 2026-08-29 nothing of ours lives there**: the
+world corpus is `scripts/extract-worlds.js`'s output in the repo, and GMBT owns
+`_work/Data` outright. What has to exist is `tools/gmbt/mdk/` — the complete
+script tree GMBT merges in — and rebuilding *that* needs no installer and no
+UAC; every source is already on the machine:
 
-**Rebuilding `_work` needs no installer and no UAC.** Every source is already on
-the machine, and `VdfsSharp.dll` ships inside GMBT:
-
-1. **Assets and worlds** — extract the `Worlds/Meshes/Anims/Textures/Sounds`
-   `.vdf` volumes with `VdfsSharp.VdfsExtractor` and `ExtractOption.Hierarchy`
-   to the Gothic root; they carry full `_WORK\DATA\...` paths. **Base volumes
-   first, `*_Addon.vdf` last** — this is NotR, and `Worlds.vdf` alone yields a
-   *pre-addon* NewWorld with a different hash. The addon volume reproduces
-   `engine-batch.ps1`'s recorded `b4dac867...` byte for byte, which is the check
-   worth running after any rebuild.
-2. **Compiled scripts** — `Data/ModVDF/GothicGame.mod` is a VDF too and carries
-   `_WORK\DATA\SCRIPTS\_COMPILED\*.DAT`, `GOTHIC.DAT` included.
-3. **Script sources** — `Downloads/g2mdk-2.6_small.exe` is NSIS; **7-Zip
+1. **Compiled scripts** — `Data/ModVDF/GothicGame.mod` is a VDF and carries
+   `_WORK\DATA\SCRIPTS\_COMPILED\*.DAT`, `GOTHIC.DAT` included; `openVfs` +
+   `vfsRead` read them out, as `extract-worlds.js` does for worlds.
+2. **Script sources** — `Downloads/g2mdk-2.6_small.exe` is NSIS; **7-Zip
    extracts it without running it**, so no elevation is needed. But 7-Zip
    **flattens NSIS's directory structure**: `Scripts/System` comes out as one
    flat directory while its `.src` files expect `_intern\`, `menu\`, `music\`,
    `pfx\`, `sfx\` and `visualfx\`. The `.src` files are the map — each line is
    `dir\file.d` — and reconstructing from them places all 27 exactly.
+
+**Base volumes first, `*_Addon.vdf` last**, wherever archives are mounted —
+this is NotR, and `Worlds.vdf` alone yields a *pre-addon* NewWorld with a
+different hash. The addon volume reproduces the recorded `b4dac867...` byte for
+byte, which `extract-worlds.js` prints and `test/assets.test.js` asserts.
 
 **The repo's gitignored `mdk/` is not retail-equivalent.** It carries
 `Story/NPC/BAU_902_Gunnar_2.d`, which redefines `Rtn_Start_902` and so cannot

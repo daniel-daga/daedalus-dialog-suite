@@ -76,27 +76,23 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   `--seed <n>` replays one seed and then delta-debugs it down to the smallest
   set of mutations that still fails, which is what turns a crash into a named
   field — patch `0030` was found this way, minimized to a single byte.
-- `engine-batch.ps1 [-Dir cand] [-Only 00,01] [-Exe Spacer2|Gothic2] [-Windowed]` — the
-  manual engine pass, automated as far as it can be. Verifies the pristine
-  backup's hash before touching the install, installs each candidate, launches
-  the engine, polls its top-level windows and auto-captures any assertion dialog
-  (killing the engine), asks for a verdict when it exits cleanly, and restores
-  the backup — hash-verified, in a `finally`, so an interrupt cannot leave a
-  modified world behind. **Load each world twice**: Spacer renders nothing on
-  the first load of *any* world, including the retail original.
-  `-Windowed` sets `zStartupWindowed=1` in `Gothic.ini` for the run and restores
-  it afterwards (backed up like the world, restored in the same `finally`).
-  There is no command-line switch for windowed mode; it is an ini key. It also
-  clears SystemPack's `SimpleWindow`, which strips the window frame — but only
-  when SystemPack's hook DLL (`ddraw.dll`) is actually installed, because
-  without it `SystemPack.ini` is inert and editing it would be theatre.
-- `mutate.js <outDir>` — stages the three T10 / E-full candidates as flat
-  `*.zen` files for `engine-batch.ps1`: `00-control-original` (the pristine
-  world — **the control, never skip it**), `01-resave` (load → save, unchanged,
-  for checklist rows 2–9) and `02-minimal-edit` (the two Phase-0 mutations, for
-  row 10). Reads `NewWorld.zen.original-backup` in preference to the installed
-  world and prints the source hash, so it cannot silently pick up a
-  mid-experiment file. See the acceptance record §8.
+- `engine-batch.ps1 [-Dir cand] [-Only 00,07] [-Full] [-Latest] [-Windowed] [-NoAudio]`
+  — the manual engine pass, automated as far as it can be, **through GMBT**
+  (below). Stages the selected candidates into `gmbt/mod/Worlds`, runs
+  `gmbt test --world=<name>` on each, polls the engine's top-level windows and
+  auto-captures any assertion dialog (killing the engine), and asks for a
+  verdict either way. **It writes nothing into the install**: the candidate
+  ships in `Data\ModVDF\DDS-CAND.mod` and is selected by name, so there is no
+  backup, no restore and no `finally`. `-Full` is required on the first run
+  and after any change to `.gmbt.yml` or the asset dirs. `-Windowed` is GMBT's
+  own switch — it crashes on this machine (environment-hazards.md).
+- `mutate.js <outDir> [<NewWorld.zen>]` — builds every candidate as a flat
+  `*.zen` for `engine-batch.ps1`, `00-control-original` (the pristine world —
+  **the control, never skip it**) through `07c`; the file's header lists them.
+  The source defaults to `../worlds/NEWWORLD.ZEN`, which
+  `scripts/extract-worlds.js` pulls out of the retail archives — never a file
+  inside the install — and the source hash is printed so a wrong world cannot
+  pass silently. See the acceptance record §8.
 - `startup-probe.ps1 [-Exe Gothic2|Spacer2] [-Seconds 45]` — **is the engine
   itself healthy?** Launches it, watches its top-level windows for an error
   dialog, and always kills what it started. Modifies **nothing** in the
@@ -146,13 +142,15 @@ nothing checks at all. The walkers themselves are covered by
   does not manage; an incomplete asset set destroys the retail extraction. That
   is why `mdk/` carries a whole script tree.
 
-  It does **not** replace `engine-batch.ps1`: that script's window-watching is
+  `engine-batch.ps1` drives it: GMBT launches, the script's window-watching —
   what auto-dumps an assertion dialog and caught Gate 2b's dialog-camera crash,
-  and GMBT has no equivalent. GMBT launches; `engine-batch.ps1` reads a verdict.
+  which GMBT has no equivalent for — reads a verdict.
 
   `mdk/` is gitignored — it is licensed Piranha Bytes content, rebuilt by the
-  procedure in environment-hazards.md.
+  procedure in environment-hazards.md. `gmbt` itself is installed to
+  `%APPDATA%\GMBT\bin` (on the user PATH; the script falls back to that path).
 
   Status 2026-08-29: the engine launches and runs a staged world (process alive,
   400 s CPU). **Nobody has yet seen a frame** — the workstation was locked — so
   "it loads and plays" is unproven and the run sheet's rows still need a person.
+  The `engine-batch.ps1` rewrite that drives GMBT has been parsed, not played.

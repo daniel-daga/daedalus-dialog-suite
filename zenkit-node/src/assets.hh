@@ -32,6 +32,12 @@ Napi::Value VfsResolve(Napi::CallbackInfo const& info);
 // entries and an asset browser shows one directory at a time.
 Napi::Value VfsList(Napi::CallbackInfo const& info);
 
+// vfsRead(handle, name) — the bytes of the first file of that name anywhere in
+// the mounted namespace, as a Buffer, or null when absent. Name lookup is
+// case-insensitive, as the engine's own is. This is how a world leaves a
+// retail Worlds.vdf without an extraction into the install (scripts/extract-worlds.js).
+Napi::Value VfsRead(Napi::CallbackInfo const& info);
+
 // extractVisual(handle, name) — a VOB visual as render-ready buffers in the
 // same chunk shape extractWorldMesh emits. Null when the asset is absent or
 // its type carries no static geometry.

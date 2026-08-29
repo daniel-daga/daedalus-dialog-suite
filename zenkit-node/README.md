@@ -675,8 +675,9 @@ they need a Gothic install, the built addon and a real GPU.
 
 ```
 # C1 — fidelity, developer-local: every original ZEN is its own reference
+node scripts/extract-worlds.js            # the retail worlds, out of the VDFs, into worlds/
 pnpm --filter zenkit-node zen-roundtrip -- \
-  --root "C:\<Gothic II>\_work\Data\Worlds" --game g2 --strict --report-dir reports/
+  --root worlds --game g2 --strict --report-dir reports/
 
 # C2 — regression, CI: the checked-in fixtures. NEVER a fidelity result.
 pnpm --filter zenkit-node zen-roundtrip -- --fixtures --strict

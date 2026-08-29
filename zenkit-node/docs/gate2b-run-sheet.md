@@ -26,13 +26,16 @@ here is claimed until it is run.
 ## Running it
 
 ```
-node tools/mutate.js C:\path\to\cand
-powershell -ExecutionPolicy Bypass -File tools/engine-batch.ps1 -Exe Gothic2 -Dir C:\path\to\cand
+node scripts/extract-worlds.js            # once: the retail worlds, out of the VDFs
+node tools/mutate.js tools/cand
+powershell -ExecutionPolicy Bypass -File tools/engine-batch.ps1 -Dir tools/cand -Only 00,07 -Full
 ```
 
-Fullscreen — windowed crashes on this machine (Environment). The script installs
-each `*.zen` in name order as `NewWorld.zen`, waits for the engine, and restores
-the pristine backup afterwards.
+Fullscreen — windowed crashes on this machine (Environment). The script stages
+the selected `*.zen` into the GMBT harness mod (`tools/gmbt`), launches the game
+on each by name, and watches for a dialog. Nothing in the install is written or
+restored: the retail archives stay stock and the candidate lives in
+`Data\ModVDF\DDS-CAND.mod`. `-Full` is required on the first run.
 
 **`00` runs first and must pass, in the same session.** A control that was not
 run is not a control, and every row below is an A/B against it. `-Only 00,03`
