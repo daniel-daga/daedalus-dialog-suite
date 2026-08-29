@@ -40,6 +40,16 @@ doc, not here. This file is only for the ground the code stands on.
   `LNK1103`.
 - `node-gyp rebuild` **deletes `build/`**, which is why the CMake output lives in
   `vendor-build/` deliberately. Do not tidy it back.
+- **A patch touching any `save` path needs the retail corpus re-run, by hand.**
+  `node scripts/zen-roundtrip.js --root "<install>/_work/Data/Worlds"` — the
+  corpus needs a retail install, so `zenkit-node.yml` has none and CI cannot
+  catch this. It has already happened once: `0028` made `VTrigger::save` rebuild
+  the deprecated `flags` byte from the two bools `load` unpacks, dropping the
+  bits nothing maps to, and the headline `4× identical [BIN_SAFE]` silently
+  became `4× semantic-drift` for a day. The fix shape is `0016`'s and `0044`'s —
+  keep the unmapped bits on a zero-initialized `reserved_*` member and merge
+  them back when writing (never on the deprecated member itself: it has no
+  initializer, so a fresh object would merge indeterminate bits).
 - **Never `dynamic_cast` ZenKit types** — node-gyp compiles `/GR-` on Windows.
 - Nested ZenKit submodules must be initialised recursively.
 - **An MSVC compile can hang.** One `cl.exe` sat 15 minutes at 31 s CPU with no

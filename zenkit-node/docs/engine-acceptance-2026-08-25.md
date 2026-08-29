@@ -647,7 +647,8 @@ VERDICTS: 4× identical [BIN_SAFE], 4× not-a-world [ASCII], 20× semantic-drift
 > `4× semantic-drift [BIN_SAFE]`. Patch `0044` keeps those bits and merges them
 > back in when writing; re-run on 2026-08-28 after it, the same command over the
 > same install reports `4× identical [BIN_SAFE]` again, i.e. exactly the line
-> above. Diagnosis and the process lesson: `docs/plans/level-editor.md` §16.13.
+> above. The process lesson - a save patch needs this corpus re-run by hand -
+> is in `docs/reference/environment-hazards.md`, *"Building the native addon"*.
 > The ASCII half of this table never changed.
 
 

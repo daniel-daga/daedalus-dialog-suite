@@ -32,11 +32,26 @@ if (cardLines > BUDGET) {
 }
 
 if (fs.existsSync(planPath)) {
-  fs.readFileSync(planPath, 'utf8').split(/\r?\n/).forEach((line, i) => {
+  // A closure is declared one of two ways, and both are checked: a status
+  // suffix on the heading, or a bold "Closed/Landed ..." opening the
+  // subsection's first paragraph. What no regex can decide is a subsection
+  // whose halves landed separately under scattered markers - that is why the
+  // convention is to mark the heading when the last half lands.
+  const lines = fs.readFileSync(planPath, 'utf8').split(/\r?\n/);
+  const suffix = /(?:[—–-]\s*|\()(closed|landed)(?:\s+\d{4}-\d{2}-\d{2})?\)?\s*$/i;
+  const opener = /^\*\*(closed|landed)\b/i;
+  lines.forEach((line, i) => {
     const m = /^### (16\.\d+)\b(.*)/.exec(line);
-    if (m && /(?:[—–-]\s*|\()(closed|landed)(?:\s+\d{4}-\d{2}-\d{2})?\)?\s*$/i.test(m[2])) {
+    if (!m) return;
+    let declared = suffix.test(m[2]);
+    for (let j = i + 1; !declared && j < lines.length && !/^#{2,3} /.test(lines[j]); j += 1) {
+      if (!lines[j].trim()) continue;
+      declared = opener.test(lines[j].trim());
+      break; // only the first paragraph's opening line speaks for the section
+    }
+    if (declared) {
       failures.push(
-        `${planPath}:${i + 1}: §${m[1]} is marked closed/landed - a closed card takes ` +
+        `${planPath}:${i + 1}: §16.${m[1].split('.')[1]} is marked closed/landed - a closed card takes ` +
         'its subsection with it: route the forward facts, delete the rest; the commit is the record.'
       );
     }

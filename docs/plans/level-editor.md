@@ -915,7 +915,7 @@ byte-for-byte over every archive event:
 - saving twice is byte-identical (the writer was nondeterministic before)
 - `classifyDumps`: **`identical`, 0 findings** on all three (measured 2026-08-25;
   patch `0028` cost all four BinSafe worlds that verdict for a day; `0044`
-  gave it back — §16.13)
+  gave it back)
 - the only byte residual is `zCVobLight.colorAniList` (4/2/16 entries): the
   original writes ZenGin's greyscale shorthand `255 `, ZenKit expands it to
   `(255 255 255)`. Semantically identical, ZenGin's parser wrote and accepts both
@@ -2431,6 +2431,39 @@ not against offering the known values. The field offers them, and an
 unrecognised value is preserved verbatim and marked rather than snapped to the
 nearest legal one. Long form: §16.21.
 
+#### Filtering the tree, and hiding a class (2026-08-28)
+
+Two questions that look like one and are not: the tree's filter says which VOBs
+a search *selects*, hiding a class says which the scene *draws*. They share the
+predicate and nothing else — `matchVobs` (`zen-world/src/model/vobTree.ts`)
+answers the query against the interned `names`/`classes` dictionaries the
+summary already carries, so the sweep is an integer lookup per VOB and neither
+question costs per-VOB IPC. The tree's filter stays in `WorldSceneTree`;
+`WorldSurface` holds `hiddenClasses` and asks `matchVobs` the complementary
+question. No second matcher, no lifted state, and the tree keeps listing what is
+hidden so a switched-off VOB is still findable.
+
+Four behaviours anything touching this must preserve:
+
+- **A match's unmatched children are not shown** — `hasChildren` on a filtered
+  row means the *kept* children, so a matched crate does not unfold into its
+  forty unmatched contents.
+- **A filtered tree ignores the expansion state and does not write to it**, so
+  clearing the filter gives back the tree the user had, not 41,393 rows the
+  filter left expanded.
+- **Hiding is `instanceHidden`, not `mesh.visible` and deliberately not a
+  zero-scale matrix.** A VOB is one instance in an `InstancedMesh` shared across
+  its visual, so the first cannot express it — and the second is a trap, because
+  the instance matrix is what `positionOf`/`rotationOf` read a pose back out of:
+  collapsing it would put a hidden VOB's gizmo at the origin and let an op carry
+  it there. The flag is one float per instance and the VOB vertex shader pushes a
+  flagged instance outside the clip volume — no draw call, no recompile.
+- **The pick pass reads the same attribute object.** `VobPicker` clones the
+  geometry and a clone *copies* attributes, so the flag is re-`setAttribute`d
+  onto the proxy as the same object; without that a hidden VOB stays clickable.
+  `WorldViewport` re-applies it on `mesh`/`visuals` like exposure, because a
+  structural op rebuilds the scene and a fresh `WorldScene` draws everything.
+
 ---
 
 ## 8. Daedalus integration — open question 4
@@ -2644,9 +2677,9 @@ would survive it (§16.7).
 ### 14.4 Editor UX
 
 - VOB search and find by name or class — the scene tree's header, answered
-  against the interned dictionaries. *Landed 2026-08-28 (§16.16).*
+  against the interned dictionaries. *Landed 2026-08-28 (§7).*
 - Per-class visibility filters, hide/show — Spacer's VOB-type toggles, on the
-  filter's own predicate. *Landed 2026-08-28 (§16.16).*
+  filter's own predicate. *Landed 2026-08-28 (§7).*
 - Batch operations. Spacer has zSlang; our answer is
   [`mcp-server.md`](mcp-server.md) plus scripted ops. *Planned elsewhere.*
 - Engine preview ("play from here") — parked as later/kept-open (§11).
@@ -2859,7 +2892,8 @@ deprecated raw `flags`/`filterFlags` bytes `load()` unpacks into those eight
 bools, verbatim, rather than reconstructing them from the bools — so setting
 any of the eight and saving silently reverted to whatever the archive held at
 load. (`0028` dropped the bits of those bytes `load()` does not unpack;
-`0044` keeps them — §16.13.) `zCMover` and `oCTriggerChangeLevel` both derive from `VTrigger` and
+`0044` keeps them; the process lesson is in `environment-hazards.md`,
+*"Building the native addon"*.) `zCMover` and `oCTriggerChangeLevel` both derive from `VTrigger` and
 inherit these twelve once their own case is added. `zCTrigger` was appended to
 `BuildVisualVobTree`'s mesh-extraction-only fixture (path `1/12`), so the
 checked-in golden fixture is unaffected.
@@ -4055,40 +4089,6 @@ reads on alpha-tested foliage and on blended VOB materials, which get the term
 uniformly by design (a face-on billboard is untouched; an edge-on one dims
 slightly).
 
-### 16.13 The four retail BinSafe worlds re-save `identical` again — patch `0044`
-
-**Closed 2026-08-28 (patch `0044`).** For one day the headline BinSafe result —
-`4× identical [BIN_SAFE]`, measured 2026-08-27 — did not reproduce: the same
-command over the same install reported `4× semantic-drift [BIN_SAFE]`, NewWorld
-108 differing events and OldWorld 13, every one of them the `flags` field of a
-`zCTrigger` subclass and nothing else.
-
-**It was patch `0028`.** `VTrigger::load` unpacks exactly two bits of the
-deprecated `flags` byte — `startEnabled` (bit 0) and `sendUntrigger` (bit 2) —
-and `0028` made `VTrigger::save` rebuild the byte from those two bools instead
-of echoing the byte it read. Bits 1 and 3–7 have no bool to be rebuilt from, so
-they were dropped; retail carries them (the four bytes sampled in OldWorld are
-all `0b00010010`, bits 1 *and* 4). `filterFlags` had the same hole in bits 6–7
-and was safe only by luck: `load` unpacks all six bits ZenGin uses.
-
-**Reverting `0028` was never the answer** — the asymmetry it fixes is real and
-is on the editor's own path. `0044` is `0016`'s shape applied here: the bits
-nothing maps to are kept on two new zero-initialized members
-(`reserved_flags`, `reserved_filter_flags`) and merged back into the rebuilt
-bytes when writing. The deprecated `flags`/`filter_flags` members could not
-serve for this — they have no initializer at all, so a freshly constructed
-`VTrigger` would have merged in indeterminate bits. Covered by
-`test/saveWorld.test.js`, which seeds the unmapped bits into an authored world
-by structure and asserts every flag byte survives a load and a save; the retail
-corpus was re-run and reports `4× identical [BIN_SAFE]` again.
-
-**The forward fact, and it outlives the patch:** a save-path patch landed
-without the retail corpus being re-run, and the claim it invalidated is the
-loudest one this project makes. `zenkit-node.yml` cannot catch it — the corpus
-needs a retail install and CI has none — so the check is a person running
-`node scripts/zen-roundtrip.js --root "<install>/_work/Data/Worlds"` after any
-patch that touches a `save`.
-
 ### 16.14 Copy / paste / duplicate a VOB (§14.1 1.2)
 
 **The most-used Spacer verb after move**, and the one parity gap with no new
@@ -4710,85 +4710,6 @@ move**, both for the reason a placed trigger fires at nothing: the effect is a
 catalogued so the grid supplies it; the visual comes from the placement dialog.
 
 **No engine verdict covers any of this**, like every op since candidate `03`.
-
-### 16.16 The scene tree has no filter, and no per-class visibility (§14.4)
-
-Two Spacer verbs from the editor-UX half of the parity inventory, carded
-together because the second is the first one's data reaching the render path.
-
-**Search and filter.** The scene tree lists what the world holds and offers no
-way to narrow it — on a retail world that is 41,393 VOBs. Spacer filters by name
-and by VOB type, and both are worth having. **Both columns are already in the summary, interned.** `vobIndex` emits
-`names`/`nameIndex` and `classes`/`classIndex` (`zenkit-node/src/normalize.cc:1331`)
-— string tables plus a per-VOB index into them. So a class filter is an integer
-comparison against a table position, not a string scan, and neither filter needs
-`getVobProps` or any per-VOB IPC. Renderer work over data that crossed the
-boundary once.
-
-**Per-class visibility.** Spacer's VOB-type toggles, hiding a whole class in the
-viewport. The filter above decides which VOBs a query selects; this decides
-which the scene draws, so the two want one predicate and not two. Do the filter
-first and let visibility consume it.
-
-**The performance constraint is the whole design.** `worldStore` deliberately
-holds no `immer` because the summary carries `ArrayBuffer` columns, and
-`CLAUDE.md`'s rule against passing `semanticModel` into memoized components
-applies here for the same reason. A filter that rebuilds a 41,393-element array
-on every keystroke, or that lands in a component's props as a new object each
-render, will be slower than no filter at all. Debounce, and derive.
-
-**Not in scope:** saving a filter, named filter sets, or a query language.
-Spacer has none of them.
-
-**Search and filter landed 2026-08-28.** `matchVobs`, `isEmptyQuery` and
-`flattenMatching` are in `zen-world/src/model/vobTree.ts`, beside
-`flattenVisible`: the query is answered against the dictionaries first and the
-sweep over the VOBs is an integer lookup per row, and `flattenMatching` keeps
-each match's ancestors so a hit deep in the tree is reachable without anyone
-expanding anything. The tree's own header carries the name field (debounced
-200 ms) and a multi-select over the class dictionary, and the count line reads
-"N of M VOBs" while a filter is up. Three decisions worth knowing before the
-visibility card builds on them:
-
-- **A match's unmatched children are not shown.** `hasChildren` on a filtered
-  row is about the *kept* children, so a matched crate does not unfold into its
-  forty unmatched contents. What is on screen is the answer to the query.
-- **A filtered tree ignores the expansion state and does not write to it.**
-  Chevrons follow the filtered rows and a toggle is a no-op while a filter is
-  up — so clearing the filter gives back the tree the user had, not 41,393 rows
-  left expanded by the filter.
-- **The predicate the visibility card wants is `matchVobs`**, which returns one
-  byte per VOB and is the natural input to a render-side "draw this VOB?" —
-  but the filter state lives in `WorldSceneTree` and would have to be lifted to
-  `WorldSurface` for the viewport to see it.
-
-**Per-class visibility landed 2026-08-28**, and it did *not* lift the tree's
-filter. Spacer's VOB-type show/hide is its own control, in the toolbar beside
-Brightness where the other view settings are, because the two questions are
-different ones: the tree's filter says which VOBs a search selects, and hiding a
-class says which the scene draws. Sharing the *predicate* was the point of the
-note above and that is what happened — `WorldSurface` holds `hiddenClasses`,
-asks `matchVobs` the complementary question, and hands the viewport a
-`hiddenVobs` byte array. No second matcher, no state lifted, and the tree keeps
-listing what is hidden so a switched-off VOB is still findable and selectable.
-
-How it hides is the part worth knowing before anything else touches the scene:
-
-- **Not `mesh.visible`, and deliberately not a zero-scale matrix.** A VOB is one
-  instance inside an `InstancedMesh` shared with every other VOB of its visual,
-  so the first cannot express it — and the second would be a trap, because the
-  instance matrix is exactly what `positionOf`/`rotationOf` read a VOB's pose
-  back out of. Collapsing it would put a hidden VOB's gizmo at the origin and
-  let an op carry it there. So the flag is `instanceHidden`, one float per
-  instance beside the matrix, and the VOB vertex shader pushes a flagged
-  instance outside the clip volume. Hiding a class costs no draw call, no
-  recompile and no geometry.
-- **The pick pass reads the same attribute object.** `VobPicker` clones the
-  geometry, and a clone *copies* attributes — so the hidden flag is re-`setAttribute`d
-  onto the proxy as the same object. Without it a hidden VOB stays clickable,
-  and clicking something invisible selects it in the tree.
-- **`WorldViewport` re-applies it on `mesh`/`visuals`**, like exposure: a
-  structural op rebuilds the scene, and a fresh `WorldScene` draws everything.
 
 ### 16.17 The rest of `zCVob` (§14.1 1.8)
 

@@ -214,9 +214,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 - **The board's two flush rules are enforced, not trusted** — `tools/check-board.js`
   (`npm run board:check`, and the `zen-world-tests` CI job) fails the card budget
-  and any §16 heading still marked closed/landed; §16.1, §16.5 and §16.10 flushed
-  to make it green, forward facts routed (§14.1 1.6, CLAUDE.md CI notes,
-  `environment-hazards.md`).
+  and any §16 subsection declaring itself closed/landed - on the heading or
+  opening its first paragraph. Five flushed to make it green (§16.1, .5, .10,
+  .13, .16), forward facts routed to §7, §14.1 1.6, CLAUDE.md's CI notes and
+  `environment-hazards.md`. What it cannot judge is a subsection whose halves
+  landed separately, so the convention is to mark the heading when the last
+  half lands.
 
 *(flushed 2026-08-29, twice. Six rounds' twenty-six cards went first; then the
 five of round 7-9 — portal pairing, waypoint occupancy, W4, the spawn-index
