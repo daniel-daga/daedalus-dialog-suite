@@ -284,6 +284,8 @@ Notes:
 - `all-tests.yml` triggers include `workflow_call` so it can gate releases
 - Editor CI typechecks both main process and renderer separately
 - Editor CI build is guarded against chunk-size and `eval` warnings
+- The real-Electron world-render spec (`tests/e2e-electron/world-render.spec.ts`) needs the dev-build addon, which `zenkit-node`'s install script skips by default in CI: `build-windows.yml`'s `e2e-electron-windows` job sets `ZENKIT_NODE_FORCE_BUILD=1` before install so the spec runs there; the ubuntu `editor-e2e-electron` job does not, so the spec self-skips — that platform doesn't ship, so it is not the gate
+- `node tools/check-board.js` (root `npm run board:check`, run in `zen-world-tests`) enforces the board's card-line budget and §16's closed-card flush rule
 
 ---
 

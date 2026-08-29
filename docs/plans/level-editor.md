@@ -2601,7 +2601,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
 | 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
 | 1.5 | **Numeric transform entry** | **landed** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half landed too (2026-08-28).** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` with the round-trip tolerance test the old wording asked for, and `WorldPropertyGrid` now has three angle fields on top of it. Unlike position, a committed angle leaves as an **absolute** pose (`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute angle is the thing the grid can now read off a VOB; the equality refusal below is therefore applied **per angle**, and it compares the typed number against the *displayed* rounded value as well as the exact decomposed one — `coordinate()` rounds to 2 dp, so a field reading "30" can be 30.000000000000004 underneath and retyping what is on screen would otherwise re-orthonormalize the matrix. `zenRotationToEuler`'s throw is caught and the row renders as unavailable rather than blanking the grid. **A multi-selection landed 2026-08-28** and is the one asymmetry: the fields describe the anchor VOB as always, but with N selected a committed angle leaves as a **delta** through the gizmo's own `onRotateSelection` → `rotateVobs`, so the selection turns together and keeps the relative orientation it had — the rule the position fields already have, and the one that keeps typing and dragging on one op-building path. The delta is `eulerDeltaRotation(displayed, typed)` (`zen-world/coords`), built from the two angle triples rather than from the anchor's stored matrix: a `R(to) * M^-1` would carry the anchor's own non-orthonormality into every other VOB of the selection. See §16.4. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
-| 1.6 | **Snapping** | **partial** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal are still out**, and not for want of a raycast — the world mesh has a BVH and the terrain pick already uses it. They are out because both are *per-VOB* answers (each VOB finds its own ground, its own normal) and the commit path takes one delta for the whole selection: `translateVobs`/`rotateVobs` would need a per-VOB variant, which is a second op-building path and the thing the gizmo work has avoided since Phase 1b began. Align-to-normal additionally has to decide which axis of a visual is up — the same question that keeps a placed VOB unrotated (`IDENTITY` in `WorldSurface`). |
+| 1.6 | **Snapping** | **landed** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal landed 2026-08-28**, as the per-VOB answer the shared-delta commit path could not give: `zen-world`'s `dropVobsToGround`/`alignVobsToNormal` take per-VOB hits and batch to one `MoveVob`/`RotateVob` per VOB, one undo entry, exactly as `translateVobs`/`rotateVobs` do for a shared delta. Align turns local **+Y** onto the hit normal — the engine is Y-up, with no per-visual-class exception (the "which axis is up for this visual" question that keeps a placed VOB at `IDENTITY` is not reopened) — and composes on the left, so whatever rotation the VOB had about that axis survives. The raycast is `WorldViewportHandle.raycastDown`, synchronous against the existing BVH; a VOB whose ray misses (over the sky, off the mesh) is left where it was rather than refusing the batch. A *typed* coordinate still does not snap — a typed number is an explicit destination. |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
 | 1.8 | **The rest of `zCVob`** | **landed** (§16.17) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 landed the same day: `dynamicShadows` on the same two bits, and all seven fields of a decal visual, flat and prefixed. Two fields stay out and both by a fact rather than by time — `farClipScale`, because retail ships uninitialised junk in it (§7), and **`sleepMode`, because `VirtualObject` reads and writes it only under `is_save_game()`**, so a value set on a world archive never reaches the file. |
 
@@ -2694,32 +2694,10 @@ open as later improvements. Neither is a prerequisite.
 The long form of every open card on [`docs/BOARD.md`](../BOARD.md). The board
 carries one line and an owner per card and points here; this section carries the
 diagnosis, the measurement and the decision each one is waiting on. A card that
-closes takes its subsection with it — the commit is then the record.
-
-### 16.1 Nothing has watched the packaged renderer draw — closed 2026-08-28
-
-The addon half was already closed: the packaged app opens a world in CI, so
-`npmRebuild: false` rests on a runtime verdict rather than on a reading of
-`binding.gyp`. But that smoke never created a window — it opened the world
-through `WorldService` and exited. A packaged build in which the World surface
-rendered nothing, or threw on first paint, would still have passed every gate
-there was.
-
-Closed with `daedalus-dialog-editor/tests/e2e-electron/world-render.spec.ts`:
-a real-Electron spec that drives the actual UI (Open Project → World toggle →
-choose install → open a world) and then reads the GPU's own framebuffer back
-through `window.__worldViewport.renderFrom` — the same mechanism
-`scripts/verify-world-render.js` already used against a real Gothic install —
-to prove the fixture's mesh was drawn, not just fetched. It compares every
-pixel against the known clear colour and asserts at least one differs.
-
-The spec needs the native addon for the *dev* build, which `zenkit-node`'s
-install script skips by default in CI. `build-windows.yml`'s
-`e2e-electron-windows` job now sets `ZENKIT_NODE_FORCE_BUILD=1` before
-`pnpm install` so the spec actually runs there rather than self-skipping; the
-ubuntu `editor-e2e-electron` job (`all-tests.yml`) does not set it, so the
-spec skips itself there for want of the addon — that job's platform doesn't
-ship, so it was never the gate this closes.
+closes takes its subsection with it — the commit is then the record. Numbers
+are never reused, so a flushed subsection leaves its gap and old pointers stay
+unambiguous. This is checked: `npm run board:check` (root, and CI) fails while
+a subsection's heading still ends in *closed* or *landed*.
 
 ### 16.2 The ops' engine verdict — Gate 2b ran, and it is half a verdict
 
@@ -2959,7 +2937,7 @@ contains, list fields, and base-`zCVob` widening (§14.1 item 1.8). Alongside an
 independent: class-specific *insertion* (item 1.3 — I1 landed 2026-08-28,
 `oCItem` only, §16.15), and copy/paste (1.2). Numeric transform entry
 (1.5) is landed, multi-selection rotation included (§16.4); snapping (1.6) is
-fully landed (§16.5). All still before Phase 1c in §11.
+fully landed (§14.1 1.6). All still before Phase 1c in §11.
 
 ### 16.4 Typed rotation — the multi-selection landed; what is left needs Spacer
 
@@ -3030,36 +3008,6 @@ One thing users will see and may report as a bug: displayed angles are canonical
 — yaw/roll in (−180, 180], pitch in [−90, 90] — so a field committed at 190°
 remounts as −170°, and a pole pose remounts with roll 0. Both correct, both look
 like the editor changing their number.
-
-### 16.5 Snapping — drop-to-ground and align-to-normal (landed)
-
-Grid step and angle step landed first. The two that were left were **not**
-blocked on a raycast — the world mesh already had a BVH — but on both being
-*per-VOB* answers — each VOB finds its own ground, its own normal — while
-`translateVobs`/`rotateVobs` take **one** delta for the whole selection. That
-meant a per-VOB op-building path, which `zen-world` now has:
-`dropVobsToGround` and `alignVobsToNormal` each take a list of `{ vob, ... }`
-hits rather than a shared delta, batching to one `MoveVob`/`RotateVob` per VOB
-and one undo entry, exactly as `translateVobs`/`rotateVobs` do for a shared
-delta.
-
-Align-to-normal turns local **+Y** onto the hit normal — the engine is Y-up, so
-+Y is the standard default, with no per-visual-class exception (the open
-question of "which axis is up for this visual" that keeps a placed VOB at
-`IDENTITY` is not reopened here). The turn composes on the left, same as
-`rotateVobs`, so whatever the VOB's orientation already had about that axis
-survives.
-
-The raycast itself lives on `WorldViewport` as an imperative handle
-(`WorldViewportHandle.raycastDown`) — the one thing the World surface needs
-from the viewport that is a query rather than a prop, answered synchronously
-against the existing BVH in response to a toolbar click. `WorldSurface` casts
-down from each selected VOB's own position, in flat-index order, and drops any
-VOB whose ray missed rather than refusing the whole batch — a VOB over the
-sky or off the edge of the mesh is left where it was, and the rest still land.
-
-Confirmed not reopened: a *typed* coordinate does not snap (a typed number is
-an explicit destination).
 
 ### 16.6 Every remaining catalogue bound rests on documentation, and one was wrong
 
@@ -3692,51 +3640,6 @@ proves self-consistency and nothing about the engine. A real ASCII fidelity
 result stays a developer-local `--root` run unless a small ZenGin-authored ASCII
 world is checked in.
 
-
-### 16.10 `resavedSize` was fragile at a day or month boundary, not a second one — closed
-
-Found while making the ASCII stamp comparisons robust, and left alone
-deliberately. Patch `0018` formats the header stamp `"%d.%d.%d %02d:%02d:%02d"`
-— hour, minute and second are zero-padded, **day and month are not** — so the
-header's *length* changes when the day crosses 9→10 (or the month does), and the
-re-save is then a different size from the original. That broke
-`assert.strictEqual(ascii.resavedSize, ascii.size)`
-(`test/roundtrip.test.js:165`) and `row.wholeFileIdentical` with it; reproduced
-by rewriting the fixture's stamp shorter before the re-save, `sizes 5064 5068`.
-
-**Decided 2026-08-28: the stamp-stripped size, in the existing field.**
-`resavedSize` keeps being one number and starts meaning "the re-save's length
-with the header stamp's variable part excluded", so
-`assert.strictEqual(ascii.resavedSize, ascii.size)` keeps working as written
-and the day/month boundary stops being able to fail it. `size` is stripped the
-same way or the comparison is meaningless. No second field: a report that
-carries both a raw and a stripped size makes every consumer choose, and the raw
-one answers no question anybody asks — the harness is measuring fidelity, and a
-timestamp is the one part of the file that is *supposed* to differ.
-
-**Test it at the boundary, not on the day you write it.** The reproduction is
-already known — rewrite the fixture's stamp shorter before the re-save
-(`sizes 5064 5068`) — so the test does not need a real 9→10 boundary and must
-not wait for one.
-
-**Landed 2026-08-28.** `zen-roundtrip`'s `strippedSize(buf)` is
-`withoutHeaderStamps(buf).length`, and it is what `size` and `resavedSize` both
-report — including the crashed row's `size`, which used to be a raw
-`fs.statSync`, so the field has one meaning across every row rather than two.
-`withoutHeaderStamps` was already there and already stamp-length-insensitive
-(it rewrites the values to a fixed form, in *every* header, so the world's
-nested `MeshAndBsp` archive is covered too); nothing new had to learn the
-header's shape. Covered by *"the reported sizes exclude the header stamp, so
-its length cannot break them"* in `zenkit-node/test/roundtrip.test.js`, which
-rewrites the fixture's stamp to `date 1.1.1 0:0:0` — shorter than any the
-writer can emit on any day — and asserts the equality holds; it fails
-`4837 !== 4825` without the strip.
-
-Untouched deliberately: `wholeFileIdentical` stays `original.equals(resaved)`.
-It is already false for any pair written a second apart, so the day boundary
-is not what breaks it, and making it stamp-insensitive is a different question
-about what a whole-file claim should mean — `deterministic` and
-`byteDiff` are the fields that already answer it stamp-insensitively.
 
 ### 16.11 A malformed world still crashes the reader — the hang was the small half
 

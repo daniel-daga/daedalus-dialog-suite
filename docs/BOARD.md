@@ -38,7 +38,10 @@ rather than a silent drop, and flushing it would be the drop. The budget is on t
 rules above them do not grow and the cards do. Not a style preference: this file
 is read at the start of every session, and a board nobody re-reads is a handover
 again. The fix is never to compress a card's prose — it is to move that prose to
-its home and leave the pointer.
+its home and leave the pointer. The budget is checked, not trusted:
+`npm run board:check` (root, and CI) fails this file over 80 card lines, and
+fails the plan while a §16 heading still ends in *closed* or *landed* — a
+closed card takes its subsection with it there too.
 
 **Done is emptied whenever it has served its purpose, not only at a phase
 boundary.** It exists so one session sees what the last one landed; `git log` is
@@ -94,29 +97,18 @@ was true for so long nobody re-reads it.
   not this one. The release-gate gaps that used to be named here are **all
   closed** — the addon is asserted present and unpacked, the packaged app now
   opens a world in CI, and a real-Electron spec now watches the World surface
-  draw (§16.1, Done). What a dispatch would still ship unproven is now narrow
+  draw (`world-render.spec.ts`). What a dispatch would still ship unproven is now narrow
   and is in Next: the subtree delete and the waypoint renumber have loaded in an
   engine but have never been *looked at* in a frame where they could be seen.
-- **This machine is fully built; every other machine and CI must rebuild.**
-  `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
-  and the editor's `dist/` all changed on 2026-08-28, and the addon again with
-  I5's seven constructions, the bed's `setVobClassProp` case and `getPortals`, and
-  again on 2026-08-29 for the waypoint names' windows-1252 arguments and for the
-  binding-hardening refusals (`ParseIndexPath`, `decodeTexture`,
-  `extractWorldMesh`) plus the `corrupt-mesh` fixture variant their tests author,
-  and once more for §16.21's eight enum writes. The recipe
-  and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
-  `build`, `zen-world` before the editor typechecks, the full `build` for
-  `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
-  addon"*. Do not repeat them here.
-  **Why it matters that a stale `.node` is silent:** the editor's Jest suites
-  fake the worker, so they stay green against a binary with neither
-  `getVobProps` nor `setVobClassProp` while the running app has no class
-  properties at all — and, since §16.17 V1 and V2, against one whose `setVobProp`
-  refuses `presetName`, `visualCamAlign`, `bias`, `dynamicShadows` and the seven
-  decal keys, and whose `getVobProps` answers no `dynamicShadows` at all, and
-  since §16.21 against one that refuses all eight enum keys the grid now draws
-  as dropdowns.
+- **This machine is fully built; every other machine and CI must rebuild** —
+  the addon has changed in nearly every recent session, and `git log` says what
+  and when. The recipe and every trap in it — `build-zenkit.js` before
+  `node-gyp rebuild`, never `build`, `zen-world` before the editor typechecks,
+  the full `build` for `verify-world-edit.js` — are in
+  `environment-hazards.md`, *"Building the native addon"*, along with why a
+  stale `.node` is **silent**: the editor's Jest suites fake the worker, so
+  every suite stays green against a binary missing whatever the ops have
+  gained since it was built. Do not repeat any of it here.
 - `daedalus-dialog-editor/dist/` holds a packaged app (`win-unpacked`, the
   installer) that is **no longer fresh** — it predates the waypoint delete, and
   every session that only compiles leaves it further behind. `.gitignore`d, and
@@ -220,7 +212,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty)*
+- **The board's two flush rules are enforced, not trusted** — `tools/check-board.js`
+  (`npm run board:check`, and the `zen-world-tests` CI job) fails the card budget
+  and any §16 heading still marked closed/landed; §16.1, §16.5 and §16.10 flushed
+  to make it green, forward facts routed (§14.1 1.6, CLAUDE.md CI notes,
+  `environment-hazards.md`).
 
 *(flushed 2026-08-29, twice. Six rounds' twenty-six cards went first; then the
 five of round 7-9 — portal pairing, waypoint occupancy, W4, the spawn-index

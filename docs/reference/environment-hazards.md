@@ -53,6 +53,11 @@ doc, not here. This file is only for the ground the code stands on.
 - **The renderer bundle is what `verify-world-edit.js` drives.** `build:main`
   alone leaves it stale, and the symptom is an edit refused by a validator that
   the renderer is a version behind. Run the full `build`.
+- **A stale editor addon never fails a test.** The editor's Jest suites fake
+  the zenkit worker, so every suite stays green against a `.node` missing
+  whatever the ops have gained since it was built; the only place a stale
+  addon shows is the running app — a property absent from the grid, an edit
+  refused. Rebuild before trusting anything observed in the app.
 - **`daedalus-parser`'s own native binding goes stale the same way, silently.**
   `npm test`'s `npm run build` step is `tree-sitter generate` — it regenerates
   `src/parser.c` but never recompiles `bindings/node`'s `.node` file, so a

@@ -29,6 +29,9 @@ jobs:
           node-version: '20'
           cache: pnpm
 
+      - name: Board and plan hygiene
+        run: node tools/check-board.js
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
