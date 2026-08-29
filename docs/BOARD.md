@@ -164,7 +164,15 @@ pointer is a finding id in the file the routing table names.
   no `.zen` left on this machine. Needs the re-extract, so it needs a person.
   §16.22 q3, `environment-hazards.md`
 
-**Phase 1c — W4** (§16.23)
+**Level editor — two defects with their diagnosis already written**
+
+- **The six waynet mutators never mark the handle mutated**, so `container` is
+  a lie: `zenkit-node/lib/index.js` wraps only the VOB ops with `markMutated`.
+  Any run. `world-editor-review-2026-08-29.md`, *Conventions and cleanup* 1
+- **The spawn index loses 1,178 of 4,087 spawn calls**, so the world's spawn
+  overlay under-draws and the duplicate rule cannot see a chapter-block
+  relocation. `callSites` keeps only a body's top-level calls
+  (`linking-visitor.ts`, `processFunctionCall`). Any run. §16.19
 
 
 **Phase 1b-2 — VOB editing**

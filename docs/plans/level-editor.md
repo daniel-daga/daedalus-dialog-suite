@@ -5277,9 +5277,9 @@ difference between no project open and no spawn here.
   different extraction that nothing does.
 - **Occupancy, gap and overlap checks are world-locus findings** and used to hit
   the wall §16.8 and §16.18 stood behind. The wall is down on the type side —
-  §16.20 slice 1 landed `Problem.locus` — but the panel still only navigates a
-  script locus (slice 2), so these stay uncarded and want a rule nobody has
-  specified either way.
+  §16.20 slices 1 and 2 both landed, so the panel navigates a world locus too.
+  What is left is not a wall but a specification: these stay uncarded because
+  nobody has said what the rule should be, either way.
 - **W4, script→world go-to-definition, was called large at §16.8** on the
   premise that nothing displayed a script-side waypoint name to click. That
   expired — `InsertNpcActionRenderer` displays one and §16.20 slice 2 built the
