@@ -5162,6 +5162,21 @@ other entry there acts on `self` and would index a mover as a spawn. What it
 still cannot tell apart is an instance name from a `var` holding one — that is a
 symbol question, and the main process holds no semantic model of the project.
 
+**The index sees 71% of the spawn calls retail writes, measured 2026-08-29 by
+q4's script and not known when slices 1–4 landed.** `DialogFunction.callSites`
+carries only a function body's **top-level** calls, so a `Wld_InsertNpc` inside
+an `if` body is not a call site at all and never reaches `extractSpawnSites`:
+2,909 of the corpus's 4,087 spawn calls survive, and the 1,178 lost are whole
+files, not a scatter — `B_Enter_NewWorld.d` (400 calls), `B_Enter_OldWorld.d`
+(302), `B_Enter_AddonWorld.d` (137) and every `EVT_*.d` yield **zero** sites,
+because a chapter-entry function is one `if` after another. Reproduced at one
+line: `func void T() { Wld_InsertNpc(A,"WP1"); if (X == 1) { Wld_InsertNpc(B,
+"WP2"); }; };` indexes A and not B. This qualifies all four slices — the
+duplicate rule cannot see a relocation written in a chapter block, the panel
+under-reports who spawns at a point, and the overlay under-draws — and it is a
+parser-side fact (`linking-visitor.ts`, `processFunctionCall`), not an
+`extractSpawnSites` one. Nobody owns it; it is written here rather than carded.
+
 **Slice 2 — the duplicate-spawn rule.** §8 names "duplicate NPC IDs" as
 cross-validation and nothing implements it. Over slice 1's index this is a
 script-locus finding, so it has a `filePath` and fits the panel's navigation
@@ -5565,6 +5580,50 @@ predicted.
 **74** sectors, not 154. 154 is its `P:` material count, copied one column
 across on 2026-08-28. Nothing was built on it — `checkPortalMaterials` reads the
 list, never its length.
+
+**q4 answered, 2026-08-29: there is no threshold, because the distribution has
+a cliff and not a tail — and the check dies on it.**
+`check-spawn-occupancy.js` in `daedalus-dialog-editor/scripts/` runs the
+editor's own index pass over a script tree (`extractFileMetadataFromSource` per
+file, then `extractSpawnSites`) and counts two numbers per spawn point: how many
+sites name it, and how many *distinct* instances those sites carry. NPCs are
+told from items by `ProjectService`'s own test — a prototype chain reaching
+`C_NPC` — because `SpawnSite` keeps no class and both externals feed it. Run
+over `mdk/Content`, 1,725 `.d` files: 2,909 spawn sites on 1,618 points, of
+which **2,653 NPC sites on 1,375 points**.
+
+| distinct NPCs on one point | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 9 | 12 | 21 | 22 | 25 | 49 | 67 | 79 | 173 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| points | 1174 | 157 | 20 | 6 | 4 | 3 | 1 | 2 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+
+**1,357 of 1,375 points hold four NPCs or fewer, and the other 18 are the
+game's own design.** Everything from 5 up is a named group: `ADW_ENTRANCE` and
+`FARM2` at 9, `NW_FARM1_OUT_01` at 7, `MAYA` and `REICH` at 6, mine and bandit
+camps at 5 — and above them the mass-relocation points, `NW_TROLLAREA_RITUALPATH_01`
+at 12, `STRAND` at 21, `ADDON_GOLDMINE` at 22, `NW_MONASTERY_ENTRY_01` at 25,
+`BANDIT` at 49, `BIGFARM` at 67, `OC1` at 79 and **`NW_CITY_ENTRANCE_01` at
+173**. So a threshold anywhere between 5 and 173 flags only points retail put
+there on purpose, and there is no gap in between to put it in. That is the
+outcome §16.22 allows: **the occupancy check is not writable from a count**, and
+this run cards nothing.
+
+**A second number that would have been the wrong one.** Sites per point is not
+occupancy: 840 points carry one site but 1,174 carry one distinct instance, so
+**334 points get the same NPC written more than once** — the chapter-re-entry
+pattern §16.19 slice 2 met as 598 site pairs. Only the distinct-instance column
+could ever have been a crowd, and it is the one tabled above.
+
+**Both numbers are floors, not counts, and that is the more useful finding.**
+The index misses every spawn nested in an `if` body — 1,178 of the corpus's
+4,087 spawn calls, whole chapter-entry files at a time. The script reports its
+own coverage for exactly that reason. The measurement is recorded at §16.19,
+where the index it qualifies is described.
+
+**The corpus is `mdk/Content`, which is not retail-equivalent** — it carries an
+extra `BAU_902_Gunnar_2.d` and is missing at least one dialog
+(`environment-hazards.md`). Its 3,722 literal `Wld_InsertNpc` calls match the
+number §16.8 and §16.19 measured, so it is the same corpus those used; it is
+not the shipped `.DAT`.
 
 ### 16.23 W4 gets its affordance (§16.8, decided 2026-08-29)
 

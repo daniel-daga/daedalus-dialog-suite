@@ -163,8 +163,6 @@ pointer is a finding id in the file the routing table names.
   the planarity card: it rides `getPortals` over the retail worlds and there is
   no `.zen` left on this machine. Needs the re-extract, so it needs a person.
   §16.22 q3, `environment-hazards.md`
-- **Waypoint occupancy is unmeasured** — how many NPCs retail spawns on one
-  waypoint, over the spawn index. Any run. §16.22 q4
 
 **Phase 1c — W4** (§16.23)
 
@@ -224,6 +222,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Waypoint occupancy is measured, and it kills its own check** — 1,357 of
+  retail's 1,375 NPC spawn points hold 4 NPCs or fewer and the other 18 are
+  design (`NW_CITY_ENTRANCE_01` holds 173), so no count is a threshold and
+  nothing is carded. It also found the index misses every spawn inside an `if`
+  body — 1,178 of 4,087 calls, recorded at §16.19. §16.22 q4. board-loop
 - **Portal pairing is measured** — retail is 100% paired: 572 `P:` names, 286
   pairs, zero unpaired, zero malformed, zero repeats. So the check is a warning
   and it is writable; filing that card is a person's call. §16.22 q1 has the
