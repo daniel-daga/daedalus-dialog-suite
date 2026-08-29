@@ -11,7 +11,8 @@
 
 import {
   AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, DECAL_FIELDS, baseFieldOf, classPropKeys,
-  decalFieldOf, decalSubKey, fieldOf, isAuthorableVobClass,
+  CLASS_ENUM_FIELDS, EnumValueDescriptor, decalFieldOf, decalSubKey, enumValuesOf, fieldOf,
+  isAuthorableVobClass,
 } from '../src/model';
 
 describe('the per-class field catalogue', () => {
@@ -447,5 +448,102 @@ describe('the decal fields, which live on the visual and not on the vob', () => 
     expect(baseFieldOf('decalDimension')).toBeNull();
     expect(fieldOf('zCVob', 'decalDimension')).toBeNull();
     expect(classPropKeys('zCVob')).toEqual([]);
+  });
+});
+
+describe('the enum sets (level-editor.md §16.21)', () => {
+  it('names an enum on every class that has one, and no field twice', () => {
+    // The set is per class and per key, so the two failures that reach a reader
+    // are a key catalogued twice — once as a scalar and once as an enum, which
+    // would give the grid two widgets for one archive member — and a class the
+    // grid never draws, whose set nothing can read.
+    expect(Object.keys(CLASS_ENUM_FIELDS).sort()).toEqual([
+      'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
+      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'zCMover', 'zCVobLight',
+      'zCVobSound', 'zCVobSoundDaytime',
+    ]);
+    for (const [className, fields] of Object.entries(CLASS_ENUM_FIELDS)) {
+      expect(Object.keys(CLASS_FIELDS)).toContain(className);
+      for (const key of Object.keys(fields)) {
+        expect(classPropKeys(className)).not.toContain(key);
+      }
+    }
+  });
+
+  it('reads each set out of ZenKit`s header, whole and in stored order', () => {
+    // The values are the enumerators of the C++ enum the archive member has,
+    // in declaration order, labelled with the enumerator`s own name — a set
+    // read rather than invented, which is the property the card exists for.
+    expect(enumValuesOf('zCVobLight', 'lightType')).toEqual([
+      { value: 0, label: 'POINT' }, { value: 1, label: 'SPOT' },
+      { value: 2, label: 'RESERVED0' }, { value: 3, label: 'RESERVED1' },
+    ]);
+    expect(enumValuesOf('zCVobLight', 'quality')).toEqual([
+      { value: 0, label: 'HIGH' }, { value: 1, label: 'MEDIUM' }, { value: 2, label: 'LOW' },
+    ]);
+    expect(enumValuesOf('zCVobSound', 'mode')).toEqual([
+      { value: 0, label: 'LOOP' }, { value: 1, label: 'ONCE' }, { value: 2, label: 'RANDOM' },
+    ]);
+    expect(enumValuesOf('zCVobSound', 'volumeType')).toEqual([
+      { value: 0, label: 'SPHERICAL' }, { value: 1, label: 'ELLIPSOIDAL' },
+    ]);
+    expect(enumValuesOf('zCMover', 'behavior')).toEqual([
+      { value: 0, label: 'TOGGLE' }, { value: 1, label: 'TRIGGER_CONTROL' },
+      { value: 2, label: 'OPEN_TIME' }, { value: 3, label: 'LOOP' },
+      { value: 4, label: 'SINGLE_KEYS' },
+    ]);
+    expect(enumValuesOf('oCMobDoor', 'soundMaterial')).toEqual([
+      { value: 0, label: 'WOOD' }, { value: 1, label: 'STONE' }, { value: 2, label: 'METAL' },
+      { value: 3, label: 'LEATHER' }, { value: 4, label: 'CLAY' }, { value: 5, label: 'GLASS' },
+    ]);
+  });
+
+  it('gives the daytime sound the base sound`s two enums, as the fields do', () => {
+    expect(enumValuesOf('zCVobSoundDaytime', 'mode')).toEqual(enumValuesOf('zCVobSound', 'mode'));
+    expect(enumValuesOf('zCVobSoundDaytime', 'volumeType'))
+      .toEqual(enumValuesOf('zCVobSound', 'volumeType'));
+  });
+
+  it('gives every movable-object class the same one enum', () => {
+    // `soundMaterial` is `VMovableObject`s, so every `oCMob*` inherits it — the
+    // same shape `OC_MOB_FIELDS` has, and an editor that offered it on the door
+    // and not the chest would be describing the hierarchy wrongly.
+    for (const className of ['oCMOB', 'oCMobInter', 'oCMobBed', 'oCMobLadder',
+      'oCMobSwitch', 'oCMobWheel', 'oCMobFire', 'oCMobContainer', 'oCMobDoor']) {
+      expect(enumValuesOf(className, 'soundMaterial')).toEqual(enumValuesOf('oCMOB', 'soundMaterial'));
+    }
+  });
+
+  it('holds out the two mover enums a save would drop', () => {
+    // `VMover::save` writes `posLerpType` and `speedType` only when the mover
+    // has keyframes, which this catalogue cannot author — so on a mover that
+    // animates from its visual, a write of either is dropped on save and reads
+    // to a user as the editor having done nothing. The same reason `speed` is
+    // not a field, and `lerpMode` is also the field the retail sweep found
+    // outside its own set (120 three times, 132198264 once).
+    expect(enumValuesOf('zCMover', 'lerpMode')).toBeNull();
+    expect(enumValuesOf('zCMover', 'speedMode')).toBeNull();
+  });
+
+  it('answers null for a key that is not an enum, and for a prototype member', () => {
+    expect(enumValuesOf('zCVobLight', 'range')).toBeNull();
+    expect(enumValuesOf('oCItem', 'instance')).toBeNull();
+    expect(enumValuesOf('zCVob', 'mode')).toBeNull();
+    expect(enumValuesOf('toString', 'mode')).toBeNull();
+    expect(enumValuesOf('zCVobSound', 'toString')).toBeNull();
+  });
+
+  it('gives each set unique values and unique labels', () => {
+    // A repeated value makes two options write the same number; a repeated
+    // label makes them indistinguishable in the list.
+    const table: Readonly<Record<string, Readonly<Record<string, readonly EnumValueDescriptor[]>>>>
+      = CLASS_ENUM_FIELDS;
+    for (const fields of Object.values(table)) {
+      for (const values of Object.values(fields)) {
+        expect(new Set(values.map((v) => v.value)).size).toBe(values.length);
+        expect(new Set(values.map((v) => v.label)).size).toBe(values.length);
+        expect(values.every((v) => Number.isInteger(v.value) && v.value >= 0)).toBe(true);
+      }
+    }
   });
 });

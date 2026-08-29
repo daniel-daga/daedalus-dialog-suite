@@ -157,11 +157,9 @@ pointer is a finding id in the file the routing table names.
 
 **Phase 1b-2 — enum properties** (§7 decision, §16.21)
 
-- **The enum sets are not written down** — which fields on which classes, read
-  out of ZenKit's headers; a wrong set marks a legal retail value unknown, which
-  is worse than no set. Any run. §16.21
 - **An enum field is free text** — the combobox that offers without coercing,
-  once the sets exist. Any run. §16.21
+  now that the sets exist. Carries the binding case and the IPC branch with it,
+  since `SetVobClassProp` refuses these keys today. Any run. §16.21
 
 **Phase 1b-2 — VOB editing**
 
@@ -214,6 +212,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The enum sets are written down** — `CLASS_ENUM_FIELDS`/`enumValuesOf`, eight
+  fields over thirteen classes; a retail sweep found every value inside its set,
+  and the two mover enums a save drops are held out. §16.21
 - **World findings navigate** — the panel requests a focus, `WorldSurface`
   consumes it once, `framePoint` frames a waypoint. §16.20 slice 2
 - **The locus union landed** — `Problem.locus` is script-or-world, the eight

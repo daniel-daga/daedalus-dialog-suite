@@ -635,6 +635,156 @@ export function decalSubKey(key: string): string {
 }
 
 /**
+ * One option of an enum field: the number the archive stores, and the name
+ * ZenKit's own enumerator carries.
+ *
+ * The label is the enumerator verbatim (`SLOW_START_END`, not "Slow start and
+ * end") because the card this table answers is "read out of ZenKit's headers
+ * rather than guessed": a prose label is a second, unverifiable claim about what
+ * the value means, and the header is the only thing here that can be checked.
+ */
+export interface EnumValueDescriptor {
+  value: number;
+  label: string;
+}
+
+/** `zenkit::SoundMode` and `zenkit::SoundTriggerVolumeType`, shared by
+ *  `zCVobSound` and the daytime sound that derives from it. */
+const SOUND_ENUMS = {
+  mode: [
+    { value: 0, label: 'LOOP' },
+    { value: 1, label: 'ONCE' },
+    { value: 2, label: 'RANDOM' },
+  ],
+  volumeType: [
+    { value: 0, label: 'SPHERICAL' },
+    { value: 1, label: 'ELLIPSOIDAL' },
+  ],
+} as const satisfies Readonly<Record<string, readonly EnumValueDescriptor[]>>;
+
+/** `zenkit::SoundMaterialType` — declared on `VMovableObject`, so every
+ *  `oCMob*` class carries it, the same way they share `OC_MOB_FIELDS`. */
+const MOVABLE_OBJECT_ENUMS = {
+  soundMaterial: [
+    { value: 0, label: 'WOOD' },
+    { value: 1, label: 'STONE' },
+    { value: 2, label: 'METAL' },
+    { value: 3, label: 'LEATHER' },
+    { value: 4, label: 'CLAY' },
+    { value: 5, label: 'GLASS' },
+  ],
+} as const satisfies Readonly<Record<string, readonly EnumValueDescriptor[]>>;
+
+/**
+ * The enum fields, per class, and the values each one has
+ * (level-editor.md §16.21).
+ *
+ * **A fourth table, and deliberately not a `kind` on the third.** The rule at
+ * the top of this file kept enums out of `CLASS_FIELDS` for a real reason —
+ * retail carries values outside the documented sets, and a dropdown that snapped
+ * one to the nearest legal value would corrupt a world by the act of opening it.
+ * §16.21 resolves that by separating *offering* from *coercing*: a field offers
+ * the set and writes a value when one is picked, and a value not in the set is
+ * kept exactly as read and marked unknown. That is why the set lives beside the
+ * field catalogue rather than in it — a reader that only knows how to write a
+ * bounded scalar goes on seeing no enum at all, and the one that can offer looks
+ * here.
+ *
+ * The sets are the enumerators of `zenkit::LightType`, `LightQuality`,
+ * `SoundMode`, `SoundTriggerVolumeType`, `MoverBehavior` and
+ * `SoundMaterialType`, in declaration order, minus each enum's deprecated
+ * lower-case aliases (which are the same values under their old names).
+ *
+ * **Swept over retail NewWorld/OldWorld/AddonWorld, 2026-08-29** — 41,393 VOBs,
+ * every stored value of every field below:
+ *
+ * | field | values held |
+ * |---|---|
+ * | `zCVobLight.lightType` | 0 (4,649) — retail places no spotlight at all |
+ * | `zCVobLight.quality` | 0 (198), 1 (586), 2 (3,865) |
+ * | `zCVobSound.mode` | 0 (1,009), 1 (33), 2 (111) |
+ * | `zCVobSound.volumeType` | 0 (1,151), 1 (2) |
+ * | `zCVobSoundDaytime.mode` | 0 (68), 2 (16) |
+ * | `zCVobSoundDaytime.volumeType` | 0 (82), 1 (2) |
+ * | `zCMover.behavior` | 0 (126), 1 (1), 2 (2), 3 (21) |
+ * | `oCMob*.soundMaterial` | 0 (1,535), 1 (8), 2 (5) — all three on `oCMobInter` |
+ *
+ * Every one is inside its set, so nothing here marks a retail value unknown —
+ * which was the whole risk the card named. The one field that *is* outside its
+ * set is held out below.
+ */
+export const CLASS_ENUM_FIELDS = {
+  zCVobLight: {
+    lightType: [
+      { value: 0, label: 'POINT' },
+      { value: 1, label: 'SPOT' },
+      // `RESERVED0`/`RESERVED1` are ZenKit's names and the engine documents them
+      // as unused. They are in the set because leaving them out would make a
+      // world that holds one read as unknown, and no world in the corpus holds
+      // either — so the set costs nothing and the omission could cost a value.
+      { value: 2, label: 'RESERVED0' },
+      { value: 3, label: 'RESERVED1' },
+    ],
+    quality: [
+      { value: 0, label: 'HIGH' },
+      { value: 1, label: 'MEDIUM' },
+      { value: 2, label: 'LOW' },
+    ],
+  },
+  zCVobSound: SOUND_ENUMS,
+  // Inherited rather than restated, exactly as `ZC_VOB_SOUND_DAYTIME_FIELDS`
+  // spreads the base sound's fields: `zCVobSoundDaytime` derives from
+  // `zCVobSound` and its archive holds the same two members.
+  zCVobSoundDaytime: SOUND_ENUMS,
+  zCMover: {
+    // `behavior` is the one mover enum that is written unconditionally.
+    // `lerpMode` and `speedMode` are **not here**, for the reason `speed` is not
+    // a field: `VMover::save` writes all three only `if (!keyframes.empty())`,
+    // and this catalogue cannot author keyframes — so on a mover that animates
+    // from its visual, a write of either is dropped on save while the op reports
+    // success, which reads to a user as the editor having done nothing.
+    //
+    // `lerpMode` is also the field the objection at the top of this file was
+    // built on, and the sweep sharpened it: across the three worlds it holds 120
+    // three times and 132198264 once, against a set of {0, 1}. §16.3 knew of the
+    // 120s; the 132198264 is new, and it is a whole `MoverLerpType` word of
+    // garbage that only "keep what was read" survives.
+    behavior: [
+      { value: 0, label: 'TOGGLE' },
+      { value: 1, label: 'TRIGGER_CONTROL' },
+      { value: 2, label: 'OPEN_TIME' },
+      { value: 3, label: 'LOOP' },
+      { value: 4, label: 'SINGLE_KEYS' },
+    ],
+  },
+  oCMOB: MOVABLE_OBJECT_ENUMS,
+  oCMobInter: MOVABLE_OBJECT_ENUMS,
+  oCMobBed: MOVABLE_OBJECT_ENUMS,
+  oCMobLadder: MOVABLE_OBJECT_ENUMS,
+  oCMobSwitch: MOVABLE_OBJECT_ENUMS,
+  oCMobWheel: MOVABLE_OBJECT_ENUMS,
+  oCMobFire: MOVABLE_OBJECT_ENUMS,
+  oCMobContainer: MOVABLE_OBJECT_ENUMS,
+  oCMobDoor: MOVABLE_OBJECT_ENUMS,
+} as const satisfies Record<string, Readonly<Record<string, readonly EnumValueDescriptor[]>>>;
+
+/**
+ * The values `key` may take on `className`, or null when that field is not an
+ * enum — the `fieldOf` of the fourth table.
+ *
+ * Both arguments arrive from a world, so both lookups are `hasOwnProperty`
+ * rather than an index plus `??`, for the reason `fieldsOf` is: a plain object
+ * literal answers `['toString']` with a function, and a grid handed one would
+ * try to draw a method as a list of options.
+ */
+export function enumValuesOf(className: string, key: string): readonly EnumValueDescriptor[] | null {
+  if (!Object.prototype.hasOwnProperty.call(CLASS_ENUM_FIELDS, className)) return null;
+  const fields: Readonly<Record<string, readonly EnumValueDescriptor[]>> =
+    CLASS_ENUM_FIELDS[className as keyof typeof CLASS_ENUM_FIELDS];
+  return Object.prototype.hasOwnProperty.call(fields, key) ? fields[key] : null;
+}
+
+/**
  * What retail expects of an `oCMob*` class's `focusName`, or null for a class
  * that has no expectation.
  *

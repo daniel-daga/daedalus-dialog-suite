@@ -5384,3 +5384,32 @@ holds to everywhere else.
 which classes are enums, and their values, read out of ZenKit's headers rather
 than guessed — a wrong set is worse than no set, because it marks a legal retail
 value as unknown. The field component follows.
+
+**The sets landed 2026-08-29** as `CLASS_ENUM_FIELDS` and `enumValuesOf` in
+`zen-world/src/model/vobClasses.ts` — a *fourth* table beside the class, base and
+decal ones, deliberately not a `kind` on the first, so a reader that only knows
+how to write a bounded scalar goes on seeing no enum at all. Eight fields over
+thirteen classes: `zCVobLight.lightType`/`.quality`, `zCVobSound(.Daytime)`'s
+`mode`/`volumeType`, `zCMover.behavior`, and `soundMaterial` on all nine
+`oCMob*`. Labels are ZenKit's enumerators verbatim (`SLOW_START_END`), because a
+prose label is a second claim the header cannot check.
+
+Two things the sweep that backs them settled — 41,393 VOBs over retail
+NewWorld/OldWorld/AddonWorld, every stored value of every field:
+
+- **Every value of every set above is inside its set.** The risk the card named
+  — a set that marks a legal retail value unknown — is not realised by any of
+  the eight, and `zCVobLight.lightType` is 0 on all 4,649 lights (retail places
+  no spotlight).
+- **`zCMover.lerpMode` and `.speedMode` are held out**, and `lerpMode` is why
+  the objection existed: against a set of {0, 1} it holds 120 three times and
+  **132198264 once** — a whole word of garbage, which only "keep exactly what
+  was read" survives. §16.3 knew of the 120s; the second value is new. But the
+  reason they are out is the *other* one: `VMover::save` writes `posLerpType`
+  and `speedType` only `if (!keyframes.empty())`, and the catalogue cannot
+  author keyframes — the same silent-drop that keeps `speed` out.
+
+What the field component still owes: nothing here decides how an out-of-set
+value is *shown*, only that it is kept. `SetVobClassProp` refuses these keys
+today — they are in no `CLASS_FIELDS` entry — so the component's card carries
+the binding case and the IPC branch with it.
