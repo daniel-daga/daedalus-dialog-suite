@@ -16,6 +16,11 @@ public:
 // Decode raw windows-1252 bytes (as stored by ZenKit) into UTF-16.
 std::u16string Windows1252ToUtf16(std::string_view input);
 
+// Decode raw windows-1252 bytes into UTF-8. For putting a stored name into an
+// error message: N-API reads a std::string as UTF-8, so raw bytes reach the
+// caller as mojibake.
+std::string Windows1252ToUtf8(std::string_view input);
+
 // Encode UTF-16 into windows-1252 bytes. Throws EncodingError on unmappable
 // characters (including any code point outside the BMP, which arrives as a
 // surrogate pair).

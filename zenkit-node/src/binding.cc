@@ -542,6 +542,28 @@ Napi::Value SetVobPosition(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// Every string ZenKit stores is windows-1252, and every name that addresses one
+// has to be encoded the same way to compare equal to it (level-editor.md §4).
+// The positional counterpart to RequiredCp1252String below, which does this for
+// a key of an options object.
+std::string RequiredCp1252Arg(Napi::Env env, Napi::Value value, char const* label) {
+  if (!value.IsString()) {
+    throw Napi::TypeError::New(env, std::string {label} + " must be a string");
+  }
+  try {
+    return zenkit_node::Utf16ToWindows1252(value.As<Napi::String>().Utf16Value());
+  } catch (zenkit_node::EncodingError const& e) {
+    throw Napi::Error::New(env, std::string {label} + ": " + e.what());
+  }
+}
+
+// A stored name on its way into an error message. The bytes are windows-1252
+// and N-API reads a std::string as UTF-8, so an undecoded name reaches the user
+// as mojibake in exactly the messages that exist to name the waypoint they meant.
+std::string Named(std::string const& stored) {
+  return zenkit_node::Windows1252ToUtf8(stored);
+}
+
 // setWaypointPosition(handle, waypoint, name, [x, y, z]) — moves one waypoint.
 //
 // `waypoint` is an index into the same filtered, stored-order point list
@@ -563,10 +585,7 @@ Napi::Value SetWaypointPosition(Napi::CallbackInfo const& info) {
     throw Napi::TypeError::New(env, "waypoint must be a number");
   }
   auto const requested = info[1].As<Napi::Number>().Int64Value();
-  if (!info[2].IsString()) {
-    throw Napi::TypeError::New(env, "name must be a string");
-  }
-  auto const name = info[2].As<Napi::String>().Utf8Value();
+  auto const name = RequiredCp1252Arg(env, info[2], "name");
   auto position = Vec3FromValue(env, info[3], "position");
 
   auto points = CollectWaypoints(*handle);
@@ -576,8 +595,9 @@ Napi::Value SetWaypointPosition(Napi::CallbackInfo const& info) {
 
   auto const& point = points[static_cast<std::size_t>(requested)];
   if (point->name != name) {
-    throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is " + point->name
-                                  + ", not " + name + " — the waynet has changed under this op");
+    throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
+                                  + Named(point->name) + ", not " + Named(name)
+                                  + " — the waynet has changed under this op");
   }
 
   point->position = position;
@@ -606,11 +626,8 @@ Napi::Value SetWaypointName(Napi::CallbackInfo const& info) {
     throw Napi::TypeError::New(env, "waypoint must be a number");
   }
   auto const requested = info[1].As<Napi::Number>().Int64Value();
-  if (!info[2].IsString() || !info[3].IsString()) {
-    throw Napi::TypeError::New(env, "name and newName must be strings");
-  }
-  auto const name = info[2].As<Napi::String>().Utf8Value();
-  auto const renamed = info[3].As<Napi::String>().Utf8Value();
+  auto const name = RequiredCp1252Arg(env, info[2], "name");
+  auto const renamed = RequiredCp1252Arg(env, info[3], "newName");
 
   auto points = CollectWaypoints(*handle);
   if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
@@ -620,7 +637,7 @@ Napi::Value SetWaypointName(Napi::CallbackInfo const& info) {
   auto const at = static_cast<std::size_t>(requested);
   if (points[at]->name != name) {
     throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
-                                  + points[at]->name + ", not " + name
+                                  + Named(points[at]->name) + ", not " + Named(name)
                                   + " — the waynet has changed under this op");
   }
   if (renamed.empty()) {
@@ -629,7 +646,7 @@ Napi::Value SetWaypointName(Napi::CallbackInfo const& info) {
   for (std::size_t other = 0; other < points.size(); ++other) {
     if (other != at && points[other]->name == renamed) {
       throw Napi::Error::New(
-          env, "waypoint " + std::to_string(other) + " is already named " + renamed);
+          env, "waypoint " + std::to_string(other) + " is already named " + Named(renamed));
     }
   }
 
@@ -665,10 +682,7 @@ Napi::Value SetWaypointName(Napi::CallbackInfo const& info) {
 Napi::Value AddWaypoint(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapHandle(env, info[0]);
-  if (!info[1].IsString()) {
-    throw Napi::TypeError::New(env, "name must be a string");
-  }
-  auto const name = info[1].As<Napi::String>().Utf8Value();
+  auto const name = RequiredCp1252Arg(env, info[1], "name");
   auto position = Vec3FromValue(env, info[2], "position");
 
   if (name.empty()) {
@@ -678,7 +692,7 @@ Napi::Value AddWaypoint(Napi::CallbackInfo const& info) {
   for (std::size_t other = 0; other < points.size(); ++other) {
     if (points[other]->name == name) {
       throw Napi::Error::New(
-          env, "waypoint " + std::to_string(other) + " is already named " + name);
+          env, "waypoint " + std::to_string(other) + " is already named " + Named(name));
     }
   }
 
@@ -740,10 +754,7 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
     throw Napi::TypeError::New(env, "waypoint must be a number");
   }
   auto const requested = info[1].As<Napi::Number>().Int64Value();
-  if (!info[2].IsString()) {
-    throw Napi::TypeError::New(env, "name must be a string");
-  }
-  auto const name = info[2].As<Napi::String>().Utf8Value();
+  auto const name = RequiredCp1252Arg(env, info[2], "name");
   if (!info[3].IsBoolean()) {
     throw Napi::TypeError::New(env, "barrier must be a boolean: true deletes an arbitrary "
                                     "waypoint with its edges, false undoes an append");
@@ -758,11 +769,11 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
   auto const at = static_cast<std::size_t>(requested);
   if (points[at]->name != name) {
     throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
-                                  + points[at]->name + ", not " + name
+                                  + Named(points[at]->name) + ", not " + Named(name)
                                   + " — the waynet has changed under this op");
   }
   if (!barrier && at + 1 != points.size()) {
-    throw Napi::Error::New(env, "only the last waypoint can be removed; " + name + " is "
+    throw Napi::Error::New(env, "only the last waypoint can be removed; " + Named(name) + " is "
                                   + std::to_string(requested) + " of "
                                   + std::to_string(points.size()));
   }
@@ -772,7 +783,7 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
   if (!barrier) {
     for (auto const& edge : edges) {
       if (edge.first.get() == target || edge.second.get() == target) {
-        throw Napi::Error::New(env, name + " is an edge endpoint and cannot be removed");
+        throw Napi::Error::New(env, Named(name) + " is an edge endpoint and cannot be removed");
       }
     }
   }
@@ -830,11 +841,8 @@ ResolveWaypointPair(Napi::Env env, WorldHandle& handle, Napi::CallbackInfo const
     if (!info[index_argument].IsNumber()) {
       throw Napi::TypeError::New(env, "waypoint must be a number");
     }
-    if (!info[index_argument + 1].IsString()) {
-      throw Napi::TypeError::New(env, "name must be a string");
-    }
     auto const requested = info[index_argument].As<Napi::Number>().Int64Value();
-    auto const name = info[index_argument + 1].As<Napi::String>().Utf8Value();
+    auto const name = RequiredCp1252Arg(env, info[index_argument + 1], "name");
 
     if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
       throw Napi::Error::New(env, "no waypoint at " + std::to_string(requested));
@@ -842,7 +850,7 @@ ResolveWaypointPair(Napi::Env env, WorldHandle& handle, Napi::CallbackInfo const
     auto const at = static_cast<std::size_t>(requested);
     if (points[at]->name != name) {
       throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
-                                    + points[at]->name + ", not " + name
+                                    + Named(points[at]->name) + ", not " + Named(name)
                                     + " — the waynet has changed under this op");
     }
     resolved[end] = points[at];
@@ -852,7 +860,7 @@ ResolveWaypointPair(Napi::Env env, WorldHandle& handle, Napi::CallbackInfo const
   // when they resolve to the same object, and an edge from a waypoint to itself
   // is a line of zero length the overlay cannot draw and the engine cannot walk.
   if (resolved[0].get() == resolved[1].get()) {
-    throw Napi::Error::New(env, resolved[0]->name + " cannot be joined to itself");
+    throw Napi::Error::New(env, Named(resolved[0]->name) + " cannot be joined to itself");
   }
   return {resolved[0], resolved[1]};
 }
@@ -1011,15 +1019,8 @@ Napi::Value SetVobRotation(Napi::CallbackInfo const& info) {
 }
 
 std::string RequiredCp1252String(Napi::Env env, Napi::Object opts, char const* key) {
-  Napi::Value const value = opts.Get(key);
-  if (!value.IsString()) {
-    throw Napi::TypeError::New(env, std::string {"opts."} + key + " must be a string");
-  }
-  try {
-    return zenkit_node::Utf16ToWindows1252(value.As<Napi::String>().Utf16Value());
-  } catch (zenkit_node::EncodingError const& e) {
-    throw Napi::Error::New(env, std::string {"opts."} + key + ": " + e.what());
-  }
+  std::string const label = std::string {"opts."} + key;
+  return RequiredCp1252Arg(env, opts.Get(key), label.c_str());
 }
 
 // setVobProp(handle, indexPath, props) — the scalar fields of `zCVob` itself:

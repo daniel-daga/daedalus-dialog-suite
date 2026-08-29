@@ -33,6 +33,27 @@ std::u16string Windows1252ToUtf16(std::string_view input) {
   return out;
 }
 
+std::string Windows1252ToUtf8(std::string_view input) {
+  std::string out;
+  out.reserve(input.size());
+  // Every windows-1252 byte decodes to one BMP code point below U+FFFF, so
+  // there are no surrogate pairs to reassemble here.
+  for (char16_t unit : Windows1252ToUtf16(input)) {
+    auto cp = static_cast<std::uint32_t>(unit);
+    if (cp < 0x80) {
+      out.push_back(static_cast<char>(cp));
+    } else if (cp < 0x800) {
+      out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+      out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+      out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+      out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+  }
+  return out;
+}
+
 std::string Utf16ToWindows1252(std::u16string_view input) {
   std::string out;
   out.reserve(input.size());

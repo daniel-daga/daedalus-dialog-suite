@@ -124,7 +124,19 @@ padded.
    `waynetMutation.test.js` asserts a null `container` after each of the six.
 
 2. **Waypoint names cross the boundary as UTF-8 while everything else is
-   windows-1252.** `src/binding.cc:569, 612-613, 671, 746, 837` all use
+   windows-1252.** — **FIXED 2026-08-29**: the five argument reads go through a
+   new `RequiredCp1252Arg` (the positional twin of `RequiredCp1252String`, which
+   now delegates to it), so a name argument is the same bytes as the name the
+   world holds. The messages that quote a stored name decode it back for
+   display — `Windows1252ToUtf8` in `encoding.cc`, new — because N-API reads a
+   `std::string` as UTF-8 and the raw bytes would reach the user as mojibake in
+   exactly the refusal that exists to name the waypoint they meant. Held by three
+   tests in `encoding.test.js`: *"a waypoint name getWaynet emits still addresses
+   its own waypoint"*, *"an authored waypoint name round-trips through the file
+   as windows-1252"* (which asserts the cp1252 bytes in the saved file and that
+   the duplicate refusal catches the collision after a reload) and *"a waypoint
+   name windows-1252 cannot represent is refused, not mangled"*.
+   `src/binding.cc:569, 612-613, 671, 746, 837` all use
    `Utf8Value()`, but `getWaynet` emits names via `Str()` →
    `Windows1252ToUtf16` (`normalize.cc:1419`) and every other write path uses
    `RequiredCp1252String`. For a waypoint stored as `WP_K\xF6NIG`: the name read

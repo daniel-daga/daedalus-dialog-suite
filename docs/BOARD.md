@@ -99,7 +99,8 @@ was true for so long nobody re-reads it.
 - **This machine is fully built; every other machine and CI must rebuild.**
   `vendor/ZenKit` (patches `0029`–`0048`, `src/fixture.cc`), the addon, `zen-world/dist`
   and the editor's `dist/` all changed on 2026-08-28, and the addon again with
-  I5's seven constructions, the bed's `setVobClassProp` case and `getPortals`. The recipe
+  I5's seven constructions, the bed's `setVobClassProp` case and `getPortals`, and
+  again on 2026-08-29 for the waypoint names' windows-1252 arguments. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
   `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
@@ -138,9 +139,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **Waypoint names cross the binding as UTF-8** — everything else there is
-  cp1252: refused ops, mojibake, and a duplicate check that misses collisions.
-  Any run. *binding* 2
 - **The waynet store's three defects** — an empty waynet reads as full
   knowledge, the payload survives into the next world, and the identity guard
   is blind to the flags column. Any run. *first pass* 2-4
@@ -208,6 +206,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 *(flushed 2026-08-29 — the two `ops/main` fixes before this one are in commits
 7298fe6 and f587b74 and marked FIXED at their pointer; `git log` is the record.)*
+
+- **Waypoint names cross the binding as windows-1252** — the five name
+  arguments go through `RequiredCp1252Arg`, and a message quoting a stored name
+  decodes it back. board-loop. *binding* 2, FIXED
 
 - **The waynet mutators mark the handle mutated** — the six waynet ops go
   through `markMutated` like the VOB ops, so a mutated handle's `container` is
