@@ -75,10 +75,9 @@ was true for so long nobody re-reads it.
 
 - `master` is where work lands and is **pushed to `origin/master`**;
   `feature/level-editor` was merged and is no longer where work happens.
-  `board-loop-3` was fast-forwarded into master on 2026-08-28 (35 commits) and
-  is **spent** — as `board-loop` was before it, and as `board-loop-4` now is:
-  `master` contains it. `board-loop-5` is the branch in use. A push is not a
-  release — see the merge note below.
+  Every `board-loop*` branch is now **spent** — `master` contains all five, and
+  work lands on `master` directly. It is ahead of `origin/master` and pushing is
+  a person's call. A push is not a release — see the merge note below.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
@@ -160,8 +159,10 @@ pointer is a finding id in the file the routing table names.
   landed, but **the MDK extraction is gone from this machine** and every
   `--world` script has lost its corpus. Needs a re-extract, so it needs a
   person. §16.22 q2, `environment-hazards.md`
-- **Portal orientation is unmeasured** — do normals point consistently with
-  respect to their two sectors? Any run. §16.22 q3
+- **Portal orientation is unmeasured** — blocked on the same missing corpus as
+  the planarity card: it rides `getPortals` over the retail worlds and there is
+  no `.zen` left on this machine. Needs the re-extract, so it needs a person.
+  §16.22 q3, `environment-hazards.md`
 - **Waypoint occupancy is unmeasured** — how many NPCs retail spawns on one
   waypoint, over the spawn index. Any run. §16.22 q4
 
