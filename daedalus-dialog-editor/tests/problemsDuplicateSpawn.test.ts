@@ -16,6 +16,12 @@ import { buildProjectView } from '../src/renderer/problems/domain/projectView';
 import { useProblemsStore } from '../src/renderer/store/problemsStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import type { SpawnSite } from '../src/shared/types';
+import type { Problem } from '../src/renderer/problems/domain/types';
+
+/** The file a script problem names; `undefined` for a world locus. */
+const filePathOf = (problem: Problem): string | undefined =>
+  (problem.locus.kind === 'script' ? problem.locus.filePath : undefined);
+
 
 const spawn = (
   instance: string,
@@ -40,12 +46,11 @@ describe('duplicateSpawnRule', () => {
 
     const problems = duplicateSpawnRule(view);
     expect(problems).toHaveLength(2);
-    expect(problems.map((problem) => problem.filePath)).toEqual(['Startup.d', 'DIA_Gaan.d']);
+    expect(problems.map(filePathOf)).toEqual(['Startup.d', 'DIA_Gaan.d']);
     expect(problems[0]).toMatchObject({
       rule: 'duplicate-spawn',
       severity: 'warning',
-      filePath: 'Startup.d',
-      functionName: 'STARTUP_NEWWORLD'
+      locus: { kind: 'script', filePath: 'Startup.d', functionName: 'STARTUP_NEWWORLD' }
     });
     expect(problems[0].message).toContain('BAU_961_GAAN');
     expect(problems[0].message).toContain('NW_FARM1_01');
@@ -153,6 +158,6 @@ describe('the Problems scan over the spawn index', () => {
 
     const found = useProblemsStore.getState().problems.filter((p) => p.rule === 'duplicate-spawn');
     expect(found).toHaveLength(2);
-    expect(found.map((p) => p.filePath).sort()).toEqual(['DIA_Gaan.d', 'Startup.d']);
+    expect(found.map(filePathOf).sort()).toEqual(['DIA_Gaan.d', 'Startup.d']);
   });
 });

@@ -1,7 +1,11 @@
 import { voiceIdRule } from '../src/renderer/problems/domain/rules/voiceId';
 import { buildProjectView } from '../src/renderer/problems/domain/projectView';
-import type { FileModel } from '../src/renderer/problems/domain/types';
+import type { FileModel, Problem } from '../src/renderer/problems/domain/types';
 import type { DialogAction, DialogFunction, SemanticModel } from '../src/shared/types';
+
+/** The file a script problem names; `undefined` for a world locus. */
+const filePathOf = (problem: Problem): string | undefined =>
+  (problem.locus.kind === 'script' ? problem.locus.filePath : undefined);
 
 const line = (id: string, extra: Partial<DialogAction> = {}): DialogAction => ({
   type: 'DialogLine',
@@ -55,7 +59,7 @@ describe('voiceIdRule', () => {
 
     expect(malformed).toHaveLength(0);
     expect(duplicates).toHaveLength(2);
-    expect(duplicates.map((p) => p.filePath).sort()).toEqual(['a.d', 'b.d']);
+    expect(duplicates.map(filePathOf).sort()).toEqual(['a.d', 'b.d']);
     expect(duplicates[0]).toMatchObject({
       rule: 'voice-id-duplicate',
       severity: 'warning'
@@ -86,8 +90,7 @@ describe('voiceIdRule', () => {
     expect(problems[0]).toMatchObject({
       rule: 'voice-id-malformed',
       severity: 'warning',
-      filePath: 'a.d',
-      functionName: 'DIA_A',
+      locus: { kind: 'script', filePath: 'a.d', functionName: 'DIA_A' },
       id: 'voice-id-malformed:a.d:DIA_A:DIA_ALRIK_HI'
     });
     expect(problems[0].message).toBe(
@@ -115,6 +118,6 @@ describe('voiceIdRule', () => {
     const duplicates = voiceIdRule(view).filter((p) => p.rule === 'voice-id-duplicate');
 
     expect(duplicates).toHaveLength(2);
-    expect(duplicates.map((p) => p.filePath).sort()).toEqual(['a.d', 'b.d']);
+    expect(duplicates.map(filePathOf).sort()).toEqual(['a.d', 'b.d']);
   });
 });

@@ -81,10 +81,10 @@ describe('runRules', () => {
 
     const voiceProblem = problems.find((p) => p.rule === 'voice-id-malformed');
     expect(voiceProblem).toBeDefined();
-    expect(voiceProblem?.functionName).toBe('DIA_Ghost_Info');
+    expect(voiceProblem?.locus).toMatchObject({ functionName: 'DIA_Ghost_Info' });
     // The malformed voice id lives in the dialog's info function, so the problem
     // is navigable straight to DIA_Ghost.
-    expect(voiceProblem?.dialogName).toBe('DIA_Ghost');
+    expect(voiceProblem?.locus).toMatchObject({ kind: 'script', dialogName: 'DIA_Ghost' });
   });
 
   it('returns no problems for a clean project', () => {

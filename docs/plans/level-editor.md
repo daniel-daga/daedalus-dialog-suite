@@ -3540,14 +3540,13 @@ changing a name: `SetWaypointEdge` removing an edge can promote an endpoint to a
 free point, and the free-point subset is the rule's other input, so
 `waynetLoaded` compares it alongside the names (review *first pass* 4).
 
-**The portal findings do not fit the panel, and are not being made to.** A
-malformed `P:OWCAVE01_` material is in a world mesh: there is no file, no dialog
-and no function, so making it a `Problem` means `filePath` becomes optional and
-a world locus is added — a change to five working rules and the panel's whole
-navigation model, paid now for a consumer that does not exist. **The open
-question is therefore where world findings surface**, and it stays open
-deliberately rather than being answered by widening a type that does not fit.
-See §16.18.
+**The portal findings did not fit the panel, and the panel was widened instead
+of the check being dropped.** A malformed `P:OWCAVE01_` material is in a world
+mesh: there is no file, no dialog and no function. That was left open here
+rather than paid for one consumer; §7's locus decision answered it once four
+checks were waiting, and §16.20 slice 1 landed the union on 2026-08-29 —
+`Problem.locus` is `{ kind: 'script'; filePath; … } | { kind: 'world'; … }` and
+every rule in this file emits `kind: 'script'`. See §16.18 and §16.20.
 
 **The dangling-waypoint rule landed 2026-08-29, and W1's lookup landed with
 it** — the two were one card because the rule is the only consumer the lookup
@@ -5241,12 +5240,11 @@ difference between no project open and no spawn here.
   `ProjectIndex.routines` is the set of `dailyRoutine` name strings off NPC
   instances and feeds autocomplete; the `TA_*` windows §8 asks for are a
   different extraction that nothing does.
-- **Occupancy, gap and overlap checks are world-locus findings** and hit the
-  same wall §16.8 and §16.18 already stand behind: `Problem.filePath` is
-  non-optional and the panel's navigation model is file/dialog/function. This is
-  now the fourth thing waiting on a designed surface for world-shaped findings.
-  **Prefer designing that surface over adding a fourth checker with no
-  consumer.**
+- **Occupancy, gap and overlap checks are world-locus findings** and used to hit
+  the wall §16.8 and §16.18 stood behind. The wall is down on the type side —
+  §16.20 slice 1 landed `Problem.locus` — but the panel still only navigates a
+  script locus (slice 2), so these stay uncarded and want a rule nobody has
+  specified either way.
 - **W4, script→world go-to-definition, is called large at §16.8** and stays
   that way: nothing in the editor currently displays a script-side waypoint name
   to click, so the card would be a UI affordance plus a lookup plus a camera
@@ -5273,7 +5271,12 @@ and argued that a fifth checker would only deepen the debt.
 
 **What lands, in order — each slice is a card.**
 
-1. **The locus union.** `Problem.filePath` becomes
+1. **The locus union — LANDED 2026-08-29.** `Problem.locus` is the union below;
+   the eight rule ids all emit `kind: 'script'`, `runRules` exports its
+   comparator (`compareProblems`) and orders a world locus after every script
+   problem of its severity, and `ProblemsPanel` returns early on a world locus
+   because it has no file to open — slice 2's branch replaces that early return.
+   Original text: `Problem.filePath` becomes
    `locus: { kind: 'script'; filePath; npc?; dialogName?; functionName? }
    | { kind: 'world'; waypoint?; vob?; polygon? }`. The eight existing rule ids
    all emit `kind: 'script'` and their behaviour does not change; the panel

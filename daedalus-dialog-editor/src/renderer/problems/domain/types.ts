@@ -20,13 +20,12 @@ export type ProblemRuleId =
   | 'waypoint-not-in-world'
   | 'duplicate-spawn';
 
-export interface Problem {
-  /** Stable key for React lists and cross-scan dedupe. */
-  id: string;
-  rule: ProblemRuleId;
-  severity: ProblemSeverity;
-  /** Human-readable, self-contained description. */
-  message: string;
+/**
+ * A problem in the scripts: a declaration in a file, which is what the panel
+ * navigates to by opening the file and selecting the symbol.
+ */
+export interface ScriptLocus {
+  kind: 'script';
   /** File that owns the offending declaration. */
   filePath: string;
   /** NPC the offending dialog belongs to, when applicable. */
@@ -35,6 +34,36 @@ export interface Problem {
   dialogName?: string;
   /** Function the problem points at, used for navigation. */
   functionName?: string;
+}
+
+/**
+ * A problem in the open world. It has no file, no dialog and no function —
+ * which is why `Problem` carries a union rather than a file path (§16.20).
+ * Every field is an address into the world that was open when the scan ran:
+ * names where the world has them, indices where it does not.
+ */
+export interface WorldLocus {
+  kind: 'world';
+  /** Name of the offending waynet point. */
+  waypoint?: string;
+  /** Index of the offending VOB in the world summary, as of the scan. */
+  vob?: number;
+  /** Index of the offending world-mesh polygon, as of the scan. */
+  polygon?: number;
+}
+
+/** Where a problem is. */
+export type ProblemLocus = ScriptLocus | WorldLocus;
+
+export interface Problem {
+  /** Stable key for React lists and cross-scan dedupe. */
+  id: string;
+  rule: ProblemRuleId;
+  severity: ProblemSeverity;
+  /** Human-readable, self-contained description. */
+  message: string;
+  /** Where the problem is, and what navigating to it means. */
+  locus: ProblemLocus;
 }
 
 /** One parsed file: its path and full semantic model. */

@@ -22,8 +22,7 @@ export const knowsInfoDanglingRule: LintRule = (view): Problem[] => {
           rule: 'knowsinfo-dangling',
           severity: 'error',
           message: `Function "${func.name}" checks Npc_KnowsInfo for "${dialogRef}", which is not a known dialog.`,
-          filePath: file.filePath,
-          functionName: func.name
+          locus: { kind: 'script', filePath: file.filePath, functionName: func.name }
         });
       }
     }

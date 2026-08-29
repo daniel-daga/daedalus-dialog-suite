@@ -114,8 +114,11 @@ describe('orphanedFunctionRule', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0].rule).toBe('orphaned-function');
     expect(problems[0].severity).toBe('warning');
-    expect(problems[0].functionName).toBe('Lonely_Fn');
-    expect(problems[0].filePath).toBe('dialogs.d');
+    expect(problems[0].locus).toEqual({
+      kind: 'script',
+      filePath: 'dialogs.d',
+      functionName: 'Lonely_Fn'
+    });
     expect(problems[0].message).toContain('Lonely_Fn');
     expect(problems[0].id).toBe('orphaned-function:dialogs.d:Lonely_Fn');
   });

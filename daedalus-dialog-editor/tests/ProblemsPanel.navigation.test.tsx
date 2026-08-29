@@ -32,8 +32,7 @@ const problem = (overrides: Partial<Problem> = {}): Problem => ({
   rule: 'waypoint-not-in-world',
   severity: 'warning',
   message: 'Waypoint OW_PATH_42 is not in the open world',
-  filePath: 'Story/Routines/Rtn.d',
-  functionName: 'Rtn_Start_Diego',
+  locus: { kind: 'script', filePath: 'Story/Routines/Rtn.d', functionName: 'Rtn_Start_Diego' },
   ...overrides
 });
 

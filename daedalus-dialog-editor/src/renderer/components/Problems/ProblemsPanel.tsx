@@ -50,10 +50,15 @@ const ProblemsPanel: React.FC = () => {
   }, [problems]);
 
   const handleSelect = async (problem: Problem): Promise<void> => {
-    const navigated = problem.dialogName
-      ? await navigateToDialog(problem.dialogName, problem.functionName)
-      : problem.functionName
-        ? await navigateToSymbol(problem.functionName)
+    // A world locus has no file to open. Slice 2 of §16.20 gives it its own
+    // branch; until then it is listed and clicking it does nothing.
+    const locus = problem.locus;
+    if (locus.kind !== 'script') return;
+
+    const navigated = locus.dialogName
+      ? await navigateToDialog(locus.dialogName, locus.functionName)
+      : locus.functionName
+        ? await navigateToSymbol(locus.functionName)
         : false;
     if (navigated) return;
 
@@ -62,10 +67,10 @@ const ProblemsPanel: React.FC = () => {
     // project index's whole-project pass, so a warning in a routines file
     // nobody opened resolves to nothing — and Problems is the whole main area,
     // so a click that goes nowhere also says nothing. Fall back to the one
-    // thing every problem carries: the file that owns the declaration.
-    await useEditorStore.getState().openFile(problem.filePath);
+    // thing every script problem carries: the file that owns the declaration.
+    await useEditorStore.getState().openFile(locus.filePath);
     const { setSelectedFunctionName, setActiveView } = useUISelectionStore.getState();
-    if (problem.functionName) setSelectedFunctionName(problem.functionName);
+    if (locus.functionName) setSelectedFunctionName(locus.functionName);
     setActiveView('dialog');
   };
 

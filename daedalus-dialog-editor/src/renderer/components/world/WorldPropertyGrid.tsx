@@ -267,8 +267,9 @@ const ClassField: React.FC<{
  * against the measured table in `zen-world`, and it names a value that class
  * actually uses rather than only reporting that something is wrong.
  *
- * Not a `Problem`: the Problems panel is built on a file, a dialog and a
- * function, and a VOB in a world has none of the three (§16.18).
+ * Not a `Problem`: `Problem.locus` admits a world VOB since §16.20 slice 1, but
+ * this warning is about the field under the cursor and is read where it is
+ * edited — nothing has asked for it in the panel.
  */
 const FocusNameWarning: React.FC<{ className: string; value: ClassPropValue }> = ({
   className, value,

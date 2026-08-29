@@ -65,8 +65,7 @@ export const duplicateSpawnRule: LintRule = (view): Problem[] => {
           `NPC "${instance}" is spawned at ${points.length} different points ` +
           `(${points.join(', ')}). This site spawns it at "${point}" — if more than ` +
           `one of them runs, the NPC exists more than once.`,
-        filePath: site.filePath,
-        functionName: site.functionName
+        locus: { kind: 'script', filePath: site.filePath, functionName: site.functionName }
       });
     }
   }

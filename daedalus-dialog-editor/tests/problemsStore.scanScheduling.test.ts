@@ -135,7 +135,11 @@ describe('problemsStore per-file facts cache', () => {
     useProblemsStore.getState().runScan();
     expect(extractSpy).toHaveBeenCalledTimes(2);
     expect(
-      useProblemsStore.getState().problems.some((p) => p.rule === 'npc-not-found' && p.dialogName === 'DIA_B')
+      useProblemsStore
+        .getState()
+        .problems.some(
+          (p) => p.rule === 'npc-not-found' && p.locus.kind === 'script' && p.locus.dialogName === 'DIA_B'
+        )
     ).toBe(true);
 
     // Unchanged model identities: no rule extraction work at all.
@@ -159,7 +163,11 @@ describe('problemsStore per-file facts cache', () => {
 
     useProblemsStore.getState().runScan();
     expect(
-      useProblemsStore.getState().problems.some((p) => p.rule === 'npc-not-found' && p.dialogName === 'DIA_A')
+      useProblemsStore
+        .getState()
+        .problems.some(
+          (p) => p.rule === 'npc-not-found' && p.locus.kind === 'script' && p.locus.dialogName === 'DIA_A'
+        )
     ).toBe(true);
 
     // Diego becomes a known NPC (e.g. reindex) while a.d's model is unchanged:

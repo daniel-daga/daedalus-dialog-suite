@@ -54,18 +54,31 @@ export function runRules(view: ProjectView): Problem[] {
   const functionToDialogName = buildFunctionToDialogName(view);
 
   const problems = ALL_RULES.flatMap((rule) => rule(view)).map((problem) => {
-    if (problem.dialogName || !problem.functionName) return problem;
-    const dialogName = functionToDialogName.get(problem.functionName.trim().toLowerCase());
-    return dialogName ? { ...problem, dialogName } : problem;
+    const { locus } = problem;
+    if (locus.kind !== 'script' || locus.dialogName || !locus.functionName) return problem;
+    const dialogName = functionToDialogName.get(locus.functionName.trim().toLowerCase());
+    return dialogName ? { ...problem, locus: { ...locus, dialogName } } : problem;
   });
 
-  return problems.sort((a, b) => {
-    if (SEVERITY_ORDER[a.severity] !== SEVERITY_ORDER[b.severity]) {
-      return SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
-    }
-    if (a.filePath !== b.filePath) {
-      return a.filePath.localeCompare(b.filePath);
-    }
-    return a.message.localeCompare(b.message);
-  });
+  return problems.sort(compareProblems);
+}
+
+/**
+ * The panel's total order: errors first, then by file path, then by message.
+ * A world problem has no file path, so it sorts after every script problem of
+ * its severity — one group, in one place, rather than interleaved with files
+ * it has nothing to do with.
+ */
+export function compareProblems(a: Problem, b: Problem): number {
+  if (SEVERITY_ORDER[a.severity] !== SEVERITY_ORDER[b.severity]) {
+    return SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
+  }
+  const aFile = a.locus.kind === 'script' ? a.locus.filePath : null;
+  const bFile = b.locus.kind === 'script' ? b.locus.filePath : null;
+  if (aFile === null || bFile === null) {
+    if (aFile !== bFile) return aFile === null ? 1 : -1;
+  } else if (aFile !== bFile) {
+    return aFile.localeCompare(bFile);
+  }
+  return a.message.localeCompare(b.message);
 }

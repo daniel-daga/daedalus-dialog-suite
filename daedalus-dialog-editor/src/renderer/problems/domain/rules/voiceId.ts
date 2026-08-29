@@ -55,8 +55,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
         rule: 'voice-id-duplicate',
         severity: 'warning',
         message: `Voice ID "${occ.id}" is used ${group.length} times across the project.`,
-        filePath: occ.filePath,
-        functionName: occ.functionName
+        locus: { kind: 'script', filePath: occ.filePath, functionName: occ.functionName }
       });
     }
   }
@@ -70,8 +69,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
       rule: 'voice-id-malformed',
       severity: 'warning',
       message: `Voice ID "${occ.id}" does not match the expected naming pattern (…_<number>_<number>).`,
-      filePath: occ.filePath,
-      functionName: occ.functionName
+      locus: { kind: 'script', filePath: occ.filePath, functionName: occ.functionName }
     });
   }
 

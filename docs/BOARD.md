@@ -152,8 +152,6 @@ pointer is a finding id in the file the routing table names.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **A world finding has no file, and `Problem` demands one** — the locus union,
-  and deliberately no new rule in the same commit. Any run. §16.20 slice 1
 - **A world finding does not navigate** — the panel's click branches; a world
   locus frames through the handle W3 already built. Any run. §16.20 slice 2
 - **`checkPortalMaterials` still has no consumer** — built and retail-tested
@@ -212,6 +210,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(empty)*
 
 ## Done
+
+- **The locus union landed** — `Problem.locus` is script-or-world, the eight
+  rules and the panel migrated with no new rule in the commit. §16.20 slice 1
 
 *(flushed 2026-08-29. Twenty-two cards across five board-loop rounds: the
 world-editor review, Phase 1c's spawn slices, the dialog-simulator findings, the

@@ -58,8 +58,11 @@ describe('knowsInfoDanglingRule', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0].rule).toBe('knowsinfo-dangling');
     expect(problems[0].severity).toBe('error');
-    expect(problems[0].functionName).toBe('Check');
-    expect(problems[0].filePath).toBe('cond.d');
+    expect(problems[0].locus).toEqual({
+      kind: 'script',
+      filePath: 'cond.d',
+      functionName: 'Check'
+    });
     expect(problems[0].message).toContain('DIA_Ghost');
   });
 

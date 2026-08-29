@@ -52,7 +52,9 @@ describe('problemsStore', () => {
     expect(state.hasScanned).toBe(true);
     expect(state.isScanning).toBe(false);
     expect(state.scannedFileCount).toBe(1);
-    expect(state.problems.some((p) => p.rule === 'npc-not-found' && p.dialogName === 'DIA_X')).toBe(true);
+    expect(state.problems.some(
+        (p) => p.rule === 'npc-not-found' && p.locus.kind === 'script' && p.locus.dialogName === 'DIA_X'
+      )).toBe(true);
   });
 
   it('reports no problems when the referenced NPC is known', () => {

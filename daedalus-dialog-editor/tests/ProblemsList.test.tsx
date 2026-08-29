@@ -10,17 +10,14 @@ const problems: Problem[] = [
     rule: 'npc-not-found',
     severity: 'error',
     message: 'Dialog "DIA_X" references NPC "Nobody", which is not defined in the project.',
-    filePath: 'Story/Dialoge/a.d',
-    dialogName: 'DIA_X',
-    npc: 'Nobody'
+    locus: { kind: 'script', filePath: 'Story/Dialoge/a.d', dialogName: 'DIA_X', npc: 'Nobody' }
   },
   {
     id: 'orphaned-function:b.d:Helper',
     rule: 'orphaned-function',
     severity: 'warning',
     message: 'Function "Helper" is not referenced by any dialog, choice, or function call.',
-    filePath: 'Story/Dialoge/b.d',
-    functionName: 'Helper'
+    locus: { kind: 'script', filePath: 'Story/Dialoge/b.d', functionName: 'Helper' }
   }
 ];
 

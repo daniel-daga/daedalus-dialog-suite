@@ -1,6 +1,10 @@
 import { waypointNotInWorldRule } from '../src/renderer/problems/domain/rules/waypointNotInWorld';
 import { buildProjectView } from '../src/renderer/problems/domain/projectView';
-import type { WaypointSites, WorldWaynetView } from '../src/renderer/problems/domain/types';
+import type { Problem, WaypointSites, WorldWaynetView } from '../src/renderer/problems/domain/types';
+
+/** The file a script problem names; `undefined` for a world locus. */
+const filePathOf = (problem: Problem): string | undefined =>
+  (problem.locus.kind === 'script' ? problem.locus.filePath : undefined);
 
 const world = (names: string[], freePoints: string[] = []): WorldWaynetView => ({
   pointNameKeys: new Set([...names, ...freePoints].map((name) => name.toUpperCase())),
@@ -29,8 +33,7 @@ describe('waypointNotInWorldRule', () => {
     expect(problems[0]).toMatchObject({
       rule: 'waypoint-not-in-world',
       severity: 'warning',
-      filePath: 'Rtn.d',
-      functionName: 'Rtn_Start_Diego'
+      locus: { kind: 'script', filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego' }
     });
     // The third answer is not knowable from one world: the message may never
     // claim the waypoint is missing, only that it is not in *this* world.
@@ -46,7 +49,7 @@ describe('waypointNotInWorldRule', () => {
     );
 
     const problems = waypointNotInWorldRule(view);
-    expect(problems.map((problem) => problem.filePath)).toEqual(['a.d', 'b.d']);
+    expect(problems.map(filePathOf)).toEqual(['a.d', 'b.d']);
     expect(new Set(problems.map((problem) => problem.id)).size).toBe(2);
   });
 
@@ -60,7 +63,9 @@ describe('waypointNotInWorldRule', () => {
 
     const problems = waypointNotInWorldRule(view);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toMatchObject({ filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego' });
+    expect(problems[0]).toMatchObject({
+      locus: { kind: 'script', filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego' }
+    });
   });
 
   it('matches waypoint names case-insensitively', () => {

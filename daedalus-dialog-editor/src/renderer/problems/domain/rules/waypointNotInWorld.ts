@@ -46,8 +46,7 @@ export const waypointNotInWorldRule: LintRule = (view): Problem[] => {
         rule: 'waypoint-not-in-world',
         severity: 'warning',
         message: `Waypoint "${name}" is not in the open world. It may belong to another world.`,
-        filePath: site.filePath,
-        functionName: site.functionName
+        locus: { kind: 'script', filePath: site.filePath, functionName: site.functionName }
       });
     }
   }

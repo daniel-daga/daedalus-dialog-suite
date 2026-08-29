@@ -66,8 +66,7 @@ describe('choiceNoClearChoicesRule', () => {
     expect(problems[0]).toMatchObject({
       rule: 'choice-no-clearchoices',
       severity: 'warning',
-      functionName: 'DIA_X_Info',
-      filePath: 'a.d',
+      locus: { kind: 'script', filePath: 'a.d', functionName: 'DIA_X_Info' },
       id: 'choice-no-clearchoices:a.d:DIA_X_Info'
     });
     expect(problems[0].message).toBe(

@@ -44,8 +44,7 @@ export const orphanedFunctionRule: LintRule = (view): Problem[] => {
       rule: 'orphaned-function',
       severity: 'warning',
       message: `Function "${entry.func.name}" is not referenced by any dialog, choice, or function call.`,
-      filePath: entry.filePath,
-      functionName: entry.func.name
+      locus: { kind: 'script', filePath: entry.filePath, functionName: entry.func.name }
     });
   }
 

@@ -16,10 +16,16 @@ const RULE_LABEL: Record<ProblemRuleId, string> = {
 
 const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
-const secondaryText = (problem: Problem): string => {
-  const parts = [baseName(problem.filePath)];
-  if (problem.dialogName) parts.push(problem.dialogName);
-  else if (problem.functionName) parts.push(problem.functionName);
+const secondaryText = ({ locus }: Problem): string => {
+  if (locus.kind === 'world') {
+    if (locus.waypoint) return `World · ${locus.waypoint}`;
+    if (locus.vob !== undefined) return `World · VOB ${locus.vob}`;
+    if (locus.polygon !== undefined) return `World · polygon ${locus.polygon}`;
+    return 'World';
+  }
+  const parts = [baseName(locus.filePath)];
+  if (locus.dialogName) parts.push(locus.dialogName);
+  else if (locus.functionName) parts.push(locus.functionName);
   return parts.join(' · ');
 };
 

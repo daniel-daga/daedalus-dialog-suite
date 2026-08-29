@@ -120,7 +120,7 @@ describe('the Problems scan over an open world', () => {
 
     const found = useProblemsStore.getState().problems.filter((p) => p.rule === 'waypoint-not-in-world');
     expect(found).toHaveLength(1);
-    expect(found[0].filePath).toBe('Rtn.d');
+    expect(found[0].locus).toMatchObject({ kind: 'script', filePath: 'Rtn.d' });
   });
 
   it('hands the scan the stored view instead of rebuilding it per scan', () => {

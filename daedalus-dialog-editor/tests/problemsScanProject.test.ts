@@ -36,7 +36,9 @@ describe('scanProject', () => {
     const result = scanProject({ files, knownNpcNames: [] });
 
     expect(result.scannedFileCount).toBe(2);
-    expect(result.problems.some((p) => p.rule === 'npc-not-found' && p.dialogName === 'DIA_X')).toBe(true);
+    expect(result.problems.some(
+        (p) => p.rule === 'npc-not-found' && p.locus.kind === 'script' && p.locus.dialogName === 'DIA_X'
+      )).toBe(true);
   });
 
   it('finds no problems when every NPC is known and nothing is orphaned', () => {

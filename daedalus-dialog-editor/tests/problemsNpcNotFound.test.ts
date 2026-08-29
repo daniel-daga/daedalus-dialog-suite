@@ -38,9 +38,7 @@ describe('npcNotFoundRule', () => {
     expect(problems[0]).toMatchObject({
       rule: 'npc-not-found',
       severity: 'error',
-      npc: 'Ghost',
-      dialogName: 'DIA_Ghost',
-      filePath: 'a.d',
+      locus: { kind: 'script', filePath: 'a.d', dialogName: 'DIA_Ghost', npc: 'Ghost' },
       id: 'npc-not-found:a.d:DIA_Ghost'
     });
     expect(problems[0].message).toBe(
