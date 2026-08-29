@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type { SemanticModel } from '../src/shared/types';
 
@@ -76,6 +76,39 @@ describe('SimulatorDialog', () => {
     const notice = screen.getByTestId('simulator-launch-failure');
     expect(notice).toHaveTextContent(/DIA_Gate/);
     expect(notice).toHaveTextContent(/false/i);
+  });
+
+  it('keeps a running session when the semantic model is reparsed underneath it', () => {
+    const { rerender } = render(
+      <SimulatorDialog open semanticModel={semanticModel()} dialogName="DIA_Gate" npcName="NPC_Guard" onClose={jest.fn()} />
+    );
+    expect(createSimulatorModelSpy).toHaveBeenCalledTimes(1);
+
+    const assumeSwitch = screen.getByRole('checkbox', { name: /assume unknown/i });
+    fireEvent.click(assumeSwitch);
+    expect(assumeSwitch).toBeChecked();
+
+    // A background reparse hands down a new model identity with the same content.
+    rerender(
+      <SimulatorDialog open semanticModel={semanticModel()} dialogName="DIA_Gate" npcName="NPC_Guard" onClose={jest.fn()} />
+    );
+
+    expect(createSimulatorModelSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('checkbox', { name: /assume unknown/i })).toBeChecked();
+  });
+
+  it('re-projects the current model when it is reopened', () => {
+    const { rerender } = render(
+      <SimulatorDialog open semanticModel={semanticModel()} dialogName="DIA_Gate" npcName="NPC_Guard" onClose={jest.fn()} />
+    );
+    rerender(
+      <SimulatorDialog open={false} semanticModel={semanticModel()} dialogName="DIA_Gate" npcName="NPC_Guard" onClose={jest.fn()} />
+    );
+    rerender(
+      <SimulatorDialog open semanticModel={semanticModel()} dialogName="DIA_Gate" npcName="NPC_Guard" onClose={jest.fn()} />
+    );
+
+    expect(createSimulatorModelSpy).toHaveBeenCalledTimes(2);
   });
 
   it('disables an available entry whose information function is missing, with the reason', () => {

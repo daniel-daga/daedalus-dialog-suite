@@ -7,7 +7,9 @@ application), `src/renderer/components/Simulator/SimulatorDialog.tsx`, the
 `DialogDetailsEditor` integration, the Jest/Playwright suites, and
 `docs/architecture/dialog-simulator.md`.
 
-Status legend: **Open** — no fix landed yet. Only M2 is still open.
+Status legend: **Open** — no fix landed yet. Every finding is fixed; what is
+left of this file is the test-coverage observations, carried as row 38 of
+`unattended-queue.md`.
 
 ---
 
@@ -139,7 +141,10 @@ frequently. Gate the mount (or at least the projection) on `open`.
 
 ### M2. A background reparse silently wipes a running session
 
-**Status:** Open
+**Status:** FIXED 2026-08-30 — the projection is pinned to the semantic model
+the modal opened on (a ref cleared when `open` goes false), so a reparse while
+it is open changes no identity the session effect depends on. Reopening
+re-projects the current model. `simulatorDialog.test.tsx` covers both.
 
 The effect in `SimulatorDialog.tsx:44-53` depends on `model`, so any
 semantic-model update while the modal is open (e.g. a file-watcher reparse)

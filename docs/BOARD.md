@@ -142,8 +142,8 @@ with nobody watching, ordered: the 2026-07 defects, the production-readiness
 and simulator backlogs, and the level editor's measurements. Triaged against
 the tree 2026-08-30, each verified still open. **Take the top unclaimed row and
 cross it off in the same commit; a run may not add rows.**
-`unattended-queue.md` — rows 1-2 landed 2026-08-30; row 3 is a background
-reparse discarding a running simulator session.
+`unattended-queue.md` — rows 1-3 landed 2026-08-30; row 4 is `clearSearch` not
+cancelling the in-flight search that then repopulates the cleared results.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
 needs the engine; the order is a guess at his, so move it.
@@ -232,3 +232,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended queue row 2** (board-loop) — auto-save routes its write through
   `fileStore.saveFile`, so an external-modification rejection raises the conflict
   dialog. Cost: a multi-file tick now commits per file. 2026-07 **3.1**
+- **Unattended queue row 3** (board-loop) — the simulator's projection is pinned
+  to the model it opened on, so a background reparse no longer discards the
+  session. Simulator review findings are now all fixed. simulator **M2**

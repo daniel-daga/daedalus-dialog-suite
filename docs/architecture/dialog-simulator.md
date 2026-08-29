@@ -20,7 +20,11 @@ Imports flow in one direction:
 
 The UI projects the selected full `SemanticModel` with `createSimulatorModel`,
 and only while the modal is open — the projection walks every function, constant
-and dialog, and the model identity changes on every reparse. Project mode and single-file mode therefore use the
+and dialog, and the model identity changes on every reparse. While the modal
+stays open the projection is **pinned to the model it opened on**: a background
+reparse would otherwise recreate the session and discard the transcript,
+history and scratch state under the user. Reopening picks up the current model.
+Project mode and single-file mode therefore use the
 same simulator behavior, and the lightweight project dialog index is never
 used as an execution source.
 

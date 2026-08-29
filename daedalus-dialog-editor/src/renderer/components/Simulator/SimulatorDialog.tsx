@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -38,11 +38,16 @@ const SimulatorDialog: React.FC<SimulatorDialogProps> = ({
   onClose
 }) => {
   // Projecting the semantic model is the expensive part, and the model identity
-  // changes on every reparse — so a closed simulator does none of it.
-  const model = useMemo(
-    () => (open ? createSimulatorModel(semanticModel) : null),
-    [open, semanticModel]
-  );
+  // changes on every reparse — so a closed simulator does none of it, and an
+  // open one stays pinned to the snapshot it opened on: a background reparse
+  // must not recreate the session and discard the transcript underneath the
+  // user. Reopening picks up the current model.
+  const pinnedRef = useRef<SemanticModel | null>(null);
+  if (!open) pinnedRef.current = null;
+  else if (pinnedRef.current === null) pinnedRef.current = semanticModel;
+  const pinned = pinnedRef.current;
+
+  const model = useMemo(() => (pinned ? createSimulatorModel(pinned) : null), [pinned]);
   const [session, setSession] = useState<SimulatorSession | null>(null);
   const [launchFailure, setLaunchFailure] = useState<string | undefined>(undefined);
   const [, setRevision] = useState(0);
