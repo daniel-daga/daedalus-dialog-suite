@@ -17,6 +17,7 @@ handovers cost an hour a session:
 | machine and toolchain hazards | `docs/reference/environment-hazards.md` |
 | a known wart nobody is fixing yet | `docs/refactoring-targets.md` |
 | the Gate 2 checklist | `zenkit-node/docs/engine-acceptance-2026-08-25.md` §8 |
+| **work a run can take unattended** | `docs/plans/unattended-queue.md` |
 | a 2026-08-29 review finding | `docs/plans/world-editor-review-2026-08-29.md` |
 | a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
 | a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
@@ -136,16 +137,16 @@ card waits on live at its pointer — put new prose there, not here.
 would ship unproven is the acceptance record's short list (decal fields, enum
 writes, the classes beyond five), none of it carded.
 
-**Review findings, 2026-08-29.** Each pointer is a section and number in
-`world-editor-review-2026-08-29.md`; each card starts with its failing test.
+**The unattended queue — one card for 49 items.** Everything a run can take
+with nobody watching, ordered: the 2026-07 defects, the production-readiness
+and simulator backlogs, and the level editor's measurements. Triaged against
+the tree 2026-08-30, each verified still open. **Take the top unclaimed row and
+cross it off in the same commit; a run may not add rows.**
+`unattended-queue.md` — row 1 is a stale semantic model written over a fresh
+one.
 
-- **28 live defects nobody was tracking** — the 2026-07 plan, triaged against
-  the tree 2026-08-29: 28 of its 37 items still reproduce, 4 had landed, 5 died
-  with the Flow view. Start at 2.5, which deletes an action on Escape-then-Enter.
-  `code-review-2026-07-remediation.md`
-
-**World surface, from Daniel's own sessions 2026-08-30.** All three are §16.24;
-none needs the engine, and the order here is a guess at his — move it.
+**World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
+needs the engine; the order is a guess at his, so move it.
 
 - **A VOB can be picked through the world mesh** — the pick pass draws only the
   VOB proxies, so nothing writes depth and a VOB behind a wall wins the pixel.
@@ -156,17 +157,15 @@ none needs the engine, and the order here is a guess at his — move it.
 - **Paste lands the copy inside the original and leaves it unselected** — wants
   an offset and the copy selected. The "jerk" is the structural re-read, which
   is a bigger and separate question. §16.24 4
+- **After a paste the locator works on no VOB at all** — every link in
+  `onFocus → focusVob → frameVob → frameVobRef` is optional-chained, so a null
+  is a silent no-op. Not root-caused; the probe is written. §16.24 5
+- **The right sidebar has no locator for the selection** — picking in the
+  viewport leaves no way back to it. `.` already does it. §16.24 6
 - **The multi-select gizmo sits on the last VOB picked, not the centre** —
   wants the centre. **Decide rotation first**: `rotateVobs` turns each VOB about
   its own origin, so a centroid gizmo would show a pivot the op does not use.
   §16.24 2
-
-**Editor-side backlogs — nothing carded, which is not the same as nothing
-open.** Still unfixed and unowned: the simulator's M2 (a background reparse
-wipes a running session), §3 P3's incomplete bundle-size guard, the
-error-boundary gaps and the update link with no `shell.openExternal` channel.
-None need the engine or the corpus; carding them is a person's call. See the
-routing table's review files.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
@@ -227,12 +226,5 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Gate 2b closed** — `07a`/`07b`/`07c` passed 2026-08-30 through GMBT: the
-  torch subtree wholly gone, the renumber with routines intact. The engine
-  harness stages `NEWWORLD.ZEN`, verifies the staged hash and prints each
-  candidate's sheet. Acceptance record, *"Gate 2b, third pass"*.
-- **The free-point guard is fixed, and the finding was the smaller half** —
-  free points are `zCVobSpot` VOBs, not waynet points; the editor was reading
-  the waynet's storage flag, so all 874 retail `FP_` sites warned and the jump
-  button called every free point missing. Both surfaces now call one
-  `worldHasPoint`. *first pass* 6.
+*(empty — `git log` is the record; the last two, Gate 2b and the free-point
+guard, are in the acceptance record and the 2026-08-29 review file.)*

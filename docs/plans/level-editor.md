@@ -2103,3 +2103,30 @@ and selected, so it can be dragged straight away. The "jerking" reported with
 it is the structural-op re-read — a paste is `isStructuralOp`, so the whole
 projection is rebuilt — which is a separate and larger question from where the
 copy lands.
+
+**5. After a paste, the locator stops working on every VOB.** Reported
+2026-08-30. Not diagnosed to a root cause — what is established is the path and
+why it fails *silently*: the scene tree's locator is
+`onFocus(vob)` → `WorldSurface.focusVob` → `viewportRef.current?.frameVob(vob)`
+→ `frameVobRef.current?.(vob)`, and **every link is optional-chained**, so a
+null anywhere is a no-op with no error, which is exactly the reported symptom.
+`frameVobRef.current` is installed by the scene effect
+(`WorldViewport.tsx:854`) and set to null by its teardown (`:1076`); the effect
+is keyed on `[mesh, visuals, bbox]` — the three payloads a **structural op
+re-reads**, and a paste is `isStructuralOp`. Its first statement is
+`if (!host) return;` with **no cleanup returned**, so a re-run that finds no
+host leaves the ref null for the rest of the world's life. First probe:
+assert `frameVobRef.current` is non-null after a structural re-read; the
+double-click on a row and the `.` key go through `frameThese` too, so check
+whether they also died — that separates "the ref is null" from "the handle is
+stale".
+Whatever the cause, the optional chaining is the reason nobody saw it: a
+locator that cannot locate should say so, not do nothing.
+
+**6. The right sidebar needs a locator for the current selection.** Picking in
+the viewport leaves no way back to it — the tree's locator is per row, and a
+VOB selected by clicking the world may not even be scrolled into view there.
+The keyboard already does it (`.` or Numpad-`.` → `frameSelection`, and `Home`
+frames the world), so this is the same command with a button on it, in the
+property grid's header, calling `focusVob(primaryVob(selection))`. It also
+gives item 5 a second surface to fail on, which is worth having.
