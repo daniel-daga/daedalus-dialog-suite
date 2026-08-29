@@ -15,6 +15,12 @@
 # --noupdatesubtitles is required: GMBT 0.22 throws a KeyNotFoundException in
 # UpdateDialogs() on this script set.
 #
+# World files under mod/Worlds must be UPPER-CASE on disk: GMBT upper-cases
+# --world and compares it case-sensitively against the on-disk names, and a
+# miss surfaces as "Unknown error: KeyNotFoundException ... in
+# DetectIfWorldIsNotExists" (its file-not-found message key is itself missing),
+# not as a message naming the world. engine-batch.ps1 stages them that way.
+#
 # Never --full: GMBT refuses it without a script reparse ("Full test requires
 # scripts reparse"), and this harness never reparses. A plain `gmbt test` merges
 # the asset dirs every run; --reinstall is for after this file changes.

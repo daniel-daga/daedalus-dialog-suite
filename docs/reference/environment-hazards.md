@@ -246,6 +246,16 @@ so the retail extraction was gone and every measurement card lost its corpus.
 **The asset dirs must supply a complete tree**, which is why the beppo project
 carries a whole `mdk/`; that is load-bearing, not tidiness.
 
+**GMBT 0.22's `Unknown error: KeyNotFoundException` in
+`DetectIfWorldIsNotExists` means "world not found", and the usual cause is
+case.** It upper-cases `--world`, lists the asset dirs' `Worlds/` with their
+on-disk names, and compares the two case-*sensitively*; on a miss it tries to
+print `Config.Error.FileDidNotFound`, a key absent from its own translation
+table, and that lookup is the exception you see instead. So a candidate must
+be `07A-FRAME-TORCH.ZEN` on disk, not `07a-frame-torch.zen` — `engine-batch.ps1`
+stages upper-case for this reason. (The same exception in `UpdateDialogs()` is
+the different, known one that `--noupdatesubtitles` sidesteps.)
+
 The game itself was never at risk: it runs from `Data/*.vdf`, and `_work` is
 only the modding tree. **Since 2026-08-29 nothing of ours lives there**: the
 world corpus is `scripts/extract-worlds.js`'s output in the repo, and GMBT owns

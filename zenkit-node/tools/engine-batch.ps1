@@ -100,10 +100,14 @@ if ($Latest) { Log "-Latest: $($cands[0].Name) only, written $($cands[0].LastWri
 
 # --- stage: the mod carries exactly the selected candidates, nothing stale.
 # Every *.zen here is packed into the .mod, and a world is 75 MB.
+# UPPER-CASE on disk, or GMBT cannot find the world: it upper-cases --world and
+# compares it case-SENSITIVELY against the asset dir's on-disk names, and then
+# dies with a KeyNotFoundException in DetectIfWorldIsNotExists because its own
+# "file not found" message key is missing (environment-hazards.md, GMBT).
 Get-ChildItem $ModWorlds -Filter '*.zen' -ErrorAction SilentlyContinue | Remove-Item -Force
 foreach ($c in $cands) {
-  Copy-Item $c.FullName (Join-Path $ModWorlds $c.Name) -Force
-  Log "staged $($c.Name) size=$($c.Length) sha=$((Sha $c.FullName).Substring(0,16))"
+  Copy-Item $c.FullName (Join-Path $ModWorlds $c.Name.ToUpper()) -Force
+  Log "staged $($c.Name.ToUpper()) size=$($c.Length) sha=$((Sha $c.FullName).Substring(0,16))"
 }
 
 $first = $true
@@ -122,7 +126,7 @@ foreach ($c in $cands) {
   # marvin mode on. A plain `gmbt test` merges the asset dirs every run; --full
   # is refused ("Full test requires scripts reparse"), so -Reinstall is the
   # strongest thing offered, once per batch.
-  $gmbtArgs = @('test', "--world=$($c.Name)", '--noreparse', '--nomenu', '-D', '--noupdatesubtitles')
+  $gmbtArgs = @('test', "--world=$($c.Name.ToUpper())", '--noreparse', '--nomenu', '-D', '--noupdatesubtitles')
   if ($Reinstall -and $first) { $gmbtArgs += '--reinstall' }
   if ($Windowed) { $gmbtArgs += '--windowed' }
   if ($NoAudio) { $gmbtArgs += '--noaudio' }
