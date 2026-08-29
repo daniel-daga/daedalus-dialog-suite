@@ -142,8 +142,8 @@ with nobody watching, ordered: the 2026-07 defects, the production-readiness
 and simulator backlogs, and the level editor's measurements. Triaged against
 the tree 2026-08-30, each verified still open. **Take the top unclaimed row and
 cross it off in the same commit; a run may not add rows.**
-`unattended-queue.md` — row 1 is a stale semantic model written over a fresh
-one.
+`unattended-queue.md` — row 1 landed 2026-08-30; row 2 is auto-save bypassing
+the conflict route.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
 needs the engine; the order is a guess at his, so move it.
@@ -226,5 +226,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty — `git log` is the record; the last two, Gate 2b and the free-point
-guard, are in the acceptance record and the 2026-08-29 review file.)*
+- **Unattended queue row 1** (board-loop) — `getSemanticModel` stamps the file
+  before its await and drops a cache write whose stamp moved. Residual, unowned:
+  the 512-file cap does not pin open files. 2026-07 **4.1**

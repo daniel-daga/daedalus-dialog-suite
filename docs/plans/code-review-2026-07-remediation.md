@@ -108,12 +108,18 @@ undo prompt and nothing to reveal that deletion was armed.
 ## P4 — Correctness (medium severity, batch by area)
 
 Renderer stores:
-- [ ] 4.1 `getSemanticModel`'s post-await cache write has no staleness guard —
-      `projectStore.ts:632-642` unconditionally `set()`s `parsedFiles`, and
-      `invalidateCacheForFile` (`:282`) drops the `inFlight` entry while the old promise still
-      resolves and writes its stale model back. *Half-fixed:* the project-swap guard (`:459`) and
-      `inFlight` dedup landed; the skip-writes-for-open-files check did not —
-      `projectStore.ts` never imports `useFileStore`.
+- [x] 4.1 **Landed 2026-08-30.** `getSemanticModel` now stamps the file before the await and
+      drops its cache write if the stamp moved — `invalidateCacheForFile`, `clearCache`,
+      `closeProject` and `updateFileModels` all bump it. The caller still gets the model it
+      asked for; only the shared cache is protected. Test: `projectStore.staleCacheWrite`.
+      The "skip writes for open files" half is covered *indirectly* and not by importing
+      `useFileStore` (which would be a cycle — `fileStore.ts:12` imports `projectStore`):
+      `storeSync` pushes every open file's model through `updateFileModel`, so the editor's
+      model always wins over a parse in flight, and a cached entry means no parse starts at
+      all. **Residual, unowned:** `enforceParsedFilesCap` does not pin open files, so if an
+      open file's entry is evicted on a project past the 512-file cap, the next
+      `getSemanticModel` re-parses from disk and caches a model without its unsaved edits.
+      Pinning needs the open-file set, which is the import projectStore cannot have.
 - [ ] 4.3 `clearSearch` (`searchStore.ts:95-102`) still does not bump `currentSearchId` (`:65`) or
       reset `isSearching` (`:73`), so an in-flight chunked search passes the guards at `:221/:258`
       and repopulates cleared results at `:262`.

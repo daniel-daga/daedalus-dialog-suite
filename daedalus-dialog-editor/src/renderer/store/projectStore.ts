@@ -208,6 +208,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   // handed to a post-mutation caller.
   const inFlight = new Map<string, Promise<SemanticModel>>();
 
+  // Staleness stamps for the cache write at the end of getSemanticModel (2026-07
+  // finding 4.1). The write happens after an await, so between the parse
+  // starting and it resolving the entry may have been invalidated, the project
+  // closed, or the editor's own (possibly unsaved) model pushed in by
+  // storeSync. Any of those makes the parse's result older than what the cache
+  // now holds, so it must be dropped rather than written back. The caller still
+  // gets the model it asked for — only the shared cache is protected.
+  let stampCounter = 0;
+  const fileStamps = new Map<string, number>();
+  let allFilesStamp = 0;
+  const stampOf = (filePath: string) => Math.max(fileStamps.get(filePath) ?? 0, allFilesStamp);
+  const stampFile = (filePath: string) => { fileStamps.set(filePath, ++stampCounter); };
+  const stampAllFiles = () => { allFilesStamp = ++stampCounter; fileStamps.clear(); };
+
   // Category-stable merge cache. For each category we remember the ordered list
   // of input map references from the last merge plus the merged object we
   // produced. An unchanged signature (same length + all refs ===) means the
@@ -281,6 +295,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   /** Remove a single file from the parsed-files cache. */
   const invalidateCacheForFile = (filePath: string) => {
     inFlight.delete(filePath);
+    stampFile(filePath);
     parsedFileRecency.delete(filePath);
     set((state) => {
       const newCache = new Map(state.parsedFiles);
@@ -564,6 +579,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
 
     inFlight.clear();
+    stampAllFiles();
     resetMergeCache();
     resetParsedFileRecency();
 
@@ -616,6 +632,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       return existing;
     }
 
+    const stampAtStart = stampOf(filePath);
     const parsePromise = (async () => {
       // Parse file via IPC
       const semanticModel = await window.editorAPI.parseDialogFile(filePath);
@@ -628,7 +645,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         Object.values(semanticModel.variables).forEach(v => { v.filePath = filePath; });
       }
 
-      // Cache the result
+      // Cache the result — unless this parse went stale while it was in flight
+      // (invalidated, project closed, or superseded by the editor's own model).
+      if (stampOf(filePath) !== stampAtStart) {
+        return semanticModel;
+      }
+
       set((state) => {
         const newCache = new Map(state.parsedFiles);
         newCache.set(filePath, {
@@ -935,6 +957,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   clearCache: () => {
     inFlight.clear();
+    stampAllFiles();
     resetMergeCache();
     resetParsedFileRecency();
     set((state) => ({ parsedFiles: new Map(), parseGeneration: state.parseGeneration + 1 }));
@@ -958,6 +981,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         lastParsed: new Date()
       });
       touchParsedFile(filePath);
+      // This model — the editor's, unsaved edits included — now owns the entry:
+      // a disk parse still in flight for the same file must not replace it.
+      stampFile(filePath);
     }
 
     // The dialog index only depends on each dialog's name + owning NPC. Action
