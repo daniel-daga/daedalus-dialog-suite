@@ -1969,6 +1969,15 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
         `${op.op} is a waynet op: it does not project onto the vob columns`,
       );
     }
+    if (op.vob < 0 || op.vob >= reader.count) {
+      // What the two waynet siblings already do, and for the sharper reason:
+      // this batch has already been committed to the world, so a VOB the
+      // projection does not have means the columns and the world have parted
+      // company. `positions[op.vob * 3] = …` and `flags[op.vob] |= bit` are
+      // silent no-ops out of range, so without this the op reports success with
+      // the projection never updated.
+      throw new RangeError(`no vob ${op.vob} in the index`);
+    }
     if (op.op === 'SetVobProp') {
       // The name and the visual are dictionary indices rather than values, so
       // this is an intern plus a write — a projection that only wrote the

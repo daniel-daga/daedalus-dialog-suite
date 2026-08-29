@@ -308,7 +308,13 @@ handlers → `WorldService` → `zenkit.worker` → `commitOps`/`writeOp` →
    then pops A's entry and `openWorld` clears both stacks, so nothing records it.
    No test opens a world with a request in flight.
 
-3. **`applyOps` never bounds-checks `op.vob`, and it runs after the commit.**
+3. **`applyOps` never bounds-checks `op.vob`, and it runs after the commit.** —
+   **FIXED 2026-08-29**: `applyOps` refuses an op naming a VOB outside
+   `reader.count` with a `RangeError`, before writing anything for it — what the
+   two waynet siblings already did. It still runs after the commit, so what it
+   turns is a silent no-op into a loud disagreement; the window itself is the
+   renderer's and is unchanged. Held by *"refuses an op naming a vob the index
+   does not have"* (`zen-world/test/ops.test.ts`).
    `zenkit.worker.ts:248-283` calls `commitOps` (world mutated, atomic) and only
    then `applyOps` (`ops.ts:1948-2016`). Its two waynet siblings —
    `applyWaypointPositions` (:1908) and `applyWaypointNames` (:1938) — both do

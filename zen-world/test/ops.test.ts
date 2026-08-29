@@ -2036,6 +2036,25 @@ describe('applying ops to the index', () => {
     expect(reader.position(0)).toEqual([3, 3, 3]);
     expect(reader.position(1)).toEqual([2, 2, 2]);
   });
+
+  // The batch reaches here after `commitOps` has already changed the world, so
+  // a VOB the projection does not have is not a hypothetical: the store still
+  // holds the pre-delete summary in the window between the world op resolving
+  // and the index re-read resolving. Both waynet siblings refuse by name; a
+  // typed-array write out of range is a silent no-op, so without this the op
+  // reports success with the projection never updated.
+  it('refuses an op naming a vob the index does not have', () => {
+    const reader = createVobReader(vobIndex([{ pos: [1, 2, 3], name: 'A' }]));
+    const gone = { ...moveVob(reader, 0, [7, 8, 9]), vob: 4, path: '4' };
+
+    expect(() => applyOps(reader, [gone])).toThrow(/no vob 4/);
+    expect(reader.position(0)).toEqual([1, 2, 3]);
+
+    const negative = { ...setVobProp(reader, 0, { name: 'NEW' }), vob: -1, path: '0' };
+
+    expect(() => applyOps(reader, [negative])).toThrow(/no vob -1/);
+    expect(reader.name(0)).toBe('A');
+  });
 });
 
 describe('committing ops to the world', () => {

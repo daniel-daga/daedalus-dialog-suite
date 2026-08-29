@@ -138,8 +138,6 @@ card waits on live at its pointer — put new prose there, not here.
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
 
-- **`applyOps` trusts `op.vob`** — no bounds check, and it runs after the
-  commit; both of its waynet siblings do check. Any run. *ops/main* 3
 - **The waynet mutators never mark the handle mutated** — so `container`
   reports the pre-edit file's digests as this handle's facts. Any run.
   *binding* 1
@@ -213,6 +211,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 *(flushed 2026-08-29 — the two `ops/main` fixes before this one are in commits
 7298fe6 and f587b74 and marked FIXED at their pointer; `git log` is the record.)*
+
+- **`applyOps` bounds-checks `op.vob`** — an op naming a VOB the projection
+  does not have is a `RangeError`, not a silent typed-array no-op reported as
+  success. board-loop. *ops/main* 3, marked FIXED
 
 - **An `AddVob` with a null `to` is refused at the IPC boundary** — the delete
   direction is `invertOp`'s, built in main off the undo stack, and is no longer
